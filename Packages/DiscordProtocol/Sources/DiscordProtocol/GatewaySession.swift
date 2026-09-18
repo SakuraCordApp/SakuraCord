@@ -2,9 +2,9 @@ import Compression
 import Foundation
 import libzstd
 import OSLog
-import SakuraCordModels
+import MarrowChatModels
 
-private let sessionLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "GatewaySession")
+private let sessionLogger = Logger(subsystem: "dev.marrowchat.MarrowChat", category: "GatewaySession")
 
 enum GatewaySocketMessage: Sendable, Equatable {
     case data(Data)

@@ -243,7 +243,7 @@ public final class MediaDeviceMonitor: @unchecked Sendable {
     ]
 
     private let queue = DispatchQueue(
-        label: "app.sakuracord.media-device-monitor",
+        label: "app.marrowchat.media-device-monitor",
         qos: .userInitiated
     )
     private let handler: Handler

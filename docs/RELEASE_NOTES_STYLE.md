@@ -1,6 +1,6 @@
 # GitHub release notes style
 
-GitHub release notes are SakuraCord's detailed, durable account of a release.
+GitHub release notes are MarrowChat's detailed, durable account of a release.
 They serve users who want the full change summary, contributors investigating
 when behavior changed, and the Sparkle update interface. They are not the same
 copy as the shorter Discord announcement.
@@ -34,7 +34,7 @@ Use this consistent order:
 4. A linked comparison as the final line:
 
    ```markdown
-   **Full Changelog:** [vPREVIOUS...vCURRENT](https://github.com/SakuraCordApp/SakuraCord/compare/vPREVIOUS...vCURRENT)
+   **Full Changelog:** [vPREVIOUS...vCURRENT](https://github.com/d-lab17/MarrowChat/compare/vPREVIOUS...vCURRENT)
    ```
 
 Put user-facing features and fixes first. Follow them with performance,
@@ -76,7 +76,7 @@ details, and filler that communicates neither is removed.
 ## Template
 
 ```markdown
-SakuraCord vX.Y.Z adds [major features]. It also improves [important areas].
+MarrowChat vX.Y.Z adds [major features]. It also improves [important areas].
 
 ## Specific product area
 
@@ -88,7 +88,7 @@ SakuraCord vX.Y.Z adds [major features]. It also improves [important areas].
 - Reduced [specific problem or cost].
 - Fixed [specific behavior].
 
-**Full Changelog:** [vPREVIOUS...vX.Y.Z](https://github.com/SakuraCordApp/SakuraCord/compare/vPREVIOUS...vX.Y.Z)
+**Full Changelog:** [vPREVIOUS...vX.Y.Z](https://github.com/d-lab17/MarrowChat/compare/vPREVIOUS...vX.Y.Z)
 ```
 
 ## Review and storage

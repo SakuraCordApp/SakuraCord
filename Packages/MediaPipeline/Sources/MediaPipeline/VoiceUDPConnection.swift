@@ -109,7 +109,7 @@ public actor VoiceUDPConnection {
             using: parameters
         )
         queue = DispatchQueue(
-            label: "dev.sakuracord.voice.udp",
+            label: "dev.marrowchat.voice.udp",
             qos: serviceClass == .interactiveVoice ? .userInteractive : .userInitiated
         )
         let stream = AsyncThrowingStream<Data, any Error>.makeStream(bufferingPolicy: .bufferingNewest(2000))

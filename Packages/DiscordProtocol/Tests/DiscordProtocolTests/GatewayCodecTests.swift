@@ -1,6 +1,6 @@
 @testable import DiscordProtocol
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 import Testing
 
 @Test func `json gateway codec round trips unknown events`() throws {

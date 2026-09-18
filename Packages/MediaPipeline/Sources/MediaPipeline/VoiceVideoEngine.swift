@@ -41,7 +41,7 @@ public final class VoiceVideoEngine: NSObject, AVCaptureVideoDataOutputSampleBuf
     public static let bitrate = 2_500_000
 
     private let captureSession = AVCaptureSession()
-    private let captureQueue = DispatchQueue(label: "app.sakuracord.video.capture", qos: .userInteractive)
+    private let captureQueue = DispatchQueue(label: "app.marrowchat.video.capture", qos: .userInteractive)
     private let encoder: H264VideoEncoder
     private let imageContext = CIContext(options: [.cacheIntermediates: false])
     private let encodedFrameHandler: @Sendable (EncodedVideoFrame) -> Void
@@ -344,7 +344,7 @@ public final class H264VideoDecoder: @unchecked Sendable {
     private var sps: Data?
     private var pps: Data?
     private let imageContext = CIContext(options: [.cacheIntermediates: false])
-    private let decodeQueue = DispatchQueue(label: "dev.sakuracord.video.decode", qos: .userInteractive)
+    private let decodeQueue = DispatchQueue(label: "dev.marrowchat.video.decode", qos: .userInteractive)
     private let output: @Sendable (VoiceVideoFrame) -> Void
 
     public init(output: @escaping @Sendable (VoiceVideoFrame) -> Void) {

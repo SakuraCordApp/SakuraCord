@@ -1,7 +1,7 @@
-# SakuraCord architecture
+# MarrowChat architecture
 
-SakuraCord is a SwiftPM-backed macOS application collected in
-`SakuraCord.xcworkspace`. SwiftPM remains the build source of truth; the
+MarrowChat is a SwiftPM-backed macOS application collected in
+`MarrowChat.xcworkspace`. SwiftPM remains the build source of truth; the
 workspace is a convenience entry point.
 
 ## Package ownership
@@ -9,12 +9,12 @@ workspace is a convenience entry point.
 | Package | Responsibility |
 | --- | --- |
 | `App` | SwiftUI application, AppKit bridges, app state, authentication UI, settings, and the plugin-host executable. |
-| `SakuraCordModels` | Stable domain values, typed snowflakes, messages, commands, interactions, and provider events. |
+| `MarrowChatModels` | Stable domain values, typed snowflakes, messages, commands, interactions, and provider events. |
 | `DiscordProtocol` | Provider contract, REST and Gateway implementation, Discord DTO decoding, credentials, request scheduling, and offline provider. |
-| `SakuraCordPersistence` | Account-scoped GRDB database, migrations, and user-authored drafts. Discord workspace and history state is never persisted. |
+| `MarrowChatPersistence` | Account-scoped GRDB database, migrations, and user-authored drafts. Discord workspace and history state is never persisted. |
 | `MessageRendering` | Parsed message documents, Discord Markdown conversion, and attributed-content planning support. |
 | `MediaPipeline` | Media cache interfaces plus voice/video signaling, transport, capture, playback, Opus, H.264, and DAVE integration. |
-| `SakuraCordPluginSDK` | Plugin manifest, capability, and permission contracts. |
+| `MarrowChatPluginSDK` | Plugin manifest, capability, and permission contracts. |
 | `DaveKit` | Swift wrapper over the vendored libdave/MLS implementation used by `MediaPipeline`. |
 
 Dependencies point inward toward models and explicit protocols. Views do not
@@ -23,7 +23,7 @@ construct Discord requests or own network transports.
 ## Application state
 
 `AppModel` is a Main Actor observable projection over a `ChatProvider` and
-`SakuraCordDatabase`. It coordinates navigation, session-memory caches, drafts, message
+`MarrowChatDatabase`. It coordinates navigation, session-memory caches, drafts, message
 presentation, forum state, interactions, and voice state for the current app
 workspace. Views receive narrow values or the model reference.
 
@@ -118,7 +118,7 @@ An approved QR credential or an older stored credential that predates
 installation-identity persistence performs a bounded, best-effort unauthenticated
 lookup before Gateway startup: one Apex request, followed by one `/experiments`
 fallback only when Apex fails or omits the identity. Discord may omit the
-optional identity from both successful responses; SakuraCord then starts
+optional identity from both successful responses; MarrowChat then starts
 Gateway without it. The lookup runs once per provider and does not replay the
 authentication exchange or force an otherwise valid credential through login.
 Passwords, cookies, captured authorization headers, and analytics identifiers
@@ -140,7 +140,7 @@ from Keychain into a mode-`0600` file within the app's sandbox Application
 Support container. It is excluded from release and update-enabled packages and
 is not the production credential contract.
 
-Only user-authored drafts are stored through `SakuraCordPersistence`.
+Only user-authored drafts are stored through `MarrowChatPersistence`.
 Credentials never enter GRDB, fixtures, logs, or plugin APIs. Discord
 workspace, message, read, member, and Gateway state is session-memory only. A
 database migration drops the obsolete tables from earlier builds while
@@ -195,8 +195,8 @@ target does not import it directly.
 
 ## Plugins
 
-`SakuraCordPluginSDK` defines future-facing capability and permission
-contracts. `SakuraCordPluginHost` is a separate executable and signing target,
+`MarrowChatPluginSDK` defines future-facing capability and permission
+contracts. `MarrowChatPluginHost` is a separate executable and signing target,
 but it is intentionally inert and currently loads no plugins. No plugin
 receives a Discord credential or credential handle.
 
@@ -213,8 +213,8 @@ the result.
 
 The canonical icon sources are:
 
-- `App/Packaging/SakuraCord.icon`
-- `App/Packaging/SakuraCord Flower.icon`
+- `App/Packaging/MarrowChat.icon`
+- `App/Packaging/MarrowChat Flower.icon`
 
 `script/package_dmg.sh` uses the release configuration, verifies the app
 signature, builds the DMG, verifies the image, and writes its SHA-256 digest.
@@ -246,13 +246,13 @@ merge commit is explicitly validated before publication. Release validation
 also requires every stable or beta tag commit to be reachable from nightly.
 Nightly beta tags must point to commits on the `nightly` source branch, use
 human-facing `vX.Y.Z Beta N` release and Discord titles, and use tag-specific
-`SakuraCord-vX.Y.Z-Beta-N.dmg` assets. They run the same validation and
+`MarrowChat-vX.Y.Z-Beta-N.dmg` assets. They run the same validation and
 packaging job, publish as GitHub prereleases, and select their dedicated
 Discord channel and role. Only after a
 nightly prerelease's assets are publicly re-downloaded and compared does the
 workflow atomically update the signed appcast on the generated `nightly-feed`
 branch. The application reads that feed from
-`https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml`.
+`https://raw.githubusercontent.com/d-lab17/MarrowChat/nightly-feed/appcast.xml`.
 If a maintainer edits the GitHub Release body after publication, a
 release-edit workflow downloads the unchanged DMG,
 preserves its build number, regenerates and verifies the signed appcast with the
@@ -260,4 +260,4 @@ current body, and replaces only the appcast asset. The two release paths share
 global release concurrency so this refresh cannot race the initial
 publication. Maintainers can dispatch the same workflow with a tag to repair an
 older feed. The public feed is
-`https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml`.
+`https://github.com/d-lab17/MarrowChat/releases/latest/download/appcast.xml`.

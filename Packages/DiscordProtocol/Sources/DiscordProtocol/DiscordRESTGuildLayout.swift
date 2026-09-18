@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 extension DiscordRESTProvider {
     func applyGuildSettingsProto(

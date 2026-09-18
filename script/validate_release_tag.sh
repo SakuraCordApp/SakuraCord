@@ -12,7 +12,7 @@ TAG="$2"
 # shellcheck source=release_metadata.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_metadata.sh"
 
-if ! sakuracord_is_release_tag "$TAG"; then
+if ! marrowchat_is_release_tag "$TAG"; then
   echo "Pre-release validation: $TAG is not a stable or nightly release tag." >&2
   exit 1
 fi

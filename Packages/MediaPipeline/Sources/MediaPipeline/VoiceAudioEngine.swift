@@ -4,7 +4,7 @@ import CoreAudio
 import Foundation
 import OSLog
 
-private let voiceAudioLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "VoiceAudio")
+private let voiceAudioLogger = Logger(subsystem: "dev.marrowchat.MarrowChat", category: "VoiceAudio")
 
 public struct CapturedOpusFrame: Sendable {
     public var data: Data
@@ -44,7 +44,7 @@ public final class VoiceAudioEngine {
     // AVAudioEngine can switch the headset transport for the entire Mac, even
     // when the node is immediately redirected to the built-in microphone.
     private let captureSession = AVCaptureSession()
-    private let captureQueue = DispatchQueue(label: "app.sakuracord.audio.capture", qos: .userInteractive)
+    private let captureQueue = DispatchQueue(label: "app.marrowchat.audio.capture", qos: .userInteractive)
     private var captureOutput: AVCaptureAudioDataOutput?
     private let playbackEngine = AVAudioEngine()
     private let codec: OpusCodec

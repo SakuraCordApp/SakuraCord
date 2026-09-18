@@ -6,8 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$ROOT_DIR/script/runtime.sh"
 
 TARGET="${1:-app}"
-sakuracord_acquire_operation_lock
-trap sakuracord_release_operation_lock EXIT
+marrowchat_acquire_operation_lock
+trap marrowchat_release_operation_lock EXIT
 
 run_tests() {
   local package_path="$1"
@@ -16,12 +16,12 @@ run_tests() {
 
   swift build \
     --package-path "$package_path" \
-    --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
+    --cache-path "$MARROWCHAT_SWIFTPM_CACHE_DIR" \
     --scratch-path "$package_path/.build" \
     --build-tests
   bin_dir="$(swift build \
     --package-path "$package_path" \
-    --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
+    --cache-path "$MARROWCHAT_SWIFTPM_CACHE_DIR" \
     --scratch-path "$package_path/.build" \
     --show-bin-path)"
 
@@ -36,7 +36,7 @@ run_tests() {
 
   swift test \
     --package-path "$package_path" \
-    --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
+    --cache-path "$MARROWCHAT_SWIFTPM_CACHE_DIR" \
     --scratch-path "$package_path/.build" \
     --skip-build
 }
@@ -49,12 +49,12 @@ case "$TARGET" in
     run_tests "$ROOT_DIR/Packages/DiscordProtocol"
     ;;
   all)
-    run_tests "$ROOT_DIR/Packages/SakuraCordModels"
+    run_tests "$ROOT_DIR/Packages/MarrowChatModels"
     run_tests "$ROOT_DIR/Packages/DiscordProtocol"
-    run_tests "$ROOT_DIR/Packages/SakuraCordPersistence"
+    run_tests "$ROOT_DIR/Packages/MarrowChatPersistence"
     run_tests "$ROOT_DIR/Packages/MessageRendering"
     run_tests "$ROOT_DIR/Packages/MediaPipeline"
-    run_tests "$ROOT_DIR/Packages/SakuraCordPluginSDK"
+    run_tests "$ROOT_DIR/Packages/MarrowChatPluginSDK"
     run_tests "$ROOT_DIR/App"
     ;;
   *)

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TOOLS_DIR="$ROOT_DIR/.build/code-quality-tools"
-FIXTURE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-code-quality-test.XXXXXX")"
+FIXTURE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-code-quality-test.XXXXXX")"
 ZERO_SHA="0000000000000000000000000000000000000000"
 
 cleanup() {
@@ -86,8 +86,8 @@ chmod +x \
   "$FIXTURE_ROOT/script/pre_push_code_quality.sh"
 
 git -C "$FIXTURE_ROOT" init -q
-git -C "$FIXTURE_ROOT" config user.name "SakuraCord Code Quality Test"
-git -C "$FIXTURE_ROOT" config user.email "code-quality-test@sakuracord.invalid"
+git -C "$FIXTURE_ROOT" config user.name "MarrowChat Code Quality Test"
+git -C "$FIXTURE_ROOT" config user.email "code-quality-test@marrowchat.invalid"
 git -C "$FIXTURE_ROOT" add .
 git -C "$FIXTURE_ROOT" commit -qm "Correct fixture"
 git -C "$FIXTURE_ROOT" config core.hooksPath .githooks
@@ -104,8 +104,8 @@ expect_hook_failure \
   "refs/heads/main $BAD_SHA refs/heads/main $ZERO_SHA
 "
 
-SAKURACORD_CODE_QUALITY_ROOT="$FIXTURE_ROOT" \
-  SAKURACORD_CODE_QUALITY_TOOLS_DIR="$TOOLS_DIR" \
+MARROWCHAT_CODE_QUALITY_ROOT="$FIXTURE_ROOT" \
+  MARROWCHAT_CODE_QUALITY_TOOLS_DIR="$TOOLS_DIR" \
   "$FIXTURE_ROOT/script/code_quality.sh" fix --files App/Sources/Fixture.swift
 git -C "$FIXTURE_ROOT" add App/Sources/Fixture.swift
 (
@@ -140,8 +140,8 @@ expect_hook_failure \
   "refs/heads/main $(git -C "$FIXTURE_ROOT" rev-parse HEAD) refs/heads/main $GOOD_SHA
 "
 
-SAKURACORD_CODE_QUALITY_ROOT="$FIXTURE_ROOT" \
-  SAKURACORD_CODE_QUALITY_TOOLS_DIR="$TOOLS_DIR" \
+MARROWCHAT_CODE_QUALITY_ROOT="$FIXTURE_ROOT" \
+  MARROWCHAT_CODE_QUALITY_TOOLS_DIR="$TOOLS_DIR" \
   "$FIXTURE_ROOT/script/code_quality.sh" fix --staged
 
 NOTES_AFTER="$(shasum -a 256 "$FIXTURE_ROOT/Notes.txt")"

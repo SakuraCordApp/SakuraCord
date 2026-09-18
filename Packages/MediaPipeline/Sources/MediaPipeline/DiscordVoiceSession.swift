@@ -3,9 +3,9 @@ import DaveKit
 import Foundation
 @preconcurrency import Network
 import OSLog
-import SakuraCordModels
+import MarrowChatModels
 
-private let voiceMediaLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "VoiceMedia")
+private let voiceMediaLogger = Logger(subsystem: "dev.marrowchat.MarrowChat", category: "VoiceMedia")
 
 public struct VoiceSessionConfiguration: Equatable, Sendable {
     public var inputDeviceID: AudioDeviceID?

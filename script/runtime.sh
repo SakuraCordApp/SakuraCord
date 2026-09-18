@@ -8,102 +8,102 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
   return 2 2>/dev/null || exit 2
 fi
 
-if [[ -n "${SAKURACORD_RUNTIME_LOADED:-}" ]]; then
+if [[ -n "${MARROWCHAT_RUNTIME_LOADED:-}" ]]; then
   return 0 2>/dev/null || exit 0
 fi
-SAKURACORD_RUNTIME_LOADED=1
+MARROWCHAT_RUNTIME_LOADED=1
 
-SAKURACORD_ROOT_DIR="${SAKURACORD_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
-SAKURACORD_PRODUCT_NAME="SakuraCord"
-SAKURACORD_APP_NAME="$SAKURACORD_PRODUCT_NAME"
-SAKURACORD_DISPLAY_NAME="$SAKURACORD_PRODUCT_NAME"
-SAKURACORD_BUNDLE_ID="dev.sakuracord.SakuraCord"
-SAKURACORD_PACKAGE_DIR="$SAKURACORD_ROOT_DIR/App"
-SAKURACORD_SCRATCH_DIR="$SAKURACORD_PACKAGE_DIR/.build"
-SAKURACORD_DIST_DIR="$SAKURACORD_ROOT_DIR/dist"
-SAKURACORD_APP_BUNDLE="$SAKURACORD_DIST_DIR/$SAKURACORD_APP_NAME.app"
-SAKURACORD_EXECUTABLE_PATH="$SAKURACORD_APP_BUNDLE/Contents/MacOS/$SAKURACORD_APP_NAME"
-SAKURACORD_RUNTIME_DIR="$SAKURACORD_ROOT_DIR/.codex-runtime"
-SAKURACORD_OPERATION_LOCK="$SAKURACORD_RUNTIME_DIR/operation.lock"
-SAKURACORD_SWIFTPM_CACHE_DIR="$SAKURACORD_RUNTIME_DIR/swiftpm-cache"
+MARROWCHAT_ROOT_DIR="${MARROWCHAT_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+MARROWCHAT_PRODUCT_NAME="MarrowChat"
+MARROWCHAT_APP_NAME="$MARROWCHAT_PRODUCT_NAME"
+MARROWCHAT_DISPLAY_NAME="$MARROWCHAT_PRODUCT_NAME"
+MARROWCHAT_BUNDLE_ID="dev.marrowchat.MarrowChat"
+MARROWCHAT_PACKAGE_DIR="$MARROWCHAT_ROOT_DIR/App"
+MARROWCHAT_SCRATCH_DIR="$MARROWCHAT_PACKAGE_DIR/.build"
+MARROWCHAT_DIST_DIR="$MARROWCHAT_ROOT_DIR/dist"
+MARROWCHAT_APP_BUNDLE="$MARROWCHAT_DIST_DIR/$MARROWCHAT_APP_NAME.app"
+MARROWCHAT_EXECUTABLE_PATH="$MARROWCHAT_APP_BUNDLE/Contents/MacOS/$MARROWCHAT_APP_NAME"
+MARROWCHAT_RUNTIME_DIR="$MARROWCHAT_ROOT_DIR/.codex-runtime"
+MARROWCHAT_OPERATION_LOCK="$MARROWCHAT_RUNTIME_DIR/operation.lock"
+MARROWCHAT_SWIFTPM_CACHE_DIR="$MARROWCHAT_RUNTIME_DIR/swiftpm-cache"
 
-sakuracord_scoped_pids() {
+marrowchat_scoped_pids() {
   ps -ww -axo pid=,command= | while read -r pid command; do
-    if [[ "$command" == "$SAKURACORD_EXECUTABLE_PATH" || "$command" == "$SAKURACORD_EXECUTABLE_PATH "* ]]; then
+    if [[ "$command" == "$MARROWCHAT_EXECUTABLE_PATH" || "$command" == "$MARROWCHAT_EXECUTABLE_PATH "* ]]; then
       printf '%s\n' "$pid"
     fi
   done
 }
 
-sakuracord_is_scoped_app_running() {
-  [[ -n "$(sakuracord_scoped_pids)" ]]
+marrowchat_is_scoped_app_running() {
+  [[ -n "$(marrowchat_scoped_pids)" ]]
 }
 
-sakuracord_stop_scoped_app() {
+marrowchat_stop_scoped_app() {
   local pid
   local remaining
   local attempts=0
 
-  for pid in $(sakuracord_scoped_pids); do
+  for pid in $(marrowchat_scoped_pids); do
     kill "$pid" 2>/dev/null || true
   done
 
-  while sakuracord_is_scoped_app_running && [[ "$attempts" -lt 50 ]]; do
+  while marrowchat_is_scoped_app_running && [[ "$attempts" -lt 50 ]]; do
     sleep 0.1
     attempts=$((attempts + 1))
   done
 
-  remaining="$(sakuracord_scoped_pids)"
+  remaining="$(marrowchat_scoped_pids)"
   if [[ -n "$remaining" ]]; then
-    echo "SakuraCord did not exit after SIGTERM (PIDs: $remaining)." >&2
+    echo "MarrowChat did not exit after SIGTERM (PIDs: $remaining)." >&2
     return 1
   fi
 }
 
-sakuracord_wait_for_scoped_app() {
+marrowchat_wait_for_scoped_app() {
   local attempts=0
-  while ! sakuracord_is_scoped_app_running && [[ "$attempts" -lt 100 ]]; do
+  while ! marrowchat_is_scoped_app_running && [[ "$attempts" -lt 100 ]]; do
     sleep 0.1
     attempts=$((attempts + 1))
   done
-  sakuracord_is_scoped_app_running
+  marrowchat_is_scoped_app_running
 }
 
-sakuracord_release_operation_lock() {
-  if [[ -f "$SAKURACORD_OPERATION_LOCK/pid" ]] \
-    && [[ "$(cat "$SAKURACORD_OPERATION_LOCK/pid" 2>/dev/null || true)" == "$$" ]]; then
-    rm -f "$SAKURACORD_OPERATION_LOCK/pid"
-    rmdir "$SAKURACORD_OPERATION_LOCK" 2>/dev/null || true
+marrowchat_release_operation_lock() {
+  if [[ -f "$MARROWCHAT_OPERATION_LOCK/pid" ]] \
+    && [[ "$(cat "$MARROWCHAT_OPERATION_LOCK/pid" 2>/dev/null || true)" == "$$" ]]; then
+    rm -f "$MARROWCHAT_OPERATION_LOCK/pid"
+    rmdir "$MARROWCHAT_OPERATION_LOCK" 2>/dev/null || true
   fi
 }
 
-sakuracord_acquire_operation_lock() {
+marrowchat_acquire_operation_lock() {
   local owner=""
-  mkdir -p "$SAKURACORD_RUNTIME_DIR"
+  mkdir -p "$MARROWCHAT_RUNTIME_DIR"
 
-  if ! mkdir "$SAKURACORD_OPERATION_LOCK" 2>/dev/null; then
-    owner="$(cat "$SAKURACORD_OPERATION_LOCK/pid" 2>/dev/null || true)"
+  if ! mkdir "$MARROWCHAT_OPERATION_LOCK" 2>/dev/null; then
+    owner="$(cat "$MARROWCHAT_OPERATION_LOCK/pid" 2>/dev/null || true)"
     if [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then
-      echo "Another SakuraCord build or test is already running (PID $owner)." >&2
+      echo "Another MarrowChat build or test is already running (PID $owner)." >&2
       return 75
     fi
-    rm -f "$SAKURACORD_OPERATION_LOCK/pid"
-    rmdir "$SAKURACORD_OPERATION_LOCK" 2>/dev/null || true
-    if ! mkdir "$SAKURACORD_OPERATION_LOCK" 2>/dev/null; then
-      echo "Could not recover the stale SakuraCord operation lock." >&2
+    rm -f "$MARROWCHAT_OPERATION_LOCK/pid"
+    rmdir "$MARROWCHAT_OPERATION_LOCK" 2>/dev/null || true
+    if ! mkdir "$MARROWCHAT_OPERATION_LOCK" 2>/dev/null; then
+      echo "Could not recover the stale MarrowChat operation lock." >&2
       return 75
     fi
   fi
 
-  printf '%s\n' "$$" >"$SAKURACORD_OPERATION_LOCK/pid"
+  printf '%s\n' "$$" >"$MARROWCHAT_OPERATION_LOCK/pid"
 }
 
-sakuracord_print_identity() {
-  printf 'Root:      %s\n' "$SAKURACORD_ROOT_DIR"
-  printf 'App:       %s\n' "$SAKURACORD_APP_BUNDLE"
-  printf 'Bundle ID: %s\n' "$SAKURACORD_BUNDLE_ID"
+marrowchat_print_identity() {
+  printf 'Root:      %s\n' "$MARROWCHAT_ROOT_DIR"
+  printf 'App:       %s\n' "$MARROWCHAT_APP_BUNDLE"
+  printf 'Bundle ID: %s\n' "$MARROWCHAT_BUNDLE_ID"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  sakuracord_print_identity
+  marrowchat_print_identity
 fi

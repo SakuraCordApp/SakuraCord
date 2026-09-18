@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IDENTITY_NAME="SakuraCord Local Development"
+IDENTITY_NAME="MarrowChat Local Development"
 LOGIN_KEYCHAIN="$(security default-keychain -d user | tr -d '[:space:]\"')"
 if [[ -z "$LOGIN_KEYCHAIN" || ! -f "$LOGIN_KEYCHAIN" ]]; then
   echo "Could not locate the login keychain." >&2
@@ -14,7 +14,7 @@ existing_identity="$(
 )"
 
 if [[ -n "$existing_identity" ]]; then
-  echo "SakuraCord local signing identity is already installed: $existing_identity"
+  echo "MarrowChat local signing identity is already installed: $existing_identity"
   exit 0
 fi
 
@@ -24,7 +24,7 @@ if security find-certificate -c "$IDENTITY_NAME" "$LOGIN_KEYCHAIN" >/dev/null 2>
   exit 1
 fi
 
-STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-signing.XXXXXX")"
+STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-signing.XXXXXX")"
 cleanup() {
   rm -rf "$STAGING_DIR"
 }
@@ -43,7 +43,7 @@ openssl req \
   -nodes \
   -keyout "$PRIVATE_KEY" \
   -out "$CERTIFICATE" \
-  -subj "/CN=$IDENTITY_NAME/O=SakuraCord Development" \
+  -subj "/CN=$IDENTITY_NAME/O=MarrowChat Development" \
   -addext "basicConstraints=critical,CA:TRUE" \
   -addext "keyUsage=critical,digitalSignature,keyCertSign" \
   -addext "extendedKeyUsage=critical,codeSigning" \
@@ -79,4 +79,4 @@ if [[ -z "$identity_hash" ]]; then
   exit 1
 fi
 
-echo "Installed SakuraCord local signing identity: $identity_hash"
+echo "Installed MarrowChat local signing identity: $identity_hash"

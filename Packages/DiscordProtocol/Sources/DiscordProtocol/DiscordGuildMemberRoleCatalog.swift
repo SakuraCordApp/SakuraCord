@@ -1,4 +1,4 @@
-import SakuraCordModels
+import MarrowChatModels
 
 struct GuildMemberRoleCatalog {
     struct Entry {

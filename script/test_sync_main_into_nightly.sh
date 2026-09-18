@@ -23,8 +23,8 @@ create_fixture() {
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    ': "${SAKURACORD_TEST_VALIDATION_LOG:?}"' \
-    'printf "validated\n" > "$SAKURACORD_TEST_VALIDATION_LOG"' \
+    ': "${MARROWCHAT_TEST_VALIDATION_LOG:?}"' \
+    'printf "validated\n" > "$MARROWCHAT_TEST_VALIDATION_LOG"' \
     > "$seed/script/ci.sh"
   chmod +x "$seed/script/"*.sh
   printf 'base\n' > "$seed/base.txt"
@@ -45,7 +45,7 @@ git -C "$FAST_FORWARD_ROOT/seed" commit --quiet -m "Advance main"
 git -C "$FAST_FORWARD_ROOT/seed" push --quiet origin main
 git clone --quiet --branch nightly \
   "$FAST_FORWARD_ROOT/remote.git" "$FAST_FORWARD_ROOT/worker"
-SAKURACORD_TEST_VALIDATION_LOG="$FAST_FORWARD_ROOT/validation.log" \
+MARROWCHAT_TEST_VALIDATION_LOG="$FAST_FORWARD_ROOT/validation.log" \
   "$FAST_FORWARD_ROOT/worker/script/sync_main_into_nightly.sh" origin >/dev/null
 git -C "$FAST_FORWARD_ROOT/worker" fetch --quiet origin main nightly
 if [[ "$(git -C "$FAST_FORWARD_ROOT/worker" rev-parse origin/main)" != \
@@ -71,7 +71,7 @@ git -C "$DIVERGED_ROOT/seed" commit --quiet -m "Advance nightly"
 git -C "$DIVERGED_ROOT/seed" push --quiet origin nightly
 git clone --quiet --branch nightly \
   "$DIVERGED_ROOT/remote.git" "$DIVERGED_ROOT/worker"
-SAKURACORD_TEST_VALIDATION_LOG="$DIVERGED_ROOT/validation.log" \
+MARROWCHAT_TEST_VALIDATION_LOG="$DIVERGED_ROOT/validation.log" \
   "$DIVERGED_ROOT/worker/script/sync_main_into_nightly.sh" origin >/dev/null
 git -C "$DIVERGED_ROOT/worker" fetch --quiet origin main nightly
 if ! git -C "$DIVERGED_ROOT/worker" merge-base --is-ancestor \
@@ -100,7 +100,7 @@ git clone --quiet --branch nightly \
 NIGHTLY_BEFORE="$(
   git --git-dir="$CONFLICT_ROOT/remote.git" rev-parse refs/heads/nightly
 )"
-if SAKURACORD_TEST_VALIDATION_LOG="$CONFLICT_ROOT/validation.log" \
+if MARROWCHAT_TEST_VALIDATION_LOG="$CONFLICT_ROOT/validation.log" \
   "$CONFLICT_ROOT/worker/script/sync_main_into_nightly.sh" origin \
   >/dev/null 2>&1; then
   echo "A conflicting main-to-nightly merge unexpectedly succeeded." >&2

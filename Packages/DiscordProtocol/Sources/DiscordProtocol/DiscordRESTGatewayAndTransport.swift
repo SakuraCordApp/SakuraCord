@@ -3,7 +3,7 @@ import Foundation
 // Gateway lifecycle and transport recovery share stateful invariants that are
 // safest to audit in one extension-oriented source file.
 // swiftlint:disable file_length
-import SakuraCordModels
+import MarrowChatModels
 
 extension DiscordRESTProvider {
     public func joinVoice(
@@ -1851,7 +1851,7 @@ extension DiscordRESTProvider {
             )
             if roleMemberRequestID == nil {
                 // Discord's SearchContextManager handles unsolicited and
-                // search-driven GUILD_MEMBERS_CHUNK_BATCH users. SakuraCord
+                // search-driven GUILD_MEMBERS_CHUNK_BATCH users. MarrowChat
                 // also issues private member-resolution requests solely to
                 // hydrate timeline presentation; those extra requests must
                 // not expand message-search UserStore beyond Discord's live

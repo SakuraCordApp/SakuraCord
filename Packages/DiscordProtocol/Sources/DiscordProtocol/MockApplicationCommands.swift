@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 enum MockApplicationCommands {
     static let applicationID = "900000000000000100"
@@ -259,7 +259,7 @@ enum MockApplicationCommands {
     }
 
     static func autocomplete(query: String) -> [ApplicationCommandChoice] {
-        let all = ["sakura", "sakuracord", "sample", "sandbox", "safety", "swift"]
+        let all = ["sakura", "marrowchat", "sample", "sandbox", "safety", "swift"]
         return all.filter {
             query.isEmpty || $0.localizedCaseInsensitiveContains(query)
         }.prefix(8).map { ApplicationCommandChoice(name: $0, value: .string($0)) }

@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 public enum MessageHistoryAnchor: Equatable, Sendable {
     case newest

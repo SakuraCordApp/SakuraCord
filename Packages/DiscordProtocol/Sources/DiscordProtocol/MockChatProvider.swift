@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 import UniformTypeIdentifiers
 
 public actor MockChatProvider: ChatProvider {
@@ -1083,7 +1083,7 @@ public actor MockChatProvider: ChatProvider {
         let titles = [
             "Media viewer should use a native presentation",
             "Reaction state should update without reloading",
-            "Channel links should open inside SakuraCord",
+            "Channel links should open inside MarrowChat",
             "Markdown custom emoji are not rendered",
             "Forum channels need a dedicated browser",
             "Keyboard navigation for long post lists",
@@ -1417,7 +1417,7 @@ public extension MockChatProvider {
 
     private static func demoGIFs(query: String) throws -> [GIFSearchResult] {
         let directory = FileManager.default.temporaryDirectory.appending(
-            path: "SakuraCordDemoMedia", directoryHint: .isDirectory
+            path: "MarrowChatDemoMedia", directoryHint: .isDirectory
         )
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appending(path: "demo.gif")
@@ -1453,7 +1453,7 @@ public extension MockChatProvider {
             }
         }
         let directory = FileManager.default.temporaryDirectory
-            .appending(path: "SakuraCordDemoAttachments", directoryHint: .isDirectory)
+            .appending(path: "MarrowChatDemoAttachments", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fileExtension = sourceURL.pathExtension
         let filename =
@@ -1636,7 +1636,7 @@ public extension MockChatProvider {
             userID: currentUser.id,
             sessionID: state.sessionID,
             token: "demo-token",
-            endpoint: "mock.sakuracord.invalid"
+            endpoint: "mock.marrowchat.invalid"
         )
     }
 

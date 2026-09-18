@@ -1,6 +1,6 @@
 # Testing
 
-SakuraCord keeps its committed automated test suite deliberately selective.
+MarrowChat keeps its committed automated test suite deliberately selective.
 Tests are production code with ongoing compile-time, runtime, reliability, and
 maintenance costs.
 

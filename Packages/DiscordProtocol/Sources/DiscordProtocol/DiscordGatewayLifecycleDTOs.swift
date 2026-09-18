@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 struct DiscordTimestampDTO: Decodable {
     var date: Date

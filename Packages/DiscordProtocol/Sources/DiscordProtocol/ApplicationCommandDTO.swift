@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 struct ApplicationCommandIndexDecoder {
     private struct ApplicationBotDTO: Decodable {

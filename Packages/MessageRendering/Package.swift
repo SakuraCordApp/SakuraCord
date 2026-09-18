@@ -5,9 +5,9 @@ let package = Package(
     name: "MessageRendering",
     platforms: [.macOS(.v27)],
     products: [.library(name: "MessageRendering", targets: ["MessageRendering"])],
-    dependencies: [.package(path: "../SakuraCordModels")],
+    dependencies: [.package(path: "../MarrowChatModels")],
     targets: [
-        .target(name: "MessageRendering", dependencies: ["SakuraCordModels"]),
+        .target(name: "MessageRendering", dependencies: ["MarrowChatModels"]),
         .testTarget(name: "MessageRenderingTests", dependencies: ["MessageRendering"])
     ]
 )

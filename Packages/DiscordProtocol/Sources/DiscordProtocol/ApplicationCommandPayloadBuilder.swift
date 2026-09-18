@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 struct ApplicationCommandPayload {
     var data: [String: JSONValue]

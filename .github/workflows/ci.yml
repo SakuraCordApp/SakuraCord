@@ -77,14 +77,14 @@ jobs:
             release_control_root="$GITHUB_WORKSPACE/release-control"
           fi
           source "$release_control_root/script/release_metadata.sh"
-          if ! sakuracord_is_release_tag "$release_tag"; then
+          if ! marrowchat_is_release_tag "$release_tag"; then
             echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
             exit 1
           fi
-          version="$(sakuracord_release_version_from_tag "$release_tag")"
-          release_track="$(sakuracord_release_track_from_tag "$release_tag")"
-          release_display_name="$(sakuracord_release_display_name_from_tag "$release_tag")"
-          dmg_name="$(sakuracord_release_dmg_name_from_tag "$release_tag")"
+          version="$(marrowchat_release_version_from_tag "$release_tag")"
+          release_track="$(marrowchat_release_track_from_tag "$release_tag")"
+          release_display_name="$(marrowchat_release_display_name_from_tag "$release_tag")"
+          dmg_name="$(marrowchat_release_dmg_name_from_tag "$release_tag")"
           git fetch --no-tags origin \
             +refs/heads/nightly:refs/remotes/origin/nightly
           if ! git merge-base --is-ancestor \
@@ -103,20 +103,20 @@ jobs:
           fi
           "$release_control_root/script/validate_release_tag.sh" \
             "$release_control_root" "$release_tag"
-          echo "SAKURACORD_VERSION=$version" >> "$GITHUB_ENV"
-          echo "SAKURACORD_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-          echo "SAKURACORD_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
-          echo "SAKURACORD_RELEASE_TRACK=$release_track" >> "$GITHUB_ENV"
-          echo "SAKURACORD_RELEASE_DISPLAY_NAME=$release_display_name" >> "$GITHUB_ENV"
-          echo "SAKURACORD_RELEASE_CONTROL_ROOT=$release_control_root" >> "$GITHUB_ENV"
-          echo "SAKURACORD_RELEASE_COPY=$release_copy" >> "$GITHUB_ENV"
-          echo "SAKURACORD_DMG_PATH=dist/$dmg_name" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_VERSION=$version" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_RELEASE_TRACK=$release_track" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_RELEASE_DISPLAY_NAME=$release_display_name" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_RELEASE_CONTROL_ROOT=$release_control_root" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_RELEASE_COPY=$release_copy" >> "$GITHUB_ENV"
+          echo "MARROWCHAT_DMG_PATH=dist/$dmg_name" >> "$GITHUB_ENV"
       - name: Prepare exact release notes and Discord copy
         run: |
           mkdir -p dist
-          node "$SAKURACORD_RELEASE_CONTROL_ROOT/script/release_automation.mjs" prepare \
-            --input "$SAKURACORD_RELEASE_COPY" \
-            --tag "$SAKURACORD_RELEASE_TAG" \
+          node "$MARROWCHAT_RELEASE_CONTROL_ROOT/script/release_automation.mjs" prepare \
+            --input "$MARROWCHAT_RELEASE_COPY" \
+            --tag "$MARROWCHAT_RELEASE_TAG" \
             --output dist/release-copy.json \
             --notes-output dist/release-notes.md
       - name: Inspect existing release checkpoints
@@ -126,16 +126,16 @@ jobs:
         run: |
           published=false
           announced=false
-          if gh release view "$SAKURACORD_RELEASE_TAG" >/dev/null 2>&1; then
-            release_state="$(gh release view "$SAKURACORD_RELEASE_TAG" --json isDraft,isPrerelease)"
+          if gh release view "$MARROWCHAT_RELEASE_TAG" >/dev/null 2>&1; then
+            release_state="$(gh release view "$MARROWCHAT_RELEASE_TAG" --json isDraft,isPrerelease)"
             is_draft="$(jq -r .isDraft <<< "$release_state")"
             is_prerelease="$(jq -r .isPrerelease <<< "$release_state")"
             expected_prerelease=false
-            if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+            if [[ "$MARROWCHAT_RELEASE_TRACK" == "nightly" ]]; then
               expected_prerelease=true
             fi
             if [[ "$is_prerelease" != "$expected_prerelease" ]]; then
-              echo "Existing release prerelease state does not match $SAKURACORD_RELEASE_TRACK track." >&2
+              echo "Existing release prerelease state does not match $MARROWCHAT_RELEASE_TRACK track." >&2
               exit 1
             fi
             if [[ "$is_draft" == "false" ]]; then
@@ -143,7 +143,7 @@ jobs:
             fi
             checkpoint_dir="$RUNNER_TEMP/release-checkpoints"
             mkdir -p "$checkpoint_dir"
-            if gh release download "$SAKURACORD_RELEASE_TAG" \
+            if gh release download "$MARROWCHAT_RELEASE_TAG" \
               --pattern discord-announcement.json --dir "$checkpoint_dir" >/dev/null 2>&1; then
               announced=true
             fi
@@ -180,7 +180,7 @@ jobs:
       - name: Package DMG
         if: steps.existing_release.outputs.published != 'true'
         env:
-          SAKURACORD_ENABLE_UPDATES: 1
+          MARROWCHAT_ENABLE_UPDATES: 1
           SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: ./script/package_dmg.sh
       - name: Generate and validate signed Sparkle appcast
@@ -190,43 +190,43 @@ jobs:
           SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: |
           ./script/generate_appcast.sh \
-            "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-notes.md
+            "$MARROWCHAT_DMG_PATH" dist/appcast.xml dist/release-notes.md
       - name: Publish or repair GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "${{ steps.existing_release.outputs.published }}" == "true" ]]; then
-            gh release edit "$SAKURACORD_RELEASE_TAG" \
-              --title "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" \
+            gh release edit "$MARROWCHAT_RELEASE_TAG" \
+              --title "MarrowChat $MARROWCHAT_RELEASE_DISPLAY_NAME" \
               --notes-file dist/release-notes.md
-            gh release upload "$SAKURACORD_RELEASE_TAG" dist/release-copy.json --clobber
-          elif gh release view "$SAKURACORD_RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$SAKURACORD_RELEASE_TAG" \
-              --title "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" \
+            gh release upload "$MARROWCHAT_RELEASE_TAG" dist/release-copy.json --clobber
+          elif gh release view "$MARROWCHAT_RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$MARROWCHAT_RELEASE_TAG" \
+              --title "MarrowChat $MARROWCHAT_RELEASE_DISPLAY_NAME" \
               --notes-file dist/release-notes.md
-            gh release upload "$SAKURACORD_RELEASE_TAG" \
-              "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-copy.json --clobber
-            gh release edit "$SAKURACORD_RELEASE_TAG" --draft=false
+            gh release upload "$MARROWCHAT_RELEASE_TAG" \
+              "$MARROWCHAT_DMG_PATH" dist/appcast.xml dist/release-copy.json --clobber
+            gh release edit "$MARROWCHAT_RELEASE_TAG" --draft=false
           else
             release_flags=()
-            if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+            if [[ "$MARROWCHAT_RELEASE_TRACK" == "nightly" ]]; then
               release_flags+=(--prerelease --latest=false)
             fi
-            gh release create "$SAKURACORD_RELEASE_TAG" \
-              "$SAKURACORD_DMG_PATH" dist/appcast.xml dist/release-copy.json \
+            gh release create "$MARROWCHAT_RELEASE_TAG" \
+              "$MARROWCHAT_DMG_PATH" dist/appcast.xml dist/release-copy.json \
               --draft \
-              --title "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" \
+              --title "MarrowChat $MARROWCHAT_RELEASE_DISPLAY_NAME" \
               --verify-tag \
               --notes-file dist/release-notes.md \
               "${release_flags[@]}"
-            gh release edit "$SAKURACORD_RELEASE_TAG" --draft=false
+            gh release edit "$MARROWCHAT_RELEASE_TAG" --draft=false
           fi
       - name: Verify published release assets
         if: steps.existing_release.outputs.published != 'true'
         run: |
           published_appcast="$RUNNER_TEMP/published-appcast.xml"
           published_dmg="$RUNNER_TEMP/published.dmg"
-          release_prefix="https://github.com/$GITHUB_REPOSITORY/releases/download/$SAKURACORD_RELEASE_TAG"
+          release_prefix="https://github.com/$GITHUB_REPOSITORY/releases/download/$MARROWCHAT_RELEASE_TAG"
           curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
             --output "$published_appcast" "$release_prefix/appcast.xml"
           cmp dist/appcast.xml "$published_appcast"
@@ -237,9 +237,9 @@ jobs:
           )"
           curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
             --output "$published_dmg" "$enclosure_url"
-          cmp "$SAKURACORD_DMG_PATH" "$published_dmg"
+          cmp "$MARROWCHAT_DMG_PATH" "$published_dmg"
       - name: Publish the signed nightly feed
-        if: steps.existing_release.outputs.published != 'true' && env.SAKURACORD_RELEASE_TRACK == 'nightly'
+        if: steps.existing_release.outputs.published != 'true' && env.MARROWCHAT_RELEASE_TRACK == 'nightly'
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./script/publish_nightly_appcast.sh dist/appcast.xml
@@ -248,13 +248,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_json="$(gh release view "$SAKURACORD_RELEASE_TAG" --json databaseId,isDraft,isPrerelease,name,url)"
+          release_json="$(gh release view "$MARROWCHAT_RELEASE_TAG" --json databaseId,isDraft,isPrerelease,name,url)"
           if [[ "$(jq -r .isDraft <<< "$release_json")" != "false" ]]; then
             echo "The GitHub Release is still a draft." >&2
             exit 1
           fi
           expected_prerelease=false
-          if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+          if [[ "$MARROWCHAT_RELEASE_TRACK" == "nightly" ]]; then
             expected_prerelease=true
           fi
           if [[ "$(jq -r .isPrerelease <<< "$release_json")" != "$expected_prerelease" ]]; then
@@ -262,7 +262,7 @@ jobs:
             exit 1
           fi
           if [[ "$(jq -r .name <<< "$release_json")" != \
-            "SakuraCord $SAKURACORD_RELEASE_DISPLAY_NAME" ]]; then
+            "MarrowChat $MARROWCHAT_RELEASE_DISPLAY_NAME" ]]; then
             echo "The published release has the wrong display name." >&2
             exit 1
           fi
@@ -278,11 +278,11 @@ jobs:
           DISCORD_NIGHTLY_UPDATES_ROLE_ID: ${{ secrets.DISCORD_NIGHTLY_UPDATES_ROLE_ID }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ "$SAKURACORD_RELEASE_TRACK" == "nightly" ]]; then
+          if [[ "$MARROWCHAT_RELEASE_TRACK" == "nightly" ]]; then
             export DISCORD_RELEASE_CHANNEL_ID="$DISCORD_NIGHTLY_RELEASE_CHANNEL_ID"
             export DISCORD_UPDATES_ROLE_ID="$DISCORD_NIGHTLY_UPDATES_ROLE_ID"
           fi
-          message_id="$(node "$SAKURACORD_RELEASE_CONTROL_ROOT/script/release_automation.mjs" announce-discord \
+          message_id="$(node "$MARROWCHAT_RELEASE_CONTROL_ROOT/script/release_automation.mjs" announce-discord \
             --input dist/release-copy.json \
             --repo "$GITHUB_REPOSITORY" \
             --release-id "${{ steps.published_release.outputs.id }}" \
@@ -293,9 +293,9 @@ jobs:
             exit 1
           fi
           jq -n \
-            --arg tag "$SAKURACORD_RELEASE_TAG" \
+            --arg tag "$MARROWCHAT_RELEASE_TAG" \
             --arg messageId "$message_id" \
             '{schemaVersion: 1, tagName: $tag, messageId: $messageId}' \
             > dist/discord-announcement.json
-          gh release upload "$SAKURACORD_RELEASE_TAG" \
+          gh release upload "$MARROWCHAT_RELEASE_TAG" \
             dist/discord-announcement.json --clobber

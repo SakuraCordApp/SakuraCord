@@ -18,7 +18,7 @@ func `media cache persists bytes without storing the source URL`() async throws 
 
     #expect(try await cache.data(for: url) == expected)
     let cacheDirectory = root.appending(
-        path: "SakuraCord/Media",
+        path: "MarrowChat/Media",
         directoryHint: .isDirectory
     )
     let filenames = try FileManager.default.contentsOfDirectory(

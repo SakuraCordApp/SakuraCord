@@ -12,5 +12,5 @@ if [[ -n "$CURRENT_HOOKS_PATH" && "$CURRENT_HOOKS_PATH" != "$EXPECTED_HOOKS_PATH
 fi
 
 git -C "$ROOT_DIR" config --local core.hooksPath "$EXPECTED_HOOKS_PATH"
-echo "Installed SakuraCord Git hooks from $EXPECTED_HOOKS_PATH."
+echo "Installed MarrowChat Git hooks from $EXPECTED_HOOKS_PATH."
 echo "Every commit validates its staged snapshot; every push validates committed tips and staged Swift changes."

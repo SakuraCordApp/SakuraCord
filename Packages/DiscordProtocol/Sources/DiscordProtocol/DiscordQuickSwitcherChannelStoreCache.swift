@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 /// Mirrors the stable insertion order Discord's ChannelStore restores from
 /// disk before READY reconciliation. Replacing this order with each READY
@@ -80,7 +80,7 @@ extension DiscordRESTProvider {
         let base = forwardPeopleCacheDirectoryOverride
             ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
                 .appending(
-                    path: "dev.sakuracord.SakuraCord/QuickSwitcherChannelStore",
+                    path: "dev.marrowchat.MarrowChat/QuickSwitcherChannelStore",
                     directoryHint: .isDirectory
                 )
         return base?.appending(path: "\(safeAccountID).json")

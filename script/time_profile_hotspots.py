@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("xml")
-    parser.add_argument("--process", default="SakuraCord", help="process name or PID")
+    parser.add_argument("--process", default="MarrowChat", help="process name or PID")
     parser.add_argument("--start", type=float, default=0.0, help="inclusive trace time")
     parser.add_argument("--end", type=float, default=float("inf"), help="exclusive trace time")
     parser.add_argument("--limit", type=int, default=25)
@@ -265,7 +265,7 @@ def main() -> None:
     inclusive: collections.defaultdict[tuple[str, str], float] = collections.defaultdict(float)
     inclusive_main: collections.defaultdict[tuple[str, str], float] = collections.defaultdict(float)
     leaf: collections.defaultdict[tuple[str, str], float] = collections.defaultdict(float)
-    target_binaries = {"SakuraCord"}
+    target_binaries = {"MarrowChat"}
     sample_count = 0
     sampled_milliseconds = 0.0
 

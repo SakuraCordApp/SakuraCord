@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 nonisolated struct DiscordForwardSearchPeopleCache: Codable, Sendable {
     struct Alias: Codable, Hashable, Sendable {
@@ -383,7 +383,7 @@ extension DiscordRESTProvider {
         let base = forwardPeopleCacheDirectoryOverride
             ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
                 .appending(
-                    path: "dev.sakuracord.SakuraCord/ForwardSearchPeople",
+                    path: "dev.marrowchat.MarrowChat/ForwardSearchPeople",
                     directoryHint: .isDirectory
                 )
         return base?.appending(path: "\(safeAccountID).json")

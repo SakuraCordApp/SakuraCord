@@ -1,6 +1,6 @@
 @testable import DiscordProtocol
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 import Testing
 
 @Test func `guild typing payload uses member and nickname`() throws {

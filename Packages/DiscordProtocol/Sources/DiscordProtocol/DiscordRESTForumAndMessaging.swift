@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 extension DiscordRESTProvider {
     public func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
@@ -203,7 +203,7 @@ extension DiscordRESTProvider {
         var message: [String: JSONValue] = [
             "content": .string(draft.content),
             // The current first-party nested forum-post action always includes
-            // the selected sticker list. SakuraCord does not expose forum
+            // the selected sticker list. MarrowChat does not expose forum
             // sticker sending, so the exact supported shape is an empty list.
             "sticker_ids": .array([]),
         ]

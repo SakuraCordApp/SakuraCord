@@ -341,7 +341,7 @@ import Testing
 
 @Test func `disk diagnostics are opt in and contain every recorded request outcome`() throws {
     let directory = FileManager.default.temporaryDirectory
-        .appending(path: "SakuraCordDiagnosticsTests-\(UUID().uuidString)")
+        .appending(path: "MarrowChatDiagnosticsTests-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = DiscordAPIDiagnosticStore(
         maximumEntries: 10,
@@ -394,7 +394,7 @@ import Testing
 
 @Test func `disk diagnostics stop at their per session byte limit`() throws {
     let directory = FileManager.default.temporaryDirectory
-        .appending(path: "SakuraCordDiagnosticsLimitTests-\(UUID().uuidString)")
+        .appending(path: "MarrowChatDiagnosticsLimitTests-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let maximumDiskBytes = 1_024
     let store = DiscordAPIDiagnosticStore(
@@ -423,17 +423,17 @@ import Testing
 
 @Test func `disk diagnostics prune older session files to the aggregate count limit`() throws {
     let directory = FileManager.default.temporaryDirectory
-        .appending(path: "SakuraCordDiagnosticsRetentionTests-\(UUID().uuidString)")
+        .appending(path: "MarrowChatDiagnosticsRetentionTests-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     try FileManager.default.createDirectory(
         at: directory,
         withIntermediateDirectories: true
     )
     let oldest = directory.appending(
-        path: "SakuraCord Discord API Logs 2026-01-01 00-00-00.jsonl"
+        path: "MarrowChat Discord API Logs 2026-01-01 00-00-00.jsonl"
     )
     let newer = directory.appending(
-        path: "SakuraCord Discord API Logs 2026-01-02 00-00-00.jsonl"
+        path: "MarrowChat Discord API Logs 2026-01-02 00-00-00.jsonl"
     )
     try Data("oldest\n".utf8).write(to: oldest)
     try Data("newer\n".utf8).write(to: newer)
@@ -465,7 +465,7 @@ import Testing
 
 @Test func `clearing memory and disk removes prior files and resumes active capture`() throws {
     let directory = FileManager.default.temporaryDirectory
-        .appending(path: "SakuraCordDiagnosticsClearTests-\(UUID().uuidString)")
+        .appending(path: "MarrowChatDiagnosticsClearTests-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = DiscordAPIDiagnosticStore(
         maximumEntries: 10,

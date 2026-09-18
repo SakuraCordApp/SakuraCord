@@ -1,9 +1,9 @@
 import DaveKit
 import Foundation
 import OSLog
-import SakuraCordModels
+import MarrowChatModels
 
-private let voiceGatewayLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "VoiceGateway")
+private let voiceGatewayLogger = Logger(subsystem: "dev.marrowchat.MarrowChat", category: "VoiceGateway")
 
 public enum VoiceGatewayDiagnosticDirection: String, Sendable {
     case request

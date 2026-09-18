@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 import Testing
 @testable import DiscordProtocol
 
@@ -518,7 +518,7 @@ private func verifyAnimatedAndCommandFixtures(
     try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: sourceDirectory) }
     let source = sourceDirectory.appending(path: "demo-note.txt")
-    let contents = Data("A fictional attachment from the SakuraCord demo.".utf8)
+    let contents = Data("A fictional attachment from the MarrowChat demo.".utf8)
     try contents.write(to: source)
 
     let sent = try await provider.send(
@@ -543,7 +543,7 @@ private func verifyAnimatedAndCommandFixtures(
     let provider = MockChatProvider()
     _ = try await provider.bootstrap()
     let urls = (0 ... SendMessageDraft.maximumAttachmentCount).map {
-        URL(fileURLWithPath: "/tmp/sakuracord-over-limit-\($0)")
+        URL(fileURLWithPath: "/tmp/marrowchat-over-limit-\($0)")
     }
 
     await #expect(throws: ChatProviderError.self) {
@@ -558,8 +558,8 @@ private func verifyAnimatedAndCommandFixtures(
 }
 
 @Test func `message draft keeps attachment urls and metadata synchronized`() {
-    let original = URL(fileURLWithPath: "/tmp/sakuracord-original.png")
-    let replacement = URL(fileURLWithPath: "/tmp/sakuracord-replacement.png")
+    let original = URL(fileURLWithPath: "/tmp/marrowchat-original.png")
+    let replacement = URL(fileURLWithPath: "/tmp/marrowchat-replacement.png")
     var draft = SendMessageDraft(
         channelID: ChannelID(rawValue: 210),
         content: "",

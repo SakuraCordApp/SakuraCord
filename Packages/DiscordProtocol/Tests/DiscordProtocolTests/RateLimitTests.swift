@@ -1,6 +1,6 @@
 @testable import DiscordProtocol
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 import Testing
 
 // Rate-limit coverage is kept in one sequential suite because the tests share
@@ -367,7 +367,7 @@ struct ProviderRequestContractTests {
             session: URLSession(configuration: configuration)
         )
         let attachments = (0 ... SendMessageDraft.maximumAttachmentCount).map {
-            URL(fileURLWithPath: "/tmp/sakuracord-over-limit-\($0)")
+            URL(fileURLWithPath: "/tmp/marrowchat-over-limit-\($0)")
         }
 
         await #expect(throws: ChatProviderError.self) {
@@ -392,7 +392,7 @@ struct ProviderRequestContractTests {
             session: URLSession(configuration: configuration)
         )
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "sakuracord-provider-oversized-\(UUID().uuidString).bin"
+            "marrowchat-provider-oversized-\(UUID().uuidString).bin"
         )
         guard FileManager.default.createFile(atPath: file.path, contents: nil) else {
             throw CocoaError(.fileWriteUnknown)
@@ -2011,7 +2011,7 @@ private struct BootstrapRequestScenario {
             "users", "roles", "everyone",
         ])
 
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-upload-test.txt")
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("marrowchat-upload-test.txt")
         try Data("attachment".utf8).write(to: fileURL)
         defer { try? FileManager.default.removeItem(at: fileURL) }
         _ = try await provider.send(SendMessageDraft(

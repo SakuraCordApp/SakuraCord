@@ -1,10 +1,10 @@
 import Foundation
 import OSLog
-import SakuraCordModels
+import MarrowChatModels
 
-let gatewayLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "Gateway")
+let gatewayLogger = Logger(subsystem: "dev.marrowchat.MarrowChat", category: "Gateway")
 let discordPerformanceSignposter = OSSignposter(
-    subsystem: "dev.sakuracord.SakuraCord",
+    subsystem: "dev.marrowchat.MarrowChat",
     category: "PointsOfInterest"
 )
 
@@ -604,7 +604,7 @@ extension DiscordRESTProvider {
 
         // Current Discord and Swiftcord v1 source a newly authenticated account
         // from Gateway READY. Paicord performs an additional /users/@me read,
-        // but a pending SakuraCord login must fail closed instead of introducing
+        // but a pending MarrowChat login must fail closed instead of introducing
         // that observable difference before its credential has been persisted.
         // Previously stored sessions retain the bounded compatibility fallback.
         if currentUser == nil {
@@ -1582,7 +1582,7 @@ extension DiscordRESTProvider {
         return
             base
                 .appending(
-                    path: "dev.sakuracord.SakuraCord/EmojiCache/\(accountID)",
+                    path: "dev.marrowchat.MarrowChat/EmojiCache/\(accountID)",
                     directoryHint: .isDirectory
                 )
                 .appending(path: "\(guildID).json")
@@ -1605,7 +1605,7 @@ extension DiscordRESTProvider {
     }
 
     var statusDefaultsKey: String? {
-        accountID.map { "dev.sakuracord.presence.\($0)" }
+        accountID.map { "dev.marrowchat.presence.\($0)" }
     }
 
     public func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws

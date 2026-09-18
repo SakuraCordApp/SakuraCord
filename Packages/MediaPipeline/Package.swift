@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v27)],
     products: [.library(name: "MediaPipeline", targets: ["MediaPipeline"])],
     dependencies: [
-        .package(path: "../SakuraCordModels"),
+        .package(path: "../MarrowChatModels"),
         .package(path: "../DaveKit"),
         .package(url: "https://github.com/jedisct1/swift-sodium.git", from: "0.9.1")
     ],
@@ -14,7 +14,7 @@ let package = Package(
         .target(
             name: "MediaPipeline",
             dependencies: [
-                "SakuraCordModels",
+                "MarrowChatModels",
                 "DaveKit",
                 .product(name: "Sodium", package: "swift-sodium"),
                 .product(name: "Clibsodium", package: "swift-sodium")

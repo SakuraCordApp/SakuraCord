@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 private struct GuildMessageSearchResponseDTO: Decodable {
     var totalResults: Int

@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 public enum MessageLinkDestination: Hashable, Sendable {
     case discordChannel(guildID: GuildID?, channelID: ChannelID)

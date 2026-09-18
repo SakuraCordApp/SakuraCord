@@ -1,9 +1,9 @@
 # Discord production protocol baseline
 
-Last repository audit: 23 August 2026, in a working tree based on SakuraCord
+Last repository audit: 23 August 2026, in a working tree based on MarrowChat
 commit `0f2c7fdb`.
 
-This document describes SakuraCord's durable network contract and the dated
+This document describes MarrowChat's durable network contract and the dated
 evidence behind it. It is not a claim that Discord's undocumented
 normal-account protocol is stable, supported, or safe from account action.
 
@@ -62,7 +62,7 @@ v1 corroborates that complete disabled shape; Paicord sends the narrower
 `replied_user:false` form.
 
 REST transport recovery was audited on 15 August 2026 from a sanitized
-authenticated SakuraCord diagnostic captured during a live stall. The main
+authenticated MarrowChat diagnostic captured during a live stall. The main
 Gateway continued sending QoS heartbeats and receiving ACKs, while one
 acknowledgement and otherwise independent channel-history, profile, and
 message-search requests all received no HTTP response and failed at their
@@ -102,15 +102,15 @@ HTTP request was made during any observed start or stop. The REST preview route
 below is therefore a separately verified on-demand read, not part of broadcast
 allocation or teardown.
 Authenticated interoperability in the same server additionally confirmed that
-SakuraCord can decode/watch an official-client broadcast and that an official
-client can watch SakuraCord's broadcast.
+MarrowChat can decode/watch an official-client broadcast and that an official
+client can watch MarrowChat's broadcast.
 
 Private DM and group-DM calls were re-audited on 22 August 2026 against a
 fresh, signed, notarized, renamed official Discord desktop `0.0.408`
 (Electron `42.7.1`, Chromium `148.0.7778.280`, client build `595897`, native
 build `88466`) in an isolated profile. CDP was attached before each scenario.
 The two test accounts alternated broadcaster/viewer roles between the official
-client and SakuraCord. The sanitized capture covered call start, join, leave,
+client and MarrowChat. The sanitized capture covered call start, join, leave,
 last-participant end, broadcast start/stop, initial watch behavior, explicit
 watch/leave/rejoin, stream termination while watched, source-selection failure,
 main Gateway, REST, call Voice, stream Voice, DAVE negotiation, and cleanup.
@@ -174,7 +174,7 @@ The native GIF media follow-up was rechecked on 7 August 2026 against that same
 first-party asset (the fetched asset still matched the recorded SHA-256). Its
 picker result normalizer consumes the response-provided `src` and `gif_src`
 media URLs; the selected format for these routes is WebM. A sanitized current
-SakuraCord response confirmed that Discord search and landing results now use
+MarrowChat response confirmed that Discord search and landing results now use
 `static.klipy.com` WebM and WebP media. The first-party picker assigns those
 response URLs directly to its image and video elements without applying
 Discord's separate `isAllowedGifProviderUrl` asset-action helper. Discord's current
@@ -205,7 +205,7 @@ flow. No credential, authenticated login, or personal response value was used
 or retained for this re-audit.
 
 The post-approval installation repair was re-audited on 8 August 2026 after two
-sanitized SakuraCord QR-login traces showed successful Apex responses that
+sanitized MarrowChat QR-login traces showed successful Apex responses that
 contained assignments but no installation; the second trace also showed the
 fallback `/experiments` response returning a fingerprint and assignments but no
 installation. The current production asset
@@ -292,7 +292,7 @@ Its user and guild-member stores process `LOCAL_MESSAGES_LOADED` before
 `CONNECTION_OPEN`, so identities and guild nicknames recovered from local
 message pages seed insertion order before Ready users and members; subsequent
 history and live-message discoveries append without moving existing entries.
-SakuraCord mirrors that state source with an account-scoped cache containing
+MarrowChat mirrors that state source with an account-scoped cache containing
 only message-observed user identity records and nonempty guild nicknames from
 the current resolved member store. Ephemeral guild, member-chunk, relationship,
 and private-channel updates feed the live index without being written into the
@@ -323,7 +323,7 @@ the `ChannelStore` insertion sequence: `CONNECTION_OPEN` visits guild records
 in their Gateway order and inserts each full-sync channel item in payload
 order; `loadAllGuildAndPrivateChannelsFromDisk()` then exposes guild channels
 in that raw order before private channels. This is intentionally independent
-of the category/position ordering used by the channel sidebar. SakuraCord
+of the category/position ordering used by the channel sidebar. MarrowChat
 therefore retains a separate raw channel-ID sequence for Forward search rather
 than reusing its presentation-sorted channel array. The
 separate category/channel-position comparator in the same bundle belongs to
@@ -339,7 +339,7 @@ sample are omitted. The channel matcher adds up to three points before its
 match-class cap using the live Forward path's `100`-point bonus scale; the category
 booster separately multiplies by `1 + score / maximumResolvedScore`. Like the
 first-party persisted store, locally pending channel and guild selections
-survive a relaunch; SakuraCord stores an account-scoped aggregate containing
+survive a relaunch; MarrowChat stores an account-scoped aggregate containing
 the pending total-use delta and newest ten timestamps, then replays it over the
 fresh settings snapshot without an extra request. Controlled
 fresh-launch comparisons reproduced the same
@@ -360,7 +360,7 @@ opening a public guild and its default channel, history loading, and a renderer
 reload. Selecting the guild caused one newest-history GET and no read
 acknowledgement. The reload rebuilt account and guild state from Gateway rather
 than issuing `/users/@me` or `/users/@me/guilds`; it also performed the
-first-party lurker-membership mutation for that public guild. SakuraCord does
+first-party lurker-membership mutation for that public guild. MarrowChat does
 not copy unrelated store, billing, analytics, experiment, or lurker-join
 fan-out. No message, reaction, acknowledgement, call, or other user-content
 mutation was sent during the observation.
@@ -387,7 +387,7 @@ one has no comparable path. Public documentation remains authoritative for
 supported API semantics, status codes, and rate limits.
 
 Implement the exact current first-party request and event shape unless
-SakuraCord has a deliberate safety or architectural difference. Every
+MarrowChat has a deliberate safety or architectural difference. Every
 difference must be explained with evidence and locked down by mocked
 request-contract and request-budget tests.
 
@@ -434,7 +434,7 @@ seed the account before the first snapshot is published. A complete Ready
 therefore sends zero `/users/@me` and zero `/users/@me/guilds` reads. In the
 sanitized 4 August 2026 large-account desktop observation, Ready carried all 16
 guild IDs and their channel collections but omitted the guild names needed for
-the catalogue. SakuraCord used one bounded `/users/@me/guilds` fallback after a
+the catalogue. MarrowChat used one bounded `/users/@me/guilds` fallback after a
 server `429`; the decoded settings contained 12 folders covering 15 guilds.
 That layout must remain pending until the fallback catalogue is installed, then
 order the live rail instead of being consumed against an empty catalogue. The
@@ -485,7 +485,7 @@ and retained as evidence.
 | `GET /gifs/trending?locale={locale}&media_format=webm` | Opening the GIF picker; one cacheable landing read returning the current base categories in server order and their preview media. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/trending-gifs?media_format=webm&locale={locale}` | Explicit Trending GIFs selection; no body. The returned order is preserved. | Current first-party route and clean-client request; P−, S−. |
 | `GET /gifs/search?q={query}&media_format=webm&locale={locale}` | Nonempty picker search after the current 250 ms debounce; no speculative or paginated follow-up. The live default response is 50 results and its order is preserved. | Current first-party route/action and clean-client `hello` request; P−, S−. |
-| `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which SakuraCord matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded newest-backed channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Distant navigation uses `around={message}&limit=50` as a replacement window; its older and newer edges paginate independently with `before={oldest}&limit=20` and `after={newest}&limit=20`. A historical window is not cached as though it were newest-backed. No body. | Public message semantics and `before`/`after`/`around` pagination, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
+| `GET /channels/{channel}/messages` | Visible history only; guild history requires effective `VIEW_CHANNEL` and `READ_MESSAGE_HISTORY`, and voice-channel history additionally requires `CONNECT`. The current clean client uses `limit=10` for a newly selected uncached channel, which MarrowChat matches once per channel per uninterrupted Gateway connection. A dispatched newest-page read is allowed to finish and populate the session stores after a later selection supersedes its presentation; rapid navigation does not abort those reads. Reopening a loaded newest-backed channel restores its bounded session-memory page and sends no history request. After a Gateway gap, the retained page is presented immediately but its completeness marker is invalidated; returning to Ready refreshes the selected page once and later reopened pages refresh once on selection. Distant navigation uses `around={message}&limit=50` as a replacement window; its older and newer edges paginate independently with `before={oldest}&limit=20` and `after={newest}&limit=20`. A historical window is not cached as though it were newest-backed. No body. | Public message semantics and `before`/`after`/`around` pagination, current first-party permission/message paths and stale-connection refresh, and Paicord's permission-checked channel store. Swiftcord v1 checks `VIEW_CHANNEL` before presentation but otherwise supplies only a historical unguarded/refetching history path. Paicord retains a per-channel in-memory store and uses a historical 50-message initial page. The current first-party cache behavior and connection-generation invalidation take precedence. |
 | `GET /guilds/{guild}/messages/search` | One explicit server search on Return, filter/sort application, or page selection. Optional repeated `author_id`, `channel_id`, `mentions`, `has`, and `author_type`; optional `pinned`, date snowflakes, and trimmed `content`; then exact sort and 25-step offset fields. No `limit` query item. Nested groups select their `hit` message and retain context for shared timeline rendering and exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
 | `POST /users/@me/messages/search/tabs` | One explicit DM search with `tabs.messages`, `limit:25`, 25-step `offset`, exact sort/filter fields, and `track_exact_total_hits:true`. Optional top-level `channel_ids` scopes the same endpoint to one or more DMs; omitting it searches all DMs. Returned channel metadata is merged before exact-result navigation. | Sanitized authenticated clean-client CDP matrix on 14 August 2026; P−, S−. |
 | `GET /channels/{thread}` | One unknown-thread deep-link resolution; no body. | Public channel semantics and all three references. |
@@ -502,7 +502,7 @@ and retained as evidence.
 | `PATCH /users/@me/guilds/settings` | One explicit server or category notification change; `guilds` contains exactly one partial guild entry. Category changes contain one category-keyed `channel_overrides` entry and only the selected notification, mute, or collapse fields. | Current first-party; P−, S−. |
 | `GET /guilds/{guild}/application-command-index`, `/channels/{channel}/application-command-index`, `/users/@me/application-command-index`, or `/applications/{application}/application-command-index` | Target-specific index; at most three created GETs for the reviewed `202`/`429` readiness flow. | Current first-party route family; P−, S−. |
 | `POST /interactions` | One explicit type-2 execution, type-4 autocomplete, or returned modal submission; nonce-keyed, one attempt. | Current first-party and Paicord command model; Swiftcord has no current index/interaction path. |
-| `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. A reply with its author notification enabled omits `allowed_mentions`; disabling it adds `parse:["users","roles","everyone"]` and `replied_user:false`. SakuraCord deliberately adds `enforce_nonce:true` to ordinary composer sends. An explicit forward uses the same route once per selected destination (maximum five), empty `content`, nonce without `enforce_nonce`, `message_reference` with `type:1` and source IDs, and context location `forwarding`. Selected forwards start together and settle independently. Optional user-entered context is one later ordinary send per successful destination unless slowmode without bypass forbids it. Picker browsing and typing perform no HTTP or Gateway search. | Current first-party build and clean macOS CDP request/search observation. Pinned Paicord has no forward request/picker; its ordinary reply path has the narrower disabled-mention shape. Swiftcord v1 corroborates the complete reply mention control but has no forward path. DiscordKit's later DTO-only snapshot support is decoding evidence, not request or picker evidence. |
+| `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. A reply with its author notification enabled omits `allowed_mentions`; disabling it adds `parse:["users","roles","everyone"]` and `replied_user:false`. MarrowChat deliberately adds `enforce_nonce:true` to ordinary composer sends. An explicit forward uses the same route once per selected destination (maximum five), empty `content`, nonce without `enforce_nonce`, `message_reference` with `type:1` and source IDs, and context location `forwarding`. Selected forwards start together and settle independently. Optional user-entered context is one later ordinary send per successful destination unless slowmode without bypass forbids it. Picker browsing and typing perform no HTTP or Gateway search. | Current first-party build and clean macOS CDP request/search observation. Pinned Paicord has no forward request/picker; its ordinary reply path has the narrower disabled-mention shape. Swiftcord v1 corroborates the complete reply mention control but has no forward path. DiscordKit's later DTO-only snapshot support is decoding evidence, not request or picker evidence. |
 | `POST /channels/{channel}/attachments` | Explicit files only; `files` entries contain string index `id`, `filename`, `file_size`, and `is_clip:false`. | Current first-party upload action and Paicord; Swiftcord has no comparable presigned upload. |
 | `PUT {Discord-issued upload_url}` | One unauthenticated storage PUT per reserved file, `application/octet-stream`, raw bytes, no Discord authorization metadata. | Current first-party and Paicord; S−. |
 | `PATCH` or `DELETE /channels/{channel}/messages/{message}` | Explicit edit with only `content`, or explicit deletion with no body. | Public message semantics and all three references. |
@@ -514,14 +514,14 @@ and retained as evidence.
 
 The first-party asset also defines `/gifs/select`, `/gifs/suggest`, and
 `/gifs/trending-search`. They are not required for picker content, search,
-favourite persistence, or message sending and SakuraCord deliberately does not
+favourite persistence, or message sending and MarrowChat deliberately does not
 issue those analytics/suggestion requests. A picker open creates the landing
 read and the shared settings read only. Search and trending each create one
 GET, and each favourite action creates one non-retried PATCH.
 
 ### Attachment selection and external-host fallback
 
-Before an attachment enters a composer, SakuraCord applies Discord's current
+Before an attachment enters a composer, MarrowChat applies Discord's current
 per-file account cap using binary byte counts: 10 MiB for a base account,
 50 MiB for Nitro Basic or legacy Nitro Classic, and 500 MiB for Nitro. A file
 at the exact boundary is accepted. A larger file is rejected during selection,
@@ -602,7 +602,7 @@ The default attempt budget is exact:
 | User-completed login CAPTCHA | At most 1 replay of the challenged request. |
 
 Any `429` pauses authenticated traffic until the server-provided cooldown.
-Route and global bucket data come from response headers/body; SakuraCord does
+Route and global bucket data come from response headers/body; MarrowChat does
 not hard-code Discord rate limits or probe early. The first request for each
 normalized route and Discord major parameter is dispatched immediately. Only
 concurrent requests for that same, still-unknown key wait for the discovery
@@ -647,7 +647,7 @@ and 16 MiB decompressed safety bounds.
 
 ETF maps may use 64-bit integer keys even though the equivalent JSON object can
 only expose string keys. The clean 4 August large-account Ready payload did so;
-SakuraCord now converts integer keys to their exact decimal spelling without a
+MarrowChat now converts integer keys to their exact decimal spelling without a
 floating-point round trip. This follows Discord's documented ETF rule that
 snowflakes may be 64-bit integers or strings and produces the same object-key
 shape consumed by the JSON web, Paicord, and Swiftcord paths.
@@ -701,7 +701,7 @@ voice state, 6 Resume, 8 bounded guild-member request/search, 13 private-call
 subscription, 37 bulk guild subscription, 40 QoS heartbeat, and 41 time-spent
 session update. After an initial idle Ready, the desktop lifecycle order is 4
 (null voice state), 3 (current presence), 41, then 40. When a Voice connection
-survives a Gateway gap, SakuraCord preserves that active state instead of
+survives a Gateway gap, MarrowChat preserves that active state instead of
 publishing the idle reset, then republishes the current channel and local
 mute/deafen/video flags after Ready. QoS payloads use version 29 and only
 the locally known `foregrounded` reason; heartbeat sessions rotate after 30
@@ -712,7 +712,7 @@ the historical JSON/zlib and opcode-1 subset and has no 13, 37, 40, or 41.
 Current first-party Identify normally uses capability bitfield `1734653`; the
 clean account received `1767421` because the first-party
 `private_channel_obfuscation` experiment adds bit 15. As rechecked on 13 August
-2026, SakuraCord now advertises `1767421`: its existing Ready Supplemental path
+2026, MarrowChat now advertises `1767421`: its existing Ready Supplemental path
 hydrates `lazy_private_channels` from the supplemental user table, merges them
 with ordinary private channels, applies the same last-message ordering, and
 reconciles subsequent channel/message Gateway events. Discord's public Gateway
@@ -740,7 +740,7 @@ exception dispatches.
 
 - `GUILD_CREATE` adds or restores the guild, its rail entry, channels, roles,
   members, threads, emoji, and voice state. `GUILD_UPDATE` patches every guild
-  field SakuraCord models. `GUILD_DELETE` with `unavailable:true` retains and
+  field MarrowChat models. `GUILD_DELETE` with `unavailable:true` retains and
   marks the guild unavailable; an ordinary delete removes its guild-scoped
   caches, requests, channels, and rail entry. Joining, becoming unavailable,
   recovering, and leaving issue no compensating REST request.
@@ -750,7 +750,7 @@ exception dispatches.
   build `587597` handles Guild Create as an envelope with `id`, `data_mode`, and
   guild identity nested under `properties`, while the public event description
   and pinned Paicord model remain flat; pinned Swiftcord v1 has no corresponding
-  current handler. A private sanitized SakuraCord diagnostic recorded the
+  current handler. A private sanitized MarrowChat diagnostic recorded the
   failed live join as sequence 131 `GUILD_CREATE`, followed by guild catalog and
   member activity, proving the event arrived but its identity was not decoded.
   Gateway Ready and Guild Create now accept flat or nested identity plus string
@@ -774,7 +774,7 @@ exception dispatches.
 - A `RATE_LIMITED` dispatch records Discord's `retry_after` seconds against
   the rejected outgoing opcode. A send attempted during that cooldown fails
   locally, and a rejected member request completes its pending continuation
-  with an error. SakuraCord does not replay, retry early, or speculate about a
+  with an error. MarrowChat does not replay, retry early, or speculate about a
   replacement Gateway request.
 - Sticker, soundboard, scheduled-event and exception, Stage, poll-vote,
   integration, webhook, AutoMod, entitlement, and subscription dispatches have
@@ -819,7 +819,7 @@ is not the whole network surface. The remaining production connections are:
   Authorization, client-properties, fingerprint, installation ID, or
   routing-key headers and use a shared coalescing/cancellation queue. Inline
   linked images are accepted only on those exact HTTPS hosts, without
-  credentials or a custom port; SakuraCord does not fetch arbitrary
+  credentials or a custom port; MarrowChat does not fetch arbitrary
   third-party link previews.
 - unauthenticated GIF-picker media GETs use the response-provided HTTPS
   origins, without credentials or a nonstandard port, matching the current
@@ -831,14 +831,14 @@ is not the whole network surface. The remaining production connections are:
   streamed through that queue to an app-controlled temporary file before
   AVFoundation opens the local file; AVFoundation never receives a remote
   URL. Tenor WebM results may use corresponding MP4 and GIF representations.
-  Klipy results use the response-provided WebP directly; SakuraCord does not
+  Klipy results use the response-provided WebP directly; MarrowChat does not
   invent an MP4 URL by changing the Klipy WebM extension. A visible result
   creates at most three distinct media requests. Cell reuse, viewport exit,
   or picker dismissal cancels
   waiters and removes staged video files. No Authorization, client metadata,
   fingerprint, installation, Discord routing, or cookie header is added.
 
-The current official desktop and SakuraCord use ETF with `zstd-stream` for the
+The current official desktop and MarrowChat use ETF with `zstd-stream` for the
 main Gateway. The public web client uses JSON with compressed Gateway
 transport, Paicord uses JSON plus zstd, and Swiftcord v1 uses historical JSON
 plus zlib.
@@ -873,9 +873,9 @@ rejected challenge does not create another request.
 
 The clean desktop additionally read `/auth/location-metadata` for its own
 country, consent, and promotional UI and emitted science traffic before the
-user submitted the form. SakuraCord has no corresponding UI or analytics
+user submitted the form. MarrowChat has no corresponding UI or analytics
 consumer, so it deliberately does not add those unrelated requests. The clean
-success path connected Gateway immediately after `/auth/login`; SakuraCord now
+success path connected Gateway immediately after `/auth/login`; MarrowChat now
 uses that same ordering. Swiftcord v1 independently corroborates the pending
 token → Gateway Ready user → account-store sequence. Paicord performs an extra
 pre-Gateway current-user read and was retained only as conflicting evidence,
@@ -900,7 +900,7 @@ implementation records.
   Swiftcord v1 is the historical outlier that clears and refetches on every
   channel change. A clean-client CDP rapid-navigation trace on 10 August showed
   three dispatched `limit=10` reads all finishing after their selections were
-  superseded; SakuraCord therefore cancels only stale presentation and lets the
+  superseded; MarrowChat therefore cancels only stale presentation and lets the
   bounded transport reads finish into its provider caches. Discord's public
   message documentation defines the endpoint, permissions, and pagination
   parameters but does not prescribe client cache or cancellation lifetime.
@@ -947,7 +947,7 @@ implementation records.
   have one attempt, are never retried after an ambiguous failure, and roll back
   only that key when Discord does not confirm the requested state.
 - Rich rendering issues no authenticated request by itself. Link previews use
-  decoded embeds; SakuraCord does not scrape or preflight message URLs.
+  decoded embeds; MarrowChat does not scrape or preflight message URLs.
 - Reactor previews use the documented reaction-user GET with `type=0&limit=5`.
   Loads are visible-row driven, coalesced, cached, limited to four concurrent
   reads, and never paginate. The preview identity is stable across count
@@ -963,7 +963,7 @@ implementation records.
   `1e353f3bdea3545c198b32c7e2216fcd0b923dbf` confirmed the presentation
   pattern: fetch once through a shared queue, retain reactor identities in a
   message-and-emoji cache, and rerender from that cache independently of hover.
-  SakuraCord implements that behavior in its native model and bounded
+  MarrowChat implements that behavior in its native model and bounded
   five-reactor cache; no Equicord source was copied.
 - Guild emoji primarily comes from Ready/Guild Gateway payloads and
   `GUILD_EMOJIS_UPDATE`. A coalesced sequential guild-emoji GET is only a cache
@@ -1032,7 +1032,7 @@ implementation records.
   outside that range, while an authoritative update replaces the stored role
   list so a removed role cannot leave a stale color behind. This matches
   Paicord's `GuildStore`/`MessageAuthor` ownership. When a guild history page
-  contains an author absent from that store, SakuraCord resolves at most 200
+  contains an author absent from that store, MarrowChat resolves at most 200
   unique user IDs, with newest authors and reply authors prioritized before
   mentions. Discord's 100-ID opcode 8 limit is preserved by issuing at most two
   disjoint batches concurrently with `presences: false`, then merging their
@@ -1061,11 +1061,11 @@ implementation records.
   message. The freshly restarted official client nevertheless rendered a
   sampled author's non-default role color from its initial compressed Gateway
   member state; it did not need a subsequent opcode 8 request for that sampled
-  author. SakuraCord therefore treats Gateway membership as authoritative,
+  author. MarrowChat therefore treats Gateway membership as authoritative,
   marks it usable in the validated `READY` dispatch before bootstrap can
   resume, and removes failed author IDs from the request-deduplication set so a
   connection-timing failure cannot permanently suppress their later lookup.
-  An authenticated, sanitized SakuraCord trace in the Swiftcord `#general`
+  An authenticated, sanitized MarrowChat trace in the Swiftcord `#general`
   channel on 31 July 2026 exposed the prior defect precisely: Discord returned
   valid chunks containing 6 and 11 requested members with no nonce, while the
   client rejected them and timed out. The old client had sent a hyphenated UUID
@@ -1147,7 +1147,7 @@ implementation records.
   Paicord still derives `assets/collectibles/{asset}/static.png` and `img.png`;
   that historical path fails for some current nameplates. Pinned Swiftcord v1
   has no collectibles/nameplate implementation. This was statically rechecked
-  on 5 August 2026 after a live SakuraCord member showed an absent resting asset
+  on 5 August 2026 after a live MarrowChat member showed an absent resting asset
   but a working hover animation.
 - Hidden-channel metadata and effective access are derived from cached guild,
   role, member, and permission-overwrite data. Displaying the last-message
@@ -1235,7 +1235,7 @@ capture was used for this recheck.
   Highlights maps to Discord's highlight enum `DISABLED` (`1`) when selected
   and `NULL` (`0`) when cleared; `ENABLED` is `2`. Ready and
   `USER_GUILD_SETTINGS_UPDATE` decode and retain all five fields. A server
-  “Mark as Read” action sends only SakuraCord's currently unread, accessible
+  “Mark as Read” action sends only MarrowChat's currently unread, accessible
   channel and joined-thread states to `POST /read-states/ack-bulk`, with at
   most 100 entries in each sequential request. The UI applies those read
   boundaries optimistically and rolls them back on failure; notification
@@ -1272,7 +1272,7 @@ capture was used for this recheck.
   unread styling, or inferring a collapsed presentation. Unread children of a
   muted category remain visible as unread inside the server but do not produce
   the server-rail unread marker. Manual category collapse/expand updates the
-  sidebar optimistically and sends only the `collapsed` field. SakuraCord keeps
+  sidebar optimistically and sends only the `collapsed` field. MarrowChat keeps
   at most one collapse PATCH in flight per category; further toggles replace a
   single queued desired value, so only the latest differing state is sent after
   the in-flight request. A rejected request restores the last confirmed state.
@@ -1330,7 +1330,7 @@ capture was used for this recheck.
   messages uses the ordinary single newest-page `GET
   /channels/{channel_id}/messages?limit=100`. The viewport starts at the oldest
   row in that page and the banner reports the loaded lower bound (`100+`).
-  SakuraCord does not automatically walk backward to find an arbitrarily old
+  MarrowChat does not automatically walk backward to find an arbitrarily old
   acknowledgement boundary. An upward user scroll may request one older
   20-message page with `before={oldest_loaded_message_id}&limit=20`; after that
   page is incorporated, the banner grows with the discovered unread rows
@@ -1377,7 +1377,7 @@ capture was used for this recheck.
   follows the same account-scoped lifecycle and is not discarded by a Ready
   refresh.
 - Discord's accepted acknowledgement and the later versioned Ready read state
-  are the durable source across app launches. SakuraCord does not maintain a
+  are the durable source across app launches. MarrowChat does not maintain a
   second locally persisted read boundary. A fresh launch rebuilds the same
   effective state from the server snapshot, with later versioned Gateway
   events reconciled through the single account read-state model.
@@ -1431,7 +1431,7 @@ account action or traffic capture was performed.
   one-to-one DM then uses the established single profile request below.
   `CHANNEL_UPDATE`, `CHANNEL_RECIPIENT_ADD`,
   `CHANNEL_RECIPIENT_REMOVE`, and `CHANNEL_DELETE` reconcile in place without
-  inventing another read or mutation. SakuraCord exposes no create-DM,
+  inventing another read or mutation. MarrowChat exposes no create-DM,
   user-lookup, group-name, or group-membership REST mutation while those
   product surfaces are disabled.
 - History uses one `GET /channels/{channel.id}/messages`, with `before` before
@@ -1448,15 +1448,15 @@ account action or traffic capture was performed.
   `parse:["users","roles","everyone"]`, `replied_user:false` object so
   ordinary content mentions retain their default parsing. Concurrent calls
   with the same channel and nonce share one in-flight mutation.
-- SakuraCord deliberately adds `enforce_nonce: true` to the first-party and
+- MarrowChat deliberately adds `enforce_nonce: true` to the first-party and
   Paicord bodies. Discord
   publicly documents this as returning the already-created message for a
-  duplicate nonce, and SakuraCord's safety contract requires that stronger
+  duplicate nonce, and MarrowChat's safety contract requires that stronger
   idempotency boundary. This is the sole reviewed body-shape difference.
   Mutations still have one attempt, use server-provided cooldowns, and never
   replay an ambiguous result automatically.
 - Swiftcord v1 supplied a historical existing-DM history and send reference. It
-  omits a nonce and permits a manual retry after failure, so SakuraCord follows
+  omits a nonce and permits a manual retry after failure, so MarrowChat follows
   the current first-party shape plus the stricter nonce, deduplication, and
   one-attempt safety rules above.
 
@@ -1492,7 +1492,7 @@ Hello. Identify opcode 0 included the main voice `session_id`, DAVE maximum 1,
 stream). Ready opcode 2 offered AES-GCM and XChaCha20-Poly1305 RTP-size modes and
 the `fixed_keyframe_interval` experiment. Select Protocol opcode 1 advertised
 Opus plus AV1 decode-only, H.265, H.264, and VP8 in the official client; the
-official broadcaster negotiated H.265, while interoperability with SakuraCord's
+official broadcaster negotiated H.265, while interoperability with MarrowChat's
 advertised H.264 negotiated H.264. Session Description opcode 4 selected
 `secure_frames_version:1` and `dave_protocol_version:1` in every captured media
 session. A 2560×1440 60 FPS screen was advertised by Voice opcode 12 with
@@ -1508,7 +1508,7 @@ resolution qualities use `type:"fixed"` with their actual encoded width and
 height. The observed Source/60 advertisement also retained RID and quality 100,
 `max_framerate:60`, and `max_bitrate:9000000`.
 
-SakuraCord applies that advertised maximum to VideoToolbox's one-second
+MarrowChat applies that advertised maximum to VideoToolbox's one-second
 data-rate window. The RTP sender derives its wire pacing rate from the encoded
 payload plus the actual RTP/encryption overhead and ten percent drain headroom;
 the headroom empties transport work between frames without increasing encoder
@@ -1545,7 +1545,7 @@ transport backpressure cannot grow into delayed microphone or sound-share audio.
   replacement allocation rather than deleting the stream. `STREAM_DELETE`
   carries the key plus optional unavailable/reason state and tears down only
   that stream's media and decode resources. When `unavailable` is true, the
-  stream remains reconnecting: SakuraCord retains the local capture or explicit
+  stream remains reconnecting: MarrowChat retains the local capture or explicit
   viewer intent, sends `STREAM_PING`, and attaches the replacement stream RTC
   allocation instead of treating the event as a terminal stop.
 - The stream Voice Identify uses the current user's main voice `session_id`,
@@ -1569,7 +1569,7 @@ transport backpressure cannot grow into delayed microphone or sound-share audio.
 - `GET /streams/{stream_key}/preview?version={milliseconds}` returns a nullable
   CDN URL used only as lightweight pre-join presentation. It is a retry-safe
   read under the shared scheduler. A first-party broadcaster may additionally
-  post a bounded JPEG data-URL thumbnail to the same preview family; SakuraCord
+  post a bounded JPEG data-URL thumbnail to the same preview family; MarrowChat
   does not need that mutation for media delivery and does not invent or retry
   it.
 - Main-Gateway opcode 4 now carries guild/channel, mute/deafen, and
@@ -1578,13 +1578,13 @@ transport backpressure cannot grow into delayed microphone or sound-share audio.
   projected from pushed voice-state `self_stream` and the stream event store.
 
 Screen source selection is an Apple framework boundary, not a Discord
-protocol. SakuraCord prepares `SCContentSharingPicker` when the preview opens
+protocol. MarrowChat prepares `SCContentSharingPicker` when the preview opens
 but creates no capture stream until the user explicitly chooses a source. A
 picker cancellation returns to the source-less preview; dismissing the preview
-releases the picker observer. Once selected, SakuraCord owns one `SCStream`,
+releases the picker observer. Once selected, MarrowChat owns one `SCStream`,
 updates its content filter/configuration in place for source or quality changes,
 accepts only complete IOSurface-backed screen frames, and optionally captures
-48 kHz stereo source audio while excluding SakuraCord's own process audio. It
+48 kHz stereo source audio while excluding MarrowChat's own process audio. It
 keeps preview delivery enabled while the preview overlay is presented, including
 while the system picker temporarily owns key-window focus. It
 releases picker, stream, preview, audio/video encoders, decoder, and transport

@@ -5,7 +5,7 @@ import Foundation
 import OSLog
 
 private let screenCaptureLogger = Logger(
-    subsystem: "dev.sakuracord.SakuraCord",
+    subsystem: "dev.marrowchat.MarrowChat",
     category: "ScreenShareCapture"
 )
 
@@ -118,7 +118,7 @@ public enum ScreenShareCaptureError: LocalizedError, Equatable, Sendable {
         case .unavailable:
             "Screen sharing is unavailable. Check Screen Recording access in System Settings."
         case .outputUnavailable:
-            "SakuraCord could not attach to the selected screen source."
+            "MarrowChat could not attach to the selected screen source."
         case .encoderUnavailable(let message):
             "The screen-share encoder could not start: \(message)"
         }
@@ -139,7 +139,7 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
     private let encodedContinuation: AsyncStream<ScreenShareEncodedVideoFrame>.Continuation
     private let encodedAudioContinuation: AsyncStream<CapturedOpusFrame>.Continuation
     private let captureQueue = DispatchQueue(
-        label: "dev.sakuracord.screen-share.capture",
+        label: "dev.marrowchat.screen-share.capture",
         qos: .userInitiated
     )
     private let imageContext = CIContext(options: [.cacheIntermediates: false])

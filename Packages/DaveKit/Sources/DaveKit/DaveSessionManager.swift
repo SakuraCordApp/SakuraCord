@@ -2,7 +2,7 @@ import CLibdave
 import Foundation
 import OSLog
 
-private let daveProtocolLogger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "DAVE")
+private let daveProtocolLogger = Logger(subsystem: "dev.marrowchat.MarrowChat", category: "DAVE")
 
 public actor DaveSessionManager {
     // MARK: - Constants

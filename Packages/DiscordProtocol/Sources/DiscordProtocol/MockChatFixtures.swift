@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 struct MockChatFixture {
     fileprivate struct TimelineFixtureInput {
@@ -65,7 +65,7 @@ struct MockChatFixture {
         guard let data = Data(base64Encoded: encoded) else { return nil }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(
-                "sakuracord-animated-custom-emoji-fixture-v1.gif"
+                "marrowchat-animated-custom-emoji-fixture-v1.gif"
             )
         do {
             try data.write(to: url, options: .atomic)
@@ -1064,7 +1064,7 @@ private struct MockMessageFixtureBuilder {
             ChannelID(rawValue: 200): [
                 message(
                     1001, 200, rowan,
-                    "Welcome to **Aurora Studio** — a fictional community bundled with SakuraCord's offline demo.",
+                    "Welcome to **Aurora Studio** — a fictional community bundled with MarrowChat's offline demo.",
                     base
                 ),
                 message(

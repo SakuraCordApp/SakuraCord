@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 nonisolated enum DiscordGIFFavoriteMediaPolicy {
     /// Discord persists only the selected source for a GIF favourite. Older

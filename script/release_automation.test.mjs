@@ -83,7 +83,7 @@ test("preserves hand-written notes and appends only the ownership marker", () =>
   const prepared = prepareReleaseCopy(releaseCopy(), "v0.1.2");
   assert.match(prepared.githubDescription, /Full Changelog:\*\* hand-written/);
   assert.ok(prepared.githubDescription.endsWith(RELEASE_ACTION_MARKER));
-  assert.equal(prepared.githubDescription.match(/sakuracord-release-action/g)?.length, 1);
+  assert.equal(prepared.githubDescription.match(/marrowchat-release-action/g)?.length, 1);
 });
 
 test("sanitizes pre-made Discord mentions and constrains allowed mentions", () => {
@@ -95,14 +95,14 @@ test("sanitizes pre-made Discord mentions and constrains allowed mentions", () =
   );
   const payload = createDiscordPayload(
     copy,
-    "SakuraCordApp/SakuraCord",
+    "d-lab17/MarrowChat",
     123,
-    "https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.1.2",
+    "https://github.com/d-lab17/MarrowChat/releases/tag/v0.1.2",
     "1528177363995590795",
   );
   assert.equal(payload.allowed_mentions.parse.length, 0);
   assert.deepEqual(payload.allowed_mentions.roles, ["1528177363995590795"]);
-  assert.equal(payload.embeds[0].title, "SakuraCord v0.1.2");
+  assert.equal(payload.embeds[0].title, "MarrowChat v0.1.2");
   assert.doesNotMatch(payload.embeds[0].description, /<@|@here/);
   assert.equal(payload.nonce.length, 25);
   assert.equal(payload.enforce_nonce, true);
@@ -115,13 +115,13 @@ test("gives nightly announcements distinct visual framing", () => {
       discordAnnouncement:
         "**A specific nightly headline 🌙**\n\n**Highlights**\n- Good things",
     }),
-    "SakuraCordApp/SakuraCord",
+    "d-lab17/MarrowChat",
     124,
-    "https://github.com/SakuraCordApp/SakuraCord/releases/tag/v0.2.0-Beta-3",
+    "https://github.com/d-lab17/MarrowChat/releases/tag/v0.2.0-Beta-3",
     "1541194051196289157",
   );
 
-  assert.equal(payload.embeds[0].title, "SakuraCord v0.2.0 Beta 3 🌙");
+  assert.equal(payload.embeds[0].title, "MarrowChat v0.2.0 Beta 3 🌙");
   assert.equal(payload.embeds[0].color, 0x5865f2);
   assert.deepEqual(payload.allowed_mentions.roles, ["1541194051196289157"]);
 });

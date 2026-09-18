@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY="sakuracord.insecureDebugCredentials"
+MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY="marrowchat.insecureDebugCredentials"
 
-sakuracord_read_persistent_debug_credentials() {
+marrowchat_read_persistent_debug_credentials() {
   local root_dir="$1"
   local configured_value
   local status
 
-  SAKURACORD_PERSISTENT_DEBUG_CREDENTIALS_IS_SET=0
-  SAKURACORD_PERSISTENT_DEBUG_CREDENTIALS=0
+  MARROWCHAT_PERSISTENT_DEBUG_CREDENTIALS_IS_SET=0
+  MARROWCHAT_PERSISTENT_DEBUG_CREDENTIALS=0
 
   if ! git -C "$root_dir" rev-parse --git-dir >/dev/null 2>&1; then
     return 0
@@ -16,14 +16,14 @@ sakuracord_read_persistent_debug_credentials() {
 
   if configured_value="$(
     git -C "$root_dir" config --local --type=bool \
-      --get "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY" 2>/dev/null
+      --get "$MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY" 2>/dev/null
   )"; then
-    SAKURACORD_PERSISTENT_DEBUG_CREDENTIALS_IS_SET=1
+    MARROWCHAT_PERSISTENT_DEBUG_CREDENTIALS_IS_SET=1
     case "$configured_value" in
-      true) SAKURACORD_PERSISTENT_DEBUG_CREDENTIALS=1 ;;
-      false) SAKURACORD_PERSISTENT_DEBUG_CREDENTIALS=0 ;;
+      true) MARROWCHAT_PERSISTENT_DEBUG_CREDENTIALS=1 ;;
+      false) MARROWCHAT_PERSISTENT_DEBUG_CREDENTIALS=0 ;;
       *)
-        echo "Unexpected Git boolean for $SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY." >&2
+        echo "Unexpected Git boolean for $MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY." >&2
         return 2
         ;;
     esac
@@ -36,38 +36,38 @@ sakuracord_read_persistent_debug_credentials() {
     return 0
   fi
 
-  echo "Git config $SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY must be a boolean." >&2
+  echo "Git config $MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY must be a boolean." >&2
   return 2
 }
 
-sakuracord_resolve_insecure_debug_credentials() {
+marrowchat_resolve_insecure_debug_credentials() {
   local root_dir="$1"
 
-  SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS=0
-  SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE="default"
+  MARROWCHAT_RESOLVED_INSECURE_DEBUG_CREDENTIALS=0
+  MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_SOURCE="default"
 
-  if [[ "${SAKURACORD_INSECURE_DEBUG_CREDENTIALS+x}" == "x" ]]; then
-    case "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS" in
+  if [[ "${MARROWCHAT_INSECURE_DEBUG_CREDENTIALS+x}" == "x" ]]; then
+    case "$MARROWCHAT_INSECURE_DEBUG_CREDENTIALS" in
       0|1)
-        SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS="$SAKURACORD_INSECURE_DEBUG_CREDENTIALS"
-        SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE="environment"
+        MARROWCHAT_RESOLVED_INSECURE_DEBUG_CREDENTIALS="$MARROWCHAT_INSECURE_DEBUG_CREDENTIALS"
+        MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_SOURCE="environment"
         return 0
         ;;
       *)
-        echo "SAKURACORD_INSECURE_DEBUG_CREDENTIALS must be 0 or 1." >&2
+        echo "MARROWCHAT_INSECURE_DEBUG_CREDENTIALS must be 0 or 1." >&2
         return 2
         ;;
     esac
   fi
 
-  sakuracord_read_persistent_debug_credentials "$root_dir" || return $?
-  if [[ "$SAKURACORD_PERSISTENT_DEBUG_CREDENTIALS_IS_SET" == "1" ]]; then
-    SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS="$SAKURACORD_PERSISTENT_DEBUG_CREDENTIALS"
-    SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE="repository config"
+  marrowchat_read_persistent_debug_credentials "$root_dir" || return $?
+  if [[ "$MARROWCHAT_PERSISTENT_DEBUG_CREDENTIALS_IS_SET" == "1" ]]; then
+    MARROWCHAT_RESOLVED_INSECURE_DEBUG_CREDENTIALS="$MARROWCHAT_PERSISTENT_DEBUG_CREDENTIALS"
+    MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_SOURCE="repository config"
   fi
 }
 
-sakuracord_apply_secure_release_credential_policy() {
+marrowchat_apply_secure_release_credential_policy() {
   local mode="$1"
   local updates_enabled="$2"
 
@@ -76,17 +76,17 @@ sakuracord_apply_secure_release_credential_policy() {
     return 0
   fi
 
-  if [[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "1" \
-    && "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "environment" ]]; then
+  if [[ "$MARROWCHAT_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "1" \
+    && "$MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "environment" ]]; then
     echo "Insecure debug credentials cannot be used for release or update-enabled packages." >&2
     return 2
   fi
 
-  SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS=0
-  SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE="release safety override"
+  MARROWCHAT_RESOLVED_INSECURE_DEBUG_CREDENTIALS=0
+  MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_SOURCE="release safety override"
 }
 
-sakuracord_set_persistent_debug_credentials() {
+marrowchat_set_persistent_debug_credentials() {
   local root_dir="$1"
   local value="$2"
 
@@ -96,15 +96,15 @@ sakuracord_set_persistent_debug_credentials() {
   fi
 
   git -C "$root_dir" config --local \
-    "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY" "$value"
+    "$MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY" "$value"
 }
 
-sakuracord_delete_insecure_debug_credentials() {
+marrowchat_delete_insecure_debug_credentials() {
   local directory="$1"
   local candidate
   local filename
 
-  SAKURACORD_DELETED_DEBUG_CREDENTIAL_COUNT=0
+  MARROWCHAT_DELETED_DEBUG_CREDENTIAL_COUNT=0
 
   if [[ ! -e "$directory" && ! -L "$directory" ]]; then
     return 0
@@ -119,8 +119,8 @@ sakuracord_delete_insecure_debug_credentials() {
     if [[ -f "$candidate" && ! -L "$candidate" \
       && "$filename" =~ ^[0-9]+\.credential$ ]]; then
       rm -f -- "$candidate"
-      SAKURACORD_DELETED_DEBUG_CREDENTIAL_COUNT=$((
-        SAKURACORD_DELETED_DEBUG_CREDENTIAL_COUNT + 1
+      MARROWCHAT_DELETED_DEBUG_CREDENTIAL_COUNT=$((
+        MARROWCHAT_DELETED_DEBUG_CREDENTIAL_COUNT + 1
       ))
     fi
   done < <(find "$directory" -mindepth 1 -maxdepth 1 -print0)

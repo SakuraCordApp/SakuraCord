@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 #if DEBUG
     extension DiscordRESTProvider {

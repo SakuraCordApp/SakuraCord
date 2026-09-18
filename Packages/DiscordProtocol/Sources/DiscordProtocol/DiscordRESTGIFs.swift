@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 private struct DiscordGIFDTO: Decodable {
     var id: String

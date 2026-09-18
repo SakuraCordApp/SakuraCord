@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "SakuraCordApp",
+    name: "MarrowChatApp",
     platforms: [.macOS(.v27)],
     products: [
-        .executable(name: "SakuraCord", targets: ["SakuraCord"]),
-        .executable(name: "SakuraCordPluginHost", targets: ["SakuraCordPluginHost"])
+        .executable(name: "MarrowChat", targets: ["MarrowChat"]),
+        .executable(name: "MarrowChatPluginHost", targets: ["MarrowChatPluginHost"])
     ],
     dependencies: [
-        .package(path: "../Packages/SakuraCordModels"),
+        .package(path: "../Packages/MarrowChatModels"),
         .package(path: "../Packages/DiscordProtocol"),
-        .package(path: "../Packages/SakuraCordPersistence"),
+        .package(path: "../Packages/MarrowChatPersistence"),
         .package(path: "../Packages/MessageRendering"),
         .package(path: "../Packages/MediaPipeline"),
-        .package(path: "../Packages/SakuraCordPluginSDK"),
+        .package(path: "../Packages/MarrowChatPluginSDK"),
         .package(url: "https://github.com/airbnb/lottie-ios.git", exact: "4.6.1"),
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4"),
         .package(
@@ -24,10 +24,10 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "SakuraCord",
+            name: "MarrowChat",
             dependencies: [
-                "SakuraCordModels", "DiscordProtocol", "SakuraCordPersistence",
-                "MessageRendering", "MediaPipeline", "SakuraCordPluginSDK",
+                "MarrowChatModels", "DiscordProtocol", "MarrowChatPersistence",
+                "MessageRendering", "MediaPipeline", "MarrowChatPluginSDK",
                 .product(name: "Lottie", package: "lottie-ios"),
                 .product(name: "HCaptcha", package: "hcaptcha"),
                 .product(name: "Sparkle", package: "Sparkle")
@@ -39,10 +39,10 @@ let package = Package(
                 .interoperabilityMode(.Cxx)
             ]
         ),
-        .executableTarget(name: "SakuraCordPluginHost", dependencies: ["SakuraCordPluginSDK"]),
+        .executableTarget(name: "MarrowChatPluginHost", dependencies: ["MarrowChatPluginSDK"]),
         .testTarget(
-            name: "SakuraCordAppTests",
-            dependencies: ["SakuraCord", "DiscordProtocol", "MediaPipeline"],
+            name: "MarrowChatAppTests",
+            dependencies: ["MarrowChat", "DiscordProtocol", "MediaPipeline"],
             swiftSettings: [.interoperabilityMode(.Cxx)]
         )
     ]

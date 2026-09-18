@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 import Testing
 @testable import DiscordProtocol
 
@@ -7,13 +7,13 @@ import Testing
     let attachment = ForumPostAttachment(
         url: URL(fileURLWithPath: "/tmp/original.png"),
         filename: "renamed.png",
-        description: "A pink SakuraCord flower",
+        description: "A pink MarrowChat flower",
         isSpoiler: true
     )
 
     let file = DiscordRESTProvider.forumUploadFile(attachment)
     #expect(file.name == "SPOILER_renamed.png")
-    #expect(file.description == "A pink SakuraCord flower")
+    #expect(file.description == "A pink MarrowChat flower")
     #expect(
         DiscordRESTProvider.uploadedAttachmentPayload(
             id: 0,
@@ -23,7 +23,7 @@ import Testing
             "id": .string("0"),
             "filename": .string("SPOILER_renamed.png"),
             "uploaded_filename": .string("cloud-token"),
-            "description": .string("A pink SakuraCord flower"),
+            "description": .string("A pink MarrowChat flower"),
         ])
     )
 }

@@ -1,6 +1,6 @@
-# Releasing SakuraCord
+# Releasing MarrowChat
 
-This is the maintainer runbook for versioned SakuraCord releases. Release-note
+This is the maintainer runbook for versioned MarrowChat releases. Release-note
 wording belongs in the [GitHub release notes](RELEASE_NOTES_STYLE.md) and
 [Discord announcement](DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md) style guides.
 
@@ -10,7 +10,7 @@ A tag matching `vMAJOR.MINOR.PATCH` publishes a regular release. A tag matching
 `vMAJOR.MINOR.PATCH-Beta-NUMBER` publishes a GitHub prerelease to the nightly
 track. Git refs cannot contain spaces, so `v0.1.5-Beta-1` is displayed as
 `v0.1.5 Beta 1` in the GitHub Release and Discord announcement and is packaged
-as `SakuraCord-v0.1.5-Beta-1.dmg`. Both tracks build and sign the app, generate
+as `MarrowChat-v0.1.5-Beta-1.dmg`. Both tracks build and sign the app, generate
 and verify the Sparkle appcast, publish reviewed release notes, and post the
 reviewed announcement to Discord. Nightly and regular builds share the CI
 workflow's monotonically increasing build number, allowing a later regular
@@ -35,7 +35,7 @@ create and commit `Releases/<tag>.json`:
 {
   "schemaVersion": 1,
   "tagName": "v0.1.3",
-  "githubDescription": "SakuraCord v0.1.3 adds ...\n\n## Feature area\n\n- Added ...\n\n**Full Changelog:** [v0.1.2...v0.1.3](https://github.com/SakuraCordApp/SakuraCord/compare/v0.1.2...v0.1.3)",
+  "githubDescription": "MarrowChat v0.1.3 adds ...\n\n## Feature area\n\n- Added ...\n\n**Full Changelog:** [v0.1.2...v0.1.3](https://github.com/d-lab17/MarrowChat/compare/v0.1.2...v0.1.3)",
   "discordAnnouncement": "**Specific feature headline 🌸**\n\n**Highlights**\n- A user-facing feature"
 }
 ```
@@ -47,7 +47,7 @@ headline instead of the regular sakura headline:
 {
   "schemaVersion": 1,
   "tagName": "v0.2.0-Beta-1",
-  "githubDescription": "SakuraCord v0.2.0 Beta 1 adds ...",
+  "githubDescription": "MarrowChat v0.2.0 Beta 1 adds ...",
   "discordAnnouncement": "**Specific nightly headline 🌙**\n\n**Highlights**\n- A user-facing feature"
 }
 ```
@@ -89,7 +89,7 @@ information check and remains silent when no newer build exists.
 
 ## One-time Sparkle setup
 
-SakuraCord pins the official Sparkle package. Generate one Ed25519 keypair on a
+MarrowChat pins the official Sparkle package. Generate one Ed25519 keypair on a
 trusted maintainer Mac, back up the private key in an offline secret store, and
 configure the repository secrets:
 

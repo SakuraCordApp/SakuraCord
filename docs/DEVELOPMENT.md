@@ -1,16 +1,16 @@
 # Development
 
 This guide collects the day-to-day commands and safety rules that are useful
-when working on SakuraCord but too detailed for the public project README.
+when working on MarrowChat but too detailed for the public project README.
 
 ## Setup
 
-SakuraCord requires macOS 27, Xcode 27 with Swift 6.4, and Git. After cloning,
+MarrowChat requires macOS 27, Xcode 27 with Swift 6.4, and Git. After cloning,
 complete the required [developer and agent bootstrap](README.md#developer-and-agent-bootstrap)
 before committing or pushing.
 
 The application package lives in `App/`. SwiftPM manifests are the build source
-of truth, while `SakuraCord.xcworkspace` is a convenience entry point.
+of truth, while `MarrowChat.xcworkspace` is a convenience entry point.
 
 ## Launch modes
 
@@ -31,11 +31,12 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
 
-Use `./script/build_and_run.sh run` to launch the normal app and restore an
-existing SakuraCord session from Keychain. Read-only authenticated verification
-may observe existing state and allow normal connection or session-maintenance
-traffic, but agent-run verification must not deliberately mutate remote account
-state or content without an explicit request for that specific action.
+Use `./script/build_and_run.sh --online` (equivalent to the default `run` mode)
+to launch the normal app and restore an existing MarrowChat session from
+Keychain. Read-only authenticated verification may observe existing state and
+allow normal connection or session-maintenance traffic, but agent-run
+verification must not deliberately mutate remote account state or content
+without an explicit request for that specific action.
 
 Use `./script/build_and_run.sh run-release` to build the optimized release
 configuration, apply the release credential restrictions, and launch the
@@ -59,7 +60,7 @@ or disable it with:
 ./script/debug_credentials.sh disable
 ```
 
-An explicit `SAKURACORD_INSECURE_DEBUG_CREDENTIALS=0` or `1` overrides the
+An explicit `MARROWCHAT_INSECURE_DEBUG_CREDENTIALS=0` or `1` overrides the
 checkout setting for one build. Release and update-enabled packages ignore the
 checkout preference and reject an explicit insecure override.
 
@@ -67,11 +68,11 @@ Local credentials are unencrypted files, readable by other processes running
 as the same macOS user, under:
 
 ```text
-~/Library/Containers/dev.sakuracord.SakuraCord/Data/Library/Application Support/SakuraCord/InsecureDebugCredentials/
+~/Library/Containers/dev.marrowchat.MarrowChat/Data/Library/Application Support/MarrowChat/InsecureDebugCredentials/
 ```
 
 Never enable this mode on a shared or production machine, and never copy its
-contents into the repository, logs, or bug reports. With SakuraCord closed,
+contents into the repository, logs, or bug reports. With MarrowChat closed,
 `./script/debug_credentials.sh delete` disables the mode and removes recognized
 local credential files without changing credentials stored in Keychain.
 
@@ -93,13 +94,13 @@ proportion to its risk:
 
 ### Persistent local code-signing identity
 
-The build script uses an installed Apple Development identity, or the SakuraCord
+The build script uses an installed Apple Development identity, or the MarrowChat
 local development identity, automatically so macOS sees rebuilt development
 apps as the same signed application. If more than one identity is installed,
 select one explicitly by its name or SHA-1 hash:
 
 ```sh
-SAKURACORD_CODE_SIGN_IDENTITY='Apple Development: Developer Name (TEAMID)' \
+MARROWCHAT_CODE_SIGN_IDENTITY='Apple Development: Developer Name (TEAMID)' \
   ./script/build_and_run.sh run
 ```
 

@@ -112,7 +112,7 @@ public final class DiscordClientMetadata: @unchecked Sendable {
         }
     }
 
-    nonisolated static let installationDefaultsKey = "dev.sakuracord.discord-installation-id"
+    nonisolated static let installationDefaultsKey = "dev.marrowchat.discord-installation-id"
 
     static func persistedInstallationID() -> String? {
         UserDefaults.standard.string(forKey: installationDefaultsKey)

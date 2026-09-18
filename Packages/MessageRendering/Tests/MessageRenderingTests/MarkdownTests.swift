@@ -1,5 +1,5 @@
 import AppKit
-import SakuraCordModels
+import MarrowChatModels
 @testable import MessageRendering
 import Testing
 
@@ -166,7 +166,7 @@ import Testing
     let rejectedURLs = try [
         #require(URL(string: "file:///Users/example/private.txt")),
         #require(URL(string: "x-apple.systempreferences:com.apple.settings")),
-        #require(URL(string: "sakuracord-test://open")),
+        #require(URL(string: "marrowchat-test://open")),
         #require(URL(string: "javascript:alert(1)")),
         #require(URL(string: "https:relative-path"))
     ]

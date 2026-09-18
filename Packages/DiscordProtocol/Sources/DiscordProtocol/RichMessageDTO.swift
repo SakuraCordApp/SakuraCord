@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 struct MessageEmbedDTO: Decodable {
     struct Media: Decodable {

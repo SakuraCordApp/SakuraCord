@@ -6,14 +6,14 @@ let package = Package(
     platforms: [.macOS(.v27)],
     products: [.library(name: "DiscordProtocol", targets: ["DiscordProtocol"])],
     dependencies: [
-        .package(path: "../SakuraCordModels"),
+        .package(path: "../MarrowChatModels"),
         .package(url: "https://github.com/facebook/zstd.git", from: "1.5.7"),
     ],
     targets: [
         .target(
             name: "DiscordProtocol",
             dependencies: [
-                "SakuraCordModels",
+                "MarrowChatModels",
                 .product(name: "libzstd", package: "zstd"),
             ],
             resources: [.process("Resources")]

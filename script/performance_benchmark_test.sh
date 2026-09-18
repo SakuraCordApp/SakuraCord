@@ -3,23 +3,23 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$root/script/fixtures/performance-overlap"
-temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-performance-test.XXXXXX")"
-member_list_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-member-list-performance-test.XXXXXX")"
-loading_scroll_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-performance-test.XXXXXX")"
-loading_scroll_invalid_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-invalid-test.XXXXXX")"
-loading_scroll_missing_gesture_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-loading-scroll-missing-gesture-test.XXXXXX")"
-startup_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-startup-test.XXXXXX")"
-navigation_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-navigation-test.XXXXXX")"
-insufficient_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-insufficient-test.XXXXXX")"
-cancelled_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-cancelled-test.XXXXXX")"
-missing_outcome_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-outcome-test.XXXXXX")"
-pagination_failed_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-pagination-failed-test.XXXXXX")"
-short_distance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-short-distance-test.XXXXXX")"
-missing_elapsed_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-elapsed-test.XXXXXX")"
-late_tick_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-late-tick-test.XXXXXX")"
-incomplete_render_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-incomplete-render-test.XXXXXX")"
-missing_profiler_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-missing-profiler-test.XXXXXX")"
-provenance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-provenance-test.XXXXXX")"
+temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-performance-test.XXXXXX")"
+member_list_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-member-list-performance-test.XXXXXX")"
+loading_scroll_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-loading-scroll-performance-test.XXXXXX")"
+loading_scroll_invalid_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-loading-scroll-invalid-test.XXXXXX")"
+loading_scroll_missing_gesture_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-loading-scroll-missing-gesture-test.XXXXXX")"
+startup_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-startup-test.XXXXXX")"
+navigation_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-navigation-test.XXXXXX")"
+insufficient_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-insufficient-test.XXXXXX")"
+cancelled_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-cancelled-test.XXXXXX")"
+missing_outcome_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-missing-outcome-test.XXXXXX")"
+pagination_failed_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-pagination-failed-test.XXXXXX")"
+short_distance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-short-distance-test.XXXXXX")"
+missing_elapsed_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-missing-elapsed-test.XXXXXX")"
+late_tick_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-late-tick-test.XXXXXX")"
+incomplete_render_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-incomplete-render-test.XXXXXX")"
+missing_profiler_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-missing-profiler-test.XXXXXX")"
+provenance_temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-provenance-test.XXXXXX")"
 source_marker="$root/.performance-provenance-test.$$"
 trap 'rm -rf "$temporary" "$member_list_temporary" "$loading_scroll_temporary" "$loading_scroll_invalid_temporary" "$loading_scroll_missing_gesture_temporary" "$startup_temporary" "$navigation_temporary" "$insufficient_temporary" "$cancelled_temporary" "$missing_outcome_temporary" "$pagination_failed_temporary" "$short_distance_temporary" "$missing_elapsed_temporary" "$late_tick_temporary" "$incomplete_render_temporary" "$missing_profiler_temporary" "$provenance_temporary"; rm -f "$source_marker"' EXIT
 
@@ -148,7 +148,7 @@ if "$root/script/performance_benchmark.sh" summarize \
         'loading-scroll benchmark without physical gesture coverage was accepted' >&2
     exit 1
 fi
-SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES=1 \
+MARROWCHAT_PERFORMANCE_ALLOW_MISSING_GESTURES=1 \
     "$root/script/performance_benchmark.sh" summarize \
     "$loading_scroll_missing_gesture_temporary" >/dev/null
 grep -F $'loading-scroll.gesture-coverage\tfalse' \
@@ -288,18 +288,18 @@ if "$root/script/performance_benchmark.sh" summarize \
     exit 1
 fi
 
-provenance_executable="$provenance_temporary/SakuraCord"
+provenance_executable="$provenance_temporary/MarrowChat"
 provenance_directory="$provenance_temporary/build-provenance"
 printf '%s\n' 'synthetic benchmark executable' >"$provenance_executable"
-SAKURACORD_PERFORMANCE_EXECUTABLE_OVERRIDE="$provenance_executable" \
-SAKURACORD_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE="$provenance_directory" \
+MARROWCHAT_PERFORMANCE_EXECUTABLE_OVERRIDE="$provenance_executable" \
+MARROWCHAT_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE="$provenance_directory" \
     "$root/script/performance_benchmark.sh" provenance-record >/dev/null
-SAKURACORD_PERFORMANCE_EXECUTABLE_OVERRIDE="$provenance_executable" \
-SAKURACORD_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE="$provenance_directory" \
+MARROWCHAT_PERFORMANCE_EXECUTABLE_OVERRIDE="$provenance_executable" \
+MARROWCHAT_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE="$provenance_directory" \
     "$root/script/performance_benchmark.sh" provenance-check
 printf '%s\n' 'source changed after build' >"$source_marker"
-if SAKURACORD_PERFORMANCE_EXECUTABLE_OVERRIDE="$provenance_executable" \
-    SAKURACORD_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE="$provenance_directory" \
+if MARROWCHAT_PERFORMANCE_EXECUTABLE_OVERRIDE="$provenance_executable" \
+    MARROWCHAT_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE="$provenance_directory" \
     "$root/script/performance_benchmark.sh" provenance-check >/dev/null 2>&1; then
     printf '%s\n' 'benchmark accepted source changes made after the executable build' >&2
     exit 1

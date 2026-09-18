@@ -11,39 +11,39 @@ source "$ROOT_DIR/script/release_metadata.sh"
 source "$ROOT_DIR/script/debug_credentials_config.sh"
 
 case "$MODE" in
-  package|package-release|run|run-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
+  package|package-release|run|run-release|--online|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
   *)
-    echo "usage: $0 [package|package-release|run|run-release|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|run-release|--online|--offline|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
 
-APP_NAME="$SAKURACORD_APP_NAME"
-DISPLAY_NAME="$SAKURACORD_DISPLAY_NAME"
-BUNDLE_ID="$SAKURACORD_BUNDLE_ID"
-PACKAGE_DIR="$SAKURACORD_PACKAGE_DIR"
-DIST_DIR="$SAKURACORD_DIST_DIR"
-APP_BUNDLE="$SAKURACORD_APP_BUNDLE"
+APP_NAME="$MARROWCHAT_APP_NAME"
+DISPLAY_NAME="$MARROWCHAT_DISPLAY_NAME"
+BUNDLE_ID="$MARROWCHAT_BUNDLE_ID"
+PACKAGE_DIR="$MARROWCHAT_PACKAGE_DIR"
+DIST_DIR="$MARROWCHAT_DIST_DIR"
+APP_BUNDLE="$MARROWCHAT_APP_BUNDLE"
 CONTENTS="$APP_BUNDLE/Contents"
 MACOS="$CONTENTS/MacOS"
 FRAMEWORKS="$CONTENTS/Frameworks"
 RESOURCES="$CONTENTS/Resources"
-PRODUCT_NAME="$SAKURACORD_PRODUCT_NAME"
-BUNDLE_SHORT_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
-BUNDLE_BUILD_VERSION="${SAKURACORD_BUILD_NUMBER:-1}"
+PRODUCT_NAME="$MARROWCHAT_PRODUCT_NAME"
+BUNDLE_SHORT_VERSION="$(marrowchat_release_version "$ROOT_DIR")"
+BUNDLE_BUILD_VERSION="${MARROWCHAT_BUILD_NUMBER:-1}"
 if [[ ! "$BUNDLE_BUILD_VERSION" =~ ^[0-9]+$ ]]; then
-  echo "SAKURACORD_BUILD_NUMBER must be an integer." >&2
+  echo "MARROWCHAT_BUILD_NUMBER must be an integer." >&2
   exit 2
 fi
-UPDATES_ENABLED="${SAKURACORD_ENABLE_UPDATES:-0}"
+UPDATES_ENABLED="${MARROWCHAT_ENABLE_UPDATES:-0}"
 if [[ "$UPDATES_ENABLED" != "0" && "$UPDATES_ENABLED" != "1" ]]; then
-  echo "SAKURACORD_ENABLE_UPDATES must be 0 or 1." >&2
+  echo "MARROWCHAT_ENABLE_UPDATES must be 0 or 1." >&2
   exit 2
 fi
-sakuracord_resolve_insecure_debug_credentials "$ROOT_DIR"
-sakuracord_apply_secure_release_credential_policy "$MODE" "$UPDATES_ENABLED"
-INSECURE_DEBUG_CREDENTIALS="$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS"
-INSECURE_DEBUG_CREDENTIALS_SOURCE="$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE"
+marrowchat_resolve_insecure_debug_credentials "$ROOT_DIR"
+marrowchat_apply_secure_release_credential_policy "$MODE" "$UPDATES_ENABLED"
+INSECURE_DEBUG_CREDENTIALS="$MARROWCHAT_RESOLVED_INSECURE_DEBUG_CREDENTIALS"
+INSECURE_DEBUG_CREDENTIALS_SOURCE="$MARROWCHAT_INSECURE_DEBUG_CREDENTIALS_SOURCE"
 if [[ "$UPDATES_ENABLED" == "1" ]]; then
   if [[ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]]; then
     echo "SPARKLE_ED_PUBLIC_KEY is required when production updates are enabled." >&2
@@ -67,14 +67,14 @@ BUILD_FLAGS=()
 if [[ "$MODE" == "package-release" || "$MODE" == "run-release" ]]; then
   BUILD_FLAGS=(-c release --disable-index-store)
 fi
-APP_ICON_NAME="$SAKURACORD_PRODUCT_NAME"
-APP_ICON_SOURCE="${SAKURACORD_APP_ICON:-SakuraCord.icon}"
+APP_ICON_NAME="$MARROWCHAT_PRODUCT_NAME"
+APP_ICON_SOURCE="${MARROWCHAT_APP_ICON:-MarrowChat.icon}"
 if [[ "$APP_ICON_SOURCE" = /* ]]; then
   APP_ICON="$APP_ICON_SOURCE"
 else
   APP_ICON="$ROOT_DIR/App/Packaging/$APP_ICON_SOURCE"
 fi
-CODE_SIGN_IDENTITY="${SAKURACORD_CODE_SIGN_IDENTITY:-}"
+CODE_SIGN_IDENTITY="${MARROWCHAT_CODE_SIGN_IDENTITY:-}"
 if [[ -z "$CODE_SIGN_IDENTITY" ]]; then
   CODE_SIGN_IDENTITY="$(
     security find-identity -v -p codesigning 2>/dev/null \
@@ -84,18 +84,18 @@ fi
 if [[ -z "$CODE_SIGN_IDENTITY" ]]; then
   CODE_SIGN_IDENTITY="$(
     security find-identity -v -p codesigning 2>/dev/null \
-      | awk '/"SakuraCord Local Development"/ { print $2; exit }'
+      | awk '/"MarrowChat Local Development"/ { print $2; exit }'
   )"
 fi
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:--}"
 if [[ "$CODE_SIGN_IDENTITY" != "-" ]] \
   && ! security find-identity -v -p codesigning 2>/dev/null \
     | grep -Fq -- "$CODE_SIGN_IDENTITY"; then
-  echo "SAKURACORD_CODE_SIGN_IDENTITY is not a valid code-signing identity." >&2
+  echo "MARROWCHAT_CODE_SIGN_IDENTITY is not a valid code-signing identity." >&2
   exit 2
 fi
 
-sakuracord_acquire_operation_lock
+marrowchat_acquire_operation_lock
 ICON_STAGING_DIR=""
 ENTITLEMENTS_STAGING=""
 cleanup() {
@@ -105,11 +105,11 @@ cleanup() {
   if [[ -n "$ENTITLEMENTS_STAGING" && -f "$ENTITLEMENTS_STAGING" ]]; then
     rm -f "$ENTITLEMENTS_STAGING"
   fi
-  sakuracord_release_operation_lock
+  marrowchat_release_operation_lock
 }
 trap cleanup EXIT
 
-sakuracord_print_identity
+marrowchat_print_identity
 if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" ]]; then
   echo "Debug credentials: enabled ($INSECURE_DEBUG_CREDENTIALS_SOURCE)"
 else
@@ -122,19 +122,19 @@ else
 fi
 
 if [[ "$MODE" != "package" && "$MODE" != "package-release" ]]; then
-  sakuracord_stop_scoped_app
+  marrowchat_stop_scoped_app
 fi
 
 swift build \
   --package-path "$PACKAGE_DIR" \
-  --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
-  --scratch-path "$SAKURACORD_SCRATCH_DIR" \
+  --cache-path "$MARROWCHAT_SWIFTPM_CACHE_DIR" \
+  --scratch-path "$MARROWCHAT_SCRATCH_DIR" \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --product "$PRODUCT_NAME"
 BIN_DIR="$(swift build \
   --package-path "$PACKAGE_DIR" \
-  --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
-  --scratch-path "$SAKURACORD_SCRATCH_DIR" \
+  --cache-path "$MARROWCHAT_SWIFTPM_CACHE_DIR" \
+  --scratch-path "$MARROWCHAT_SCRATCH_DIR" \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --show-bin-path)"
 
@@ -165,9 +165,9 @@ if [[ ! -d "$APP_ICON" ]]; then
   echo "missing app icon: $APP_ICON" >&2
   exit 1
 fi
-ICON_STAGING_DIR="$(mktemp -d "$DIST_DIR/SakuraCordIconSource.XXXXXX")"
+ICON_STAGING_DIR="$(mktemp -d "$DIST_DIR/MarrowChatIconSource.XXXXXX")"
 ditto "$APP_ICON" "$ICON_STAGING_DIR/$APP_ICON_NAME.icon"
-ICON_PARTIAL_PLIST="$DIST_DIR/SakuraCordIcon-Info.plist"
+ICON_PARTIAL_PLIST="$DIST_DIR/MarrowChatIcon-Info.plist"
 xcrun actool \
   --compile "$RESOURCES" \
   --platform macosx \
@@ -195,20 +195,20 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>27.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>SakuraCord uses your microphone when you join a voice call.</string>
-  <key>NSCameraUsageDescription</key><string>SakuraCord uses your camera when you enable video in a call.</string>
-  <key>NSScreenCaptureUsageDescription</key><string>SakuraCord uses screen capture only when you choose a source to share in a voice call.</string>
+  <key>NSMicrophoneUsageDescription</key><string>MarrowChat uses your microphone when you join a voice call.</string>
+  <key>NSCameraUsageDescription</key><string>MarrowChat uses your camera when you enable video in a call.</string>
+  <key>NSScreenCaptureUsageDescription</key><string>MarrowChat uses screen capture only when you choose a source to share in a voice call.</string>
 </dict>
 </plist>
 PLIST
 
 if [[ "$UPDATES_ENABLED" == "1" ]]; then
-  /usr/libexec/PlistBuddy -c "Add :SakuraCordUpdatesEnabled bool true" "$CONTENTS/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :MarrowChatUpdatesEnabled bool true" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c \
-    "Add :SUFeedURL string https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml" \
+    "Add :SUFeedURL string https://github.com/d-lab17/MarrowChat/releases/latest/download/appcast.xml" \
     "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c \
-    "Add :SakuraCordNightlyFeedURL string https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml" \
+    "Add :MarrowChatNightlyFeedURL string https://raw.githubusercontent.com/d-lab17/MarrowChat/nightly-feed/appcast.xml" \
     "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_ED_PUBLIC_KEY" "$CONTENTS/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$CONTENTS/Info.plist"
@@ -221,14 +221,14 @@ if [[ "$UPDATES_ENABLED" == "1" ]]; then
 fi
 if [[ "$INSECURE_DEBUG_CREDENTIALS" == "1" ]]; then
   /usr/libexec/PlistBuddy -c \
-    "Add :SakuraCordInsecureDebugCredentialsEnabled bool true" \
+    "Add :MarrowChatInsecureDebugCredentialsEnabled bool true" \
     "$CONTENTS/Info.plist"
 fi
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
-ENTITLEMENTS_STAGING="$(mktemp "$DIST_DIR/SakuraCord.entitlements.XXXXXX")"
-sed "s/__SAKURACORD_BUNDLE_IDENTIFIER__/$BUNDLE_ID/g" \
-  "$ROOT_DIR/Config/SakuraCord.entitlements" >"$ENTITLEMENTS_STAGING"
+ENTITLEMENTS_STAGING="$(mktemp "$DIST_DIR/MarrowChat.entitlements.XXXXXX")"
+sed "s/__MARROWCHAT_BUNDLE_IDENTIFIER__/$BUNDLE_ID/g" \
+  "$ROOT_DIR/Config/MarrowChat.entitlements" >"$ENTITLEMENTS_STAGING"
 if [[ "$UPDATES_ENABLED" != "1" ]]; then
   /usr/libexec/PlistBuddy -c \
     "Delete :com.apple.security.temporary-exception.mach-lookup.global-name" \
@@ -240,7 +240,7 @@ codesign --force --sign "$CODE_SIGN_IDENTITY" \
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE" "$@"
-  sakuracord_wait_for_scoped_app
+  marrowchat_wait_for_scoped_app
 }
 open_offline_app() { open_app --args --offline; }
 open_offline_long_server_list() { open_app --args --offline-long-server-list; }
@@ -260,14 +260,14 @@ open_offline_incoming_private_call() {
 }
 open_media_viewer_benchmark() {
   /usr/bin/open -n \
-    --env SAKURACORD_MEDIA_VIEWER_BENCHMARK=1 \
+    --env MARROWCHAT_MEDIA_VIEWER_BENCHMARK=1 \
     "$APP_BUNDLE"
-  sakuracord_wait_for_scoped_app
+  marrowchat_wait_for_scoped_app
 }
 
 case "$MODE" in
   package|package-release) ;;
-  run) open_app ;;
+  run|--online) open_app ;;
   run-release) open_app ;;
   --debug) lldb -- "$MACOS/$APP_NAME" ;;
   --logs)
@@ -282,7 +282,7 @@ case "$MODE" in
     # Verification must never touch a stored Discord credential or the live API.
     open_offline_app
     sleep 2
-    sakuracord_is_scoped_app_running
+    marrowchat_is_scoped_app_running
     ;;
   --offline) open_offline_app ;;
   --offline-long-server-list) open_offline_long_server_list ;;

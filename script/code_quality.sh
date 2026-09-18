@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="${SAKURACORD_CODE_QUALITY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
-TOOLS_DIR="${SAKURACORD_CODE_QUALITY_TOOLS_DIR:-$ROOT_DIR/.build/code-quality-tools}"
+ROOT_DIR="${MARROWCHAT_CODE_QUALITY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+TOOLS_DIR="${MARROWCHAT_CODE_QUALITY_TOOLS_DIR:-$ROOT_DIR/.build/code-quality-tools}"
 
 SWIFTFORMAT_VERSION="0.62.1"
 SWIFTFORMAT_SHA256="7cb1cb1fae04932047c7015441c543848e8e60e1572d808d080e0a1f1661114a"

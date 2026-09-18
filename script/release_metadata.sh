@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-sakuracord_release_version() {
+marrowchat_release_version() {
   local root_dir="$1"
-  local version="${SAKURACORD_VERSION:-}"
+  local version="${MARROWCHAT_VERSION:-}"
   local release_tag
 
   if [[ -z "$version" ]]; then
@@ -17,28 +17,28 @@ sakuracord_release_version() {
   fi
 
   if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "SAKURACORD_VERSION or the latest release tag must use MAJOR.MINOR.PATCH." >&2
+    echo "MARROWCHAT_VERSION or the latest release tag must use MAJOR.MINOR.PATCH." >&2
     return 2
   fi
 
   printf '%s\n' "$version"
 }
 
-sakuracord_is_release_tag() {
+marrowchat_is_release_tag() {
   local tag="$1"
   [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-Beta-[0-9]+)?$ ]]
 }
 
-sakuracord_is_nightly_release_tag() {
+marrowchat_is_nightly_release_tag() {
   local tag="$1"
   [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-Beta-[0-9]+$ ]]
 }
 
-sakuracord_release_version_from_tag() {
+marrowchat_release_version_from_tag() {
   local tag="$1"
   local version
 
-  if ! sakuracord_is_release_tag "$tag"; then
+  if ! marrowchat_is_release_tag "$tag"; then
     echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
@@ -47,31 +47,31 @@ sakuracord_release_version_from_tag() {
   printf '%s\n' "${version%%-Beta-*}"
 }
 
-sakuracord_release_track_from_tag() {
+marrowchat_release_track_from_tag() {
   local tag="$1"
 
-  if ! sakuracord_is_release_tag "$tag"; then
+  if ! marrowchat_is_release_tag "$tag"; then
     echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
-  if sakuracord_is_nightly_release_tag "$tag"; then
+  if marrowchat_is_nightly_release_tag "$tag"; then
     printf 'nightly\n'
   else
     printf 'regular\n'
   fi
 }
 
-sakuracord_release_asset_version_from_tag() {
+marrowchat_release_asset_version_from_tag() {
   local tag="$1"
   local beta_number
   local version
 
-  if ! sakuracord_is_release_tag "$tag"; then
+  if ! marrowchat_is_release_tag "$tag"; then
     echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
-  if sakuracord_is_nightly_release_tag "$tag"; then
-    version="$(sakuracord_release_version_from_tag "$tag")"
+  if marrowchat_is_nightly_release_tag "$tag"; then
+    version="$(marrowchat_release_version_from_tag "$tag")"
     beta_number="${tag##*-}"
     printf '%s-Beta-%s\n' "$version" "$beta_number"
   else
@@ -79,17 +79,17 @@ sakuracord_release_asset_version_from_tag() {
   fi
 }
 
-sakuracord_release_display_name_from_tag() {
+marrowchat_release_display_name_from_tag() {
   local tag="$1"
   local beta_number
   local version
 
-  if ! sakuracord_is_release_tag "$tag"; then
+  if ! marrowchat_is_release_tag "$tag"; then
     echo "Release tags must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-Beta-NUMBER." >&2
     return 2
   fi
-  if sakuracord_is_nightly_release_tag "$tag"; then
-    version="$(sakuracord_release_version_from_tag "$tag")"
+  if marrowchat_is_nightly_release_tag "$tag"; then
+    version="$(marrowchat_release_version_from_tag "$tag")"
     beta_number="${tag##*-}"
     printf 'v%s Beta %s\n' "$version" "$beta_number"
   else
@@ -97,7 +97,7 @@ sakuracord_release_display_name_from_tag() {
   fi
 }
 
-sakuracord_release_dmg_name() {
+marrowchat_release_dmg_name() {
   local version="$1"
 
   if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -105,22 +105,22 @@ sakuracord_release_dmg_name() {
     return 2
   fi
 
-  printf 'SakuraCord.v%s.dmg\n' "$version"
+  printf 'MarrowChat.v%s.dmg\n' "$version"
 }
 
-sakuracord_release_dmg_url_name() {
+marrowchat_release_dmg_url_name() {
   local version="$1"
-  sakuracord_release_dmg_name "$version"
+  marrowchat_release_dmg_name "$version"
 }
 
-sakuracord_release_dmg_name_from_tag() {
+marrowchat_release_dmg_name_from_tag() {
   local tag="$1"
   local asset_version
 
-  asset_version="$(sakuracord_release_asset_version_from_tag "$tag")"
-  if sakuracord_is_nightly_release_tag "$tag"; then
-    printf 'SakuraCord-v%s.dmg\n' "$asset_version"
+  asset_version="$(marrowchat_release_asset_version_from_tag "$tag")"
+  if marrowchat_is_nightly_release_tag "$tag"; then
+    printf 'MarrowChat-v%s.dmg\n' "$asset_version"
   else
-    printf 'SakuraCord.v%s.dmg\n' "$asset_version"
+    printf 'MarrowChat.v%s.dmg\n' "$asset_version"
   fi
 }

@@ -6,11 +6,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$ROOT_DIR/script/release_metadata.sh"
 
 APPCAST_PATH="${1:-$ROOT_DIR/dist/appcast.xml}"
-RELEASE_TAG="${SAKURACORD_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
+RELEASE_TAG="${MARROWCHAT_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
 REPOSITORY="${GITHUB_REPOSITORY:-}"
 BRANCH="nightly-feed"
 
-if ! sakuracord_is_nightly_release_tag "$RELEASE_TAG"; then
+if ! marrowchat_is_nightly_release_tag "$RELEASE_TAG"; then
   echo "Only vMAJOR.MINOR.PATCH-Beta-NUMBER releases may publish the nightly feed." >&2
   exit 2
 fi
@@ -59,7 +59,7 @@ if [[ -n "$CURRENT_METADATA" ]]; then
   CURRENT_SHA="$(jq -r '.sha // empty' <<< "$CURRENT_METADATA")"
   CURRENT_URL="$(jq -r '.download_url // empty' <<< "$CURRENT_METADATA")"
   if [[ -n "$CURRENT_URL" ]]; then
-    CURRENT_APPCAST="$(mktemp "${TMPDIR:-/tmp}/SakuraCordNightlyAppcast.XXXXXX")"
+    CURRENT_APPCAST="$(mktemp "${TMPDIR:-/tmp}/MarrowChatNightlyAppcast.XXXXXX")"
     cleanup() {
       rm -f "$CURRENT_APPCAST"
     }
@@ -90,7 +90,7 @@ if [[ -n "$CURRENT_SHA" ]]; then
 fi
 gh api "${API_ARGUMENTS[@]}" >/dev/null
 
-PUBLISHED_APPCAST="$(mktemp "${TMPDIR:-/tmp}/SakuraCordPublishedNightlyAppcast.XXXXXX")"
+PUBLISHED_APPCAST="$(mktemp "${TMPDIR:-/tmp}/MarrowChatPublishedNightlyAppcast.XXXXXX")"
 cleanup() {
   rm -f "${CURRENT_APPCAST:-}" "$PUBLISHED_APPCAST"
 }

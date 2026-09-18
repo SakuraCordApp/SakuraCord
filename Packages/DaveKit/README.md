@@ -1,6 +1,6 @@
 # DaveKit
 
-DaveKit is SakuraCord's Swift wrapper around the vendored
+DaveKit is MarrowChat's Swift wrapper around the vendored
 [Discord Audio and Video End-to-End Encryption (DAVE)](https://github.com/discord/libdave)
 and MLS implementations. `MediaPipeline` uses it for voice and video encryption;
 the app target does not import DaveKit directly.

@@ -1,6 +1,6 @@
 @testable import DiscordProtocol
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 import Testing
 
 @Test func `discord timestamps parse fractional and whole seconds`() throws {

@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const RELEASE_ACTION_MARKER = "<!-- sakuracord-release-action:v1 -->";
+export const RELEASE_ACTION_MARKER = "<!-- marrowchat-release-action:v1 -->";
 const DISCORD_API = "https://discord.com/api/v10";
 const REGULAR_RELEASE_COLOR = 0xce6096;
 const NIGHTLY_RELEASE_COLOR = 0x5865f2;
@@ -83,7 +83,7 @@ export function createDiscordPayload(copy, repository, releaseId, releaseUrl, ro
     content: `<@&${roleId}>`,
     embeds: [
       {
-        title: `SakuraCord ${releaseDisplayName(validated.tagName)}${isNightly ? " 🌙" : ""}`,
+        title: `MarrowChat ${releaseDisplayName(validated.tagName)}${isNightly ? " 🌙" : ""}`,
         description: validated.discordAnnouncement,
         color: isNightly ? NIGHTLY_RELEASE_COLOR : REGULAR_RELEASE_COLOR,
       },

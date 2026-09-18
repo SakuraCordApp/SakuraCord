@@ -4,12 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=release_metadata.sh
 source "$ROOT_DIR/script/release_metadata.sh"
-RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
-EXPECTED_TAG="${SAKURACORD_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
+RELEASE_VERSION="$(marrowchat_release_version "$ROOT_DIR")"
+EXPECTED_TAG="${MARROWCHAT_RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
 if [[ -n "$EXPECTED_TAG" ]]; then
-  DMG_NAME="$(sakuracord_release_dmg_name_from_tag "$EXPECTED_TAG")"
+  DMG_NAME="$(marrowchat_release_dmg_name_from_tag "$EXPECTED_TAG")"
 else
-  DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+  DMG_NAME="$(marrowchat_release_dmg_name "$RELEASE_VERSION")"
 fi
 APPCAST_PATH="${1:-$ROOT_DIR/dist/appcast.xml}"
 DMG_PATH="${2:-$ROOT_DIR/dist/$DMG_NAME}"
@@ -92,33 +92,33 @@ if [[ -z "$ENCLOSURE_SIGNATURE" ]]; then
   echo "The appcast enclosure is missing its Sparkle EdDSA signature." >&2
   exit 1
 fi
-if [[ -z "$EXPECTED_TAG" || -z "${SAKURACORD_BUILD_NUMBER:-}" || -z "${SAKURACORD_VERSION:-}" ]]; then
+if [[ -z "$EXPECTED_TAG" || -z "${MARROWCHAT_BUILD_NUMBER:-}" || -z "${MARROWCHAT_VERSION:-}" ]]; then
   echo "Release tag, build number, and version are required for appcast validation." >&2
   exit 2
 fi
-EXPECTED_DMG_URL_NAME="$(sakuracord_release_dmg_name_from_tag "$EXPECTED_TAG")"
+EXPECTED_DMG_URL_NAME="$(marrowchat_release_dmg_name_from_tag "$EXPECTED_TAG")"
 if [[ "$(basename "$DMG_PATH")" != "$EXPECTED_DMG_URL_NAME" ]]; then
   echo "Unexpected release archive name: $(basename "$DMG_PATH")" >&2
   exit 1
 fi
-EXPECTED_URL="https://github.com/SakuraCordApp/SakuraCord/releases/download/$EXPECTED_TAG/$EXPECTED_DMG_URL_NAME"
+EXPECTED_URL="https://github.com/d-lab17/MarrowChat/releases/download/$EXPECTED_TAG/$EXPECTED_DMG_URL_NAME"
 if [[ "$ENCLOSURE_URL" != "$EXPECTED_URL" ]]; then
   echo "Unexpected appcast enclosure URL: $ENCLOSURE_URL" >&2
   exit 1
 fi
-if [[ "$APPCAST_VERSION" != "${SAKURACORD_BUILD_NUMBER:-}" ]]; then
-  echo "Appcast build version does not match SAKURACORD_BUILD_NUMBER." >&2
+if [[ "$APPCAST_VERSION" != "${MARROWCHAT_BUILD_NUMBER:-}" ]]; then
+  echo "Appcast build version does not match MARROWCHAT_BUILD_NUMBER." >&2
   exit 1
 fi
-if [[ "$APPCAST_SHORT_VERSION" != "${SAKURACORD_VERSION:-}" ]]; then
-  echo "Appcast short version does not match SAKURACORD_VERSION." >&2
+if [[ "$APPCAST_SHORT_VERSION" != "${MARROWCHAT_VERSION:-}" ]]; then
+  echo "Appcast short version does not match MARROWCHAT_VERSION." >&2
   exit 1
 fi
 if [[ "$APPCAST_HAS_RELEASE_NOTES" != "true" ]]; then
   echo "The appcast does not contain embedded release notes." >&2
   exit 1
 fi
-EXPECTED_RELEASE_URL="https://github.com/SakuraCordApp/SakuraCord/releases/tag/$EXPECTED_TAG"
+EXPECTED_RELEASE_URL="https://github.com/d-lab17/MarrowChat/releases/tag/$EXPECTED_TAG"
 if [[ "$APPCAST_FULL_RELEASE_NOTES_URL" != "$EXPECTED_RELEASE_URL" ]]; then
   echo "Unexpected full release notes URL: $APPCAST_FULL_RELEASE_NOTES_URL" >&2
   exit 1
@@ -145,10 +145,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-APP_BUNDLE="$MOUNT_POINT/SakuraCord.app"
+APP_BUNDLE="$MOUNT_POINT/MarrowChat.app"
 INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
 if [[ ! -d "$APP_BUNDLE" ]]; then
-  echo "The release DMG does not contain SakuraCord.app." >&2
+  echo "The release DMG does not contain MarrowChat.app." >&2
   exit 1
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
@@ -164,14 +164,14 @@ assert_plist_value() {
   fi
 }
 
-assert_plist_value "CFBundleIdentifier" "dev.sakuracord.SakuraCord"
-assert_plist_value "CFBundleVersion" "$SAKURACORD_BUILD_NUMBER"
-assert_plist_value "CFBundleShortVersionString" "$SAKURACORD_VERSION"
-assert_plist_value "SakuraCordUpdatesEnabled" "true"
+assert_plist_value "CFBundleIdentifier" "dev.marrowchat.MarrowChat"
+assert_plist_value "CFBundleVersion" "$MARROWCHAT_BUILD_NUMBER"
+assert_plist_value "CFBundleShortVersionString" "$MARROWCHAT_VERSION"
+assert_plist_value "MarrowChatUpdatesEnabled" "true"
 assert_plist_value "SUFeedURL" \
-  "https://github.com/SakuraCordApp/SakuraCord/releases/latest/download/appcast.xml"
-assert_plist_value "SakuraCordNightlyFeedURL" \
-  "https://raw.githubusercontent.com/SakuraCordApp/SakuraCord/nightly-feed/appcast.xml"
+  "https://github.com/d-lab17/MarrowChat/releases/latest/download/appcast.xml"
+assert_plist_value "MarrowChatNightlyFeedURL" \
+  "https://raw.githubusercontent.com/d-lab17/MarrowChat/nightly-feed/appcast.xml"
 assert_plist_value "SUPublicEDKey" "$SPARKLE_ED_PUBLIC_KEY"
 assert_plist_value "SUEnableAutomaticChecks" "true"
 assert_plist_value "SUScheduledCheckInterval" "21600"
@@ -200,8 +200,8 @@ ENTITLEMENTS="$(
   codesign -d --entitlements :- "$APP_BUNDLE" 2>/dev/null
 )"
 for service in \
-  "dev.sakuracord.SakuraCord-spks" \
-  "dev.sakuracord.SakuraCord-spki"; do
+  "dev.marrowchat.MarrowChat-spks" \
+  "dev.marrowchat.MarrowChat-spki"; do
   if [[ "$ENTITLEMENTS" != *"$service"* ]]; then
     echo "The packaged app is missing the Sparkle Mach service entitlement: $service" >&2
     exit 1

@@ -8,12 +8,12 @@ source "$ROOT_DIR/script/runtime.sh"
 source "$ROOT_DIR/script/release_metadata.sh"
 
 DMGBUILD="${DMGBUILD:-dmgbuild}"
-RELEASE_VERSION="$(sakuracord_release_version "$ROOT_DIR")"
-RELEASE_TAG="${SAKURACORD_RELEASE_TAG:-}"
+RELEASE_VERSION="$(marrowchat_release_version "$ROOT_DIR")"
+RELEASE_TAG="${MARROWCHAT_RELEASE_TAG:-}"
 if [[ -n "$RELEASE_TAG" ]]; then
-  DMG_NAME="$(sakuracord_release_dmg_name_from_tag "$RELEASE_TAG")"
+  DMG_NAME="$(marrowchat_release_dmg_name_from_tag "$RELEASE_TAG")"
 else
-  DMG_NAME="$(sakuracord_release_dmg_name "$RELEASE_VERSION")"
+  DMG_NAME="$(marrowchat_release_dmg_name "$RELEASE_VERSION")"
 fi
 OUTPUT_PATH="${1:-$ROOT_DIR/dist/$DMG_NAME}"
 SETTINGS="$ROOT_DIR/App/Packaging/DMG/settings.py"
@@ -28,18 +28,18 @@ if [[ ! -x "$DMGBUILD" ]] && ! command -v "$DMGBUILD" >/dev/null 2>&1; then
 fi
 
 "$ROOT_DIR/script/build_and_run.sh" package-release
-codesign --verify --deep --strict --verbose=2 "$SAKURACORD_APP_BUNDLE"
+codesign --verify --deep --strict --verbose=2 "$MARROWCHAT_APP_BUNDLE"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
-DMG_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/SakuraCordDMG.XXXXXX")"
+DMG_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/MarrowChatDMG.XXXXXX")"
 cleanup() {
   rm -R "$DMG_TEMP_DIR"
 }
 trap cleanup EXIT
 
-export SAKURACORD_DMG_APP_BUNDLE="$SAKURACORD_APP_BUNDLE"
-export SAKURACORD_DMG_BACKGROUND="$ROOT_DIR/App/Packaging/DMG/background.png"
-"$DMGBUILD" -s "$SETTINGS" SakuraCord "$DMG_TEMP_DIR/$DMG_NAME"
+export MARROWCHAT_DMG_APP_BUNDLE="$MARROWCHAT_APP_BUNDLE"
+export MARROWCHAT_DMG_BACKGROUND="$ROOT_DIR/App/Packaging/DMG/background.png"
+"$DMGBUILD" -s "$SETTINGS" MarrowChat "$DMG_TEMP_DIR/$DMG_NAME"
 hdiutil verify "$DMG_TEMP_DIR/$DMG_NAME"
 rm -f "$OUTPUT_PATH"
 mv "$DMG_TEMP_DIR/$DMG_NAME" "$OUTPUT_PATH"

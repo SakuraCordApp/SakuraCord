@@ -28,7 +28,7 @@ manifests.
 | add, change, or remove automated tests | [docs/TESTING.md](docs/TESTING.md) |
 | commit or push from a fresh clone | [docs/README.md — Developer and agent bootstrap](docs/README.md#developer-and-agent-bootstrap) |
 | push `main`, create a release tag, or change release automation | [docs/RELEASING.md](docs/RELEASING.md) |
-| use Computer Use against SakuraCord | run `./script/runtime.sh` and use the complete path from its `App:` line |
+| use Computer Use against MarrowChat | run `./script/runtime.sh` and use the complete path from its `App:` line |
 | work on planned scope, priority, acceptance criteria, or progress | [Roadmap Management](plugin://roadmap-management@personal) |
 | draft release notes or a Discord release announcement | [RELEASE_NOTES_STYLE.md](docs/RELEASE_NOTES_STYLE.md) and [DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md](docs/DISCORD_RELEASE_ANNOUNCEMENTS_STYLE.md) |
 
@@ -40,7 +40,7 @@ manifests.
   verification pass against a configured session when it can exercise the
   changed behavior. Agent-run verification must not deliberately mutate remote
   account state or content.
-- When using Computer Use, target SakuraCord by the absolute bundle path printed
+- When using Computer Use, target MarrowChat by the absolute bundle path printed
   by `runtime.sh`, never by display name, and keep that target for the session.
 - Roadmap state belongs only in the deployed roadmap service. Repository code
   and commits are evidence to assess, not proof that an item is complete.

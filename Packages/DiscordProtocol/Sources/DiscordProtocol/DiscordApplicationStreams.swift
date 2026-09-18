@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 private enum ApplicationStreamNegotiationRequest: Sendable {
     case create(

@@ -26,7 +26,7 @@ enum H264SPSVUIRewriter {
 
         guard let profileIDC = copyHeader(from: &reader, to: &writer) else { return nil }
 
-        // SakuraCord deliberately emits constrained Baseline. Refuse to rewrite a
+        // MarrowChat deliberately emits constrained Baseline. Refuse to rewrite a
         // high-profile SPS unless its extra syntax is explicitly supported.
         let highProfiles: Set<UInt64> = [100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 144]
         guard !highProfiles.contains(profileIDC) else { return nil }

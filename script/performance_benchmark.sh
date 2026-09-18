@@ -4,19 +4,19 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runtime="$("$root/script/runtime.sh")"
 canonical_app="$(sed -n 's/^App:  *//p' <<<"$runtime")"
-app="${SAKURACORD_PERFORMANCE_APP_OVERRIDE:-$canonical_app}"
+app="${MARROWCHAT_PERFORMANCE_APP_OVERRIDE:-$canonical_app}"
 bundle_id="$(sed -n 's/^Bundle ID:  *//p' <<<"$runtime")"
-executable="${SAKURACORD_PERFORMANCE_EXECUTABLE_OVERRIDE:-$app/Contents/MacOS/SakuraCord}"
-provenance_directory="${SAKURACORD_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE:-$root/.build/performance-tools/build-provenance}"
-source_root="${SAKURACORD_PERFORMANCE_SOURCE_ROOT_OVERRIDE:-$root}"
+executable="${MARROWCHAT_PERFORMANCE_EXECUTABLE_OVERRIDE:-$app/Contents/MacOS/MarrowChat}"
+provenance_directory="${MARROWCHAT_PERFORMANCE_PROVENANCE_DIRECTORY_OVERRIDE:-$root/.build/performance-tools/build-provenance}"
+source_root="${MARROWCHAT_PERFORMANCE_SOURCE_ROOT_OVERRIDE:-$root}"
 
 usage() {
     sed -n \
-        '/^# SakuraCord performance benchmark harness/,/^# Artifacts/p' \
+        '/^# MarrowChat performance benchmark harness/,/^# Artifacts/p' \
         "$0" | sed 's/^# \{0,1\}//'
 }
 
-# SakuraCord performance benchmark harness
+# MarrowChat performance benchmark harness
 #
 # Commands:
 #   build
@@ -44,7 +44,7 @@ usage() {
 #       Before measurement the app read-only loads up to five older pages until
 #       the native timeline has at least 100 messages. This never synthesizes user
 #       interaction, marks content read, sends a message, or enables an offline
-#       fixture. Set SAKURACORD_PERFORMANCE_ACCOUNT_ID to a stored debug account
+#       fixture. Set MARROWCHAT_PERFORMANCE_ACCOUNT_ID to a stored debug account
 #       ID to compare accounts; otherwise the most recently selected account is
 #       used. Defaults: 35 seconds.
 #   authenticated-member-list-scroll [seconds]
@@ -110,7 +110,7 @@ usage() {
 #       beside the raw capture. Activity Monitor's normalized Energy Impact
 #       number is private and is not the same measurement as top's power column.
 #       For diagnostic captures made without physical input, set
-#       SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES=1. The summary is then
+#       MARROWCHAT_PERFORMANCE_ALLOW_MISSING_GESTURES=1. The summary is then
 #       explicitly labeled as lacking gesture coverage; strict mode is default.
 #
 # Artifacts are written beneath .build/performance and remain untracked.
@@ -124,7 +124,7 @@ running_pid() {
             printf '%s\n' "$candidate"
             return 0
         fi
-    done < <(pgrep -x SakuraCord || true)
+    done < <(pgrep -x MarrowChat || true)
     return 1
 }
 
@@ -136,7 +136,7 @@ is_scoped_command() {
 require_running_pid() {
     local pid
     if ! pid="$(running_pid)"; then
-        printf '%s\n' "The exact scoped SakuraCord app is not running: $app" >&2
+        printf '%s\n' "The exact scoped MarrowChat app is not running: $app" >&2
         exit 3
     fi
     printf '%s\n' "$pid"
@@ -299,7 +299,7 @@ write_source_manifest() {
 
 current_source_state_hash() {
     local temporary hash
-    temporary="$(mktemp -d "${TMPDIR:-/tmp}/sakuracord-source-state.XXXXXX")"
+    temporary="$(mktemp -d "${TMPDIR:-/tmp}/marrowchat-source-state.XXXXXX")"
     write_source_manifest "$temporary"
     hash="$(shasum -a 256 "$temporary/source-manifest.tsv" | awk '{print $1}')"
     rm -rf "$temporary"
@@ -478,7 +478,7 @@ record_running_app() (
         "Preparing $scenario for ${seconds}s with $template." \
         "Output: $output"
 
-    notification="dev.sakuracord.performance.trace-started.$$.${RANDOM}"
+    notification="dev.marrowchat.performance.trace-started.$$.${RANDOM}"
     trace_scratch_directory="$(new_xctrace_scratch_directory)"
     snapshot_xctrace_temporary_files "$trace_scratch_directory"
     notifyutil -1 "$notification" >"$output/trace-start-notification.txt" &
@@ -506,7 +506,7 @@ record_running_app() (
     touch "$output/interaction-ready"
     printf '%s\n' \
         "Recording active: $scenario." \
-        "Use SakuraCord normally now; do not send messages or mutate account data."
+        "Use MarrowChat normally now; do not send messages or mutate account data."
     trace_status=0
     wait "$trace_pid" || trace_status=$?
     trace_pid=""
@@ -552,14 +552,14 @@ record_launch() (
         fi
         if pid="$(running_pid || true)"; [[ -n "$pid" ]]; then
             printf '%s\n' \
-                "Another scoped SakuraCord process is still running: $pid" >&2
+                "Another scoped MarrowChat process is still running: $pid" >&2
             exit 4
         fi
     fi
 
     output="$(new_output_directory "$scenario")"
     trace="$output/recording.trace"
-    notification="dev.sakuracord.performance.trace-started.$$.${RANDOM}"
+    notification="dev.marrowchat.performance.trace-started.$$.${RANDOM}"
     mkdir -p "$output"
     case "$scenario" in
         authenticated-scroll) resource_window_name="MessageTimelineAutoScrollBenchmark" ;;
@@ -587,8 +587,8 @@ record_launch() (
         scroll_input_telemetry=0
         requires_interactive_window=0
     fi
-    scroll_surface="${SAKURACORD_PERFORMANCE_SCROLL_SURFACE:-all}"
-    performance_account_id="${SAKURACORD_PERFORMANCE_ACCOUNT_ID:-}"
+    scroll_surface="${MARROWCHAT_PERFORMANCE_SCROLL_SURFACE:-all}"
+    performance_account_id="${MARROWCHAT_PERFORMANCE_ACCOUNT_ID:-}"
     if [[ "$scenario" == "authenticated-scroll" \
           || "$scenario" == "authenticated-member-list-scroll" \
           || "$scenario" == "authenticated-gesture-scroll" \
@@ -599,11 +599,11 @@ record_launch() (
           || "$scenario" == "authenticated-search" \
           || "$scenario" == "authenticated-search-pagination" \
           || "$scenario" == "authenticated-search-scroll" ]]; then
-        debug_credential_directory="$HOME/Library/Containers/$bundle_id/Data/Library/Application Support/SakuraCord/InsecureDebugCredentials"
+        debug_credential_directory="$HOME/Library/Containers/$bundle_id/Data/Library/Application Support/MarrowChat/InsecureDebugCredentials"
         if [[ -z "$performance_account_id" ]]; then
             preferred_account_id="$(
                 defaults read "$bundle_id" \
-                    'dev.sakuracord.preferred-account-id' 2>/dev/null || true
+                    'dev.marrowchat.preferred-account-id' 2>/dev/null || true
             )"
             if [[ "$preferred_account_id" =~ ^[0-9]+$ ]] \
                 && [[ -f "$debug_credential_directory/$preferred_account_id.credential" ]]
@@ -646,8 +646,8 @@ record_launch() (
         "$output" "$scenario" "Time Profiler" "$performance_account_id"
     sandbox_directory="$HOME/Library/Containers/$bundle_id/Data/tmp"
     mkdir -p "$sandbox_directory"
-    sandbox_result="$(mktemp "$sandbox_directory/sakuracord-performance-result.XXXXXX")"
-    sandbox_window="$(mktemp "$sandbox_directory/sakuracord-performance-window.XXXXXX")"
+    sandbox_result="$(mktemp "$sandbox_directory/marrowchat-performance-result.XXXXXX")"
+    sandbox_window="$(mktemp "$sandbox_directory/marrowchat-performance-window.XXXXXX")"
     if (( requires_interactive_window )); then
         # Computer Use resolves windows through LaunchServices. A raw executable
         # launch is profileable but exposes no operable app window, so scenarios
@@ -660,13 +660,13 @@ record_launch() (
             -i /dev/null \
             -o "$output/app-stdout.log" \
             --stderr "$output/app-output.log" \
-            --env SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
-            --env "SAKURACORD_PERFORMANCE_ACCOUNT_ID=$performance_account_id" \
-            --env "SAKURACORD_PERFORMANCE_WINDOW_NAME=$resource_window_name" \
-            --env "SAKURACORD_PERFORMANCE_WINDOW_PATH=$sandbox_window" \
-            --env "SAKURACORD_PERFORMANCE_RESULT_PATH=$sandbox_result" \
-            --env "SAKURACORD_SCROLL_INPUT_TELEMETRY=$scroll_input_telemetry" \
-            --env "SAKURACORD_PERFORMANCE_SCROLL_SURFACE=$scroll_surface" \
+            --env MARROWCHAT_INSECURE_DEBUG_CREDENTIALS=1 \
+            --env "MARROWCHAT_PERFORMANCE_ACCOUNT_ID=$performance_account_id" \
+            --env "MARROWCHAT_PERFORMANCE_WINDOW_NAME=$resource_window_name" \
+            --env "MARROWCHAT_PERFORMANCE_WINDOW_PATH=$sandbox_window" \
+            --env "MARROWCHAT_PERFORMANCE_RESULT_PATH=$sandbox_result" \
+            --env "MARROWCHAT_SCROLL_INPUT_TELEMETRY=$scroll_input_telemetry" \
+            --env "MARROWCHAT_PERFORMANCE_SCROLL_SURFACE=$scroll_surface" \
             "$app" \
             --args "$@"
         pid=""
@@ -687,13 +687,13 @@ record_launch() (
         # attach the trace to its stable PID, and only exec the app once tracing
         # is active. The exec preserves the PID so startup and benchmark
         # signposts remain in one process trace.
-        SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
-            SAKURACORD_PERFORMANCE_ACCOUNT_ID="$performance_account_id" \
-            SAKURACORD_PERFORMANCE_WINDOW_NAME="$resource_window_name" \
-            SAKURACORD_PERFORMANCE_WINDOW_PATH="$sandbox_window" \
-            SAKURACORD_PERFORMANCE_RESULT_PATH="$sandbox_result" \
-            SAKURACORD_SCROLL_INPUT_TELEMETRY="$scroll_input_telemetry" \
-            SAKURACORD_PERFORMANCE_SCROLL_SURFACE="$scroll_surface" \
+        MARROWCHAT_INSECURE_DEBUG_CREDENTIALS=1 \
+            MARROWCHAT_PERFORMANCE_ACCOUNT_ID="$performance_account_id" \
+            MARROWCHAT_PERFORMANCE_WINDOW_NAME="$resource_window_name" \
+            MARROWCHAT_PERFORMANCE_WINDOW_PATH="$sandbox_window" \
+            MARROWCHAT_PERFORMANCE_RESULT_PATH="$sandbox_result" \
+            MARROWCHAT_SCROLL_INPUT_TELEMETRY="$scroll_input_telemetry" \
+            MARROWCHAT_PERFORMANCE_SCROLL_SURFACE="$scroll_surface" \
             /bin/sh -c 'kill -STOP "$$"; exec "$@"' sh "$executable" "$@" \
             >"$output/app-output.log" 2>&1 &
         pid=$!
@@ -840,7 +840,7 @@ record_authenticated_loading_scroll_overlap() {
             exit 2
             ;;
     esac
-    SAKURACORD_PERFORMANCE_SCROLL_SURFACE="$surface" \
+    MARROWCHAT_PERFORMANCE_SCROLL_SURFACE="$surface" \
         record_launch authenticated-loading-scroll-overlap "$seconds" \
         --debug-authenticated-loading-scroll-overlap-performance
 }
@@ -879,7 +879,7 @@ summarize_recording() {
         exit 6
     fi
     local scenario profile_process profile_interval allow_missing_gestures
-    allow_missing_gestures="${SAKURACORD_PERFORMANCE_ALLOW_MISSING_GESTURES:-0}"
+    allow_missing_gestures="${MARROWCHAT_PERFORMANCE_ALLOW_MISSING_GESTURES:-0}"
     scenario="$(
         awk -F '\t' '$1 == "scenario" { print $2 }' "$output/metadata.tsv"
     )"
@@ -1263,7 +1263,7 @@ if File.file?(time_profile_path) && File.size?(time_profile_path)
     if startup_pid
       next unless sample_pid == startup_pid
     else
-      next unless process&.include?("SakuraCord") || thread.include?("(SakuraCord,")
+      next unless process&.include?("MarrowChat") || thread.include?("(MarrowChat,")
     end
     raw_time = raw_values["sample-time"]
     raw_weight = raw_values["weight"]
@@ -1745,7 +1745,7 @@ if navigation_benchmark
     # The app-controlled residual must remove the union of every REST attempt
     # overlapping the navigation window. Subtracting only the conversation's
     # history request misattributes concurrent profile, avatar, or guild REST
-    # latency to SakuraCord and can turn network variance into a false app
+    # latency to MarrowChat and can turn network variance into a false app
     # regression. Keep the narrower value under an explicit diagnostic label.
     navigation_app_residuals[label] = outer_minus_all_network_union
     navigation_history_network_subtracted_residuals[label] =
@@ -2120,7 +2120,7 @@ main_thread_overlap = main_thread_overlap_bounds.each_with_object({}) do |(name,
   end
 end
 
-puts "SakuraCord performance summary"
+puts "MarrowChat performance summary"
 puts "artifact\t#{directory}"
 puts "measurement.window\t#{measurement_window_label}"
 puts "resources.window\t#{resource_window_label}"
@@ -2354,7 +2354,7 @@ command="${1:-}"
 case "$command" in
     build)
         cd "$root"
-        SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1 \
+        MARROWCHAT_INSECURE_DEBUG_CREDENTIALS=1 \
             ./script/build_and_run.sh run
         record_build_provenance
         ;;

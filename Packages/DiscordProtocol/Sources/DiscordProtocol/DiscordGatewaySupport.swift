@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 enum DiscordGatewayPayloadFactory {
     static func guildSubscriptions(
@@ -1202,11 +1202,13 @@ struct ReadyMergedMemberDTO: Decodable {
     var bio: String?
     var pending: Bool?
     var joinedAt: String?
+    var communicationDisabledUntil: String?
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
         case nick, roles, presence, avatar, banner, bio, pending
         case joinedAt = "joined_at"
+        case communicationDisabledUntil = "communication_disabled_until"
     }
 
     func hydrated(using usersByID: [String: UserDTO]) -> GuildMemberDTO? {
@@ -1220,7 +1222,8 @@ struct ReadyMergedMemberDTO: Decodable {
             banner: banner,
             bio: bio,
             pending: pending,
-            joinedAt: joinedAt
+            joinedAt: joinedAt,
+            communicationDisabledUntil: communicationDisabledUntil
         )
     }
 }

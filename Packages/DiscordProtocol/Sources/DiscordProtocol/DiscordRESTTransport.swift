@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 extension DiscordRESTProvider {
     #if DEBUG
@@ -853,7 +853,7 @@ extension DiscordRESTProvider {
         {
             return true
         }
-        // A client-generated mutation reaching HTTP 400 means SakuraCord's
+        // A client-generated mutation reaching HTTP 400 means MarrowChat's
         // contract is malformed. Do not let another user action repeat it.
         return status == 400 && method != "GET"
     }
@@ -874,16 +874,16 @@ extension DiscordRESTProvider {
     static func safetyStopMessage(status: Int, discordCode: Int?) -> String {
         switch discordCode {
         case 10005:
-            "Discord could not resolve the command's application integration. SakuraCord networking has been stopped without retrying."
-        case 40002: "Discord requires account verification. SakuraCord networking has been stopped."
+            "Discord could not resolve the command's application integration. MarrowChat networking has been stopped without retrying."
+        case 40002: "Discord requires account verification. MarrowChat networking has been stopped."
         case 40003:
-            "Discord reported that direct messages are being opened too quickly. SakuraCord networking has been stopped."
+            "Discord reported that direct messages are being opened too quickly. MarrowChat networking has been stopped."
         case 40004:
-            "Discord temporarily disabled message sending. SakuraCord networking has been stopped without retrying."
-        case 40012: "Discord revoked the connection. SakuraCord networking has been stopped."
-        case 40333: "Discord rejected the request metadata. SakuraCord networking has been stopped."
+            "Discord temporarily disabled message sending. MarrowChat networking has been stopped without retrying."
+        case 40012: "Discord revoked the connection. MarrowChat networking has been stopped."
+        case 40333: "Discord rejected the request metadata. MarrowChat networking has been stopped."
         default:
-            "Discord returned a safety-sensitive HTTP \(status) response. SakuraCord networking has been stopped."
+            "Discord returned a safety-sensitive HTTP \(status) response. MarrowChat networking has been stopped."
         }
     }
 

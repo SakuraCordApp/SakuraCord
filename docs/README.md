@@ -1,4 +1,4 @@
-# SakuraCord documentation
+# MarrowChat documentation
 
 This directory contains durable repository documentation. It is intentionally
 small: implementation details should be discoverable from code and tests, while
@@ -9,7 +9,7 @@ planned work and progress belong in the canonical roadmap service.
 | Document | Purpose |
 | --- | --- |
 | [Architecture](ARCHITECTURE.md) | Package ownership, runtime boundaries, persistence, plugins, and packaging. |
-| [Protocol baseline](PROTOCOL_BASELINE.md) | Current SakuraCord network contracts, safety rules, capability gates, and dated protocol evidence. |
+| [Protocol baseline](PROTOCOL_BASELINE.md) | Current MarrowChat network contracts, safety rules, capability gates, and dated protocol evidence. |
 | [Testing](TESTING.md) | Criteria for committed automated tests, test design, and verification without new tests. |
 | [Development](DEVELOPMENT.md) | Local setup, launch modes, credentials, commands, and validation. |
 | [Releasing](RELEASING.md) | Versioned release workflow, service setup, signing limitations, and recovery. |
@@ -76,4 +76,4 @@ evidence to review, not proof that a roadmap item is complete.
 
 Adjacent asset inventories under `Brand/`, packaging attribution under
 `App/Packaging/`, and vendored dependency READMEs under `Packages/DaveKit/` are
-scoped to their own directories and are not SakuraCord planning documents.
+scoped to their own directories and are not MarrowChat planning documents.

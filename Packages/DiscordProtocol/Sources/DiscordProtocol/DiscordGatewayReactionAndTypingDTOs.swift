@@ -1,4 +1,4 @@
-import SakuraCordModels
+import MarrowChatModels
 
 struct MessageDeleteDTO: Decodable {
     var id: String

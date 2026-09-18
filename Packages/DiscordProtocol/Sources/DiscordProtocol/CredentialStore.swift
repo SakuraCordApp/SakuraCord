@@ -233,7 +233,7 @@ public actor InsecureDebugFileCredentialStore: CredentialStore {
             in: .userDomainMask
         ).first ?? fileManager.temporaryDirectory
         return applicationSupport
-            .appendingPathComponent("SakuraCord", isDirectory: true)
+            .appendingPathComponent("MarrowChat", isDirectory: true)
             .appendingPathComponent("InsecureDebugCredentials", isDirectory: true)
     }
 }
@@ -292,7 +292,7 @@ public enum InsecureDebugCredentialError: LocalizedError, Sendable {
 }
 
 public nonisolated enum CredentialServiceName {
-    public static let primary = "dev.sakuracord.SakuraCord.session"
+    public static let primary = "dev.marrowchat.MarrowChat.session"
 }
 
 public struct KeychainError: LocalizedError, Sendable {

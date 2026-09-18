@@ -1,5 +1,5 @@
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 struct ProfileCacheKey: Hashable {
     var userID: UserID
@@ -1777,10 +1777,12 @@ struct GuildMemberDTO: Decodable {
     var bio: String?
     var pending: Bool?
     var joinedAt: String?
+    var communicationDisabledUntil: String?
 
     enum CodingKeys: String, CodingKey {
         case user, nick, roles, presence, avatar, banner, bio, pending
         case joinedAt = "joined_at"
+        case communicationDisabledUntil = "communication_disabled_until"
     }
 
     func domain(
@@ -1841,7 +1843,8 @@ struct GuildMemberDTO: Decodable {
             globalDisplayName: globalDisplayName,
             activityText: activities.first(where: { $0.type != 4 })?.displayText ?? customStatus,
             customStatus: customStatus,
-            isPending: pending
+            isPending: pending,
+            communicationDisabledUntil: communicationDisabledUntil.flatMap(DiscordDate.parse)
         )
     }
 

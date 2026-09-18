@@ -40,9 +40,9 @@ fi
 
 for attempt in 1 2 3; do
   if swift package \
-    --package-path "$SAKURACORD_PACKAGE_DIR" \
-    --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
-    --scratch-path "$SAKURACORD_SCRATCH_DIR" \
+    --package-path "$MARROWCHAT_PACKAGE_DIR" \
+    --cache-path "$MARROWCHAT_SWIFTPM_CACHE_DIR" \
+    --scratch-path "$MARROWCHAT_SCRATCH_DIR" \
     resolve; then
     break
   fi
@@ -55,7 +55,7 @@ for attempt in 1 2 3; do
 done
 
 swift build \
-  --package-path "$SAKURACORD_PACKAGE_DIR" \
-  --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
-  --scratch-path "$SAKURACORD_SCRATCH_DIR" \
-  --product SakuraCord
+  --package-path "$MARROWCHAT_PACKAGE_DIR" \
+  --cache-path "$MARROWCHAT_SWIFTPM_CACHE_DIR" \
+  --scratch-path "$MARROWCHAT_SCRATCH_DIR" \
+  --product MarrowChat

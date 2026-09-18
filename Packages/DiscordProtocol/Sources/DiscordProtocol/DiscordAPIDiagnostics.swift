@@ -432,7 +432,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
         let metadata = ExportMetadata(
-            format: "sakuracord-discord-api-log-v2",
+            format: "marrowchat-discord-api-log-v2",
             generatedAt: .now,
             retainedEntryCount: snapshot.entries.count,
             retainedEstimatedByteCount:
@@ -769,7 +769,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             in: .userDomainMask
         ).first ?? FileManager.default.temporaryDirectory
         return base
-            .appending(path: "SakuraCord", directoryHint: .isDirectory)
+            .appending(path: "MarrowChat", directoryHint: .isDirectory)
             .appending(path: "Diagnostics", directoryHint: .isDirectory)
     }
 
@@ -797,7 +797,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
-        let baseName = "SakuraCord Discord API Logs \(formatter.string(from: .now))"
+        let baseName = "MarrowChat Discord API Logs \(formatter.string(from: .now))"
         var fileURL = directoryURL.appending(path: "\(baseName).jsonl")
         var suffix = 2
         while fileManager.fileExists(atPath: fileURL.path) {
@@ -815,7 +815,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         let handle = try FileHandle(forWritingTo: fileURL)
         do {
             let metadata = DiskMetadata(
-                format: "sakuracord-discord-api-log-v2",
+                format: "marrowchat-discord-api-log-v2",
                 startedAt: .now,
                 redaction:
                     "Sensitive and user-authored values, URLs, IDs, nonces, request IDs, and rate-limit bucket IDs are discarded before writing."
@@ -872,7 +872,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
         )
         .compactMap { url -> (URL, Date)? in
             guard url.lastPathComponent.hasPrefix(
-                "SakuraCord Discord API Logs "
+                "MarrowChat Discord API Logs "
             ), url.pathExtension == "jsonl",
                 let values = try? url.resourceValues(forKeys: keys),
                 values.isRegularFile == true,

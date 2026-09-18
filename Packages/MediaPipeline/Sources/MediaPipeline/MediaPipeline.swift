@@ -1,6 +1,6 @@
 import CryptoKit
 import Foundation
-import SakuraCordModels
+import MarrowChatModels
 
 public struct GIFResult: Identifiable, Hashable, Sendable {
     public let id: String
@@ -38,7 +38,7 @@ public actor MediaCache {
     public init(maximumBytes: Int64 = 2 * 1024 * 1024 * 1024, directory: URL? = nil) throws {
         self.maximumBytes = maximumBytes
         let base = try directory ?? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        self.directory = base.appending(path: "SakuraCord/Media", directoryHint: .isDirectory)
+        self.directory = base.appending(path: "MarrowChat/Media", directoryHint: .isDirectory)
         beforeIndexLoad = {}
         removeCachedFile = { try FileManager.default.removeItem(at: $0) }
         try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
@@ -54,7 +54,7 @@ public actor MediaCache {
     ) throws {
         self.maximumBytes = maximumBytes
         self.directory = directory.appending(
-            path: "SakuraCord/Media",
+            path: "MarrowChat/Media",
             directoryHint: .isDirectory
         )
         self.beforeIndexLoad = beforeIndexLoad

@@ -5,23 +5,23 @@ import SwiftUI
 public extension NSAttributedString.Key {
     /// Paragraph-level metadata consumed by the native timeline painter.
     static let discordMarkdownBlock = NSAttributedString.Key(
-        "dev.sakuracord.markdown.block"
+        "dev.marrowchat.markdown.block"
     )
 
     /// Marks hidden spoiler text. The value is an NSNumber boolean.
     static let discordMarkdownSpoiler = NSAttributedString.Key(
-        "dev.sakuracord.markdown.spoiler"
+        "dev.marrowchat.markdown.spoiler"
     )
 
     /// Marks inline code for the native painter's rounded Discord treatment.
     static let discordMarkdownInlineCode = NSAttributedString.Key(
-        "dev.sakuracord.markdown.inline-code"
+        "dev.marrowchat.markdown.inline-code"
     )
 
     /// Marks the logical bullet that the native painter replaces with
     /// Discord's larger filled list marker.
     static let discordMarkdownListMarker = NSAttributedString.Key(
-        "dev.sakuracord.markdown.list-marker"
+        "dev.marrowchat.markdown.list-marker"
     )
 }
 
