@@ -76,6 +76,8 @@ struct EmojiDocumentRowView: View {
 struct EmojiHoverPreviewBar: View {
     let interaction: EmojiPickerInteractionModel
     let skinTone: NativeEmojiSkinTone
+    let guildsByID: [GuildID: Guild]
+    let premiumType: Int
 
     var body: some View {
         HStack(spacing: 6) {
@@ -86,10 +88,32 @@ struct EmojiHoverPreviewBar: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
+            if let guild = sourceGuild {
+                HStack(spacing: 6) {
+                    EmojiGuildBookmarkIcon(guild: guild)
+                        .accessibilityHidden(true)
+                    Text(guild.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .frame(maxWidth: 180, alignment: .trailing)
+                .help(guild.name)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("From \(guild.name)"))
+            }
         }
         .padding(.horizontal, 10)
         .frame(height: 38, alignment: .center)
         .accessibilityElement(children: .combine)
+    }
+
+    private var sourceGuild: Guild? {
+        guard DiscordEmojiPermissionPolicy.hasNitro(premiumType: premiumType),
+              case let .custom(emoji) = interaction.item
+        else { return nil }
+        return guildsByID[emoji.guildID]
     }
 }
 
