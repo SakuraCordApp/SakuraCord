@@ -132,6 +132,67 @@ its workflow build number is lower. The normal Sparkle alert, verification,
 download, installation, and relaunch flow remain in place; Regular builds keep
 upstream downgrade protection enabled.
 
+### On-device translation
+
+`TranslationState`, owned by `AppModel`, holds translation preferences, in-memory
+message results (at most 200), and the two composer toggle states. Translation is
+off by default. Neither launch, enabling it, nor reading Apple's supported-language
+catalog translates text or requests model downloads. An explicit message or draft
+action submits work; there is no Discord send/edit operation in the translation
+service. A translated draft becomes ordinary editable composer text and follows
+the existing draft persistence and send validation paths.
+
+`AppleTranslationCoordinator` admits at most eight queued/active operations.
+`TranslationTaskHost` lives at the main window root. Each operation has a distinct
+SwiftUI identity and configuration, so identical language pairs still execute.
+View-provided sessions are transferred to an ephemeral session client and consumed
+on the generic executor; they never live in the coordinator or a singleton. Only
+Sendable result values cross back to the Main Actor. Cancellation, host removal,
+and account teardown remove and resume continuations exactly once. Request IDs,
+account sessions, settings snapshots, message content, composer destinations, and
+monotonic draft revisions prevent stale completions from publishing or clearing
+newer work. Settings changes discard toggle state without changing composer text.
+
+Language identifiers come from `LanguageAvailability` with the same `highFidelity`
+preference as the translation configuration. Apple's framework selects its
+traditional on-device fallback when the preferred model is unavailable; Apple
+Intelligence is not an eligibility gate. Matching retains language and script,
+with region fallback only within that script. System Language resolves the ordered
+preferred-language list; an unavailable saved target remains saved and produces an
+actionable error. Supported and installed are distinct. Translation uses automatic
+source detection and lets the SwiftUI session present Apple's source-selection or
+model-download consent UI. No preparation call, dummy text, bulk model download,
+or fixed HTTP-style timeout is used.
+
+`TranslationTokenProtector` builds a structural plan: mentions, custom emoji,
+FakeNitro links, timestamps, command mentions, URLs/link destinations, code,
+Markdown delimiters, private-use characters, and line breaks remain literal.
+Only prose slots reach the model. Every slot must return exactly once and cannot
+introduce protected syntax; otherwise the complete operation fails closed. There
+are no model-visible placeholders to collide with user input, lose, or duplicate.
+Splitting prose around syntax intentionally reduces sentence context and can
+reduce fluency; a markup-heavy or ambiguous short slot may require a retry/source
+choice or fail. Link destinations are conservatively preserved through the final
+closing parenthesis on their line. Spoiler prose stays inside its original
+boundaries. Both messages and drafts use the same validation.
+
+Translated messages stay separate from `Message.content`. The native timeline
+reuses rich-text rendering, selection/copy, link and mention activation, and
+spoiler reveal state in a distinct translation region. Caption actions and Copy
+Translation are available to accessibility. Presentation updates relayout affected
+rows and invalidate retained conversation layouts when necessary. Edits/deletion,
+settings and locale changes, eviction, and account teardown invalidate results.
+Drafts retain their original plus any edits to the translated version; closing the
+strip preserves current text. Sending, navigation, thread closure, IME composition,
+and account teardown cancel the affected pending draft operation.
+
+[Apple documents](https://developer.apple.com/documentation/translation/translationsession)
+that translation content is processed on-device and its framework usage/performance
+metrics exclude source and translated content. This feature does not log or persist
+translation results. Model downloads and Apple's diagnostics are separate from
+translation processing; Discord networking and ordinary accepted draft persistence
+remain unchanged. There is no external translation provider, credential, or fallback.
+
 ## Window modal presentation
 
 Custom full-window modals use `WindowModalOverlay`. Feature models and local

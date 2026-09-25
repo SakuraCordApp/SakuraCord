@@ -71,6 +71,7 @@ extension AppModel {
         threadDraft = ""
         threadReplyingTo = nil
         clearComposerAttachments(for: .thread)
+        translation.resetDraft(.thread)
         hasMoreThreadMessages = cachedBoundary ?? false
         beginInitialThreadLoad(thread)
     }
@@ -215,6 +216,7 @@ extension AppModel {
         threadDraft = ""
         threadReplyingTo = nil
         clearComposerAttachments(for: .thread)
+        translation.resetDraft(.thread)
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false
         isLoadingEarlierThread = false
@@ -326,6 +328,7 @@ extension AppModel {
         let content = threadDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty else { return .rejected }
         guard validateAttachmentCount(attachments) else { return .rejected }
+        translation.resetDraft(.thread)
         let replyTo = threadReplyingTo?.id
         let mentionsRepliedUser = threadReplyMentionsAuthor
         let confirmed = await sendThreadMessage(
@@ -367,6 +370,7 @@ extension AppModel {
         if clearsComposer {
             threadDraft = ""
             threadReplyingTo = nil
+            translation.resetDraft(.thread)
         }
         let didSend = await performOutgoingSend(draft, isRetry: false)
         if didSend {

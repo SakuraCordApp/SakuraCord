@@ -40,6 +40,7 @@ struct ComposerView: View {
             focus: { isFocused = true },
             header: {
                 VStack(alignment: .leading, spacing: 0) {
+                    ComposerTranslationHeader(model: model, destination: conversation)
                     if !hasActiveCommand, let reply = activeReply {
                         let author = model.authorPresentation(for: reply)
                         ComposerReplyHeader(
@@ -108,6 +109,9 @@ struct ComposerView: View {
                                             .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                                     }
                                 }
+                                ComposerTranslateDraftRow(model: model, destination: conversation) {
+                                    showComposerActions = false
+                                }
                             }
                             .buttonStyle(PopoverRowButtonStyle()).padding(6).frame(width: 200)
                         }
@@ -134,6 +138,7 @@ struct ComposerView: View {
                             ComposerTextView(
                                 text: draft,
                                 conversationID: activeConversationID,
+                                translationEditID: model.translation.draftEditIDs[conversation],
                                 placeholder: composerPlaceholder,
                                 sendWithReturn: model.generalInputSettings.sendsWithReturn,
                                 generalInputSettings: model.generalInputSettings,
@@ -158,7 +163,10 @@ struct ComposerView: View {
                                     )
                                 },
                                 onDropAttachments: handleDroppedAttachments,
-                                onCompositionStateChange: { isComposing = $0 },
+                                onCompositionStateChange: {
+                                    isComposing = $0
+                                    if $0 { model.dismissDraftTranslation(in: conversation) }
+                                },
                                 capturesUnfocusedTyping:
                                     !showEmojiPicker
                                         && !showGIFPicker
@@ -1121,7 +1129,7 @@ struct ComposerView: View {
     }
 
     private var hasComposerActions: Bool {
-        canAddAttachments || canCreatePoll
+        canAddAttachments || canCreatePoll || model.translation.settings.isEnabled
     }
 
     private var composerPlaceholder: String {

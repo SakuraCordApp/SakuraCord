@@ -44,6 +44,7 @@ extension NativeTimelineRowPainter {
         if input.hidesMessageContent { return }
         drawForwardedHeaderAndSystemIcon(input)
         drawMessageContent(input)
+        drawMessageTranslation(input)
         drawPoll(input)
         drawPollResult(input)
         drawMessageLinkedImages(input)

@@ -279,6 +279,7 @@ enum ComposerEmojiAttributedText {
 struct ComposerTextView: NSViewRepresentable {
     let text: String
     var conversationID: ChannelID?
+    var translationEditID: UUID?
     let placeholder: String
     let sendWithReturn: Bool
     var generalInputSettings: GeneralInputSettingsSnapshot = .defaults
@@ -393,6 +394,9 @@ struct ComposerTextView: NSViewRepresentable {
             textView.unmarkText()
             textView.delegate = context.coordinator
         }
+        let isTranslationEdit = translationEditID != nil
+            && translationEditID != context.coordinator.parent.translationEditID
+            && conversationID == context.coordinator.parent.conversationID
         context.coordinator.parent = self
         context.coordinator.updateCompositionState(from: textView, deferringNotification: true)
 
@@ -435,13 +439,15 @@ struct ComposerTextView: NSViewRepresentable {
                 mentionPresentations: mentionPresentations
             )
         {
-            textView.textStorage?.setAttributedString(
-                ComposerEmojiAttributedText.make(
-                    text,
-                    font: font,
-                    mentionPresentations: mentionPresentations
-                )
+            let replacement = ComposerEmojiAttributedText.make(
+                text, font: font, mentionPresentations: mentionPresentations
             )
+            if isTranslationEdit {
+                textView.insertText(replacement, replacementRange: NSRange(location: 0, length: textView.attributedString().length))
+                textView.undoManager?.setActionName(String(localized: "Translate Draft"))
+            } else {
+                textView.textStorage?.setAttributedString(replacement)
+            }
 
             if selection == nil {
                 textView.setSelectedRange(

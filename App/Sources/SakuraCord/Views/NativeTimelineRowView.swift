@@ -532,6 +532,7 @@ struct NativeTimelineRowLayout {
     var pollLayout: NativeTimelinePollLayout?
     var pollResultFrame: CGRect?
     var inviteRegions: [NativeTimelineInviteLayout] = []
+    var translationRegion: TranslationRegion?
 
     static func make(
         item: NativeMessageTimelineItem,
@@ -659,13 +660,17 @@ struct NativeTimelineRowLayout {
                 unstyledContentPresentation
             )
             : unstyledContentPresentation
+        let translationPresentation = NativeTimelineTranslationPresentation.make(
+            row: row, model: model, isOutgoingBubble: isOutgoingBubble
+        )
         let preferredBubbleContentWidth =
             NativeTimelineBubbleLayout.preferredContentWidth(
                 for: message,
                 row: row,
                 content: contentPresentation,
                 availableWidth: width,
-                isEnabled: usesBubbles
+                isEnabled: usesBubbles,
+                translation: translationPresentation
             )
         let isGenerated = message.type.hasGeneratedContent
         let bubbleColumn = NativeTimelineBubbleLayout.column(
@@ -926,6 +931,17 @@ struct NativeTimelineRowLayout {
             )
             contentFrame = CGRect(x: contentX, y: verticalOffset, width: contentWidth, height: textHeight)
             verticalOffset += textHeight
+            hasRichContent = true
+        }
+        var translationRegion: TranslationRegion?
+        if let translationPresentation {
+            if hasRichContent { verticalOffset += 4 }
+            let region = NativeTimelineRowLayout.translation(
+                translationPresentation, messageID: message.id, isOutgoingBubble: isOutgoingBubble,
+                origin: CGPoint(x: contentX, y: verticalOffset), width: contentWidth
+            )
+            translationRegion = region
+            verticalOffset = region.frame.maxY
             hasRichContent = true
         }
 
@@ -1368,7 +1384,8 @@ struct NativeTimelineRowLayout {
             pinnedAtFrame: pinnedAtFrame,
             pollLayout: pollLayout,
             pollResultFrame: pollResultFrame,
-            inviteRegions: inviteRegions
+            inviteRegions: inviteRegions,
+            translationRegion: translationRegion
         )
         }
     }
@@ -1697,7 +1714,7 @@ extension NativeTimelineRowLayout {
 }
 
 extension NativeTimelineRowLayout {
-    fileprivate static func measuredTextHeight(
+    static func measuredTextHeight(
         _ framesetter: CTFramesetter,
         value: NSAttributedString,
         length: Int,
@@ -1723,7 +1740,7 @@ extension NativeTimelineRowLayout {
                 .trailingVisualOverflow(in: value)
     }
 
-    private static func measuredTextWidth(_ text: String, font: NSFont) -> CGFloat {
+    static func measuredTextWidth(_ text: String, font: NSFont) -> CGFloat {
         let attributed = NSAttributedString(
             string: text,
             attributes: [.font: font]

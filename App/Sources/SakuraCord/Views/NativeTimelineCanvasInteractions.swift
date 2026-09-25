@@ -595,6 +595,15 @@ extension NativeTimelineCanvasView {
         {
             return TextPointerHit(hit: hit, region: .content)
         }
+        if let translation = layout.translationRegion,
+           let frame = translation.textFrame, let value = translation.attributedText,
+           let framesetter = translation.framesetter,
+           let hit = NativeTimelineTextHitTester.hit(
+               value: value, framesetter: framesetter,
+               frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame), point: point
+           ), hit.mention != nil || hit.url != nil || hit.spoilerRange != nil {
+            return TextPointerHit(hit: hit, region: translation.regionID)
+        }
         for embed in layout.embedRegions {
             for (textIndex, region) in embed.textRegions.enumerated() {
                 if let hit = NativeTimelineTextHitTester.hit(
@@ -770,6 +779,15 @@ extension NativeTimelineCanvasView {
                     .messageContentDrawingFrame(frame),
                 characterIndex: characterIndex,
                 rawToken: rawToken
+            )
+        case .translation:
+            guard let translation = layout.translationRegion, translation.regionID == region,
+                  let value = translation.attributedText, let framesetter = translation.framesetter,
+                  let frame = translation.textFrame else { return nil }
+            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
+                value: value, framesetter: framesetter,
+                frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame),
+                characterIndex: characterIndex, rawToken: rawToken
             )
         case let .embed(embedID, textIndex):
             guard let embed = layout.embedRegions.first(where: {
@@ -1098,6 +1116,8 @@ extension NativeTimelineCanvasView {
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
             canPin: model?.canManagePins(for: row.message) == true,
             isPinned: row.message.isPinned,
+            translationTitle: model?.messageTranslationMenuTitle(for: row.message),
+            canCopyTranslation: model?.translatedMessageText(row.message) != nil,
             context: messageInteractionContext
         ) {
             guard case let .action(
@@ -1148,6 +1168,8 @@ extension NativeTimelineCanvasView {
         switch action {
         case .pinMessage, .unpinMessage:
             return { actions.togglePin(row.message) }
+        case .toggleTranslation:
+            return { [weak model] in model?.toggleMessageTranslation(row.message) }
         default:
             return nonPinMessageMenuHandler(
                 action: action,
@@ -1204,6 +1226,10 @@ extension NativeTimelineCanvasView {
         row: MessageRowPresentation
     ) -> (() -> Void)? {
         switch action {
+        case .copyTranslation:
+            { [weak model] in
+                if let text = model?.translatedMessageText(row.message) { Self.copyText(text) }
+            }
         case .copyText:
             { Self.copyText(row.message.content) }
         case .copyLink:
