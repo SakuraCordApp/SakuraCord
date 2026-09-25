@@ -6,6 +6,7 @@ import Testing
 private actor RecordingTranslator: TextTranslating {
     private(set) var requests: [TranslationRequest] = []
     private var gate: CheckedContinuation<Void, Never>?
+    private var requestWaiter: CheckedContinuation<Void, Never>?
     private var holdsNextRequest = false
 
     func holdNextRequest() {
@@ -17,8 +18,16 @@ private actor RecordingTranslator: TextTranslating {
         gate = nil
     }
 
+    /// Suspends until the first request arrives, without spinning the main actor.
+    func waitForFirstRequest() async {
+        guard requests.isEmpty else { return }
+        await withCheckedContinuation { requestWaiter = $0 }
+    }
+
     func translate(_ request: TranslationRequest) async throws -> TranslationResult {
         requests.append(request)
+        requestWaiter?.resume()
+        requestWaiter = nil
         if holdsNextRequest {
             holdsNextRequest = false
             await withCheckedContinuation { gate = $0 }
@@ -137,9 +146,7 @@ func `translation imports are validated`(id: SettingsControlID, raw: String, acc
     model.updateDraft("goedemorgen")
     model.translateDraft(in: .channel)
     let task = try #require(model.translation.draftTasks[.channel])
-    while await translator.requests.isEmpty {
-        await Task.yield()
-    }
+    await translator.waitForFirstRequest()
 
     model.updateDraft("goedemorgen allemaal")
     await translator.releaseHeldRequest()
