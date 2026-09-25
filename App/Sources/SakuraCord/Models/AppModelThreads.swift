@@ -71,6 +71,7 @@ extension AppModel {
         threadDraft = ""
         threadReplyingTo = nil
         clearComposerAttachments(for: .thread)
+        translation.resetDraft(.thread)
         hasMoreThreadMessages = cachedBoundary ?? false
         beginInitialThreadLoad(thread)
     }
@@ -215,6 +216,7 @@ extension AppModel {
         threadDraft = ""
         threadReplyingTo = nil
         clearComposerAttachments(for: .thread)
+        translation.resetDraft(.thread)
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false
         isLoadingEarlierThread = false
@@ -367,6 +369,7 @@ extension AppModel {
         if clearsComposer {
             threadDraft = ""
             threadReplyingTo = nil
+            translation.resetDraft(.thread)
         }
         let didSend = await performOutgoingSend(draft, isRetry: false)
         if didSend {

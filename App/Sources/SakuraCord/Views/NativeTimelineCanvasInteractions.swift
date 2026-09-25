@@ -1098,6 +1098,7 @@ extension NativeTimelineCanvasView {
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
             canPin: model?.canManagePins(for: row.message) == true,
             isPinned: row.message.isPinned,
+            translationTitle: model?.messageTranslationMenuTitle(for: row.message),
             context: messageInteractionContext
         ) {
             guard case let .action(
@@ -1148,6 +1149,8 @@ extension NativeTimelineCanvasView {
         switch action {
         case .pinMessage, .unpinMessage:
             return { actions.togglePin(row.message) }
+        case .toggleTranslation:
+            return { [weak model] in model?.toggleMessageTranslation(row.message) }
         default:
             return nonPinMessageMenuHandler(
                 action: action,

@@ -128,6 +128,7 @@ extension NativeTimelineCanvasView {
         if let pinAction = pinAccessibilityAction(for: message) {
             result.append(pinAction)
         }
+        result.append(contentsOf: translationAccessibilityActions(for: message))
         result.append(NSAccessibilityCustomAction(
             name: "Copy Text"
         ) {

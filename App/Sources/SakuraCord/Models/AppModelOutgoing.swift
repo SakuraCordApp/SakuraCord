@@ -167,6 +167,7 @@ extension AppModel {
         if clearsComposer {
             replyingTo = nil
             updateDraft("")
+            translation.resetDraft(.channel)
         }
         let didSend = await performOutgoingSend(outgoing, isRetry: false)
         if didSend {

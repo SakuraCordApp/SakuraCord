@@ -40,6 +40,7 @@ struct ComposerView: View {
             focus: { isFocused = true },
             header: {
                 VStack(alignment: .leading, spacing: 0) {
+                    ComposerTranslationHeader(model: model, destination: conversation)
                     if !hasActiveCommand, let reply = activeReply {
                         let author = model.authorPresentation(for: reply)
                         ComposerReplyHeader(
@@ -107,6 +108,9 @@ struct ComposerView: View {
                                         Label("Create a Poll", systemImage: "chart.bar.xaxis")
                                             .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                                     }
+                                }
+                                ComposerTranslateDraftRow(model: model, destination: conversation) {
+                                    showComposerActions = false
                                 }
                             }
                             .buttonStyle(PopoverRowButtonStyle()).padding(6).frame(width: 200)
@@ -1121,7 +1125,7 @@ struct ComposerView: View {
     }
 
     private var hasComposerActions: Bool {
-        canAddAttachments || canCreatePoll
+        canAddAttachments || canCreatePoll || model.translation.settings.isEnabled
     }
 
     private var composerPlaceholder: String {

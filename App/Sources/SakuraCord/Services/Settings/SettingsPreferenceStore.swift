@@ -313,6 +313,22 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             storage: .appWide(key: "settings.attachments.attachmentCompactionQuality"), defaultValue: .string(AttachmentCompactionOptions.Quality.balanced.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .translationProvider, page: .features,
+            storage: .appWide(key: "settings.translation.provider"), defaultValue: .string(TranslationProvider.off.rawValue)
+        ),
+        SettingsPreferenceRegistration(
+            id: .translationServer, page: .features,
+            storage: .appWide(key: "settings.translation.libreTranslateServer"), defaultValue: .string("")
+        ),
+        SettingsPreferenceRegistration(
+            id: .translationMessageLanguage, page: .features,
+            storage: .appWide(key: "settings.translation.messageLanguage"), defaultValue: .string("")
+        ),
+        SettingsPreferenceRegistration(
+            id: .translationDraftLanguage, page: .features,
+            storage: .appWide(key: "settings.translation.draftLanguage"), defaultValue: .string(TranslationLanguage.englishUS.rawValue)
+        ),
+        SettingsPreferenceRegistration(
             id: .localStorageLimit,
             page: .storageDownloads,
             storage: .appWide(key: "mediaCacheLimit"),

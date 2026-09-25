@@ -3,8 +3,11 @@ import Foundation
 nonisolated extension SettingsCatalog {
     static let featuresPage = page(
         .features, group: .preferences, title: "Features", image: "square.stack.3d.up.fill",
-        help: "Manage hidden channels, FakeNitro, and attachments.",
-        keywords: ["channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "uploads"]
+        help: "Manage hidden channels, FakeNitro, attachments, and translation.",
+        keywords: [
+            "channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "uploads",
+            "translate", "DeepL", "LibreTranslate",
+        ]
     )
 
     static let featuresControls: [SettingsControlMetadata] = [
@@ -60,6 +63,37 @@ nonisolated extension SettingsCatalog {
             label: "Compression quality",
             help: "Choose between higher quality, balanced compression, and smaller files.",
             keywords: ["attachment", "compression", "compaction", "upload", "file size"], scope: .appWideLocal
+        ),
+    ] + translationControls
+
+    static let translationControls: [SettingsControlMetadata] = [
+        control(
+            .translationProvider, page: .features, section: .featuresTranslation,
+            label: "Translation provider",
+            help: "Choose DeepL or a LibreTranslate server for translating messages and drafts.",
+            keywords: ["translate", "translation", "DeepL", "LibreTranslate", "language"], scope: .appWideLocal
+        ),
+        control(
+            .translationServer, page: .features, section: .featuresTranslation,
+            label: "LibreTranslate server", help: "The address of the LibreTranslate server to use.",
+            keywords: ["translate", "LibreTranslate", "server", "URL", "self-hosted"], scope: .appWideLocal
+        ),
+        control(
+            .translationAPIKey, page: .features, section: .featuresTranslation,
+            label: "Translation API key",
+            help: "Stored in your Keychain and never included in settings exports.",
+            keywords: ["translate", "DeepL", "LibreTranslate", "API key", "Keychain"],
+            owner: .macOS, scope: .appWideLocal, persistence: .systemManaged, reset: .notApplicable
+        ),
+        control(
+            .translationMessageLanguage, page: .features, section: .featuresTranslation,
+            label: "Translate messages into", help: "The language used when you translate a message.",
+            keywords: ["translate", "translation", "language", "messages"], scope: .appWideLocal
+        ),
+        control(
+            .translationDraftLanguage, page: .features, section: .featuresTranslation,
+            label: "Translate drafts into", help: "The language used when you translate your message draft.",
+            keywords: ["translate", "translation", "language", "draft", "composer"], scope: .appWideLocal
         ),
     ]
 }

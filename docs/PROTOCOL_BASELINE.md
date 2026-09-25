@@ -1078,6 +1078,33 @@ for behavior only and independently implemented against Catbox's official
 [tools/API documentation](https://catbox.moe/tools.php),
 [service limits](https://catbox.moe/), and [FAQ](https://catbox.moe/faq.php).
 
+### Message and draft translation (third-party, user-initiated)
+
+Translation is off by default. After the user chooses a provider in Features
+settings, choosing **Translate Message** or **Translate Draft** sends only that
+text and the chosen target language:
+
+| Endpoint | Body | Result handling |
+| --- | --- | --- |
+| `POST https://api-free.deepl.com/v2/translate` (keys ending in `:fx`) or `POST https://api.deepl.com/v2/translate` | JSON `{"text":[text],"target_lang":code}` with `Authorization: DeepL-Auth-Key`. | `translations[0].text` and `detected_source_language`; HTTP 403 is a rejected key and 456 an exhausted quota. |
+| `POST <server>/translate` (LibreTranslate; default `http://127.0.0.1:5000`) | JSON `{"q","source":"auto","target","format":"text"}`, plus `api_key` only when one is saved. | `translatedText` and `detectedLanguage.language`; an `error` field is shown to the user. |
+
+Requests use an ephemeral, cookie-free session with a 20-second timeout and never
+carry a Discord credential, cookie, or client metadata. Mentions, custom emoji,
+timestamps, command mentions, links, and code are replaced with private-use
+placeholders before sending and restored afterwards; a draft whose placeholders
+do not return intact is left unchanged. Slash-command drafts are refused.
+Results stay in memory: message translations are shown below the original only
+while its content is unchanged, and a translated draft is ordinary composer text
+the user reviews and sends. API keys live in the Keychain under their own service
+and are never exported. LibreTranslate servers must use HTTPS unless they are on
+the local network (loopback, `.local`, unqualified, or private addresses), which
+the app's App Transport Security local-networking exception allows. The request
+and placeholder behavior was cross-checked against the GPL-licensed
+[Concord](https://github.com/chojs23/concord) client for behavior only, and
+implemented against DeepL's [API reference](https://developers.deepl.com/docs/api-reference/translate)
+and LibreTranslate's [API documentation](https://docs.libretranslate.com/guides/api_usage/).
+
 Shared request metadata now matches the non-secret fields observed from the
 clean host: product OS version rather than Darwin kernel version, actual system
 locale, Chromium's ordered language preference header, current client/build

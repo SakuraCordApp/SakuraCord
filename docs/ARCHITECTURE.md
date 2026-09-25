@@ -223,6 +223,11 @@ Within the production provider:
   Automatically policy and selected host. It never
   receives Discord credentials or sends a Discord message; its validated HTTPS
   result is inserted into the originating draft.
+- `HTTPTextTranslator` is the unauthenticated DeepL/LibreTranslate client behind
+  `TranslationState`, which `AppModel` owns together with in-memory message and
+  draft translations. It runs only on an explicit Translate action and never
+  receives Discord credentials. Translation API keys use a dedicated Keychain
+  service, so they never appear as saved accounts or in settings exports.
 - `DiscordAPIDiagnosticStore` receives REST attempts and responses, attachment
   uploads, native-authentication traffic, and main, voice, and remote-auth
   Gateway envelopes at those transport boundaries. Detailed capture retains

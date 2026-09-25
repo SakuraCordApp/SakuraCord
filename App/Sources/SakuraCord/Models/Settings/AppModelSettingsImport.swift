@@ -11,6 +11,7 @@ extension AppModel {
         if pages.contains(.features) {
             applyFeaturesSettings(FeaturesSettingsStore.shared.load())
             applyAttachmentSettings(attachmentSettingsStore.load())
+            applyTranslationSettings(translation.settingsStore.load())
         }
         if pages.contains(.appearance) || pages.contains(.interface) {
             applyAppearanceSettings(AppearanceSettingsStore.shared.load(), persists: false)

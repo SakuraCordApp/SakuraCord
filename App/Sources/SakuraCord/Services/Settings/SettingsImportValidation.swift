@@ -53,6 +53,15 @@ nonisolated enum SettingsImportValidation {
         case .attachmentCompactionPrompt, .attachmentExternalUploadPrompt: return AttachmentHandlingPolicy(rawValue: raw) != nil
         case .attachmentExternalProvider: return ExternalAttachmentHostingService(rawValue: raw) != nil
         case .attachmentCompactionQuality: return AttachmentCompactionOptions.Quality(rawValue: raw) != nil
+        default: return acceptsTranslationString(raw, id: id)
+        }
+    }
+
+    private static func acceptsTranslationString(_ raw: String, id: SettingsControlID) -> Bool {
+        switch id {
+        case .translationProvider: return TranslationProvider(rawValue: raw) != nil
+        case .translationServer: return TranslationServerAddress.acceptsStoredServer(raw)
+        case .translationMessageLanguage, .translationDraftLanguage: return raw.isEmpty || TranslationLanguage(rawValue: raw) != nil
         default: return acceptsStructuredString(raw, id: id)
         }
     }

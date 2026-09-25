@@ -691,6 +691,7 @@ extension NativeTimelineCanvasView {
                 ))
             }
         }
+        appendTranslationAccessibility(to: &children, message: message, layout: layout, rowIndex: rowIndex, parent: parent)
     }
 
     private func appendMessageMediaAccessibility(
