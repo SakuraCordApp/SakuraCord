@@ -1,11 +1,11 @@
 import Foundation
 import Translation
 
-/// A transferred session stays on the generic executor for the entire operation.
+/// A session stays in the nonisolated SwiftUI callback for the entire operation.
 /// Apple sessions are not Sendable: do not send one back to the Main Actor or
 /// retain it after the SwiftUI task returns. Only our Sendable result crosses back.
 nonisolated enum AppleTranslationSessionRunner {
-    static func translate(text: String, session: sending any TranslationSessionClient) async throws -> TranslationResult {
+    static func translate(text: String, session: any TranslationSessionClient) async throws -> TranslationResult {
         let plan = TranslationTokenProtector(text)
         guard plan.hasTranslatableText else { throw LocalTranslationError.emptyText }
         var responses: [TranslationTokenProtector.Slot] = []
@@ -28,7 +28,7 @@ nonisolated protocol TranslationSessionClient {
 nonisolated final class AppleTranslationSessionClient: TranslationSessionClient {
     private let session: TranslationSession
 
-    init(session: sending TranslationSession) {
+    init(session: TranslationSession) {
         self.session = session
     }
 

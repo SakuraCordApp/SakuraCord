@@ -7,7 +7,7 @@ import Translation
 @MainActor
 @Observable
 final class AppleTranslationCoordinator: TextTranslating {
-    struct Operation: Identifiable, Equatable {
+    nonisolated struct Operation: Identifiable, Equatable, Sendable {
         let id: UUID
         let text: String
         let targetPreference: String
@@ -93,23 +93,27 @@ final class AppleTranslationCoordinator: TextTranslating {
 /// Scoped to the translationTask callback. No session escapes this call.
 @MainActor
 extension AppleTranslationCoordinator {
-    func perform(_ operation: Operation, using session: sending any TranslationSessionClient) async {
-        guard active?.id == operation.id, let target = operation.target else { return }
+    nonisolated func perform(_ operation: Operation, using session: any TranslationSessionClient) async {
         do {
-            // A failed auto-detection check still reaches the system language UI.
-            let status = try? await languages.provider.status(for: operation.text, target: target)
-            try Task.checkCancellation()
-            guard active?.id == operation.id else { throw CancellationError() }
-            if status == .sameLanguage { throw LocalTranslationError.sameLanguage }
-            if status == .unsupported { throw LocalTranslationError.unsupportedPair }
+            try await validate(operation)
             let result = try await AppleTranslationSessionRunner.translate(text: operation.text, session: session)
-            finish(operation.id, with: .success(result))
+            await finish(operation.id, with: .success(result))
         } catch {
-            finish(operation.id, with: .failure(Self.mappedError(error)))
+            await finish(operation.id, with: .failure(Self.mappedError(error)))
         }
     }
 
-    static func mappedError(_ error: any Error) -> any Error {
+    private func validate(_ operation: Operation) async throws {
+        guard active?.id == operation.id, let target = operation.target else { throw CancellationError() }
+        // A failed auto-detection check still reaches the system language UI.
+        let status = try? await languages.provider.status(for: operation.text, target: target)
+        try Task.checkCancellation()
+        guard active?.id == operation.id else { throw CancellationError() }
+        if status == .sameLanguage { throw LocalTranslationError.sameLanguage }
+        if status == .unsupported { throw LocalTranslationError.unsupportedPair }
+    }
+
+    nonisolated static func mappedError(_ error: any Error) -> any Error {
         switch error {
         case is CancellationError, TranslationError.alreadyCancelled: CancellationError()
         case let local as LocalTranslationError: local

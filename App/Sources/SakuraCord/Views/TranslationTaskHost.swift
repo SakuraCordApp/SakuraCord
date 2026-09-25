@@ -31,7 +31,7 @@ private struct TranslationOperationHost: View {
                 TranslationSession.Configuration(
                     source: nil, target: Locale.Language(identifier: target.id), preferredStrategy: .highFidelity
                 )
-            }) { session in
+            }) { @Sendable session in
                 await coordinator.perform(operation, using: AppleTranslationSessionClient(session: session))
             }
             .onDisappear {

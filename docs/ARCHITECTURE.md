@@ -145,8 +145,8 @@ the existing draft persistence and send validation paths.
 `AppleTranslationCoordinator` admits at most eight queued/active operations.
 `TranslationTaskHost` lives at the main window root. Each operation has a distinct
 SwiftUI identity and configuration, so identical language pairs still execute.
-View-provided sessions are transferred to an ephemeral session client and consumed
-on the generic executor; they never live in the coordinator or a singleton. Only
+An explicitly Sendable, nonisolated SwiftUI callback consumes each view-provided
+session through an ephemeral session client on the generic executor; they never live in the coordinator or a singleton. Only
 Sendable result values cross back to the Main Actor. Cancellation, host removal,
 and account teardown remove and resume continuations exactly once. Request IDs,
 account sessions, settings snapshots, message content, composer destinations, and
