@@ -38,16 +38,16 @@ nonisolated enum SidebarAccountControlMetrics {
 }
 
 @MainActor
-final class ChannelSidebarSelectionCommitter {
+final class ChannelSidebarSelectionCommitter<Selection: Equatable> {
     private enum PendingSelection: Equatable {
         case none
-        case value(ChannelID?)
+        case value(Selection?)
     }
 
     private var pendingTask: Task<Void, Never>?
     private var pendingSelectionState = PendingSelection.none
 
-    var pendingSelection: ChannelID? {
+    var pendingSelection: Selection? {
         guard case let .value(selection) = pendingSelectionState else {
             return nil
         }
@@ -61,7 +61,7 @@ final class ChannelSidebarSelectionCommitter {
         return false
     }
 
-    func presentedSelection(fallback: ChannelID?) -> ChannelID? {
+    func presentedSelection(fallback: Selection?) -> Selection? {
         guard case let .value(selection) = pendingSelectionState else {
             return fallback
         }
@@ -69,9 +69,9 @@ final class ChannelSidebarSelectionCommitter {
     }
 
     func schedule(
-        _ selection: ChannelID?,
-        currentSelection: @escaping @MainActor () -> ChannelID?,
-        commit: @escaping @MainActor (ChannelID?) -> Void
+        _ selection: Selection?,
+        currentSelection: @escaping @MainActor () -> Selection?,
+        commit: @escaping @MainActor (Selection?) -> Void
     ) {
         pendingTask?.cancel()
         let selectionBeforeDeferral = currentSelection()
@@ -95,7 +95,7 @@ final class ChannelSidebarSelectionCommitter {
         }
     }
 
-    func selectedValueChanged(to selection: ChannelID?) {
+    func selectedValueChanged(to selection: Selection?) {
         guard case let .value(pendingSelection) = pendingSelectionState else {
             return
         }
@@ -136,7 +136,7 @@ struct ChannelSidebarView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.sakuraCordWindowIsFullScreen) private var isFullScreen
     @State private var selectionCommitter =
-        ChannelSidebarSelectionCommitter()
+        ChannelSidebarSelectionCommitter<GuildSidebarSelection>()
     @State private var accountControlHeight: CGFloat = 0
 
     var body: some View {
@@ -157,7 +157,11 @@ struct ChannelSidebarView: View {
                 GuildChannelList(
                     input: GuildChannelListInput(
                         modelIdentity: ObjectIdentifier(voiceModel),
-                        channelGroups: channelGroups,
+                        guildID: guild?.id,
+                        hasCustomization: guild.map { voiceModel.hasChannelsAndRoles(in: $0.id) } ?? false,
+                        hasGuide: guild.map { voiceModel.hasGuildGuide(in: $0.id) } ?? false,
+                        page: voiceModel.guildWorkspacePage,
+                        channelGroups: voiceModel.selectedChannelGroups(channelGroups, guildID: guild?.id),
                         rulesChannelID: guild?.rulesChannelID,
                         activeVoiceChannelID: activeVoiceChannelID,
                         hiddenChannelIDs: hiddenChannelIDs,
@@ -170,11 +174,12 @@ struct ChannelSidebarView: View {
                     selection: deferredGuildSelection
                 )
                 .equatable()
-                .onChange(of: selection) { _, newSelection in
+                .onChange(of: guildSelection) { _, newSelection in
                     selectionCommitter.selectedValueChanged(
                         to: newSelection
                     )
                 }
+                .onChange(of: guild?.id) { _, _ in selectionCommitter.cancel() }
             }
 
             AccountControlView(
@@ -217,33 +222,43 @@ struct ChannelSidebarView: View {
         1 / max(displayScale, 1)
     }
 
-    private var deferredGuildSelection: Binding<ChannelID?> {
+    private var guildSelection: GuildSidebarSelection? {
+        if let page = voiceModel.guildWorkspacePage { return .page(page) }
+        return selection.map(GuildSidebarSelection.channel)
+    }
+
+    private var deferredGuildSelection: Binding<GuildSidebarSelection?> {
         Binding(
-            // During the one-run-loop handoff, report the sidebar's accepted
-            // value back to NSOutlineView instead of the still-old model
-            // value. Otherwise AppKit sees the selection snap backward and
-            // performs a second complete selection/layout transaction when
-            // the model commit arrives.
-            get: {
-                selectionCommitter.presentedSelection(fallback: selection)
-            },
+            // Keep every destination on the same deferred NSOutlineView handoff.
+            // Finish the native selection transaction before changing the
+            // conversation and toolbar structure.
+            get: { selectionCommitter.presentedSelection(fallback: guildSelection) },
             set: { newSelection in
-                guard selection != newSelection else { return }
-                if let newSelection {
-                    AppPerformanceSignposts.beginConversationNavigation(
-                        to: newSelection
-                    )
+                guard guildSelection != newSelection else { return }
+                if case let .channel(channelID) = newSelection {
+                    AppPerformanceSignposts.beginConversationNavigation(to: channelID)
                 } else {
                     AppPerformanceSignposts.cancelConversationNavigation()
                 }
+                let guildID = guild?.id
                 selectionCommitter.schedule(
                     newSelection,
-                    currentSelection: { selection },
+                    currentSelection: { guildSelection },
                     commit: { newSelection in
-                        if let newSelection {
-                            voiceModel.recordForwardDestinationVisit(newSelection)
+                        guard guild?.id == guildID else { return }
+                        switch newSelection {
+                        case .channel(let channelID):
+                            voiceModel.recordForwardDestinationVisit(channelID)
+                            selection = channelID
+                        case .page(let page):
+                            guard let guildID else { return }
+                            if page == .guide {
+                                voiceModel.openGuildGuide(in: guildID)
+                            } else {
+                                voiceModel.openChannelsAndRoles(in: guildID)
+                            }
+                        case nil: break
                         }
-                        selection = newSelection
                     }
                 )
             }
@@ -279,6 +294,10 @@ struct ChannelSidebarView: View {
 /// observable row leaves continue to receive their own model updates.
 nonisolated private struct GuildChannelListInput: Equatable, Sendable {
     let modelIdentity: ObjectIdentifier
+    let guildID: GuildID?
+    let hasCustomization: Bool
+    let hasGuide: Bool
+    let page: GuildWorkspacePage?
     let channelGroups: [ChannelGroup]
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
@@ -289,10 +308,15 @@ nonisolated private struct GuildChannelListInput: Equatable, Sendable {
     let bottomContentInset: CGFloat
 }
 
+nonisolated private enum GuildSidebarSelection: Hashable {
+    case channel(ChannelID)
+    case page(GuildWorkspacePage)
+}
+
 private struct GuildChannelList: View, Equatable {
     let input: GuildChannelListInput
     let model: AppModel
-    @Binding var selection: ChannelID?
+    @Binding var selection: GuildSidebarSelection?
 
     nonisolated static func == (
         lhs: GuildChannelList,
@@ -303,10 +327,26 @@ private struct GuildChannelList: View, Equatable {
 
     var body: some View {
         List(selection: $selection) {
+            if input.guildID != nil {
+                if input.hasGuide {
+                    guildPageRow("Server Guide", symbol: "signpost.right", page: .guide)
+                }
+                if input.hasCustomization {
+                    guildPageRow("Channels & Roles", symbol: "slider.horizontal.3", page: .channelsAndRoles)
+                }
+            }
+            if input.hasGuide || input.hasCustomization {
+                Divider()
+                    .padding(.horizontal, 16)
+                    .listRowInsets(EdgeInsets())
+                    .selectionDisabled()
+                    .accessibilityHidden(true)
+            }
             ForEach(input.channelGroups) { group in
                 ChannelGroupRows(
                     model: model,
                     group: group,
+                    followsPageDestinations: (input.hasGuide || input.hasCustomization) && group.id == input.channelGroups.first?.id,
                     bottomContentInset:
                         group.id == input.channelGroups.last?.id
                             ? input.bottomContentInset
@@ -335,6 +375,21 @@ private struct GuildChannelList: View, Equatable {
                 .accessibilityHidden(true)
         }
     }
+    private func guildPageRow(_ title: String, symbol: String, page: GuildWorkspacePage) -> some View {
+        HStack(spacing: 8) {
+            Color.clear.frame(width: 8, height: 8)
+            Image(systemName: symbol)
+                .foregroundStyle(.primary.opacity(0.66))
+                .frame(width: 16)
+            Text(title).foregroundStyle(.primary.opacity(0.78)).lineLimit(1)
+            Spacer()
+        }
+        .frame(minHeight: ChannelSidebarLayoutMetrics.minimumRowHeight)
+        .accessibilityElement(children: .combine)
+        .tag(GuildSidebarSelection.page(page))
+        .overlay { ChannelRowHoverBridge(isSelected: input.page == page) }
+    }
+
 }
 
 struct SidebarBottomScrollSpacer: View {
@@ -439,6 +494,7 @@ struct SidebarChromeSeparator: Shape {
 private struct ChannelGroupRows: View {
     let model: AppModel
     let group: ChannelGroup
+    let followsPageDestinations: Bool
     let bottomContentInset: CGFloat
     let rulesChannelID: ChannelID?
     let activeVoiceChannelID: ChannelID?
@@ -453,6 +509,7 @@ private struct ChannelGroupRows: View {
     init(
         model: AppModel,
         group: ChannelGroup,
+        followsPageDestinations: Bool = false,
         bottomContentInset: CGFloat,
         rulesChannelID: ChannelID?,
         activeVoiceChannelID: ChannelID?,
@@ -463,6 +520,7 @@ private struct ChannelGroupRows: View {
     ) {
         self.model = model
         self.group = group
+        self.followsPageDestinations = followsPageDestinations
         self.bottomContentInset = bottomContentInset
         self.rulesChannelID = rulesChannelID
         self.activeVoiceChannelID = activeVoiceChannelID
@@ -493,7 +551,27 @@ private struct ChannelGroupRows: View {
     }
 
     var body: some View {
-        Section {
+        Group {
+            if group.name == nil {
+                channelRows
+            } else if followsPageDestinations {
+                categoryHeader
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .selectionDisabled()
+                channelRows
+            } else {
+                Section { channelRows } header: { categoryHeader }
+            }
+        }
+        .onChange(of: isCollapsedInModel) { _, isCollapsed in
+            guard isExpanded == isCollapsed else { return }
+            withAnimation(.snappy(duration: 0.18)) {
+                isExpanded = !isCollapsed
+            }
+        }
+    }
+    @ViewBuilder private var channelRows: some View {
             ForEach(visibleChannels) { channel in
                 if channel.kind == .voice {
                     ChannelRow(
@@ -504,7 +582,7 @@ private struct ChannelGroupRows: View {
                         isHidden: hiddenChannelIDs.contains(channel.id),
                         isChecking: checkingChannelIDs.contains(channel.id)
                     )
-                    .tag(channel.id)
+                    .tag(GuildSidebarSelection.channel(channel.id))
                     ForEach(
                         voiceParticipantEntriesByChannel[channel.id]?.participants
                             ?? []
@@ -519,14 +597,16 @@ private struct ChannelGroupRows: View {
                         isHidden: hiddenChannelIDs.contains(channel.id),
                         isChecking: checkingChannelIDs.contains(channel.id)
                     )
-                    .tag(channel.id)
+                    .tag(GuildSidebarSelection.channel(channel.id))
                 }
             }
 
             if bottomContentInset > 0 {
                 SidebarBottomScrollSpacer(height: bottomContentInset)
             }
-        } header: {
+    }
+
+    private var categoryHeader: some View {
             VStack(spacing: 0) {
                 if let name = group.name,
                    let categoryID = group.categoryID,
@@ -611,13 +691,6 @@ private struct ChannelGroupRows: View {
                     }
                 }
             }
-        }
-        .onChange(of: isCollapsedInModel) { _, isCollapsed in
-            guard isExpanded == isCollapsed else { return }
-            withAnimation(.snappy(duration: 0.18)) {
-                isExpanded = !isCollapsed
-            }
-        }
     }
 
     private var visibleChannels: [Channel] {

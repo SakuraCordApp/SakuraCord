@@ -30,6 +30,7 @@ extension NativeMemberListCanvasView {
             || bounds.width != reconciledViewportWidth
         if reconcileInteraction || viewportChanged || force {
             installRowOverlayIfNeeded()
+            installAvatarOverlays(in: visible)
         }
         guard force || viewportChanged else { return false }
         reconciledVisibleRange = visible
@@ -37,7 +38,6 @@ extension NativeMemberListCanvasView {
         let prewarmLower = max(0, visible.lowerBound - NativeMemberListMetrics.prewarmItemCount)
         let prewarmUpper = min(items.count, visible.upperBound + NativeMemberListMetrics.prewarmItemCount)
         let prewarmRange = prewarmLower ..< prewarmUpper
-        installAvatarOverlays(in: visible)
         installActivityEmojiOverlays(in: visible)
         installAccessibilityRows(in: visible)
         prewarmImages(in: prewarmRange, visible: visible)
@@ -110,7 +110,7 @@ extension NativeMemberListCanvasView {
             guard let host = avatarOverlays.removeValue(forKey: id) else {
                 continue
             }
-            avatarOverlayMembers[id] = nil
+            avatarOverlayConfigurations[id] = nil
             reusableHosts.append(host)
         }
 
@@ -129,13 +129,18 @@ extension NativeMemberListCanvasView {
                 avatarOverlays[id] = value
                 return value
             }()
-            if avatarOverlayMembers[id] != member {
+            let configuration = AvatarOverlayConfiguration(
+                member: member,
+                isHovered: hoveredIndex == index && !isScrolling && !interactionsBlocked
+                    && WindowModalCoordinator.allowsInput(for: self)
+            )
+            if avatarOverlayConfigurations[id] != configuration {
                 host.rootView = AnyView(
-                    MemberAvatar(member: member)
+                    MemberAvatar(member: member, isHovered: configuration.isHovered)
                         .opacity(member.isListedOnline ? 1 : 0.55)
                         .allowsHitTesting(false)
                 )
-                avatarOverlayMembers[id] = member
+                avatarOverlayConfigurations[id] = configuration
             }
             host.frame = CGRect(
                 x: NativeMemberListMetrics.horizontalInset + 4,
@@ -156,7 +161,7 @@ extension NativeMemberListCanvasView {
     func removeAvatarOverlays() {
         for host in avatarOverlays.values { host.removeFromSuperview() }
         avatarOverlays.removeAll(keepingCapacity: true)
-        avatarOverlayMembers.removeAll(keepingCapacity: true)
+        avatarOverlayConfigurations.removeAll(keepingCapacity: true)
     }
 
     func installActivityEmojiOverlays(in range: Range<Int>) {
@@ -526,7 +531,7 @@ extension NativeMemberListCanvasView {
         removeProfileAnchor(immediately: true)
         for host in avatarOverlays.values { host.removeFromSuperview() }
         for host in activityEmojiOverlays.values { host.removeFromSuperview() }
-        avatarOverlayMembers.removeAll()
+        avatarOverlayConfigurations.removeAll()
         activityEmojiOverlayConfigurations.removeAll()
         for proxy in accessibilityRows.values { proxy.removeFromSuperview() }
         avatarOverlays.removeAll()

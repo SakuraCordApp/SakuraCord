@@ -132,11 +132,12 @@ struct RootView: View {
         case .connecting:
             true
         case .workspace:
-            model.isSwitchingAccounts
+            model.onboardingEntryGuildID == nil && model.guildWorkspacePage == nil
+                && (model.isSwitchingAccounts
                 || MessageSearchSurfacePolicy.showsToolbar(
                     channelKind: model.selectedChannel?.kind,
                     hasOpenThread: model.openThread != nil
-                )
+                ))
         case .signedOut:
             model.launchMode != .normal && !model.includesOfflineSignIn
         }
@@ -205,6 +206,9 @@ private struct ChatRootView: View {
                     },
                     updateStatus: { await model.updateStatus($0) }
                 )
+                .opacity(model.onboardingEntryGuildID == nil ? 1 : 0)
+                .allowsHitTesting(model.onboardingEntryGuildID == nil)
+                .accessibilityHidden(model.onboardingEntryGuildID != nil)
             }
             .opacity(model.isSwitchingAccounts ? 0 : 1)
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -220,7 +224,7 @@ private struct ChatRootView: View {
             )
         } detail: {
             Group {
-                if model.isSwitchingAccounts {
+                if model.isSwitchingAccounts || model.onboardingEntryGuildID != nil {
                     Color.clear
                 } else {
                     ChatWorkspaceView(
@@ -236,7 +240,14 @@ private struct ChatRootView: View {
             }
         }
         .toolbar {
-            conversationToolbar
+            if model.onboardingEntryGuildID == nil { conversationToolbar }
+        }
+        .overlay {
+            if let guildID = model.onboardingEntryGuildID, !model.isSwitchingAccounts {
+                GuildOnboardingView(model: model, guildID: guildID)
+                    .id(guildID)
+                    .padding(.leading, columnVisibility == .detailOnly ? 0 : ChatChromeMetrics.serverRailWidth)
+            }
         }
         .environment(\.composerDropInteraction, composerDropInteraction)
         .overlay(alignment: .topLeading) {
@@ -403,6 +414,9 @@ private struct ChatRootView: View {
                 supplementaryToolbarSpacerWidth = 0
             }
         }
+        .onChange(of: toolbarPinsChannelID) { _, channelID in
+            if channelID == nil { model.dismissInbox() }
+        }
         .onChange(of: model.openThread?.id) { _, threadID in
             if threadID != nil {
                 model.dismissPinnedMessages()
@@ -500,7 +514,7 @@ private struct ChatRootView: View {
 
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
+        ToolbarItem(id: "conversation-title", placement: .navigation) {
             if model.isSwitchingAccounts {
                 SkeletonShimmerTimeline {
                     HStack(spacing: 8) {
@@ -512,38 +526,20 @@ private struct ChatRootView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                 }
-            } else if let channel = model.selectedChannel {
-                if isDirectMessageSelected {
-                    ConversationToolbarLabel(
-                        title: channel.name,
-                        systemImage: channelToolbarSymbol(channel),
-                        subtitle: directMessageToolbarSubtitle(for: channel),
-                        textSize: InterfaceTypographyMetrics.interfaceTextSize,
-                        avatarChannel: channel,
-                        avatarStatus: directMessageToolbarStatus(for: channel)
-                    )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                } else if let topic = channelTopic(for: channel) {
-                    ChannelTopicToolbarButton(
-                        title: channel.name,
-                        systemImage: channelToolbarSymbol(channel),
-                        topic: topic,
-                        textSize: InterfaceTypographyMetrics.interfaceTextSize
-                    )
-                } else {
-                    ConversationToolbarLabel(
-                        title: channel.name,
-                        systemImage: channelToolbarSymbol(channel),
-                        subtitle: nil,
-                        textSize: InterfaceTypographyMetrics.interfaceTextSize
-                    )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                }
+            } else if let title = conversationToolbarPresentation {
+                ConversationToolbarTitle(presentation: title)
+                    // Remeasure changed text without replacing the toolbar item.
+                    .id(title.title)
+                    .transition(.identity)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
             }
         }
         .visibilityPriority(.high)
+
+        ToolbarSpacer(.fixed, placement: .navigation)
 
         if !model.isSwitchingAccounts {
             if let presentation = supplementaryToolbarPresentation {
@@ -640,7 +636,7 @@ private struct ChatRootView: View {
                     )
                 }
                 .visibilityPriority(.high)
-            } else if let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
+            } else if model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil, let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
                 ToolbarItem {
                     Button { model.openVoiceChat(for: channel) } label: {
                         Label("Open Chat", systemImage: "bubble.left.fill")
@@ -650,32 +646,31 @@ private struct ChatRootView: View {
                 .visibilityPriority(.high)
             }
 
-            if hasToolbarActionBeforeInbox {
-                ToolbarSpacer(.fixed)
-            }
-
-            ToolbarItem {
-                Button {
-                    if model.inbox.isPresented { model.dismissInbox() } else { model.presentInbox() }
-                } label: {
-                    Label("Inbox", systemImage: "tray.fill")
-                }
-                .help("Inbox")
-                .background {
-                    StableAnchoredPopoverPresenter(
-                        isPresented: model.inbox.isPresented,
-                        configuration: .toolbarPanel,
-                        onDismiss: model.dismissInbox
-                    ) { InboxPopoverView(model: model) }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .visibilityPriority(.high)
-
             if let pinsChannelID = toolbarPinsChannelID {
+                if hasToolbarActionBeforeInbox {
+                    ToolbarSpacer(.fixed)
+                }
+
+                ToolbarItem(id: "inbox") {
+                    Button {
+                        if model.inbox.isPresented { model.dismissInbox() } else { model.presentInbox() }
+                    } label: {
+                        Label("Inbox", systemImage: "tray.fill")
+                    }
+                    .help("Inbox")
+                    .background {
+                        StableAnchoredPopoverPresenter(
+                            isPresented: model.inbox.isPresented,
+                            configuration: .toolbarPanel,
+                            onDismiss: model.dismissInbox
+                        ) { InboxPopoverView(model: model) }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .visibilityPriority(.high)
                 ToolbarSpacer(.fixed)
 
-                ToolbarItem {
+                ToolbarItem(id: "pinned-messages") {
                     Button {
                         if model.pinnedMessages.isPresented {
                             model.dismissPinnedMessages()
@@ -702,7 +697,8 @@ private struct ChatRootView: View {
         }
 
         if model.isSwitchingAccounts
-            || (!hasOpenSupplementaryToolbarConversation && selectedVoiceChannel == nil)
+            || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil
+                && !hasOpenSupplementaryToolbarConversation && selectedVoiceChannel == nil)
         {
             if !model.isSwitchingAccounts {
                 ToolbarSpacer(.fixed)
@@ -765,6 +761,8 @@ private struct ChatRootView: View {
 
     private var canAcceptWindowDrops: Bool {
         modalInputAllowed
+            && model.onboardingEntryGuildID == nil
+            && model.guildWorkspacePage == nil
             && !presentsForumComposer
             && !showAccountSwitcher
             && model.presentedInteractionModal == nil
@@ -926,8 +924,23 @@ private struct ChatRootView: View {
     }
 
     private var toolbarPinsChannelID: ChannelID? {
-        guard selectedVoiceChannel == nil, model.openThread == nil else { return nil }
+        guard model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil,
+              selectedVoiceChannel == nil, model.openThread == nil
+        else { return nil }
         return model.activePinsChannelID
+    }
+
+    private var conversationToolbarPresentation: ConversationToolbarPresentation? {
+        if let page = model.guildWorkspacePage {
+            return .init(title: page == .guide ? "Server Guide" : "Channels & Roles",
+                         systemImage: page == .guide ? "signpost.right" : "slider.horizontal.3")
+        }
+        guard let channel = model.selectedChannel else { return nil }
+        return .init(title: channel.name, systemImage: channelToolbarSymbol(channel),
+                     subtitle: isDirectMessageSelected ? directMessageToolbarSubtitle(for: channel) : nil,
+                     topic: isDirectMessageSelected ? nil : channelTopic(for: channel),
+                     avatarChannel: isDirectMessageSelected ? channel : nil,
+                     avatarStatus: isDirectMessageSelected ? directMessageToolbarStatus(for: channel) : nil)
     }
 
     private var supplementaryToolbarPresentation: SupplementaryToolbarPresentation? {
@@ -1256,6 +1269,15 @@ private struct SupplementaryToolbarPresentation {
     let systemImage: String
 }
 
+private struct ConversationToolbarPresentation {
+    let title: String
+    let systemImage: String
+    var subtitle: String?
+    var topic: String?
+    var avatarChannel: Channel?
+    var avatarStatus: PresenceStatus?
+}
+
 private struct ConversationToolbarLabel: View {
     let title: String
     let systemImage: String
@@ -1312,34 +1334,39 @@ private struct ConversationToolbarLabel: View {
     }
 }
 
-private struct ChannelTopicToolbarButton: View {
-    let title: String
-    let systemImage: String
-    let topic: String
-    let textSize: CGFloat
+/// Use the same control and native toolbar background for every destination.
+/// Topic availability changes only its action and accessibility traits.
+private struct ConversationToolbarTitle: View {
+    let presentation: ConversationToolbarPresentation
     @State private var isTopicPresented = false
 
     var body: some View {
         Button {
-            isTopicPresented.toggle()
+            if presentation.topic != nil { isTopicPresented.toggle() }
         } label: {
             ConversationToolbarLabel(
-                title: title,
-                systemImage: systemImage,
-                subtitle: nil,
-                textSize: textSize
+                title: presentation.title,
+                systemImage: presentation.systemImage,
+                subtitle: presentation.subtitle,
+                textSize: InterfaceTypographyMetrics.interfaceTextSize,
+                avatarChannel: presentation.avatarChannel,
+                avatarStatus: presentation.avatarStatus
             )
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
         }
+        .buttonStyle(.plain)
+        .allowsHitTesting(presentation.topic != nil)
+        .accessibilityRemoveTraits(presentation.topic == nil ? .isButton : [])
+        .accessibilityAddTraits(presentation.topic == nil ? .isStaticText : [])
         .escapeDismissiblePopover(
             isPresented: $isTopicPresented,
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .bottom
         ) {
-            ChannelTopicPopover(topic: topic)
+            if let topic = presentation.topic { ChannelTopicPopover(topic: topic) }
         }
-        .help("Show channel topic")
-        .accessibilityLabel("Show channel topic")
-        .accessibilityValue(title)
+        .onChange(of: presentation.title) { isTopicPresented = false }
     }
 }
 

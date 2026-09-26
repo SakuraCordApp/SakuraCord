@@ -46,6 +46,7 @@ final class NativeMemberListScrollView: NSScrollView {
     let inputPerformanceProbe = ScrollInputPerformanceProbe(
         surface: .memberList
     )
+    var appearanceDidChange: (() -> Void)?
 
     override func scrollWheel(with event: NSEvent) {
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
@@ -65,6 +66,7 @@ final class NativeMemberListScrollView: NSScrollView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateBackgroundForEffectiveAppearance()
+        appearanceDidChange?()
     }
 
     private func updateBackgroundForEffectiveAppearance() {

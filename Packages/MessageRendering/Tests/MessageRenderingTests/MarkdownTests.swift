@@ -3,6 +3,22 @@ import SakuraCordModels
 @testable import MessageRendering
 import Testing
 
+@Test func `server invite recognition excludes code and lookalike hosts while deduplicating bare URLs`() {
+    let source = """
+    discord.gg/Valid https://discord.com/invite/Valid discordapp.com/invite/Other
+    <https://discord.gg/Third> https://notdiscord.gg/Hidden
+    `discord.gg/Inline`
+    ```
+    discord.gg/Fenced
+    ```
+    discord.gg/ie3urhej
+    """
+    #expect(DiscordMarkdown.serverInviteReferences(in: source).map(\.code) == ["Valid", "Other", "Third", "ie3urhej"])
+    #expect(ServerInviteReference("https://discord.gg@evil.example/test") == nil)
+    #expect(ServerInviteReference("https://discord.gg/a/b") == nil)
+    #expect(ServerInviteReference("../users/@me") == nil)
+}
+
 @Test func `markdown removes delimiters`() {
     let value = DiscordMarkdown.attributed("Hello **native** `client`")
     #expect(String(value.characters) == "Hello native client")

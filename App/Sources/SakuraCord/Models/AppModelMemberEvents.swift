@@ -8,6 +8,7 @@ extension AppModel {
         preparedPresentation: PreparedMemberListPresentation? = nil
     ) {
         AppPerformanceSignposts.measureSync("MemberListEventPublication") {
+            value.forEach { receiveOnboardingMember($0, guildID: guildID) }
             let receivedMembers = value
             let value = value.map { member in
                 var member = member

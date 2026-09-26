@@ -609,3 +609,16 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Discord Server Guide artwork
+
+The default Guide header (`GuildGuidePlaceholder.svg`) is Discord’s vector
+cloud illustration, observed through authenticated Computer Use/CDP in stable
+web build 619060 on 2026-09-24.
+
+- Source: https://discord.com/assets/36eaea47ad7cb391.svg
+- SHA-256: `d8aafefd243e9eb03cfc9876b4875eefe7cfb8ce6926db67f9c11281e72248dd`
+
+The artwork remains Discord’s property; Discord has not published an open-source
+license for it. It reproduces the official Guide’s fallback when a server has
+not uploaded a header and does not imply affiliation or endorsement.

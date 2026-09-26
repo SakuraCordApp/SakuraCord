@@ -405,6 +405,12 @@ enum NativeEmojiCatalogDiagnostics {
 }
 
 enum NativeEmojiCatalogMetadata {
+    private static let valuesByShortcode = Dictionary(
+        NativeEmojiCatalog.items.flatMap { emoji in emoji.shortcodes.map { ($0, emoji.value) } },
+        uniquingKeysWith: { first, _ in first }
+    )
+
+    static func value(forShortcode shortcode: String) -> String? { valuesByShortcode[shortcode] }
     static func shortcode(for value: String) -> String? {
         NativeEmojiCatalog.items.first(where: {
             $0.value == value || $0.skinToneVariants.values.contains(value)

@@ -142,6 +142,11 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let index: Int
     }
 
+    struct AvatarOverlayConfiguration: Equatable {
+        let member: Member
+        let isHovered: Bool
+    }
+
     struct ActivityEmojiOverlayPresentation {
         let id: ActivityEmojiOverlayID
         let configuration: ActivityEmojiOverlayConfiguration
@@ -216,7 +221,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         }
     )
     var avatarOverlays: [ItemID: NSHostingView<AnyView>] = [:]
-    var avatarOverlayMembers: [ItemID: Member] = [:]
+    var avatarOverlayConfigurations: [ItemID: AvatarOverlayConfiguration] = [:]
     var activityEmojiOverlays: [ActivityEmojiOverlayID: NSHostingView<AnyView>] = [:]
     var activityEmojiOverlayConfigurations: [
         ActivityEmojiOverlayID: ActivityEmojiOverlayConfiguration

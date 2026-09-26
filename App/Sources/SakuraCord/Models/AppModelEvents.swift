@@ -241,6 +241,7 @@ extension AppModel {
         preparedMemberListPresentation: PreparedMemberListPresentation? = nil
     ) {
         if consumeInboxEvent(event) { return }
+        receiveGuideResourceEvent(event)
         switch event {
         case .connectionChanged(let state):
             consumeConnectionChange(state)
@@ -305,6 +306,8 @@ extension AppModel {
             refreshUnreadPresentation()
         case .notificationSettingsChanged(let settings):
             applyNotificationSettings(settings)
+            synchronizeVisibleCustomization(guildID: settings.guildID)
+            reconcileSelectedOnboardingChannel()
             refreshUnreadPresentation()
             reconcileInboxEligibility()
         case .emojiUserSettingsChanged(let settings):
@@ -473,6 +476,9 @@ extension AppModel {
         let previousState = connectionState
         connectionState = state
         handleApplicationStreamsForGatewayState(state)
+        if state == .ready, previousState != .ready {
+            refreshSelectedGuildOnboarding(force: true)
+        }
         if state == .ready, previousState != .ready, inbox.isPresented { refreshInbox() }
         if state != .ready {
             if previousState == .ready {
@@ -518,6 +524,7 @@ extension AppModel {
         preparedTextPlan: NativeTimelineTextPlan?
     ) {
         confirmSlowmodeMessage(message)
+        receiveGuideMessage(message)
         message = outgoingMediaPresentationPreserving(message)
         typingState.clear(userID: message.author.id, in: message.channelID)
         if let nonce = message.nonce {
@@ -871,6 +878,9 @@ extension AppModel {
         let previousGuildsByID = serverRailGuildsByID
         let previousAccessEvidence = readState.authoritativeAccessEvidenceChannelIDs()
         snapshot = value
+        for (guildID, member) in value.currentMembersByGuildID {
+            receiveOnboardingMember(member, guildID: guildID)
+        }
         forwardSearchSourceRevision &+= 1
         readState.replaceSnapshot(value)
         composer.slowmode.updateIntervals(for: value.channels, replacing: previousSnapshot?.channels ?? [])

@@ -273,6 +273,7 @@ public struct MessageEmbed: Identifiable, Codable, Hashable, Sendable {
     public var provider: MessageEmbedProvider?
     public var author: MessageEmbedAuthor?
     public var fields: [MessageEmbedField]
+    public var components: [MessageComponent]?
 
     public init(
         id: String = UUID().uuidString, title: String? = nil, type: String? = nil,
@@ -280,7 +281,7 @@ public struct MessageEmbed: Identifiable, Codable, Hashable, Sendable {
         footer: MessageEmbedFooter? = nil, image: MessageEmbedMedia? = nil,
         thumbnail: MessageEmbedMedia? = nil, video: MessageEmbedMedia? = nil,
         provider: MessageEmbedProvider? = nil, author: MessageEmbedAuthor? = nil,
-        fields: [MessageEmbedField] = []
+        fields: [MessageEmbedField] = [], components: [MessageComponent]? = nil
     ) {
         self.id = id
         self.title = title
@@ -296,6 +297,7 @@ public struct MessageEmbed: Identifiable, Codable, Hashable, Sendable {
         self.provider = provider
         self.author = author
         self.fields = fields
+        self.components = components
     }
 }
 

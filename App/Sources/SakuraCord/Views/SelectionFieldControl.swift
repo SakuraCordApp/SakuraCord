@@ -442,6 +442,17 @@ private final class SelectionFieldControlContentView<
         onActivate()
     }
 
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .comboBox }
+    override func accessibilityLabel() -> String? { placeholder }
+    override func accessibilityValue() -> Any? { options.map(\.title).joined(separator: ", ") }
+    override func isAccessibilityEnabled() -> Bool { isEnabled }
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled, WindowModalCoordinator.allowsInput(for: self) else { return false }
+        onToggle()
+        return true
+    }
+
     override func keyDown(with event: NSEvent) {
         let command: SelectionFieldInputCommand? = switch event.keyCode {
         case 126: .previous

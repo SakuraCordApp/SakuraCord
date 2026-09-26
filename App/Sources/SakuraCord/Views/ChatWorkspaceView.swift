@@ -6,7 +6,20 @@ struct ChatWorkspaceView: View {
     @Binding var presentsForumComposer: Bool
     let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if let guildID = model.selectedGuildID, let page = model.guildWorkspacePage {
+            switch page {
+            case .channelsAndRoles: GuildCustomizationView(model: model, guildID: guildID)
+                .id("customization-\(guildID)-\(model.currentUser?.id.description ?? "")")
+            case .guide: GuildGuideView(model: model, guildID: guildID)
+                .id("guide-\(guildID)-\(model.currentUser?.id.description ?? "")")
+            }
+        } else {
+            conversation
+        }
+    }
+
+    @ViewBuilder private var conversation: some View {
         let presentation = ChatWorkspacePresentation(
             isVoiceChannel: model.selectedChannel?.kind == .voice,
             isForumChannel: model.selectedChannel?.kind == .forum,

@@ -252,6 +252,7 @@ extension AppModel {
         if let account, !isCurrentAccountSession(account) { return }
         AppPerformanceSignposts.measureSync("BootstrapSnapshotPublish") {
             snapshot = value
+            onboarding.members = value.currentMembersByGuildID
             configureForwardDestinationHistoryScope(
                 credentialHandle?.accountID
                     ?? (launchMode == .offlineTesting ? "offline" : "signed-out")

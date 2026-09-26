@@ -70,7 +70,7 @@ import Testing
             """
         )
     }
-    #expect(tableNames == ["drafts", "grdb_migrations"])
+    #expect(tableNames == ["drafts", "grdb_migrations", "onboardingDrafts"])
 }
 
 private func createVersionFiveDatabase(
@@ -169,4 +169,20 @@ private func createVersionFiveDatabase(
             """
         )
     }
+}
+
+@Test func `unfinished onboarding survives reopening and remains account scoped`() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let guildID = GuildID(rawValue: 100)
+    let first = try SakuraCordDatabase(accountID: .init(rawValue: 1), directory: directory)
+    let second = try SakuraCordDatabase(accountID: .init(rawValue: 2), directory: directory)
+    let draft = GuildOnboardingDraft(responses: ["11"], baselineResponses: [], promptID: "20", joinedAt: .now, initial: true)
+    try await first.saveOnboardingDraft(draft, guildID: guildID)
+    let reopened = try SakuraCordDatabase(accountID: .init(rawValue: 1), directory: directory)
+    #expect(try await reopened.onboardingDraft(guildID: guildID) == draft)
+    #expect(try await second.onboardingDraft(guildID: guildID) == nil)
+    #expect(try await reopened.draftStorageSummary().draftCount == 1)
+    try await reopened.clearDrafts()
+    #expect(try await first.onboardingDraft(guildID: guildID) == nil)
 }

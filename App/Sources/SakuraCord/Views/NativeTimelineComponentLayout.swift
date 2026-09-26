@@ -137,14 +137,16 @@ struct NativeTimelineComponentLayout {
 
     static func make(
         message: Message,
+        components embedComponents: [MessageComponent]? = nil,
         model: AppModel?,
         origin: CGPoint,
         maximumWidth: CGFloat,
         integratesWithBubble: Bool = false,
         drawsTopSeparator: Bool = false
     ) -> Self? {
-        guard !message.components.isEmpty else { return nil }
-        var nodes = message.components.map { component in
+        let components = embedComponents ?? message.components
+        guard !components.isEmpty else { return nil }
+        var nodes = components.map { component in
             if integratesWithBubble {
                 NodeBuilder.bubbleRootNode(
                     for: component,
@@ -161,7 +163,7 @@ struct NativeTimelineComponentLayout {
                 )
             }
         }
-        if let error = model?.componentError(for: message.id) {
+        if embedComponents == nil, let error = model?.componentError(for: message.id) {
             let errorBox = NodeBuilder.plainText(
                 "⚠ \(error)",
                 font: .systemFont(ofSize: 11),
@@ -205,7 +207,7 @@ struct NativeTimelineComponentLayout {
         let expandsSingleBubbleContainer =
             integratesWithBubble
                 && !drawsTopSeparator
-                && message.components.count == 1
+                && components.count == 1
         let containers = root.containers.map { container in
             guard expandsSingleBubbleContainer,
                   container.chrome == .bubbleSection

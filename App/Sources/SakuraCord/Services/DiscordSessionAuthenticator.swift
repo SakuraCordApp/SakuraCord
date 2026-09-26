@@ -35,15 +35,6 @@ nonisolated enum DiscordRemoteAuthTicketExchangeStep: Equatable, Sendable {
     case captcha(DiscordCaptchaChallenge)
 }
 
-nonisolated struct DiscordCaptchaChallenge: Equatable, Identifiable, Sendable {
-    let id: UUID
-    let siteKey: String
-    let rqdata: String?
-    let rqtoken: String?
-    let sessionID: String?
-    let shouldServeInvisible: Bool
-}
-
 nonisolated protocol DiscordFingerprintStoring: Sendable {
     func load() async -> String?
     func save(_ fingerprint: String) async

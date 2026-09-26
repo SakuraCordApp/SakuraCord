@@ -69,6 +69,9 @@ extension DiscordRESTProvider {
             threads: startupThreads,
             activeJoinedThreads: startupActiveJoinedThreads,
             members: members,
+            currentMembersByGuildID: cachedMembers.compactMapValues { members in
+                members.first { $0.id == user.id }
+            },
             readStates: ready.readStates,
             notificationSettings: ready.notificationSettings,
             usesNewNotifications: ready.usesNewNotifications

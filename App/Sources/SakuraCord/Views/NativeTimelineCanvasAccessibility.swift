@@ -1185,6 +1185,7 @@ extension NativeTimelineCanvasView {
             group.setAccessibilityChildren([button])
             children.append(group)
         }
+        appendInviteAccessibility(message: message, to: &children, layout: layout, rowIndex: rowIndex, parent: parent)
     }
 
     func appendComponentAccessibility(

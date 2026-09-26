@@ -961,6 +961,8 @@ extension DiscordRESTProvider {
         if let discordCode, [40001, 40002, 40003, 40004, 40012, 40333].contains(discordCode) {
             return true
         }
+        // Only supported invite challenges reach the explicit human-completion path.
+        if DiscordCaptchaChallenge.inviteChallenge(data: data, status: status, method: method, path: path) != nil { return false }
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            object["captcha_key"] != nil || object["captcha_sitekey"] != nil
            || object["captcha_service"] != nil
@@ -971,6 +973,9 @@ extension DiscordRESTProvider {
         // Known poll failures can race local expiry and permission checks.
         if status == 400, profileValidationError(data: data, method: method, path: path) != nil { return false }
         if status == 400, isExpectedPollFailure(discordCode: discordCode, method: method, path: path) { return false }
+        if status == 400, method == "POST", path.split(separator: "/").count == 2,
+           path.hasPrefix("/invites/"), let discordCode,
+           [10006, 50270, 40007, 30001].contains(discordCode) { return false }
         return status == 400 && method != "GET"
     }
 
@@ -979,6 +984,8 @@ extension DiscordRESTProvider {
     }
 
     static func isExpectedResourceNotFound(method: String, path: String) -> Bool {
+        let inviteParts = path.split(separator: "/")
+        if method == "GET" || method == "POST", inviteParts.count == 2, inviteParts[0] == "invites" { return true }
         guard method == "GET" else { return false }
         let segments = path.split(separator: "/")
         return segments.count == 3
@@ -1004,6 +1011,8 @@ extension DiscordRESTProvider {
     }
 
     static func routeTemplate(method: String, path: String) -> String {
+        let inviteParts = path.split(separator: "/")
+        if inviteParts.count == 2, inviteParts[0] == "invites" { return "\(method) /invites/{code}" }
         let segments = path.split(separator: "/", omittingEmptySubsequences: false).map { segment -> String in
             if segment.count >= 15, segment.allSatisfy(\.isNumber) {
                 return "{id}"

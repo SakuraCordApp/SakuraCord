@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SakuraCordModels
 import SwiftUI
 
 public extension NSAttributedString.Key {
@@ -1421,4 +1422,31 @@ private final class AppKitMarkdownCacheKey: NSObject {
         }
         return source == other.source && baseFontSize == other.baseFontSize
     }
+}
+
+public extension DiscordMarkdown {
+    /// Discord invite cards are client-derived, including bare links and links inside angle brackets.
+    /// Reuse the Markdown parser so code blocks and inline code never initiate preview requests.
+    static func serverInviteReferences(in source: String) -> [ServerInviteReference] {
+        guard source.contains("discord.gg/") || source.contains("discord.com/invite/")
+                || source.contains("discordapp.com/invite/") else { return [] }
+        var result: [ServerInviteReference] = []
+        var seen: Set<String> = []
+        for line in appKitPlan(source).lines {
+            if case .code = line.block { continue }
+            for run in line.runs where !run.traits.contains(.inlineCode) {
+                let candidates = run.link.map { [$0.absoluteString] }
+                    ?? run.text.components(separatedBy: .whitespacesAndNewlines)
+                for candidate in candidates {
+                    let candidate = candidate.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+                    guard candidate.contains("/"), let reference = ServerInviteReference(candidate),
+                          seen.insert(reference.code).inserted else { continue }
+                    result.append(reference)
+                    if result.count == 10 { return result }
+                }
+            }
+        }
+        return result
+    }
+
 }

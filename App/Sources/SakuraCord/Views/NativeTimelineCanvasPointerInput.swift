@@ -105,6 +105,7 @@ extension NativeTimelineCanvasView {
                 }
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
                 installPollCursors(at: index, rowOrigin: rowOrigin)
+                installInviteCursors(at: index, rowOrigin: rowOrigin)
             }
             index += 1
         }
@@ -621,6 +622,8 @@ extension NativeTimelineCanvasView {
                     )
                 case let .sakuraCordDeepLink(action):
                     _ = activateSakuraCordDeepLink(action, message: hit.message)
+                case let .invite(card, expands):
+                    activateInvite(card, message: hit.message, expands: expands)
                 }
             }
             return true
@@ -1563,6 +1566,16 @@ extension NativeTimelineCanvasView {
             x: point.x,
             y: point.y - rowOrigin
         )
+        for card in layouts[index].inviteRegions {
+            let isButton = card.buttonFrame.contains(local) && card.buttonFrame.height > 0
+            let expands = !isButton && card.detailsFrame?.contains(local) == true
+            if isButton || expands {
+                return ComponentButtonPointerHit(
+                    target: NativeTimelineComponentButtonTarget(messageID: row.id, componentID: card.componentID + (expands ? ":details" : "")),
+                    rowIndex: index, message: row.message, kind: .invite(card, expands: expands),
+                    frame: (expands ? card.detailsFrame! : card.buttonFrame).offsetBy(dx: 0, dy: rowOrigin))
+            }
+        }
         if let region = layouts[index].sakuraCordDeepLinkRegions.first(
             where: { $0.buttonFrame.contains(local) }
         ) {

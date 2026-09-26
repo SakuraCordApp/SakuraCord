@@ -513,6 +513,265 @@ not copy unrelated store, billing, analytics, experiment, or lurker-join
 fan-out. No message, reaction, acknowledgement, call, or other user-content
 mutation was sent during the observation.
 
+### Server invites and membership (22 September 2026)
+
+Authenticated CDP experiments in Discord Official Fresh desktop `0.0.411`,
+using both saved accounts exclusively in the owner-designated testing server,
+confirmed invite resolution, acceptance, leaving, invite creation/expiry/revocation,
+and a banned-account rejection followed by unban and rejoin. The production asset
+was `web.9a6d63589ff469f3.js`, SHA-256
+`459b4591cde285a42759be68941b2096491c14f8654fca35bf72d9c45cbee737`.
+Relevant public contracts are [Invite](https://docs.discord.com/developers/resources/invite)
+and [Leave Guild](https://docs.discord.com/developers/resources/user#leave-guild).
+Pinned Paicord corroborates accept/leave routes and optional Gateway `session_id`,
+but lacks the current complete invite-card workflow. Pinned Swiftcord v1's join
+view resolves an invite without implementing acceptance; it is not a behavioral
+reference for completed joining.
+
+- Preview: `GET /invites/{code}` with `with_counts=true`,
+  `with_expiration=true`, and `with_permissions=true`. A banned account can still
+  resolve an otherwise valid preview. Invalid invites returned code `10006`;
+  expired and revoked invites both returned `50270`. These expected failures
+  must not trip the account-wide networking circuit.
+- Accept: one `POST /invites/{code}` with the current Gateway `session_id`;
+  message-card actions additionally supply `invite_instance_id` as
+  `{messageID}:{code}`. Context location is `Join Guild` or
+  `Invite Button Embed`, with destination guild/channel IDs and numeric channel
+  type. No fabricated installation or analytics identifiers are added.
+  The response contains guild/channel and `new_member`, but need not contain
+  profile or counts. Preserve the preview. The observed `GUILD_CREATE` was
+  dispatched before acceptance completed; either order must work.
+- Join CAPTCHA (23 September follow-up): the same first-party asset's HTTP
+  interceptor recognizes HTTP 400 `captcha_key`, presents the challenge, and
+  resubmits with `X-Captcha-Key`, optional `X-Captcha-Rqtoken`, and optional
+  `X-Captcha-Session-Id`. Its extractor also supplies `captcha_sitekey`,
+  `captcha_service`, `captcha_rqdata`, and `should_serve_invisible` to the widget.
+  Pinned Paicord's `DefaultDiscordClient` corroborates these response fields and
+  headers; pinned Swiftcord v1 only embeds web authentication and has no native
+  join-challenge continuation. Public Invite documentation does not specify
+  this private-client challenge contract. The existing hCaptcha integration
+  uses the response site key and rqdata, the Discord origin, and the documented
+  [normal/invisible widget modes](https://docs.hcaptcha.com/configuration).
+  SakuraCord permits a supported hCaptcha response only on the invite acceptance
+  route without stopping account networking. One human completion resubmits the
+  original body/context once, on the same provider and Gateway session, with
+  no automatic retry. Cancellation, account invalidation, empty solutions,
+  another challenge, and ambiguous failures terminate that attempt. This
+  bounded replay is a deliberate difference from the generic first-party
+  interceptor. Malformed or unsupported challenges and account restrictions
+  retain the shared safety circuit. Controlled transport and presentation
+  tests exercise this path. The packaged app's normal and invisible widgets
+  returned hCaptcha's documented test token; cancellation restored the join
+  modal. No live join CAPTCHA has been observed.
+- Leave: one `DELETE /users/@me/guilds/{guild}` with `lurking:false`, returning
+  204. `GUILD_DELETE` removes membership and navigation. `unavailable:true`
+  remains an outage rather than a leave. Owners have no Leave Server menu item.
+  Already-member cards navigate without an invite acceptance request.
+- SakuraCord accepts onboarding invites and resumes the membership flow described
+  below. Member screening and special guest/target flows remain delegated to Discord.
+  Historical `GUILD_ONBOARDING_EVER_ENABLED` alone is not active onboarding.
+  A late verification requirement or missing Gateway catalogue must not be
+  reported as completed joining. Mutations are never automatically retried.
+  Membership completion does not require a readable channel: the testing alt
+  successfully left and rejoined while its server-wide View Channel permission
+  was temporarily removed, then regained channel access when it was restored.
+
+Invite cards are derived from message content even when REST `embeds` is empty
+or `SUPPRESS_EMBEDS` is set. Bare `discord.gg/code`, `discord.com/invite/code`,
+and `discordapp.com/invite/code` resolve; equivalent codes are deduplicated.
+Inline/fenced code is excluded, while angle-bracket links still produce cards.
+The V2 profile supplies `icon_hash`, `brand_color_primary`, description and
+traits. Invite cards use this profile's preset gradient, or the first dominant
+icon-palette color when `brand_color_primary` is null (the adaptive option).
+They do not use the server banner. The gradient is radial, centered at
+`(50.1%,127.05%)`, with bright/base stops at 20.65%/85.16% and CIELAB brightness
+increased by 31.5 L*. The captured bundle contains a discovery-banner branch,
+but this was not confirmed in live invite cards; the subsequent user-supplied
+Discord captures establish the gradient header used for presentation here.
+The live profile experiments covered preset colors, descriptions, traits and
+missing icons; the original profile and both memberships were restored afterward.
+The invite's optional `inviter` supplies the name and avatar beneath the server
+name. The later Discord captures show “You sent an invite to join …” for the
+current account's invite, and “{inviter} invited you to …” otherwise.
+
+### Guild onboarding and Channels & Roles (23 September 2026)
+
+Authenticated Computer Use and CDP captures in the unmodified Discord Official
+Fresh app, exclusively in SakuraCord Testing Server, establish this baseline.
+The stable desktop was `0.0.411`, client build `618874`, native build `90866`,
+Electron `42.11.1`, Chromium `148.0.7778.280`, with `has_client_mods:false`.
+The current asset was `web.161a57e2ae3675ed.js`, SHA-256
+`859e75d4181ad0ec44005772c0da71d150c078cf83dc1704fb6cf72b4a2cb487`.
+The local evidence session is `sakuracord-onboarding-20260923`; credentials,
+cookies, session IDs, tokens, and installation identifiers are redacted in the
+retained evidence. Both saved accounts exercised the configured questions.
+
+Observed REST contracts, using the shared authenticated API v9 headers:
+
+| Operation | Method and route | Body / confirmed response |
+| --- | --- | --- |
+| Read configuration and saved answers | `GET /guilds/{guild}/onboarding` | `guild_id`, `enabled`, `prompts`, `default_channel_ids`, **`responses`**, seen timestamp maps |
+| Configure server onboarding | `PUT /guilds/{guild}/onboarding` | Partial `prompts`, `default_channel_ids`, or `enabled`; response returns normalized configuration |
+| Complete initial onboarding | `POST /guilds/{guild}/onboarding-responses` | Selected IDs and seen maps; reply contains `guild_id`, `user_id`, **`onboarding_responses`** |
+| Edit member answers | `PUT /guilds/{guild}/onboarding-responses` | Same shape, covering all questions including post-join questions |
+| Select channels | `PATCH /users/@me/guilds/settings` | `{guilds:{guildID:{channel_overrides:{channelID:{flags:4096}}}}}`; deselection clears bit 12 |
+| Show all channels | Same bulk PATCH | Partial guild `flags`; observed opt-in mode `16384` became `0` when Show All Channels was enabled |
+
+The normal-user answer body is:
+
+```json
+{
+  "onboarding_responses": ["optionID"],
+  "onboarding_prompts_seen": {"promptID": 1780000000000},
+  "onboarding_responses_seen": {"optionID": 1780000000000}
+}
+```
+
+Timestamps are Unix milliseconds. Initial submission includes only
+`in_onboarding` questions; customization includes every question. The current
+asset filters removed option IDs and marks all options in the submitted question
+scope seen. Prompts retain stable IDs, `type`, `required`, `single_select`, and
+`in_onboarding`; options retain IDs, titles, optional descriptions and emoji
+objects, `role_ids`, and `channel_ids`. The configured test server exercised
+required/optional, single/multiple choice, emoji/no emoji, role/channel mappings,
+post-join questions, and default channels. The current basic setup accepted one
+chattable default channel; older seven-channel setup assumptions are not used.
+
+`GUILD_MEMBER_UPDATE` confirms role replacement and onboarding membership flags.
+The incomplete rejoined test member had `pending:false`, `flags:9` (rejoined +
+started). Initial completion changed flags to `11` (adds completed bit 1), assigned
+the selected role, and allowed a subsequently observed `MESSAGE_CREATE`.
+`pending` is member screening and is independent of onboarding. Existing members
+without started bit 3 are not assumed to need onboarding. `GUILD_CREATE`, READY
+merged members, member chunks, and sparse member updates retain these flags.
+SakuraCord uses an uncached existing Gateway member query for confirmation; a
+successful answer HTTP response alone never completes the flow.
+
+Advancing questions in Discord sent no answer mutation. Reloading before Finish
+returned to the first question and discarded unsubmitted edits. SakuraCord
+intentionally persists only its own unfinished choices and question position in
+account-scoped draft storage. It compares membership join time and confirmed
+server answers before restoring; remote changes supersede stale drafts. Question
+configuration remains live and is refreshed on entry/reconnect. Initial completion
+re-fetches configuration and membership; post-join writes validate against the
+latest fetched configuration. Ambiguous writes use readback before rollback.
+
+`USER_GUILD_SETTINGS_UPDATE` supplies authoritative channel overrides and guild
+flags. A recorded Follow Category action used the same channel override PATCH with
+the category ID and bit 12; its child controls became unavailable until the
+category was unfollowed. Source inspection corroborates parent-category opt-in
+inheritance and the separate FAVORITED bit; these are distinct from channel
+permissions. SakuraCord ignores channel selection filtering and issues no
+channel-management mutation while the global **Settings → Features → Channels → Channel customization** control is off (the default).
+Server-applied default/answer channel selections are still part of Discord's
+onboarding response processing. Turning local management on honors confirmed
+settings; Show All Channels disables filtering without erasing individual picks.
+
+[PR #4](https://github.com/SakuraCordApp/SakuraCord/pull/4) corroborates the three
+onboarding read/response routes and bulk settings route. Its eight-hour cache,
+optimistic completion assumptions, and presentation were not adopted. Pinned
+Paicord corroborates guild onboarding configuration structures and member flags,
+but does not supply this observed normal-user response flow. Pinned Swiftcord v1
+has no guild-onboarding implementation. The public
+[Guild onboarding contract](https://docs.discord.com/developers/resources/guild#guild-onboarding-object)
+describes configuration; authenticated first-party traffic supplies the private
+normal-user completion contract above.
+
+Post-join customization updates immediately in the official UI. A captured burst
+of five option toggles produced one final-state PUT; the pinned web source uses a
+one-second debounce. SakuraCord uses that delay, serializes writes per membership,
+and retains newer input when an older response arrives. A failure reads back and
+rolls back only the failed version. Required questions cannot lose their final
+selected answer. Selected options in dropdowns have removable chips; post-join
+questions precede pre-join questions, with unseen options grouped first.
+
+Role changes and channel settings reconcile through Gateway events. No dedicated
+answer-only Gateway event was established. SakuraCord refreshes the visible editor
+on foreground activation and relevant events, with a 30-second active-window
+fallback. This is not instantaneous push synchronization for answer-only edits.
+A three-second experimental poll hit a user-scoped 429 (`retry_after: 5.614`);
+that polling interval was removed. A normal cached post-join edit now sends one
+PUT without surrounding configuration/member reads.
+
+The server menu's **Show All Channels** sends the bulk settings PATCH with guild
+flags bit 14 cleared/set and preserves channel overrides. This is distinct from
+the sidebar's **Show All / Hide Voice Channels**, which locally expands voice
+channels and produced no settings request in the recorded interaction. The bulk
+channel-selection response is an array of full guild notification settings;
+SakuraCord accepts the matching confirmed entry and verifies requested bits.
+
+### Server Guide and onboarding presentation (23–24 September 2026)
+
+The follow-up authenticated session `sakuracord-onboarding-revision-20260923`
+used the same clean stable client (web 618874, desktop 0.0.411, native 90866).
+Computer Use configured and enabled a real guide in SakuraCord Testing Server;
+CDP recorded redacted requests, responses, headers and Gateway frames.
+
+| Action | Observed route | Contract |
+| --- | --- | --- |
+| Server profile | `GET /guilds/{guild}/profile` | Identity, member/online counts, description, brand color, traits; optional enrichment of the guide |
+| Load guide | `GET /guilds/{guild}/new-member-welcome` | `guild_id`, `enabled`, `welcome_message` (`author_ids`, `message`), `new_member_actions`, `resource_channels` |
+| Configure guide | `PUT /guilds/{guild}/new-member-welcome` | Full configuration; normalized response omits empty emoji objects |
+| Read member progress | `GET /guilds/{guild}/new-member-actions` | `guild_id`, `user_id`, `channel_actions` keyed by channel ID with `completed` |
+| Record task | `POST /guilds/{guild}/new-member-action/{channel}` | No request body; response has matching guild/member and confirmed channel actions |
+
+The 24 September follow-up captured stable web **619060**, desktop **0.0.411**,
+native **90866**, Electron **42.11.1**, with `has_client_mods: false`. READY’s
+parallel `merged_members` array included the signed-in member’s `flags`,
+`pending`, `joined_at`, and roles for both Testing Server and SakuraCord before
+navigation. The native bootstrap now preserves those records for all guilds.
+Unknown flags remain a permission-loading state and never display onboarding.
+
+Official SakuraCord navigation had no Guide despite `GUILD_SERVER_GUIDE` being
+present. Source modules 473529/978165 and the scoped READY channel/member data
+establish the regular-client rule: Community + onboarding + guide capabilities,
+and either unfinished home actions within seven days of joining or at least
+one resource channel (`IS_GUILD_RESOURCE_CHANNEL = 128`). Testing Server had a
+resource channel; SakuraCord had none and the member’s flags included 64.
+
+The observed Guide uses welcome/tasks on the left with profile and compact
+resources on the right for new members, then full resource cards beside the
+profile after completion. Configured resource descriptions render on those cards
+without additional history reads; opening the resource still loads its history.
+The 24 September owner task POST returned confirmed completion and the member
+update retired introductory tasks. Native page titles use the existing channel
+toolbar; onboarding keeps the same root navigation and window chrome.
+
+The tested task types were 0 (visit) and 1 (send a message). Task progress is
+separate from onboarding completion, roles, and member screening. The app reads
+progress on entry/reconnect and accepts completion only from identity-checked
+server responses. Merely opening the guide does not record task completion.
+Individual task progress has no established dedicated Gateway event. Completing
+the last task emitted `GUILD_MEMBER_UPDATE` with flags 43 → 107, setting
+`COMPLETED_HOME_ACTIONS` (64). The native guide uses that confirmed membership
+flag to retire the welcome/tasks section, as the official client does. The pinned
+official source also limits these introductory tasks to the first seven days
+after joining. An empty progress response must not override confirmed completion.
+Opening a resource card displays a side panel and does not record a task. Clicking
+its corresponding visit task navigates to the channel and sends the task POST.
+Resource previews requested `messages?after={channelID}&limit=5`; the opened panel
+requested `messages?limit=30&around={channelID}`. Both target the oldest history.
+The native resource reader pages forward from the same beginning using the
+existing history provider. Unstarted native memberships returned an empty success
+response; only HTTP 204 is treated as empty progress, never empty task confirmation.
+
+Discord's question editor explicitly confirmed that **13 or more answers**
+become a dropdown without descriptions. Both `type: 1` and the count boundary
+are represented in the native presentation. Required onboarding replaces the
+guild workspace; completed-member customization and Server Guide are scrolling
+channel-list destinations. Resource pages use the existing rich message renderer
+without chat identity headers or a composer.
+
+The pinned first-party source resolves guide headers to
+`/home-headers/{guild}/{hash}.png` and resource/task icons to
+`/resource-channels/{channel}/{hash}` and `/new-member-actions/{channel}/{hash}`
+on the CDN. Its resource navigation requests the beginning of channel history.
+These source observations supplement the authenticated configuration/progress
+captures; custom uploaded guide artwork was not established by the test server.
+Pinned Paicord and Swiftcord contain no comparable guide progress implementation.
+The official [Server Guide FAQ](https://support.discord.com/hc/en-us/articles/13497665141655-Server-Guide-FAQ)
+corroborates welcome signs, tasks, and resource-channel pages.
+
 ### Evidence priority for protocol changes
 
 Every new or materially changed production communication with Discord must be
@@ -852,7 +1111,7 @@ The default attempt budget is exact:
 | Pending-QR or stored-session missing-installation repair | Once per provider: 1 unauthenticated Apex GET, plus 1 unauthenticated `/experiments` GET only when Apex fails or omits the identity. Both are best-effort; no automatic retry or authentication replay, and Gateway proceeds without the optional identity when unavailable. |
 | Native password/MFA status retry | Original plus at most 2 current-official retries for `429`, `500`, `502`, or `504`, subject to the established delay ceiling. |
 | Remote-auth ticket status retry | Original plus at most 3 Paicord-policy retries for `429`, `500`, `502`, or `504`, subject to its delay ceiling. |
-| User-completed login CAPTCHA | At most 1 replay of the challenged request. |
+| User-completed login or server-join CAPTCHA | At most 1 replay of the challenged request, only after human completion; a second challenge ends the attempt. |
 
 Any `429` pauses authenticated traffic until the server-provided cooldown.
 Route and global bucket data come from response headers/body; SakuraCord does
@@ -874,7 +1133,8 @@ waiting for confirmation and cannot be retried automatically.
 Authentication failures, account restrictions, verification/challenge
 responses, invalid client metadata, malformed mutation responses, and repeated
 unexpected not-found responses can open the session-wide safety circuit.
-Ordinary resource-scoped permission failures remain scoped when the decoded
+Supported invite hCaptcha responses use the bounded human-completion exception
+described above. Ordinary resource-scoped permission failures remain scoped when the decoded
 Discord error does not indicate an account/session condition. Expected
 resource-scoped not-found responses, including an unavailable user profile,
 remain scoped to the initiating presentation.

@@ -13,6 +13,7 @@ extension DiscordRESTProvider {
             }
         )
         cachedGuilds[guildID] = nil
+        cachedGuildOnboarding[guildID] = nil
         cachedJoinedThreads = cachedJoinedThreads.filter {
             $0.value.guildID != guildID
         }

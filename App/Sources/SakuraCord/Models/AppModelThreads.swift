@@ -350,7 +350,7 @@ extension AppModel {
         thread: MessageThreadSummary,
         clearsComposer: Bool
     ) async -> Bool {
-        guard allowSlowmodeSubmission(in: thread.id) else { return false }
+        guard allowOnboardingSubmission(in: thread.id), allowSlowmodeSubmission(in: thread.id) else { return false }
         let draft = SendMessageDraft(
             channelID: thread.id,
             content: content,

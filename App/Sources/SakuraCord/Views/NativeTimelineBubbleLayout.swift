@@ -88,7 +88,7 @@ enum NativeTimelineBubbleLayout {
             )
         }
         if !message.embeds.isEmpty || !message.components.isEmpty
-            || !row.sakuraCordDeepLinks.isEmpty || message.thread != nil
+            || !row.sakuraCordDeepLinks.isEmpty || !row.serverInvites.isEmpty || message.thread != nil
             || message.forwardedSnapshot != nil
         {
             preferredWidth = max(

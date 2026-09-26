@@ -273,6 +273,10 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(NativeEmojiSkinTone.standard.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .channelManagement, page: .features,
+            storage: .appWide(key: "settings.features.channelManagement"), defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
             id: .showHiddenChannels, page: .features,
             storage: .appWide(key: "settings.features.showHiddenChannels"), defaultValue: .bool(true)
         ),

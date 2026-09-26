@@ -12,6 +12,9 @@ struct ServerContextMenuBridge: NSViewRepresentable {
     let setNotificationLevel: (MessageNotificationLevel) -> Void
     let setNotificationToggle: (GuildNotificationToggle, Bool) -> Void
     let copyServerID: () -> Void
+    var leaveServer: (() -> Void)?
+    var showsAllChannels: () -> Bool? = { nil }
+    var setShowsAllChannels: (Bool) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(from: self)
@@ -43,6 +46,9 @@ struct ServerContextMenuBridge: NSViewRepresentable {
         private var setNotificationLevel: (MessageNotificationLevel) -> Void
         private var setNotificationToggle: (GuildNotificationToggle, Bool) -> Void
         private var copyServerID: () -> Void
+        private var leaveServer: (() -> Void)?
+        private var showsAllChannels: () -> Bool?
+        private var setShowsAllChannels: (Bool) -> Void
 
         init(from bridge: ServerContextMenuBridge) {
             isUnread = bridge.isUnread
@@ -54,6 +60,9 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             setNotificationLevel = bridge.setNotificationLevel
             setNotificationToggle = bridge.setNotificationToggle
             copyServerID = bridge.copyServerID
+            leaveServer = bridge.leaveServer
+            showsAllChannels = bridge.showsAllChannels
+            setShowsAllChannels = bridge.setShowsAllChannels
         }
 
         func update(from bridge: ServerContextMenuBridge) {
@@ -66,6 +75,9 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             setNotificationLevel = bridge.setNotificationLevel
             setNotificationToggle = bridge.setNotificationToggle
             copyServerID = bridge.copyServerID
+            leaveServer = bridge.leaveServer
+            showsAllChannels = bridge.showsAllChannels
+            setShowsAllChannels = bridge.setShowsAllChannels
         }
 
         func makeMenu() -> NSMenu {
@@ -116,6 +128,12 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 menu.addItem(item)
             }
 
+            if let all = showsAllChannels() {
+                let item = menuItem("Show All Channels", action: #selector(toggleAllChannels))
+                item.state = all ? .on : .off
+                menu.addItem(item)
+            }
+
             let notificationItem = menuItem(
                 "Notification Settings",
                 systemImage: "bell.badge.fill",
@@ -134,8 +152,20 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                     action: #selector(copyServerIDFromMenu)
                 )
             )
+            if leaveServer != nil {
+                menu.addItem(.separator())
+                menu.addItem(menuItem("Leave Server", systemImage: "rectangle.portrait.and.arrow.right",
+                                      action: #selector(leaveServerFromMenu), isDestructive: true))
+            }
             return menu
         }
+
+        @objc private func toggleAllChannels() {
+            guard let all = showsAllChannels() else { return }
+            setShowsAllChannels(!all)
+        }
+
+        @objc private func leaveServerFromMenu() { leaveServer?() }
 
         private var isDirectlyMuted: Bool {
             notificationSettings.isMuted
@@ -179,7 +209,8 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             _ title: String,
             systemImage: String? = nil,
             action: Selector?,
-            isEnabled: Bool = true
+            isEnabled: Bool = true,
+            isDestructive: Bool = false
         ) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = action == nil ? nil : self
@@ -188,7 +219,8 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 ContextMenuItemSupport.configure(
                     item,
                     title: title,
-                    systemImage: systemImage
+                    systemImage: systemImage,
+                    isDestructive: isDestructive
                 )
             }
             return item

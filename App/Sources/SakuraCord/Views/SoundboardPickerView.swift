@@ -79,6 +79,7 @@ nonisolated enum SoundboardPickerContentPolicy {
 
 struct SoundboardPickerView: View {
     let model: AppModel
+    @State private var measurement = NativePickerRowMeasurement()
     @State private var query = ""
     @State private var searchIsFocused = false
     @State private var visibleSection: SoundboardSection = .favorites
@@ -97,7 +98,7 @@ struct SoundboardPickerView: View {
                 soundboardErrorBanner(error)
                 Divider()
             }
-            ScrollViewReader { proxy in
+            NativePickerScrollReader { proxy in
                 HStack(spacing: 0) {
                     sidebar(proxy: proxy)
                     Divider()
@@ -143,48 +144,39 @@ struct SoundboardPickerView: View {
         .background(Color(hex: 0xF0B232).opacity(0.1))
     }
 
-    private func sidebar(proxy: ScrollViewProxy) -> some View {
-        GeometryReader { _ in
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    if browsingSections.contains(where: { $0.id == .favorites }) {
-                        bookmark(.favorites, help: "Favorites", systemImage: "star.fill", proxy: proxy)
-                    }
-                    if browsingSections.contains(where: { $0.id == .frequent }) {
-                        bookmark(.frequent, help: "Frequently Used", systemImage: "clock.fill", proxy: proxy)
-                    }
-                    bookmark(.defaults, help: "Discord Sounds", systemImage: "waveform", proxy: proxy)
-
-                    if !guilds.isEmpty {
-                        Divider()
-                            .frame(width: 28)
-                            .padding(.vertical, 2)
-
-                        ForEach(guilds) { guild in
-                            PickerSectionBookmark(
-                                section: SoundboardSection.guild(guild.id),
-                                visibleSection: visibleSection,
-                                help: guild.name,
-                                jump: { section in jump(to: section, proxy: proxy) },
-                                content: { EmojiGuildBookmarkIcon(guild: guild) }
-                            )
-                        }
-                    }
-                }
-                .scrollTargetLayout()
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .center)
+    private func sidebar(proxy: NativePickerScrollPosition) -> some View {
+        PickerSectionRail {
+            if browsingSections.contains(where: { $0.id == .favorites }) {
+                bookmark(.favorites, help: "Favorites", systemImage: "star.fill", proxy: proxy)
             }
-            .scrollIndicators(.hidden)
+            if browsingSections.contains(where: { $0.id == .frequent }) {
+                bookmark(.frequent, help: "Frequently Used", systemImage: "clock.fill", proxy: proxy)
+            }
+            bookmark(.defaults, help: "Discord Sounds", systemImage: "waveform", proxy: proxy)
+
+            if !guilds.isEmpty {
+                Divider()
+                    .frame(width: 28)
+                    .padding(.vertical, 2)
+
+                ForEach(guilds) { guild in
+                    PickerSectionBookmark(
+                        section: SoundboardSection.guild(guild.id),
+                        visibleSection: visibleSection,
+                        help: guild.name,
+                        jump: { section in jump(to: section, proxy: proxy) },
+                        content: { PickerGuildBookmarkIcon(guild: guild) }
+                    )
+                }
+            }
         }
-        .frame(width: PickerSectionRailLayout.width)
     }
 
     private func bookmark(
         _ section: SoundboardSection,
         help: String,
         systemImage: String,
-        proxy: ScrollViewProxy
+        proxy: NativePickerScrollPosition
     ) -> some View {
         PickerSectionBookmark(
             section: section,
@@ -197,57 +189,105 @@ struct SoundboardPickerView: View {
         )
     }
 
-    private func content(proxy: ScrollViewProxy) -> some View {
-        ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if model.isLoadingSoundboard, model.allSoundboardSounds.isEmpty {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading sounds…")
-                        }
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 80)
-                    } else if let error = model.soundboardErrorMessage,
-                              model.allSoundboardSounds.isEmpty
-                    {
-                        VStack(spacing: 8) {
-                            Text("Couldn’t load the soundboard.")
-                            Button("Retry") { Task { await model.retrySoundboardLoad() } }
-                                .buttonStyle(.link)
-                        }
-                        .help(error)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 100)
-                    } else {
-                        ForEach(sections, id: \.id) { section in
-                            SoundboardSectionView(
-                                section: section,
-                                model: model
-                            )
-                            .id(section.id.contentID)
-                            .onAppear { visibleSection = section.id }
-                        }
-                    }
+    private func content(proxy: NativePickerScrollPosition) -> some View {
+        let rows = documentRows
+        return NativePickerDocument(
+            rows: rows,
+            revision: rows.hashValue,
+            position: proxy,
+            showsIndicators: false,
+            rowHeight: { row, width in
+                switch row.content {
+                case .sounds: return 48
+                case .spacer: return 8
+                default:
+                    return measurement.height(key: "\(row.id):\(row.content)", width: width) { rowView(row) }
                 }
-                .padding(.vertical, 8)
-                .scrollTargetLayout()
-        }
-        .scrollIndicators(.hidden)
+            },
+            becameVisible: { row in
+                if case .header = row.content, let section = row.section { visibleSection = section }
+            },
+            didScrollTo: { row in
+                if let section = row.section { visibleSection = section }
+            },
+            content: rowView
+        )
         .onChange(of: query) { _, value in
-                guard !value.isEmpty else { return }
-                Task { @MainActor in
-                    await Task.yield()
-                    proxy.scrollTo(SoundboardSection.search.contentID, anchor: .top)
+            guard !value.isEmpty else { return }
+            Task { @MainActor in
+                await Task.yield()
+                proxy.scrollTo(SoundboardSection.search.contentID, anchor: .top)
+            }
+        }
+    }
+
+    private var documentRows: [SoundboardDocumentRow] {
+        var rows = [SoundboardDocumentRow(id: "top", section: nil, content: .spacer)]
+        if model.isLoadingSoundboard, model.allSoundboardSounds.isEmpty {
+            rows.append(.init(id: "loading", section: nil, content: .loading))
+        } else if let error = model.soundboardErrorMessage, model.allSoundboardSounds.isEmpty {
+            rows.append(.init(id: "failure", section: nil, content: .failure(error)))
+        } else {
+            for section in sections {
+                rows.append(.init(id: section.id.contentID, section: section.id, content: .header(section.title, section.sounds.count)))
+                if section.sounds.isEmpty {
+                    let message = section.id == .search ? "No sounds found." : "No sounds here yet."
+                    rows.append(.init(id: "empty:\(section.id.id)", section: section.id, content: .empty(message)))
                 }
+                for start in stride(from: 0, to: section.sounds.count, by: 3) {
+                    let sounds = Array(section.sounds[start ..< min(start + 3, section.sounds.count)])
+                    rows.append(.init(id: "sounds:\(section.id.id):\(sounds[0].id)", section: section.id, content: .sounds(sounds)))
+                }
+            }
+        }
+        rows.append(.init(id: "bottom", section: nil, content: .spacer))
+        return rows
+    }
+
+    @ViewBuilder private func rowView(_ row: SoundboardDocumentRow) -> some View {
+        switch row.content {
+        case .spacer:
+            Color.clear.frame(height: 8)
+        case let .header(title, count):
+            EmojiPickerHeader(title: title, count: count).padding(.top, 5)
+        case let .empty(message):
+            Text(message).font(.callout).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 38)
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading sounds…")
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 80)
+        case let .failure(error):
+            VStack(spacing: 8) {
+                Text("Couldn’t load the soundboard.")
+                Button("Retry") { Task { await model.retrySoundboardLoad() } }.buttonStyle(.link)
+            }
+            .help(error).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 100)
+        case let .sounds(sounds):
+            HStack(spacing: 6) {
+                ForEach(sounds) { sound in SoundboardButton(sound: sound, model: model) }
+                ForEach(sounds.count ..< 3, id: \.self) { _ in
+                    Color.clear.frame(maxWidth: .infinity).frame(height: 42)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
         }
     }
 
     private var guilds: [Guild] {
-        SoundboardPickerContentPolicy.guilds(
+        let ordered = SoundboardPickerContentPolicy.guilds(
             railItems: model.serverRailItems,
             guildsByID: model.serverRailGuildsByID,
             fallbackGuilds: model.snapshot?.guilds ?? [],
             currentGuildID: model.selectedGuildID
+        )
+        return PickerSectionGuildOrdering.retainingNonemptyCatalogs(
+            ordered, catalogs: model.soundboardSoundsByGuild, isAvailable: \.isAvailable
         )
     }
 
@@ -310,7 +350,7 @@ struct SoundboardPickerView: View {
         }
     }
 
-    private func jump(to section: SoundboardSection, proxy: ScrollViewProxy) {
+    private func jump(to section: SoundboardSection, proxy: NativePickerScrollPosition) {
         query = ""
         visibleSection = section
         Task { @MainActor in
@@ -321,40 +361,19 @@ struct SoundboardPickerView: View {
     }
 }
 
-private struct SoundboardSectionView: View {
-    let section: SoundboardPickerSection
-    let model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            EmojiPickerHeader(title: section.title, count: section.sounds.count)
-                .padding(.top, 5)
-            if section.sounds.isEmpty {
-                Text(emptyMessage)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 38)
-            } else {
-                LazyVGrid(
-                    columns: Array(
-                        repeating: GridItem(.flexible(), spacing: 6),
-                        count: 3
-                    ),
-                    spacing: 6
-                ) {
-                    ForEach(section.sounds) { sound in
-                        SoundboardButton(sound: sound, model: model)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
-            }
-        }
+private struct SoundboardDocumentRow: Identifiable, Hashable {
+    enum Content: Hashable {
+        case spacer
+        case header(String, Int)
+        case sounds([SoundboardSound])
+        case empty(String)
+        case loading
+        case failure(String)
     }
 
-    private var emptyMessage: String {
-        section.id == .search ? "No sounds found." : "No sounds here yet."
-    }
+    let id: String
+    let section: SoundboardSection?
+    let content: Content
 }
 
 private struct SoundboardButton: View {

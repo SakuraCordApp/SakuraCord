@@ -476,3 +476,22 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
             )
     )
 }
+
+@Test(arguments: ["onboarding", "screening", "unknown", "completed"])
+func `server verification blocks sends without exposing hidden channels`(state: String) {
+    let guildID = GuildID(rawValue: 100)
+    let channel = Channel(id: .init(rawValue: 200), guildID: guildID, name: "general")
+    var basis = ConversationPermissionBasis(
+        guild: Guild(id: guildID, name: "Test"),
+        resolvedBasePermissions: DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory | DiscordPermissionBits.sendMessages,
+        overwritePrincipals: PermissionOverwritePrincipals(guildID: guildID, currentUserID: .init(rawValue: 1), roleIDs: []),
+        hasCurrentRoleIdentity: true, currentUserIsPending: state == "screening",
+        currentUserRequiresOnboarding: state == "onboarding", currentUserOnboardingIsKnown: state != "unknown"
+    )
+    let access = AppModel.resolveConversationAccess(for: channel, permissionBasis: basis)
+    #expect(access == (state == "unknown" ? .checking : .readable(canSend: state == "completed")))
+    basis = ConversationPermissionBasis(guild: basis.guild, resolvedBasePermissions: 0,
+        overwritePrincipals: basis.overwritePrincipals, hasCurrentRoleIdentity: true,
+        currentUserIsPending: state == "screening", currentUserRequiresOnboarding: state == "onboarding")
+    #expect(AppModel.resolveConversationAccess(for: channel, permissionBasis: basis) == .hidden)
+}

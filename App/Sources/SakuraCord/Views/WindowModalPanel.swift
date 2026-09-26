@@ -10,20 +10,26 @@ extension View {
     func windowModal<Item: Identifiable, Modal: View>(
         item: Binding<Item?>,
         title: LocalizedStringResource? = nil,
+        cornerRadius: CGFloat = 16,
+        cornerStyle: RoundedCornerStyle = .continuous,
+        isConcealed: @escaping () -> Bool = { false },
         @ViewBuilder content: @escaping (Item) -> Modal
     ) -> some View {
-        modifier(WindowModalPanelModifier(item: item, title: title, modal: content))
+        modifier(WindowModalPanelModifier(item: item, title: title, cornerRadius: cornerRadius, cornerStyle: cornerStyle, isConcealed: isConcealed, modal: content))
     }
 
     func windowModal<Modal: View>(
         isPresented: Binding<Bool>,
         title: LocalizedStringResource? = nil,
+        cornerRadius: CGFloat = 16,
+        cornerStyle: RoundedCornerStyle = .continuous,
+        isConcealed: @escaping () -> Bool = { false },
         @ViewBuilder content: @escaping () -> Modal
     ) -> some View {
         windowModal(item: Binding(
             get: { isPresented.wrappedValue ? WindowModalBooleanPresentation() : nil },
             set: { isPresented.wrappedValue = $0 != nil }
-        ), title: title) { _ in content() }
+        ), title: title, cornerRadius: cornerRadius, cornerStyle: cornerStyle, isConcealed: isConcealed) { _ in content() }
     }
 
     func windowModalSize(width: CGFloat, height: CGFloat? = nil) -> some View {
@@ -40,6 +46,9 @@ private struct WindowModalBooleanPresentation: Identifiable { let id = "presente
 private struct WindowModalPanelModifier<Item: Identifiable, Modal: View>: ViewModifier {
     @Binding var item: Item?
     let title: LocalizedStringResource?
+    let cornerRadius: CGFloat
+    let cornerStyle: RoundedCornerStyle
+    let isConcealed: () -> Bool
     @ViewBuilder let modal: (Item) -> Modal
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
@@ -47,7 +56,7 @@ private struct WindowModalPanelModifier<Item: Identifiable, Modal: View>: ViewMo
     func body(content: Content) -> some View {
         content.background {
             WindowModalOverlay(presentation: item, dismiss: { item = nil }, content: { item, animationState in
-                WindowModalPanelSurface(animationState: animationState, title: title) { modal(item) }
+                WindowModalPanelSurface(animationState: animationState, title: title, cornerRadius: cornerRadius, cornerStyle: cornerStyle, isConcealed: isConcealed) { modal(item) }
                     .environment(\.colorScheme, colorScheme)
                     .environment(\.locale, locale)
             })
@@ -58,6 +67,9 @@ private struct WindowModalPanelModifier<Item: Identifiable, Modal: View>: ViewMo
 private struct WindowModalPanelSurface<Content: View>: View {
     let animationState: WindowModalContext
     let title: LocalizedStringResource?
+    let cornerRadius: CGFloat
+    let cornerStyle: RoundedCornerStyle
+    let isConcealed: () -> Bool
     @ViewBuilder let content: () -> Content
     private var context: WindowModalContext { animationState }
 
@@ -77,11 +89,12 @@ private struct WindowModalPanelSurface<Content: View>: View {
                         content()
                     }
                     .fixedSize()
-                    .background(Color(nsColor: .windowBackgroundColor), in: ConcentricRectangle(cornerRadius: 16, style: .continuous))
-                    .clipShape(ConcentricRectangle(cornerRadius: 16, style: .continuous))
+                    .background(Color(nsColor: .windowBackgroundColor), in: ConcentricRectangle(cornerRadius: cornerRadius, style: cornerStyle))
+                    .clipShape(ConcentricRectangle(cornerRadius: cornerRadius, style: cornerStyle))
+                    .containerShape(.rect(cornerRadius: cornerRadius, style: cornerStyle))
                     .contentShape(Rectangle())
                     .onTapGesture {}
-                    .overlay { ConcentricRectangle(cornerRadius: 16, style: .continuous).stroke(.separator, lineWidth: 1) }
+                    .overlay { ConcentricRectangle(cornerRadius: cornerRadius, style: cornerStyle).stroke(.separator, lineWidth: 1) }
                     .backgroundPreferenceValue(ProfileFrameAnchorKey.self) { anchor in
                         ProfileFrameDecoration(anchor: anchor, order: "back")
                     }
@@ -99,6 +112,7 @@ private struct WindowModalPanelSurface<Content: View>: View {
         .focusable().focusEffectDisabled().accessibilityAddTraits(.isModal)
         .animation(.easeOut(duration: WindowModalAnimationTiming.openingSeconds), value: animationState.isVisible)
         .onExitCommand { context() }
+        .opacity(isConcealed() ? 0 : 1)
     }
 }
 

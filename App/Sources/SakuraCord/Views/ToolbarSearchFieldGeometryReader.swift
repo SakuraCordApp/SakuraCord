@@ -602,7 +602,16 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             let isHidden = isToolbarItemVisible
                 ? (originalSearchToolbarItemIsHidden ?? false)
                 : true
-            item.isHidden = isHidden
+            if item.isHidden != isHidden {
+                // Search disappears together with the channel actions. Finish
+                // that native layout without morphing its glass into the title.
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    context.allowsImplicitAnimation = false
+                    item.isHidden = isHidden
+                    window.contentView?.superview?.layoutSubtreeIfNeeded()
+                }
+            }
             appliedSearchToolbarItemIsHidden = isHidden
             return true
         }

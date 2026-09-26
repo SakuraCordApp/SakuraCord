@@ -605,6 +605,11 @@ extension NativeTimelineRowPainter {
         let activeComponentChoiceTarget = input.activeComponentChoiceTarget
         let pressedComponentButton = input.pressedComponentButton
         let componentButtonPressProgress = input.componentButtonPressProgress
+        for card in layout.inviteRegions {
+            let target = NativeTimelineComponentButtonTarget(messageID: message.id, componentID: card.componentID)
+            inviteCard(card, isHovered: hoveredComponentButton == target,
+                       pressProgress: pressedComponentButton == target ? componentButtonPressProgress : 0)
+        }
         for region in layout.sakuraCordDeepLinkRegions {
             let target = NativeTimelineComponentButtonTarget(
                 messageID: message.id,

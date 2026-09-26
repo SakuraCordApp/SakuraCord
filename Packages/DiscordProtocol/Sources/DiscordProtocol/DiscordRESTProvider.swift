@@ -201,6 +201,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var pendingRoleMemberRequests: [String: PendingRoleMemberRequest] = [:]
     var requestedHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     var resolvingHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
+    var cachedGuildOnboarding: [GuildID: GuildOnboarding] = [:]
     var cachedGuilds: [GuildID: Guild] = [:]
     var cachedGuildRailItems: [GuildRailItem] = []
     var cachedGuildLayout: DiscordGuildLayout?

@@ -281,6 +281,7 @@ extension NativeMessageTimelineCoordinator {
             if let preparation = layoutPreparation,
                preparation.isComplete,
                preparation.presentationRevision == parent.presentationRevision,
+               preparation.inviteRevision == parent.model.serverInvites.revision,
                abs(preparation.width - width) < 0.5,
                let cached = preparation.layouts[item.identifier],
                cached.item == item,
@@ -835,6 +836,7 @@ extension NativeMessageTimelineCoordinator {
             let sourceItems = items
             let sourceConversation = parent.conversation
             let sourcePresentationRevision = parent.presentationRevision
+            let sourceInviteRevision = parent.model.serverInvites.revision
             let visibleRange = visibleItemRangeForWidthRelayout()
             let indexes = NativeTimelineWidthRelayoutPolicy.indexes(
                 itemCount: sourceItems.count,
@@ -891,6 +893,7 @@ extension NativeMessageTimelineCoordinator {
                 let canReusePreparedPresentation =
                     self.parent.presentationRevision
                         == sourcePresentationRevision
+                        && self.parent.model.serverInvites.revision == sourceInviteRevision
                 let finalLayouts = self.items.map { item in
                     if canReusePreparedPresentation,
                        let prepared = preparedByIdentifier[item.identifier],
@@ -1005,20 +1008,15 @@ extension NativeMessageTimelineCoordinator {
             stopObserving()
             let center = NotificationCenter.default
             observations = [
-                center.addObserver(
-                    forName: .NSCalendarDayChanged,
-                    object: nil, queue: .main
-                ) { [weak self] _ in
+                center.addObserver(forName: ServerInvitePresentationStore.changed, object: nil, queue: .main) { [weak self] notification in
+                    let store = notification.object as? ServerInvitePresentationStore
+                    let reference = notification.userInfo?["reference"] as? ServerInviteReference
                     MainActor.assumeIsolated {
-                        self?.scheduleModelRowsUpdate()
-                    }
-                },
-                center.addObserver(
-                    forName: NSApplication.didBecomeActiveNotification,
-                    object: nil, queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        self?.scheduleModelRowsUpdate()
+                        guard let self, store === self.parent.model.serverInvites else { return }
+                        Task { @MainActor [weak self] in
+                            await Task.yield()
+                            self?.refreshServerInvites(reference)
+                        }
                     }
                 },
                 center.addObserver(
@@ -1105,6 +1103,13 @@ extension NativeMessageTimelineCoordinator {
                     }
                 },
             ]
+            observations += [.NSCalendarDayChanged, NSApplication.didBecomeActiveNotification].map { name in
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.scheduleModelRowsUpdate()
+                    }
+                }
+            }
         }
 
         func noteScrollActivity() {

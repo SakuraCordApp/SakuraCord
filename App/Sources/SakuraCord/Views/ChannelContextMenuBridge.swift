@@ -109,6 +109,22 @@ nonisolated enum ChannelContextMenuSubject: Equatable, Sendable {
 
 /// SwiftUI context menus can discard item images in the macOS 27 adaptation.
 /// This bridge uses the same AppKit symbol configuration as message menus.
+/// Page destinations share the channel row's native hover and selection tracking.
+struct ChannelRowHoverBridge: NSViewRepresentable {
+    let isSelected: Bool
+    func makeNSView(context: Context) -> ChannelContextMenuHitView {
+        let view = ChannelContextMenuHitView()
+        view.isSelected = isSelected
+        return view
+    }
+    func updateNSView(_ view: ChannelContextMenuHitView, context: Context) {
+        view.isSelected = isSelected
+    }
+    static func dismantleNSView(_ view: ChannelContextMenuHitView, coordinator: ()) {
+        view.uninstallFromNativeRow()
+    }
+}
+
 struct ChannelContextMenuBridge: NSViewRepresentable {
     var subject: ChannelContextMenuSubject = .channel
     let isSelected: Bool

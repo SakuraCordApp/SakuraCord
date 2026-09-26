@@ -10,6 +10,7 @@ extension AppModel {
     func localDraftStorageSummary() async throws -> LocalDraftStorageSummary {
         let databases = draftDatabasesByAccountID()
         await composer.flushDraftOperations()
+        await onboarding.draftWrite?.value
         var all = DraftStorageSummary(draftCount: 0, approximateByteCount: 0)
         for (_, database) in databases {
             let summary = try await database.draftStorageSummary()

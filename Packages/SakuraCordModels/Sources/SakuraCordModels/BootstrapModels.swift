@@ -52,6 +52,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public var threads: [MessageThreadSummary]
     public var activeJoinedThreads: [MessageThreadSummary]
     public var members: [Member]
+    public var currentMembersByGuildID: [GuildID: Member]
     public var readStates: [ChannelReadState]
     public var notificationSettings: [GuildNotificationSettings]
     public var usesNewNotifications: Bool
@@ -77,6 +78,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         threads: [MessageThreadSummary] = [],
         activeJoinedThreads: [MessageThreadSummary] = [],
         members: [Member],
+        currentMembersByGuildID: [GuildID: Member] = [:],
         readStates: [ChannelReadState] = [],
         notificationSettings: [GuildNotificationSettings] = [],
         usesNewNotifications: Bool = true
@@ -102,6 +104,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         self.threads = threads
         self.activeJoinedThreads = activeJoinedThreads
         self.members = members
+        self.currentMembersByGuildID = currentMembersByGuildID
         self.readStates = readStates
         self.notificationSettings = notificationSettings
         self.usesNewNotifications = usesNewNotifications
@@ -119,7 +122,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         case guilds, guildRailItems, forwardGuildStoreOrder
         case channels, forwardChannelStoreOrder
         case threads, activeJoinedThreads
-        case members, readStates
+        case members, currentMembersByGuildID, readStates
         case notificationSettings, usesNewNotifications
     }
 
@@ -189,6 +192,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
                 [MessageThreadSummary].self, forKey: .activeJoinedThreads
             ) ?? []
         members = try container.decode([Member].self, forKey: .members)
+        currentMembersByGuildID = try container.decodeIfPresent([GuildID: Member].self, forKey: .currentMembersByGuildID) ?? [:]
         readStates = try container.decodeIfPresent([ChannelReadState].self, forKey: .readStates) ?? []
         notificationSettings =
             try container.decodeIfPresent([GuildNotificationSettings].self, forKey: .notificationSettings)
@@ -233,6 +237,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         try container.encode(threads, forKey: .threads)
         try container.encode(activeJoinedThreads, forKey: .activeJoinedThreads)
         try container.encode(members, forKey: .members)
+        try container.encode(currentMembersByGuildID, forKey: .currentMembersByGuildID)
         try container.encode(readStates, forKey: .readStates)
         try container.encode(notificationSettings, forKey: .notificationSettings)
         try container.encode(usesNewNotifications, forKey: .usesNewNotifications)

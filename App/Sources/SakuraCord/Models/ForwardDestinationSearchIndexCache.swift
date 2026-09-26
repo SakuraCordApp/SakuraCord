@@ -197,7 +197,9 @@ final class ForwardDestinationSearchIndexCache {
                     roleIDs: roleIDs
                 ),
                 hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
-                currentUserIsPending: member?.isPending == true
+                currentUserIsPending: member?.isPending == true,
+                currentUserRequiresOnboarding: guild.features.contains("GUILD_ONBOARDING") && member?.requiresOnboarding == true,
+                currentUserOnboardingIsKnown: !guild.features.contains("GUILD_ONBOARDING") || member?.flags != nil
             )
         }
     }

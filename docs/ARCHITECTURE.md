@@ -20,8 +20,9 @@ workspace is a convenience entry point.
 Dependencies point inward toward models and explicit protocols. Views do not
 construct Discord requests or own network transports.
 
-The app resource catalog vendors only SocialSymbols' GitHub and Discord symbol
-sets for the About settings page. No SocialSymbols package dependency is used.
+The app resource catalog vendors SocialSymbols' GitHub and Discord symbol sets
+for About and Discord’s default Server Guide header artwork. Attribution lives
+in `THIRD_PARTY_NOTICES.md`. No SocialSymbols package dependency is used.
 
 ## Application state
 
@@ -64,6 +65,46 @@ invalidates earlier restoration results. Switching, logout, and failed startup s
 load cancellation and presentation reset, including pins and composer state.
 `AppModel` remains the workspace coordinator; feature state should have an
 explicit owner rather than accumulating unrelated fields in extensions.
+
+`GuildOnboardingStore` owns account-scoped question presentation, unfinished
+answer drafts, and membership confirmation. `SakuraCordModels` defines the live
+configuration, selected IDs, validation rules, and member flags;
+`DiscordProtocol` refreshes configuration, submits one answer mutation, and
+confirms membership through the existing Gateway member query. The app restores
+its own drafts only when join time and confirmed server answers still match,
+prunes deleted options, and invalidates in-flight work on account changes.
+Onboarding and member screening independently gate message, thread, forum, and
+retry paths. Bootstrap carries READY’s self-member records for every guild,
+so an unknown membership never implies unfinished onboarding. Confirmed unfinished
+memberships cover the guild content inside the existing navigation/window chrome
+with `GuildOnboardingView`, reusing the sign-in gradient and native glass controls.
+Question transitions animate only when the step changes; cached entries remain
+visible across navigation and background refreshes.
+Completed memberships navigate to customization or Server Guide through scrolling
+channel-list entries with the same native hover and toolbar as channels. Guide
+visibility follows Discord’s resource-channel flag or unfinished first-week tasks,
+not the guild feature flag alone.
+The same account-scoped feature store owns live guide configuration, confirmed
+member task progress, and resource history. `DiscordProtocol` owns guide REST
+contracts; resource side panels reuse the native timeline renderer with identity chrome
+and the composer omitted. Viewing the guide is read-only; visits require successful
+history access after an explicit task selection, and send tasks require a confirmed
+self-authored message event. Resource previews do not complete visit tasks.
+Onboarding dropdowns use the shared `SelectionField` control, including its native
+search, tokens, keyboard navigation, and single/multiple selection modes.
+Post-join edits are optimistic in the feature store, coalesced for one second,
+and serialized per membership. Confirmations update the baseline without
+replacing newer edits; failures roll back only the failed version. Optimistic
+role previews never grant messaging permissions. Channel edits overlay only
+selection bits on the notification store so unrelated settings remain live.
+Channel management is a global Settings feature preference, off by default;
+when enabled, the channel sidebar consumes authoritative guild/channel opt-in
+flags from the existing notification-settings store. Channel permissions remain
+independent. Draft writes join the clear/teardown barriers and storage accounting;
+server configuration, member records, roles, and channel catalogs are never persisted.
+An unfinished draft retains baseline option IDs and its membership join timestamp
+solely to detect conflicts against a fresh server read, never to restore confirmed
+Discord state.
 
 `AppUpdateController` owns Sparkle's `SPUStandardUpdaterController` for the
 application lifetime. It starts only when the canonical release bundle contains
@@ -310,7 +351,7 @@ from Keychain into a mode-`0600` file within the app's sandbox Application
 Support container. It is excluded from release and update-enabled packages and
 is not the production credential contract.
 
-Only user-authored drafts are stored through `SakuraCordPersistence`.
+Only user-authored message and unfinished onboarding drafts are stored through `SakuraCordPersistence`.
 Credentials never enter GRDB, fixtures, logs, or plugin APIs. Discord
 authoritative workspace, message, read, member, and Gateway state is
 session-memory only. A database migration drops the obsolete tables from earlier
@@ -587,6 +628,21 @@ reads them. Large animations submit the current frame to the compositor and
 release previous uploads; frame timing and shared playback clocks remain with
 the presentation owner. In-memory cache budgets still account for the full
 decoded raster size.
+
+Emoji, sticker, and soundboard pickers share `NativePickerDocument`: an AppKit
+scroll document with exact row origins and binary viewport lookup, following
+the timeline's bounded presentation model. Only visible rows and one adjacent
+row on either side retain native views or SwiftUI hosts, recycled as they leave
+the viewport. Large scrollbar jumps do not
+instantiate intervening cells or depend on lazy height estimates. The existing
+sticker and soundboard cell views retain their controls. Emoji rows use native
+buttons, cached Core Text glyphs matching the existing emoji preview metrics, and
+the shared decoded-image loader and animation canvas. Selection, menus, media
+playback, accessibility, and activation policy remain with the cell owner;
+picker models retain catalog filtering, search, and account actions.
+Catalog updates preserve the visible row and its offset when that row survives.
+`PickerSectionRail` owns shared sidebar chrome, guild icons, and ordering/filter
+helpers; unknown catalogs remain reachable for loading and retry.
 
 The app's shared animation loader also stores prepared public-media frames in
 `MediaPipeline`'s existing bounded disk cache. Versioned keys include the source

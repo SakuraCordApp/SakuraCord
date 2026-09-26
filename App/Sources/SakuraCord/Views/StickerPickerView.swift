@@ -60,6 +60,8 @@ private struct StickerPickerDocumentRow: Identifiable {
         case header(title: String, count: Int)
         case stickers([StickerPickerCell])
         case empty(String)
+        case loading
+        case failure(String)
     }
 
     let id: String
@@ -71,6 +73,10 @@ private struct StickerPickerDocumentRow: Identifiable {
     }
 
     var listInsets: EdgeInsets {
+        switch content {
+        case .loading, .failure: return EdgeInsets()
+        default: break
+        }
         if case .stickers = content {
             return EdgeInsets(
                 top: StickerPickerMetrics.rowSpacing / 2,
@@ -79,7 +85,8 @@ private struct StickerPickerDocumentRow: Identifiable {
                 trailing: 0
             )
         }
-        return EdgeInsets(top: 2, leading: 10, bottom: 2, trailing: 10)
+        // Preserve the plain List's eight-point horizontal content margin.
+        return EdgeInsets(top: 2, leading: 18, bottom: 2, trailing: 18)
     }
 }
 
@@ -99,6 +106,7 @@ private final class StickerPickerDocumentStore {
     private(set) var guilds: [Guild] = []
     private(set) var packs: [StickerPack] = []
     private(set) var favoriteIDs: Set<String> = []
+    private(set) var revision = 0
     private(set) var rows: [StickerPickerDocumentRow] = []
     private(set) var selectableCells: [StickerPickerCell] = []
     private(set) var showsFavorites = false
@@ -111,7 +119,7 @@ private final class StickerPickerDocumentStore {
     private var cellsByID: [String: StickerPickerCell] = [:]
 
     func synchronize(with model: AppModel) {
-        let guilds = PickerSectionGuildOrdering.orderedGuilds(
+        let orderedGuilds = PickerSectionGuildOrdering.orderedGuilds(
             railItems: model.serverRailItems,
             guildsByID: model.serverRailGuildsByID,
             fallbackGuilds: model.snapshot?.guilds ?? [],
@@ -120,6 +128,9 @@ private final class StickerPickerDocumentStore {
         let stickersByGuild = model.stickersByGuild.mapValues { stickers in
             stickers.filter { model.stickerSendRoute(for: $0) != nil }
         }
+        let guilds = PickerSectionGuildOrdering.retainingNonemptyCatalogs(
+            orderedGuilds, catalogs: stickersByGuild, isAvailable: \.isAvailable
+        )
         guard self.guilds != guilds
             || self.stickersByGuild != stickersByGuild
             || packs != model.standardStickerPacks
@@ -234,6 +245,7 @@ private final class StickerPickerDocumentStore {
     }
 
     private func rebuildSelectableCells() {
+        revision &+= 1
         rows = sections.flatMap(documentRows(for:))
         let selectableRows = rows.compactMap { row -> [StickerPickerCell]? in
             guard case let .stickers(cells) = row.content else { return nil }
@@ -337,7 +349,7 @@ struct StickerPickerView: View {
     @FocusState private var keyboardNavigationIsFocused: Bool
 
     var body: some View {
-        ScrollViewReader { proxy in
+        NativePickerScrollReader { proxy in
             VStack(spacing: 0) {
                 EmojiPickerSearchField(
                     text: $document.query,
@@ -349,7 +361,7 @@ struct StickerPickerView: View {
                     sidebar(proxy: proxy)
                     Divider()
                     VStack(spacing: 0) {
-                        StickerPickerDocumentList(
+                        StickerPickerDocumentView(
                             document: document,
                             interaction: interaction,
                             model: model,
@@ -436,66 +448,60 @@ struct StickerPickerView: View {
         .frame(height: 46)
     }
 
-    private func sidebar(proxy: ScrollViewProxy) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
-                if document.showsFavorites {
+    private func sidebar(proxy: NativePickerScrollPosition) -> some View {
+        PickerSectionRail {
+            if document.showsFavorites {
+                PickerSectionBookmark(
+                    section: StickerPickerSectionID.favorites,
+                    visibleSection: document.visibleSection,
+                    help: "Favorites",
+                    jump: { jump(to: $0, proxy: proxy) },
+                    content: { Image(systemName: "star.fill") }
+                )
+            }
+            if document.showsFrequentlyUsed {
+                PickerSectionBookmark(
+                    section: StickerPickerSectionID.frequent,
+                    visibleSection: document.visibleSection,
+                    help: "Frequently Used",
+                    jump: { jump(to: $0, proxy: proxy) },
+                    content: { Image(systemName: "clock.fill") }
+                )
+            }
+            if !document.guilds.isEmpty {
+                if document.showsFavorites || document.showsFrequentlyUsed {
+                    Divider().frame(width: 28).padding(.vertical, 2)
+                }
+                ForEach(document.guilds) { guild in
                     PickerSectionBookmark(
-                        section: StickerPickerSectionID.favorites,
+                        section: StickerPickerSectionID.guild(guild.id),
                         visibleSection: document.visibleSection,
-                        help: "Favorites",
+                        help: guild.name,
                         jump: { jump(to: $0, proxy: proxy) },
-                        content: { Image(systemName: "star.fill") }
+                        content: { PickerGuildBookmarkIcon(guild: guild) }
                     )
-                }
-                if document.showsFrequentlyUsed {
-                    PickerSectionBookmark(
-                        section: StickerPickerSectionID.frequent,
-                        visibleSection: document.visibleSection,
-                        help: "Frequently Used",
-                        jump: { jump(to: $0, proxy: proxy) },
-                        content: { Image(systemName: "clock.fill") }
-                    )
-                }
-                if !document.guilds.isEmpty {
-                    if document.showsFavorites || document.showsFrequentlyUsed {
-                        Divider().frame(width: 28).padding(.vertical, 2)
-                    }
-                    ForEach(document.guilds) { guild in
-                        PickerSectionBookmark(
-                            section: StickerPickerSectionID.guild(guild.id),
-                            visibleSection: document.visibleSection,
-                            help: guild.name,
-                            jump: { jump(to: $0, proxy: proxy) },
-                            content: { EmojiGuildBookmarkIcon(guild: guild) }
-                        )
-                    }
-                }
-                if !document.packs.isEmpty {
-                    if document.showsFavorites || document.showsFrequentlyUsed || !document.guilds.isEmpty {
-                        Divider().frame(width: 28).padding(.vertical, 2)
-                    }
-                    ForEach(document.packs) { pack in
-                        PickerSectionBookmark(
-                            section: StickerPickerSectionID.pack(pack.id),
-                            visibleSection: document.visibleSection,
-                            help: pack.name,
-                            jump: { jump(to: $0, proxy: proxy) },
-                            content: {
-                                StickerPackBookmarkIcon(pack: pack)
-                            }
-                        )
-                    }
                 }
             }
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity)
+            if !document.packs.isEmpty {
+                if document.showsFavorites || document.showsFrequentlyUsed || !document.guilds.isEmpty {
+                    Divider().frame(width: 28).padding(.vertical, 2)
+                }
+                ForEach(document.packs) { pack in
+                    PickerSectionBookmark(
+                        section: StickerPickerSectionID.pack(pack.id),
+                        visibleSection: document.visibleSection,
+                        help: pack.name,
+                        jump: { jump(to: $0, proxy: proxy) },
+                        content: {
+                            StickerPackBookmarkIcon(pack: pack)
+                        }
+                    )
+                }
+            }
         }
-        .scrollIndicators(.hidden)
-        .frame(width: PickerSectionRailLayout.width)
     }
 
-    private func jump(to section: StickerPickerSectionID, proxy: ScrollViewProxy) {
+    private func jump(to section: StickerPickerSectionID, proxy: NativePickerScrollPosition) {
         document.query = ""
         interaction.synchronize(with: document.selectableCells)
         document.visibleSection = section
@@ -533,7 +539,7 @@ struct StickerPickerView: View {
 
     private func handleKeyPress(
         _ press: KeyPress,
-        proxy: ScrollViewProxy
+        proxy: NativePickerScrollPosition
     ) -> KeyPress.Result {
         switch press.key {
         case .leftArrow:
@@ -557,7 +563,7 @@ struct StickerPickerView: View {
 
     private func navigate(
         _ direction: EmojiPickerGridDirection,
-        proxy: ScrollViewProxy
+        proxy: NativePickerScrollPosition
     ) -> KeyPress.Result {
         guard let cell = document.destinationCell(
             from: interaction.selectedCellID,
@@ -575,62 +581,50 @@ struct StickerPickerView: View {
     }
 }
 
-private struct StickerPickerDocumentList: View {
+private struct StickerPickerDocumentView: View {
     let document: StickerPickerDocumentStore
     let interaction: StickerPickerInteractionModel
     let model: AppModel
-    let proxy: ScrollViewProxy
+    let proxy: NativePickerScrollPosition
     let activate: (StickerPickerCell) -> Void
     let toggleFavorite: (StickerPickerItem) -> Void
     let becameVisible: (StickerPickerSectionID) -> Void
 
-    var body: some View {
-        List {
-            if model.isLoadingStickerPicker, document.selectableCells.isEmpty {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading stickers…")
-                }
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 70)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+    @State private var measurement = NativePickerRowMeasurement()
+
+    private var rows: [StickerPickerDocumentRow] {
+        var rows: [StickerPickerDocumentRow] = []
+        if document.selectableCells.isEmpty {
+            if model.isLoadingStickerPicker {
+                rows.append(.init(id: "loading", section: .search, content: .loading))
             }
-            if let error = model.stickerPickerErrorMessage,
-               document.selectableCells.isEmpty
-            {
-                VStack(spacing: 8) {
-                    Label("Couldn’t load stickers.", systemImage: "wifi.exclamationmark")
-                    Button("Retry") { Task { await model.loadStickerPicker() } }
-                        .buttonStyle(.link)
-                        .focusable(false)
-                }
-                .help(error)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 90)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-            }
-            ForEach(document.rows) { row in
-                StickerPickerDocumentRowView(
-                    row: row,
-                    interaction: interaction,
-                    isFavorite: document.isFavorite,
-                    activate: activate,
-                    toggleFavorite: toggleFavorite,
-                    becameVisible: becameVisible
-                )
-                .id(row.id)
-                .listRowInsets(row.listInsets)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+            if let error = model.stickerPickerErrorMessage {
+                rows.append(.init(id: "failure", section: .search, content: .failure(error)))
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .environment(\.defaultMinListRowHeight, 0)
+        return rows + document.rows
+    }
+
+    var body: some View {
+        NativePickerDocument(
+            rows: rows,
+            revision: document.revision &* 4 &+ (model.isLoadingStickerPicker ? 1 : 0) &+ model.stickerPickerErrorMessage.hashValue,
+            position: proxy,
+            rowHeight: { row, width in
+                if case .stickers = row.content { return StickerPickerMetrics.cellHeight + StickerPickerMetrics.rowSpacing }
+                return measurement.height(key: "\(row.id):\(row.content)", width: width) { rowView(row) }
+            },
+            becameVisible: { row in
+                if case .header = row.content { becameVisible(row.section) }
+            },
+            didScrollTo: { row in
+                switch row.content {
+                case .loading, .failure: break
+                default: becameVisible(row.section)
+                }
+            },
+            content: rowView
+        )
         .onChange(of: document.query) { _, query in
             interaction.synchronize(with: document.selectableCells)
             guard !query.isEmpty else { return }
@@ -640,6 +634,39 @@ private struct StickerPickerDocumentList: View {
             }
         }
     }
+    private func rowView(_ row: StickerPickerDocumentRow) -> some View {
+        // NSTableView reserved one point at the trailing edge of each List row.
+        rowContent(row).padding(.trailing, 1)
+    }
+
+    @ViewBuilder private func rowContent(_ row: StickerPickerDocumentRow) -> some View {
+        switch row.content {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading stickers…")
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 70)
+        case let .failure(error):
+            VStack(spacing: 8) {
+                Label("Couldn’t load stickers.", systemImage: "wifi.exclamationmark")
+                Button("Retry") { Task { await model.loadStickerPicker() } }
+                    .buttonStyle(.link)
+                    .focusable(false)
+            }
+            .help(error)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 90)
+        default:
+            StickerPickerDocumentRowView(
+                row: row, interaction: interaction, isFavorite: document.isFavorite,
+                activate: activate, toggleFavorite: toggleFavorite
+            )
+            .padding(row.listInsets)
+        }
+    }
+
 }
 
 private struct StickerPickerDocumentRowView: View {
@@ -648,15 +675,12 @@ private struct StickerPickerDocumentRowView: View {
     let isFavorite: (StickerPickerItem) -> Bool
     let activate: (StickerPickerCell) -> Void
     let toggleFavorite: (StickerPickerItem) -> Void
-    let becameVisible: (StickerPickerSectionID) -> Void
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             switch row.content {
             case let .header(title, count):
                 EmojiPickerHeader(title: title, count: count)
                     .padding(.top, 8)
-                    .onAppear { becameVisible(row.section) }
             case let .stickers(cells):
                 HStack(spacing: StickerPickerMetrics.gridSpacing) {
                     ForEach(cells) { cell in
@@ -685,6 +709,8 @@ private struct StickerPickerDocumentRowView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 42)
+            case .loading, .failure:
+                EmptyView()
             }
         }
     }

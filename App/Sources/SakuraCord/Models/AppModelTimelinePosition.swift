@@ -56,7 +56,17 @@ extension AppModel {
     }
 
     func reportMainWindowActive(_ isActive: Bool) {
+        let becameActive = isActive && !mainWindowIsActive
         mainWindowIsActive = isActive
+        if becameActive, let guildID = selectedGuildID {
+            if guildWorkspacePage == .channelsAndRoles {
+                startAccountChildTask(account: accountSession()) { model, _ in
+                    await model.synchronizeGuildCustomization(in: guildID)
+                }
+            } else if guildWorkspacePage == .guide {
+                refreshGuildGuide(in: guildID)
+            }
+        }
         updateApplicationStreamWindowActivity(isActive)
         if let selectedChannelID {
             preserveUnreadDividerIfNeeded(channelID: selectedChannelID)

@@ -196,7 +196,7 @@ extension AppModel {
     }
 
     func performOutgoingSend(_ outgoing: SendMessageDraft, isRetry: Bool) async -> Bool {
-        guard allowSlowmodeSubmission(in: outgoing.channelID) else {
+        guard allowOnboardingSubmission(in: outgoing.channelID), allowSlowmodeSubmission(in: outgoing.channelID) else {
             updateOutgoingState(.failed, nonce: outgoing.nonce, channelID: outgoing.channelID)
             return false
         }

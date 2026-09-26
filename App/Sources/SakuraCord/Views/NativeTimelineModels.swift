@@ -147,12 +147,13 @@ enum NativeTimelineConversation: Hashable {
     case search
     case pins(ChannelID)
     case inbox(InboxTab)
+    case resource(GuildID, ChannelID)
 
     var id: ChannelID? {
         switch self {
         case let .channel(id), let .thread(id):
             id
-        case .pins(let id):
+        case .pins(let id), .resource(_, let id):
             id
         case .search, .inbox:
             nil
@@ -160,7 +161,7 @@ enum NativeTimelineConversation: Hashable {
     }
 
     var supportsReply: Bool {
-        self != .search && !isPins && !isInbox
+        self != .search && !isPins && !isInbox && !isResource
     }
 
     var activatesMessageOnClick: Bool {
@@ -169,7 +170,7 @@ enum NativeTimelineConversation: Hashable {
 
     nonisolated var alignsUnderfilledContentToTop: Bool {
         switch self {
-        case .search, .pins, .inbox:
+        case .search, .pins, .inbox, .resource:
             true
         case .channel, .thread:
             false
@@ -189,7 +190,7 @@ enum NativeTimelineConversation: Hashable {
             .messages
         case .thread:
             .replies
-        case .search:
+        case .search, .resource:
             .messages
         case .inbox:
             .messages
@@ -211,6 +212,8 @@ enum NativeTimelineConversation: Hashable {
             model.pinnedMessages.rows
         case .inbox:
             model.inbox.rows
+        case .resource(let guildID, _):
+            model.onboarding.guides[guildID]?.resource?.rows ?? []
         }
     }
 
@@ -227,6 +230,8 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsRevision
         case .pins:
             model.pinnedMessages.rowsRevision
+        case .resource(let guildID, _):
+            model.onboarding.guides[guildID]?.resource?.revision ?? 0
         }
     }
 
@@ -237,7 +242,7 @@ enum NativeTimelineConversation: Hashable {
             model.messageRowsUpdateHint
         case .thread:
             model.threadMessageRowsUpdateHint
-        case .search, .pins, .inbox:
+        case .search, .pins, .inbox, .resource:
             nil
         }
     }
@@ -255,7 +260,14 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsUpdateJournal
         case .pins:
             model.pinnedMessages.rowsUpdateJournal
+        case .resource(let guildID, _):
+            model.onboarding.guides[guildID]?.resource?.journal ?? MessageRowsUpdateJournal()
         }
+    }
+
+    var isResource: Bool {
+        if case .resource = self { return true }
+        return false
     }
 
     var isInbox: Bool {

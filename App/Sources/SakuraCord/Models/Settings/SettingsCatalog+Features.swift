@@ -9,6 +9,11 @@ nonisolated extension SettingsCatalog {
 
     static let featuresControls: [SettingsControlMetadata] = [
         control(
+            .channelManagement, page: .features, section: .featuresChannels,
+            label: "Channel customization", help: "Choose which channels appear in each server through Channels & Roles.",
+            keywords: ["onboarding", "channels", "roles", "default channels"], scope: .appWideLocal
+        ),
+        control(
             .showHiddenChannels, page: .features, section: .featuresChannels,
             label: "Show hidden channels", help: "Show channels you cannot access, including their available metadata.",
             keywords: ["features", "hidden channels"], scope: .appWideLocal

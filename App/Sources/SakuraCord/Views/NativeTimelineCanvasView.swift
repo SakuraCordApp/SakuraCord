@@ -88,6 +88,14 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         case reaction(String)
         case pollAnswer(Int)
 
+        var playsOnHover: Bool {
+            switch self {
+            case .authorAvatar, .authorAvatarDecoration, .replyAvatar, .invocationAvatar, .reactionAvatar:
+                true
+            default:
+                false
+            }
+        }
     }
 
     struct AnimatedMediaOverlayKey: Hashable {
@@ -128,6 +136,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         enum Kind {
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
+            case invite(NativeTimelineInviteLayout, expands: Bool)
 
             var isDisabled: Bool {
                 switch self {
@@ -135,6 +144,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                     region.isDisabled
                 case .sakuraCordDeepLink:
                     false
+                case let .invite(card, expands):
+                    !expands && card.isDisabled
                 }
             }
         }

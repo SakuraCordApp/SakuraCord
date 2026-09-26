@@ -91,6 +91,7 @@ struct MessageEmbedDTO: Decodable {
     var provider: Provider?
     var author: Author?
     var fields: LossyList<Field>?
+    var components: LossyList<MessageComponentDTO>?
 
     func domain(index: Int) -> MessageEmbed {
         MessageEmbed(
@@ -104,6 +105,9 @@ struct MessageEmbedDTO: Decodable {
                     id: $0.offset, name: $0.element.name, value: $0.element.value,
                     isInline: $0.element.inline ?? false
                 )
+            },
+            components: components?.elements.enumerated().map {
+                $0.element.domain(path: "embed-\(index).\($0.offset)", usesPathIdentity: true)
             }
         )
     }
@@ -279,10 +283,12 @@ final class MessageComponentDTO: Decodable {
         case defaultValue = "default"
     }
 
-    func domain(path: String) -> MessageComponent {
-        let stableID = id.map(String.init) ?? path
+    func domain(path: String, usesPathIdentity: Bool = false) -> MessageComponent {
+        // Website previews have independent component trees; their numeric IDs
+        // must not collide with another embed or the message's own components.
+        let stableID = usesPathIdentity ? path : id.map(String.init) ?? path
         let children = (components?.elements ?? []).enumerated().map {
-            $0.element.domain(path: "\(path).\($0.offset)")
+            $0.element.domain(path: "\(path).\($0.offset)", usesPathIdentity: usesPathIdentity)
         }
         let mediaValue: ComponentMedia = {
             let source = type == 13 ? file : media
@@ -317,7 +323,8 @@ final class MessageComponentDTO: Decodable {
             )
         case 9:
             return .section(
-                id: stableID, children: children, accessory: accessory?.domain(path: "\(path).accessory")
+                id: stableID, children: children,
+                accessory: accessory?.domain(path: "\(path).accessory", usesPathIdentity: usesPathIdentity)
             )
         case 10: return .textDisplay(id: stableID, content: content ?? "")
         case 11: return .thumbnail(id: stableID, media: mediaValue)

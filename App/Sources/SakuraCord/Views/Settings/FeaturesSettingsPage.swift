@@ -11,6 +11,9 @@ struct FeaturesSettingsPage: View {
         )
         SettingsPageForm(page: .features, state: state) {
             Section {
+                Toggle("Channel customization", isOn: value.channelManagement)
+                    .tint(SakuraCordAccentColor.color)
+                    .settingsControlAnchor(.channelManagement, state: state)
                 Toggle("Show hidden channels", isOn: value.showHiddenChannels)
                     .tint(SakuraCordAccentColor.color)
                     .settingsControlAnchor(.showHiddenChannels, state: state)

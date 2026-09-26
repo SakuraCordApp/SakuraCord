@@ -255,6 +255,14 @@ extension NativeTimelineCanvasView {
                 Set<NativeTimelineMediaKey>] = [:]
         for index in rowRange
         where rowFrame(at: index).intersects(viewport) {
+            if let row = items[index].messageRow, !row.serverInvites.isEmpty, let model {
+                let references = row.serverInvites
+                let session = model.accountSession()
+                Task { @MainActor in
+                    guard model.isCurrentAccountSession(session) else { return }
+                    for reference in references { model.loadServerInvite(reference) }
+                }
+            }
             let rowKeys = mediaKeys(for: items[index], at: index)
             keys.formUnion(rowKeys)
             keysByIdentifier[items[index].identifier] = rowKeys
@@ -293,6 +301,15 @@ extension NativeTimelineCanvasView {
         appendMessageTextMediaKeys(for: row, layout: layouts[index], into: &keys)
         appendAttachmentMediaKeys(for: message, layout: layouts[index], into: &keys)
         appendEmbedMediaKeys(layouts[index].embedRegions, into: &keys)
+        for card in layouts[index].inviteRegions {
+            if let invite = card.invite {
+                if let url = invite.iconURL { keys.append(.media(url, maximumPixelDimension: 128)) }
+                if let url = invite.inviter?.avatarURL { keys.append(.media(url, maximumPixelDimension: 32)) }
+                for trait in invite.traits {
+                    if let url = trait.emojiURL { keys.append(.media(url, maximumPixelDimension: 32)) }
+                }
+            }
+        }
         appendComponentMediaKeys(for: message, layouts: layouts[index].componentLayouts, into: &keys)
         appendStickerAndReactionMediaKeys(for: message, layout: layouts[index], into: &keys)
         for answer in message.poll?.answers ?? [] {

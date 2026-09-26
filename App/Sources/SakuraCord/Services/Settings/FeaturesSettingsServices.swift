@@ -4,6 +4,7 @@ nonisolated struct FeaturesSettingsSnapshot: Equatable, Sendable {
     static let defaults = Self()
 
     var showHiddenChannels = true
+    var channelManagement = false
     var fakeNitroEmojis = true
     var fakeNitroStickers = true
     var fakeNitroSoundboard = true
@@ -21,6 +22,7 @@ final class FeaturesSettingsStore {
 
     func load() -> FeaturesSettingsSnapshot {
         var value = FeaturesSettingsSnapshot.defaults
+        if case let .bool(saved) = preferences.value(for: .channelManagement) { value.channelManagement = saved }
         if case let .bool(saved) = preferences.value(for: .showHiddenChannels) { value.showHiddenChannels = saved }
         if case let .bool(saved) = preferences.value(for: .fakeNitroEmojis) { value.fakeNitroEmojis = saved }
         if case let .bool(saved) = preferences.value(for: .fakeNitroStickers) { value.fakeNitroStickers = saved }
@@ -30,6 +32,7 @@ final class FeaturesSettingsStore {
     }
 
     func save(_ value: FeaturesSettingsSnapshot) {
+        preferences.set(.bool(value.channelManagement), for: .channelManagement)
         preferences.set(.bool(value.showHiddenChannels), for: .showHiddenChannels)
         preferences.set(.bool(value.fakeNitroEmojis), for: .fakeNitroEmojis)
         preferences.set(.bool(value.fakeNitroStickers), for: .fakeNitroStickers)
@@ -43,6 +46,7 @@ extension AppModel {
         featuresSettings = value
         FeaturesSettingsStore.shared.save(value)
         refreshVisibleChannelGroups()
+        reconcileSelectedOnboardingChannel()
         if allowedScreenShareSettings(screenShareSettings) != screenShareSettings {
             Task { [weak self] in
                 guard let self else { return }

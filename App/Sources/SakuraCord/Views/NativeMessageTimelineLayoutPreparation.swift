@@ -7,6 +7,7 @@ extension NativeMessageTimelineCoordinator {
         let rowsRevision: UInt64
         let presentationRevision: UInt64
         let fontRevision: UInt64
+        let inviteRevision: UInt64
         let width: CGFloat
         var layouts: [NativeMessageTimelineItem.Identifier: CachedItemLayout] = [:]
         var isComplete = false
@@ -16,6 +17,7 @@ extension NativeMessageTimelineCoordinator {
             rowsRevision = parent.rowsRevision
             presentationRevision = parent.presentationRevision
             fontRevision = ProfileNameFontCache.revision
+            inviteRevision = parent.model.serverInvites.revision
             self.width = width
         }
 
@@ -25,6 +27,7 @@ extension NativeMessageTimelineCoordinator {
                 && rowsRevision == parent.rowsRevision
                 && presentationRevision == parent.presentationRevision
                 && fontRevision == ProfileNameFontCache.revision
+                && inviteRevision == parent.model.serverInvites.revision
                 && abs(self.width - width) < 0.5
         }
     }

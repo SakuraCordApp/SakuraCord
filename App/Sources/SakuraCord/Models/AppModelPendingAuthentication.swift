@@ -99,6 +99,8 @@ extension AppModel {
                 AccountID(handle.accountID).flatMap(accountDatabaseFactory)
             }
             resetForAccountConnection(handle)
+            await refreshSupportedCapabilities(for: session)
+            guard isCurrentAccountSession(session) else { return false }
             await applyLiveBootstrap(
                 value,
                 publishesSessionState: !preservesInteractivePresentation,
@@ -160,12 +162,8 @@ extension AppModel {
         activeAccountID = nil
         didAttemptSessionRestore = true
         resetAccountPresentationState()
+        supportedCapabilities = []
         let session = accountSession()
-        await refreshSupportedCapabilities(for: session)
-        guard isCurrentAccountSession(session) else {
-            await stopPendingProvider(nextProvider)
-            return nil
-        }
         let stream = await nextProvider.eventStream()
         guard isCurrentAccountSession(session) else {
             await stopPendingProvider(nextProvider)

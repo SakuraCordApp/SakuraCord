@@ -976,7 +976,7 @@ private struct ProfileAboutSection: View {
     }
 }
 
-private struct ProfileRolesSection: View {
+struct ProfileRolesSection: View {
     let roles: [GuildRole]
     var keepsExpanded = false
     @State private var isExpanded = false

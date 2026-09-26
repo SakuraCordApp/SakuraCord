@@ -4,6 +4,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
     public let id: GuildID
     public var name: String
     public var iconURL: URL?
+    public var guideHeaderURL: URL?
     public var accentHex: UInt32
     public var unreadCount: Int
     public var mentionCount: Int
@@ -22,6 +23,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         unreadCount: Int = 0, mentionCount: Int = 0, isOwnedByCurrentUser: Bool? = nil,
         currentUserPermissions: UInt64? = nil, rulesChannelID: ChannelID? = nil,
         features: Set<String> = [],
+        guideHeaderURL: URL? = nil,
         profileTag: PrimaryGuildIdentity? = nil,
         defaultMessageNotifications: MessageNotificationLevel = .onlyMentions,
         isUnavailable: Bool = false,
@@ -31,6 +33,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         self.id = id
         self.name = name
         self.iconURL = iconURL
+        self.guideHeaderURL = guideHeaderURL
         self.accentHex = accentHex
         self.unreadCount = unreadCount
         self.mentionCount = mentionCount
@@ -48,7 +51,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, name, iconURL, accentHex, unreadCount, mentionCount, isOwnedByCurrentUser
         case currentUserPermissions, rulesChannelID, features, profileTag, defaultMessageNotifications
-        case isUnavailable, joinedAt, isAgeRestricted
+        case isUnavailable, joinedAt, isAgeRestricted, guideHeaderURL
     }
 
     public init(from decoder: any Decoder) throws {
@@ -56,6 +59,7 @@ public struct Guild: Identifiable, Codable, Hashable, Sendable {
         id = try values.decode(GuildID.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
         iconURL = try values.decodeIfPresent(URL.self, forKey: .iconURL)
+        guideHeaderURL = try values.decodeIfPresent(URL.self, forKey: .guideHeaderURL)
         accentHex = try values.decodeIfPresent(UInt32.self, forKey: .accentHex) ?? 0x5865F2
         unreadCount = try values.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
         mentionCount = try values.decodeIfPresent(Int.self, forKey: .mentionCount) ?? 0

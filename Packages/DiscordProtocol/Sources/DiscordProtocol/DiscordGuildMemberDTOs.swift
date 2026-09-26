@@ -5,6 +5,7 @@ struct GuildDTO: Decodable {
     var id: String
     var name: String
     var icon: String?
+    var homeHeader: String?
     var owner: Bool?
     var permissions: String?
     var rulesChannelID: String?
@@ -14,6 +15,7 @@ struct GuildDTO: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, icon, owner, permissions, features, profile
+        case homeHeader = "home_header"
         case rulesChannelID = "rules_channel_id"
         case defaultMessageNotifications = "default_message_notifications"
     }
@@ -36,6 +38,7 @@ struct GuildDTO: Decodable {
             currentUserPermissions: permissions.flatMap(UInt64.init),
             rulesChannelID: rulesChannelID.flatMap(ChannelID.init),
             features: features ?? [],
+            guideHeaderURL: homeHeader.flatMap { URL(string: "https://cdn.discordapp.com/home-headers/\(id)/\($0).png?size=2048") },
             profileTag: profile?.domain(guildID: id),
             defaultMessageNotifications:
                 defaultMessageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))
@@ -92,13 +95,14 @@ struct GuildMemberDTO: Decodable {
     var banner: String?
     var bio: String?
     var pending: Bool?
+    var flags: UInt64?
     var joinedAt: String?
     var avatarDecorationData: UserDTO.AvatarDecorationDTO?
     var collectibles: UserCollectiblesDTO?
     var displayNameStyles: UserDTO.DisplayNameStyleDTO?
 
     enum CodingKeys: String, CodingKey {
-        case user, nick, roles, presence, avatar, banner, bio, pending, collectibles
+        case user, nick, roles, presence, avatar, banner, bio, pending, flags, collectibles
         case joinedAt = "joined_at"
         case avatarDecorationData = "avatar_decoration_data"
         case displayNameStyles = "display_name_styles"
@@ -178,6 +182,7 @@ struct GuildMemberDTO: Decodable {
             customStatus: customStatus,
             isListeningToMusic: primaryActivity?.type == 2,
             isPending: pending,
+            flags: flags,
             joinedAt: joinedAt.flatMap(DiscordDate.parse)
         )
     }

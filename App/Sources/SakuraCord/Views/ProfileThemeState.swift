@@ -48,7 +48,7 @@ final class ProfileThemeState {
 }
 
 @MainActor
-private final class ProfileAvatarPaletteLoader {
+final class ProfileAvatarPaletteLoader {
     static let shared = ProfileAvatarPaletteLoader()
     private let cache = NSCache<NSURL, Palette>()
 

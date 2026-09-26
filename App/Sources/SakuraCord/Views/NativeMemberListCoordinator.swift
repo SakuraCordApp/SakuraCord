@@ -56,6 +56,15 @@ final class NativeMemberListCoordinator: NSObject {
             self.parent.selectMember(original)
         }
         let scrollView = NativeMemberListScrollView()
+        scrollView.appearanceDidChange = { [weak self, weak scrollView, weak canvas] in
+            guard let self, let scrollView, let canvas else { return }
+            self.requestDocumentUpdate(
+                sections: self.parent.sections,
+                presentation: self.parent.presentation,
+                scrollView: scrollView,
+                canvas: canvas
+            )
+        }
         scrollView.inputPerformanceProbe.install(on: scrollView)
         scrollView.documentView = canvas
         scrollView.drawsBackground = false
@@ -198,6 +207,7 @@ final class NativeMemberListCoordinator: NSObject {
     }
 
     func stop() {
+        (scrollView as? NativeMemberListScrollView)?.appearanceDidChange = nil
         documentPreparationTask?.cancel()
         documentPreparationTask = nil
         scrollIdleTask?.cancel()
@@ -239,6 +249,12 @@ final class NativeMemberListCoordinator: NSObject {
         scrollView: NSScrollView,
         canvas: NativeMemberListCanvasView
     ) {
+        let presentation = NativeMemberListPresentation(
+            roleColorDisplay: presentation.roleColorDisplay,
+            isDark: scrollView.effectiveAppearance.bestMatch(
+                from: [.darkAqua, .aqua]
+            ) == .darkAqua
+        )
         let sections = sections.map { section in
             MemberSection(id: section.id, title: section.title, colorHex: section.colorHex,
                           totalCount: section.totalCount, members: section.members.map(parent.cosmeticPolicy.member),

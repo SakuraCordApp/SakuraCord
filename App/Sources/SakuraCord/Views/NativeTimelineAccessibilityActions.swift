@@ -420,7 +420,7 @@ extension NativeTimelineCanvasView {
         guard hoveredRow != value else { return }
         let old = hoveredRow
         hoveredRow = value
-        updateAvatarDecorationPlayback()
+        updateAvatarPlayback()
         if let old {
             setNeedsDisplay(rowFrame(at: old))
         }

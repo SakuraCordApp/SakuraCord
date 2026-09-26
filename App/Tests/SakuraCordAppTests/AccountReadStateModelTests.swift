@@ -2660,8 +2660,7 @@ struct AccountReadStateModelTests {
     let provider = MockChatProvider()
     let model = AppModel(
         launchMode: .offlineTesting,
-        provider: provider,
-        readAcknowledgementTiming: .init(debounce: .milliseconds(30))
+        provider: provider
     )
     await model.start()
     let channelID = ChannelID(rawValue: 210)
@@ -2670,7 +2669,10 @@ struct AccountReadStateModelTests {
     let oldBoundary = model.readState.entries[channelID]?.lastAcknowledgedMessageID
 
     model.markConversationRead(channelID: channelID)
-    await provider.emit(.readStateSnapshot([
+    // Deliver the stale snapshot in the same main-actor turn, before the
+    // queued transport task can run. A debounce cannot guarantee that order
+    // when the parallel suite delays event-stream consumption.
+    model.consumeImmediately(.readStateSnapshot([
         ChannelReadState(
             channelID: channelID,
             lastAcknowledgedMessageID: oldBoundary,
@@ -2679,7 +2681,7 @@ struct AccountReadStateModelTests {
         )
     ]))
 
-    #expect(await eventually { model.readState.readStateVersion == 41 })
+    #expect(model.readState.readStateVersion == 41)
     #expect(!model.isChannelUnread(channelID))
     #expect(model.channelMentionCount(channelID) == 0)
     for _ in 0 ..< 500 {

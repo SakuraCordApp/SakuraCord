@@ -145,6 +145,9 @@ import Testing
             {"title":"Preview","description":"**Rich** description","url":"https://example.com",
              "color":5793266,"fields":[{"name":"One","value":"Value","inline":true}],
              "image":{"url":"attachment://photo.png","width":800,"height":600}},
+            {"type":"components","url":"https://example.com/preview","components":[
+              {"type":17,"id":1,"accent_color":15702980,"components":[
+                {"type":10,"id":2,"content":"# Website preview"}]}, false]},
             false
           ],
           "components":[
@@ -178,8 +181,13 @@ import Testing
     #expect(message.applicationID == ApplicationID(rawValue: 400))
     #expect(message.attachments.count == 1)
     #expect(message.attachments[0].title == "Photo")
-    #expect(message.embeds.count == 1)
+    #expect(message.embeds.count == 2)
     #expect(message.embeds[0].fields.count == 1)
+    #expect(message.embeds[1].components == [
+        .container(id: "embed-1.0", accentColor: 15702980, spoiler: false, children: [
+            .textDisplay(id: "embed-1.0.0", content: "# Website preview"),
+        ]),
+    ])
     #expect(message.components.count == 1)
     guard case let .container(_, _, _, children) = message.components[0],
           case let .button(_, _, _, emoji, _, _, _, _) = children[1]

@@ -1113,10 +1113,12 @@ struct CommandApplicationIcon: View {
 
     var body: some View {
         Group {
-            if let url = application?.iconURL ?? application?.bot?.avatarURL {
+            if let url = application?.iconURL {
                 AnimatedRemoteImage(
                     url: url,
                 )
+            } else if let bot = application?.bot, let url = bot.avatarURL {
+                AvatarView(name: bot.displayName, url: url, size: size)
             } else {
                 ZStack {
                     Circle().fill(Color.secondary.opacity(0.18))

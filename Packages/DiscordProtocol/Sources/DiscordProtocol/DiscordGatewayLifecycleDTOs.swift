@@ -27,6 +27,7 @@ struct DiscordTimestampDTO: Decodable {
 struct GatewayGuildPropertiesDTO: Decodable {
     var name: String?
     var icon: String?
+    var homeHeader: String?
     var owner: Bool?
     var ownerID: String?
     var permissions: String?
@@ -37,10 +38,12 @@ struct GatewayGuildPropertiesDTO: Decodable {
     var profile: GuildProfileTagDTO?
     var containsProfile: Bool
     var containsIcon: Bool
+    var containsHomeHeader: Bool
     var containsRulesChannelID: Bool
 
     enum CodingKeys: String, CodingKey {
         case name, icon, owner, permissions, features, profile
+        case homeHeader = "home_header"
         case ownerID = "owner_id"
         case rulesChannelID = "rules_channel_id"
         case nsfwLevel = "nsfw_level"
@@ -52,6 +55,7 @@ struct GatewayGuildPropertiesDTO: Decodable {
         nsfwLevel = try? values.decode(Int.self, forKey: .nsfwLevel)
         name = try? values.decode(String.self, forKey: .name)
         icon = try? values.decode(String.self, forKey: .icon)
+        homeHeader = try? values.decode(String.self, forKey: .homeHeader)
         owner = try? values.decode(Bool.self, forKey: .owner)
         ownerID = try? values.decode(String.self, forKey: .ownerID)
         permissions = try? values.decode(
@@ -65,6 +69,7 @@ struct GatewayGuildPropertiesDTO: Decodable {
         profile = try values.decodeIfPresent(GuildProfileTagDTO.self, forKey: .profile)
         containsProfile = values.contains(.profile)
         containsIcon = values.contains(.icon)
+        containsHomeHeader = values.contains(.homeHeader)
         containsRulesChannelID = values.contains(.rulesChannelID)
     }
 }
@@ -73,6 +78,7 @@ struct GatewayGuildPatchDTO: Decodable {
     var id: String
     var name: String?
     var icon: String?
+    var homeHeader: String?
     var owner: Bool?
     var ownerID: String?
     var permissions: String?
@@ -84,10 +90,12 @@ struct GatewayGuildPatchDTO: Decodable {
     var profile: GuildProfileTagDTO?
     var containsProfile: Bool
     var containsIcon: Bool
+    var containsHomeHeader: Bool
     var containsRulesChannelID: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, name, icon, owner, permissions, unavailable, properties, features, profile
+        case homeHeader = "home_header"
         case ownerID = "owner_id"
         case rulesChannelID = "rules_channel_id"
         case nsfwLevel = "nsfw_level"
@@ -118,6 +126,13 @@ struct GatewayGuildPatchDTO: Decodable {
         } else {
             profile = nested?.profile
             containsProfile = nested?.containsProfile ?? false
+        }
+        if values.contains(.homeHeader) {
+            homeHeader = try? values.decode(String.self, forKey: .homeHeader)
+            containsHomeHeader = true
+        } else {
+            homeHeader = nested?.homeHeader
+            containsHomeHeader = nested?.containsHomeHeader ?? false
         }
         if values.contains(.icon) {
             icon = try? values.decode(String.self, forKey: .icon)
@@ -166,6 +181,7 @@ struct GatewayGuildPatchDTO: Decodable {
                 ? rulesChannelID.flatMap(ChannelID.init)
                 : existing?.rulesChannelID,
             features: features ?? existing?.features ?? [],
+            guideHeaderURL: containsHomeHeader ? homeHeader.flatMap { URL(string: "https://cdn.discordapp.com/home-headers/\(guildID)/\($0).png?size=2048") } : existing?.guideHeaderURL,
             profileTag: containsProfile ? profile?.domain(guildID: guildID) : existing?.profileTag,
             defaultMessageNotifications:
                 defaultMessageNotifications.flatMap(MessageNotificationLevel.init(rawValue:))

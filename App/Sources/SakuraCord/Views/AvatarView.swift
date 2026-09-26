@@ -6,19 +6,25 @@ struct AvatarView: View {
     let size: CGFloat
     let maximumPixelDimension: Int?
     let animates: Bool
+    // Rows with their own pointer tracking supply the hover state; standalone
+    // avatars track the pointer over the image itself.
+    let isHovered: Bool?
+    @State private var isPointerInside = false
 
     init(
         name: String,
         url: URL?,
         size: CGFloat,
         maximumPixelDimension: Int? = nil,
-        animates: Bool = true
+        animates: Bool = true,
+        isHovered: Bool? = nil
     ) {
         self.name = name
         self.url = url
         self.size = size
         self.maximumPixelDimension = maximumPixelDimension
         self.animates = animates
+        self.isHovered = isHovered
     }
 
     var body: some View {
@@ -38,8 +44,10 @@ struct AvatarView: View {
                 {
                     AnimatedRemoteImage(
                         url: url,
+                        animates: isHovered ?? isPointerInside,
                         maximumPixelDimension: requestedPixelDimension,
                         contentMode: .fill,
+                        resetsWhenStopped: true
                     )
                 } else {
                     StaticRemoteImage(
@@ -53,6 +61,7 @@ struct AvatarView: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+        .onModalHover { isPointerInside = $0 }
         .accessibilityLabel("\(name) avatar")
     }
 

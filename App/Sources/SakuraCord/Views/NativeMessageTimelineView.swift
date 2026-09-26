@@ -1053,7 +1053,7 @@ extension NativeMessageTimelineCoordinator {
                             model.navigateToPinnedResult(message)
                         case .inbox:
                             model.navigateToInboxResult(message)
-                        case .channel, .thread:
+                        case .channel, .thread, .resource:
                             break
                         }
                     }
