@@ -181,6 +181,7 @@ proportion to its risk:
 | `./script/build_and_run.sh package` | Stage an ad-hoc signed debug app without launching it |
 | `./script/build_and_run.sh run-release` | Build, stage, and launch an optimized release app |
 | `./script/test.sh protocol` | Run protocol package tests |
+| `./script/test.sh media` | Run media package tests |
 | `./script/test.sh app` | Run application package tests |
 | `./script/test.sh all` | Run the configured first-party test matrix |
 | `./script/code_quality.sh check` | Run the pinned SwiftFormat and SwiftLint policy |
@@ -190,6 +191,14 @@ Hosted CI caches the app and all six library test builds. Release compilation
 runs alongside any required validation, and publication waits for both. See
 [release validation and caches](RELEASING.md#validation-parallel-packaging-and-caches)
 for the exact commit reuse rules and cache boundaries.
+
+Each package's test execution has a three-minute process deadline, separate
+from compilation. The test runner streams console output, records Swift Testing
+events, and captures process listings and macOS stack samples before terminating
+a stalled process group. Diagnostics live in `.codex-runtime/test-diagnostics/`;
+failed or cancelled CI runs upload them as a seven-day artifact. A timeout fails
+validation without retrying or skipping tests. The CI build-and-test step also
+has a 30-minute outer limit covering compilation and framework staging.
 
 ### Verifying native notification audio
 

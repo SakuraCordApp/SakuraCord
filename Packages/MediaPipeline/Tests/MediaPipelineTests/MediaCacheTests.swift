@@ -1,4 +1,3 @@
-import Dispatch
 import Foundation
 @testable import MediaPipeline
 import Testing
@@ -111,7 +110,7 @@ func `media cache reads do not wait for index maintenance`() async throws {
     let insert = Task {
         try await cache.insert(Data("new-media".utf8), for: insertedURL)
     }
-    #expect(await indexLoad.waitUntilPaused())
+    await indexLoad.waitUntilPaused()
 
     let read = Task {
         try await cache.data(for: cachedURL)
@@ -125,7 +124,7 @@ func `media cache reads do not wait for index maintenance`() async throws {
             return false
         }
         let result = await group.next() ?? false
-        indexLoad.resume()
+        await indexLoad.resume()
         group.cancelAll()
         return result
     }
@@ -149,11 +148,11 @@ func `media cache clear cannot be undone by an older suspended insert`() async t
     let insert = Task {
         try await cache.insert(Data("old-media".utf8), for: insertedURL)
     }
-    #expect(await indexLoad.waitUntilPaused())
+    await indexLoad.waitUntilPaused()
 
     let clear = Task { try await cache.removeAll() }
     for _ in 0 ..< 20 { await Task.yield() }
-    indexLoad.resume()
+    await indexLoad.resume()
     try await insert.value
     try await clear.value
 
@@ -211,27 +210,29 @@ func `media cache tracks failed evictions and retries them`() async throws {
     #expect(try await cache.status().evictionStatus == .withinLimit)
 }
 
-private final class SuspendedMediaCacheIndexLoad: @unchecked Sendable {
-    private let paused = DispatchSemaphore(value: 0)
-    private let resumeSignal = DispatchSemaphore(value: 0)
+private actor SuspendedMediaCacheIndexLoad {
+    private var paused = false
+    private var resumed = false
+    private var pauseWaiter: CheckedContinuation<Void, Never>?
+    private var resumeWaiter: CheckedContinuation<Void, Never>?
 
-    func pause() {
-        paused.signal()
-        resumeSignal.wait()
+    func pause() async {
+        paused = true
+        pauseWaiter?.resume()
+        pauseWaiter = nil
+        guard !resumed else { return }
+        await withCheckedContinuation { resumeWaiter = $0 }
     }
 
-    func waitUntilPaused() async -> Bool {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global().async { [self] in
-                continuation.resume(
-                    returning: paused.wait(timeout: .now() + 2) == .success
-                )
-            }
-        }
+    func waitUntilPaused() async {
+        guard !paused else { return }
+        await withCheckedContinuation { pauseWaiter = $0 }
     }
 
     func resume() {
-        resumeSignal.signal()
+        resumed = true
+        resumeWaiter?.resume()
+        resumeWaiter = nil
     }
 }
 

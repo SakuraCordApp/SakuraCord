@@ -18,6 +18,7 @@ esac
 "$ROOT_DIR/script/test_release_metadata.sh"
 "$ROOT_DIR/script/test_sync_main_into_nightly.sh"
 "$ROOT_DIR/script/test_debug_credentials_config.sh"
+python3 "$ROOT_DIR/script/test_run_test_diagnostics.py"
 node --test "$ROOT_DIR/script/release_automation.test.mjs"
 node --test "$ROOT_DIR/script/ci_reuse.test.mjs"
 node --test "$ROOT_DIR/script/update_appcast_display_version.test.mjs"

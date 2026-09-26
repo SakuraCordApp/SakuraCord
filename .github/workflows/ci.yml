@@ -75,7 +75,17 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Build and test
+        timeout-minutes: 30
         run: ./script/ci.sh
+      - name: Upload test diagnostics
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .codex-runtime/test-diagnostics
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Archive SwiftPM build cache
         id: cache-archive
         continue-on-error: true

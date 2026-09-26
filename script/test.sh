@@ -14,11 +14,13 @@ run_tests() {
   local bin_dir
   local framework
 
+  echo "=== $(basename "$package_path"): build tests ==="
   swift build \
     --package-path "$package_path" \
     --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
     --scratch-path "$package_path/.build" \
     --build-tests
+  echo "=== $(basename "$package_path"): locate test products ==="
   bin_dir="$(swift build \
     --package-path "$package_path" \
     --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
@@ -28,13 +30,18 @@ run_tests() {
   # SwiftPM does not stage binary-target frameworks where its macOS test
   # helper searches for them. Keep the test host self-contained without
   # changing the application bundle or a global dynamic-library path.
+  echo "=== $(basename "$package_path"): stage test frameworks ==="
   for framework in "$bin_dir"/*.framework; do
     [[ -d "$framework" ]] || continue
     mkdir -p "$bin_dir/PackageFrameworks"
     ditto "$framework" "$bin_dir/PackageFrameworks/$(basename "$framework")"
   done
 
-  swift test \
+  python3 "$ROOT_DIR/script/run_test_diagnostics.py" \
+    --label "$(basename "$package_path")" \
+    --output-dir "$SAKURACORD_RUNTIME_DIR/test-diagnostics" \
+    --events --timeout-seconds 180 -- \
+    swift test \
     --package-path "$package_path" \
     --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
     --scratch-path "$package_path/.build" \
@@ -48,6 +55,9 @@ case "$TARGET" in
   protocol)
     run_tests "$ROOT_DIR/Packages/DiscordProtocol"
     ;;
+  media)
+    run_tests "$ROOT_DIR/Packages/MediaPipeline"
+    ;;
   all)
     run_tests "$ROOT_DIR/Packages/SakuraCordModels"
     run_tests "$ROOT_DIR/Packages/DiscordProtocol"
@@ -58,7 +68,7 @@ case "$TARGET" in
     run_tests "$ROOT_DIR/App"
     ;;
   *)
-    echo "usage: $0 [app|protocol|all]" >&2
+    echo "usage: $0 [app|protocol|media|all]" >&2
     exit 2
     ;;
 esac

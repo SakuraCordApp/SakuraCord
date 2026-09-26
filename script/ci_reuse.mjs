@@ -75,7 +75,7 @@ function cacheKey(configuration) {
   ]) add(command(program, args));
   const files = command('git', ['ls-files', '-z']).split('\0').filter(path =>
     /(^|\/)Package\.(swift|resolved)$/.test(path)
-    || /^script\/(ci|ci_reuse|test|runtime|build_and_run|package_dmg)\./.test(path)
+    || /^script\/(ci|ci_reuse|test|run_test_diagnostics|runtime|build_and_run|package_dmg)\./.test(path)
     || path === workflowPath);
   for (const path of files.sort()) {
     add(path);
