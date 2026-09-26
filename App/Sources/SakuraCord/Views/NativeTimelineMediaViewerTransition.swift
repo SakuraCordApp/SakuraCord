@@ -9,11 +9,10 @@ extension NativeTimelineCanvasView {
         cornerRadius: CGFloat,
         fillsFrame: Bool
     ) -> NativeTimelineMediaViewerPresentation {
-        let presentation = presentation.withTimelinePreviewImages(
-            timelinePreviewImages(
-                for: presentation,
-                rowIndex: rowIndex
-            )
+        let media = timelineMedia(for: presentation, rowIndex: rowIndex)
+        let presentation = presentation.withTimelineMedia(
+            previewImages: media.previewImages,
+            transitionSources: media.transitionSources
         )
         guard presentation.items.indices.contains(presentation.selection),
               case .image = presentation.items[presentation.selection].kind
@@ -78,29 +77,57 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    private func timelinePreviewImages(
+    private func timelineMedia(
         for presentation: NativeTimelineMediaViewerPresentation,
         rowIndex: Int
-    ) -> [String: NSImage] {
-        guard layouts.indices.contains(rowIndex) else { return [:] }
+    ) -> (
+        previewImages: [String: NSImage],
+        transitionSources: [String: MediaViewerTransitionSource]
+    ) {
+        guard layouts.indices.contains(rowIndex) else { return ([:], [:]) }
         let layout = layouts[rowIndex]
         let imageItemIDs = Set(presentation.items.compactMap { item in
             if case .image = item.kind { item.id } else { nil }
         })
+        let rowOrigin = displayedRowOrigin(at: rowIndex)
         var images: [String: NSImage] = [:]
+        var sources: [String: MediaViewerTransitionSource] = [:]
 
-        func insert(_ itemID: String, key: NativeTimelineMediaKey) {
+        func insert(
+            _ itemID: String,
+            key: NativeTimelineMediaKey,
+            frame: CGRect?,
+            cornerRadius: CGFloat,
+            fillsFrame: Bool
+        ) {
             guard imageItemIDs.contains(itemID),
                   let image = NativeTimelineRowPainter.mediaImage(for: key)
             else { return }
             images[itemID] = image
+            guard sources[itemID] == nil else { return }
+            sources[itemID] = timelineTransitionSource(
+                itemID: itemID,
+                image: image,
+                frame: frame,
+                rowOrigin: rowOrigin,
+                cornerRadius: cornerRadius,
+                fillsFrame: fillsFrame
+            )
         }
 
         for region in layout.attachmentRegions {
             guard let key = NativeTimelineMediaKey.attachment(
                 region.attachment
             ) else { continue }
-            insert(region.attachment.id, key: key)
+            insert(
+                region.attachment.id,
+                key: key,
+                frame: region.frame,
+                cornerRadius: 8,
+                fillsFrame: MediaGalleryImagePresentation.fillsFrame(
+                    itemCount: layout.attachmentRegions.count
+                )
+            )
         }
         for region in layout.linkedImageRegions {
             insert(
@@ -109,7 +136,11 @@ extension NativeTimelineCanvasView {
                     region.reference.displayURL,
                     maximumPixelDimension:
                         region.reference.isEmoji ? 96 : 720
-                )
+                ),
+                frame: region.frame,
+                cornerRadius: region.reference.isEmoji ? 7 : 10,
+                fillsFrame: !region.reference.isEmoji
+                    && !region.reference.isSticker
             )
         }
         for component in layout.componentLayouts {
@@ -119,32 +150,64 @@ extension NativeTimelineCanvasView {
                     key: .media(
                         region.displayURL,
                         maximumPixelDimension: region.maximumPixelDimension
-                    )
+                    ),
+                    frame: region.frame,
+                    cornerRadius: region.cornerRadius,
+                    fillsFrame: false
                 )
             }
             for region in component.media where !region.isVideo {
                 insert(
                     region.componentID,
-                    key: .media(region.displayURL)
+                    key: .media(region.displayURL),
+                    frame: region.frame,
+                    cornerRadius: 8,
+                    fillsFrame: true
                 )
             }
         }
         for region in layout.embedRegions {
-            guard !region.mediaIsVideo, let url = region.mediaURL else {
-                continue
-            }
-            let candidateIDs: [String] = presentation.items.compactMap { item in
-                guard case .image = item.kind,
-                      item.url == url || item.previewURL == url
-                else { return nil }
-                return item.id
-            }
-            for itemID in candidateIDs {
-                insert(itemID, key: .media(url))
+            guard !region.mediaIsVideo,
+                  let url = region.mediaURL
+            else { continue }
+            for item in presentation.items where imageItemIDs.contains(item.id)
+                && (item.url == url || item.previewURL == url) {
+                insert(
+                    item.id,
+                    key: .media(url),
+                    frame: region.mediaFrame,
+                    cornerRadius: 8,
+                    fillsFrame: false
+                )
             }
         }
 
-        return images
+        return (images, sources)
+    }
+
+    private func timelineTransitionSource(
+        itemID: String,
+        image: NSImage,
+        frame: CGRect?,
+        rowOrigin: CGFloat,
+        cornerRadius: CGFloat,
+        fillsFrame: Bool
+    ) -> MediaViewerTransitionSource? {
+        guard window != nil, let frame else { return nil }
+        let frameInCanvas = frame.offsetBy(dx: 0, dy: rowOrigin)
+        let visibleFrame = frameInCanvas.intersection(visibleRect)
+        guard !visibleFrame.isNull,
+              visibleFrame.width > 0,
+              visibleFrame.height > 0
+        else { return nil }
+        return MediaViewerTransitionSource(
+            itemID: itemID,
+            image: image,
+            frameInWindow: convert(frameInCanvas, to: nil),
+            visibleFrameInWindow: convert(visibleFrame, to: nil),
+            cornerRadius: cornerRadius,
+            fillsFrame: fillsFrame
+        )
     }
 
     func mediaViewerPresentation(

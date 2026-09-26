@@ -7,8 +7,6 @@ struct MediaViewerStage: View {
     let previewImage: NSImage?
     let isVisible: Bool
     let transitionSource: MediaViewerTransitionSource?
-    let transitionSourceFrame: CGRect?
-    let transitionSourceVisibleFrame: CGRect?
     let horizontalInset: CGFloat
     let topInset: CGFloat
     let bottomInset: CGFloat
@@ -29,9 +27,6 @@ struct MediaViewerStage: View {
                     mediaHeight: item.height,
                     isVisible: isVisible,
                     transitionSource: transitionSource,
-                    transitionSourceFrame: transitionSourceFrame,
-                    transitionSourceVisibleFrame:
-                        transitionSourceVisibleFrame,
                     horizontalInset: horizontalInset,
                     topInset: topInset,
                     bottomInset: bottomInset,
@@ -72,8 +67,6 @@ private struct MediaViewerZoomableImage: View {
     let mediaHeight: Int?
     let isVisible: Bool
     let transitionSource: MediaViewerTransitionSource?
-    let transitionSourceFrame: CGRect?
-    let transitionSourceVisibleFrame: CGRect?
     let horizontalInset: CGFloat
     let topInset: CGFloat
     let bottomInset: CGFloat
@@ -145,16 +138,11 @@ private struct MediaViewerZoomableImage: View {
                 .opacity(transitionSource == nil ? 1 : 0)
                 .allowsHitTesting(false)
 
-                if let transitionSource,
-                   let transitionSourceFrame,
-                   let transitionSourceVisibleFrame
-                {
+                if let transitionSource {
                     MediaViewerTransitionImage(
                         url: url,
                         isAnimated: isAnimated,
                         source: transitionSource,
-                        sourceFrame: transitionSourceFrame,
-                        sourceVisibleFrame: transitionSourceVisibleFrame,
                         destinationFrame: transformedFrame,
                         presentationProgress: presentationProgress,
                         isPresented: isVisible
@@ -301,8 +289,6 @@ private struct MediaViewerTransitionImage: View {
     let url: URL
     let isAnimated: Bool
     let source: MediaViewerTransitionSource
-    let sourceFrame: CGRect
-    let sourceVisibleFrame: CGRect
     let destinationFrame: CGRect
     let presentationProgress: CGFloat
     let isPresented: Bool
@@ -312,8 +298,6 @@ private struct MediaViewerTransitionImage: View {
         url: URL,
         isAnimated: Bool,
         source: MediaViewerTransitionSource,
-        sourceFrame: CGRect,
-        sourceVisibleFrame: CGRect,
         destinationFrame: CGRect,
         presentationProgress: CGFloat,
         isPresented: Bool
@@ -321,8 +305,6 @@ private struct MediaViewerTransitionImage: View {
         self.url = url
         self.isAnimated = isAnimated
         self.source = source
-        self.sourceFrame = sourceFrame
-        self.sourceVisibleFrame = sourceVisibleFrame
         self.destinationFrame = destinationFrame
         self.presentationProgress = presentationProgress
         self.isPresented = isPresented
@@ -334,13 +316,13 @@ private struct MediaViewerTransitionImage: View {
         let sourceProgress = 1 - progress
         let remoteImageOpacity = remoteImageOpacity(for: progress)
         let clipFrame = interpolatedFrame(
-            from: sourceVisibleFrame,
+            from: source.visibleFrameInWindow,
             to: destinationFrame,
             progress: progress
         )
         let sourceImageFrame = MediaViewerLayoutPolicy.imageFrame(
             imageSize: source.image.size,
-            in: sourceFrame,
+            in: source.frameInWindow,
             fillsFrame: source.fillsFrame
         )
         let destinationImageFrame = MediaViewerLayoutPolicy.imageFrame(
@@ -416,8 +398,10 @@ private struct MediaViewerTransitionImage: View {
     private func sharesEdge(
         _ edge: KeyPath<CGRect, CGFloat>
     ) -> Bool {
-        abs(sourceFrame[keyPath: edge] - sourceVisibleFrame[keyPath: edge])
-            < 0.5
+        abs(
+            source.frameInWindow[keyPath: edge]
+                - source.visibleFrameInWindow[keyPath: edge]
+        ) < 0.5
     }
 
     private func interpolatedFrame(

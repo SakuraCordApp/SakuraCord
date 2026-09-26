@@ -20,24 +20,38 @@ struct MediaViewerWindowOverlay: View {
 @Observable
 private final class MediaViewerWindowAnimationState {
     private(set) var isVisible = false
-    private(set) var transitionSourceFrame: CGRect?
-    private(set) var transitionSourceVisibleFrame: CGRect?
+    private(set) var transitionSources: [String: MediaViewerTransitionSource] = [:]
     private var reducesMotion = false
-    private let hasTransitionSource: Bool
+    private let sourceItemIDs: Set<String>
+    private var selectedItemID: String
 
-    init(hasTransitionSource: Bool) {
-        self.hasTransitionSource = hasTransitionSource
+    init(presentation: NativeTimelineMediaViewerPresentation) {
+        sourceItemIDs = Set(presentation.transitionSources.keys)
+        selectedItemID = presentation.items[presentation.selection].id
     }
 
-    func setTransitionSourceFrames(
-        frame: CGRect?,
-        visibleFrame: CGRect?
+    private var hasTransitionSource: Bool {
+        sourceItemIDs.contains(selectedItemID)
+    }
+
+    func select(itemID: String) {
+        selectedItemID = itemID
+    }
+
+    func setTransitionSources(
+        _ sources: [String: MediaViewerTransitionSource]
     ) {
-        guard transitionSourceFrame != frame
-                || transitionSourceVisibleFrame != visibleFrame
+        guard transitionSources.count != sources.count
+            || sources.contains(where: { itemID, source in
+                guard let previous = transitionSources[itemID] else {
+                    return true
+                }
+                return previous.frameInWindow != source.frameInWindow
+                    || previous.visibleFrameInWindow
+                        != source.visibleFrameInWindow
+            })
         else { return }
-        transitionSourceFrame = frame
-        transitionSourceVisibleFrame = visibleFrame
+        transitionSources = sources
     }
 
     func present(reducesMotion: Bool) {
@@ -101,17 +115,17 @@ private struct MediaViewerWindowAnimatedContent: View {
     init(presentation: NativeTimelineMediaViewerPresentation, context: WindowModalContext) {
         self.presentation = presentation
         self.context = context
-        _animationState = State(initialValue: MediaViewerWindowAnimationState(hasTransitionSource: presentation.transitionSource != nil))
+        _animationState = State(initialValue: MediaViewerWindowAnimationState(presentation: presentation))
     }
 
     var body: some View {
         MediaViewer(
             presentation: presentation,
             isVisible: animationState.isVisible,
-            transitionSourceFrame: reducesMotion ? nil : animationState.transitionSourceFrame,
-            transitionSourceVisibleFrame: reducesMotion ? nil : animationState.transitionSourceVisibleFrame,
+            transitionSources: reducesMotion ? [:] : animationState.transitionSources,
             close: { context.dismiss() },
-            closeInteractively: { context.dismiss(interactively: true) }
+            closeInteractively: { context.dismiss(interactively: true) },
+            selectionChanged: { animationState.select(itemID: $0) }
         )
         .background {
             MediaViewerTransitionFrameReader(presentation: presentation, animationState: animationState)
@@ -137,15 +151,13 @@ private struct MediaViewerTransitionFrameReader: NSViewRepresentable {
 
     func makeNSView(context: Context) -> Reader { Reader() }
     func updateNSView(_ view: Reader, context: Context) {
-        view.sourceFrame = presentation.transitionSource?.frameInWindow
-        view.sourceVisibleFrame = presentation.transitionSource?.visibleFrameInWindow
+        view.sources = presentation.transitionSources
         view.animationState = animationState
         view.resolveFrames()
     }
 
     final class Reader: NSView {
-        var sourceFrame: CGRect?
-        var sourceVisibleFrame: CGRect?
+        var sources: [String: MediaViewerTransitionSource] = [:]
         var animationState: MediaViewerWindowAnimationState?
         private weak var reportedHost: NSView?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -155,10 +167,23 @@ private struct MediaViewerTransitionFrameReader: NSViewRepresentable {
             var ancestor = superview
             while let view = ancestor {
                 if let host = view as? WindowModalHostingView {
-                    animationState?.setTransitionSourceFrames(
-                        frame: sourceFrame.map { host.convert($0, from: nil) },
-                        visibleFrame: sourceVisibleFrame.map { host.convert($0, from: nil) }
-                    )
+                    let resolvedSources = sources.mapValues { source in
+                        MediaViewerTransitionSource(
+                            itemID: source.itemID,
+                            image: source.image,
+                            frameInWindow: host.convert(
+                                source.frameInWindow,
+                                from: nil
+                            ),
+                            visibleFrameInWindow: host.convert(
+                                source.visibleFrameInWindow,
+                                from: nil
+                            ),
+                            cornerRadius: source.cornerRadius,
+                            fillsFrame: source.fillsFrame
+                        )
+                    }
+                    animationState?.setTransitionSources(resolvedSources)
                     if reportedHost !== host {
                         reportedHost = host
                         MediaViewerPresentationPerformanceProbe.shared.reportOverlayAttached(to: host)

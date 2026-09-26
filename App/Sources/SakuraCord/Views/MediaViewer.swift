@@ -5,10 +5,10 @@ struct MediaViewer: View {
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
     let presentation: NativeTimelineMediaViewerPresentation
     let isVisible: Bool
-    let transitionSourceFrame: CGRect?
-    let transitionSourceVisibleFrame: CGRect?
+    let transitionSources: [String: MediaViewerTransitionSource]
     let close: () -> Void
     let closeInteractively: () -> Void
+    let selectionChanged: (String) -> Void
     @State private var interaction: MediaViewerInteractionModel
     @State private var feedbackTask: Task<Void, Never>?
     @FocusState private var keyboardNavigationIsFocused: Bool
@@ -16,17 +16,17 @@ struct MediaViewer: View {
     init(
         presentation: NativeTimelineMediaViewerPresentation,
         isVisible: Bool = true,
-        transitionSourceFrame: CGRect? = nil,
-        transitionSourceVisibleFrame: CGRect? = nil,
+        transitionSources: [String: MediaViewerTransitionSource] = [:],
         close: @escaping () -> Void,
-        closeInteractively: @escaping () -> Void
+        closeInteractively: @escaping () -> Void,
+        selectionChanged: @escaping (String) -> Void = { _ in }
     ) {
         self.presentation = presentation
         self.isVisible = isVisible
-        self.transitionSourceFrame = transitionSourceFrame
-        self.transitionSourceVisibleFrame = transitionSourceVisibleFrame
+        self.transitionSources = transitionSources
         self.close = close
         self.closeInteractively = closeInteractively
+        self.selectionChanged = selectionChanged
         _interaction = State(
             initialValue: MediaViewerInteractionModel(
                 itemCount: presentation.items.count,
@@ -37,21 +37,15 @@ struct MediaViewer: View {
 
     var body: some View {
         let item = presentation.items[interaction.selection]
-        let transitionSource = presentation.transitionSource.flatMap { source in
-            source.itemID == item.id
-                && transitionSourceFrame != nil
-                && transitionSourceVisibleFrame != nil
-                ? source
-                : nil
-        }
+        let transitionSource = transitionSources[item.id]
         let usesSourceTransition = transitionSource != nil
 
         GlassEffectContainer(spacing: 12) {
             GeometryReader { proxy in
                 ZStack {
-                    if presentation.transitionSource != nil,
-                       let transitionSourceVisibleFrame
-                    {
+                    if let transitionSource {
+                        let transitionSourceVisibleFrame =
+                            transitionSource.visibleFrameInWindow
                         Color(nsColor: .windowBackgroundColor)
                             .frame(
                                 width: transitionSourceVisibleFrame.width,
@@ -76,9 +70,6 @@ struct MediaViewer: View {
                             presentation.timelinePreviewImages[item.id],
                         isVisible: isVisible,
                         transitionSource: transitionSource,
-                        transitionSourceFrame: transitionSourceFrame,
-                        transitionSourceVisibleFrame:
-                            transitionSourceVisibleFrame,
                         horizontalInset: 66,
                         topInset: MediaViewerTopChromeMetrics.mediaTopInset,
                         bottomInset: presentation.items.count > 1 ? 82 : 14,
@@ -255,6 +246,7 @@ struct MediaViewer: View {
     }
 
     private func announceSelection() {
+        selectionChanged(presentation.items[interaction.selection].id)
         NSAccessibility.post(
             element: NSApplication.shared,
             notification: .announcementRequested,

@@ -371,7 +371,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
     let authorAvatarURL: URL?
     let timestamp: Date
     let timelinePreviewImages: [String: NSImage]
-    let transitionSource: MediaViewerTransitionSource?
+    let transitionSources: [String: MediaViewerTransitionSource]
 
     init(
         id: UUID = UUID(),
@@ -384,7 +384,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         authorAvatarURL: URL?,
         timestamp: Date,
         timelinePreviewImages: [String: NSImage] = [:],
-        transitionSource: MediaViewerTransitionSource? = nil
+        transitionSources: [String: MediaViewerTransitionSource] = [:]
     ) {
         self.id = id
         self.messageID = messageID
@@ -396,11 +396,12 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         self.authorAvatarURL = authorAvatarURL
         self.timestamp = timestamp
         self.timelinePreviewImages = timelinePreviewImages
-        self.transitionSource = transitionSource
+        self.transitionSources = transitionSources
     }
 
-    func withTimelinePreviewImages(
-        _ timelinePreviewImages: [String: NSImage]
+    func withTimelineMedia(
+        previewImages: [String: NSImage],
+        transitionSources: [String: MediaViewerTransitionSource]
     ) -> Self {
         Self(
             id: id,
@@ -412,26 +413,19 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
             authorName: authorName,
             authorAvatarURL: authorAvatarURL,
             timestamp: timestamp,
-            timelinePreviewImages: timelinePreviewImages,
-            transitionSource: transitionSource
+            timelinePreviewImages: previewImages,
+            transitionSources: transitionSources
         )
     }
 
     func withTransitionSource(
         _ transitionSource: MediaViewerTransitionSource
     ) -> Self {
-        Self(
-            id: id,
-            messageID: messageID,
-            items: items,
-            selection: selection,
-            authorID: authorID,
-            authorFontID: authorFontID,
-            authorName: authorName,
-            authorAvatarURL: authorAvatarURL,
-            timestamp: timestamp,
-            timelinePreviewImages: timelinePreviewImages,
-            transitionSource: transitionSource
+        var sources = transitionSources
+        sources[transitionSource.itemID] = transitionSource
+        return withTimelineMedia(
+            previewImages: timelinePreviewImages,
+            transitionSources: sources
         )
     }
 }
