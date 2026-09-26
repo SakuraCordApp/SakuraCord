@@ -419,6 +419,81 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    override func quickLook(with event: NSEvent) {
+        guard WindowModalCoordinator.allowsInput(for: self),
+              !overlayBlocksInteractions,
+              editingMessageID == nil
+        else {
+            super.quickLook(with: event)
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let index = rowIndex(at: point.y),
+              items.indices.contains(index),
+              layouts.indices.contains(index),
+              items[index].messageID != nil
+        else {
+            super.quickLook(with: event)
+            return
+        }
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        for text in selectableTextRegions(for: items[index], layout: layouts[index]) {
+            guard let hit = NativeTimelineTextHitTester.hit(
+                value: text.value,
+                framesetter: text.framesetter,
+                frame: text.frame,
+                point: local
+            ), hit.mention == nil,
+                text.value.attribute(.attachment, at: hit.characterIndex, effectiveRange: nil) == nil
+            else { continue }
+            if let spoilerRange = hit.spoilerRange,
+               let key = textSpoilerRevealKey(
+                   itemIdentifier: items[index].identifier,
+                   region: text.region,
+                   rangeLocation: spoilerRange.location
+               ), !spoilerRevealStore.isTextRevealed(key)
+            {
+                return
+            }
+            let word = Self.wordRange(at: hit.characterIndex, in: text.value.string)
+            guard word.length > 0,
+                  let anchor = NativeTimelineTextHitTester.rangeFrame(
+                      value: text.value,
+                      framesetter: text.framesetter,
+                      frame: text.frame,
+                      range: word
+                  )
+            else { continue }
+            let substring = (text.value.string as NSString).substring(with: word)
+            guard substring.rangeOfCharacter(from: .letters) != nil else { continue }
+            let rowOrigin = displayedRowOrigin(at: index)
+            showDefinition(
+                for: text.value,
+                range: NSRange(location: hit.characterIndex, length: 0),
+                options: nil
+            ) { adjustedRange in
+                let firstCharacter = NSRange(location: adjustedRange.location, length: 1)
+                let frame = NativeTimelineTextHitTester.rangeFrame(
+                    value: text.value,
+                    framesetter: text.framesetter,
+                    frame: text.frame,
+                    range: firstCharacter
+                ) ?? anchor
+                let font = text.value.attribute(
+                    .font,
+                    at: min(adjustedRange.location, text.value.length - 1),
+                    effectiveRange: nil
+                ) as? NSFont
+                return NSPoint(
+                    x: frame.minX,
+                    y: frame.maxY + (font?.descender ?? 0) + rowOrigin
+                )
+            }
+            return
+        }
+        super.quickLook(with: event)
+    }
+
     private func forwardedSourcePointerHit(at point: CGPoint) -> MessageID? {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
