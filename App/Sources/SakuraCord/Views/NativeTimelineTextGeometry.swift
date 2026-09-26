@@ -878,7 +878,8 @@ enum NativeTimelineTextHitTester {
         value: NSAttributedString,
         framesetter: CTFramesetter,
         frame: CGRect,
-        point: CGPoint
+        point: CGPoint,
+        targetsTextCharacters: Bool = false
     ) -> NativeTimelineTextHit? {
         guard value.length > 0,
               frame.width > 0,
@@ -887,6 +888,14 @@ enum NativeTimelineTextHitTester {
         else { return nil }
         let layout = coreTextFrameLayout(value: value, framesetter: framesetter, frame: frame)
         guard !layout.origins.isEmpty else { return nil }
+        // Lookup needs the pointed character, rather than the start of a
+        // clickable link or spoiler region.
+        if targetsTextCharacters {
+            return textLineHit(
+                value: value, layout: layout, frame: frame, point: point,
+                targetsTextCharacters: true
+            )
+        }
         let paintedSpoiler = spoilerRegions(
             value: value,
             textFrame: layout.frame,
@@ -1016,7 +1025,8 @@ enum NativeTimelineTextHitTester {
         value: NSAttributedString,
         layout: CoreTextFrameLayout,
         frame: CGRect,
-        point: CGPoint
+        point: CGPoint,
+        targetsTextCharacters: Bool = false
     ) -> NativeTimelineTextHit? {
         let local = CGPoint(
             x: point.x - frame.minX,
@@ -1040,13 +1050,31 @@ enum NativeTimelineTextHitTester {
                   local.x <= origin.x + max(1, width)
             else { continue }
 
-            let stringIndex = CTLineGetStringIndexForPosition(
+            var stringIndex = CTLineGetStringIndexForPosition(
                 line,
                 CGPoint(x: local.x - origin.x, y: 0)
             )
             guard stringIndex != kCFNotFound else { return nil }
             let lineRange = CTLineGetStringRange(line)
             guard lineRange.length > 0 else { return nil }
+            if targetsTextCharacters {
+                // Core Text returns the nearest caret. On the trailing half
+                // of a glyph that can point at the next word or spoiler.
+                let string = value.string as NSString
+                for candidate in [
+                    min(stringIndex, value.length - 1),
+                    max(lineRange.location, stringIndex - 1),
+                ] {
+                    let range = string.rangeOfComposedCharacterSequence(at: candidate)
+                    let start = CTLineGetOffsetForStringIndex(line, range.location, nil)
+                    let end = CTLineGetOffsetForStringIndex(line, NSMaxRange(range), nil)
+                    let localX = local.x - origin.x
+                    if localX >= min(start, end), localX < max(start, end) {
+                        stringIndex = range.location
+                        break
+                    }
+                }
+            }
             let characterIndex = min(
                 value.length - 1,
                 max(

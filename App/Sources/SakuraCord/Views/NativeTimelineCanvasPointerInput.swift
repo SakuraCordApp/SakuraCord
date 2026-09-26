@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Combine
+import CoreServices
 import CoreText
 import ImageIO
 import Lottie
@@ -418,6 +419,120 @@ extension NativeTimelineCanvasView {
         } else {
             setTextSelection(nil)
         }
+    }
+
+    override func quickLook(with event: NSEvent) {
+        guard WindowModalCoordinator.allowsInput(for: self),
+              !overlayBlocksInteractions,
+              editingMessageID == nil
+        else {
+            super.quickLook(with: event)
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let index = rowIndex(at: point.y),
+              items.indices.contains(index),
+              layouts.indices.contains(index),
+              items[index].messageID != nil
+        else {
+            super.quickLook(with: event)
+            return
+        }
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        for text in selectableTextRegions(for: items[index], layout: layouts[index]) {
+            guard let hit = NativeTimelineTextHitTester.hit(
+                value: text.value,
+                framesetter: text.framesetter,
+                frame: text.frame,
+                point: local,
+                targetsTextCharacters: true
+            ), hit.mention == nil,
+                text.value.attribute(.attachment, at: hit.characterIndex, effectiveRange: nil) == nil
+            else { continue }
+            guard let lookupRange = dictionaryLookupRange(
+                in: text,
+                itemIdentifier: items[index].identifier,
+                characterIndex: hit.characterIndex
+            ) else { return }
+            let lookupText = text.value.attributedSubstring(from: lookupRange)
+            let lookupIndex = hit.characterIndex - lookupRange.location
+            let term = DCSGetTermRangeInString(nil, lookupText.string as CFString, lookupIndex)
+            let word = term.location == kCFNotFound
+                ? Self.wordRange(at: lookupIndex, in: lookupText.string)
+                : NSRange(location: term.location, length: term.length)
+            guard word.length > 0,
+                  let anchor = NativeTimelineTextHitTester.rangeFrame(
+                      value: text.value,
+                      framesetter: text.framesetter,
+                      frame: text.frame,
+                      range: NSRange(
+                          location: lookupRange.location + word.location,
+                          length: word.length
+                      )
+                  )
+            else { continue }
+            let substring = (lookupText.string as NSString).substring(with: word)
+            guard substring.rangeOfCharacter(from: .letters) != nil else { continue }
+            let rowOrigin = displayedRowOrigin(at: index)
+            // AppKit's automatic expansion of a zero-length range can silently
+            // fail for custom-drawn text. Resolve the system dictionary term first.
+            showDefinition(
+                for: lookupText,
+                range: word,
+                options: nil
+            ) { adjustedRange in
+                let originalLocation = lookupRange.location + adjustedRange.location
+                let firstCharacter = NSRange(location: originalLocation, length: 1)
+                let frame = NativeTimelineTextHitTester.rangeFrame(
+                    value: text.value,
+                    framesetter: text.framesetter,
+                    frame: text.frame,
+                    range: firstCharacter
+                ) ?? anchor
+                let font = text.value.attribute(
+                    .font,
+                    at: min(originalLocation, text.value.length - 1),
+                    effectiveRange: nil
+                ) as? NSFont
+                return NSPoint(
+                    x: frame.minX,
+                    y: frame.maxY + (font?.descender ?? 0) + rowOrigin
+                )
+            }
+            return
+        }
+        super.quickLook(with: event)
+    }
+
+    private func dictionaryLookupRange(
+        in text: SelectableTextRegion,
+        itemIdentifier: NativeMessageTimelineItem.Identifier,
+        characterIndex: Int
+    ) -> NSRange? {
+        var lowerBound = 0
+        var upperBound = text.value.length
+        // AppKit may expand a lookup to surrounding words. Bound its input
+        // at hidden spoilers so that expansion cannot reveal their contents.
+        text.value.enumerateAttribute(
+            .discordMarkdownSpoiler,
+            in: NSRange(location: 0, length: text.value.length)
+        ) { value, range, _ in
+            guard (value as? NSNumber)?.boolValue == true else { return }
+            if let key = textSpoilerRevealKey(
+                itemIdentifier: itemIdentifier,
+                region: text.region,
+                rangeLocation: range.location
+            ), spoilerRevealStore.isTextRevealed(key) {
+                return
+            }
+            if NSMaxRange(range) <= characterIndex {
+                lowerBound = max(lowerBound, NSMaxRange(range))
+            } else {
+                upperBound = min(upperBound, range.location)
+            }
+        }
+        guard characterIndex >= lowerBound, characterIndex < upperBound else { return nil }
+        return NSRange(location: lowerBound, length: upperBound - lowerBound)
     }
 
     private func forwardedSourcePointerHit(at point: CGPoint) -> MessageID? {
