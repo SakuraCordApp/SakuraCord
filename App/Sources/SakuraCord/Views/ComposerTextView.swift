@@ -376,7 +376,7 @@ struct ComposerTextView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasHorizontalScroller = false
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
 
@@ -492,6 +492,7 @@ struct ComposerTextView: NSViewRepresentable {
                 + textView.textContainerInset.height * 2
         )
 
+        scrollView.hasVerticalScroller = contentHeight > maximumHeight
         return CGSize(width: proposedWidth, height: min(contentHeight, maximumHeight))
     }
 

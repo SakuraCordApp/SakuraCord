@@ -184,6 +184,7 @@ struct ComposerSendButton: View {
     var isSlowmodeBlocked = false
 
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
 
     var body: some View {
@@ -204,7 +205,11 @@ struct ComposerSendButton: View {
     private var buttonLabel: some View {
         Image(systemName: "paperplane.circle.fill")
             .font(.system(size: 21, weight: .medium))
-            .foregroundStyle(isEnabled && !isSlowmodeBlocked ? Color.white : Color.gray.opacity(0.62))
+            .foregroundStyle(
+                isEnabled && !isSlowmodeBlocked
+                    ? (colorScheme == .dark ? Color.white : Color.black)
+                    : Color.gray.opacity(0.62)
+            )
             .frame(
                 width: ChatChromeMetrics.composerControlHeight,
                 height: ChatChromeMetrics.composerControlHeight
