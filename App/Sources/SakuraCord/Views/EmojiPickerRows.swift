@@ -76,20 +76,44 @@ struct EmojiDocumentRowView: View {
 struct EmojiHoverPreviewBar: View {
     let interaction: EmojiPickerInteractionModel
     let skinTone: NativeEmojiSkinTone
+    let guildsByID: [GuildID: Guild]
 
     var body: some View {
+        let guild = sourceGuild
+
         HStack(spacing: 6) {
             interaction.item.preview(skinTone: skinTone, dimension: 28, nativeFontSize: 24)
                 .frame(width: 30, height: 30, alignment: .center)
-            Text(interaction.item.shortcode)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(interaction.item.shortcode)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let guild {
+                    Text("from \(Text(guild.name).fontWeight(.semibold))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(guild.name)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let guild {
+                EmojiGuildBookmarkIcon(guild: guild)
+                    .help(guild.name)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 10)
         .frame(height: 38, alignment: .center)
         .accessibilityElement(children: .combine)
+    }
+
+    private var sourceGuild: Guild? {
+        guard case let .custom(emoji) = interaction.item
+        else { return nil }
+        return guildsByID[emoji.guildID]
     }
 }
 
