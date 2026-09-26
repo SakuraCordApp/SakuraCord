@@ -170,6 +170,11 @@ final class AppModel {
         }
     }
     var visibleChannelGroups: [ChannelGroup] = []
+    var pinnedDirectMessageIDs: Set<ChannelID> {
+        guard let settings = snapshot?.notificationSettings.first(where: { $0.guildID == nil })
+        else { return [] }
+        return Set(settings.channelOverrides.filter(\.isPinnedDirectMessage).map(\.channelID))
+    }
     var unreadCategoryIDsByGuild: [GuildID: Set<ChannelID>] = [:]
     var hiddenChannelIDs: Set<ChannelID> = [] {
         didSet { refreshVisibleChannelGroups() }

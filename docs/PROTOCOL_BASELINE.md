@@ -2008,6 +2008,32 @@ capture was used for this recheck.
   Notifications Settings help article. The same pinned Paicord and Swiftcord
   revisions still have no comparable server settings mutations. No
   authenticated account action or traffic capture was used for this recheck.
+- DM and group DM sidebar pins use the account-scoped channel override's
+  `FAVORITED` flag (`1 << 11`). Each action sends one
+  `PATCH /users/@me/guilds/@me/settings` with
+  `{"channel_overrides":{"<channel_id>":{"flags":<updated_flags>}}}`,
+  preserving unrelated flag bits. The official wire URL encodes the guild
+  scope as `%40me`; both spellings identify the same `@me` scope. HTTP 200
+  returns the complete settings object. Startup settings and live
+  `USER_GUILD_SETTINGS_UPDATE` events use `guild_id:null`. When present,
+  `channel_overrides` is an authoritative list, including each entry's
+  default-valued fields: unpinning can omit `flags` while retaining an override
+  for mute, or remove the override entirely. An absent list preserves cached
+  overrides. Pinned conversations sort by descending latest-message timestamp,
+  falling back to the channel snowflake's creation timestamp, independently of
+  pin time.
+
+  This contract was verified on 2026-09-26 with signed official desktop
+  `0.0.413`, stable web build `621195`, and asset
+  `web.e223a2399a103bfa.js` (SHA-256
+  `91a9059dc8678b9d198638b3089085c1774fb078ac111e5c41a4fca5811ca953`).
+  Authenticated CDP captures covered DM and group DM pin/unpin requests and
+  responses; a second-client Gateway observer received all four changes.
+  Captured retained-override unpins establish the omitted-flags reset contract.
+  The official sort store establishes the timestamp fallback. Discord's public
+  help documents Favorites presentation, but its public API documentation does
+  not specify these user-client settings. The pinned Paicord and Swiftcord v1
+  revisions above have no comparable DM pin action or ordering implementation.
 - A category is a first-class user-guild-settings override keyed by its
   category channel ID; changing it does not rewrite or mute any child channel's
   server-side override. A category notification selection sends one immediate,

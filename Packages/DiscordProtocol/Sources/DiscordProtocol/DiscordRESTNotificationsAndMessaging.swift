@@ -2,6 +2,17 @@ import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
+    public func updateDirectMessagePin(
+        channelID: ChannelID,
+        flags: UInt64
+    ) async throws {
+        try await updateChannelNotificationSettings(
+            guildID: nil,
+            channelID: channelID,
+            override: ["flags": .number(Double(flags))]
+        )
+    }
+
     func updateGuildNotificationSettings(
         guildID: GuildID,
         settings: [String: JSONValue]

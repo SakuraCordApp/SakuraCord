@@ -388,6 +388,19 @@ public actor MockChatProvider: ChatProvider {
         )
     }
 
+    public func updateDirectMessagePin(channelID: ChannelID, flags: UInt64) async throws {
+        var settings = snapshot.notificationSettings.first { $0.guildID == nil }
+            ?? GuildNotificationSettings(guildID: nil, messageNotifications: .inherit)
+        var override = settings.channelOverrides.first { $0.channelID == channelID }
+            ?? ChannelNotificationOverride(channelID: channelID)
+        override.flags = flags
+        settings.channelOverrides.removeAll { $0.channelID == channelID }
+        settings.channelOverrides.append(override)
+        snapshot.notificationSettings.removeAll { $0.guildID == nil }
+        snapshot.notificationSettings.append(settings)
+        continuation?.yield(.notificationSettingsChanged(settings))
+    }
+
     public func updateCategoryNotificationLevel(
         guildID: GuildID,
         categoryID: ChannelID,

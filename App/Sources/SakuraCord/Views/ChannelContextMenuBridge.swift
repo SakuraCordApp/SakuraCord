@@ -107,6 +107,11 @@ nonisolated enum ChannelContextMenuSubject: Equatable, Sendable {
     var includesCopyLink: Bool { self == .channel }
 }
 
+enum ChannelPinMenuAction {
+    case unavailable
+    case available(isPinned: Bool, toggle: () -> Void)
+}
+
 /// SwiftUI context menus can discard item images in the macOS 27 adaptation.
 /// This bridge uses the same AppKit symbol configuration as message menus.
 /// Page destinations share the channel row's native hover and selection tracking.
@@ -140,6 +145,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     let setNotificationLevel: (MessageNotificationLevel) -> Void
     let copyChannelID: () -> Void
     let copyLink: () -> Void
+    var pinAction: ChannelPinMenuAction = .unavailable
 
     func makeCoordinator() -> Coordinator {
         Coordinator(from: self)
@@ -184,6 +190,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         private var setNotificationLevel: (MessageNotificationLevel) -> Void
         private var copyChannelID: () -> Void
         private var copyLink: () -> Void
+        private var pinAction: ChannelPinMenuAction
 
         init(from bridge: ChannelContextMenuBridge) {
             subject = bridge.subject
@@ -199,6 +206,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             setNotificationLevel = bridge.setNotificationLevel
             copyChannelID = bridge.copyChannelID
             copyLink = bridge.copyLink
+            pinAction = bridge.pinAction
         }
 
         func update(from bridge: ChannelContextMenuBridge) {
@@ -215,6 +223,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             setNotificationLevel = bridge.setNotificationLevel
             copyChannelID = bridge.copyChannelID
             copyLink = bridge.copyLink
+            pinAction = bridge.pinAction
         }
 
         func makeMenu() -> NSMenu {
@@ -230,6 +239,18 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 )
             )
             menu.addItem(.separator())
+
+            if case let .available(isPinned, _) = pinAction {
+                menu.addItem(
+                    menuItem(
+                        isPinned ? "Unpin" : "Pin",
+                        systemImage: "pin.fill",
+                        action: #selector(togglePinFromMenu),
+                        isEnabled: allowsMutations && !isMutationPending
+                    )
+                )
+                menu.addItem(.separator())
+            }
 
             if isDirectlyMuted {
                 let unmuteItem = menuItem(
@@ -356,6 +377,12 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
 
         @objc private func markReadFromMenu() {
             markRead()
+        }
+
+        @objc private func togglePinFromMenu() {
+            if case let .available(_, toggle) = pinAction {
+                toggle()
+            }
         }
 
         @objc private func muteFromMenu(_ sender: NSMenuItem) {

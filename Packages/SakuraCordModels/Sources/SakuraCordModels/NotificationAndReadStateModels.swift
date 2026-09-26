@@ -60,6 +60,9 @@ public struct ThreadNotificationSettings: Codable, Hashable, Sendable {
 }
 
 public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
+    // Discord's FAVORITED bit on an @me channel override pins a DM in the inbox.
+    public static let pinnedDirectMessageFlag: UInt64 = 1 << 11
+
     public var channelID: ChannelID
     public var messageNotifications: MessageNotificationLevel
     public var isMuted: Bool
@@ -81,6 +84,16 @@ public struct ChannelNotificationOverride: Codable, Hashable, Sendable {
         self.muteConfiguration = muteConfiguration
         self.flags = flags
         self.isCollapsed = isCollapsed
+    }
+
+    public var isPinnedDirectMessage: Bool {
+        flags & Self.pinnedDirectMessageFlag != 0
+    }
+
+    public func flags(settingPinnedDirectMessage isPinned: Bool) -> UInt64 {
+        isPinned
+            ? flags | Self.pinnedDirectMessageFlag
+            : flags & ~Self.pinnedDirectMessageFlag
     }
 }
 

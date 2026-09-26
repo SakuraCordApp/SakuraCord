@@ -214,6 +214,7 @@ public protocol ChatProvider: Sendable {
         isMuted: Bool,
         until: Date?
     ) async throws
+    func updateDirectMessagePin(channelID: ChannelID, flags: UInt64) async throws
     func updateCategoryNotificationLevel(
         guildID: GuildID,
         categoryID: ChannelID,
@@ -808,6 +809,8 @@ public extension ChatProvider {
         isMuted: Bool,
         until: Date?
     ) async throws {}
+
+    func updateDirectMessagePin(channelID: ChannelID, flags: UInt64) async throws {}
 
     func updateCategoryNotificationLevel(
         guildID: GuildID,

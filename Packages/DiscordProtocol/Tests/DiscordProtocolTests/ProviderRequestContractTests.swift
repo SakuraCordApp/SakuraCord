@@ -538,6 +538,22 @@ struct ProviderRequestContractTests {
         #expect((override?["message_notifications"] as? NSNumber)?.intValue == 1)
         #expect(override?["muted"] == nil)
 
+        try await provider.updateDirectMessagePin(
+            channelID: channelID,
+            flags: (1 << 11) | (1 << 5)
+        )
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 2)
+        #expect(RateLimitURLProtocol.channelNotificationMethod == "PATCH")
+        #expect(
+            RateLimitURLProtocol.channelNotificationPath
+                == "/api/v9/users/@me/guilds/@me/settings"
+        )
+        overrides = RateLimitURLProtocol.channelNotificationBody?["channel_overrides"]
+            as? [String: Any]
+        override = overrides?["200"] as? [String: Any]
+        #expect((override?["flags"] as? NSNumber)?.uint64Value == (1 << 11) | (1 << 5))
+        #expect(override?["message_notifications"] == nil)
+
         let endTime = Date(timeIntervalSince1970: 1_785_420_000)
         try await provider.updateChannelMute(
             guildID: guildID,
@@ -545,7 +561,7 @@ struct ProviderRequestContractTests {
             isMuted: true,
             until: endTime
         )
-        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 2)
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 3)
         overrides =
             RateLimitURLProtocol.channelNotificationBody?["channel_overrides"]
                 as? [String: Any]
@@ -560,7 +576,7 @@ struct ProviderRequestContractTests {
             isMuted: false,
             until: nil
         )
-        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 3)
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 4)
         overrides =
             RateLimitURLProtocol.channelNotificationBody?["channel_overrides"]
                 as? [String: Any]
@@ -577,7 +593,7 @@ struct ProviderRequestContractTests {
                 level: .nothing
             )
         }
-        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 4)
+        #expect(RateLimitURLProtocol.channelNotificationRequestCount == 5)
     }
 
     @Test func `direct message notification mutations use the private channel scope once`() async throws {

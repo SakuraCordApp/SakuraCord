@@ -65,6 +65,10 @@ invalidates earlier restoration results. Switching, logout, and failed startup s
 load cancellation and presentation reset, including pins and composer state.
 `AppModel` remains the workspace coordinator; feature state should have an
 explicit owner rather than accumulating unrelated fields in extensions.
+DM and group DM sidebar pins come from the current account's `@me` channel
+notification overrides. The inbox orders pinned conversations by their latest
+message timestamp, falling back to channel creation for empty conversations,
+without changing provider channel order or persisting Discord workspace snapshots.
 
 `GuildOnboardingStore` owns account-scoped question presentation, unfinished
 answer drafts, and membership confirmation. `SakuraCordModels` defines the live

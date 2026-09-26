@@ -1040,12 +1040,9 @@ struct GatewayUserGuildSettingsDTO: Decodable {
             collapsed = try? values.decode(Bool.self, forKey: .collapsed)
         }
 
-        func domain(
-            merging existing: ChannelNotificationOverride? = nil
-        ) -> ChannelNotificationOverride? {
+        var domain: ChannelNotificationOverride? {
             guard let channelID = ChannelID(channelID) else { return nil }
-            var value = existing ?? ChannelNotificationOverride(channelID: channelID)
-            value.channelID = channelID
+            var value = ChannelNotificationOverride(channelID: channelID)
             if let messageNotifications = messageNotifications.flatMap(
                 MessageNotificationLevel.init(rawValue:)
             ) {
@@ -1064,10 +1061,6 @@ struct GatewayUserGuildSettingsDTO: Decodable {
                 value.isCollapsed = collapsed
             }
             return value
-        }
-
-        var domain: ChannelNotificationOverride? {
-            domain(merging: nil)
         }
     }
 
@@ -1161,13 +1154,9 @@ struct GatewayUserGuildSettingsDTO: Decodable {
             value.flags = flags
         }
         if hasChannelOverrides {
-            let existingByID = Dictionary(
-                uniqueKeysWithValues: value.channelOverrides.map { ($0.channelID, $0) }
-            )
-            value.channelOverrides = channelOverrides.compactMap { override in
-                let channelID = ChannelID(override.channelID)
-                return override.domain(merging: channelID.flatMap { existingByID[$0] })
-            }
+            // Supplied overrides are authoritative: Discord omits cleared flags
+            // even when an override remains for another setting, such as mute.
+            value.channelOverrides = channelOverrides.compactMap(\.domain)
         }
         return value
     }
