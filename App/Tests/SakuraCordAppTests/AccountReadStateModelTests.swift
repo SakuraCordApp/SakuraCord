@@ -2658,17 +2658,15 @@ struct AccountReadStateModelTests {
 @MainActor
 @Test func `mark read survives a stale snapshot before transport`() async throws {
     let provider = MockChatProvider()
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: provider
-    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let channelID = ChannelID(rawValue: 210)
-    model.selectedChannelID = channelID
-    #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
-    let oldBoundary = model.readState.entries[channelID]?.lastAcknowledgedMessageID
+    let oldBoundary = try #require(model.readState.entries[channelID]?.lastAcknowledgedMessageID)
+    let target = try #require(model.readState.entries[channelID]?.latestKnownMessageID)
 
+    #expect(model.isChannelUnread(channelID))
     model.markConversationRead(channelID: channelID)
+    #expect(model.readState.entries[channelID]?.pendingAcknowledgementID == target)
     // Deliver the stale snapshot in the same main-actor turn, before the
     // queued transport task can run. A debounce cannot guarantee that order
     // when the parallel suite delays event-stream consumption.

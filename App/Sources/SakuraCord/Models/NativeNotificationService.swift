@@ -148,6 +148,9 @@ nonisolated struct NotificationContentPresentation: Equatable, Sendable {
         case .user:
             "@\(message.mentionedUsers.first { String($0.id.rawValue) == mention.id }?.displayName ?? "unknown-user")"
         case .role: "@unknown-role"
+        case .game: "Game"
+        case .broadcast: mention.rawToken
+        case .timestamp: DiscordTimestampToken(rawToken: mention.rawToken)?.formatted() ?? mention.rawToken
         case .channel, .channelLink: "#unknown-channel"
         case .message: "Message link"
         }

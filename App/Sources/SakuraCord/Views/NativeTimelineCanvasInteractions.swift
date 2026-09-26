@@ -716,6 +716,8 @@ extension NativeTimelineCanvasView {
         switch mention.target {
         case .unresolved:
             break
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentionsByID[id]
         case let .user(id):
             let resolver = MessageMentionResolver(
                 model: model,

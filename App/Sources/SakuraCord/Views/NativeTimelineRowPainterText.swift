@@ -869,16 +869,17 @@ extension NativeTimelineRowPainter {
         in frame: CGRect,
         isHovered: Bool
     ) {
-        let color = roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
+        let color: NSColor = presentation.isTimestamp
+            ? .labelColor
+            : roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: 5.5
         )
-        color.withAlphaComponent(
-            NativeTimelineMentionAppearance.backgroundAlpha(
-                isHovered: isHovered
-            )
-        ).setFill()
+        let backgroundAlpha = presentation.isTimestamp
+            ? (isHovered ? 0.18 : 0.12)
+            : NativeTimelineMentionAppearance.backgroundAlpha(isHovered: isHovered)
+        color.withAlphaComponent(backgroundAlpha).setFill()
         shape.fill()
         if case .role = presentation.target,
            SakuraCordAccentColor.usesAccentFallback(
@@ -913,7 +914,7 @@ extension NativeTimelineRowPainter {
                 )
             }
             labelX = iconFrame.maxX + 4
-        } else if case .user = presentation.target {
+        } else if presentation.showsAvatar {
             let avatarSize = max(10, frame.height - 6)
             let avatarFrame = CGRect(
                 x: labelX,
@@ -927,12 +928,16 @@ extension NativeTimelineRowPainter {
                 drawImage(
                     image,
                     in: avatarFrame,
-                    cornerRadius: avatarSize / 2,
+                    cornerRadius: presentation.isGame ? 3 : avatarSize / 2,
                     fillsFrame: true
                 )
             } else {
                 color.withAlphaComponent(0.38).setFill()
-                NSBezierPath(ovalIn: avatarFrame).fill()
+                if presentation.isGame {
+                    NSBezierPath(roundedRect: avatarFrame, xRadius: 3, yRadius: 3).fill()
+                } else {
+                    NSBezierPath(ovalIn: avatarFrame).fill()
+                }
             }
             labelX = avatarFrame.maxX + 4
         }

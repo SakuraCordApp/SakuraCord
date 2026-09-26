@@ -47,10 +47,15 @@ public struct RenderedMention: Codable, Hashable, Sendable {
     )
 
     public enum Kind: String, Codable, Hashable, Sendable {
-        case user, role, channel, channelLink, message
+        case user, role, game, broadcast, timestamp, channel, channelLink, message
     }
 
-    public static let tokenPattern = #"<@!?[0-9]+>|<@&[0-9]+>|<#[0-9]+>|https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+(?:/[0-9]+)?"#
+    public static let tokenPattern = [
+        #"<@!?[0-9]+>|<@&[0-9]+>|<@\$[0-9]+>|<#[0-9]+>|"#,
+        #"(?<![\w@\\])@(?:everyone|here)(?!\w)|"#,
+        #"<t:-?[0-9]+(?::[tTdDfFsSR])?>|"#,
+        #"https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+(?:/[0-9]+)?"#
+    ].joined()
 
     public var id: String
     public var kind: Kind
@@ -59,6 +64,32 @@ public struct RenderedMention: Codable, Hashable, Sendable {
     public var messageChannelID: String?
 
     public init?(rawToken: String) {
+        if rawToken.hasPrefix("<@$"), rawToken.hasSuffix(">"),
+           let gameID = UInt64(rawToken.dropFirst(3).dropLast())
+        {
+            id = String(gameID)
+            kind = .game
+            self.rawToken = rawToken
+            messageGuildID = nil
+            messageChannelID = nil
+            return
+        }
+        if let timestamp = DiscordTimestampToken(rawToken: rawToken) {
+            id = String(timestamp.seconds)
+            kind = .timestamp
+            self.rawToken = rawToken
+            messageGuildID = nil
+            messageChannelID = nil
+            return
+        }
+        if rawToken == "@everyone" || rawToken == "@here" {
+            id = String(rawToken.dropFirst())
+            kind = .broadcast
+            self.rawToken = rawToken
+            messageGuildID = nil
+            messageChannelID = nil
+            return
+        }
         let range = NSRange(rawToken.startIndex ..< rawToken.endIndex, in: rawToken)
         if let match = Self.tokenExpression.firstMatch(in: rawToken, range: range),
            let prefixRange = Range(match.range(at: 1), in: rawToken),

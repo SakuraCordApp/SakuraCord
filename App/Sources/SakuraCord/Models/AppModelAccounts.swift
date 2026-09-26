@@ -486,6 +486,12 @@ extension AppModel {
         isLoadingGIFPicker = false
         gifFavoriteMutationURL = nil
         gifErrorMessage = nil
+        gameMentionLoadTask?.cancel()
+        gameMentionLoadTask = nil
+        gameMentionsByID = [:]
+        hydratedGameMentionIDs = []
+        pendingGameMentionIDs = []
+        failedGameMentionIDs = [:]
         attachmentCompactionGeneration &+= 1
         attachmentCompactionTask?.cancel()
         attachmentCompactionTask = nil

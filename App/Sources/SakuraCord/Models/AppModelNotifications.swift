@@ -147,6 +147,12 @@ extension AppModel {
             let roles = guildID.flatMap { guildRolesByGuildID[$0] }
                 ?? (guildID == selectedGuildID ? guildRoles : [])
             return "@\(roles.first { String($0.id.rawValue) == mention.id }?.name ?? "unknown-role")"
+        case .game:
+            return gameMentionsByID[mention.id]?.name ?? "Game"
+        case .broadcast:
+            return mention.rawToken
+        case .timestamp:
+            return DiscordTimestampToken(rawToken: mention.rawToken)?.formatted() ?? mention.rawToken
         case .channel, .channelLink:
             let id = ChannelID(mention.id)
             let channel = snapshot?.channels.first { $0.id == id }

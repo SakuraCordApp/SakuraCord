@@ -28,22 +28,42 @@ struct MessageMentionResolver {
         switch mention.kind {
         case .user: userPresentation(mention)
         case .role: rolePresentation(mention)
+        case .game: gamePresentation(mention)
+        case .broadcast: MentionPresentation.fallback(for: mention)
+        case .timestamp: MentionPresentation.fallback(for: mention)
         case .channel: channelPresentation(mention)
         case .channelLink: channelLinkPresentation(mention)
         case .message: messagePresentation(mention)
         }
     }
 
-    /// Media discovery only needs the avatar carried by user mentions. Going
-    /// through the complete presentation switch for channel, role, and
-    /// message mentions performs unrelated channel/role lookups even though
-    /// those presentations can never contribute a media key.
+    /// Media discovery only needs images carried by user and game mentions.
+    /// Resolving every mention kind would perform unrelated channel and role
+    /// lookups for presentations that cannot contribute a media key.
     func avatarURL(_ mention: RenderedMention) -> URL? {
+        if mention.kind == .game {
+            return model.gameMentionsByID[mention.id].flatMap { $0.iconURL ?? $0.coverURL }
+        }
         guard mention.kind == .user,
               let userID = UserID(mention.id)
         else { return nil }
         let member = member(userID)
         return member?.guildAvatarURL ?? user(userID)?.avatarURL
+    }
+
+    private func gamePresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let game = model.gameMentionsByID[mention.id] else {
+            model.requestGameMentionDetails(id: mention.id)
+            return MentionPresentation.fallback(for: mention)
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: game.name,
+            target: .game(game.id),
+            avatarURL: game.iconURL ?? game.coverURL,
+            systemImage: game.iconURL == nil && game.coverURL == nil ? "gamecontroller.fill" : nil,
+            isGame: true
+        )
     }
 
     private func userPresentation(_ mention: RenderedMention) -> MentionPresentation {
@@ -271,6 +291,8 @@ struct CustomEmojiRichText: View {
         switch mention.target {
         case .unresolved:
             return
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentionsByID[id]
         case let .user(id):
             let user = model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
@@ -332,7 +354,7 @@ private struct AnchoredMentionPopoverLayer: View {
                     }
                 case let .role(id):
                     RoleMembersPopover(model: model, roleID: id)
-                case .unresolved, .channel, .linkedChannel, .message:
+                case .unresolved, .game, .channel, .linkedChannel, .message:
                     EmptyView()
                 }
             }
@@ -346,7 +368,7 @@ private struct AnchoredMentionPopoverLayer: View {
         switch request.mention.target {
         case .user:
             .memberProfile
-        case .unresolved, .role, .channel, .linkedChannel, .message:
+        case .unresolved, .game, .role, .channel, .linkedChannel, .message:
             .interactive
         }
     }

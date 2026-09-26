@@ -430,7 +430,7 @@ nonisolated enum NativeTimelineCoreText {
             ).width
         )
         let height = max(21, ceil(font.pointSize + 6))
-        let showsAvatar = if case .user = presentation.target { true } else { false }
+        let showsAvatar = presentation.showsAvatar
         let showsLeadingIcon = presentation.systemImage != nil
         let avatarSize = height - 6
         let iconSize = height - 7

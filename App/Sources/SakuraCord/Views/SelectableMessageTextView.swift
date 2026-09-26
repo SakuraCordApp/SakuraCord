@@ -8,6 +8,7 @@ import Synchronization
 nonisolated enum MentionTarget: Hashable, Sendable {
     case unresolved
     case user(UserID)
+    case game(String)
     case role(RoleID)
     case channel(ChannelID)
     case linkedChannel(guildID: GuildID?, channelID: ChannelID)
@@ -21,8 +22,15 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     var avatarURL: URL?
     var colorHex: UInt32?
     var systemImage: String?
+    var isGame = false
+    var isTimestamp = false
 
     var id: String { rawToken }
+    var showsAvatar: Bool {
+        if isGame { return avatarURL != nil }
+        if case .user = target { return true }
+        return false
+    }
 
     static func fallback(for mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
@@ -43,6 +51,23 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
                 rawToken: mention.rawToken,
                 label: "@unknown-role",
                 target: .role(id)
+            )
+        case .broadcast:
+            return unresolved(mention, label: mention.rawToken)
+        case .game:
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: "Unknown Game",
+                target: .game(mention.id),
+                systemImage: "gamecontroller.fill",
+                isGame: true
+            )
+        case .timestamp:
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: DiscordTimestampToken(rawToken: mention.rawToken)?.formatted() ?? mention.rawToken,
+                target: .unresolved,
+                isTimestamp: true
             )
         case .channel:
             guard let id = ChannelID(mention.id) else {
