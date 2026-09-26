@@ -3,11 +3,26 @@ import Foundation
 nonisolated extension SettingsCatalog {
     static let featuresPage = page(
         .features, group: .preferences, title: "Features", image: "square.stack.3d.up.fill",
-        help: "Manage hidden channels, FakeNitro, and attachments.",
-        keywords: ["channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "uploads"]
+        help: "Manage hidden channels, FakeNitro, attachments, and on-device translation.",
+        keywords: ["channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "uploads", "translation", "language"]
     )
 
     static let featuresControls: [SettingsControlMetadata] = [
+        control(
+            .translationEnabled, page: .features, section: .featuresTranslation,
+            label: "Enable on-device translation", help: "Translate messages and drafts with Apple Translation after an explicit action.",
+            keywords: ["translation", "language", "Apple", "offline"], scope: .appWideLocal
+        ),
+        control(
+            .translationMessageLanguage, page: .features, section: .featuresTranslation,
+            label: "Translate messages into", help: "Choose a supported target language for messages.",
+            keywords: ["translation", "language"], scope: .appWideLocal
+        ),
+        control(
+            .translationDraftLanguage, page: .features, section: .featuresTranslation,
+            label: "Translate drafts into", help: "Choose a supported target language for editable drafts.",
+            keywords: ["translation", "language", "composer"], scope: .appWideLocal
+        ),
         control(
             .channelManagement, page: .features, section: .featuresChannels,
             label: "Channel customization", help: "Choose which channels appear in each server through Channels & Roles.",

@@ -273,6 +273,18 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(NativeEmojiSkinTone.standard.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .translationEnabled, page: .features,
+            storage: .appWide(key: "settings.translation.enabled"), defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .translationMessageLanguage, page: .features,
+            storage: .appWide(key: "settings.translation.messageLanguage"), defaultValue: .string("")
+        ),
+        SettingsPreferenceRegistration(
+            id: .translationDraftLanguage, page: .features,
+            storage: .appWide(key: "settings.translation.draftLanguage"), defaultValue: .string("en")
+        ),
+        SettingsPreferenceRegistration(
             id: .channelManagement, page: .features,
             storage: .appWide(key: "settings.features.channelManagement"), defaultValue: .bool(false)
         ),

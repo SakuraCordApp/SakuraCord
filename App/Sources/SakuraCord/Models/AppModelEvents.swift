@@ -253,11 +253,13 @@ extension AppModel {
             consumeMessageCreated(&message, preparedTextPlan: preparedTextPlan)
             reconcileInboxMessage(message, isNew: true)
         case .messageUpdated(let incoming):
+            invalidateMessageTranslation(incoming.id, content: incoming.content)
             let reconciled = applyingPendingPinIntent(to: incoming)
             consumeMessageUpdated(reconciled, preparedTextPlan: preparedTextPlan)
             reconcilePinnedMessage(reconciled)
             reconcileInboxMessage(reconciled)
         case .messagePatched(let update):
+            if let content = update.content { invalidateMessageTranslation(update.messageID, content: content) }
             recordConversationRefreshMutation(.patch(update), messageID: update.messageID, channelID: update.channelID)
             if let message = applyingMessageUpdate(update) {
                 let reconciled = applyingPendingPinIntent(to: message)
@@ -271,6 +273,7 @@ extension AppModel {
         case .messageReactionUpdated(let update):
             applyReactionUpdate(update)
         case .messageDeleted(let channelID, let messageID):
+            invalidateMessageTranslation(messageID)
             consumeMessageDeleted(channelID: channelID, messageID: messageID)
             removeDeletedPinnedMessage(channelID: channelID, messageID: messageID)
             removeInboxMessage(messageID, mentionsOnly: false)

@@ -307,6 +307,7 @@ final class AppModel {
     let launchMode: AppLaunchMode
     let typingState: TypingStateModel
     let commandComposer = ApplicationCommandComposerModel()
+    let translation: TranslationState
     let readState = AccountReadStateModel()
     let notificationPreferences: NotificationPreferences
     let voiceVideoPreferences: VoiceVideoPreferences
@@ -950,6 +951,7 @@ final class AppModel {
             commandExecutionTask?.cancel()
             commandComposer.resetForChannelChange()
             clearComposerAttachments(for: .channel)
+            translation.resetDraft(.channel)
             isVoiceChatOpen = selectedChannel?.kind == .voice
             closeThread()
             if let selectedChannelID {
@@ -1201,7 +1203,8 @@ final class AppModel {
         attachmentCompactor: any AttachmentCompacting = AttachmentCompactor(),
         attachmentSettingsStore: AttachmentSettingsStore? = nil,
         privacySafetySettingsStore: PrivacySafetySettingsStore? = nil,
-        uploadPrivacyPreparation: UploadPrivacyPreparation? = nil
+        uploadPrivacyPreparation: UploadPrivacyPreparation? = nil,
+        translation: TranslationState? = nil
     ) {
         self.launchMode = launchMode
         includesOfflineSignIn = launchMode == .offlineTesting && awaitsOfflineSignIn
@@ -1210,6 +1213,7 @@ final class AppModel {
         interfaceSettings = InterfaceSettingsStore.shared.load()
         generalInputSettings = GeneralInputSettingsStore.shared.load()
         featuresSettings = FeaturesSettingsStore.shared.load()
+        self.translation = translation ?? TranslationState()
         let resolvedAttachmentStore = attachmentSettingsStore ?? .shared
         self.attachmentSettingsStore = resolvedAttachmentStore
         attachmentSettings = resolvedAttachmentStore.load()

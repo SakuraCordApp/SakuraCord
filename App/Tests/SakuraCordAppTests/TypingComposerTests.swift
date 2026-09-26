@@ -2677,6 +2677,7 @@ private actor TypingTestProvider: ChatProvider {
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private(set) var typingChannels: [ChannelID] = []
     private(set) var sendCount = 0
+    private(set) var editCount = 0
     private(set) var sentNonces: [String] = []
     private(set) var sentDrafts: [SendMessageDraft] = []
     private var nextMessageID: UInt64 = 100
@@ -2791,6 +2792,7 @@ private actor TypingTestProvider: ChatProvider {
     }
 
     func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        editCount += 1
         throw ChatProviderError.invalidRequest("not used")
     }
 
@@ -2831,4 +2833,39 @@ private actor NotificationCredentialStore: CredentialStore {
     func handles() async throws -> [CredentialHandle] {
         storedHandles
     }
+}
+
+@MainActor
+@Test func `translation never sends or edits Discord and explicit sending cancels pending translation`() async throws {
+    let provider = TypingTestProvider()
+    let translator = ControlledTranslationTestService()
+    let state = TranslationState(
+        settingsStore: TranslationSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())),
+        translator: translator
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider, translation: state)
+    await model.start()
+    model.selectedChannelID = ChannelID(rawValue: 10)
+    model.applyTranslationSettings(.init(isEnabled: true, messageLanguage: "en", draftLanguage: "en"))
+    model.updateDraft("Hallo")
+    model.translateDraft(in: .channel)
+    let translationTask = try #require(state.draftTasks[.channel])
+    await translator.waitForRequests(1)
+    #expect(await provider.sendCount == 0)
+    #expect(await provider.editCount == 0)
+    #expect(await model.send())
+    translator.complete(0, text: "Late translation")
+    await translationTask.value
+    #expect(model.draft.isEmpty)
+    #expect(state.drafts[.channel] == nil)
+    #expect(await provider.sendCount == 1)
+    let message = Message(id: MessageID(rawValue: 999), channelID: ChannelID(rawValue: 10),
+                          author: await provider.otherUser, content: "Hallo")
+    model.toggleMessageTranslation(message)
+    let messageTask = try #require(state.messageTasks[message.id])
+    await translator.waitForRequests(2)
+    translator.complete(1)
+    await messageTask.value
+    #expect(await provider.sendCount == 1)
+    #expect(await provider.editCount == 0)
 }
