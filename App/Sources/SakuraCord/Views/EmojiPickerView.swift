@@ -432,8 +432,7 @@ struct EmojiPickerView: View {
                             EmojiHoverPreviewBar(
                                 interaction: interaction,
                                 skinTone: selectedSkinTone,
-                                guildsByID: model.serverRailGuildsByID,
-                                premiumType: model.snapshot?.currentUser.premiumType ?? 0
+                                guildsByID: model.serverRailGuildsByID
                             )
                             .frame(height: 38)
                         }

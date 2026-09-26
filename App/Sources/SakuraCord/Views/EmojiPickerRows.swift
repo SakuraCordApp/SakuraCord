@@ -77,31 +77,32 @@ struct EmojiHoverPreviewBar: View {
     let interaction: EmojiPickerInteractionModel
     let skinTone: NativeEmojiSkinTone
     let guildsByID: [GuildID: Guild]
-    let premiumType: Int
 
     var body: some View {
+        let guild = sourceGuild
+
         HStack(spacing: 6) {
             interaction.item.preview(skinTone: skinTone, dimension: 28, nativeFontSize: 24)
                 .frame(width: 30, height: 30, alignment: .center)
-            Text(interaction.item.shortcode)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
-            if let guild = sourceGuild {
-                HStack(spacing: 6) {
-                    EmojiGuildBookmarkIcon(guild: guild)
-                        .accessibilityHidden(true)
-                    Text(guild.name)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(interaction.item.shortcode)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let guild {
+                    Text("from \(Text(guild.name).fontWeight(.semibold))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .help(guild.name)
                 }
-                .frame(maxWidth: 180, alignment: .trailing)
-                .help(guild.name)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text("From \(guild.name)"))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let guild {
+                EmojiGuildBookmarkIcon(guild: guild)
+                    .help(guild.name)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, 10)
@@ -110,8 +111,7 @@ struct EmojiHoverPreviewBar: View {
     }
 
     private var sourceGuild: Guild? {
-        guard DiscordEmojiPermissionPolicy.hasNitro(premiumType: premiumType),
-              case let .custom(emoji) = interaction.item
+        guard case let .custom(emoji) = interaction.item
         else { return nil }
         return guildsByID[emoji.guildID]
     }
