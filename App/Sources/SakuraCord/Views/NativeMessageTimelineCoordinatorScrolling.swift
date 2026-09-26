@@ -203,6 +203,50 @@ final class NativeTimelineBenchmarkRunState {
 }
 
 extension NativeMessageTimelineCoordinator {
+        func refreshLinkedImageLayouts(
+            for identifiers: Set<NativeMessageTimelineItem.Identifier>
+        ) {
+            guard let canvas, let scrollView, layoutWidth > 0,
+                  initialPositionConversation == parent.conversation
+            else { return }
+            var changed: [(Int, NativeTimelineRowLayout)] = []
+            for index in items.indices
+            where identifiers.contains(items[index].identifier)
+                && layouts.indices.contains(index)
+                && !layouts[index].linkedImageRegions.isEmpty
+            {
+                let updated = layout(for: items[index], width: layoutWidth)
+                let previousFrames = layouts[index].linkedImageRegions.map(\.frame)
+                let updatedFrames = updated.linkedImageRegions.map(\.frame)
+                if previousFrames != updatedFrames {
+                    changed.append((index, updated))
+                }
+            }
+            guard !changed.isEmpty else { return }
+
+            let wasNearBottom = scrollState().isNearBottom
+            let anchor = wasNearBottom ? nil : visibleAnchor()
+            isApplyingUpdate = true
+            cancelLayoutPreparation()
+            for (index, updated) in changed {
+                layouts[index] = updated
+                rowHeights[index] = updated.height
+                cacheItemLayout(items[index], layout: updated)
+                canvas.invalidateBitmap(items[index].identifier)
+            }
+            rebuildOrigins()
+            applySnapshot(to: canvas, in: scrollView)
+            if wasNearBottom {
+                scroll(toDocumentY: .greatestFiniteMagnitude, scrollView: scrollView)
+            } else if let anchor {
+                restore(anchor)
+            }
+            positionViewportCanvas()
+            canvas.invalidateVisibleContent()
+            isApplyingUpdate = false
+            reportScrollState(force: true)
+        }
+
         func replaceItem(
             at index: Int,
             with item: NativeMessageTimelineItem,

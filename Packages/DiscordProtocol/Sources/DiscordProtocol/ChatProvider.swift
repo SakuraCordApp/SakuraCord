@@ -100,6 +100,7 @@ public protocol ChatProvider: Sendable {
         anchoredAt anchor: MessageHistoryAnchor,
         limit: Int
     ) async throws -> MessagePage
+    func refreshedAttachmentURL(_ url: URL) async throws -> URL?
     func searchMessages(_ query: MessageSearchQuery) async throws -> MessageSearchPage
     func inboxMentions(_ query: InboxMentionQuery, before: MessageID?) async throws -> InboxMentionPage
     func dismissInboxMention(_ messageID: MessageID) async throws
@@ -289,6 +290,8 @@ public protocol PendingCredentialChatProvider: ChatProvider {
 }
 
 public extension ChatProvider {
+    func refreshedAttachmentURL(_: URL) async throws -> URL? { nil }
+
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildGuideProfile(in guildID: GuildID) async throws -> GuildGuideProfile { throw ChatProviderError.invalidRequest("Server profile is unavailable.") }
     func guildGuideProgress(in guildID: GuildID) async throws -> GuildGuideProgress { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }

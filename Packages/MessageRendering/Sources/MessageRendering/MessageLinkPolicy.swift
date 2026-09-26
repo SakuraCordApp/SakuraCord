@@ -29,6 +29,19 @@ public enum MessageLinkPolicy {
         return url
     }
 
+    static func discordAttachmentFilename(for url: URL) -> String? {
+        guard url.scheme?.lowercased() == "https",
+              url.user == nil, url.password == nil, url.port == nil,
+              ["cdn.discordapp.com", "media.discordapp.net"].contains(
+                  url.host?.lowercased() ?? ""
+              ),
+              url.path.hasPrefix("/attachments/")
+                  || url.path.hasPrefix("/ephemeral-attachments/")
+        else { return nil }
+        let filename = url.lastPathComponent
+        return filename.isEmpty ? nil : filename
+    }
+
     private static func angleBracketDestinationContent(
         from rawValue: String
     ) -> String? {

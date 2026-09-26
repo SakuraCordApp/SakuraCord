@@ -59,14 +59,6 @@ final class MediaViewerInteractionModel {
         return true
     }
 
-    func toggleZoom() {
-        if scale > Self.minimumScale + 0.01 {
-            resetZoom()
-        } else {
-            commitScale(2)
-        }
-    }
-
     func commitScale(_ value: CGFloat) {
         scale = min(Self.maximumScale, max(Self.minimumScale, value))
         if scale == Self.minimumScale {

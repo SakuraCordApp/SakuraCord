@@ -72,7 +72,7 @@ enum NativeTimelineBubbleLayout {
             )
         }
         if let linkedImageWidth = content.linkedImages
-            .map(\.displaySize.width).max()
+            .map(\.resolvedDisplaySize.width).max()
         {
             preferredWidth = max(
                 preferredWidth,

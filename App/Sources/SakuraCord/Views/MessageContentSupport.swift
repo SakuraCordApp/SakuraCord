@@ -356,14 +356,22 @@ nonisolated struct LinkedImagePresentation: Sendable {
     private static let expression = RegularExpressionFactory.make(
         #"\[([^\]]+)\]\((https://[^\s)]+)\)"#
     )
+    private static let bareURLExpression = RegularExpressionFactory.make(
+        #"https://[^\s<>]+"#
+    )
 
     let visibleText: String
     let images: [LinkedImageReference]
     let matchedEmojiURLs: Set<URL>
 
-    init(content: String) {
+    init(
+        content: String,
+        includeBareMediaURLs: Bool = true,
+        excludedURLs: Set<URL> = []
+    ) {
         let sourceRange = NSRange(content.startIndex ..< content.endIndex, in: content)
-        let references = Self.expression.matches(in: content, range: sourceRange).compactMap { match -> (NSRange, LinkedImageReference)? in
+        let markdownMatches = Self.expression.matches(in: content, range: sourceRange)
+        var references = markdownMatches.compactMap { match -> (NSRange, LinkedImageReference)? in
             guard let labelRange = Range(match.range(at: 1), in: content),
                   let urlRange = Range(match.range(at: 2), in: content),
                   let url = URL(string: String(content[urlRange])),
@@ -378,6 +386,39 @@ nonisolated struct LinkedImagePresentation: Sendable {
                 )
             )
         }
+        if includeBareMediaURLs {
+            for match in Self.bareURLExpression.matches(in: content, range: sourceRange) {
+                guard !markdownMatches.contains(where: {
+                    NSIntersectionRange($0.range, match.range).length > 0
+                }), let matchedRange = Range(match.range, in: content),
+                    !Self.isConcealedBareURL(at: matchedRange.lowerBound, in: content),
+                    matchedRange.lowerBound == content.startIndex
+                        || content[content.index(before: matchedRange.lowerBound)] != "<"
+                else { continue }
+
+                let raw = String(content[matchedRange])
+                let candidate = raw.trimmingCharacters(in: CharacterSet(charactersIn: ".,!?;:)]}"))
+                guard let url = URL(string: candidate),
+                      LinkedImageReference.isBareAttachmentURL(url),
+                      !excludedURLs.contains(url)
+                else { continue }
+                let removesLeadingSpace = matchedRange.lowerBound != content.startIndex
+                    && content[content.index(before: matchedRange.lowerBound)] == " "
+                let range = NSRange(
+                    location: match.range.location - (removesLeadingSpace ? 1 : 0),
+                    length: (candidate as NSString).length + (removesLeadingSpace ? 1 : 0)
+                )
+                references.append((
+                    range,
+                    LinkedImageReference(
+                        id: "\(range.location):\(url.absoluteString)",
+                        label: url.lastPathComponent,
+                        url: url
+                    )
+                ))
+            }
+        }
+        references.sort { $0.0.location < $1.0.location }
         matchedEmojiURLs = Set(
             references.compactMap { reference in
                 reference.1.linkedEmoji == nil ? nil : reference.1.url
@@ -409,6 +450,51 @@ nonisolated struct LinkedImagePresentation: Sendable {
         }
         visibleText = String(presentedText)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isConcealedBareURL(
+        at urlStart: String.Index,
+        in content: String
+    ) -> Bool {
+        let lineStart = content[..<urlStart].lastIndex(of: "\n")
+            .map { content.index(after: $0) } ?? content.startIndex
+        let lineEnd = content[urlStart...].firstIndex(of: "\n")
+            ?? content.endIndex
+        let line = content[lineStart ..< lineEnd]
+        if line.hasPrefix("```") { return true }
+        var isInCodeFence = false
+        for previousLine in content[..<lineStart].split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        ) where previousLine.hasPrefix("```") {
+            isInCodeFence.toggle()
+        }
+        if isInCodeFence { return true }
+
+        var cursor = line.startIndex
+        while cursor < urlStart {
+            if line[cursor] == "\\" {
+                cursor = line.index(cursor, offsetBy: 2, limitedBy: line.endIndex)
+                    ?? line.endIndex
+                continue
+            }
+            if line[cursor] == "`",
+               let closing = line[line.index(after: cursor)...].firstIndex(of: "`") {
+                if urlStart < closing { return true }
+                cursor = line.index(after: closing)
+                continue
+            }
+            if line[cursor...].hasPrefix("||") {
+                let openingEnd = line.index(cursor, offsetBy: 2)
+                if let closing = line[openingEnd...].range(of: "||") {
+                    if urlStart < closing.lowerBound { return true }
+                    cursor = closing.upperBound
+                    continue
+                }
+            }
+            cursor = line.index(after: cursor)
+        }
+        return false
     }
 
     private static func remainingText(
@@ -498,6 +584,20 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
         return CGSize(width: 360, height: 220)
     }
 
+    @MainActor
+    var resolvedDisplaySize: CGSize {
+        guard !isEmoji, !isSticker,
+              let source = NativeTimelineMediaStore.shared.imageSize(
+                  for: .media(displayURL, maximumPixelDimension: 720)
+              )
+        else { return displaySize }
+        let scale = min(1, 360 / source.width, 350 / source.height)
+        return CGSize(
+            width: source.width * scale,
+            height: source.height * scale
+        )
+    }
+
     static func isSupported(_ url: URL) -> Bool {
         let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "webp", "avif"])
         guard url.scheme?.lowercased() == "https",
@@ -508,6 +608,12 @@ nonisolated struct LinkedImageReference: Identifiable, Hashable, Sendable {
         else { return false }
         return imageExtensions.contains(url.pathExtension.lowercased())
             || (isCanonicalEmojiURL(url))
+    }
+
+    static func isBareAttachmentURL(_ url: URL) -> Bool {
+        isSupported(url)
+            && (url.path.hasPrefix("/attachments/")
+                || url.path.hasPrefix("/ephemeral-attachments/"))
     }
 
     private static func isCanonicalEmojiURL(_ url: URL) -> Bool {
@@ -578,9 +684,11 @@ nonisolated enum InlineWrappingLayoutPlan {
         var usedWidth: CGFloat = 0
 
         for proposedSize in sizes {
+            let scale = proposedSize.width > widthLimit
+                ? widthLimit / proposedSize.width : 1
             let size = CGSize(
-                width: min(widthLimit, max(0, proposedSize.width)),
-                height: max(0, proposedSize.height)
+                width: max(0, proposedSize.width * scale),
+                height: max(0, proposedSize.height * scale)
             )
             if horizontalOffset > 0, horizontalOffset + size.width > widthLimit {
                 horizontalOffset = 0

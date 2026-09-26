@@ -170,6 +170,7 @@ extension NativeTimelineCanvasView {
             self.mediaInvalidationTask = nil
             let identifiers = self.pendingMediaInvalidations
             self.pendingMediaInvalidations.removeAll(keepingCapacity: true)
+            self.onMediaDimensionsChange?(identifiers)
             self.refreshVisibleMediaPins()
             var dirtyRect = CGRect.null
             for identifier in identifiers {

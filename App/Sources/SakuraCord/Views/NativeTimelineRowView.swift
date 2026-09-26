@@ -950,7 +950,7 @@ struct NativeTimelineRowLayout {
                 verticalOffset += 6
             }
             let plan = InlineWrappingLayoutPlan.frames(
-                sizes: contentPresentation.linkedImages.map { $0.displaySize },
+                sizes: contentPresentation.linkedImages.map { $0.resolvedDisplaySize },
                 maximumWidth: inlineMediaMaximumWidth,
                 horizontalSpacing: 4,
                 verticalSpacing: 4

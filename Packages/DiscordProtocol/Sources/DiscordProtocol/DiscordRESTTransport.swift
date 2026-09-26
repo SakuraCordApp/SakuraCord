@@ -907,7 +907,10 @@ extension DiscordRESTProvider {
 
     static func canRetryAsRead(method: String, path: String) -> Bool {
         method == "GET"
-            || (method == "POST" && path == "/users/@me/messages/search/tabs")
+            || (method == "POST" && (
+                path == "/users/@me/messages/search/tabs"
+                    || path == "/attachments/refresh-urls"
+            ))
     }
 
     func openSafetyCircuit(status: Int, discordCode: Int?, route: String) async {

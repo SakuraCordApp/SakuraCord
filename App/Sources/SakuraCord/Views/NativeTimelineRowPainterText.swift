@@ -330,7 +330,7 @@ extension NativeTimelineRowPainter {
         )
     }
 
-    private static func preparedDrawingText(
+    static func preparedDrawingText(
         _ value: NSAttributedString,
         framesetter: CTFramesetter,
         hoveredLinkCharacterIndex: Int?,
@@ -378,18 +378,20 @@ extension NativeTimelineRowPainter {
         range: NSRange
     ) {
         revealed.removeAttribute(.discordMarkdownSpoiler, range: range)
-        let foregroundColor = value.attribute(
-            .foregroundColor,
-            at: range.location,
-            effectiveRange: nil
-        ) as? NSColor ?? (value.attribute(
-            .link,
-            at: range.location,
-            effectiveRange: nil
-        ) == nil ? NSColor.labelColor : NSColor.linkColor)
-        for attribute in [NSAttributedString.Key.foregroundColor, .underlineColor, .strikethroughColor] {
-            revealed.addAttribute(attribute, value: foregroundColor, range: range)
+        value.enumerateAttributes(in: range) { attributes, subrange, _ in
+            let foregroundColor = attributes[.discordMarkdownSpoilerRevealedColor]
+                as? NSColor
+                ?? (attributes[.link] == nil ? NSColor.labelColor : NSColor.linkColor)
+            for attribute in [NSAttributedString.Key.foregroundColor, .underlineColor, .strikethroughColor] {
+                revealed.addAttribute(
+                    attribute, value: foregroundColor, range: subrange
+                )
+            }
         }
+        revealed.removeAttribute(
+            .discordMarkdownSpoilerRevealedColor,
+            range: range
+        )
     }
 
     private static func drawTextSelection(
@@ -420,6 +422,7 @@ extension NativeTimelineRowPainter {
     private struct MarkdownDecorationRects {
         var quotes: [CGRect] = []
         var inlineCode: [CGRect] = []
+        var attachmentLinks: [CGRect] = []
         var spoilers: [(CGRect, Bool)] = []
         var listMarkers: [CGRect] = []
     }
@@ -443,6 +446,7 @@ extension NativeTimelineRowPainter {
             value: attributedText
         )
         drawInlineCodeDecorations(decorations.inlineCode)
+        drawAttachmentLinkDecorations(decorations.attachmentLinks)
         drawSpoilerDecorations(decorations.spoilers)
         drawCodeBlockDecorations(codeBlocks)
         drawListMarkerDecorations(decorations.listMarkers)
@@ -492,6 +496,25 @@ extension NativeTimelineRowPainter {
                             hoveredSpoilerRangeLocation == range.location
                         )
                     }
+            )
+        }
+        attributedText.enumerateAttribute(
+            .discordMarkdownAttachmentLink,
+            in: fullRange
+        ) { rawValue, range, _ in
+            guard (rawValue as? NSNumber)?.boolValue == true,
+                  attributedText.attribute(
+                      .discordMarkdownSpoiler,
+                      at: range.location,
+                      effectiveRange: nil
+                  ) == nil
+            else { return }
+            result.attachmentLinks.append(contentsOf:
+                NativeTimelineTextSelectionGeometry.rects(
+                    in: textFrame,
+                    outerFrame: outerFrame,
+                    range: range
+                )
             )
         }
         attributedText.enumerateAttribute(
@@ -545,6 +568,16 @@ extension NativeTimelineRowPainter {
             )
             border.lineWidth = 1
             border.stroke()
+        }
+    }
+
+    private static func drawAttachmentLinkDecorations(_ rects: [CGRect]) {
+        NSColor.linkColor.withAlphaComponent(0.14).setFill()
+        for linkRect in rects {
+            NSBezierPath(
+                concentricRoundedRect: linkRect.insetBy(dx: -3, dy: -1),
+                cornerRadius: 4
+            ).fill()
         }
     }
 

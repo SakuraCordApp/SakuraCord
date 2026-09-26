@@ -390,6 +390,14 @@ extension NativeTimelineCanvasView {
                                   where: { $0.identifier == identifier }
                               )
                         else { return }
+                        if self.layouts[currentIndex].linkedImageRegions.contains(where: {
+                            .media(
+                                $0.reference.displayURL,
+                                maximumPixelDimension: $0.reference.isEmoji ? 96 : 720
+                            ) == key
+                        }) {
+                            self.scheduleMediaInvalidation(identifier)
+                        }
                         self.invalidateBitmap(identifier)
                         self.setNeedsDisplay(self.rowFrame(at: currentIndex))
                         self.reconcileAnimatedMediaOverlays(

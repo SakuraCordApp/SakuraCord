@@ -331,8 +331,10 @@ nonisolated enum NativeTimelineCoreText {
             }
             output.replaceCharacters(in: range, with: replacement)
         }
-        output.enumerateAttribute(.link, in: fullRange) { value, range, _ in
-            guard value != nil else { return }
+        output.enumerateAttributes(in: fullRange) { attributes, range, _ in
+            guard attributes[.link] != nil,
+                  attributes[.discordMarkdownSpoiler] == nil
+            else { return }
             output.addAttributes(
                 [
                     .foregroundColor: NSColor.linkColor,

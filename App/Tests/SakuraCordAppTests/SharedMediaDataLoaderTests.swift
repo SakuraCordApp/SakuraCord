@@ -12,6 +12,58 @@ import Testing
     #expect(configuration.requestCachePolicy == .returnCacheDataElseLoad)
 }
 
+@Test func `expired Discord image URL loads from a refreshed attachment URL`() async throws {
+    let original = try #require(URL(string:
+        "https://media.discordapp.net/attachments/708718994214879262/1142397887863590920/576D3811-DF63-4D10-8488-42BE96B7270F.gif"
+    ))
+    let refreshed = try #require(URL(string:
+        "https://media.discordapp.net/attachments/708718994214879262/1142397887863590920/576D3811-DF63-4D10-8488-42BE96B7270F.gif?ex=valid"
+    ))
+    let expected = Data("gif data".utf8)
+    let loader = SharedMediaDataLoader { url in
+        if url == original { throw RemoteMediaHTTPError(statusCode: 404) }
+        #expect(url == refreshed)
+        return expected
+    }
+    await loader.setAttachmentURLRefresh(revision: 1) { url in
+        #expect(url == original)
+        return refreshed
+    }
+
+    #expect(try await loader.data(for: original) == expected)
+    #expect(try await loader.data(for: original) == expected)
+}
+
+@Test func `an in-flight media load cannot refresh through a replaced account`() async throws {
+    let original = try #require(URL(string:
+        "https://cdn.discordapp.com/attachments/1/2/old.gif"
+    ))
+    let fetch = SuspendedRemoteMediaFetch()
+    let refresh = RefreshCallRecorder()
+    let loader = SharedMediaDataLoader(remoteFetch: fetch.fetch)
+    await loader.setAttachmentURLRefresh(revision: 1) { _ in
+        await refresh.record()
+        return original
+    }
+    let request = Task { try await loader.data(for: original) }
+    #expect(await waitUntil { await fetch.fetchCount == 1 })
+
+    await loader.setAttachmentURLRefresh(revision: 2) { _ in
+        await refresh.record()
+        return original
+    }
+    await fetch.fail(original, with: RemoteMediaHTTPError(statusCode: 404))
+    do {
+        _ = try await request.value
+        Issue.record("Expected the expired original URL to fail after the account changed.")
+    } catch let error as RemoteMediaHTTPError {
+        #expect(error.statusCode == 404)
+    } catch {
+        Issue.record("Unexpected media error: \(error)")
+    }
+    #expect(await refresh.callCount == 0)
+}
+
 @Test func `cancelling the final media waiter cancels its fetch`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let loader = SharedMediaDataLoader(remoteFetch: probe.fetch)
@@ -496,11 +548,23 @@ private actor SuspendedRemoteMediaFetch {
         continuations.removeValue(forKey: url)?.resume(returning: data)
     }
 
+    func fail(_ url: URL, with error: any Error) {
+        continuations.removeValue(forKey: url)?.resume(throwing: error)
+    }
+
     private func cancel(_ url: URL) {
         guard let continuation = continuations.removeValue(forKey: url)
         else { return }
         cancellationCount += 1
         continuation.resume(throwing: CancellationError())
+    }
+}
+
+private actor RefreshCallRecorder {
+    private(set) var callCount = 0
+
+    func record() {
+        callCount += 1
     }
 }
 

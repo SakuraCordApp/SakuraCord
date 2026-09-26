@@ -91,7 +91,9 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                     for: message
                 )
             }
-        let linkedPresentation = LinkedImagePresentation(content: visibleContent)
+        let linkedPresentation = message.type.hasGeneratedContent
+            ? LinkedImagePresentation(content: visibleContent, includeBareMediaURLs: false)
+            : MessageEmbedPresentation.linkedImagePresentation(for: message)
         let prepared = linkedPresentation.visibleText.isEmpty
             ? nil
             : RichMessageAttributedText.prepare(

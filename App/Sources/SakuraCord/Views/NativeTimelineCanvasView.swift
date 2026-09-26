@@ -88,6 +88,17 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         case reaction(String)
         case pollAnswer(Int)
 
+        // Keep message media playing while its row moves through the viewport.
+        // Small decorative animations still pause during scroll work.
+        var playsDuringScroll: Bool {
+            switch self {
+            case .linkedImage, .attachment:
+                true
+            default:
+                false
+            }
+        }
+
         var playsOnHover: Bool {
             switch self {
             case .authorAvatar, .authorAvatarDecoration, .replyAvatar, .invocationAvatar, .reactionAvatar:
@@ -239,6 +250,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?
+    var onMediaDimensionsChange:
+        ((Set<NativeMessageTimelineItem.Identifier>) -> Void)?
     var usesViewportSizedBacking = false
     var onDocumentSizeChange: ((NSSize) -> Void)?
 
