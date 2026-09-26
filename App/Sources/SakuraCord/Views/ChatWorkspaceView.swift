@@ -2,6 +2,7 @@ import SakuraCordModels
 import SwiftUI
 
 struct ChatWorkspaceView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: AppModel
     @Binding var presentsForumComposer: Bool
     let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
@@ -42,19 +43,23 @@ struct ChatWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let supplementaryContent = presentation.supplementaryContent {
-                if supplementaryContent != .memberInspector
-                    || model.selectedChannel?.kind != .directMessage
-                {
-                    Divider()
+                HStack(spacing: 0) {
+                    if supplementaryContent != .memberInspector
+                        || model.selectedChannel?.kind != .directMessage
+                    {
+                        Divider()
+                    }
+                    ChatWorkspaceSupplementaryContent(
+                        model: model,
+                        content: supplementaryContent,
+                        toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
+                    )
                 }
-                ChatWorkspaceSupplementaryContent(
-                    model: model,
-                    content: supplementaryContent,
-                    toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
-                )
+                .transition(.move(edge: .trailing))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: model.showInspector)
         .onChange(of: model.selectedChannelID) { _, channelID in
             guard let channelID else {
                 AppPerformanceSignposts.cancelConversationNavigation()
@@ -252,7 +257,9 @@ private struct DirectMessageProfileInspector: View {
             )
         )
         .task(id: recipient.id) {
-            model.showInspectorProfile(for: recipient)
+            if model.inspectorProfilePresentation?.member.id != recipient.id {
+                model.showInspectorProfile(for: recipient)
+            }
         }
     }
 }

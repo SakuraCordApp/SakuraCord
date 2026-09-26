@@ -100,6 +100,9 @@ struct RootView: View {
             }
         }
         .onChange(of: model.showInspector) { _, isVisible in
+            if !isVisible, model.selectedChannel?.kind != .directMessage {
+                model.dismissInspectorProfile()
+            }
             GeneralWindowRestorationStore.shared.recordMemberListVisibility(
                 isVisible
             )
@@ -706,7 +709,15 @@ private struct ChatRootView: View {
 
             ToolbarItem {
                 ZStack {
-                    Button { model.showInspector.toggle() } label: {
+                    Button {
+                        model.prepareInspectorProfileForPresentation()
+                        withAnimation(
+                            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                                ? nil : .smooth(duration: 0.24)
+                        ) {
+                            model.showInspector.toggle()
+                        }
+                    } label: {
                         inspectorToolbarLabel
                     }
                     .disabled(model.isSwitchingAccounts)

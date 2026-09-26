@@ -139,6 +139,18 @@ extension AppModel {
         }
     }
 
+    func prepareInspectorProfileForPresentation() {
+        guard !showInspector,
+              let channel = selectedChannel,
+              channel.kind == .directMessage,
+              let recipient = channel.recipients.first,
+              inspectorProfilePresentation?.member.id != recipient.id
+        else {
+            return
+        }
+        showInspectorProfile(for: recipient)
+    }
+
     func showInspectorProfile(for user: User) {
         isInspectorProfilePresented = true
         let member =

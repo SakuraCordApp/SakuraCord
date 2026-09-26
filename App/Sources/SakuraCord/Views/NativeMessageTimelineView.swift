@@ -313,6 +313,9 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var lastScrollActivityUptime = 0.0
         var widthRelayoutTask: Task<Void, Never>?
         var pendingLayoutWidth: CGFloat?
+        var previewLayoutWidth: CGFloat?
+        var previewedRowIdentifiers: Set<NativeMessageTimelineItem.Identifier> = []
+        var rowsPreviewedAtCurrentWidth: Set<NativeMessageTimelineItem.Identifier> = []
         var widthRelayoutGeneration: UInt64 = 0
         var performanceAutoScrollTask: Task<Void, Never>?
         var performanceDisplayLinkTicker:
@@ -406,6 +409,9 @@ extension NativeMessageTimelineCoordinator {
             presentationRevision = parent.presentationRevision
             let metadataEndUptime = ProcessInfo.processInfo.systemUptime
             if didMutateItems {
+                if previewLayoutWidth != nil {
+                    rowsPreviewedAtCurrentWidth.removeAll()
+                }
                 let didAppendItems = updateTimelineOriginsAndReserves(
                     parent: parent,
                     preparation: preparation
@@ -559,6 +565,9 @@ extension NativeMessageTimelineCoordinator {
             widthRelayoutTask?.cancel()
             widthRelayoutTask = nil
             pendingLayoutWidth = nil
+            previewLayoutWidth = nil
+            previewedRowIdentifiers.removeAll()
+            rowsPreviewedAtCurrentWidth.removeAll()
             leadingHistoryReserve = 0
             trailingHistoryReserve = 0
             followsMaterializedHistoryBoundary = false
@@ -931,6 +940,9 @@ extension NativeMessageTimelineCoordinator {
             widthRelayoutTask?.cancel()
             widthRelayoutTask = nil
             pendingLayoutWidth = nil
+            previewLayoutWidth = nil
+            previewedRowIdentifiers.removeAll()
+            rowsPreviewedAtCurrentWidth.removeAll()
             widthRelayoutGeneration &+= 1
             performanceAutoScrollTask?.cancel()
             performanceAutoScrollTask = nil
