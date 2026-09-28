@@ -783,6 +783,14 @@ final class ComposerNSTextView: NSTextView {
     }
     private lazy var unfocusedTypingMonitor = ComposerUnfocusedTypingMonitor()
 
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        var types = super.readablePasteboardTypes
+        for type in [NSPasteboard.PasteboardType.png, .tiff] where !types.contains(type) {
+            types.append(type)
+        }
+        return types
+    }
+
     private var unfocusedReturnHandler: (NSEvent) -> Bool {
         { [weak self] event in
             self?.onReturn?(event) ?? false

@@ -710,18 +710,39 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
 }
 
 @MainActor
-@Test func `composer paste materializes clipboard image data as a png attachment`() throws {
-    let pasteboard = NSPasteboard(name: .init("sakuracord-paste-image-\(UUID().uuidString)"))
-    defer { pasteboard.clearContents() }
+@Test func `composer paste advertises and materializes screenshot clipboard image data`() throws {
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
     let image = NSImage(size: NSSize(width: 2, height: 2), flipped: false) { bounds in
         NSColor.systemPink.setFill()
         bounds.fill()
         return true
     }
+    let tiffData = try #require(image.tiffRepresentation)
+    let bitmap = try #require(NSBitmapImageRep(data: tiffData))
+    let pngData = try #require(bitmap.representation(using: .png, properties: [:]))
     pasteboard.clearContents()
-    #expect(pasteboard.writeObjects([image]))
+    pasteboard.declareTypes([.png, .tiff], owner: nil)
+    #expect(pasteboard.setData(pngData, forType: .png))
+    #expect(pasteboard.setData(tiffData, forType: .tiff))
 
-    let url = try #require(ComposerPasteboardAttachments.urls(from: pasteboard).first)
+    let textView = ComposerNSTextView()
+    textView.commandPasteboard = pasteboard
+    let readablePasteboardTypes = textView.readablePasteboardTypes
+    #expect(readablePasteboardTypes.filter { $0 == .png }.count == 1)
+    #expect(readablePasteboardTypes.filter { $0 == .tiff }.count == 1)
+    let preferredPasteboardType = textView.preferredPasteboardType(
+        from: try #require(pasteboard.types),
+        restrictedToTypesFrom: readablePasteboardTypes
+    )
+    #expect(preferredPasteboardType == .png || preferredPasteboardType == .tiff)
+
+    var pastedURLs: [URL] = []
+    textView.onPasteAttachments = { pastedURLs = $0 }
+    textView.paste(nil)
+    #expect(pastedURLs.count == 1)
+
+    let url = try #require(pastedURLs.first)
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
     #expect(url.pathExtension == "png")
