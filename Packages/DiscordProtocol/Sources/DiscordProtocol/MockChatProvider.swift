@@ -22,6 +22,7 @@ public actor MockChatProvider: ChatProvider {
     private var nextMessageID: UInt64
     public private(set) var typingRequests: [ChannelID] = []
     public private(set) var pinMutationRequests: [PinMutationRequest] = []
+    public private(set) var attachmentURLRefreshRequests: [URL] = []
     public private(set) var voiceJoinRequests: [VoiceJoinRequest] = []
     public private(set) var soundboardSendRequests: [SoundboardSendRequest] = []
     public private(set) var acknowledgementRequests: [AcknowledgementRequest] = []
@@ -1890,6 +1891,11 @@ public extension MockChatProvider {
 }
 
 public extension MockChatProvider {
+    func refreshAttachmentURL(_ url: URL) async throws -> URL? {
+        attachmentURLRefreshRequests.append(url)
+        return url
+    }
+
     func setPollAnswers(_ answerIDs: [Int], messageID: MessageID, channelID: ChannelID) async throws {
         guard let index = messagesByChannel[channelID]?.firstIndex(where: { $0.id == messageID }),
               var message = messagesByChannel[channelID]?[index], var poll = message.poll,

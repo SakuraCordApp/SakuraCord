@@ -94,10 +94,14 @@ struct MessageEmbedDTO: Decodable {
     var components: LossyList<MessageComponentDTO>?
 
     func domain(index: Int) -> MessageEmbed {
-        MessageEmbed(
+        // Discord may deliver an image embed's only media, including its signed URL, as the thumbnail.
+        let promotesThumbnail = type?.lowercased() == "image" && image == nil
+        return MessageEmbed(
             id: "embed-\(index)", title: title, type: type, description: description,
             url: url.flatMap(URL.init), timestamp: timestamp.flatMap(DiscordDate.parse), color: color,
-            footer: footer?.domain, image: image?.domain, thumbnail: thumbnail?.domain,
+            footer: footer?.domain,
+            image: (promotesThumbnail ? thumbnail : image)?.domain,
+            thumbnail: promotesThumbnail ? nil : thumbnail?.domain,
             video: video?.domain,
             provider: provider?.domain, author: author?.domain,
             fields: (fields?.elements ?? []).enumerated().map {

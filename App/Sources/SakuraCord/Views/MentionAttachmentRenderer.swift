@@ -5,6 +5,11 @@ extension NSAttributedString.Key {
     nonisolated static let discordMentionToken = NSAttributedString.Key(
         "dev.sakuracord.discord-mention-token"
     )
+
+    /// Marks the paperclip placed before an attachment link's file name.
+    nonisolated static let discordAttachmentLinkIcon = NSAttributedString.Key(
+        "dev.sakuracord.discord-attachment-link-icon"
+    )
 }
 
 nonisolated final class MentionTextAttachment: NSTextAttachment {

@@ -1,5 +1,6 @@
 @testable import SakuraCord
 import Foundation
+import MessageRendering
 import SakuraCordModels
 import Testing
 
@@ -212,4 +213,26 @@ import Testing
     #expect(model.localTypingTask == nil)
     model.scheduleLocalTyping(for: "draft")
     #expect(model.localTypingTask == nil)
+}
+
+@MainActor
+@Test func `Attachment confirmations preserve masked host warnings without treating filenames as hosts`() async throws {
+    let url = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/example.com?ex=ffffffff"))
+    let compact = DiscordMarkdown.appKitAttributed(url.absoluteString)
+    #expect(MessageLinkActivator.safetyDisplayedText(in: compact) == nil)
+    let masked = DiscordMarkdown.appKitAttributed("[https://discord.com](\(url.absoluteString))")
+    let label = MessageLinkActivator.safetyDisplayedText(in: masked)
+    #expect(label == "https://discord.com")
+    let model = AppModel(launchMode: .offlineTesting)
+    let assessment = await withCheckedContinuation { continuation in
+        _ = MessageLinkActivator.activate(
+            url,
+            model: model,
+            displayedText: label,
+            confirmExternal: { continuation.resume(returning: $0) }
+        )
+    }
+    #expect(assessment.warnings.contains {
+        $0.contains("discord.com") && $0.contains("cdn.discordapp.com")
+    })
 }

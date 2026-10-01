@@ -1039,6 +1039,7 @@ and retained as evidence.
 | `POST /interactions` | One explicit type-2 execution, type-4 autocomplete, or returned modal submission; nonce-keyed, one attempt. | Current first-party and Paicord command model; Swiftcord has no current index/interaction path. |
 | `POST /channels/{channel}/messages` | One explicit send; `content`, nonce, `tts:false`, `flags:0`, macOS `mobile_network_type:"unknown"`, optional reply/attachments, and `X-Context-Properties` location `chat_input`. A reply with its author notification enabled omits `allowed_mentions`; disabling it adds `parse:["users","roles","everyone"]` and `replied_user:false`. SakuraCord deliberately adds `enforce_nonce:true` to ordinary composer sends. A poll send instead uses the exact `poll` payload and `poll_creation` context described under Polls, with empty content and no `enforce_nonce`. A native sticker-only send instead has empty `content`, one-element `sticker_ids`, and omits `enforce_nonce`; it cannot be combined with uploaded attachments. Standard, same-guild, and entitled cross-guild stickers use this route. An unentitled cross-guild custom sticker uses the existing attachment reservation/upload path with the rendered WebP and never also sends the native sticker. An explicit forward uses the same route once per selected destination (maximum five), empty `content`, nonce without `enforce_nonce`, `message_reference` with `type:1` and source IDs, and context location `forwarding`. Selected forwards start together and settle independently. Optional user-entered context is one later ordinary send per successful destination unless slowmode without bypass forbids it. Picker browsing and typing perform no HTTP or Gateway search. | Current first-party build and clean macOS CDP request/search/sticker-send observation through 3 September 2026. Pinned Paicord has no forward or complete sticker picker request; Swiftcord v1 corroborates ordinary reply mention control but has no comparable current picker. DiscordKit's later DTO-only snapshot support is decoding evidence, not request or picker evidence. |
 | `POST /channels/{channel}/attachments` | Explicit files only; `files` entries contain string index `id`, `filename`, `file_size`, and `is_clip:false`. | Current first-party upload action and Paicord; Swiftcord has no comparable presigned upload. |
+| `POST /attachments/refresh-urls` | One explicit activation of a Discord attachment link whose URL is unsigned or whose hexadecimal `ex` expires within one hour; `attachment_urls` contains exactly the original URL. `refreshed_urls[0].refreshed` is opened; a null or absent value opens the original URL. No retry, context header, or cache. | Stable web build `622805` (`web.d4c7976eccf337f1.js`, SHA-256 `7341aa3d5a2208664901f65bf776a48fb5cafe21a1a9e6ce504db79a4a636f7d`), 28 September 2026. Public docs define `ex`/`is`/`hm` but not this route; P−, S−. |
 | `PUT {Discord-issued upload_url}` | One unauthenticated storage PUT per reserved file, `application/octet-stream`, raw bytes, no Discord authorization metadata. | Current first-party and Paicord; S−. |
 | `PUT /channels/{channel}/polls/{message}/answers/@me` | Explicit poll vote, replacement, or removal; `answer_ids` is a string array, empty to remove. HTTP 204; no automatic mutation retry. | Two fresh authenticated desktop captures, 19 September 2026; see Polls. |
 | `GET /channels/{channel}/polls/{message}/answers/{answer}` | Visible voter popover; `limit=100&type=2`, optional `after` user ID; response `users`. | Fresh official voter-modal capture and public pagination contract, 19 September 2026. |
@@ -1668,6 +1669,19 @@ implementation records.
   across an unloaded range. Gateway arrivals remain outside a historical
   window until forward pagination reaches them or the user returns to the
   newest window.
+- A bare HTTPS URL on `cdn`/`media`/`images` Discord CDN hosts (including
+  subdomains and hyphen-suffixed variants) with an `/attachments/` or
+  `/ephemeral-attachments/` path renders as a paperclip and its undecoded
+  file name, matching the first-party `attachmentLink` rule in stable web
+  build `622805` (28 September 2026). The rule is anchored only at its start,
+  so a query stops at characters outside `[A-Za-z0-9?&=_-]`. Angle-bracket,
+  masked, and code-span URLs keep their ordinary presentation; profile widgets
+  exclude the rule. Activation refreshes the URL only when needed, as described
+  in the route table. SakuraCord deliberately applies that refresh to any
+  activated link whose complete URL matches the rule, because its click paths
+  carry only the URL; the first-party client refreshes only attachment-link
+  clicks and its "Copy link" item, and SakuraCord has no message link context
+  menu. Neither client refreshes image embeds, attachments, or the media viewer.
 - Pin pages remain account- and channel-scoped session memory. The `pinned`
   field is retained through history, search, complete Gateway messages, and
   omitted-field partial updates. A `CHANNEL_PINS_UPDATE` invalidates only its

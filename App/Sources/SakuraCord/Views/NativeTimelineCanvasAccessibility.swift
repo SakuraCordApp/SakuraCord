@@ -1006,7 +1006,9 @@ extension NativeTimelineCanvasView {
                         url,
                         model: self.model,
                         sourceMessage: sourceMessage,
-                        displayedText: linkLabel,
+                        displayedText: MessageLinkActivator.safetyDisplayedText(
+                            in: input.value.attributedSubstring(from: range)
+                        ),
                         presentSystemProfile: { [weak self] user in
                             self?.showMessageProfile(
                                 for: user,

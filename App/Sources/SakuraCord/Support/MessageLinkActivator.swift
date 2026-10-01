@@ -18,6 +18,29 @@ enum MessageLinkActivator {
         }
     }
 
+    /// Compact filename runs are not claimed destination addresses. Preserve
+    /// explicit labels, including masked URLs, for host-mismatch protection.
+    static func safetyDisplayedText(in value: NSAttributedString) -> String? {
+        var hasExplicitLabel = false
+        value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) { attributes, _, _ in
+            if attributes[.discordMarkdownAttachmentLink] == nil,
+               attributes[.discordAttachmentLinkIcon] == nil {
+                hasExplicitLabel = true
+            }
+        }
+        return hasExplicitLabel ? value.string : nil
+    }
+
+    static func safetyDisplayedText(in value: NSAttributedString, at index: Int) -> String? {
+        guard index >= 0, index < value.length else { return nil }
+        var range = NSRange(location: 0, length: 0)
+        guard value.attribute(
+            .link, at: index, longestEffectiveRange: &range,
+            in: NSRange(location: 0, length: value.length)
+        ) != nil else { return nil }
+        return safetyDisplayedText(in: value.attributedSubstring(from: range))
+    }
+
     static func activate(
         _ url: URL,
         model: AppModel?,
@@ -25,7 +48,7 @@ enum MessageLinkActivator {
         displayedText: String? = nil,
         presentSystemProfile: ((User) -> Void)? = nil,
         customHandler: (URL) -> Bool = { _ in false },
-        confirmExternal: (ExternalLinkSafetyAssessment) -> Void = {
+        confirmExternal: @escaping (ExternalLinkSafetyAssessment) -> Void = {
             ExternalLinkConfirmationPresenter.shared.present($0)
         }
     ) -> Bool {
@@ -72,7 +95,14 @@ enum MessageLinkActivator {
                 )
             }
         case .web:
-            if !customHandler(url) {
+            if customHandler(url) { break }
+            if let model, DiscordAttachmentLink.matches(url) {
+                Task {
+                    await model.openAttachmentLink(url) {
+                        confirmExternal(ExternalLinkSafetyPolicy.assess($0, displayedText: displayedText))
+                    }
+                }
+            } else {
                 confirmExternal(
                     ExternalLinkSafetyPolicy.assess(
                         url,
@@ -86,6 +116,24 @@ enum MessageLinkActivator {
 }
 
 extension AppModel {
+    /// Opens a Discord attachment link, first asking Discord to re-sign it
+    /// when it is unsigned or expires within the hour.
+    func openAttachmentLink(_ url: URL, open: (URL) -> Void) async {
+        guard DiscordAttachmentLink.needsRefresh(url, now: .now) else {
+            open(url)
+            return
+        }
+        let session = accountSession()
+        do {
+            let refreshed = try await session.provider.refreshAttachmentURL(url)
+            guard isCurrentAccountSession(session) else { return }
+            open(refreshed ?? url)
+        } catch {
+            guard isCurrentAccountSession(session) else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func systemMessageUser(
         userID: UserID,
         sourceMessage: Message? = nil

@@ -965,7 +965,7 @@ public final class DiscordAPIDiagnosticStore: @unchecked Sendable {
             let segment = String(rawSegment)
             if redactedChildCount > 0 {
                 redactedChildCount -= 1
-                guard segment != "@me" else { return segment }
+                guard segment != "@me", segment != "refresh-urls" else { return segment }
                 return "<redacted-id>"
             }
             redactedChildCount = identifierChildCounts[segment.lowercased()] ?? 0

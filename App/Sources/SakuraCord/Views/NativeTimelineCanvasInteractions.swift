@@ -560,7 +560,8 @@ extension NativeTimelineCanvasView {
         guard textRegion.value.attribute(
             .link,
             at: pointerHit.hit.characterIndex,
-            effectiveRange: &linkRange
+            longestEffectiveRange: &linkRange,
+            in: NSRange(location: 0, length: textRegion.value.length)
         ) != nil,
             let localFrame = NativeTimelineTextHitTester.rangeFrame(
                 value: textRegion.value,
@@ -685,6 +686,7 @@ extension NativeTimelineCanvasView {
             url,
             model: model,
             sourceMessage: message,
+            displayedText: hit.displayedText,
             presentSystemProfile: presentSystemProfile
         )
     }

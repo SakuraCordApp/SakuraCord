@@ -252,12 +252,13 @@ struct SelectableMessageTextView: NSViewRepresentable {
             richTextView.attributedString().attribute(
                 .link,
                 at: charIndex,
-                effectiveRange: &linkRange
+                longestEffectiveRange: &linkRange,
+                in: NSRange(location: 0, length: richTextView.attributedString().length)
             )
             let displayedText = linkRange.length > 0
-                ? richTextView.attributedString().attributedSubstring(
-                    from: linkRange
-                ).string
+                ? MessageLinkActivator.safetyDisplayedText(
+                    in: richTextView.attributedString().attributedSubstring(from: linkRange)
+                )
                 : nil
             return MessageLinkActivator.activate(
                 url,
@@ -430,7 +431,48 @@ nonisolated enum RichMessageAttributedText {
                 )
             }
         }
+        insertAttachmentLinkIcons(in: output, font: baseFont)
         return output
+    }
+
+    /// Places a link-colored paperclip before each attachment link's file name.
+    @MainActor
+    private static func insertAttachmentLinkIcons(
+        in output: NSMutableAttributedString,
+        font: NSFont
+    ) {
+        var locations: [Int] = []
+        output.enumerateAttribute(
+            .link, in: NSRange(location: 0, length: output.length)
+        ) { value, range, _ in
+            guard value != nil,
+                  output.attribute(.discordMarkdownAttachmentLink, at: range.location, effectiveRange: nil) != nil
+            else { return }
+            locations.append(range.location)
+        }
+        guard !locations.isEmpty else { return }
+        let size = NativeTimelineCoreText.attachmentLinkIconSize(font: font)
+        let attachment = NSTextAttachment()
+        attachment.image = NSImage(systemSymbolName: "paperclip", accessibilityDescription: nil)?
+            .withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: size, weight: .medium)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [.linkColor]))
+            )
+        attachment.bounds = CGRect(
+            x: 0,
+            y: ComposerEmojiAttributedText.attachmentOriginY(font: font, size: size),
+            width: size,
+            height: size
+        )
+        for location in locations.reversed() {
+            var attributes = output.attributes(at: location, effectiveRange: nil)
+            attributes[.discordMarkdownAttachmentLink] = nil
+            attributes[.discordAttachmentLinkIcon] = NSNumber(value: true)
+            attributes[.kern] = NativeTimelineCoreText.attachmentLinkIconSpacing
+            let icon = NSMutableAttributedString(attachment: attachment)
+            icon.addAttributes(attributes, range: NSRange(location: 0, length: icon.length))
+            output.insert(icon, at: location)
+        }
     }
 
     private static func ranges(of value: String, in source: String) -> [NSRange] {
@@ -491,6 +533,8 @@ enum RichMessageCopySerializer {
         value.enumerateAttributes(in: range) { attributes, effectiveRange, _ in
             if let token = (attributes[.discordEmojiToken] ?? attributes[.discordMentionToken]) as? String {
                 output += token
+            } else if attributes[.discordAttachmentLinkIcon] != nil {
+                return
             } else {
                 output += value.attributedSubstring(from: effectiveRange).string
             }
@@ -652,7 +696,8 @@ final class RichMessageNSTextView: NSTextView {
         let rawLink = attributedString().attribute(
             .link,
             at: index,
-            effectiveRange: &range
+            longestEffectiveRange: &range,
+            in: NSRange(location: 0, length: attributedString().length)
         )
         let url: URL? = switch rawLink {
         case let value as URL:

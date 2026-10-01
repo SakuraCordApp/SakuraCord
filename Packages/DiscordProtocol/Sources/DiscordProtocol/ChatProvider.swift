@@ -144,6 +144,8 @@ public protocol ChatProvider: Sendable {
     func setPollAnswers(_ answerIDs: [Int], messageID: MessageID, channelID: ChannelID) async throws
     func pollVoters(messageID: MessageID, channelID: ChannelID, answerID: Int, after: UserID?, limit: Int) async throws -> PollVoterPage
     func endPoll(messageID: MessageID, channelID: ChannelID) async throws -> Message
+    /// Returns a freshly signed copy of a Discord attachment URL, or nil when Discord returns none.
+    func refreshAttachmentURL(_ url: URL) async throws -> URL?
     func forward(_ draft: ForwardMessageDraft) async throws -> Message
     func supports(_ capability: ChatCapability) async -> Bool
     func applicationCommandCatalog(for target: ApplicationCommandIndexTarget) async throws
@@ -1004,5 +1006,8 @@ public extension ChatProvider {
     }
     func endPoll(messageID: MessageID, channelID: ChannelID) async throws -> Message {
         throw ChatProviderError.invalidRequest("Ending polls is unavailable.")
+    }
+    func refreshAttachmentURL(_ url: URL) async throws -> URL? {
+        throw ChatProviderError.invalidRequest("Opening attachment links is unavailable.")
     }
 }

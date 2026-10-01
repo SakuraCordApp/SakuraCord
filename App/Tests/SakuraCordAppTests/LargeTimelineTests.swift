@@ -2382,3 +2382,25 @@ private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
     )
     return bytes
 }
+
+@MainActor @Test
+func `attachment links draw a paperclip in timeline and text view surfaces and copy only the name`() throws {
+    let url = "https://cdn.discordapp.com/attachments/1/2/funnyGiff.gif"
+    let message = Message(
+        id: MessageID(rawValue: 98_101),
+        channelID: ChannelID(rawValue: 98_102),
+        author: User(id: UserID(rawValue: 98_103), username: "link.fixture", displayName: "Link Fixture"),
+        content: "Look \(url)"
+    )
+    let timeline = try #require(NativeTimelineTextPlan.make(for: message).attributedText?.value)
+    let prepared = try #require(NativeTimelineTextPlan.make(for: message).preparedText)
+    let textView = RichMessageAttributedText.make(prepared: prepared, emojiSize: 22, mentionPresentations: [:])
+    for value in [timeline, textView] {
+        let icon = (value.string as NSString).range(of: "\u{FFFC}")
+        #expect(icon.location == 5)
+        #expect(value.attribute(.discordAttachmentLinkIcon, at: icon.location, effectiveRange: nil) != nil)
+        #expect(value.attribute(.link, at: icon.location, effectiveRange: nil) as? URL == URL(string: url))
+        #expect(RichMessageCopySerializer.string(from: value, range: NSRange(location: 0, length: value.length))
+            == "Look funnyGiff.gif")
+    }
+}

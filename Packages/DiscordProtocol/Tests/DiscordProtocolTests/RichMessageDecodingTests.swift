@@ -228,6 +228,50 @@ import Testing
     #expect(message.mentionedUsers.first?.displayName == "Server Nick")
 }
 
+@Test func `image embeds promote a thumbnail-only signed GIF to their image`() throws {
+    let source = "https://cdn.discordapp.com/attachments/1/2/cat.gif"
+    let signed = "https://cdn.discordapp.com/attachments/1/2/cat.gif?ex=1&is=2&hm=3&"
+    let signedProxy = "https://media.discordapp.net/attachments/1/2/cat.gif?ex=1&is=2&hm=3&"
+    let media = #"""
+        {"url":"\#(signed)","proxy_url":"\#(signedProxy)","width":498,"height":280,
+         "content_type":"image/gif","placeholder":"thumbhash","placeholder_version":1,"flags":32}
+        """#
+    let data = Data(
+        #"""
+        {
+          "id":"100","channel_id":"200","type":0,
+          "author":{"id":"1","username":"fixture"},
+          "content":"\#(source)","timestamp":"2026-09-28T10:00:00.000Z","attachments":[],
+          "embeds":[
+            {"type":"image","url":"\#(source)","thumbnail":\#(media)},
+            {"type":"image","url":"\#(source)","image":{"url":"https://cdn.example/explicit.png"},
+             "thumbnail":\#(media)},
+            {"type":"article","url":"https://example.com","thumbnail":\#(media)}
+          ]
+        }
+        """#.utf8
+    )
+
+    let embeds = try RichMessageFixtureDecoder.decodeMessage(from: data).embeds
+    #expect(embeds.count == 3)
+    let promoted = try #require(embeds[0].image)
+    #expect(embeds[0].url?.absoluteString == source)
+    #expect(embeds[0].thumbnail == nil)
+    #expect(promoted.url?.absoluteString == signed)
+    #expect(promoted.proxyURL?.absoluteString == signedProxy)
+    #expect(promoted.width == 498)
+    #expect(promoted.height == 280)
+    #expect(promoted.contentType == "image/gif")
+    #expect(promoted.placeholder == "thumbhash")
+    #expect(promoted.flags == 32)
+
+    #expect(embeds[1].image?.url?.absoluteString == "https://cdn.example/explicit.png")
+    #expect(embeds[1].thumbnail?.url?.absoluteString == signed)
+
+    #expect(embeds[2].image == nil)
+    #expect(embeds[2].thumbnail?.url?.absoluteString == signed)
+}
+
 @Test func `welcome messages and standard lottie stickers retain renderable metadata`() throws {
     let data = Data(
         #"""

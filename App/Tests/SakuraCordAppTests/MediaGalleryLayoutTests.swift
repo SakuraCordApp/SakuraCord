@@ -110,6 +110,18 @@ func `linked emoji previews replace duplicate Discord bare media embeds`() throw
 
     #expect(MessageEmbedPresentation.kind(for: MessageEmbed(type: "rich")) == .hidden)
     #expect(MessageEmbedPresentation.kind(for: MessageEmbed(title: "Preview", type: "rich")) == .card)
+
+    let gifURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/cat.gif"))
+    let signedGIFURL = try #require(URL(string: "\(gifURL.absoluteString)?ex=1&is=2&hm=3&"))
+    let gif = MessageEmbed(
+        type: "image", url: gifURL,
+        image: MessageEmbedMedia(url: signedGIFURL, contentType: "image/gif", flags: 32)
+    )
+    #expect(MessageEmbedPresentation.kind(for: gif) == .bareMedia)
+    #expect(MessageEmbedPresentation.visibleMessageContent(gifURL.absoluteString, embeds: [gif]).isEmpty)
+    let gifItem = try #require(RichMediaItem(embed: gif, attachments: []))
+    #expect(gifItem.url == signedGIFURL)
+    #expect(gifItem.kind == .image(animated: true))
 }
 
 @MainActor @Test

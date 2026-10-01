@@ -24,6 +24,12 @@ public extension NSAttributedString.Key {
     static let discordMarkdownListMarker = NSAttributedString.Key(
         "dev.sakuracord.markdown.list-marker"
     )
+
+    /// Marks the file name of a Discord attachment link. Renderers place a
+    /// paperclip before it. The value is an NSNumber boolean.
+    static let discordMarkdownAttachmentLink = NSAttributedString.Key(
+        "dev.sakuracord.markdown.attachment-link"
+    )
 }
 
 public enum DiscordMarkdown {
@@ -48,6 +54,7 @@ public enum DiscordMarkdown {
             fileprivate let traits: InlineTraits
             fileprivate let link: URL?
             fileprivate let color: SemanticColor?
+            fileprivate var isAttachmentLink = false
         }
 
         fileprivate struct InlineTraits: OptionSet, Hashable, Sendable {
@@ -422,6 +429,7 @@ public enum DiscordMarkdown {
             attributes[.link] = link
             attributes[.foregroundColor] = NSColor.linkColor
         }
+        if run.isAttachmentLink { attributes[.discordMarkdownAttachmentLink] = NSNumber(value: true) }
         if run.traits.contains(.spoiler) {
             let spoilerColor = NSColor.secondaryLabelColor.withAlphaComponent(0.42)
             attributes[.backgroundColor] = spoilerColor
@@ -635,7 +643,7 @@ public enum DiscordMarkdown {
                    in: source,
                    at: cursor,
                    traits: inheritedTraits,
-                   anchored: sourceCollector != nil
+                   anchored: sourceCollector != nil, attachmentLinks: sourceCollector == nil && !widgetRules
                )
             {
                 flushPlain()
@@ -750,8 +758,13 @@ public enum DiscordMarkdown {
         in source: Substring,
         at cursor: String.Index,
         traits: AppKitPlan.InlineTraits,
-        anchored: Bool = false
+        anchored: Bool = false,
+        attachmentLinks: Bool = false
     ) -> (run: AppKitPlan.InlineRun, endIndex: String.Index)? {
+        if attachmentLinks, let attachment = DiscordAttachmentLink.prefix(of: source[cursor...]) {
+            let run = AppKitPlan.InlineRun(text: attachment.link.name, traits: traits, link: attachment.link.url, color: nil, isAttachmentLink: true)
+            return (run, attachment.endIndex)
+        }
         guard let match = firstURL(in: source[cursor...], anchored: anchored),
               match.range.lowerBound == cursor
         else { return nil }

@@ -1,6 +1,6 @@
 import Foundation
 
-private enum MessageRegularExpression {
+enum MessageRegularExpression {
     static func make(_ pattern: String) -> NSRegularExpression {
         do {
             return try NSRegularExpression(pattern: pattern)
