@@ -26,6 +26,7 @@ struct ExpandedProfileView: View {
                 }
         })
         .environment(\.profileCosmeticPolicy, model.cosmeticPolicy)
+        .environment(\.serverTagCardModel, model)
         .windowModalSize(width: 820, height: 720)
         .background(ProfileVerticalScrollInput())
         .accessibilityElement(children: .contain)

@@ -7,6 +7,7 @@ import SwiftUI
 @MainActor
 final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var cosmeticPolicy = ProfileCosmeticPolicy()
+    weak var serverTagCardModel: AppModel?
 
     nonisolated struct Header: Equatable, Sendable {
         let id: MemberSection.SectionIdentifier

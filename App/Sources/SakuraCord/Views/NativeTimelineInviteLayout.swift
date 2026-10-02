@@ -25,15 +25,14 @@ struct NativeServerCardContent {
         onlineCount = invite.onlineCount
     }
 
-    init(profile: GuildGuideProfile, iconURL: URL?, adaptiveColor: UInt32? = nil) {
+    init(profile: GuildProfile, iconURL: URL?, adaptiveColor: UInt32? = nil) {
         guildID = profile.id
         name = profile.name
         self.iconURL = iconURL
         inviter = nil
-        brandColor = profile.brandColorPrimary.flatMap { UInt32($0.replacingOccurrences(of: "#", with: ""), radix: 16) } ?? adaptiveColor
+        brandColor = profile.brandColor ?? adaptiveColor
         description = profile.description
-        traits = profile.traits.map { .init(label: $0.label, emoji: $0.emojiName,
-            emojiURL: $0.emojiID.flatMap { URL(string: "https://cdn.discordapp.com/emojis/\($0).webp?size=32") }) }
+        traits = profile.traits.map { .init(label: $0.label, emoji: $0.emojiName, emojiURL: $0.emojiURL) }
         memberCount = profile.memberCount
         onlineCount = profile.onlineCount
     }

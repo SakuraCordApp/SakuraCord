@@ -133,6 +133,7 @@ final class NativeMemberListCoordinator: NSObject {
         }
         let cosmeticsChanged = canvas.cosmeticPolicy != parent.cosmeticPolicy
         canvas.cosmeticPolicy = parent.cosmeticPolicy
+        canvas.serverTagCardModel = parent.serverTagCardModel
         canvas.openProfile = parent.openProfile
         canvas.modalInputDidChange()
         AppPerformanceSignposts.measureSync("MemberListCanvasUpdate") {

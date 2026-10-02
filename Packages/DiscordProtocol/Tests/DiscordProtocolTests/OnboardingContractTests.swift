@@ -86,7 +86,7 @@ struct OnboardingContractTests {
         let guide = try await provider.guildGuide(in: .init(rawValue: 100))
         #expect(guide.resourceChannels.first?.channelID == .init(rawValue: 200))
         #expect(guide.newMemberActions.first?.actionType == 0)
-        let profile = try await provider.guildGuideProfile(in: .init(rawValue: 100))
+        let profile = try await provider.guildProfile(in: .init(rawValue: 100))
         #expect(profile.memberCount == 2)
         #expect(capture.requests.contains { $0.url?.path == "/api/v9/guilds/100/profile" && $0.httpMethod == "GET" })
         #expect(capture.requests.allSatisfy { $0.httpMethod == "GET" })

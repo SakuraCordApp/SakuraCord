@@ -51,24 +51,3 @@ public struct GuildGuideProgress: Decodable, Equatable, Sendable {
         case guildID = "guild_id", userID = "user_id", channelActions = "channel_actions"
     }
 }
-
-/// Public server information displayed beside its guide.
-public struct GuildGuideProfile: Decodable, Equatable, Sendable {
-    public var id: GuildID
-    public var name: String
-    public var description: String?
-    public var memberCount: Int
-    public var onlineCount: Int
-    public var brandColorPrimary: String?
-    public var traits: [Trait]
-    public struct Trait: Decodable, Equatable, Sendable {
-        public var label: String
-        public var emojiName: String?
-        public var emojiID: String?
-        enum CodingKeys: String, CodingKey { case label, emojiName = "emoji_name", emojiID = "emoji_id" }
-    }
-    enum CodingKeys: String, CodingKey {
-        case id, name, description, traits
-        case memberCount = "member_count", onlineCount = "online_count", brandColorPrimary = "brand_color_primary"
-    }
-}

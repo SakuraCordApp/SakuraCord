@@ -94,8 +94,9 @@ extension NativeTimelineRowPainter {
     }
 
     /// The first-party profile gradient brightens the preset by 1.75 CIELAB steps (31.5 L*).
-    private static func inviteGradient(_ hex: UInt32, in frame: CGRect) {
-        guard let context = NSGraphicsContext.current?.cgContext, frame.height > 0 else { return }
+    /// Server tag cards pass their own top-left-origin context.
+    static func inviteGradient(_ hex: UInt32, in frame: CGRect, context: CGContext? = nil) {
+        guard let context = context ?? NSGraphicsContext.current?.cgContext, frame.height > 0 else { return }
         let base = NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255,
                            green: CGFloat((hex >> 8) & 255) / 255, blue: CGFloat(hex & 255) / 255, alpha: 1)
         let bright = inviteBrightColor(base)

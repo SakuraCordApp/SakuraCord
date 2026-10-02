@@ -6,6 +6,7 @@ import SwiftUI
 
 struct NativeMemberListView: NSViewRepresentable {
     @Environment(\.profileCosmeticPolicy) var cosmeticPolicy
+    @Environment(\.serverTagCardModel) var serverTagCardModel
     let sections: [MemberSection]
     let customEmojiURLsByID: CustomEmojiImageURLs
     let profilePresentation: ProfilePresentationState?

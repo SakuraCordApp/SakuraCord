@@ -562,7 +562,7 @@ reference for completed joining.
   uses the response site key and rqdata, the Discord origin, and the documented
   [normal/invisible widget modes](https://docs.hcaptcha.com/configuration).
   SakuraCord permits a supported hCaptcha response only on the invite acceptance
-  route without stopping account networking. One human completion resubmits the
+  and discoverable full-join routes without stopping account networking. One human completion resubmits the
   original body/context once, on the same provider and Gateway session, with
   no automatic retry. Cancellation, account invalidation, empty solutions,
   another challenge, and ambiguous failures terminate that attempt. This
@@ -846,6 +846,22 @@ Pinned Paicord and Swiftcord contain no comparable guide progress implementation
 The official [Server Guide FAQ](https://support.discord.com/hc/en-us/articles/13497665141655-Server-Guide-FAQ)
 corroborates welcome signs, tasks, and resource-channel pages.
 
+### Server tag cards (29 September 2026)
+
+Static analysis of web build `622805` (asset `web.d4c7976eccf337f1.js`, lazy
+chunk `8565032d97279e47.js`) established the card opened from a user's server
+tag. Its `GET /guilds/{guild}/profile` fields beyond the guide's are
+non-obvious in three ways: `badge` is a numeric preset while the image uses
+`badge_hash`; `custom_banner_hash` is a discovery splash shown only for
+`DISCOVERABLE` servers; and `game_application_ids` are ranked by
+`game_activity[].activity_score`, then resolved through `GET /games`.
+
+Without an invite, the first-party card offers **Join** only for `DISCOVERABLE`
+servers; manual-approval screening with `visibility` 3 offers an application
+instead, which SakuraCord delegates to Discord. That Join first joins as a
+lurker and offers the full join from lurker mode. SakuraCord has no lurker mode,
+so it sends only the final full-membership request (see the route table).
+
 ### Evidence priority for protocol changes
 
 Every new or materially changed production communication with Discord must be
@@ -1001,6 +1017,8 @@ and retained as evidence.
 | `PATCH /users/@me` | Changed main identity fields: `global_name`, avatar data/description or `avatar_id`, `avatar_decoration_sku_id`, `nameplate_sku_id`, and the three `display_name_*` style fields. A returned credential is adopted before subsequent writes. | Clean September identity, style, history and upload actions; first-party main-profile save dispatcher. |
 | `PATCH /guilds/{guild}/members/@me` | Changed server identity fields use `nick`; a nameplate is `collectibles.nameplate.sku_id`, with `collectibles.nameplate:null` for inheritance. Other identity fields use the same names as main scope. | Clean September server identity, cosmetics, inheritance and image actions. |
 | `PATCH /users/%40me/profile` and `PATCH /guilds/{guild}/profile/%40me` | Changed `bio`, `pronouns`, `banner`, `accent_color`, ordered `theme_colors`, and `collectibles_sku_ids`. Preserve encoded `%40me` in these paths. | Clean September main/server metadata saves, clears and partial-save recovery. |
+| `GET /guilds/{guild}/profile` | Server Guide enrichment and explicit server tag card; no query or body. The response `id` must match. `403`/`50001` is a private profile and `404` is expected; neither stops account networking. | Current first-party guide and tag-card sources; P−, S−. |
+| `PUT /guilds/{guild}/members/@me?lurker=false` | Explicit **Join** on a discoverable server's tag card; body `{}` and `X-Context-Properties: e30=` (first-party `context:{}`), one attempt, at most one user-completed CAPTCHA replay. Existing members and screening-gated servers send nothing; `30001`/`40007` do not stop account networking. | First-party lurker-mode full join (see Server tag cards); Paicord has only the PATCH member route; S−. No live join was performed. |
 | `PUT /users/@me/clan` | Account-wide `identity_guild_id` and `identity_enabled`, editable from either main or server profiles; clearing sends null/false. One save reconciles the shared user and every cached profile without follow-up reads. Eligible guilds come from joined, nonpending Gateway memberships with `GUILD_TAGS` and a tag. | Clean September tag selection/removal and first-party eligibility resolver; 10 September editor-scope correction and cache-reconciliation coverage. |
 | `PATCH /users/@me/settings-proto/1` | Custom-status update or status pick; JSON contains `settings`, plus `required_data_version` when the write carries a pending status edit with a recorded data version. Send root field 11 with the retained status settings, replacing or removing custom-status field 2, or setting status field 1 as described under dispatch reconciliation, while preserving siblings and unknown fields. Reconcile the authoritative returned settings, including an `out_of_date` response. `400` / `50105` does not open the safety circuit: the status and Inbox writers reload with `GET /users/@me/settings-proto/1`. | Clean September status saves, clears and expiry; first-party protobuf/settings implementation; web build `622805` status pick and settings engine. |
 | `GET /users/@me/settings-proto/1` | Only after `400` / `50105` from a settings-proto/1 PATCH; no body. The returned proto is applied as a full type-1 settings update. | Web build `622805` module `594061` `loadIfNecessary(true)`; Paicord, Swiftcord v1 and DiscordKit have no reload path. |

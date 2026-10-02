@@ -108,9 +108,7 @@ struct GuildGuideView: View {
     }
 
     private var bannerColor: UInt32? {
-        entry.profile?.brandColorPrimary.flatMap {
-            UInt32($0.replacingOccurrences(of: "#", with: ""), radix: 16)
-        } ?? previewColor
+        entry.profile?.brandColor ?? previewColor
     }
 
     private func serverIcon(size: CGFloat) -> some View {
@@ -170,7 +168,7 @@ struct GuildGuideView: View {
         .background(compact ? AnyShapeStyle(.background) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 12))
     }
 
-    private func serverProfile(_ profile: GuildGuideProfile) -> some View {
+    private func serverProfile(_ profile: GuildProfile) -> some View {
         let card = NativeTimelineInviteLayout(index: 0, origin: .zero, maximumWidth: 280,
             model: nil, isOwnMessage: false, fillsWidth: true,
             preview: NativeServerCardContent(profile: profile, iconURL: guild?.iconURL, adaptiveColor: previewColor))

@@ -18,15 +18,22 @@ public struct DiscordCaptchaChallenge: Equatable, Identifiable, Sendable {
         self.shouldServeInvisible = shouldServeInvisible
     }
 
-    static func inviteChallenge(data: Data, status: Int, method: String, path: String) -> Self? {
-        let segments = path.split(separator: "/")
-        guard status == 400, method == "POST", segments.count == 2, segments[0] == "invites",
+    static func joinChallenge(data: Data, status: Int, method: String, path: String) -> Self? {
+        guard status == 400, isJoinRoute(method: method, path: path),
               let payload = try? JSONDecoder().decode(Payload.self, from: data),
               payload.service == "hcaptcha", !payload.key.isEmpty,
               !payload.siteKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return Self(siteKey: payload.siteKey, rqdata: payload.rqdata,
                     rqtoken: payload.rqtoken, sessionID: payload.sessionID,
                     shouldServeInvisible: payload.shouldServeInvisible ?? false)
+    }
+
+    /// Explicit server joins: invite acceptance and a discoverable server's full-membership request.
+    static func isJoinRoute(method: String, path: String) -> Bool {
+        let segments = path.split(separator: "/")
+        if method == "POST", segments.count == 2, segments[0] == "invites" { return true }
+        return method == "PUT" && segments.count == 4 && segments[0] == "guilds" && UInt64(segments[1]) != nil
+            && segments[2] == "members" && segments[3] == "@me"
     }
 
     private struct Payload: Decodable {

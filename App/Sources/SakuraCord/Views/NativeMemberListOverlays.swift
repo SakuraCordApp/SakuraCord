@@ -371,7 +371,8 @@ extension NativeMemberListCanvasView {
             },
             presentationIdentity: AnyHashable(presentation.member.id),
             content: AnyView(ProfilePresentationContent(presentation: presentation, openProfile: openProfile)
-                .environment(\.profileCosmeticPolicy, cosmeticPolicy))
+                .environment(\.profileCosmeticPolicy, cosmeticPolicy)
+                .environment(\.serverTagCardModel, serverTagCardModel))
         )
     }
 

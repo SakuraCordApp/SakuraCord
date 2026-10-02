@@ -10,7 +10,7 @@ nonisolated enum GuildWorkspacePage: Hashable, Sendable {
 struct GuildGuideEntry {
     let identity = UUID()
     var configuration: GuildGuide?
-    var profile: GuildGuideProfile?
+    var profile: GuildProfile?
     var progress: GuildGuideProgress?
     var progressRevision: UInt64 = 0
     var isLoading = false
@@ -126,7 +126,7 @@ extension AppModel {
             do {
                 async let configuration = account.provider.guildGuide(in: guildID)
                 async let progress = account.provider.guildGuideProgress(in: guildID)
-                async let profile = try? account.provider.guildGuideProfile(in: guildID)
+                async let profile = try? account.provider.guildProfile(in: guildID)
                 let (guide, actions, serverProfile) = try await (configuration, progress, profile)
                 guard model.isCurrentAccountSession(account), !Task.isCancelled, model.onboarding.guides[guildID]?.identity == identity else { return }
                 model.onboarding.guides[guildID]?.configuration = guide

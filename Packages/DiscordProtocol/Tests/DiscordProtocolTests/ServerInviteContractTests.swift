@@ -132,6 +132,72 @@ struct ServerInviteContractTests {
         }
     }
 
+    @Test func `discoverable profile join sends one full membership request and resumes CAPTCHA once`() async throws {
+        let capture = InviteRequestCapture()
+        let provider = try await makeProvider(capture.id)
+        #expect(try await !provider.joinDiscoverableGuild(.init(rawValue: 950), captchaHandler: nil))
+        let request = try #require(capture.requests.last)
+        #expect(request.httpMethod == "PUT")
+        #expect(request.url?.path == "/api/v9/guilds/950/members/@me")
+        #expect(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "lurker", value: "false")])
+        #expect(request.httpBody == Data("{}".utf8))
+        #expect(request.value(forHTTPHeaderField: "X-Context-Properties") == "e30=")
+
+        _ = try await provider.joinDiscoverableGuild(.init(rawValue: 951)) { challenge in
+            #expect(challenge.siteKey == "site-key")
+            #expect(await !provider.requestSafetyCircuitIsOpen)
+            return "human-solution"
+        }
+        let writes = capture.requests.filter { $0.httpMethod == "PUT" }
+        #expect(writes.count == 3)
+        #expect(writes[1].url == writes[2].url)
+        #expect(writes[1].value(forHTTPHeaderField: "X-Captcha-Key") == nil)
+        #expect(writes[2].value(forHTTPHeaderField: "X-Captcha-Key") == "human-solution")
+
+        await #expect(throws: ServerInviteError.banned) { _ = try await provider.joinDiscoverableGuild(.init(rawValue: 952), captchaHandler: nil) }
+        await provider.seedInviteGuild(owner: false)
+        _ = try await provider.joinDiscoverableGuild(.init(rawValue: 900), captchaHandler: nil)
+        #expect(capture.requests.filter { $0.httpMethod == "PUT" }.count == 4)
+        #expect(await !provider.requestSafetyCircuitIsOpen)
+
+        let challenge = Data(InviteURLProtocol.challenge.utf8)
+        #expect(!DiscordRESTProvider.isSafetyStop(status: 400, discordCode: nil, method: "PUT", data: challenge, path: "/guilds/950/members/@me"))
+        #expect(!DiscordRESTProvider.isSafetyStop(status: 400, discordCode: 30001, method: "PUT", data: Data(), path: "/guilds/950/members/@me"))
+        #expect(DiscordRESTProvider.isSafetyStop(status: 400, discordCode: nil, method: "PUT", data: challenge, path: "/guilds/950/members/960"))
+        #expect(DiscordRESTProvider.isSafetyStop(status: 400, discordCode: nil, method: "PATCH", data: challenge, path: "/guilds/950/members/@me"))
+        await provider.disconnect()
+    }
+
+    @Test func `profiles limited to members are private without stopping account traffic`() async throws {
+        let capture = InviteRequestCapture()
+        let provider = try await makeProvider(capture.id)
+        await #expect(throws: GuildProfileError.restricted) { _ = try await provider.guildProfile(in: .init(rawValue: 953)) }
+        #expect(capture.requests.last?.url?.path == "/api/v9/guilds/953/profile")
+        #expect(DiscordRESTProvider.isExpectedResourceNotFound(method: "GET", path: "/guilds/953/profile"))
+        #expect(await !provider.requestSafetyCircuitIsOpen)
+        #expect(try await provider.guildProfile(in: .init(rawValue: 950)).name == "Parks")
+        await provider.disconnect()
+    }
+
+    @Test(arguments: [
+        (#"["DISCOVERABLE"]"#, 1, true),
+        (#"["DISCOVERABLE","MEMBER_VERIFICATION_GATE_ENABLED","MEMBER_VERIFICATION_MANUAL_APPROVAL"]"#, 3, false),
+        (#"["MEMBER_VERIFICATION_GATE_ENABLED","MEMBER_VERIFICATION_MANUAL_APPROVAL"]"#, 2, false),
+        ("[]", 1, false),
+    ])
+    func `server profiles offer joining only where the first party profile does`(features: String, visibility: Int, joinable: Bool) throws {
+        let profile = try JSONDecoder().decode(GuildProfile.self, from: Data("""
+        {"id":"950","name":"Parks","icon_hash":"icon","custom_banner_hash":"splash","brand_color_primary":"",
+         "visibility":\(visibility),"features":\(features),"game_application_ids":["1","2"],
+         "game_activity":{"2":{"activity_level":1,"activity_score":9}},"tag":"PARK","badge":2,"badge_hash":"hash"}
+        """.utf8))
+        #expect(profile.isDirectlyJoinable == joinable)
+        #expect(profile.brandColor == nil)
+        #expect((profile.bannerURL != nil) == profile.isDiscoverable)
+        #expect(profile.rankedGameApplicationIDs == ["2", "1"])
+        #expect(profile.badgeHash == "hash")
+    }
+
     @Test func `invite creation sends the observed settings once and keeps limit failures local`() async throws {
         let capture = InviteRequestCapture()
         let provider = try await makeProvider(capture.id)
@@ -243,6 +309,7 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
         var capturedRequest = request
         capturedRequest.httpBody = data
         NotificationCenter.default.post(name: Self.captured, object: capturedRequest)
+        if request.httpMethod == "PUT" || request.url!.lastPathComponent == "profile" { return joinGuild() }
         if request.url!.path.hasPrefix("/api/v9/channels/") {
             let limited = request.url!.path.contains("/903/")
             let body = limited ? #"{"code":30016,"message":"Maximum number of invites reached"}"# : """
@@ -289,5 +356,19 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
         if status != 204 { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
         client?.urlProtocolDidFinishLoading(self)
     }
+    private func joinGuild() {
+        let components = request.url!.pathComponents
+        let guildID = components[components.firstIndex(of: "guilds")! + 1]
+        let hasSolution = request.value(forHTTPHeaderField: "X-Captcha-Key") != nil
+        let (status, body) = guildID == "951" && !hasSolution ? (400, Self.challenge)
+            : guildID == "952" ? (403, #"{"code":40007,"message":"The user is banned from this guild."}"#)
+            : guildID == "953" ? (403, #"{"code":50001,"message":"Missing Access"}"#)
+            : (200, #"{"id":"\#(guildID)","name":"Parks","features":["DISCOVERABLE"]}"#)
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
     override func stopLoading() {}
 }

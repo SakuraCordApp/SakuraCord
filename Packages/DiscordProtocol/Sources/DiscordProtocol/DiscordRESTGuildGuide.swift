@@ -2,8 +2,11 @@ import Foundation
 import SakuraCordModels
 
 public extension DiscordRESTProvider {
-    func guildGuideProfile(in guildID: GuildID) async throws -> GuildGuideProfile {
-        let value: GuildGuideProfile = try await request("/guilds/\(guildID)/profile")
+    func guildProfile(in guildID: GuildID) async throws -> GuildProfile {
+        // Servers that limit profile visibility answer Missing Access; the first-party card presents them as private.
+        let value: GuildProfile = try await request("/guilds/\(guildID)/profile") { status, code in
+            status == 403 && code == 50001 ? GuildProfileError.restricted : nil
+        }
         guard value.id == guildID else { throw ChatProviderError.invalidRequest("Discord returned a different server’s profile.") }
         return value
     }
