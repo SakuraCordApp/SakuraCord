@@ -540,7 +540,8 @@ struct NativeTimelineRowLayout {
         item: NativeMessageTimelineItem,
         width proposedWidth: CGFloat,
         model: AppModel? = nil,
-        metrics: Metrics? = nil
+        metrics: Metrics? = nil,
+        relativeTo date: Date = .now
     ) -> Self {
         let width = max(220, proposedWidth)
         switch item {
@@ -576,7 +577,8 @@ struct NativeTimelineRowLayout {
                 isUnreadBoundary: isUnreadBoundary,
                 width: width,
                 model: model,
-                metrics: metrics ?? Metrics(settings: model?.interfaceSettings ?? .defaults)
+                metrics: metrics ?? Metrics(settings: model?.interfaceSettings ?? .defaults),
+                relativeTo: date
             )
         }
     }
@@ -637,6 +639,7 @@ struct NativeTimelineRowLayout {
         let width: CGFloat
         let model: AppModel?
         let metrics: Metrics
+        let timestampReferenceDate: Date
 
         var layout: NativeTimelineRowLayout {
         let message = row.message
@@ -657,7 +660,8 @@ struct NativeTimelineRowLayout {
         let usesComponentsV2 = message.flags.contains(.isComponentsV2)
         let unstyledContentPresentation = NativeTimelineTextPresentation.make(
             row: row,
-            model: model
+            model: model,
+            relativeTo: timestampReferenceDate
         )
         let contentPresentation = isOutgoingBubble
             ? NativeTimelineTextPresentation.outgoingBubble(
@@ -1383,14 +1387,16 @@ extension NativeTimelineRowLayout {
         isUnreadBoundary: Bool,
         width: CGFloat,
         model: AppModel?,
-        metrics: Metrics
+        metrics: Metrics,
+        relativeTo date: Date
     ) -> Self {
         MessageBuilder(
             row: row,
             isUnreadBoundary: isUnreadBoundary,
             width: width,
             model: model,
-            metrics: metrics
+            metrics: metrics,
+            timestampReferenceDate: date
         ).layout
     }
 

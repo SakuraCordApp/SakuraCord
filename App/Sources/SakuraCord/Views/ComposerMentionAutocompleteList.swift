@@ -12,8 +12,7 @@ struct MentionAutocompleteList: View {
             LazyVStack(spacing: 2) {
                 ForEach(suggestions.enumerated(), id: \.element.id) { index, suggestion in
                     if index > 0,
-                       case .role = suggestion.target,
-                       case .user = suggestions[index - 1].target
+                       (suggestion.member != nil) != (suggestions[index - 1].member != nil)
                     {
                         Divider()
                             .padding(.horizontal, 9)

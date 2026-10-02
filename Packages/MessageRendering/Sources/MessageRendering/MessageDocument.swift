@@ -59,11 +59,16 @@ public struct RenderedMention: Codable, Hashable, Sendable {
     )
 
     public enum Kind: String, Codable, Hashable, Sendable {
-        case user, role, channel, channelLink, message, guildNavigation
+        case user, role, game, broadcast, timestamp, channel, channelLink, message, guildNavigation
     }
 
-    public static let tokenPattern = #"<id:(?:guide|browse|customize)>|"#
-        + #"<@!?[0-9]+>|<@&[0-9]+>|<#[0-9]+>|https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+(?:/[0-9]+)?"#
+    public static let tokenPattern = [
+        #"<id:(?:guide|browse|customize)>|"#,
+        #"<@!?[0-9]+>|<@&[0-9]+>|<@\$[0-9]+>|<#[0-9]+>|"#,
+        #"(?<![\w@\\])@(?:everyone|here)(?!\w)|"#,
+        #"<t:-?[0-9]+(?::[tTdDfFsSR])?>|"#,
+        #"https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+(?:/[0-9]+)?"#
+    ].joined()
 
     public var id: String
     public var kind: Kind
@@ -76,6 +81,32 @@ public struct RenderedMention: Codable, Hashable, Sendable {
            let destination = GuildNavigationMention(rawValue: String(rawToken.dropFirst(4).dropLast())) {
             id = destination.rawValue
             kind = .guildNavigation
+            self.rawToken = rawToken
+            messageGuildID = nil
+            messageChannelID = nil
+            return
+        }
+        if rawToken.hasPrefix("<@$"), rawToken.hasSuffix(">"),
+           let gameID = UInt64(rawToken.dropFirst(3).dropLast())
+        {
+            id = String(gameID)
+            kind = .game
+            self.rawToken = rawToken
+            messageGuildID = nil
+            messageChannelID = nil
+            return
+        }
+        if let timestamp = DiscordTimestampToken(rawToken: rawToken) {
+            id = String(timestamp.seconds)
+            kind = .timestamp
+            self.rawToken = rawToken
+            messageGuildID = nil
+            messageChannelID = nil
+            return
+        }
+        if rawToken == "@everyone" || rawToken == "@here" {
+            id = String(rawToken.dropFirst())
+            kind = .broadcast
             self.rawToken = rawToken
             messageGuildID = nil
             messageChannelID = nil

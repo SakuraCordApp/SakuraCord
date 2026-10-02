@@ -68,6 +68,12 @@ struct MentionAutocompleteContext {
 }
 
 struct MentionAutocompleteSuggestion: Identifiable {
+    enum Action: Equatable {
+        case insert
+        case chooseTimeFormat
+        case chooseGame
+    }
+
     let id: String
     let title: String
     let detail: String
@@ -77,4 +83,5 @@ struct MentionAutocompleteSuggestion: Identifiable {
     var colorHex: UInt32?
     var member: Member?
     var systemImage: String?
+    var action: Action = .insert
 }

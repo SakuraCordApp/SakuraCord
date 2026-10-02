@@ -40,7 +40,7 @@ enum MentionAutocompleteSuggestionFactory {
 
     static func memberHeading(query: String) -> String {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? "MEMBERS" : "MEMBERS MATCHING @\(normalized.uppercased())"
+        return normalized.isEmpty ? "OPTIONS" : "OPTIONS MATCHING @\(normalized.uppercased())"
     }
 
     static func memberSuggestions(
@@ -49,6 +49,7 @@ enum MentionAutocompleteSuggestionFactory {
         localMembers: [Member],
         remoteMembers: [Member],
         roles: [GuildRole],
+        isGuildChannel: Bool = false,
         canMentionNonMentionableRoles: Bool = false
     ) -> [MentionAutocompleteSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -99,7 +100,11 @@ enum MentionAutocompleteSuggestionFactory {
             orderedMembers = bestMatches.map(\.member)
         }
 
-        var values = orderedMembers.prefix(resultLimit).map { member in
+        let specialSuggestions = specialSuggestions(
+            normalizedQuery: normalizedQuery,
+            isGuildChannel: isGuildChannel
+        )
+        let memberSuggestions = orderedMembers.prefix(resultLimit - specialSuggestions.count).map { member in
             let topColor = MessageAuthorPresentation.topRoleColor(in: member.roles)
             return MentionAutocompleteSuggestion(
                 id: "user:\(member.id)",
@@ -112,6 +117,12 @@ enum MentionAutocompleteSuggestionFactory {
                 member: member
             )
         }
+        // Keep the first matching member as the default selection for a bare
+        // @, while placing broadcasts within the visible portion of the menu.
+        var values: [MentionAutocompleteSuggestion] = []
+        values.append(contentsOf: memberSuggestions.prefix(1))
+        values.append(contentsOf: specialSuggestions)
+        values.append(contentsOf: memberSuggestions.dropFirst())
 
         let matchingRoles = roles.compactMap { role -> (GuildRole, Int)? in
             role.name.caseInsensitiveCompare("@everyone") != .orderedSame
@@ -138,6 +149,45 @@ enum MentionAutocompleteSuggestionFactory {
             )
         })
         return values
+    }
+
+    private static func specialSuggestions(
+        normalizedQuery: String,
+        isGuildChannel: Bool
+    ) -> [MentionAutocompleteSuggestion] {
+        let matchingBroadcasts = isGuildChannel
+            ? ["everyone", "here"].filter { $0.hasPrefix(normalizedQuery) }
+            : []
+        var results = matchingBroadcasts.map { name in
+            MentionAutocompleteSuggestion(
+                id: "broadcast:\(name)",
+                title: "@\(name)",
+                detail: "",
+                value: "@\(name)",
+                target: .unresolved
+            )
+        }
+        if "game".hasPrefix(normalizedQuery) {
+            results.append(MentionAutocompleteSuggestion(
+                id: "special:game",
+                title: "@game",
+                detail: "Mention a game",
+                value: "@game",
+                target: .unresolved,
+                action: .chooseGame
+            ))
+        }
+        if "time".hasPrefix(normalizedQuery) {
+            results.append(MentionAutocompleteSuggestion(
+                id: "special:time",
+                title: "@time",
+                detail: "Refer to a time dynamically in the viewer’s time zone",
+                value: "@time",
+                target: .unresolved,
+                action: .chooseTimeFormat
+            ))
+        }
+        return results
     }
 
     static func channelSuggestions(
