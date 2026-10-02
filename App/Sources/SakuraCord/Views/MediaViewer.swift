@@ -75,6 +75,7 @@ struct MediaViewer: View {
                         bottomInset: presentation.items.count > 1 ? 82 : 14,
                         interaction: interaction,
                         finishPinchDismissal: finishPinchDismissal,
+                        close: close,
                         open: {
                             MediaViewerActionService.openInBrowser(item.url)
                         },

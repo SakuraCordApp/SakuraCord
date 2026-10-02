@@ -316,7 +316,7 @@ extension NativeTimelineCanvasView {
         // into scrolling, never for each tick.
         guard !suppressesHoverPresentation else { return }
         suppressesHoverPresentation = true
-        // Pause native playback once without destroying its presentation.
+        // Pause decorative native playback once without destroying its presentation.
         // Recreating AVPlayer and Lottie overlays on each reconciliation
         // produced the benchmark's regular FAST/pause cadence, while removing
         // them made otherwise loaded videos and stickers blink out as soon as
@@ -328,8 +328,8 @@ extension NativeTimelineCanvasView {
         for overlay in lottieStickerOverlays.values {
             overlay.pauseForScroll()
         }
-        for overlay in animatedMediaOverlays.values {
-            overlay.setPlaybackSuppressed(true)
+        for (key, overlay) in animatedMediaOverlays {
+            overlay.setPlaybackSuppressed(!key.role.playsDuringScroll)
         }
         // Remove existing tracking areas too so AppKit does not hit-test the
         // moving timeline under a stationary pointer during scrolling.

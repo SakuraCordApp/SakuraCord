@@ -371,7 +371,7 @@ extension NativeTimelineRowPainter {
                     image,
                     in: region.frame,
                     cornerRadius: region.reference.isEmoji ? 7 : 10,
-                    fillsFrame: !region.reference.isEmoji && !region.reference.isSticker
+                    fillsFrame: false
                 )
             } else {
                 card(

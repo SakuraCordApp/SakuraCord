@@ -13,6 +13,10 @@ nonisolated struct SharedMediaDownloadedFile: Sendable {
     let cleanupDirectory: URL?
 }
 
+nonisolated struct RemoteMediaHTTPError: Error, Sendable {
+    let statusCode: Int
+}
+
 actor SharedMediaDataLoader {
     static let shared = SharedMediaDataLoader()
     private static let defaultRemoteDiskCostLimit: Int64 = 2 * 1024 * 1024 * 1024
@@ -90,6 +94,8 @@ actor SharedMediaDataLoader {
     private let remoteDiskCache: MediaCache?
     private let remoteFetch: @Sendable (URL) async throws -> Data
     private let remoteDownload: @Sendable (URL) async throws -> SharedMediaDownloadedFile
+    private var attachmentURLRefresh: (@Sendable (URL) async throws -> URL?)?
+    private var attachmentURLRefreshRevision: UInt64 = 0
     private var localFileLoads: [URL: Task<Data, any Error>] = [:]
     private var pendingRemoteLoads: [URL: PendingRemoteLoad] = [:]
     private var pendingRemoteOrder: [URL] = []
@@ -226,6 +232,27 @@ actor SharedMediaDataLoader {
             activeRemoteLoads[url] = active
         }
         startEligibleRemoteLoads()
+    }
+
+    func setAttachmentURLRefresh(
+        revision: UInt64,
+        refresh: @escaping @Sendable (URL) async throws -> URL?
+    ) {
+        guard revision >= attachmentURLRefreshRevision else { return }
+        attachmentURLRefreshRevision = revision
+        attachmentURLRefresh = refresh
+    }
+
+    private func refreshedAttachmentURL(
+        for url: URL,
+        revision: UInt64
+    ) async throws -> URL? {
+        guard revision == attachmentURLRefreshRevision,
+              let attachmentURLRefresh
+        else { return nil }
+        let refreshed = try await attachmentURLRefresh(url)
+        guard revision == attachmentURLRefreshRevision else { return nil }
+        return refreshed
     }
 
     func diskCacheStatus() async throws -> MediaCache.Status? {
@@ -400,16 +427,34 @@ actor SharedMediaDataLoader {
             pending.priority == .visible ? .userInitiated : .utility
         let remoteFetch = remoteFetch
         let remoteDownload = remoteDownload
+        let attachmentURLRefreshRevision = attachmentURLRefreshRevision
         let requiresFileDownload = pending.waiters.values.contains {
             $0.requiresFileDownload
         }
         let task = Task.detached(priority: taskPriority) {
             let result: Result<RemoteLoadResult, any Error>
             do {
-                if requiresFileDownload {
-                    result = .success(.file(try await remoteDownload(url)))
-                } else {
-                    result = .success(.data(try await remoteFetch(url)))
+                func load(_ mediaURL: URL) async throws -> RemoteLoadResult {
+                    if requiresFileDownload {
+                        return .file(try await remoteDownload(mediaURL))
+                    }
+                    return .data(try await remoteFetch(mediaURL))
+                }
+                do {
+                    result = .success(try await load(url))
+                } catch let error as RemoteMediaHTTPError
+                    where (error.statusCode == 403 || error.statusCode == 404)
+                        && LinkedImageReference.isBareAttachmentURL(url)
+                {
+                    guard let refreshed = try await self.refreshedAttachmentURL(
+                        for: url,
+                        revision: attachmentURLRefreshRevision
+                    ),
+                          LinkedImageReference.isBareAttachmentURL(refreshed),
+                          refreshed.path == url.path,
+                          refreshed != url
+                    else { throw error }
+                    result = .success(try await load(refreshed))
                 }
             } catch {
                 result = .failure(error)
@@ -444,11 +489,9 @@ actor SharedMediaDataLoader {
             timeoutInterval: 30
         )
         let (data, response) = try await remoteSession.data(for: request)
-        let invalidResponse = (response as? HTTPURLResponse).map {
-            !(200 ..< 300).contains($0.statusCode)
-        } ?? false
-        if invalidResponse {
-            throw URLError(.badServerResponse)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200 ..< 300).contains(httpResponse.statusCode) {
+            throw RemoteMediaHTTPError(statusCode: httpResponse.statusCode)
         }
         return data
     }
@@ -464,11 +507,9 @@ actor SharedMediaDataLoader {
         let (temporaryURL, response) = try await remoteSession.download(
             for: request
         )
-        let invalidResponse = (response as? HTTPURLResponse).map {
-            !(200 ..< 300).contains($0.statusCode)
-        } ?? false
-        if invalidResponse {
-            throw URLError(.badServerResponse)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200 ..< 300).contains(httpResponse.statusCode) {
+            throw RemoteMediaHTTPError(statusCode: httpResponse.statusCode)
         }
         let directory = incompleteDownloadRootDirectory()
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -329,6 +329,9 @@ extension NativeMessageTimelineCoordinator {
             canvas.onWidthChange = { [weak self] width in
                 self?.relayoutForWidthChange(width)
             }
+            canvas.onMediaDimensionsChange = { [weak self] identifiers in
+                self?.refreshLinkedImageLayouts(for: identifiers)
+            }
             canvas.onDocumentSizeChange = { [weak self] size in
                 self?.updateDocumentSize(size)
             }
