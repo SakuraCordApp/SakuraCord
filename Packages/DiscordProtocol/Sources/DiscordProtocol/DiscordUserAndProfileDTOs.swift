@@ -435,6 +435,7 @@ struct ProfileEffectPositionDTO: Decodable, Sendable {
 
 struct UserProfileDTO: Decodable {
     var user: UserDTO
+    var isPrivate: Bool?
     var widgets: [ProfileWidgetDTO]?
     var premiumType: Int?
     var userProfile: ProfileMetadataDTO?
@@ -455,6 +456,7 @@ struct UserProfileDTO: Decodable {
     }
     enum CodingKeys: String, CodingKey {
         case user, widgets
+        case isPrivate = "private"
         case premiumType = "premium_type"
         case userProfile = "user_profile"
         case guildMember = "guild_member"
@@ -544,6 +546,7 @@ struct UserProfileDTO: Decodable {
 
         return UserProfile(
             user: domainUser,
+            isPrivate: isPrivate,
             displayName: displayName,
             avatarURL: avatarURL,
             defaultAvatarURL: defaultAvatarURL,

@@ -3,7 +3,7 @@ import SwiftUI
 extension View {
     func composerShortcutCommands(
         conversation: MessageComposerDestination,
-        focus: @escaping () -> Void,
+        focus: @escaping (NSRange?) -> Void,
         chooseAttachment: @escaping () -> Void,
         togglePicker: @escaping (KeyboardShortcutAction) -> Void
     ) -> some View {
@@ -13,7 +13,7 @@ extension View {
             )
         ) { notification in
             if Self.targets(notification, conversation: conversation) {
-                focus()
+                focus(notification.userInfo?["selection"] as? NSRange)
             }
         }
         .onReceive(

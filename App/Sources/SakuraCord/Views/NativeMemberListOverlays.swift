@@ -370,7 +370,22 @@ extension NativeMemberListCanvasView {
                 self?.dismissProfile(ifCurrent: presentation.requestID)
             },
             presentationIdentity: AnyHashable(presentation.member.id),
-            content: AnyView(ProfilePresentationContent(presentation: presentation, openProfile: openProfile)
+            outsideClickHandler: { [weak self] event in
+                guard let self, event.type == .leftMouseDown,
+                      !event.modifierFlags.contains(.control),
+                      event.window === self.window,
+                      !self.interactionsBlocked,
+                      WindowModalCoordinator.allowsInput(for: self)
+                else { return false }
+                let point = self.convert(event.locationInWindow, from: nil)
+                guard self.visibleRect.contains(point),
+                      let index = self.index(at: point),
+                      case .member(let member, _) = self.items[index]
+                else { return false }
+                self.selectMember(member)
+                return true
+            },
+            content: AnyView(ProfilePresentationContent(presentation: presentation, openProfile: openProfile, sendMessage: sendProfileMessage)
                 .environment(\.profileCosmeticPolicy, cosmeticPolicy))
         )
     }

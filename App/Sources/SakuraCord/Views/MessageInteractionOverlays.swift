@@ -939,7 +939,7 @@ struct MessageProfilePopoverContent: View {
                presentation.member.id == userID,
                presentation.requestID == requestID
             {
-                ProfilePresentationContent(presentation: presentation, openProfile: model.expandProfile)
+                ProfilePresentationContent(presentation: presentation, openProfile: model.expandProfile, sendMessage: model.sendProfileMessage)
                     .environment(\.profileCosmeticPolicy, model.cosmeticPolicy)
             } else {
                 Color.clear.frame(width: 330, height: 250)

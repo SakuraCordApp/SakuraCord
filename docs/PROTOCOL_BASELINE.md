@@ -995,7 +995,7 @@ and retained as evidence.
 | `GET /guilds/{guild}/channels` | Cache-miss fallback only; no body, coalesced by guild. | Public channel semantics and all three client references. |
 | `GET /guilds/{guild}/roles` | Visible role/member UI cache miss; no body, coalesced. | Public guild semantics and all three client references. |
 | `GET /guilds/{guild}/roles/{role}/member-ids` | Explicit role inspection; no body; result display capped at 1,000. | Current first-party route; P−, S−. |
-| `GET /users/{user}/profile` | Explicit profile; `with_mutual_guilds=true`, `with_mutual_friends=true`, `with_mutual_friends_count=true`, plus `guild_id` only in guild context; coalesced by user and guild context. A `404` for an unavailable user remains scoped to the profile presentation and does not stop the session. | Current first-party and Paicord; Swiftcord has historical profile data but no equivalent complete route. |
+| `GET /users/{user}/profile` | Explicit profile; `type=popout`, `with_mutual_guilds=true`, `with_mutual_friends=false`, `with_mutual_friends_count=true`, plus `guild_id` only in guild context; coalesced by user and guild context. A `404` for an unavailable user remains scoped to the profile presentation and does not stop the session. | Current first-party and Paicord; Swiftcord has historical profile data but no equivalent complete route. |
 | `GET /collectibles-products/{product}` | Coalesced cache-miss read for a profile effect or frame returned by the profile response; query contains the current `locale`. | Current first-party route and September profile research; P−, S−. The obsolete `/user-profile-effects` fallback was removed. |
 | `GET /users/{user}/profile?type=modal&with_mutual_guilds=true&with_mutual_friends=false&with_mutual_friends_count=true` | Editable current-user snapshot; append `guild_id` only for server scope. Preserve raw main and scoped field presence alongside resolved presentation. | Clean September profile-editor entry and scope selection. |
 | `PATCH /users/@me` | Changed main identity fields: `global_name`, avatar data/description or `avatar_id`, `avatar_decoration_sku_id`, `nameplate_sku_id`, and the three `display_name_*` style fields. A returned credential is adopted before subsequent writes. | Clean September identity, style, history and upload actions; first-party main-profile save dispatcher. |
@@ -2449,8 +2449,11 @@ account action or traffic capture was performed.
 - History uses one `GET /channels/{channel.id}/messages`, with `before` before
   `limit` when paginating, matching Paicord's reviewed query construction.
   Full profiles use one `GET /users/{user.id}/profile` with
-  `with_mutual_guilds`, `with_mutual_friends`, and
-  `with_mutual_friends_count` set to `true`; one-to-one DMs omit `guild_id`.
+  `type=popout`, `with_mutual_guilds=true`, `with_mutual_friends=false`, and
+  `with_mutual_friends_count=true`; one-to-one DMs omit `guild_id`.
+  The summary requests the mutual-friend count without the full friend list.
+  A successful response's `private` flag controls the private-profile notice;
+  an unavailable profile remains an error rather than implying privacy.
 - Message sends remain independent of channel selection. The current
   first-party JSON shape is `mobile_network_type`, `content`, `nonce`, `tts`,
   and `flags`, plus attachments only when present and a reply reference

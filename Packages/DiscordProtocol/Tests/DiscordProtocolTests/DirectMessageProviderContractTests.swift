@@ -517,7 +517,7 @@ extension DirectMessageProviderContractTests {
         #expect(request.hadAuthorization)
     }
 
-    @Test func `DM profile matches Paicord mutual profile query`() async throws {
+    @Test func `DM profile uses the first party popout and mutual profile query`() async throws {
         DirectMessageURLProtocol.reset()
         let provider = makeProvider()
 
@@ -531,8 +531,9 @@ extension DirectMessageProviderContractTests {
         #expect(request.method == "GET")
         #expect(request.path == "/api/v9/users/2/profile")
         #expect(request.query == [
+            CapturedQueryItem(name: "type", value: "popout"),
             CapturedQueryItem(name: "with_mutual_guilds", value: "true"),
-            CapturedQueryItem(name: "with_mutual_friends", value: "true"),
+            CapturedQueryItem(name: "with_mutual_friends", value: "false"),
             CapturedQueryItem(
                 name: "with_mutual_friends_count",
                 value: "true"

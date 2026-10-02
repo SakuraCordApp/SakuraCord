@@ -355,7 +355,10 @@ struct ComposerView: View {
         }
         .composerShortcutCommands(
             conversation: conversation,
-            focus: { isFocused = true },
+            focus: { selection in
+                if let selection { draftSelection = selection }
+                isFocused = true
+            },
             chooseAttachment: { if canAddAttachments { showFileImporter = true } },
             togglePicker: { action in
                 guard !hasActiveCommand else { return }
