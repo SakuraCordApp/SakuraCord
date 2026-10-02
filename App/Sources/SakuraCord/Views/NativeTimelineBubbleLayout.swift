@@ -52,7 +52,8 @@ enum NativeTimelineBubbleLayout {
         row: MessageRowPresentation,
         content: NativeTimelineTextPresentation.Value,
         availableWidth: CGFloat,
-        isEnabled: Bool
+        isEnabled: Bool,
+        translation: NativeTimelineTranslationPresentation? = nil
     ) -> CGFloat {
         guard isEnabled else { return 80 }
         let minimumWidth: CGFloat = 28
@@ -70,6 +71,9 @@ enum NativeTimelineBubbleLayout {
                     maximumWidth: maximumWidth
                 )
             )
+        }
+        if let translation {
+            preferredWidth = max(preferredWidth, translation.preferredWidth(maximumWidth: maximumWidth))
         }
         if let linkedImageWidth = content.linkedImages
             .map(\.displaySize.width).max()

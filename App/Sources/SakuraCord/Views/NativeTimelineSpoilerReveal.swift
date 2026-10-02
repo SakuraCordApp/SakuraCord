@@ -5,6 +5,7 @@ nonisolated enum NativeTimelineTextRegion: Hashable {
     case beginningTitle
     case beginningDescription
     case content
+    case translation(UUID)
     case embed(embedID: String, textIndex: Int)
     case component(layoutIndex: Int, textIndex: Int)
 }

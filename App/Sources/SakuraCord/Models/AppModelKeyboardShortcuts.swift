@@ -98,6 +98,8 @@ extension AppModel {
             )
         case .searchCurrentConversation:
             presentMessageSearchFromCommand()
+        case .translateDraft:
+            translateDraft(in: activeComposerDestination)
         default:
             preconditionFailure("Non-messaging shortcut routed as messaging")
         }
@@ -195,6 +197,8 @@ extension AppModel {
             commandComposer.activeCommand == nil
                 && selectedChannelID != nil
                 && selectedConversationAccess.canSend
+        case .translateDraft:
+            selectedChannelID != nil && canTranslateDraft(in: activeComposerDestination)
         default: false
         }
     }

@@ -32,6 +32,7 @@ nonisolated enum SettingsImportValidation {
 
     private static func acceptsString(_ raw: String, id: SettingsControlID) -> Bool {
         switch id {
+        case .translationMessageLanguage, .translationDraftLanguage: return TranslationLanguages.validPreference(raw)
         case .launchDestination: return SettingsLaunchDestination(rawValue: raw) != nil
         case .appColorScheme: return AppColorScheme(rawValue: raw) != nil
         case .composerBarAppearance: return ComposerBarAppearance(rawValue: raw) != nil

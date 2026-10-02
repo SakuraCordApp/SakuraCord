@@ -107,6 +107,7 @@ extension NativeTimelineCanvasView {
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
+                installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
         }
@@ -737,6 +738,10 @@ extension NativeTimelineCanvasView {
            dismissFrame.contains(point)
         {
             model?.dismissEphemeralMessage(row.message)
+            return true
+        }
+        if layout.translationRegion?.actionFrame?.contains(point) == true {
+            model?.performMessageTranslationCaptionAction(row.message)
             return true
         }
         if !row.message.type.hasGeneratedContent,
@@ -1521,6 +1526,9 @@ extension NativeTimelineCanvasView {
         let message = row.message
         if layout.ephemeralRegion?.dismissFrame.contains(point) == true {
             return .ephemeralDismiss(message.id)
+        }
+        if layout.translationRegion?.actionFrame?.contains(point) == true {
+            return .translationAction(message.id)
         }
         if !message.type.hasGeneratedContent,
            NativeTimelineAuthorProfileGeometry.hitFrame(

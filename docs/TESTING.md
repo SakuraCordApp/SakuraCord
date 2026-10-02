@@ -61,3 +61,33 @@ inspection cannot establish correctness, request user confirmation.
 
 Before committing a change that used temporary UI tests, inspect both
 `git status` and the staged diff to confirm that those tests are absent.
+
+## Translation verification
+
+`TranslationTokenTests`, `AppleTranslationCoordinatorTests`, `TranslationFeatureTests`,
+and `TranslationSettingsTests` use synthetic input and injected services. They need
+no account, downloaded models, permission dialogs, or network translation. Gates
+and stored task handles synchronize completions; cancellation-ignoring fakes test
+request identity independently of cooperative task cancellation. Run the normal
+`./script/code_quality.sh check` and `./script/ci.sh` on the required Xcode toolchain.
+A source parse or isolated service test is not an application build or UI test.
+
+For manual verification, build the offline fixture with
+`./script/build_and_run.sh --offline`, obtain its exact bundle path from
+`./script/runtime.sh`, and use only synthetic messages/drafts. Enable Translation
+under Features and test Dutch→English, English→Dutch, Japanese/Korean→a supported
+target, and short ambiguous text. Include repeated mentions/custom emoji, links,
+code, multiline RTL/Unicode, and spoilers. Check selection, Copy Translation,
+links/mentions, spoiler concealment/reveal, accessibility, incoming/outgoing bubbles,
+light/dark modes, resizing, and returning to cached conversations. Exercise both
+composers, translated edits and toggles, long-draft send validation, dismissal,
+settings changes, and repeated same-pair requests.
+
+On a test Mac, use System Settings > General > Language & Region > Translation
+Languages to inspect model installation. Verify first-use approval and cancellation,
+navigation/window closure during a download, and retry. With models already installed,
+disconnect networking and repeat synthetic translation. Check the traditional-model
+path on a Mac without Apple Intelligence. Do not remove a user's existing models
+merely to run this check. Judge meaningful translation and exact protected-token
+integrity, not a permanent golden output from a changing model. Record these runtime
+checks separately from fake-based tests in the PR; unavailable checks remain unverified.

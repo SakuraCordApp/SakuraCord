@@ -37,6 +37,8 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case markUnread
     case dismissInboxMention
     case endPoll
+    case copyTranslation
+    case toggleTranslation
     case editMessage
     case pinMessage
     case unpinMessage
@@ -72,6 +74,8 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         canForward: Bool = false,
         canPin: Bool = false,
         isPinned: Bool = false,
+        translationTitle: String? = nil,
+        canCopyTranslation: Bool = false,
         context: NativeTimelineMessageInteractionContext = .conversation
     ) -> [NativeTimelineMessageMenuEntry] {
         if context == .searchResult {
@@ -109,6 +113,16 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         )
         if canEndPoll {
             entries.insert(.action(.endPoll, title: "End Poll Now", systemImage: "stop.circle"), at: min(3, entries.count))
+        }
+        if let translationTitle, !canRetry {
+            entries.insert(
+                .action(.toggleTranslation, title: translationTitle, systemImage: "translate"),
+                at: entries.firstIndex(of: .separator) ?? entries.count
+            )
+        }
+        if canCopyTranslation {
+            entries.insert(.action(.copyTranslation, title: "Copy Translation", systemImage: "doc.on.doc"),
+                           at: entries.firstIndex(of: .separator) ?? entries.count)
         }
         return entries
     }

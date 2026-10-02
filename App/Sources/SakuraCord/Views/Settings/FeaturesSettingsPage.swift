@@ -29,6 +29,7 @@ struct FeaturesSettingsPage: View {
                 ),
                 state: state
             )
+            TranslationSettingsSection(model: model, state: state)
         }
     }
 }

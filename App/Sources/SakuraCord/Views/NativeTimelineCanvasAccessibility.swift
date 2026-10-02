@@ -8,6 +8,11 @@ import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
+struct NativeTimelineAccessibilityRowState: Equatable {
+    let item: NativeMessageTimelineItem
+    let translation: MessageTranslationEntry?
+}
+
 nonisolated enum TimelineAccessibilityWorkPolicy {
     static func reconcilesEagerly(
         isVoiceOverEnabled: Bool,
@@ -163,10 +168,19 @@ extension NativeTimelineCanvasView {
         {
             let identifier = items[index].identifier
             let item = items[index]
+            let state = NativeTimelineAccessibilityRowState(
+                item: item,
+                translation: item.messageRow.flatMap {
+                    model?.messageTranslationPresentation(for: $0.message)
+                }
+            )
             let frame = rowFrame(at: index)
             desired.insert(identifier)
             desiredOrder.append(identifier)
-            if accessibilityProxies.item(for: identifier) != item {
+            // Translation state lives outside the immutable message item.
+            // Refresh children and actions when it changes, even if only
+            // this row's presentation was updated.
+            if accessibilityProxies.item(for: identifier) != state {
                 accessibilityProxies.remove(identifier)
                 let source = accessibilityRow(at: index)
                 let rowProxy = accessibilityProxy(
@@ -176,7 +190,7 @@ extension NativeTimelineCanvasView {
                 addSubview(rowProxy)
                 accessibilityProxies.install(
                     rowProxy,
-                    item: item,
+                    item: state,
                     for: identifier
                 )
             } else if accessibilityProxies.row(for: identifier)?.frame
@@ -691,6 +705,7 @@ extension NativeTimelineCanvasView {
                 ))
             }
         }
+        appendTranslationAccessibility(to: &children, message: message, layout: layout, rowIndex: rowIndex, parent: parent)
     }
 
     private func appendMessageMediaAccessibility(

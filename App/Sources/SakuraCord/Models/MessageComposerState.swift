@@ -12,7 +12,7 @@ final class MessageComposerState {
     var draft = "" { didSet { draftRevision &+= 1 } }
     var threadDraft = "" { didSet { threadDraftRevision &+= 1 } }
     @ObservationIgnored private(set) var draftRevision: UInt64 = 0
-    @ObservationIgnored private var threadDraftRevision: UInt64 = 0
+    @ObservationIgnored private(set) var threadDraftRevision: UInt64 = 0
     var replyingTo: Message?
     var threadReplyingTo: Message?
     var replyMentionsAuthor = true

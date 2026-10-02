@@ -547,6 +547,15 @@ extension NativeTimelineCanvasView {
                 framesetter: framesetter
             ))
         }
+        if let translation = layout.translationRegion,
+           let frame = translation.textFrame, let value = translation.attributedText,
+           let framesetter = translation.framesetter {
+            result.append(SelectableTextRegion(
+                region: translation.regionID,
+                frame: NativeTimelineTextGeometry.messageContentDrawingFrame(frame),
+                interactionFrame: frame, value: value, framesetter: framesetter
+            ))
+        }
         for embed in layout.embedRegions {
             for (textIndex, textRegion) in
                 embed.textRegions.enumerated()

@@ -96,6 +96,8 @@ struct SakuraCordCommands: Commands {
             ShortcutCommandButton(action: .toggleEmojiPicker)
             ShortcutCommandButton(action: .toggleGIFPicker)
             ShortcutCommandButton(action: .toggleStickerPicker)
+            Divider()
+            ShortcutCommandButton(action: .translateDraft)
         }
 
         CommandMenu("Voice") {

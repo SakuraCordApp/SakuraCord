@@ -266,7 +266,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     let accessibilityProxies =
         NativeTimelineAccessibilityProxyStore<
             NativeMessageTimelineItem.Identifier,
-            NativeMessageTimelineItem
+            NativeTimelineAccessibilityRowState
         >()
     let reactionPickerSource = StableReactionPickerSourceView()
     let reactionPickerCoordinator =

@@ -110,6 +110,7 @@ nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
         rangeLocation: Int
     )
     case ephemeralDismiss(MessageID)
+    case translationAction(MessageID)
     case authorProfile(MessageID)
     case invocationProfile(MessageID)
     case reply(MessageID, MessageID)
