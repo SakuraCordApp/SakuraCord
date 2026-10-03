@@ -180,7 +180,7 @@ private struct TrustedDomainsSettingsPage: View {
                 .disabled(domainToAdd == nil)
         } message: {
             Text(
-                "Enter the domain you want SakuraCord to trust.",
+                "Enter a domain such as example.com, or *.example.com to trust its subdomains. Wildcards do not include the domain itself.",
                 bundle: #bundle
             )
         }

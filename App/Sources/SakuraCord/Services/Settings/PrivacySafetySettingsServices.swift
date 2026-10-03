@@ -36,7 +36,7 @@ nonisolated enum ExternalLinkConfirmationPolicy: String, CaseIterable, Identifia
     ) -> Bool {
         switch self {
         case .untrustedDomains:
-            !trustedDomains.contains(domain)
+            !trustedDomains.contains { ExternalLinkTrustedDomain.matches(domain, rule: $0) }
         case .allLinks:
             true
         case .noLinks:
@@ -45,50 +45,11 @@ nonisolated enum ExternalLinkConfirmationPolicy: String, CaseIterable, Identifia
     }
 }
 
-nonisolated enum ExternalLinkTrustedDomain {
-    static func normalized(_ input: String) -> String? {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
-        guard let components = URLComponents(string: candidate),
-              components.scheme?.lowercased() == "https",
-              components.user == nil,
-              components.password == nil,
-              components.port == nil,
-              components.query == nil,
-              components.fragment == nil,
-              components.path.isEmpty || components.path == "/",
-              let rawHost = components.host?.lowercased()
-        else { return nil }
-
-        let host = rawHost.last == "." ? String(rawHost.dropLast()) : rawHost
-        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
-        guard labels.count >= 2,
-              host.utf8.count <= 253,
-              labels.allSatisfy({ label in
-                  !label.isEmpty
-                      && label.utf8.count <= 63
-                      && label.first != "-"
-                      && label.last != "-"
-                      && label.allSatisfy { character in
-                          character.isASCII
-                              && (character.isLetter || character.isNumber || character == "-")
-                      }
-              })
-        else { return nil }
-        return host
-    }
-
-    static func normalizedList(_ domains: [String]) -> [String] {
-        Array(Set(domains.compactMap(normalized))).sorted()
-    }
-}
-
 nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     static let defaults = Self(
         sendsTypingIndicators: true,
         externalLinkConfirmationPolicy: .untrustedDomains,
-        trustedDomains: []
+        trustedDomains: ExternalLinkTrustedDomain.defaults
     )
 
     var removesMediaMetadata = true

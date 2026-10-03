@@ -128,6 +128,24 @@ exports only allowlisted local preferences to versioned
 `.sakurasettings` files. Imports validate each entry, preserve omitted/unsupported
 values and apply changes through existing owners. Credentials, account content,
 Discord-synchronized values, trusted domains and OS permission grants are excluded.
+External-link confirmation defaults to a bundled, worldwide list in
+`App/Sources/SakuraCord/Resources/trusted-domains.json`. Entries are normalized
+exact hostnames or `*.example.com` rules matching one or more subdomain levels,
+but not the apex. Matching respects label boundaries. The bundled Public Suffix
+List (ICANN and private sections) rejects wildcards over registries and shared
+hosting namespaces; without that resource, wildcard validation fails closed.
+Curate first-party service domains across regions; do not wildcard arbitrary
+customer websites or general-purpose hosting platforms. Known services may
+still contain user content, so inclusion is not a guarantee of page safety.
+
+The preference store seeds each installation once, merging defaults with any
+existing list, including an explicitly empty legacy list. Later launches and
+catalogue changes preserve edits and removals. A privacy reset restores the
+current bundled list; its separate migration marker is not reset or exported.
+No catalogue downloads or account requests are needed. Exact entries retain
+their existing semantics, and the link-warning checkbox trusts only its exact
+hostname. Always Ask and Never Ask retain their existing behaviour.
+
 Platform-owned preferences use their platform services. Download bookmarks are
 usable only when accessible on the receiving Mac.
 
