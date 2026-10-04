@@ -75,35 +75,8 @@ struct NativeTimelineMediaKey: Hashable {
         }
     }
 
-    /// Discord's media proxy renders a video attachment's first frame when a
-    /// still format is requested. Only that proxy can do so; the origin URL
-    /// would deliver the whole video.
     static func videoPoster(_ attachment: Attachment) -> Self? {
-        guard let proxyURL = attachment.proxyURL,
-              proxyURL.scheme == "https",
-              proxyURL.host() == "media.discordapp.net",
-              var components = URLComponents(
-                  url: proxyURL,
-                  resolvingAgainstBaseURL: false
-              )
-        else { return nil }
-        var query = (components.queryItems ?? []).filter {
-            !["format", "width", "height"].contains($0.name)
-        }
-        query.append(URLQueryItem(name: "format", value: "webp"))
-        if let width = attachment.width, let height = attachment.height,
-           width > 0, height > 0
-        {
-            let scale = min(1, 1_024 / Double(max(width, height)))
-            query += [("width", width), ("height", height)].map { name, value in
-                URLQueryItem(
-                    name: name,
-                    value: String(max(1, Int((Double(value) * scale).rounded())))
-                )
-            }
-        }
-        components.queryItems = query
-        return components.url.map { .media($0) }
+        attachment.videoPosterURL(maximumPixelDimension: 1_024).map { .media($0) }
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {

@@ -9,8 +9,12 @@ nonisolated enum ForwardPreviewMediaKind: Equatable {
 }
 
 nonisolated struct ForwardPreviewMedia: Equatable {
+    /// The image drawn in the thumbnail. For videos this is a still poster
+    /// frame, never the video itself.
     let url: URL?
     let kind: ForwardPreviewMediaKind
+
+    static let thumbnailPixelDimension = 128
 }
 
 nonisolated struct ForwardMessagePreviewPlan: Equatable {
@@ -33,7 +37,11 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
             case .file: .file
             }
             return ForwardPreviewMedia(
-                url: attachment.proxyURL ?? attachment.url,
+                url: kind == .video
+                    ? attachment.videoPosterURL(
+                        maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
+                    )
+                    : attachment.proxyURL ?? attachment.url,
                 kind: kind
             )
         }
@@ -105,7 +113,12 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
                 return ForwardPreviewMedia(url: url, kind: .image(animated: animated))
             }
             return ForwardPreviewMedia(
-                url: video.proxyURL ?? video.url,
+                url: DiscordVideoPosterURL.url(
+                    proxyURL: video.proxyURL,
+                    width: video.width,
+                    height: video.height,
+                    maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
+                ),
                 kind: .video
             )
         }
@@ -137,7 +150,15 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
         let contentType = value.contentType?.lowercased() ?? ""
         let url = value.proxyURL ?? value.url
         if contentType.hasPrefix("video/") {
-            return ForwardPreviewMedia(url: url, kind: .video)
+            return ForwardPreviewMedia(
+                url: DiscordVideoPosterURL.url(
+                    proxyURL: value.proxyURL,
+                    width: value.width,
+                    height: value.height,
+                    maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
+                ),
+                kind: .video
+            )
         }
         let animated = contentType == "image/gif"
             || url?.pathExtension.lowercased() == "gif"
@@ -288,9 +309,18 @@ private struct ForwardPreviewThumbnail: View {
                     )
                 }
             case .video:
+                if let url = media.url {
+                    AnimatedRemoteImage(
+                        url: url,
+                        animates: false,
+                        maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension,
+                        contentMode: .fill
+                    )
+                }
                 Image(systemName: "play.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
+                    .shadow(radius: 2)
             case .audio:
                 Image(systemName: "waveform")
                     .foregroundStyle(.secondary)

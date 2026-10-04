@@ -584,7 +584,9 @@ extension NativeTimelineRowPainter {
             }
             NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
             NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: 8).fill()
-            if let image = mediaImage(for: .media(region.displayURL)) {
+            if let previewURL = region.previewURL,
+               let image = mediaImage(for: .media(previewURL))
+            {
                 drawImage(image, in: region.frame, cornerRadius: 8, fillsFrame: true)
             } else if region.isVideo {
                 systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: 30)

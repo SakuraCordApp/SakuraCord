@@ -553,13 +553,47 @@ struct ForumPostAttachmentPreview: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .video:
-                ForumPostFilePreview(systemImage: "play.rectangle.fill", filename: attachment.filename)
+                ForumPostVideoPreview(
+                    attachment: attachment,
+                    maximumPixelDimension: maximumPixelDimension
+                )
             case .audio:
                 ForumPostFilePreview(systemImage: "waveform", filename: attachment.filename)
             case .file:
                 ForumPostFilePreview(systemImage: "doc.fill", filename: attachment.filename)
             }
         }
+    }
+}
+
+private struct ForumPostVideoPreview: View {
+    let attachment: Attachment
+    let maximumPixelDimension: Int
+    @State private var didFailPosterLoad = false
+
+    var body: some View {
+        if let posterURL, !didFailPosterLoad {
+            AnimatedRemoteImage(
+                url: posterURL,
+                animates: false,
+                maximumPixelDimension: maximumPixelDimension,
+                onFailure: { didFailPosterLoad = true }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(.black.opacity(0.55), in: Circle())
+            }
+        } else {
+            ForumPostFilePreview(systemImage: "play.rectangle.fill", filename: attachment.filename)
+        }
+    }
+
+    private var posterURL: URL? {
+        attachment.videoPosterURL(maximumPixelDimension: maximumPixelDimension)
     }
 }
 

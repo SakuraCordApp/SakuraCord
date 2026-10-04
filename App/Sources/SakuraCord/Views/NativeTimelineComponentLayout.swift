@@ -98,6 +98,9 @@ struct NativeTimelineComponentLayout {
         let frame: CGRect
         let componentID: String
         let displayURL: URL
+        /// The still image drawn in the tile: the media itself for images, or
+        /// the media proxy's poster frame for videos.
+        let previewURL: URL?
         let openURL: URL
         let description: String
         let isSpoiler: Bool
@@ -316,6 +319,7 @@ private struct Node {
                 frame: $0.frame.offsetBy(dx: dx, dy: dy),
                 componentID: $0.componentID,
                 displayURL: $0.displayURL,
+                previewURL: $0.previewURL,
                 openURL: $0.openURL,
                 description: $0.description,
                 isSpoiler: $0.isSpoiler,
@@ -364,6 +368,7 @@ private struct Node {
 private enum NodeBuilder {
     private struct ResolvedMedia {
         let displayURL: URL
+        let previewURL: URL?
         let openURL: URL
         let title: String
         let description: String?
@@ -884,6 +889,7 @@ private enum NodeBuilder {
                         frame: frame,
                         componentID: item.id,
                         displayURL: media.displayURL,
+                        previewURL: media.previewURL,
                         openURL: media.openURL,
                         description:
                             media.description ?? media.title,
@@ -1195,6 +1201,9 @@ private enum NodeBuilder {
         {
             return ResolvedMedia(
                 displayURL: attachment.proxyURL ?? attachment.url,
+                previewURL: attachment.mediaKind == .video
+                    ? attachment.videoPosterURL(maximumPixelDimension: 1_024)
+                    : attachment.proxyURL ?? attachment.url,
                 openURL: attachment.url,
                 title: attachment.filename,
                 description: media.description ?? attachment.description,
@@ -1205,15 +1214,24 @@ private enum NodeBuilder {
             )
         }
         guard let openURL = media.url else { return nil }
+        let isVideo = media.contentType?.hasPrefix("video/") == true
         return ResolvedMedia(
             displayURL: media.proxyURL ?? openURL,
+            previewURL: isVideo
+                ? DiscordVideoPosterURL.url(
+                    proxyURL: media.proxyURL,
+                    width: media.width,
+                    height: media.height,
+                    maximumPixelDimension: 1_024
+                )
+                : media.proxyURL ?? openURL,
             openURL: openURL,
             title: media.description ?? "Component media",
             description: media.description,
             width: media.width,
             height: media.height,
             isSpoiler: media.isSpoiler,
-            isVideo: media.contentType?.hasPrefix("video/") == true
+            isVideo: isVideo
         )
     }
 

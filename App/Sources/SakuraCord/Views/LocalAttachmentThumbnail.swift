@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import MediaPipeline
 import SwiftUI
 import UniformTypeIdentifiers
@@ -31,6 +32,13 @@ struct LocalAttachmentThumbnail: View {
                             ConcentricRectangle(cornerRadius: imageCornerRadius, style: .continuous)
                         )
                 }
+                if isVideoFile {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(.black.opacity(0.55), in: Circle())
+                }
             } else if isImageFile {
                 ProgressView()
                     .controlSize(.small)
@@ -48,12 +56,24 @@ struct LocalAttachmentThumbnail: View {
                 return
             }
             image = nil
-            guard isImageFile else { return }
+            guard isImageFile || isVideoFile else { return }
             let accessed = url.startAccessingSecurityScopedResource()
             defer {
                 if accessed {
                     url.stopAccessingSecurityScopedResource()
                 }
+            }
+            if isVideoFile {
+                guard let frame = await Self.videoFrame(
+                    at: url,
+                    maximumPixelDimension: maximumPixelDimension
+                ),
+                    !Task.isCancelled
+                else { return }
+                let loadedImage = NSImage(cgImage: frame, size: .zero)
+                image = loadedImage
+                onImageLoaded?(loadedImage)
+                return
             }
             guard let data = try? await SharedMediaDataLoader.shared.data(for: url),
                   !Task.isCancelled
@@ -83,5 +103,24 @@ struct LocalAttachmentThumbnail: View {
 
     private var isImageFile: Bool {
         UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
+    }
+
+    private var isVideoFile: Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+    }
+
+    /// Video files keep showing their Finder icon until this frame is ready,
+    /// so an undecodable file never leaves a spinner behind.
+    private nonisolated static func videoFrame(
+        at url: URL,
+        maximumPixelDimension: Int
+    ) async -> CGImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(
+            width: maximumPixelDimension,
+            height: maximumPixelDimension
+        )
+        return try? await generator.image(at: .zero).image
     }
 }

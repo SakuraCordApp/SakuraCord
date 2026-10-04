@@ -506,7 +506,9 @@ extension NativeTimelineCanvasView {
                           store: spoilerRevealStore
                       )
                 else { continue }
-                keys.append(.media(media.displayURL))
+                if let previewURL = media.previewURL {
+                    keys.append(.media(previewURL))
+                }
             }
             for button in componentLayout.buttons {
                 guard !NativeTimelineSpoilerConcealmentPolicy

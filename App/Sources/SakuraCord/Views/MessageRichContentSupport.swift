@@ -443,6 +443,16 @@ struct RichMediaItem: Identifiable, Hashable {
     var isSpoiler: Bool
     var autoplaysInline: Bool
 
+    func videoPosterURL(maximumPixelDimension: Int) -> URL? {
+        guard kind == .video else { return nil }
+        return DiscordVideoPosterURL.url(
+            proxyURL: previewURL,
+            width: width,
+            height: height,
+            maximumPixelDimension: maximumPixelDimension
+        )
+    }
+
     init(_ attachment: Attachment) {
         id = attachment.id
         url = attachment.url

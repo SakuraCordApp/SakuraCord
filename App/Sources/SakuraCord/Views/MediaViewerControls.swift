@@ -278,8 +278,17 @@ private struct MediaViewerThumbnail: View {
                         contentMode: .fill
                     )
                 case .video:
+                    if let posterURL = item.videoPosterURL(maximumPixelDimension: 160) {
+                        AnimatedRemoteImage(
+                            url: posterURL,
+                            animates: false,
+                            maximumPixelDimension: 160,
+                            contentMode: .fill
+                        )
+                    }
                     Image(systemName: "play.fill")
                         .font(.title3)
+                        .shadow(radius: 2)
                 case .audio:
                     Image(systemName: "waveform")
                         .font(.title3)
