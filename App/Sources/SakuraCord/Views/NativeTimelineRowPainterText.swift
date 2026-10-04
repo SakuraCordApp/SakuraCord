@@ -326,6 +326,7 @@ extension NativeTimelineRowPainter {
         framesetter: CTFramesetter,
         in frame: CGRect,
         model: AppModel?,
+        mentionBackgroundColor: NSColor? = nil,
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
         hoveredLinkCharacterIndex: Int? = nil,
@@ -372,6 +373,7 @@ extension NativeTimelineRowPainter {
             outerFrame: frame,
             attributedText: drawingValue,
             model: model,
+            mentionBackgroundColor: mentionBackgroundColor,
             selectionRange: selectionRange,
             hoveredMentionCharacterIndex: hoveredMentionCharacterIndex
         )
@@ -706,6 +708,7 @@ extension NativeTimelineRowPainter {
         outerFrame: CGRect,
         attributedText: NSAttributedString,
         model: AppModel?,
+        mentionBackgroundColor: NSColor? = nil,
         selectionRange: NSRange?,
         hoveredMentionCharacterIndex: Int?
     ) {
@@ -717,7 +720,11 @@ extension NativeTimelineRowPainter {
             selectionRange: selectionRange
         )
         for draw in draws {
-            renderInlineAttachment(draw, hoveredMentionCharacterIndex: hoveredMentionCharacterIndex)
+            renderInlineAttachment(
+                draw,
+                mentionBackgroundColor: mentionBackgroundColor,
+                hoveredMentionCharacterIndex: hoveredMentionCharacterIndex
+            )
         }
     }
 
@@ -844,6 +851,7 @@ extension NativeTimelineRowPainter {
 
     private static func renderInlineAttachment(
         _ draw: InlineAttachmentDraw,
+        mentionBackgroundColor: NSColor?,
         hoveredMentionCharacterIndex: Int?
     ) {
         switch draw {
@@ -853,7 +861,8 @@ extension NativeTimelineRowPainter {
             drawMention(
                 presentation,
                 in: frame,
-                isHovered: hoveredMentionCharacterIndex == characterIndex
+                isHovered: hoveredMentionCharacterIndex == characterIndex,
+                backgroundColor: mentionBackgroundColor
             )
         case let .emojiFallback(frame, _):
             text(
@@ -881,9 +890,17 @@ extension NativeTimelineRowPainter {
     static func drawMention(
         _ presentation: MentionPresentation,
         in frame: CGRect,
-        isHovered: Bool
+        isHovered: Bool,
+        backgroundColor: NSColor? = nil
     ) {
         let color = roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
+        let labelColor = backgroundColor.map {
+            contrastingMentionTextColor(
+                mentionColor: color,
+                isHovered: isHovered,
+                backgroundColor: $0
+            )
+        } ?? color
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: 5.5
@@ -959,8 +976,42 @@ extension NativeTimelineRowPainter {
                 height: frame.height
             ),
             font: .systemFont(ofSize: 15, weight: .semibold),
-            color: color
+            color: labelColor
         )
+    }
+
+    private static func contrastingMentionTextColor(
+        mentionColor: NSColor,
+        isHovered: Bool,
+        backgroundColor: NSColor
+    ) -> NSColor {
+        guard let mention = mentionColor.usingColorSpace(.deviceRGB),
+              let background = backgroundColor.usingColorSpace(.deviceRGB)
+        else { return .white }
+
+        let alpha = NativeTimelineMentionAppearance.backgroundAlpha(
+            isHovered: isHovered
+        )
+        let red = mention.redComponent * alpha
+            + background.redComponent * (1 - alpha)
+        let green = mention.greenComponent * alpha
+            + background.greenComponent * (1 - alpha)
+        let blue = mention.blueComponent * alpha
+            + background.blueComponent * (1 - alpha)
+        let luminance = 0.2126 * linearSRGB(red)
+            + 0.7152 * linearSRGB(green)
+            + 0.0722 * linearSRGB(blue)
+        let blackContrast = (luminance + 0.05) / 0.05
+        let whiteContrast = 1.05 / (luminance + 0.05)
+        return whiteContrast >= blackContrast ? .white : .black
+    }
+
+    private static func linearSRGB(_ component: CGFloat) -> CGFloat {
+        let component = min(max(component, 0), 1)
+        if component <= 0.04045 {
+            return component / 12.92
+        }
+        return pow((component + 0.055) / 1.055, 2.4)
     }
 
     static func inlineEmojiImage(
