@@ -9,12 +9,14 @@ enum ProfilePresentationLayout {
 }
 
 struct ProfilePresentationContent<Footer: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let presentation: ProfilePresentationState
     var layout: ProfilePresentationLayout = .popover
     var maximumPopoverHeight: CGFloat = 560
     var showsRoles = true
     let footer: Footer
     var openProfile: ((ProfilePresentationState) -> Void)?
+    var sendMessage: ((UserID, String, String) async -> Bool)?
 
     init(
         presentation: ProfilePresentationState,
@@ -22,6 +24,7 @@ struct ProfilePresentationContent<Footer: View>: View {
         maximumPopoverHeight: CGFloat = 560,
         showsRoles: Bool = true,
         openProfile: ((ProfilePresentationState) -> Void)? = nil,
+        sendMessage: ((UserID, String, String) async -> Bool)? = nil,
         @ViewBuilder footer: () -> Footer
     ) {
         self.presentation = presentation
@@ -30,6 +33,7 @@ struct ProfilePresentationContent<Footer: View>: View {
         self.showsRoles = showsRoles
         self.footer = footer()
         self.openProfile = openProfile
+        self.sendMessage = sendMessage
     }
 
     var body: some View {
@@ -45,8 +49,22 @@ struct ProfilePresentationContent<Footer: View>: View {
             layout: layout,
             maximumPopoverHeight: maximumPopoverHeight,
             showsRoles: showsRoles,
-            footer: footer,
+            footer: VStack(alignment: .leading, spacing: 12) {
+                footer
+                if layout == .popover, !presentation.isCurrentUser, let sendMessage {
+                    ProfileQuickMessageView(user: presentation.member.user) { content, nonce in
+                        await sendMessage(presentation.member.id, content, nonce)
+                    }
+                    .padding(.horizontal, 16)
+                }
+            },
             openProfile: openProfile.map { action in { action(presentation) } }
+        )
+        .id(presentation.member.id)
+        .transition(.opacity)
+        .animation(
+            layout == .popover && !reduceMotion ? .easeOut(duration: 0.12) : nil,
+            value: presentation.member.id
         )
         }
     }
@@ -58,14 +76,16 @@ extension ProfilePresentationContent where Footer == EmptyView {
         layout: ProfilePresentationLayout = .popover,
         maximumPopoverHeight: CGFloat = 560,
         showsRoles: Bool = true,
-        openProfile: ((ProfilePresentationState) -> Void)? = nil
+        openProfile: ((ProfilePresentationState) -> Void)? = nil,
+        sendMessage: ((UserID, String, String) async -> Bool)? = nil
     ) {
         self.init(
             presentation: presentation,
             layout: layout,
             maximumPopoverHeight: maximumPopoverHeight,
             showsRoles: showsRoles,
-            openProfile: openProfile
+            openProfile: openProfile,
+            sendMessage: sendMessage
         ) {
             EmptyView()
         }
@@ -170,7 +190,10 @@ struct MemberProfilePopover<Footer: View>: View {
         }
         .onPreferenceChange(ProfileContentHeightKey.self) { newHeight in
             guard editor == nil, newHeight.isFinite, newHeight > 0 else { return }
-            contentHeight = max(250, newHeight)
+            let measuredHeight = max(250, newHeight)
+            guard contentHeight != measuredHeight else { return }
+            contentHeight = measuredHeight
+            popoverPresentationContext?.contentSizeDidChange?()
         }
         .task(id: cosmeticPolicy.disables(.gradient, for: member.id) ? nil : theme.source(for: profile, scale: displayScale, allowsTheme: editor?.isNitro)) {
             if !cosmeticPolicy.disables(.gradient, for: member.id) {
@@ -194,7 +217,12 @@ struct MemberProfilePopover<Footer: View>: View {
                 if editor != nil {
                     profileScrollContent(width: width - surfaceInset * 2)
                 } else {
-                    GeometryReader { geometry in profileScrollContent(width: geometry.size.width) }
+                    GeometryReader { geometry in
+                        profileScrollContent(
+                            width: geometry.size.width,
+                            minimumHeight: layout == .popover ? max(0, geometry.size.height - 14) : 0
+                        )
+                    }
                 }
             }
             .padding(surfaceInset)
@@ -212,9 +240,16 @@ struct MemberProfilePopover<Footer: View>: View {
         }
     }
 
-    private func profileScrollContent(width contentWidth: CGFloat) -> some View {
+    private func profileScrollContent(width contentWidth: CGFloat, minimumHeight: CGFloat = 0) -> some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 11) {
+                if profile?.isPrivate == true {
+                    Label("Private Profile", systemImage: "lock.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(.quaternary)
+                }
                 ProfileHeroSection(
                     member: member,
                     profile: profile,
@@ -229,7 +264,8 @@ struct MemberProfilePopover<Footer: View>: View {
                     isExpandedProfile: layout == .expanded,
                     animatesRemoteMedia: animatesRemoteMedia,
                     editor: editor,
-                    openEditorPicker: openEditorPicker
+                    openEditorPicker: openEditorPicker,
+                    openProfile: profileExpansionAction
                 )
                 .overlay(alignment: .topTrailing) {
                     if openProfile != nil {
@@ -271,6 +307,9 @@ struct MemberProfilePopover<Footer: View>: View {
                             layout: layout
                         )
                     }
+                    if profile.isPrivate == true {
+                        privateProfileNotice(profile)
+                    }
                     if let editor, editor.scope == .main || editor.isNitro {
                         ProfileInlineBioEditor(value: Binding(get: { editor.bio }, set: { editor.bio = $0 }), displayValue: profile.bio, model: editor.model)
                         .id(editor.draftGeneration)
@@ -295,17 +334,31 @@ struct MemberProfilePopover<Footer: View>: View {
 
                 }
 
+                if layout == .popover { Spacer(minLength: 0) }
                 footer
             }
             .frame(width: contentWidth, alignment: .leading)
+            .frame(minHeight: minimumHeight, alignment: .top)
             .padding(.bottom, 14)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: ProfileContentHeightKey.self, value: proxy.size.height)
-                }
-            }
+            .background(contentHeightReader)
         }
         .scrollIndicators(editorModal == nil && (editor != nil || contentHeight > maximumPopoverHeight) ? .visible : .hidden)
+    }
+
+    private var contentHeightReader: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(key: ProfileContentHeightKey.self, value: proxy.size.height)
+        }
+    }
+
+    private func privateProfileNotice(_ profile: UserProfile) -> some View {
+        Text("\(profile.displayName)'s profile is private, so some info is hidden. Add them as a friend to see more.")
+            .font(.subheadline)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
     }
 
     @ViewBuilder
@@ -336,6 +389,11 @@ struct MemberProfilePopover<Footer: View>: View {
 
     private var profileThemeHexes: [UInt32] {
         cosmeticPolicy.disables(.gradient, for: member.id) ? [] : theme.colors(for: profile, scale: displayScale, allowsTheme: editor?.isNitro)
+    }
+
+    private var profileExpansionAction: (() -> Void)? {
+        guard openProfile != nil else { return nil }
+        return { expandProfile() }
     }
 
     private func expandProfile() {
@@ -411,6 +469,7 @@ private struct ProfileHeroSection: View {
     var usesSolidBannerAccent = false
     var editor: ProfileEditorState?
     var openEditorPicker: ((ProfileEditorPicker) -> Void)?
+    var openProfile: (() -> Void)?
 
     @State private var defaultAvatarPalette: (url: URL, color: UInt32)?
 
@@ -473,6 +532,7 @@ private struct ProfileHeroSection: View {
                         size: avatarSize,
                         playback: animatesRemoteMedia ? .continuous : .paused
                     )
+                    .modifier(ProfileAvatarExpansion(openProfile: editor == nil ? openProfile : nil))
                     .padding(3)
                 }
                 .modifier(ProfileEditorImageMenu(editor: editor, target: .avatar, open: openEditorPicker))

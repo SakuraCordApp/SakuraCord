@@ -38,6 +38,7 @@ extension DiscordRESTProvider {
         let generation = profilePresentationGeneration
         let revision = profilePresentationRevisions[userID, default: 0]
         var query = [
+            URLQueryItem(name: "type", value: "popout"),
             URLQueryItem(name: "with_mutual_guilds", value: "true"),
             URLQueryItem(name: "with_mutual_friends", value: "true"),
             URLQueryItem(name: "with_mutual_friends_count", value: "true"),

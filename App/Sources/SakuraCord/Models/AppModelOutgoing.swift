@@ -145,7 +145,8 @@ extension AppModel {
         attachments: [ForumPostAttachment],
         clearsComposer: Bool,
         poll: PollDraft? = nil,
-        isTTS: Bool = false
+        isTTS: Bool = false,
+        nonce: String = ClientNonce.make()
     ) async -> Bool {
         guard allowSlowmodeSubmission(in: channelID) else { return false }
         let outgoing = SendMessageDraft(
@@ -154,6 +155,7 @@ extension AppModel {
             replyTo: replyTo,
             mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments,
+            nonce: nonce,
             poll: poll,
             isTTS: isTTS
         )

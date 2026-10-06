@@ -133,7 +133,13 @@ final class NativeMemberListCoordinator: NSObject {
         }
         let cosmeticsChanged = canvas.cosmeticPolicy != parent.cosmeticPolicy
         canvas.cosmeticPolicy = parent.cosmeticPolicy
+        canvas.contextMenu = { [weak self] member in
+            guard let self else { return NSMenu() }
+            let original = self.parent.sections.lazy.flatMap(\.members).first { $0.id == member.id } ?? member
+            return self.parent.contextMenu?(original) ?? NSMenu()
+        }
         canvas.openProfile = parent.openProfile
+        canvas.sendProfileMessage = parent.sendProfileMessage
         canvas.modalInputDidChange()
         AppPerformanceSignposts.measureSync("MemberListCanvasUpdate") {
             canvas.updatePresentation(

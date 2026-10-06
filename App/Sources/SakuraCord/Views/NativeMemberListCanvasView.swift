@@ -196,10 +196,12 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var loadedItemIndexes: [Int] = []
     var selectedMemberID: UserID?
     var openProfile: ((ProfilePresentationState) -> Void)?
+    var sendProfileMessage: ((UserID, String, String) async -> Bool)?
     var profilePresentation: ProfilePresentationState?
     var isProfilePresented = false
     var dismissProfile: () -> Void = {}
     var selectMember: (Member) -> Void = { _ in }
+    var contextMenu: ((Member) -> NSMenu)?
     var hoveredIndex: Int?
     var isScrolling = false
     var interactionsBlocked = false
@@ -307,7 +309,19 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         updateVisibleOverlaysAndPrewarming()
     }
 
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard WindowModalCoordinator.allowsInput(for: self), !interactionsBlocked,
+              let index = index(at: convert(event.locationInWindow, from: nil)),
+              case .member(let member, _) = items[index]
+        else { return nil }
+        return contextMenu?(member)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {
+            super.mouseDown(with: event)
+            return
+        }
         guard !interactionsBlocked,
               let index = index(at: convert(event.locationInWindow, from: nil)),
               case .member(let member, _) = items[index]

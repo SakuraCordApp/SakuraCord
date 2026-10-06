@@ -317,6 +317,12 @@ extension ProviderRequestContractTests {
 
         _ = try await provider.bootstrap()
         #expect(await eventually { await socket.receiveStarted })
+        let privateProfile = try await provider.profile(for: UserID(rawValue: 333_333_333_333_333_333), in: nil)
+        #expect(privateProfile.isPrivate == true)
+        #expect(privateProfile.user.username == "private-user")
+        #expect(privateProfile.mutualFriendsCount == 1)
+        #expect(privateProfile.bio == nil)
+
         let unavailableMessage =
             "This profile is unavailable. You may no longer share a server or friendship with this user."
         for userID in [

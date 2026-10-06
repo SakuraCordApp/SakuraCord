@@ -17,7 +17,9 @@ struct NativeMemberListView: NSViewRepresentable {
     var presentation = NativeMemberListPresentation()
     var onViewportRange: (ClosedRange<Int>) -> Void = { _ in }
 
+    var contextMenu: ((Member) -> NSMenu)?
     var openProfile: ((ProfilePresentationState) -> Void)?
+    var sendProfileMessage: ((UserID, String, String) async -> Bool)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)

@@ -2414,6 +2414,33 @@ private func downArrowKeyEvent(
 
 @MainActor
 @Test(arguments: [false, true])
+func `profile message retry reuses the failed outbox nonce`(timesOut: Bool) async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let recipient = User(id: UserID(rawValue: 2), username: "recipient", displayName: "Recipient")
+    let channelID = try #require(model.selectedChannelID)
+    let index = try #require(model.snapshot?.channels.firstIndex { $0.id == channelID })
+    model.snapshot?.channels[index].recipients = [recipient]
+    if timesOut {
+        await provider.timeOutNextSend()
+    } else {
+        await provider.failNextSend()
+    }
+    let nonce = ClientNonce.make()
+    #expect(await model.sendProfileMessage(to: recipient.id, content: "retry privately", nonce: nonce) == false)
+    #expect(await model.sendProfileMessage(to: recipient.id, content: "retry privately", nonce: nonce))
+    let drafts = await provider.sentDrafts
+    #expect(drafts.count == 2)
+    #expect(drafts[0] == drafts[1])
+    #expect(model.messages.filter { $0.nonce == nonce }.count == 1)
+    #expect(model.composer.outbox.draftsByNonce[nonce] == nil)
+    #expect(await model.sendProfileMessage(to: recipient.id, content: "retry privately", nonce: nonce))
+    #expect(await provider.sendCount == 2)
+}
+
+@MainActor
+@Test(arguments: [false, true])
 func `retry resends the exact failed draft through sending and confirmed states`(timesOut: Bool) async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)

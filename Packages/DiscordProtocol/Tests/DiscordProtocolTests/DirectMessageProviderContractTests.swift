@@ -517,7 +517,7 @@ extension DirectMessageProviderContractTests {
         #expect(request.hadAuthorization)
     }
 
-    @Test func `DM profile matches Paicord mutual profile query`() async throws {
+    @Test func `DM popout profile retains mutual friend list data`() async throws {
         DirectMessageURLProtocol.reset()
         let provider = makeProvider()
 
@@ -527,10 +527,13 @@ extension DirectMessageProviderContractTests {
         )
 
         #expect(profile.user.id == UserID(rawValue: 2))
+        #expect(profile.mutualFriendsCount == 1)
+        #expect(profile.mutualFriends.map(\.id) == [UserID(rawValue: 3)])
         let request = try #require(DirectMessageURLProtocol.requests.first)
         #expect(request.method == "GET")
         #expect(request.path == "/api/v9/users/2/profile")
         #expect(request.query == [
+            CapturedQueryItem(name: "type", value: "popout"),
             CapturedQueryItem(name: "with_mutual_guilds", value: "true"),
             CapturedQueryItem(name: "with_mutual_friends", value: "true"),
             CapturedQueryItem(
@@ -1933,7 +1936,11 @@ final class DirectMessageURLProtocol:
                      "guild_member":{"nick":null,"avatar":null},"guild_member_profile":{"bio":"","pronouns":"","theme_colors":null},"widgets":[],
                      "mutual_guilds":[],"mutual_friends":[],"mutual_friends_count":0}
                     """#
-                    : #"{"user":{"id":"2","username":"maya","global_name":"Maya","avatar":null},"premium_type":2,"widgets":[],"mutual_guilds":[],"mutual_friends":[],"mutual_friends_count":0}"#
+                    : """
+                    {"user":{"id":"2","username":"maya","global_name":"Maya","avatar":null},"premium_type":2,"widgets":[],"mutual_guilds":[],
+                     "mutual_friends":\(query.contains(CapturedQueryItem(name: "with_mutual_friends", value: "true")) ? #"[{"id":"3","username":"ivy","global_name":"Ivy"}]"# : "[]"),
+                     "mutual_friends_count":1}
+                    """
         default: return nil
         }
     }

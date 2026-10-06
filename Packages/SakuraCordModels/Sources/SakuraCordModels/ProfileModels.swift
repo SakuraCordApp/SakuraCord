@@ -141,6 +141,8 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         user.id
     }
 
+    /// Nil when an older profile response did not report visibility.
+    public var isPrivate: Bool?
     public var user: User
     public var displayName: String
     public var avatarURL: URL?
@@ -167,6 +169,7 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
 
     public init(
         user: User,
+        isPrivate: Bool? = nil,
         displayName: String? = nil,
         avatarURL: URL? = nil,
         defaultAvatarURL: URL? = nil,
@@ -191,6 +194,7 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         customStatus: String? = nil
     ) {
         self.user = user
+        self.isPrivate = isPrivate
         self.displayName = displayName ?? user.displayName
         self.avatarURL = avatarURL ?? user.avatarURL
         self.defaultAvatarURL = defaultAvatarURL
