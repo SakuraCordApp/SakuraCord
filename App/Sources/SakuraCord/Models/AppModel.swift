@@ -427,6 +427,8 @@ final class AppModel {
     var isLoadingGIFPicker = false
     var gifErrorMessage: String?
     var gifFavoriteMutationURL: URL?
+    @ObservationIgnored var gameMentionsByID: [String: ProfileGame] = [:]
+    @ObservationIgnored var gameMentionHydration = GameMentionHydrationState()
     var stickerPickerState = StickerPickerPresentationState()
     /// `/gif` and `/sticker` open the composer's pickers.
     var builtInExpressionPickerRequest: BuiltInExpressionPickerRequest?
@@ -1061,6 +1063,7 @@ final class AppModel {
     @ObservationIgnored var gifSearchTask: Task<Void, Never>?
     @ObservationIgnored var gifPickerLoadTask: Task<Void, Never>?
     @ObservationIgnored var gifPickerLoadGeneration: UInt64 = 0
+    @ObservationIgnored var gameMentionLoadTask: Task<Void, Never>?
     @ObservationIgnored var soundboardLoadTask: Task<Void, Never>?
     @ObservationIgnored var soundboardLoadGeneration: UInt64 = 0
     @ObservationIgnored var commandFrecencySaveTask: Task<Void, Never>?

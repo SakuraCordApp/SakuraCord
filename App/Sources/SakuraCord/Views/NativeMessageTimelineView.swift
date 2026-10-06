@@ -5,6 +5,13 @@ import SwiftUI
 
 @MainActor
 private final class NativeTimelineInputShieldScrollView: NSScrollView {
+    var onWindowChange: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?()
+    }
+
     let inputPerformanceProbe = ScrollInputPerformanceProbe(
         surface: .timeline
     )
@@ -298,6 +305,8 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var pendingModelRowsUpdateTask: Task<Void, Never>?
         var layoutPreparationTask: Task<Void, Never>?
         var layoutPreparation: LayoutPreparation?
+        var timestampSources: [NativeMessageTimelineItem.Identifier: [String]] = [:]
+        var timestampLabels: [NativeMessageTimelineItem.Identifier: [String: String]] = [:]
         var scrollIdleTask: Task<Void, Never>?
         var lastScrollActivityUptime = 0.0
         var widthRelayoutTask: Task<Void, Never>?
@@ -359,6 +368,7 @@ extension NativeMessageTimelineCoordinator {
             self.canvas = canvas
             self.documentView = documentView
             self.scrollView = scrollView
+            scrollView.onWindowChange = { [weak self] in self?.timestampWindowChanged() }
             positionViewportCanvas()
             beginObserving(scrollView)
             update(parent: parent, scrollView: scrollView)
@@ -880,6 +890,7 @@ extension NativeMessageTimelineCoordinator {
             }
             updateTimeline(parent: parent, scrollView: scrollView)
             layoutPreparation = nil
+            updateTimestampObservation()
         }
 
         func scheduleModelRowsUpdate() {
@@ -909,6 +920,7 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func stopObserving() {
+            RelativeTimestampClock.shared.remove(self)
             cancelLayoutPreparation()
             pendingModelRowsUpdateTask?.cancel()
             pendingModelRowsUpdateTask = nil

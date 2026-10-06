@@ -178,7 +178,8 @@ struct NativeTimelineRowLayout {
         item: NativeMessageTimelineItem,
         width proposedWidth: CGFloat,
         model: AppModel? = nil,
-        metrics: Metrics? = nil
+        metrics: Metrics? = nil,
+        relativeTo date: Date = .now
     ) -> Self {
         let width = max(220, proposedWidth)
         switch item {
@@ -214,7 +215,8 @@ struct NativeTimelineRowLayout {
                 isUnreadBoundary: isUnreadBoundary,
                 width: width,
                 model: model,
-                metrics: metrics ?? Metrics(settings: model?.interfaceSettings ?? .defaults)
+                metrics: metrics ?? Metrics(settings: model?.interfaceSettings ?? .defaults),
+                relativeTo: date
             )
             return builder.make()
         }

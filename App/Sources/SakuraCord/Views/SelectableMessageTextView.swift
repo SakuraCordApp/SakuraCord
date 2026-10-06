@@ -9,6 +9,7 @@ nonisolated enum MentionTarget: Hashable, Sendable {
     case unresolved
     case guildNavigation(guildID: GuildID, destination: GuildNavigationMention)
     case user(UserID)
+    case game(String)
     case role(RoleID)
     case channel(ChannelID)
     case linkedChannel(guildID: GuildID?, channelID: ChannelID)
@@ -22,8 +23,15 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     var avatarURL: URL?
     var colorHex: UInt32?
     var systemImage: String?
+    var isGame = false
+    var isTimestamp = false
 
     var id: String { rawToken }
+    var showsAvatar: Bool {
+        if isGame { return avatarURL != nil }
+        if case .user = target { return true }
+        return false
+    }
     var isInteractive: Bool { target != .unresolved }
 
     static func fallback(for mention: RenderedMention) -> MentionPresentation {
@@ -49,6 +57,23 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
                 rawToken: mention.rawToken,
                 label: "@unknown-role",
                 target: .role(id)
+            )
+        case .broadcast:
+            return unresolved(mention, label: mention.rawToken)
+        case .game:
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: "Unknown Game",
+                target: .game(mention.id),
+                systemImage: "gamecontroller.fill",
+                isGame: true
+            )
+        case .timestamp:
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: DiscordTimestampToken(rawToken: mention.rawToken)?.formatted() ?? mention.rawToken,
+                target: .unresolved,
+                isTimestamp: true
             )
         case .channel:
             guard let id = ChannelID(mention.id) else {
@@ -167,6 +192,23 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.isSelectable = isSelectable
         textView.applySakuraCordTextSelectionAppearance()
         configureTextContainer(textView.textContainer)
+        let coordinator = context.coordinator
+        if !TimestampMentionPresentation.tokens(in: source).isEmpty {
+            textView.timestampRefresh = { [weak textView, weak coordinator] date in
+                guard let textView, let coordinator else { return }
+                render(in: textView, coordinator: coordinator, at: date)
+            }
+        } else {
+            textView.timestampRefresh = nil
+        }
+        textView.updateTimestampObservation()
+        render(in: textView, coordinator: coordinator, at: .now)
+    }
+
+    func render(in textView: RichMessageNSTextView, coordinator: Coordinator, at date: Date) {
+        let currentMentions = TimestampMentionPresentation.refreshed(
+            mentionPresentations, source: source, at: date
+        )
         let signature = RichMessageRenderSignature(
             source: source,
             emojiSize: emojiSize,
@@ -174,18 +216,19 @@ struct SelectableMessageTextView: NSViewRepresentable {
             maximumNumberOfLines: maximumNumberOfLines,
             isSelectable: isSelectable,
             foregroundColor: foregroundColor.map(String.init(describing:)),
-            mentionPresentations: mentionPresentations
+            mentionPresentations: currentMentions
         )
         guard textView.renderSignature != signature else { return }
         textView.clearHoveredLink()
         textView.invalidateMeasurementCache()
+        let selectedRanges = textView.renderSignature?.source == source ? textView.selectedRanges : []
         textView.renderSignature = signature
         let rendered = NSMutableAttributedString(
             attributedString: RichMessageAttributedText.make(
                 source: source,
                 emojiSize: emojiSize,
                 baseFontSize: baseFontSize,
-                mentionPresentations: mentionPresentations
+                mentionPresentations: currentMentions
             )
         )
         if let foregroundColor {
@@ -197,9 +240,11 @@ struct SelectableMessageTextView: NSViewRepresentable {
         }
         RichMessageAttributedText.concealSpoilers(in: rendered)
         textView.textStorage?.setAttributedString(rendered)
+        let validRanges = selectedRanges.filter { NSMaxRange($0.rangeValue) <= rendered.length }
+        if !validRanges.isEmpty { textView.selectedRanges = validRanges }
         textView.invalidateIntrinsicContentSize()
-        context.coordinator.loadEmojiImages(in: textView)
-        context.coordinator.loadMentionAvatars(in: textView)
+        coordinator.loadEmojiImages(in: textView)
+        coordinator.loadMentionAvatars(in: textView)
     }
 
     func sizeThatFits(
@@ -214,6 +259,8 @@ struct SelectableMessageTextView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: RichMessageNSTextView, coordinator: Coordinator) {
+        RelativeTimestampClock.shared.remove(nsView)
+        nsView.timestampRefresh = nil
         coordinator.cancelEmojiLoads()
         RichMessageSelectionOwnership.remove(nsView)
     }
@@ -538,6 +585,26 @@ enum RichMessageCopySerializer {
 }
 
 final class RichMessageNSTextView: NSTextView {
+    var timestampRefresh: ((Date) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTimestampObservation()
+        if window != nil { timestampRefresh?(.now) }
+    }
+
+    func updateTimestampObservation() {
+        guard window != nil, timestampRefresh != nil else {
+            RelativeTimestampClock.shared.remove(self)
+            return
+        }
+        RelativeTimestampClock.shared.observe(self) { [weak self] date in
+            guard let self, let window, window.occlusionState.contains(.visible),
+                  !isHiddenOrHasHiddenAncestor, !visibleRect.isEmpty else { return }
+            timestampRefresh?(date)
+        }
+    }
+
     fileprivate var renderSignature: RichMessageRenderSignature?
     weak var model: AppModel?
     var onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }

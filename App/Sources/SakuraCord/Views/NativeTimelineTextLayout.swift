@@ -92,7 +92,8 @@ enum NativeTimelineTextPresentation {
 
     static func make(
         row: MessageRowPresentation,
-        model: AppModel?
+        model: AppModel?,
+        relativeTo date: Date = .now
     ) -> Value {
         let message = row.message
         guard !message.flags.contains(.isComponentsV2) else {
@@ -117,13 +118,14 @@ enum NativeTimelineTextPresentation {
         } else {
             row.textPlan
         }
-        return make(message: message, plan: plan, model: model)
+        return make(message: message, plan: plan, model: model, relativeTo: date)
     }
 
     static func make(
         message: Message,
         plan: NativeTimelineTextPlan,
-        model: AppModel?
+        model: AppModel?,
+        relativeTo date: Date = .now
     ) -> Value {
         guard plan.preparedText != nil else {
             return Value(
@@ -154,7 +156,8 @@ enum NativeTimelineTextPresentation {
             message: message,
             plan: plan,
             model: model,
-            baseFontSize: resolvedBaseFontSize
+            baseFontSize: resolvedBaseFontSize,
+            relativeTo: date
         ) else {
             return Value(
                 attributedContent: nil,
@@ -176,7 +179,8 @@ enum NativeTimelineTextPresentation {
         message: Message,
         plan: NativeTimelineTextPlan,
         model: AppModel?,
-        baseFontSize: CGFloat? = nil
+        baseFontSize: CGFloat? = nil,
+        relativeTo date: Date = .now
     ) -> Preparation? {
         let resolvedBaseFontSize = baseFontSize ?? plan.baseFontSize
         if plan.attributedText != nil,
@@ -186,12 +190,13 @@ enum NativeTimelineTextPresentation {
         }
         guard let prepared = plan.preparedText else { return nil }
         let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
-        let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
+        var mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
             guard case let .mention(mention) = token else { return }
             values[mention.rawToken] =
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
+        mentions = TimestampMentionPresentation.refreshed(mentions, source: message.content, at: date)
         let emojiSize: CGFloat = prepared.isEmojiOnly ? 48 : 22
         let cacheKey = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
@@ -491,7 +496,7 @@ nonisolated enum NativeTimelineCoreText {
             ).width
         )
         let height = max(21, ceil(font.pointSize + 6))
-        let showsAvatar = if case .user = presentation.target { true } else { false }
+        let showsAvatar = presentation.showsAvatar
         let showsLeadingIcon = presentation.systemImage != nil
         let avatarSize = height - 6
         let iconSize = height - 7

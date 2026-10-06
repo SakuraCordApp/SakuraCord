@@ -101,9 +101,8 @@ enum ComposerEmojiAttributedText {
         imageProvider: (String) -> NSImage? = { ComposerEmojiImageStore.shared.cachedImage(for: $0) }
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
-        let range = NSRange(source.startIndex ..< source.endIndex, in: source)
         var cursor = 0
-        for match in expression.matches(in: source, range: range) {
+        for match in attachmentMatches(in: source) {
             if match.range.location > cursor {
                 result.append(
                     NSAttributedString(
@@ -156,6 +155,34 @@ enum ComposerEmojiAttributedText {
         }
         ComposerMarkdownPresentation.apply(to: result, font: font)
         return result
+    }
+
+    private static func attachmentMatches(in source: String) -> [NSTextCheckingResult] {
+        let matches = expression.matches(in: source, range: NSRange(location: 0, length: source.utf16.count))
+        guard !matches.isEmpty else { return [] }
+        let mentionRanges = renderedMentionRanges(in: source)
+        return matches.filter { match in
+            let token = (source as NSString).substring(with: match.range)
+            let isNewMention = token.hasPrefix("<t:") || token.hasPrefix("<@$") || token == "@everyone" || token == "@here"
+            return !isNewMention || mentionRanges.contains(match.range)
+        }
+    }
+
+    private static func renderedMentionRanges(in source: String) -> Set<NSRange> {
+        var ranges: Set<NSRange> = []
+        var location = 0
+        for segment in MessageDocumentCache.shared.document(for: source).segments {
+            let text: String
+            switch segment {
+            case let .markdown(value): text = value
+            case let .customEmoji(emoji): text = emoji.rawToken
+            case let .mention(mention):
+                text = mention.rawToken
+                ranges.insert(NSRange(location: location, length: text.utf16.count))
+            }
+            location += text.utf16.count
+        }
+        return ranges
     }
 
     static func serialize(_ value: NSAttributedString, range: NSRange? = nil) -> String {
@@ -232,8 +259,7 @@ enum ComposerEmojiAttributedText {
 
     private static func displayOffset(forRawOffset offset: Int, source: String) -> Int {
         var reduction = 0
-        let sourceLength = (source as NSString).length
-        for match in expression.matches(in: source, range: NSRange(location: 0, length: sourceLength)) {
+        for match in attachmentMatches(in: source) {
             if offset >= NSMaxRange(match.range) {
                 reduction += match.range.length - 1
             } else if offset > match.range.location {

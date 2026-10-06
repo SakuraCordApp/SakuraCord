@@ -1408,6 +1408,22 @@ func `composer attachment controls preserve edits and spoiler state`(anonymisesF
 }
 
 @MainActor
+@Test func `selecting a whole draft preserves literal and active mention ranges`() {
+    let raw = "@everyone <t:1000000:R> <@$356875221078245376>"
+    for source in ["🌸 `\(raw)`", "🌸 `\(raw)` \(raw)"] {
+        let attributed = ComposerEmojiAttributedText.make(source)
+        let rawSelection = NSRange(location: 0, length: source.utf16.count)
+        let displayed = ComposerEmojiAttributedText.displayRange(forRaw: rawSelection, source: source)
+        #expect(displayed == NSRange(location: 0, length: attributed.length))
+        let textView = ComposerNSTextView()
+        textView.textStorage?.setAttributedString(attributed)
+        textView.setSelectedRange(displayed)
+        textView.insertText("replacement", replacementRange: textView.selectedRange())
+        #expect(ComposerEmojiAttributedText.serialize(textView.attributedString()) == "replacement")
+    }
+}
+
+@MainActor
 @Test func `ordinary text typed around a mention serializes one exact mention token`() throws {
     let token = "<@123>"
     let presentation = MentionPresentation(
@@ -1717,7 +1733,7 @@ func `composer attachment controls preserve edits and spoiler state`(anonymisesF
     #expect(suggestions.suffix(3).allSatisfy {
         if case .role = $0.target { true } else { false }
     })
-    #expect(MentionAutocompleteSuggestionFactory.memberHeading(query: "w") == "MEMBERS MATCHING @W")
+    #expect(MentionAutocompleteSuggestionFactory.memberHeading(query: "w") == "OPTIONS MATCHING @W")
 }
 
 @MainActor
@@ -1829,9 +1845,84 @@ func `cached mention results survive an older in flight search`() async throws {
     )
 
     #expect(suggestions.map(\.title) == [
-        "Testing", "Member 6", "Member 5", "Member 4", "Member 3", "Member 2", "@Access",
+        "Testing", "@game", "@time", "Member 6", "Member 5", "Member 4", "Member 3", "Member 2", "@Access",
     ])
-    #expect(MentionAutocompleteSuggestionFactory.memberHeading(query: "") == "MEMBERS")
+    #expect(MentionAutocompleteSuggestionFactory.memberHeading(query: "") == "OPTIONS")
+}
+
+@MainActor
+@Test func `guild mention autocomplete offers broadcast tokens without mention permission`() {
+    let everyone = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "eve",
+        recentMessages: [],
+        localMembers: [],
+        remoteMembers: [],
+        roles: [],
+        isGuildChannel: true
+    )
+    #expect(everyone.map(\.title) == ["@everyone"])
+    #expect(everyone.map(\.value) == ["@everyone"])
+
+    let here = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "he",
+        recentMessages: [],
+        localMembers: [],
+        remoteMembers: [],
+        roles: [],
+        isGuildChannel: true
+    )
+    #expect(here.map(\.title) == ["@here"])
+
+    let members = (1 ... 10).map { id in
+        Member(
+            user: User(
+                id: UserID(rawValue: UInt64(id)),
+                username: "member\(id)",
+                displayName: "Member \(id)"
+            ),
+            roleName: "Member",
+            status: .offline
+        )
+    }
+    let startingMention = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "",
+        recentMessages: [],
+        localMembers: members,
+        remoteMembers: [],
+        roles: [],
+        isGuildChannel: true
+    )
+    #expect(startingMention.prefix(3).map(\.title) == ["Member 1", "@everyone", "@here"])
+    #expect(startingMention.count == 10)
+
+    let time = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "ti",
+        recentMessages: [],
+        localMembers: [],
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(time.map(\.title) == ["@time"])
+    #expect(time.first?.action == .chooseTimeFormat)
+
+    let game = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "ga",
+        recentMessages: [],
+        localMembers: [],
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(game.map(\.title) == ["@game"])
+    #expect(game.first?.action == .chooseGame)
+
+    let directMessage = MentionAutocompleteSuggestionFactory.memberSuggestions(
+        query: "eve",
+        recentMessages: [],
+        localMembers: [],
+        remoteMembers: [],
+        roles: []
+    )
+    #expect(directMessage.isEmpty)
 }
 
 @MainActor

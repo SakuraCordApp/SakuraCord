@@ -291,6 +291,69 @@ import Testing
     #expect(!document.isEmojiOnly)
 }
 
+@Test func `message document recognizes broadcast mentions at word boundaries`() {
+    let document = MessageDocument(
+        source: #"@everyone and @here, but not name@everyone or @hereabouts or \@everyone"#
+    )
+    let mentions = document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.kind) == [.broadcast, .broadcast])
+    #expect(mentions.map(\.rawToken) == ["@everyone", "@here"])
+    #expect(!document.isEmojiOnly)
+}
+
+@Test func `message document recognizes Discord timestamps and localizes their display`() throws {
+    let source = "<t:1790247407:S> <t:1790247407:f> <t:1790247407:R> <t:1790247407>"
+    let document = MessageDocument(source: source)
+    let mentions = document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.kind) == [.timestamp, .timestamp, .timestamp, .timestamp])
+    #expect(mentions.map(\.rawToken) == source.split(separator: " ").map(String.init))
+
+    let timestamp = try #require(DiscordTimestampToken(rawToken: mentions[0].rawToken))
+    #expect(timestamp.seconds == 1_790_247_407)
+    #expect(timestamp.style == .shortDateMediumTime)
+    #expect(timestamp.rawToken == mentions[0].rawToken)
+    let timeZone = try #require(TimeZone(secondsFromGMT: 8 * 3_600))
+    let localTime = timestamp.formatted(locale: Locale(identifier: "en_GB"), timeZone: timeZone)
+    #expect(localTime.contains("24/09/2026"))
+    #expect(localTime.contains("18:56:47"))
+    #expect(DiscordTimestampToken(rawToken: "<t:1790247407:Q>") == nil)
+}
+
+@Test func `message document recognizes game profile mentions`() {
+    let token = "<@$356875221078245376>"
+    let document = MessageDocument(source: "Playing \(token) now")
+    let mentions = document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.kind) == [.game])
+    #expect(mentions.first?.id == "356875221078245376")
+    #expect(mentions.first?.rawToken == token)
+}
+
+@Test func `new mention types stay literal in code and escaped text`() {
+    let raw = "@everyone <t:1000000:R> <@$356875221078245376>"
+    for source in [
+        "🌸 `\(raw)`", "**`\(raw)`**", "```swift\n\(raw)\n```",
+        "* `**\(raw)**`", ">>> quote\n\n* `**\(raw)**`",
+        #"\@everyone \<t:1000000:R> \<@$356875221078245376>"#,
+    ] {
+        #expect(MessageDocument(source: source).segments == [.markdown(source)])
+    }
+    let mixed = MessageDocument(source: "`\(raw)` \(raw)")
+    let mentions = mixed.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.rawToken) == raw.split(separator: " ").map(String.init))
+}
+
 @Test func `message document recognizes discord message links as structured mentions`() throws {
     let link = "https://discord.com/channels/1523442314092089394/1523442315329405001/1529105171584389150"
     let document = MessageDocument(source: "See \(link) now")

@@ -590,14 +590,10 @@ public enum DiscordMarkdown {
                let close = nextInlineTerminator("`", in: source, from: source.index(after: cursor), collector: sourceCollector)
             {
                 flushPlain()
-                result.append(
-                    AppKitPlan.InlineRun(
-                        text: String(source[source.index(after: cursor) ..< close]),
-                        traits: inheritedTraits.union(.inlineCode),
-                        link: inheritedLink,
-                        color: nil
-                    )
-                )
+                result.append(inlineCodeRun(
+                    source[source.index(after: cursor) ..< close],
+                    traits: inheritedTraits, link: inheritedLink, sourceCollector: sourceCollector
+                ))
                 cursor = source.index(after: close)
                 continue
             }
@@ -788,7 +784,7 @@ public enum DiscordMarkdown {
             // except that a spoiler, like Discord's `\|\|([\s\S]+?)\|\|`, holds at
             // least one character before its nearest closing delimiter.
             let isSpoiler = delimiter.traits.contains(.spoiler)
-            let closingRange = if let sourceCollector {
+            let closingRange = if let sourceCollector, sourceCollector.matchesComposerDelimiters {
                 composerClosingDelimiter(delimiter.marker, in: source, after: contentStart, collector: sourceCollector)
             } else if isSpoiler {
                 contentStart < source.endIndex
@@ -1330,7 +1326,45 @@ public enum DiscordMarkdown {
     }
 }
 
+extension DiscordMarkdown {
+    /// Literal code ranges use the same delimiter rules as message rendering.
+    static func sourceCodeRanges(_ source: String) -> [NSRange] {
+        guard source.utf8.contains(96) else { return [] }
+        var source = source
+        source.makeContiguousUTF8()
+        var ranges: [NSRange] = []
+        let collector = SourceFormatCollector(source: source, matchesComposerDelimiters: false) { range, traits, _ in
+            if traits.contains(.inlineCode) { ranges.append(NSRange(range, in: source)) }
+        }
+        var inCodeFence = false
+        var inMultilineQuote = false
+        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("```") {
+                inCodeFence.toggle()
+                ranges.append(NSRange(line.startIndex ..< line.endIndex, in: source))
+            } else if inCodeFence {
+                ranges.append(NSRange(line.startIndex ..< line.endIndex, in: source))
+            } else {
+                if line.isEmpty { inMultilineQuote = false }
+                // planLine removes a list marker before parsing inline syntax;
+                // multiline quote continuations instead retain their whole line.
+                let content = line.hasPrefix("* ") && !inMultilineQuote ? line.dropFirst(2) : line
+                _ = inlineRuns(content, inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
+                if line.hasPrefix(">>> ") { inMultilineQuote = true }
+            }
+        }
+        return ranges
+    }
+}
+
 private extension DiscordMarkdown {
+    static func inlineCodeRun(
+        _ source: Substring, traits: AppKitPlan.InlineTraits, link: URL?, sourceCollector: SourceFormatCollector?
+    ) -> AppKitPlan.InlineRun {
+        sourceCollector?.collect(source.startIndex ..< source.endIndex, .inlineCode, "`")
+        return AppKitPlan.InlineRun(text: String(source), traits: traits.union(.inlineCode), link: link, color: nil)
+    }
+
     static func isComposerSyntaxCharacter(_ character: Character) -> Bool {
         switch character {
         case "\\", "`", "[", "<", "*", "_", "~", "|", "h": true
@@ -1355,10 +1389,12 @@ private extension DiscordMarkdown {
     /// remainder of the draft for the same closing bracket or backtick.
     final class SourceFormatCollector {
         let collect: (Range<String.Index>, AppKitPlan.InlineTraits, String) -> Void
+        let matchesComposerDelimiters: Bool
         private var terminators: [Character: [String.Index]] = [:]
 
-        init(source: String, collect: @escaping (Range<String.Index>, AppKitPlan.InlineTraits, String) -> Void) {
+        init(source: String, matchesComposerDelimiters: Bool = true, collect: @escaping (Range<String.Index>, AppKitPlan.InlineTraits, String) -> Void) {
             self.collect = collect
+            self.matchesComposerDelimiters = matchesComposerDelimiters
             for index in source.indices {
                 let character = source[index]
                 switch character {

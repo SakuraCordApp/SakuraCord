@@ -6,6 +6,15 @@ import UniformTypeIdentifiers
 struct ComposerView: View {
     typealias Conversation = MessageComposerDestination
 
+    private struct TimeFormatSelection {
+        let range: NSRange
+        let seconds: Int64
+    }
+
+    private struct GameSelection {
+        let range: NSRange
+    }
+
     let model: AppModel
     @Environment(\.composerDropInteraction) private var composerDropInteraction
     @Environment(\.appearsActive) private var appearsActive
@@ -31,6 +40,8 @@ struct ComposerView: View {
     @State private var autocompleteIndex = 0
     @State private var autocompleteKeyboardSelectionRevision = 0
     @State private var isAutocompleteDismissed = false
+    @State private var timeFormatSelection: TimeFormatSelection?
+    @State private var gameSelection: GameSelection?
 
     var body: some View {
         @Bindable var model = model
@@ -407,6 +418,8 @@ struct ComposerView: View {
             }
         }
         .onChange(of: draft) { _, value in
+            timeFormatSelection = nil
+            gameSelection = nil
             if completeClosedEmojiName(in: value) {
                 return
             }
@@ -437,6 +450,8 @@ struct ComposerView: View {
         }
         .task(id: composerPresentationID) {
             draftSelection = nil
+            timeFormatSelection = nil
+            gameSelection = nil
             selectionBeforeEmojiPicker = nil
             showFileImporter = false
             showGIFPicker = false
@@ -474,20 +489,6 @@ struct ComposerView: View {
             ? ChatChromeMetrics.composerMinimumCornerRadius : ChatChromeMetrics.composerCornerRadius
     }
 
-    /// Composer menus belong to the active input, like Discord's: they hide
-    /// when the editor loses focus or the window becomes inactive, and return
-    /// unchanged with focus.
-    private var isInputActive: Bool {
-        isFocused && appearsActive
-    }
-
-    @ViewBuilder
-    private var composerOverlay: some View {
-        if isInputActive {
-            composerMenus
-        }
-    }
-
     @ViewBuilder
     private var composerMenus: some View {
         if supportsCommands, commandComposer.isPickerPresented,
@@ -516,6 +517,23 @@ struct ComposerView: View {
                 ApplicationCommandHelpStrip(draft: draft, issue: commandComposer.fieldIssue, cancel: cancelCommand)
                     .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
             }
+        } else if let selection = timeFormatSelection {
+            ComposerTimeFormatPicker(
+                seconds: selection.seconds,
+                selectedIndex: autocompleteIndex,
+                select: { acceptTimeFormat($0, selection: selection) },
+                highlight: { autocompleteIndex = $0 }
+            )
+        } else if let selection = gameSelection {
+            ComposerGameMentionPicker(
+                model: model,
+                select: { acceptGame($0, selection: selection) },
+                dismiss: {
+                    gameSelection = nil
+                    isAutocompleteDismissed = true
+                    isFocused = true
+                }
+            )
         } else if let context = mentionAutocompleteContext {
             let suggestions = mentionAutocompleteSuggestions(for: context)
             if !suggestions.isEmpty {
@@ -769,6 +787,7 @@ struct ComposerView: View {
                 localMembers: model.mentionAutocompleteMembers,
                 remoteMembers: model.mentionMemberResults,
                 roles: model.guildRoles,
+                isGuildChannel: model.selectedChannel?.guildID != nil,
                 canMentionNonMentionableRoles:
                 MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
                     in: model.selectedChannel,
@@ -794,6 +813,7 @@ struct ComposerView: View {
     }
 
     private var composerMentionPresentations: [String: MentionPresentation] {
+        _ = model.timelinePresentationRevision
         let resolver = MessageMentionResolver(model: model)
         return MessageDocumentCache.shared.document(for: draft).segments.reduce(into: [:]) { values, segment in
             if case let .mention(mention) = segment {
@@ -1008,6 +1028,16 @@ struct ComposerView: View {
         if supportsCommands, commandComposer.isPickerPresented {
             return handleCommandPickerAutocomplete(command)
         }
+        if let selection = timeFormatSelection {
+            return handleTimeFormatAutocomplete(command, selection: selection)
+        }
+        if gameSelection != nil {
+            if case .dismiss = command {
+                gameSelection = nil
+                isFocused = true
+            }
+            return true
+        }
         if let context = mentionAutocompleteContext, !mentionAutocompleteSuggestions.isEmpty {
             return handleMentionAutocomplete(command, context: context)
         }
@@ -1128,16 +1158,6 @@ struct ComposerView: View {
         isAutocompleteDismissed = true
     }
 
-    private func acceptMentionAutocomplete(
-        _ suggestion: MentionAutocompleteSuggestion,
-        context: MentionAutocompleteContext
-    ) {
-        if let member = suggestion.member { model.rememberMentionMember(member) }
-        draftSelection = insertInDraft(suggestion.value + " ", replacing: context.range)
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
-    }
-
     @discardableResult
     private func insertInDraft(
         _ insertedText: String,
@@ -1154,7 +1174,7 @@ struct ComposerView: View {
     private var capturesUnfocusedTyping: Bool {
         conversation == (model.hasThreadPane ? .thread : .channel)
             && model.threadCreation?.isSubmitting != true
-            && !showEmojiPicker && !showGIFPicker && !showStickerPicker
+            && !showEmojiPicker && !showGIFPicker && !showStickerPicker && gameSelection == nil
     }
 
     private var commandComposer: ApplicationCommandComposerModel {
@@ -1264,6 +1284,88 @@ struct ComposerView: View {
             !activeReplyMentionsAuthor,
             in: conversation
         )
+    }
+}
+
+private extension ComposerView {
+    @ViewBuilder
+    private var composerOverlay: some View {
+        if isInputActive {
+            composerMenus
+        }
+    }
+
+    /// Composer menus belong to the active editor or game search field. They
+    /// hide when the window becomes inactive.
+    private var isInputActive: Bool {
+        appearsActive && (isFocused || gameSelection != nil)
+    }
+
+    private func acceptMentionAutocomplete(
+        _ suggestion: MentionAutocompleteSuggestion,
+        context: MentionAutocompleteContext
+    ) {
+        if case .chooseTimeFormat = suggestion.action {
+            timeFormatSelection = TimeFormatSelection(
+                range: context.range,
+                seconds: Int64(Date.now.timeIntervalSince1970)
+            )
+            autocompleteIndex = 0
+            isAutocompleteDismissed = true
+            return
+        }
+        if case .chooseGame = suggestion.action {
+            gameSelection = GameSelection(range: context.range)
+            autocompleteIndex = 0
+            isAutocompleteDismissed = true
+            isFocused = false
+            return
+        }
+        if let member = suggestion.member { model.rememberMentionMember(member) }
+        draftSelection = insertInDraft(suggestion.value + " ", replacing: context.range)
+        autocompleteIndex = 0
+        isAutocompleteDismissed = true
+    }
+
+    private func handleTimeFormatAutocomplete(
+        _ command: ComposerAutocompleteCommand,
+        selection: TimeFormatSelection
+    ) -> Bool {
+        let styles = ComposerTimeFormatPicker.styles
+        switch command {
+        case .previous:
+            autocompleteIndex = (autocompleteIndex - 1 + styles.count) % styles.count
+        case .next:
+            autocompleteIndex = (autocompleteIndex + 1) % styles.count
+        case .accept, .advance:
+            acceptTimeFormat(styles[autocompleteIndex], selection: selection)
+        case .dismiss:
+            timeFormatSelection = nil
+            isAutocompleteDismissed = true
+        case .previousField, .nextField, .removeField:
+            return false
+        }
+        return true
+    }
+
+    private func acceptTimeFormat(
+        _ style: DiscordTimestampToken.Style,
+        selection: TimeFormatSelection
+    ) {
+        let token = DiscordTimestampToken(seconds: selection.seconds, style: style)
+        timeFormatSelection = nil
+        draftSelection = insertInDraft(token.rawToken + " ", replacing: selection.range)
+        autocompleteIndex = 0
+        isAutocompleteDismissed = true
+    }
+
+    private func acceptGame(_ game: ProfileGame, selection: GameSelection) {
+        model.rememberGameMention(game)
+        gameSelection = nil
+        draftSelection = insertInDraft("<@$\(game.id)> ", replacing: selection.range)
+        autocompleteIndex = 0
+        isAutocompleteDismissed = true
+        isFocused = true
     }
 }
 
