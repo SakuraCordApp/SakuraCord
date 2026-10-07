@@ -26,6 +26,10 @@ public extension NSAttributedString.Key {
     static let discordMarkdownListMarker = NSAttributedString.Key(
         "dev.sakuracord.markdown.list-marker"
     )
+
+    static let discordMarkdownAttachmentLink = NSAttributedString.Key(
+        "dev.sakuracord.markdown.attachment-link"
+    )
 }
 
 public enum DiscordMarkdown {
@@ -50,6 +54,7 @@ public enum DiscordMarkdown {
             fileprivate let traits: InlineTraits
             fileprivate let link: URL?
             fileprivate let color: SemanticColor?
+            fileprivate var isAttachmentLink = false
             /// Identifies the spoiler containing this run by the line and UTF-8
             /// offset of its opening delimiter. Spoilers never nest, since each
             /// one closes at the nearest delimiter.
@@ -152,38 +157,6 @@ public enum DiscordMarkdown {
         blue: 225 / 255,
         alpha: 1
     )
-
-    public static func attributed(_ source: String) -> AttributedString {
-        let plan = appKitPlan(source)
-        var output = AttributedString()
-        for (lineIndex, line) in plan.lines.enumerated() {
-            if lineIndex > 0 {
-                output.append(AttributedString("\n"))
-            }
-            for run in line.runs {
-                var value = AttributedString(run.text)
-                if run.traits.contains(.bold) {
-                    value.font = .body.bold()
-                }
-                if run.traits.contains(.italic) {
-                    value.font = .body.italic()
-                }
-                if run.traits.contains(.underline) {
-                    value.underlineStyle = .single
-                }
-                if run.traits.contains(.strikethrough) {
-                    value.strikethroughStyle = .single
-                }
-                if run.traits.contains(.inlineCode) {
-                    value.font = .system(.body, design: .monospaced)
-                    value.backgroundColor = Color.secondary.opacity(0.16)
-                }
-                value.link = run.link
-                output.append(value)
-            }
-        }
-        return output
-    }
 
     /// Personal profile widgets allow emphasis, underline and links, but no
     /// message-only blocks, code, spoilers, strike-through or emoji parsing.
@@ -427,6 +400,9 @@ public enum DiscordMarkdown {
         if let link = run.link {
             attributes[.link] = link
             attributes[.foregroundColor] = NSColor.linkColor
+        }
+        if run.isAttachmentLink {
+            attributes[.discordMarkdownAttachmentLink] = NSNumber(value: true)
         }
         if run.traits.contains(.spoiler) {
             attributes[.discordMarkdownSpoiler] = NSNumber(value: run.spoilerID ?? 0)
@@ -680,15 +656,16 @@ public enum DiscordMarkdown {
                   from: String(source[cursor ... close])
               )
         else { return nil }
+        let filename = MessageLinkPolicy.discordAttachmentFilename(for: url)
 
         return (
             AppKitPlan.InlineRun(
-                text: String(
-                    source[source.index(after: cursor) ..< close]
-                ),
+                text: filename.map { "📎 \($0)" }
+                    ?? String(source[source.index(after: cursor) ..< close]),
                 traits: traits,
                 link: url,
-                color: nil
+                color: nil,
+                isAttachmentLink: filename != nil
             ),
             source.index(after: close)
         )
@@ -756,13 +733,16 @@ public enum DiscordMarkdown {
         guard let match = firstURL(in: source[cursor...], anchored: anchored),
               match.range.lowerBound == cursor
         else { return nil }
+        let filename = MessageLinkPolicy.discordAttachmentFilename(for: match.url)
 
         return (
             AppKitPlan.InlineRun(
-                text: String(source[match.range]),
+                text: filename.map { "📎 \($0)" }
+                    ?? String(source[match.range]),
                 traits: traits,
                 link: match.url,
-                color: nil
+                color: nil,
+                isAttachmentLink: filename != nil
             ),
             match.range.upperBound
         )
@@ -1327,6 +1307,43 @@ public enum DiscordMarkdown {
         case .code: "code"
         default: nil
         }
+    }
+}
+
+public extension DiscordMarkdown {
+    static func attributed(_ source: String) -> AttributedString {
+        let plan = appKitPlan(source)
+        var output = AttributedString()
+        for (lineIndex, line) in plan.lines.enumerated() {
+            if lineIndex > 0 {
+                output.append(AttributedString("\n"))
+            }
+            for run in line.runs {
+                var value = AttributedString(run.text)
+                if run.traits.contains(.bold) {
+                    value.font = .body.bold()
+                }
+                if run.traits.contains(.italic) {
+                    value.font = .body.italic()
+                }
+                if run.traits.contains(.underline) {
+                    value.underlineStyle = .single
+                }
+                if run.traits.contains(.strikethrough) {
+                    value.strikethroughStyle = .single
+                }
+                if run.traits.contains(.inlineCode) {
+                    value.font = .system(.body, design: .monospaced)
+                    value.backgroundColor = Color.secondary.opacity(0.16)
+                }
+                if run.isAttachmentLink {
+                    value.backgroundColor = Color.accentColor.opacity(0.14)
+                }
+                value.link = run.link
+                output.append(value)
+            }
+        }
+        return output
     }
 }
 

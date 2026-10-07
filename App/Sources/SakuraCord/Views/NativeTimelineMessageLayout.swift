@@ -371,7 +371,7 @@ extension NativeTimelineRowLayout {
                     verticalOffset += InterfaceScale.metric(6)
                 }
                 let plan = InlineWrappingLayoutPlan.frames(
-                    sizes: contentPresentation.linkedImages.map { $0.displaySize },
+                    sizes: contentPresentation.linkedImages.map { $0.resolvedDisplaySize },
                     maximumWidth: inlineMediaMaximumWidth,
                     horizontalSpacing: InterfaceScale.metric(4),
                     verticalSpacing: InterfaceScale.metric(4)

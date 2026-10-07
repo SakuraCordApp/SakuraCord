@@ -24,11 +24,14 @@ nonisolated enum MessageEmbedPresentation {
     ) -> [MessageEmbed] {
         guard !message.flags.contains(.suppressEmbeds), message.type != .pollResult else { return [] }
         let linkedEmojiURLs =
-            LinkedImagePresentation(content: message.content)
+            LinkedImagePresentation(content: message.content, includeBareMediaURLs: false)
                 .matchedEmojiURLs
         let sakuraCordDeepLinkActions = Set(
             SakuraCordDeepLinkPresentation.all(in: message.content)
                 .map(\.action)
+        )
+        let unpreviewedAttachmentURL = unpreviewedAttachmentURL(
+            in: message.content
         )
         return message.embeds.filter { embed in
             if let url = embed.url,
@@ -38,8 +41,36 @@ nonisolated enum MessageEmbedPresentation {
                 return false
             }
             return !(kind(for: embed) == .bareMedia
-                && embed.url.map(linkedEmojiURLs.contains) == true)
+                && (embed.url.map(linkedEmojiURLs.contains) == true
+                    || sameAttachment(
+                        embed.url,
+                        as: unpreviewedAttachmentURL
+                    )))
         }
+    }
+
+    private static func sameAttachment(_ url: URL?, as other: URL?) -> Bool {
+        guard let url, let other,
+              LinkedImageReference.isBareAttachmentURL(url)
+        else { return false }
+        return url.path == other.path
+    }
+
+    private static func unpreviewedAttachmentURL(in content: String) -> URL? {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        var link = Substring(trimmed)
+        if link.hasPrefix("||"), link.hasSuffix("||"), link.count > 4 {
+            link = link.dropFirst(2).dropLast(2)
+        } else if !link.hasPrefix("<") {
+            return nil
+        }
+        if link.hasPrefix("<"), link.hasSuffix(">") {
+            link = link.dropFirst().dropLast()
+        }
+        guard let url = URL(string: String(link)),
+              LinkedImageReference.isBareAttachmentURL(url)
+        else { return nil }
+        return url
     }
 
     static func visibleMessageContent(
@@ -50,6 +81,22 @@ nonisolated enum MessageEmbedPresentation {
             embeds: visibleEmbeds(
                 for: message
             )
+        )
+    }
+
+    static func linkedImagePresentation(for message: Message) -> LinkedImagePresentation {
+        let embeds = visibleEmbeds(for: message)
+        let representedURLs = Set(
+            embeds.filter { kind(for: $0) != .hidden }.flatMap { embed in
+                [embed.url, embed.image?.url, embed.video?.url].compactMap(\.self)
+            } + message.attachments.flatMap { attachment in
+                [attachment.url, attachment.proxyURL].compactMap(\.self)
+            }
+        )
+        return LinkedImagePresentation(
+            content: visibleMessageContent(message.content, embeds: embeds),
+            includeBareMediaURLs: !message.flags.contains(.suppressEmbeds),
+            excludedURLs: representedURLs
         )
     }
 
@@ -73,9 +120,11 @@ nonisolated enum MessageEmbedPresentation {
     static func visibleMessageContent(_ content: String, embeds: [MessageEmbed]) -> String {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        let rawURL = trimmed.hasPrefix("<") && trimmed.hasSuffix(">")
-            ? String(trimmed.dropFirst().dropLast()) : trimmed
-        guard let contentURL = URL(string: rawURL), contentURL.scheme != nil else { return content }
+        // Angle brackets explicitly keep the link in the message even when
+        // Discord also supplies a media embed for the same URL.
+        guard !trimmed.hasPrefix("<") || !trimmed.hasSuffix(">"),
+              let contentURL = URL(string: trimmed), contentURL.scheme != nil
+        else { return content }
         let replacesLink = embeds.contains { embed in
             kind(for: embed) == .bareMedia && embed.url == contentURL
         }

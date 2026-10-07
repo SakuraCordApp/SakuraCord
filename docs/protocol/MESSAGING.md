@@ -387,6 +387,18 @@ draft; no remote deletion was observed. Re-adding reserves a new upload.
 
 ## Attachments
 
+After an unauthenticated Discord attachment image GET returns `403` or `404`,
+`POST /attachments/refresh-urls` can request a fresh signed URL. The
+`attachment_urls` array contains the failed HTTPS Discord CDN URL. Accept a
+`refreshed_urls` entry only when `original` matches the request and the refreshed
+URL has a trusted Discord media host and the same path. The download retry
+carries no account credentials; media bytes are cached under the original URL.
+This is a read-only POST using the shared safe-read retry budget. Evidence is
+Discord's [signed-attachment reference](https://docs.discord.com/developers/reference#signed-attachment-cdn-urls)
+and the PR author's reported
+SakuraCord historical-GIF playback on 24 September 2026; this route was not
+separately captured from the official client.
+
 Privacy preparation precedes reservation and external multipart construction.
 Use the prepared byte count for caps and reservations. Enabled-by-default metadata
 removal makes local copies of supported images/videos, preserving orientation and

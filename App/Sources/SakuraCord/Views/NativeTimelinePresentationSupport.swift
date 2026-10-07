@@ -487,7 +487,7 @@ enum NativeTimelineMediaViewerPlan {
         in message: Message,
         selectedReferenceID: String
     ) -> NativeTimelineMediaViewerPresentation? {
-        let items = LinkedImagePresentation(content: message.content)
+        let items = MessageEmbedPresentation.linkedImagePresentation(for: message)
             .images.map { reference in
                 RichMediaItem(
                     imageID: reference.id,

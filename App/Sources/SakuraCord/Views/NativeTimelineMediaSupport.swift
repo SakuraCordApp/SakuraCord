@@ -432,6 +432,10 @@ final class NativeTimelineMediaStore {
     var cachedImages: [NativeTimelineMediaKey: CachedImage] = [:]
     var imageCacheRecency: [NativeTimelineMediaKey] = []
     var imageCacheCost = 0
+    // Keep aspect ratios after decoded pixels leave the bounded image cache.
+    // A later timeline relayout must not revert an image to its placeholder shape.
+    var imageSizes: [NativeTimelineMediaKey: CGSize] = [:]
+    var imageSizeOrder: [NativeTimelineMediaKey] = []
     var visibleKeysByOwner:
         [UUID: Set<NativeTimelineMediaKey>] = [:]
     // Keep failures only while visible, so redraws cannot repeatedly fetch a
@@ -516,6 +520,10 @@ final class NativeTimelineMediaStore {
         return cached.image
     }
 
+    func imageSize(for key: NativeTimelineMediaKey) -> CGSize? {
+        imageSizes[key]
+    }
+
     func firstAnimatedFrame(
         for key: NativeTimelineMediaKey
     ) -> NSImage? {
@@ -545,7 +553,7 @@ final class NativeTimelineMediaStore {
         animatedCache.setObject(
             media,
             forKey: key.cacheKey,
-            cost: decoded.estimatedByteCount
+            cost: decoded.storedByteCount
         )
         if let firstFrame = media.firstFrame {
             cacheImage(firstFrame, for: key)
@@ -601,8 +609,11 @@ final class NativeTimelineMediaStore {
                 animatedCache.setObject(
                     media,
                     forKey: key.cacheKey,
-                    cost: decoded.estimatedByteCount
+                    cost: decoded.storedByteCount
                 )
+                if let firstFrame = media.firstFrame {
+                    rememberImageSize(firstFrame.size, for: key)
+                }
             }
             for completion in completions {
                 completion()
@@ -838,6 +849,7 @@ final class NativeTimelineMediaStore {
         _ image: NSImage,
         for key: NativeTimelineMediaKey
     ) {
+        rememberImageSize(image.size, for: key)
         failedKeys.remove(key)
         let cost = Self.estimatedCost(of: image)
         if let previous = cachedImages.updateValue(
@@ -849,6 +861,20 @@ final class NativeTimelineMediaStore {
         imageCacheCost += cost
         touchCachedImage(key)
         evictCachedImagesIfNeeded()
+    }
+
+    private func rememberImageSize(
+        _ size: CGSize,
+        for key: NativeTimelineMediaKey
+    ) {
+        guard size.width > 0, size.height > 0 else { return }
+        if imageSizes.updateValue(size, forKey: key) == nil {
+            imageSizeOrder.append(key)
+        }
+        if imageSizeOrder.count > 1_024 {
+            let evicted = imageSizeOrder.removeFirst()
+            imageSizes[evicted] = nil
+        }
     }
 
     func touchCachedImage(_ key: NativeTimelineMediaKey) {
