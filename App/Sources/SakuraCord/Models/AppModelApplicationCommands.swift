@@ -328,8 +328,12 @@ extension AppModel {
                   channelID: channelID, guildID: context.channel.guildID
               )
         else { return }
-        let isNicknameChange = DiscordBuiltInCommands.isBuiltIn(invocation.command) && invocation.command.name == "nick"
+        let isBuiltIn = DiscordBuiltInCommands.isBuiltIn(invocation.command)
+        let isNicknameChange = isBuiltIn && invocation.command.name == "nick"
         guard isNicknameChange || allowSlowmodeSubmission(in: channelID) else { return }
+        if isBuiltIn, Self.builtInMessageText(command: invocation.command.name, message: "") != nil {
+            guard allowOutgoingQueueSubmission() else { return }
+        }
         cancelApplicationCommandAutocompleteTask(in: destination)
         let submittedDraft = commandComposer.draft
         stopLocalTyping(clearThrottle: true)
@@ -481,13 +485,10 @@ extension AppModel {
         }
         let message = string("message")
         if let text = Self.builtInMessageText(command: invocation.command.name, message: message) {
-            let isTTS = invocation.command.name == "tts"
-            startAccountChildTask(account: session) { model, _ in
-                await model.sendChannelMessage(
-                    channelID: channelID, content: text, replyTo: nil, replyPreview: nil,
-                    attachments: [], clearsComposer: false, isTTS: isTTS
-                )
-            }
+            _ = enqueueChannelMessage(
+                channelID: channelID, content: text, replyTo: nil, replyPreview: nil,
+                attachments: [], clearsComposer: false, isTTS: invocation.command.name == "tts"
+            )
             return
         }
         switch invocation.command.name {

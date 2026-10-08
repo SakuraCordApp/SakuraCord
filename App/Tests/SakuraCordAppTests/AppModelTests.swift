@@ -471,8 +471,9 @@ import UserNotifications
         authoritativeOldestMessageID: fresh.map(\.id).min()
     ).map(\.id.rawValue)
 
-    #expect(partialPageIDs == [1, 2, 4, 6, 7])
-    #expect(completePageIDs == [2, 4, 6, 7])
+    // The in-flight send stays below settled messages.
+    #expect(partialPageIDs == [1, 2, 4, 7, 6])
+    #expect(completePageIDs == [2, 4, 7, 6])
 }
 
 @MainActor

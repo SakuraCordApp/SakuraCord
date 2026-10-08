@@ -228,7 +228,7 @@ extension AppModel {
         to destination: MessageComposerDestination
     ) async -> Bool {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
-              validateAttachmentCount(attachments)
+              validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
         else { return false }
         switch destination {
         case .channel:

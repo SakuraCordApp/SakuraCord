@@ -526,6 +526,7 @@ extension AppModel {
         typingState.clear(userID: message.author.id, in: message.channelID)
         if let nonce = message.nonce {
             enrichInteractionResponse(&message)
+            composer.outbox.noteConfirmation(nonce: nonce)
             composer.outbox.draftsByNonce[nonce] = nil
             composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
             pruneOwnedPromisedAttachmentFiles()

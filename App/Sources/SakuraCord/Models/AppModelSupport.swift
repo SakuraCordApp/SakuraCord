@@ -217,13 +217,14 @@ nonisolated enum OptimisticAttachmentPresentation {
     }
 }
 
-nonisolated enum ComposerSubmissionResult: Equatable, Sendable {
+nonisolated enum ComposerSubmissionResult: Sendable {
     case rejected
-    case enqueued(serverConfirmed: Bool)
+    /// The message is in the outbox; `delivery` settles with server confirmation.
+    case enqueued(delivery: Task<Bool, Never>)
 
-    var serverConfirmed: Bool {
-        guard case let .enqueued(serverConfirmed) = self else { return false }
-        return serverConfirmed
+    func serverConfirmation() async -> Bool {
+        guard case let .enqueued(delivery) = self else { return false }
+        return await delivery.value
     }
 
     var consumedComposer: Bool {

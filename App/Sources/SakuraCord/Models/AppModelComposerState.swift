@@ -43,6 +43,10 @@ extension AppModel {
         get { composer.threadAttachments }
         set { composer.threadAttachments = newValue }
     }
+    var isSendQueueFullAlertPresented: Bool {
+        get { composer.isSendQueueFullAlertPresented }
+        set { composer.isSendQueueFullAlertPresented = newValue }
+    }
 
     func reply(to message: Message) {
         let destination: MessageComposerDestination

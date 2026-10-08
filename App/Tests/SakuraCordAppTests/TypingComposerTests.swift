@@ -2546,6 +2546,157 @@ func `retry resends the exact failed draft through sending and confirmed states`
 }
 
 @MainActor
+@Test func `composer queues sends in order and refuses a message while the outbox is full`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+
+    await provider.suspendNextSend()
+    let contents = (0 ... OutgoingMessageState.maximumWaitingDeliveries).map { "queued \($0)" }
+    var deliveries: [Task<Bool, Never>] = []
+    for content in contents {
+        model.updateDraft(content)
+        // Each submission returns once queued, while the first is still in flight.
+        guard case let .enqueued(delivery) = await model.submitComposerMessage(attachments: []) else {
+            Issue.record("\(content) was not queued")
+            return
+        }
+        deliveries.append(delivery)
+        #expect(model.draft.isEmpty)
+        if deliveries.count == 1 { await provider.waitUntilSendStarts() }
+    }
+    #expect(model.messages.filter { $0.outboxState == .sending }.map(\.content) == contents)
+
+    model.updateDraft("refused")
+    #expect(!(await model.submitComposerMessage(attachments: [])).consumedComposer)
+    #expect(model.draft == "refused")
+    #expect(model.isSendQueueFullAlertPresented)
+    #expect(await provider.sendCount == 1)
+
+    // The confirmation carries a later server timestamp than the sends still
+    // queued behind it; it must settle in place rather than move below them.
+    await provider.suspendNextSend()
+    await provider.releaseSend()
+    #expect(await deliveries[0].value)
+    await provider.waitUntilSendStarts()
+    let settling = model.messages.filter { contents.contains($0.content) }
+    #expect(settling.map(\.content) == contents)
+    #expect(settling.map(\.outboxState) == [.confirmed] + Array(repeating: .sending, count: contents.count - 1))
+
+    await provider.releaseSend()
+    for delivery in deliveries {
+        #expect(await delivery.value)
+    }
+    #expect(await provider.sentDrafts.map(\.content) == contents)
+    #expect(model.messages.filter { contents.contains($0.content) }.map(\.content) == contents)
+}
+
+@MainActor
+@Test(arguments: [false, true])
+func `thread creation holds queue capacity until it enqueues or fails`(fails: Bool) async throws {
+    let permissions = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
+        | DiscordPermissionBits.sendMessages | DiscordPermissionBits.sendMessagesInThreads
+        | DiscordPermissionBits.createPublicThreads
+    let guild = Guild(id: GuildID(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
+    let provider = TypingTestProvider(guild: guild)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    let creation = ThreadCreationDraft(parentID: channelID, permissions: model.selectedChannelThreadCreationPermissions)
+    try #require(creation.permissions.canCreatePublic)
+    creation.name = "Thread"
+    model.threadCreation = creation
+    model.threadDraft = "first message"
+
+    await provider.suspendNextSend()
+    model.updateDraft("in flight")
+    let first = await model.submitComposerMessage(attachments: [])
+    try #require(first.consumedComposer)
+    await provider.waitUntilSendStarts()
+
+    let submission = Task { await model.submitThreadCreation(creation, attachments: []) }
+    await provider.waitUntilThreadCreationStarts()
+    var queued: [ComposerSubmissionResult] = []
+    for index in 1 ..< OutgoingMessageState.maximumWaitingDeliveries {
+        model.updateDraft("queued \(index)")
+        let result = await model.submitComposerMessage(attachments: [])
+        #expect(result.consumedComposer)
+        queued.append(result)
+    }
+    model.updateDraft("keep draft")
+    #expect(!(await model.submitComposerMessage(attachments: [])).consumedComposer)
+    #expect(model.draft == "keep draft")
+    #expect(model.isSendQueueFullAlertPresented)
+
+    await provider.completeThreadCreation(fails: fails)
+    let result = await submission.value
+    #expect(result.consumedComposer == !fails)
+    #expect(model.composer.outbox.waitingDeliveryCount == OutgoingMessageState.maximumWaitingDeliveries - (fails ? 1 : 0))
+    await provider.releaseSend()
+    #expect(await first.serverConfirmation())
+    for delivery in queued { #expect(await delivery.serverConfirmation()) }
+    #expect(await result.serverConfirmation() == !fails)
+    #expect(model.composer.outbox.waitingDeliveryCount == 0)
+    #expect(await provider.sentDrafts.filter { $0.content == "first message" }.count == (fails ? 0 : 1))
+}
+
+@MainActor
+@Test(arguments: [OutboxState.sending, .failed])
+func `unconfirmed local send stays below and groups only with a recent confirmation`(state: OutboxState) {
+    let author = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let timestamp = Date(timeIntervalSince1970: 43_200)
+    // The confirmation's server timestamp trails the local send's timestamp.
+    let confirmed = Message(
+        id: MessageID(rawValue: 10), channelID: ChannelID(rawValue: 10), author: author,
+        content: "confirmed", timestamp: timestamp, nonce: "confirmed"
+    )
+    var pending = Message(
+        id: MessageID(rawValue: .max), channelID: ChannelID(rawValue: 10), author: author,
+        content: "pending", timestamp: timestamp.addingTimeInterval(-1), nonce: "pending", outboxState: state
+    )
+    #expect(AppModel.messagePrecedes(confirmed, pending))
+    #expect(MessageGrouping.rows(for: [confirmed, pending], calendar: calendar).map(\.startsGroup) == [true, false])
+    pending.timestamp = timestamp.addingTimeInterval(-MessageGrouping.defaultContinuationInterval)
+    #expect(MessageGrouping.rows(for: [confirmed, pending], calendar: calendar).map(\.startsGroup) == [true, true])
+}
+
+@MainActor
+@Test func `queued retry confirmed outside the visible history is not sent again`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    await provider.timeOutNextSend()
+    model.updateDraft("ambiguous send")
+    #expect(!(await model.sendComposerMessage(attachments: [])))
+    let failed = try #require(model.messages.first { $0.content == "ambiguous send" })
+
+    await provider.suspendNextSend()
+    model.updateDraft("in flight")
+    guard case let .enqueued(inFlight) = await model.submitComposerMessage(attachments: []) else {
+        Issue.record("The blocking send was not queued")
+        return
+    }
+    await provider.waitUntilSendStarts()
+    let retry = Task { @MainActor in await model.retrySending(failed) }
+    #expect(await until { model.composer.outbox.waitingDeliveryCount == 1 })
+
+    // The timed-out original lands while an older history window is shown.
+    model.hasMoreLaterMessages = true
+    var confirmation = Message(
+        id: MessageID(rawValue: 9_000), channelID: failed.channelID, author: failed.author,
+        content: failed.content, nonce: failed.nonce
+    )
+    model.consumeMessageCreated(&confirmation, preparedTextPlan: nil)
+
+    await provider.releaseSend()
+    #expect(await inFlight.value)
+    #expect(await retry.value)
+    #expect(await provider.sentNonces.filter { $0 == failed.nonce }.count == 1)
+}
+
+@MainActor
 @Test func `optimistic message is pending until send confirmation`() async {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -2892,11 +3043,12 @@ private actor TypingTestProvider: ChatProvider {
 
     let currentUser = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
     let otherUser = User(id: UserID(rawValue: 2), username: "other", displayName: "Other")
-    private let channels = [
-        Channel(id: ChannelID(rawValue: 10), guildID: nil, name: "text", kind: .directMessage),
+    private let guild: Guild?
+    private var channels: [Channel] { [
+        Channel(id: ChannelID(rawValue: 10), guildID: guild?.id, name: "text", kind: guild == nil ? .directMessage : .text),
         Channel(id: ChannelID(rawValue: 11), guildID: nil, name: "voice", kind: .voice),
         Channel(id: ChannelID(rawValue: 12), guildID: nil, name: "group", kind: .groupDirectMessage)
-    ]
+    ] }
     private var continuation: AsyncStream<ClientEvent>.Continuation?
     private(set) var typingChannels: [ChannelID] = []
     private(set) var sendCount = 0
@@ -2911,6 +3063,12 @@ private actor TypingTestProvider: ChatProvider {
     private var didStartSuspendedSend = false
     private var memberSearchStartedWaiter: CheckedContinuation<Void, Never>?
     private var memberSearchReleaseWaiter: CheckedContinuation<[Member], Never>?
+    private var threadCreationStarted: CheckedContinuation<Void, Never>?
+    private var threadCreationResponse: CheckedContinuation<MessageThreadSummary, Error>?
+
+    init(guild: Guild? = nil) {
+        self.guild = guild
+    }
 
     var typingCount: Int {
         typingChannels.count
@@ -2918,7 +3076,7 @@ private actor TypingTestProvider: ChatProvider {
 
     func bootstrap() async throws -> BootstrapSnapshot {
         continuation?.yield(.connectionChanged(.ready))
-        return BootstrapSnapshot(currentUser: currentUser, guilds: [], channels: channels, members: [])
+        return BootstrapSnapshot(currentUser: currentUser, guilds: guild.map { [$0] } ?? [], channels: channels, members: [])
     }
 
     func channels(in guildID: GuildID?) async throws -> [Channel] {
@@ -2962,6 +3120,30 @@ private actor TypingTestProvider: ChatProvider {
 
     func sendTyping(in channelID: ChannelID) async throws {
         typingChannels.append(channelID)
+    }
+
+    func createThread(_ draft: CreateThreadDraft) async throws -> MessageThreadSummary {
+        try await withCheckedThrowingContinuation { continuation in
+            threadCreationResponse = continuation
+            threadCreationStarted?.resume()
+            threadCreationStarted = nil
+        }
+    }
+
+    func waitUntilThreadCreationStarts() async {
+        if threadCreationResponse != nil { return }
+        await withCheckedContinuation { threadCreationStarted = $0 }
+    }
+
+    func completeThreadCreation(fails: Bool) {
+        if fails {
+            threadCreationResponse?.resume(throwing: ChatProviderError.invalidRequest("Synthetic creation failure"))
+        } else {
+            threadCreationResponse?.resume(returning: MessageThreadSummary(
+                id: ChannelID(rawValue: 30), guildID: guild?.id, parentID: channels[0].id, name: "Thread"
+            ))
+        }
+        threadCreationResponse = nil
     }
 
     func send(_ draft: SendMessageDraft) async throws -> Message {

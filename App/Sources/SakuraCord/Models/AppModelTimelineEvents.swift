@@ -923,8 +923,13 @@ extension AppModel {
         return lowerBound
     }
 
+    /// Unconfirmed local sends stay below settled messages in submission
+    /// order. A confirmation carries a later server timestamp than the local
+    /// time of the sends queued behind it, so it settles in place.
     static func messagePrecedes(_ lhs: Message, _ rhs: Message) -> Bool {
-        lhs.timestamp != rhs.timestamp ? lhs.timestamp < rhs.timestamp : lhs.id < rhs.id
+        let lhsUnconfirmed = lhs.isUnconfirmedLocalSend
+        if lhsUnconfirmed != rhs.isUnconfirmedLocalSend { return !lhsUnconfirmed }
+        return lhs.timestamp != rhs.timestamp ? lhs.timestamp < rhs.timestamp : lhs.id < rhs.id
     }
 
     func cache(_ message: Message) {

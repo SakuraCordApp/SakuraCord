@@ -19,6 +19,7 @@ final class MessageComposerState {
     var threadReplyMentionsAuthor = true
     var channelAttachments: [ForumPostAttachment] = []
     var threadAttachments: [ForumPostAttachment] = []
+    var isSendQueueFullAlertPresented = false
     @ObservationIgnored var outbox = OutgoingMessageState()
     @ObservationIgnored private var draftWriteTask: Task<Void, Never>?
 
@@ -87,6 +88,7 @@ final class MessageComposerState {
         threadReplyMentionsAuthor = true
         channelAttachments = []
         threadAttachments = []
+        isSendQueueFullAlertPresented = false
         outbox.reset()
         slowmode.reset()
         await pendingWrite?.value
@@ -94,9 +96,66 @@ final class MessageComposerState {
 }
 
 struct OutgoingMessageState {
+    /// The first-party client refuses a new message while this many sends wait
+    /// behind the one in flight.
+    static let maximumWaitingDeliveries = 5
+
+    struct DeliveryTurn {
+        let nonce: String
+        let previous: Task<Void, Never>?
+        let generation: UInt64
+    }
+
     var draftsByNonce: [String: SendMessageDraft] = [:]
     var stickerUploadSourceURLByNonce: [String: URL] = [:]
     private var nextOptimisticMessageRawValue = UInt64.max
+    private var deliveryTail: Task<Void, Never>?
+    private var waitingNonces: Set<String> = []
+    private var confirmedWaitingNonces: Set<String> = []
+    private var submissionReservations: Set<UUID> = []
+    private var deliveryGeneration: UInt64 = 0
+
+    var waitingDeliveryCount: Int { waitingNonces.count + submissionReservations.count }
+
+    var isDeliveryQueueFull: Bool {
+        waitingDeliveryCount >= Self.maximumWaitingDeliveries
+    }
+
+    /// Holds capacity while a submission prepares its destination, before it has a send nonce.
+    mutating func reserveSubmission() -> UUID? {
+        guard !isDeliveryQueueFull else { return nil }
+        let reservation = UUID()
+        submissionReservations.insert(reservation)
+        return reservation
+    }
+
+    mutating func releaseSubmission(_ reservation: UUID) {
+        submissionReservations.remove(reservation)
+    }
+
+    /// Reserves the next position in the account's single delivery order.
+    mutating func reserveDeliveryTurn(nonce: String) -> DeliveryTurn {
+        waitingNonces.insert(nonce)
+        return DeliveryTurn(nonce: nonce, previous: deliveryTail, generation: deliveryGeneration)
+    }
+
+    /// Remembers a confirmation for a send still waiting for its turn, even
+    /// when the visible history window cannot show it.
+    mutating func noteConfirmation(nonce: String) {
+        if waitingNonces.contains(nonce) { confirmedWaitingNonces.insert(nonce) }
+    }
+
+    mutating func setDeliveryTail(_ delivery: Task<Void, Never>, for turn: DeliveryTurn) {
+        guard turn.generation == deliveryGeneration else { return }
+        deliveryTail = delivery
+    }
+
+    /// Leaves the waiting set; returns whether the send was confirmed meanwhile.
+    mutating func beginDelivery(for turn: DeliveryTurn) -> Bool {
+        guard turn.generation == deliveryGeneration else { return false }
+        waitingNonces.remove(turn.nonce)
+        return confirmedWaitingNonces.remove(turn.nonce) != nil
+    }
 
     mutating func nextOptimisticMessageID() -> MessageID {
         defer { nextOptimisticMessageRawValue &-= 1 }
@@ -107,5 +166,10 @@ struct OutgoingMessageState {
         draftsByNonce.removeAll(keepingCapacity: false)
         stickerUploadSourceURLByNonce.removeAll(keepingCapacity: false)
         nextOptimisticMessageRawValue = UInt64.max
+        deliveryTail = nil
+        waitingNonces.removeAll()
+        confirmedWaitingNonces.removeAll()
+        submissionReservations.removeAll()
+        deliveryGeneration &+= 1
     }
 }

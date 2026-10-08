@@ -50,6 +50,7 @@ and each topic's contract tests before changing them.
 | --- | --- |
 | Ordinary authenticated read, including read-only DM-search POST | At most two created requests: retry after server `429` cooldown or once on a replacement pool after a confirmed REST stall. |
 | Ordinary authenticated mutation | One attempt; no automatic replay after `429`, timeout or ambiguous result. |
+| Message creation (ordinary, sticker and poll sends) | Original plus at most four replays after a non-slowmode `429` cooldown, retaining the nonce. Slowmode `429`, timeouts and ambiguous results are not replayed. See [sends](protocol/MESSAGING.md#sends-and-history). |
 | User-initiated status/custom-status save | One additional `429` attempt when the server delay is at most 30 seconds. Automatic pending-status saves do not retry. See [status](protocol/SETTINGS.md#status-and-custom-status). |
 | Command-index readiness | At most three created GETs for the tested `202`/`429` flow. |
 | Message-search indexing | Original plus at most five `202` retries, using the server delay or a five-second fallback when absent. Each logical read retains the ordinary read budget. |

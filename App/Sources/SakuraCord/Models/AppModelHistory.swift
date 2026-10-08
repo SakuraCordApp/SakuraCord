@@ -736,12 +736,7 @@ extension AppModel {
                 idByNonce[nonce] = resolved.id
             }
         }
-        return byID.values.sorted { lhs, rhs in
-            if lhs.timestamp != rhs.timestamp {
-                return lhs.timestamp < rhs.timestamp
-            }
-            return lhs.id < rhs.id
-        }
+        return byID.values.sorted(by: messagePrecedes)
     }
 
     static func reconcilingNewestPage(
@@ -783,12 +778,7 @@ extension AppModel {
                 byID[messageID] = nil
             }
         }
-        return byID.values.sorted { lhs, rhs in
-            if lhs.timestamp != rhs.timestamp {
-                return lhs.timestamp < rhs.timestamp
-            }
-            return lhs.id < rhs.id
-        }
+        return byID.values.sorted(by: messagePrecedes)
     }
 
 }

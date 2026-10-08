@@ -180,7 +180,7 @@ extension AppModel {
               let remoteURL = sticker.pickerImageLink,
               isCurrentAccountSession(session)
         else { return false }
-        guard allowSlowmodeSubmission(in: channelID) else { return false }
+        guard allowSlowmodeSubmission(in: channelID), allowOutgoingQueueSubmission() else { return false }
         let directory: URL
         do {
             directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
@@ -235,6 +235,13 @@ extension AppModel {
         sourceURL: URL,
         isRetry: Bool
     ) async -> Bool {
+        await enqueueOutgoingSend(outgoing, isRetry: isRetry, completesReading: true) { [weak self] in
+            await self?.prepareStickerUpload(outgoing, sourceURL: sourceURL) ?? false
+        }.value
+    }
+
+    /// Downloads the sticker into its promised file once the send's turn arrives.
+    private func prepareStickerUpload(_ outgoing: SendMessageDraft, sourceURL: URL) async -> Bool {
         let session = accountSession()
         guard let fileURL = outgoing.attachmentURLs.first else { return false }
         do {
@@ -250,11 +257,7 @@ extension AppModel {
                 nonce: outgoing.nonce,
                 channelID: outgoing.channelID
             )
-            let sent = await performOutgoingSend(outgoing, isRetry: isRetry)
-            if sent {
-                completeConversationReadingAndAdvance(channelID: outgoing.channelID)
-            }
-            return sent
+            return true
         } catch {
             guard isCurrentAccountSession(session) else { return false }
             updateOutgoingState(
@@ -314,7 +317,7 @@ extension AppModel {
         else {
             return false
         }
-        guard allowSlowmodeSubmission(in: channelID) else { return false }
+        guard allowSlowmodeSubmission(in: channelID), allowOutgoingQueueSubmission() else { return false }
         let draft = SendMessageDraft(channelID: channelID, content: "", stickerIDs: [sticker.id])
         var presentedSticker = sticker
         presentedSticker.assetURL = sticker.pickerMediaURL ?? sticker.mediaURL

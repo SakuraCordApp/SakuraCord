@@ -77,14 +77,14 @@ extension AppModel {
         if channelID == selectedChannelID {
             guard await prepareChannelMessageSubmission(channelID: channelID, account: session) else { return .rejected }
         }
-        guard isCurrentAccountSession(session), canCreatePoll(in: channelID) else { return .rejected }
-        // The poll appears as an outgoing message with retry, so the creator
-        // does not wait for the server.
-        startAccountChildTask(account: session) { model, _ in
-            _ = await model.sendChannelMessage(channelID: channelID, content: "", replyTo: nil,
-                                               replyPreview: nil, attachments: [], clearsComposer: false, poll: poll)
-        }
-        return .enqueued(serverConfirmed: false)
+        guard isCurrentAccountSession(session), canCreatePoll(in: channelID),
+              allowOutgoingQueueSubmission(),
+              // The poll appears as an outgoing message with retry, so the
+              // creator does not wait for the server.
+              let delivery = enqueueChannelMessage(channelID: channelID, content: "", replyTo: nil,
+                                                   replyPreview: nil, attachments: [], clearsComposer: false, poll: poll)
+        else { return .rejected }
+        return .enqueued(delivery: delivery)
     }
 
     /// Shows the current user's selection immediately and coalesces requests.

@@ -508,6 +508,11 @@ private struct ChatRootView: View {
                 .interfaceScaleRoot()
             }
         }
+        .alert("Whoa there. Way too spicy!", isPresented: $model.isSendQueueFullAlertPresented) {
+            Button("Enter the chill zone") {}
+        } message: {
+            Text("You’re sending messages too quickly!")
+        }
         .alert("SakuraCord", isPresented: Binding(get: { model.errorMessage != nil }, set: {
             if !$0 {
                 model.dismissError()

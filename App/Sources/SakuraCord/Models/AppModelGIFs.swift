@@ -114,6 +114,7 @@ extension AppModel {
 
     @discardableResult
     func sendGIF(_ gif: GIFSearchResult, in destination: MessageComposerDestination = .channel) async -> Bool {
+        guard allowOutgoingQueueSubmission() else { return false }
         if destination == .thread {
             guard let thread = openThread, openThreadAccess.canSend else { return false }
             return await sendThreadMessage(
@@ -133,7 +134,10 @@ extension AppModel {
         let replyTo = replyingTo?.id
         let mentionsRepliedUser = replyMentionsAuthor
         let replyPreview = replyingTo.map { MessageReplyPreview(message: $0) }
-        guard await prepareChannelMessageSubmission(channelID: channelID, account: session) else { return false }
+        // History can load while the picker stays open; the outbox may have filled.
+        guard await prepareChannelMessageSubmission(channelID: channelID, account: session),
+              allowOutgoingQueueSubmission()
+        else { return false }
         return await sendChannelMessage(
             channelID: channelID,
             content: gif.url.absoluteString,

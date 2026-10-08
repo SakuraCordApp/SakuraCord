@@ -11,7 +11,7 @@ and the outbox; MediaPipeline owns local media transformations.
 
 | Contract | Representative checks |
 | --- | --- |
-| DM/history/send budgets | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift) |
+| DM/history/send budgets | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [MessageSendRateLimitContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSendRateLimitContractTests.swift) |
 | Search, forwarding and pins | [MessageSearchContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSearchContractTests.swift); [MessageForwardingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageForwardingContractTests.swift); [PinnedMessagesContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PinnedMessagesContractTests.swift) |
 | Polls and threads | [PollContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PollContractTests.swift); [ForumProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ForumProviderContractTests.swift) |
 | Uploads | [UploadPrivacyContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadPrivacyContractTests.swift); [AttachmentUploadURLValidationTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AttachmentUploadURLValidationTests.swift); [UploadPrivacyPreparationTests.swift](../../App/Tests/SakuraCordAppTests/UploadPrivacyPreparationTests.swift) |
@@ -25,6 +25,23 @@ operations. An ordinary message POST carries content, nonce, TTS/flags and
 as a deliberate idempotency safeguard. Concurrent same-channel/same-nonce sends
 share one mutation. Preserve that nonce for explicit retries; an ambiguous result
 must not cause automatic resend. [Poll creation](#polls) has a distinct body.
+
+Like the first-party `MessageQueue` (stable web build `web.ae482d0492df0fb9.js`,
+observed 9 October 2026), the account's outbox delivers one send at a time in
+submission order. The composer clears as soon as a message is admitted, so later
+messages can be written and queued while earlier ones are in flight. Unconfirmed
+sends, including failed ones awaiting retry or discard, stay below settled messages
+in submission order, so each confirmation settles in place instead of moving by
+its server timestamp. While five
+sends wait behind the one in flight, a new submission is refused before it
+consumes the draft and the "Way too spicy" alert is shown. A non-slowmode `429`
+on the message POST is a definite rejection: the transport waits for the server
+cooldown and replays the same body and nonce within the
+[message creation budget](../PROTOCOL_BASELINE.md#attempt-budgets), without
+re-uploading attachments. The first-party queue replays without a bound;
+SakuraCord stops after the budget and leaves the message failed for explicit retry.
+Forwarding and the `/msg` and `/thread` built-ins post to another conversation
+outside this queue; forwarding keeps the single-attempt mutation budget.
 
 A reply includes reference type 0, message ID and channel ID. To disable the reply
 ping, include `allowed_mentions` with normal users/roles/everyone parsing and
