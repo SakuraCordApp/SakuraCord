@@ -283,7 +283,8 @@ func `Incoming call notifications deduplicate and cancel at the ringing boundary
 @Test func `Notification settings catalog registers every production control`() {
     let expected: Set<SettingsControlID> = [
         .notificationPermission, .notificationEnabled, .notificationPreview,
-        .notificationSound, .notificationDockBadge,
+        .notificationSound, .notificationMessageSound, .notificationCallRingtone,
+        .notificationDockBadge,
         .notificationDirectMessages, .notificationGroupDirectMessages,
         .notificationMentions, .notificationReplies, .notificationIncomingCalls,
         .notificationServerActivity,

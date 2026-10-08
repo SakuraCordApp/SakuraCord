@@ -383,6 +383,18 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .notificationMessageSound,
+            page: .notifications,
+            storage: .appWide(key: NotificationSoundKeys.messageSoundID),
+            defaultValue: .string(NotificationSoundLibrary.bundledID)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationCallRingtone,
+            page: .notifications,
+            storage: .appWide(key: NotificationSoundKeys.callRingtoneID),
+            defaultValue: .string(NotificationSoundLibrary.bundledID)
+        ),
+        SettingsPreferenceRegistration(
             id: .notificationDockBadge,
             page: .notifications,
             storage: .appWide(key: "notifications.dockBadge"),

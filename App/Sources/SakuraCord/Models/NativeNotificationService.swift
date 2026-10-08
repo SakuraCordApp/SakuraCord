@@ -218,6 +218,12 @@ final class NotificationPreferences {
         static let replies = "notifications.events.replies"
         static let incomingCalls = "notifications.events.incomingCalls"
         static let serverActivity = "notifications.events.serverActivity"
+        static let messageSound = NotificationSoundKeys.messageSoundID
+        static let messageSoundBookmark = NotificationSoundKeys.messageSoundBookmark
+        static let messageSoundName = NotificationSoundKeys.messageSoundName
+        static let callRingtone = NotificationSoundKeys.callRingtoneID
+        static let callRingtoneBookmark = NotificationSoundKeys.callRingtoneBookmark
+        static let callRingtoneName = NotificationSoundKeys.callRingtoneName
         static let suppressCurrentConversation = "notifications.suppressCurrentConversation"
         static let groupByConversation = "notifications.groupByConversation"
         static let clearWhenRead = "notifications.clearWhenRead"
@@ -249,6 +255,39 @@ final class NotificationPreferences {
     var notifiesServerActivity: Bool {
         didSet { defaults.set(notifiesServerActivity, forKey: Key.serverActivity) }
     }
+    /// Mirrors the account's own presence. Not persisted: DND suppresses
+    /// every local alert the same way Discord does.
+    var isDoNotDisturb: Bool = false
+    var messageSoundID: String {
+        didSet { defaults.set(messageSoundID, forKey: Key.messageSound) }
+    }
+    var messageSoundName: String {
+        didSet { defaults.set(messageSoundName, forKey: Key.messageSoundName) }
+    }
+    var messageSoundBookmark: Data? {
+        didSet {
+            if let messageSoundBookmark {
+                defaults.set(messageSoundBookmark, forKey: Key.messageSoundBookmark)
+            } else {
+                defaults.removeObject(forKey: Key.messageSoundBookmark)
+            }
+        }
+    }
+    var callRingtoneID: String {
+        didSet { defaults.set(callRingtoneID, forKey: Key.callRingtone) }
+    }
+    var callRingtoneName: String {
+        didSet { defaults.set(callRingtoneName, forKey: Key.callRingtoneName) }
+    }
+    var callRingtoneBookmark: Data? {
+        didSet {
+            if let callRingtoneBookmark {
+                defaults.set(callRingtoneBookmark, forKey: Key.callRingtoneBookmark)
+            } else {
+                defaults.removeObject(forKey: Key.callRingtoneBookmark)
+            }
+        }
+    }
     var suppressesCurrentConversation: Bool {
         didSet {
             defaults.set(suppressesCurrentConversation, forKey: Key.suppressCurrentConversation)
@@ -274,6 +313,12 @@ final class NotificationPreferences {
         notifiesReplies = true
         notifiesIncomingCalls = true
         notifiesServerActivity = true
+        messageSoundID = NotificationSoundLibrary.bundledID
+        messageSoundName = ""
+        messageSoundBookmark = nil
+        callRingtoneID = NotificationSoundLibrary.bundledID
+        callRingtoneName = ""
+        callRingtoneBookmark = nil
         suppressesCurrentConversation = true
         groupsByConversation = true
         clearsWhenRead = true
@@ -300,6 +345,28 @@ final class NotificationPreferences {
         notifiesReplies = bool(Key.replies, default: true)
         notifiesIncomingCalls = bool(Key.incomingCalls, default: true)
         notifiesServerActivity = bool(Key.serverActivity, default: true)
+        messageSoundID = defaults.string(forKey: Key.messageSound) ?? NotificationSoundLibrary.bundledID
+        messageSoundName = defaults.string(forKey: Key.messageSoundName) ?? ""
+        messageSoundBookmark = defaults.data(forKey: Key.messageSoundBookmark)
+        callRingtoneID = defaults.string(forKey: Key.callRingtone) ?? NotificationSoundLibrary.bundledID
+        callRingtoneName = defaults.string(forKey: Key.callRingtoneName) ?? ""
+        callRingtoneBookmark = defaults.data(forKey: Key.callRingtoneBookmark)
+        // Reset and Import only touch the sound IDs, so drop a custom file
+        // the ID no longer points at, and treat "custom" without one as default.
+        if messageSoundID != NotificationSoundLibrary.customID {
+            if messageSoundBookmark != nil { messageSoundBookmark = nil }
+            if !messageSoundName.isEmpty { messageSoundName = "" }
+        } else if messageSoundBookmark == nil {
+            messageSoundID = NotificationSoundLibrary.bundledID
+            messageSoundName = ""
+        }
+        if callRingtoneID != NotificationSoundLibrary.customID {
+            if callRingtoneBookmark != nil { callRingtoneBookmark = nil }
+            if !callRingtoneName.isEmpty { callRingtoneName = "" }
+        } else if callRingtoneBookmark == nil {
+            callRingtoneID = NotificationSoundLibrary.bundledID
+            callRingtoneName = ""
+        }
         suppressesCurrentConversation = bool(Key.suppressCurrentConversation, default: true)
         groupsByConversation = bool(Key.groupByConversation, default: true)
         clearsWhenRead = bool(Key.clearWhenRead, default: true)
@@ -309,6 +376,7 @@ final class NotificationPreferences {
         _ event: NotificationEventContext,
         isCurrentConversation: Bool
     ) -> Bool {
+        guard !isDoNotDisturb else { return false }
         guard isEnabled || playsSound, isEnabled(event.type) else { return false }
         if event.type == .incomingCall {
             return true

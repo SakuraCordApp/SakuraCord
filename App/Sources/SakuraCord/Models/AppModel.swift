@@ -311,7 +311,12 @@ final class AppModel {
     var isLoadingRoleMembers = false
     var roleMemberErrorMessage: String?
     @ObservationIgnored var currentStatusRevision: UInt64 = 0
-    var currentStatus: PresenceStatus = .offline
+    var currentStatus: PresenceStatus = .offline {
+        didSet {
+            notificationPreferences.isDoNotDisturb = currentStatus == .dnd
+            reconcilePrivateCallSounds()
+        }
+    }
     var connectionState: ConnectionState = .disconnected
     var isAuthenticated = false
     var isSwitchingAccounts = false
@@ -1210,8 +1215,11 @@ final class AppModel {
         accessibilitySettings = AccessibilitySettingsStore.shared.load()
         self.notificationService =
             notificationService ?? NoopNativeNotificationService()
-        self.soundPlayer = soundPlayer ?? NoopAppSoundPlayer()
-        self.notificationPreferences = notificationPreferences ?? NotificationPreferences()
+        let resolvedSoundPlayer = soundPlayer ?? NoopAppSoundPlayer()
+        let resolvedNotificationPreferences = notificationPreferences ?? NotificationPreferences()
+        resolvedSoundPlayer.connectNotificationSounds(to: resolvedNotificationPreferences)
+        self.soundPlayer = resolvedSoundPlayer
+        self.notificationPreferences = resolvedNotificationPreferences
         let resolvedVoicePreferences = voiceVideoPreferences ?? VoiceVideoPreferences()
         self.voiceVideoPreferences = resolvedVoicePreferences
         self.accessibilityMessageAnnouncer = accessibilityMessageAnnouncer ?? AccessibilityMessageAnnouncer()

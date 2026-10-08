@@ -20,6 +20,11 @@ struct NotificationsSettingsPage: View {
                 requestPermission: requestPermission,
                 authorizationStatus: authorizationStatus
             )
+            NotificationSoundSettingsSection(
+                preferences: preferences,
+                soundPlayer: model.soundPlayer,
+                state: state
+            )
             NotificationEventSettingsSection(preferences: preferences, state: state)
             NotificationPermissionSettingsSection(
                 authorizationStatus: authorizationStatus,

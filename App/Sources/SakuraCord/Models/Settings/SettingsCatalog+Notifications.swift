@@ -1,5 +1,10 @@
 import Foundation
 
+nonisolated extension SettingsControlID {
+    static let notificationMessageSound = Self(rawValue: "notifications.message-sound")
+    static let notificationCallRingtone = Self(rawValue: "notifications.call-ringtone")
+}
+
 nonisolated extension SettingsCatalog {
     static let notificationsPage = page(
         .notifications, group: .preferences, title: "Notifications", image: "bell",
@@ -45,6 +50,24 @@ nonisolated extension SettingsCatalog {
             label: "Notification sound",
             help: "Play the Discord message sound with desktop alerts, or through SakuraCord when desktop notifications are off.",
             keywords: ["audio", "alert", "Focus"],
+            scope: .appWideLocal
+        ),
+        control(
+            .notificationMessageSound,
+            page: .notifications,
+            section: .notificationDelivery,
+            label: "Message sound",
+            help: "Choose the sound played for message notifications.",
+            keywords: ["audio", "alert", "custom"],
+            scope: .appWideLocal
+        ),
+        control(
+            .notificationCallRingtone,
+            page: .notifications,
+            section: .notificationDelivery,
+            label: "Call ringtone",
+            help: "Choose the sound played for incoming calls.",
+            keywords: ["ring", "audio", "custom"],
             scope: .appWideLocal
         ),
         control(
