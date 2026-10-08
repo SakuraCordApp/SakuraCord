@@ -278,10 +278,10 @@ extension NativeMemberListCanvasView {
                 let id = items[index].id
                 headerIDs.insert(id)
                 let element = accessibilityHeaders[id] ?? NSAccessibilityElement()
-                element.setAccessibilityRole(.heading)
+                element.setAccessibilityRole(.headingRole)
                 element.setAccessibilityLabel("\(header.title) — \(header.totalCount)")
                 element.setAccessibilityParent(self)
-                element.accessibilityFrameInParentSpace = itemRect(at: index)
+                element.setAccessibilityFrameInParentSpace(itemRect(at: index))
                 accessibilityHeaders[id] = element
                 children.append(element)
                 continue
