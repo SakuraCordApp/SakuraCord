@@ -224,16 +224,23 @@ func `member list cursor rebuild handles server tags outside the viewport`() thr
     let model = AppModel(launchMode: .offlineTesting)
     let canvas = NativeMemberListCanvasView(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
     let scrollView = NSScrollView(frame: CGRect(x: 0, y: 0, width: 300, height: 100))
+    let window = NSWindow(contentRect: scrollView.frame, styleMask: [], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = scrollView
     scrollView.documentView = canvas
     canvas.serverTagCardModel = model
     canvas.updateDocumentIfNeeded(sections: [
         MemberSection(id: .online, title: "Online", colorHex: nil, totalCount: 1, members: [taggedMember]),
     ])
-    defer { canvas.tearDown() }
+    defer {
+        canvas.tearDown()
+        window.close()
+    }
 
     let index = try #require(canvas.itemIndexesByID[.member(taggedMember.id)])
     let tagFrame = try #require(canvas.serverTagFrame(at: index))
     #expect(canvas.canActivateServerTag(at: index))
+    #expect(canvas.window === window)
     withExtendedLifetime(model) {
         // The row remains visible even when its tag is wholly above the viewport.
         // Rebuilding cursors must also handle an edge touch and a partly visible tag.
@@ -244,9 +251,20 @@ func `member list cursor rebuild handles server tags outside the viewport`() thr
             #expect(canvas.itemRange(intersecting: visibleRect).contains(index))
             let intersection = tagFrame.intersection(visibleRect)
             #expect(intersection.isEmpty == (top >= tagFrame.maxY))
-            canvas.discardCursorRects()
-            canvas.resetCursorRects()
+            window.resetCursorRects()
         }
+
+        // A row can also enter the viewport before its tag at the bottom edge.
+        window.setContentSize(NSSize(width: 300, height: tagFrame.minY - 1))
+        scrollView.contentView.scroll(to: .zero)
+        let visibleRect = scrollView.documentVisibleRect
+        #expect(canvas.itemRange(intersecting: visibleRect).contains(index))
+        #expect(tagFrame.intersection(visibleRect).isNull)
+        window.resetCursorRects()
+
+        window.setContentSize(NSSize(width: 300, height: tagFrame.midY))
+        #expect(!tagFrame.intersection(scrollView.documentVisibleRect).isEmpty)
+        window.resetCursorRects()
     }
 }
 
