@@ -322,9 +322,11 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         else { return }
         for index in itemRange(intersecting: visibleRect) {
             guard canActivateServerTag(at: index),
-                  let frame = serverTagFrame(at: index)
+                  let frame = serverTagFrame(at: index)?.intersection(visibleRect),
+                  !frame.isEmpty
             else { continue }
-            addCursorRect(frame.intersection(visibleRect), cursor: .pointingHand)
+            // AppKit asserts on empty cursor rects, which a partly scrolled-out row produces.
+            addCursorRect(frame, cursor: .pointingHand)
         }
     }
 
