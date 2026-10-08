@@ -498,10 +498,11 @@ struct MemberRow: View {
 struct MemberAvatar: View {
     let member: Member
     var isHovered = false
+    var showsPresence = true
 
     var body: some View {
         AvatarPresenceView(
-            status: member.memberListStatus,
+            status: showsPresence ? member.memberListStatus : nil,
             avatarSize: InterfaceScale.metric(34),
             indicatorSize: InterfaceScale.metric(11),
             isMobile: member.showsMobileIndicator

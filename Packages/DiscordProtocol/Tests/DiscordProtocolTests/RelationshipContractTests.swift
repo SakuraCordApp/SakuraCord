@@ -13,7 +13,7 @@ struct RelationshipContractTests {
             "user": user("1"),
             "users": .array([user("2"), user("3")]),
             "relationships": .array([
-                row("2", type: 1, extra: ["nickname": .string("Pal"), "since": .string("2026-03-20T00:00:00+00:00")]),
+                row("2", type: 1, extra: ["nickname": .string("Pal"), "note": .string("Hello 🌸"), "since": .string("2026-03-20T00:00:00+00:00")]),
                 row("3", type: 3, extra: ["is_spam_request": .bool(true)]),
                 row("4", type: 4),
                 row("5", type: 2),
@@ -35,10 +35,12 @@ struct RelationshipContractTests {
         // An add keeps metadata it omits; an update replaces it.
         await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("2", type: 1))
         #expect(await provider.cachedRelationships[id(2)]?.nickname == "Pal")
+        #expect(await provider.publishedRelationships().first { $0.id == id(2) }?.note == "Hello 🌸")
         await provider.handleGatewayDispatch(name: "RELATIONSHIP_UPDATE", body: row("2", type: 1))
         records = await provider.cachedRelationships
         #expect(records[id(2)]?.nickname == nil)
         #expect(records[id(2)]?.since == nil)
+        #expect(records[id(2)]?.note == nil)
         #expect(records[id(4)]?.type == .friend)
         #expect(records[id(4)]?.since != nil)
         #expect(await provider.publishedRelationships().first { $0.id == id(4) }?.user?.username == "user4")
@@ -78,7 +80,7 @@ struct RelationshipContractTests {
     @Test func `relationship mutations use Discord's routes, bodies and context once each`() async throws {
         let provider = await makeProvider()
         try await provider.sendFriendRequest(username: "example", discriminator: nil, captchaHandler: nil)
-        try await provider.sendFriendRequest(username: "legacy", discriminator: 42, captchaHandler: nil)
+        try await provider.sendFriendRequest(username: "legacy", discriminator: 42, note: "  Hello\n🌸  ", captchaHandler: nil)
         try await provider.acceptFriendRequest(from: id(2), confirmingStranger: false, captchaHandler: nil)
         try await provider.removeRelationship(with: id(3), as: .removeFriend)
         try await provider.removeRelationship(with: id(4), as: .unblock)
@@ -94,7 +96,7 @@ struct RelationshipContractTests {
         ])
         #expect(captured.map(\.body) == [
             .object(["username": .string("example"), "discriminator": .null]),
-            .object(["username": .string("legacy"), "discriminator": .number(42)]),
+            .object(["username": .string("legacy"), "discriminator": .number(42), "note": .string("Hello 🌸")]),
             .object(["confirm_stranger_request": .bool(false)]), nil, nil,
             .object(["type": .number(2)]), nil,
         ])
@@ -133,10 +135,22 @@ struct RelationshipContractTests {
         await provider.disconnect()
     }
 
+    @Test func `request note limits use UTF16 and reject before sending`() async throws {
+        let provider = await makeProvider()
+        #expect(try FriendRequestNote.normalized(String(repeating: "🌸", count: 60))?.utf16.count == 120)
+        #expect(try FriendRequestNote.normalized(" \n ") == nil)
+        await #expect(throws: RelationshipActionError.self) {
+            try await provider.sendFriendRequest(username: "example", discriminator: nil,
+                                                 note: String(repeating: "🌸", count: 61), captchaHandler: nil)
+        }
+        #expect(requests(method: "POST").isEmpty)
+        await provider.disconnect()
+    }
+
     @Test(arguments: ["hcaptcha", "recaptcha", "recaptcha_enterprise", "turnstile"])
     func `a friend request challenge is solved by a human once and replays the original request`(service: String) async throws {
         let provider = await makeProvider()
-        try await provider.sendFriendRequest(username: "captcha-\(service)", discriminator: nil) { challenge in
+        try await provider.sendFriendRequest(username: "captcha-\(service)", discriminator: nil, note: "Hello 🌸") { challenge in
             #expect(challenge.service.rawValue == service)
             #expect(challenge.siteKey == "site-key")
             #expect(challenge.userFlow == "friend_request")
@@ -154,6 +168,21 @@ struct RelationshipContractTests {
         #expect(replay.request.value(forHTTPHeaderField: "X-Captcha-Rqtoken") == "request-token")
         #expect(replay.request.value(forHTTPHeaderField: "X-Captcha-Session-Id") == "captcha-session")
         #expect(await !provider.requestSafetyCircuitIsOpen)
+        await provider.disconnect()
+    }
+
+    @Test
+    func `blocking presents the human challenge and preserves its original context`() async throws {
+        let provider = await makeProvider()
+        try await provider.blockUser(id(990)) { challenge in
+            #expect(challenge.service == .hcaptcha)
+            return "human-solution"
+        }
+        let captured = RelationshipURLProtocol.requests.withLock { $0 }
+        #expect(captured.count == 2)
+        #expect(captured.allSatisfy { $0.request.httpMethod == "PUT" && context($0.request) == "ContextMenu" })
+        #expect(captured.allSatisfy { $0.body == .object(["type": .number(2)]) })
+        #expect(captured.last?.request.value(forHTTPHeaderField: "X-Captcha-Key") == "human-solution")
         await provider.disconnect()
     }
 
@@ -280,6 +309,7 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
         case (_, "captcha-repeated"?, _): (400, Self.challenge(service: "hcaptcha"))
         case (_, let name?, _) where name.hasPrefix("captcha-") && !solved:
             (400, Self.challenge(service: String(name.dropFirst("captcha-".count))))
+        case ("PUT", _, "990") where !solved: (400, Self.challenge(service: "hcaptcha"))
         case ("PUT", _, "813") where body == .object(["confirm_stranger_request": .bool(false)]):
             (400, #"{"code":80013,"message":"Confirmation required"}"#)
         case ("DELETE", _, "404"): (404, #"{"code":10013,"message":"Unknown User"}"#)

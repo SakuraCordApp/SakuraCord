@@ -35,7 +35,7 @@ public extension MockChatProvider {
         return nicknames[userID]
     }
 
-    func sendFriendRequest(username: String, discriminator: Int?, captchaHandler: DiscordCaptchaHandler?) async throws {
+    func sendFriendRequest(username: String, discriminator: Int?, note: String? = nil, captchaHandler: DiscordCaptchaHandler?) async throws {
         let known = snapshot.knownUsers + snapshot.relationships.compactMap(\.user)
         guard let user = known.first(where: { $0.username == username }), user.id != currentUser.id else {
             throw RelationshipActionError.failed("Hm, didn’t work. Double check that the username is correct.")
@@ -43,7 +43,7 @@ public extension MockChatProvider {
         if snapshot.relationships.contains(where: { $0.id == user.id && $0.type == .friend }) {
             throw RelationshipActionError.failed("You’re already friends with that user!")
         }
-        setRelationship(Relationship(id: user.id, type: .outgoingRequest, user: user))
+        setRelationship(Relationship(id: user.id, type: .outgoingRequest, user: user, note: try FriendRequestNote.normalized(note)))
     }
 
     func acceptFriendRequest(from userID: UserID, confirmingStranger: Bool, captchaHandler: DiscordCaptchaHandler?) async throws {
@@ -60,7 +60,7 @@ public extension MockChatProvider {
         publishRelationships()
     }
 
-    func blockUser(_ userID: UserID) async throws {
+    func blockUser(_ userID: UserID, captchaHandler: DiscordCaptchaHandler? = nil) async throws {
         let user = snapshot.relationships.first { $0.id == userID }?.user
             ?? snapshot.knownUsers.first { $0.id == userID }
         setRelationship(Relationship(id: userID, type: .blocked, user: user))

@@ -62,7 +62,9 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
 
         var height: CGFloat {
             switch self {
-            case .header: NativeMemberListMetrics.sectionHeaderHeight
+            // An untitled section keeps its header item for stable layout but takes no space.
+            case .header(let header): header.title.isEmpty && !header.isLoadingSkeleton
+                ? 0 : NativeMemberListMetrics.sectionHeaderHeight
             case .member, .placeholder: NativeMemberListMetrics.memberRowHeight
             }
         }
@@ -153,6 +155,8 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     struct AvatarOverlayConfiguration: Equatable {
         let member: Member
         let isHovered: Bool
+        let showsPresence: Bool
+        let opacity: CGFloat
     }
 
     struct ActivityEmojiOverlayPresentation {
@@ -202,6 +206,10 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var dismissProfile: () -> Void = {}
     var selectMember: (Member) -> Void = { _ in }
     var nicknameActions: (Member) -> [NicknameMenuAction] = { _ in [] }
+    /// Trailing controls hosted only on the hovered row.
+    var rowAccessory: ((Member) -> AnyView)?
+    var rowMenu: ((Member) -> NSMenu?)?
+    var rowAccessibilityActions: ((Member) -> [NSAccessibilityCustomAction])?
     var hoveredIndex: Int?
     var hoveredServerTagID: ItemID?
     var serverTagCardPresentation: ServerTagCardPresentation?
@@ -245,6 +253,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         ActivityEmojiOverlayID: ActivityEmojiOverlayConfiguration
     ] = [:]
     var accessibilityRows: [ItemID: NativeMemberAccessibilityProxyView] = [:]
+    var accessibilityHeaders: [ItemID: NSAccessibilityElement] = [:]
     var imageTasks: [URL: Task<Void, Never>] = [:]
     var imageTaskPriorities: [URL: MediaLoadPriority] = [:]
     var imageTaskPixelDimensions: [URL: Int] = [:]
@@ -372,7 +381,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         guard let index = index(at: point),
               case .member(let member, _) = items[index]
         else { return nil }
-        return NicknameContextMenu.menu(for: nicknameActions(member))
+        return rowMenu?(member) ?? NicknameContextMenu.menu(for: nicknameActions(member))
     }
 
 }

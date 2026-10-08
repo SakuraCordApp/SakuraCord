@@ -37,6 +37,7 @@ extension NativeMemberListCanvasView {
                 )
                 return
             }
+            guard !section.title.isEmpty else { return }
             drawSectionHeader(section, at: index, context: context)
         case .placeholder:
             guard let skeletonStyle else { return }
@@ -378,7 +379,7 @@ extension NativeMemberListCanvasView {
         if let activity = prepared.activity,
            let truncationToken = prepared.activityTruncationToken
         {
-            let maximumWidth = max(0, row.maxX - textX - 4)
+            let maximumWidth = max(0, row.maxX - textX - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth))
             let visibleActivity = Self.truncatedLine(
                 activity,
                 token: truncationToken,
@@ -428,7 +429,8 @@ extension NativeMemberListCanvasView {
             width: NativeMemberListMetrics.avatarSize,
             height: NativeMemberListMetrics.avatarSize
         )
-        let opacity: CGFloat = !member.isListedOnline ? 0.55 : 1
+        let opacity = presentation.opacity(for: member)
+        let status = presentation.status(for: member)
         let isMobile = member.showsMobileIndicator
         let presenceIndicatorRect = AvatarPresencePresentation.indicatorRect(
             avatarRect: avatar,
@@ -437,7 +439,7 @@ extension NativeMemberListCanvasView {
         )
         context.saveGState()
         context.setAlpha(opacity)
-        if member.memberListStatus != nil {
+        if status != nil {
             context.addRect(context.boundingBoxOfClipPath)
             context.addPath(AvatarPresencePresentation.cutoutPath(
                 avatarRect: avatar,
@@ -497,7 +499,7 @@ extension NativeMemberListCanvasView {
 
         context.restoreGState()
 
-        if let status = member.memberListStatus {
+        if let status {
             drawPresenceIndicator(
                 status,
                 isMobile: isMobile,

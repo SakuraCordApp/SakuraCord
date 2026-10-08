@@ -14,18 +14,18 @@ extension AppModel {
     }
 
     var friendsSection: FriendsSection {
-        friends.selectedSection ?? FriendsListPolicy.initialSection(relationships)
+        friends.selectedSection ?? friends.initialSection
     }
 
     /// Discord's visible sections; the chosen one stays while it empties.
     var visibleFriendsSections: [FriendsSection] {
-        let visible = FriendsListPolicy.visibleSections(relationships, presences: friends.presences)
+        let visible = friends.availableSections
         let section = friendsSection
         return FriendsSection.allCases.filter { visible.contains($0) || $0 == section }
     }
 
     var incomingFriendRequestCount: Int {
-        FriendsListPolicy.incomingRequestCount(relationships)
+        friends.incomingCount
     }
 
     var isFriendsSearchActive: Bool {
@@ -37,12 +37,8 @@ extension AppModel {
         set { friends.searchTextBySection[friendsSection] = newValue }
     }
 
-    func friendsListGroups() -> [FriendsListGroup] {
-        FriendsListPolicy.groups(
-            for: friendsSection,
-            rows: FriendsListPolicy.rows(relationships, presences: friends.presences),
-            query: friendsSearchText
-        )
+    var friendsProjection: FriendsProjection {
+        friends.projection(for: friendsSection, query: friendsSearchText)
     }
 
     func openFriends() {
@@ -103,6 +99,7 @@ extension AppModel {
 
     func applyRelationships(_ relationships: [Relationship]) {
         guard var value = snapshot else { return }
+        friends.replaceRelationships(relationships)
         value.relationships = relationships
         value.friendUserIDs = relationships.friendUserIDs
         value.relationshipNicknamesByUserID = relationships.nicknamesByUserID
@@ -113,11 +110,7 @@ extension AppModel {
     }
 
     func applyRelationshipPresences(_ presences: [UserID: UserPresence], isComplete: Bool) {
-        if isComplete {
-            friends.presences = presences
-        } else {
-            friends.presences.merge(presences) { _, newer in newer }
-        }
+        friends.updatePresences(presences, isComplete: isComplete)
     }
 
     // MARK: - Add Friend
@@ -133,16 +126,18 @@ extension AppModel {
         friends.isSendingRequest = true
         friends.addFriendError = nil
         friends.addFriendSuccess = nil
+        let note = friends.addFriendNote
         let session = accountSession()
         startAccountChildTask(account: session) { model, session in
             defer { if model.isCurrentAccountSession(session) { model.friends.isSendingRequest = false } }
             do {
                 try await session.provider.sendFriendRequest(
-                    username: username, discriminator: discriminator,
+                    username: username, discriminator: discriminator, note: note,
                     captchaHandler: model.friendsCaptchaHandler(account: session)
                 )
                 guard model.isCurrentAccountSession(session) else { return }
                 model.friends.addFriendText = ""
+                model.friends.addFriendNote = ""
                 model.friends.addFriendSuccess = tag
                 model.friends.addFriendFocusRequest &+= 1
             } catch {
@@ -176,8 +171,8 @@ extension AppModel {
     }
 
     func blockUser(_ user: User) {
-        performRelationshipAction(on: user.id) { _, session in
-            try await session.provider.blockUser(user.id)
+        performRelationshipAction(on: user.id) { model, session in
+            try await session.provider.blockUser(user.id, captchaHandler: model.friendsCaptchaHandler(account: session))
         }
     }
 
@@ -252,7 +247,7 @@ extension AppModel {
     }
 
     private func solveFriendsCaptcha(_ challenge: DiscordCaptchaChallenge, account: AppModelAccountSession) async throws -> String {
-        guard isCurrentAccountSession(account) else { throw CancellationError() }
+        guard isCurrentAccountSession(account), isFriendsPresented else { throw CancellationError() }
         return try await friends.captcha.solution(for: challenge)
     }
 }

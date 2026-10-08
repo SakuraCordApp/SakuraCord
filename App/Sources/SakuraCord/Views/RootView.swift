@@ -583,19 +583,16 @@ private struct ChatRootView: View {
             }
             if model.guildWorkspacePage == .channelsAndRoles, model.featuresSettings.channelManagement,
                let guildID = model.selectedGuildID, model.hasCustomizationQuestions(in: guildID) {
-                ToolbarItemGroup(placement: .principal) {
-                    Toggle("Customize", systemImage: "slider.horizontal.3", isOn: Binding(
-                        get: { !model.isBrowsingGuildChannels },
-                        set: { if $0 { model.showGuildCustomizationChannels(false) } }
-                    ))
-                    .labelStyle(.titleAndIcon)
-                    .tint(SakuraCordAccentColor.color)
-                    Toggle("Browse Channels", systemImage: "list.bullet", isOn: Binding(
+                ToolbarItem(placement: .principal) {
+                    Picker("Channels & Roles", selection: Binding(
                         get: { model.isBrowsingGuildChannels },
-                        set: { if $0 { model.showGuildCustomizationChannels(true) } }
-                    ))
-                    .labelStyle(.titleAndIcon)
-                    .tint(SakuraCordAccentColor.color)
+                        set: { model.showGuildCustomizationChannels($0) }
+                    )) {
+                        Text("Customize").tag(false)
+                        Text("Browse Channels").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
             }
             if let presentation = supplementaryToolbarPresentation {
@@ -1494,32 +1491,22 @@ private struct ChannelTopicPopover: View {
     }
 }
 
-/// Friends sections as native toolbar toggles, following Discord's visibility rules.
+/// Friends categories use the same principal placement as Channels & Roles.
 private struct FriendsToolbarSections: ToolbarContent {
     let model: AppModel
 
     var body: some ToolbarContent {
-        let sections = model.visibleFriendsSections
-        let selected = model.friendsSection
-        ToolbarItemGroup(placement: .principal) {
-            ForEach(sections.filter { $0 != .addFriend }, id: \.self) { section in
-                Toggle(isOn: Binding(get: { selected == section }, set: { if $0 { model.selectFriendsSection(section) } })) {
-                    Label(title(section), systemImage: symbol(section))
+        ToolbarItem(id: "friends-categories", placement: .principal) {
+            Picker("Friends", selection: Binding(
+                get: { model.friendsSection },
+                set: { model.selectFriendsSection($0) }
+            )) {
+                ForEach(model.visibleFriendsSections, id: \.self) { section in
+                    Text(title(section)).tag(section)
                 }
-                .labelStyle(.titleAndIcon)
-                .tint(SakuraCordAccentColor.color)
-                .badge(section == .pending ? model.incomingFriendRequestCount : 0)
-                .accessibilityValue(section == .pending && model.incomingFriendRequestCount > 0
-                    ? "\(model.incomingFriendRequestCount) incoming" : "")
             }
-        }
-        ToolbarSpacer(.fixed, placement: .principal)
-        ToolbarItem(placement: .principal) {
-            Toggle(isOn: Binding(get: { selected == .addFriend }, set: { if $0 { model.selectFriendsSection(.addFriend) } })) {
-                Label("Add Friend", systemImage: "person.badge.plus")
-            }
-            .labelStyle(.titleAndIcon)
-            .tint(SakuraCordAccentColor.color)
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
     }
 
@@ -1527,17 +1514,8 @@ private struct FriendsToolbarSections: ToolbarContent {
         switch section {
         case .online: "Online"
         case .all: "All"
-        case .pending: "Pending"
+        case .pending: model.incomingFriendRequestCount > 0 ? "Pending (\(model.incomingFriendRequestCount))" : "Pending"
         case .addFriend: "Add Friend"
-        }
-    }
-
-    private func symbol(_ section: FriendsSection) -> String {
-        switch section {
-        case .online: "dot.radiowaves.left.and.right"
-        case .all: "person.2"
-        case .pending: "clock"
-        case .addFriend: "person.badge.plus"
         }
     }
 }

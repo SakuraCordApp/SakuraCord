@@ -29,7 +29,7 @@ by the first All or Pending view; Online and Add Friend use READY. A record
 changed by Gateway while the read is in flight keeps its newer state, and a new
 READY discards the result.
 
-`RELATIONSHIP_ADD` keeps stored nickname/since when omitted; `RELATIONSHIP_UPDATE`
+`RELATIONSHIP_ADD` keeps stored nickname/since/note when omitted or null; `RELATIONSHIP_UPDATE`
 replaces them; `RELATIONSHIP_REMOVE` deletes the record. Mutations answer 204
 without a body and Gateway often arrives first, so responses never write records.
 
@@ -37,7 +37,7 @@ without a body and Gateway often arrives first, so responses never write records
 
 | Action | Request | `X-Context-Properties` location |
 | --- | --- | --- |
-| Send request | `POST /users/@me/relationships` `{"username":…,"discriminator":null}` (legacy tag: number) | Add Friend |
+| Send request | `POST /users/@me/relationships` `{"username":…,"discriminator":null}` (legacy tag: number), optional `note` | Add Friend |
 | Accept | `PUT /users/@me/relationships/{user}` `{"confirm_stranger_request":false}` | Friends |
 | Remove, cancel, decline | `DELETE /users/@me/relationships/{user}` | Friends |
 | Block | `PUT /users/@me/relationships/{user}` `{"type":2}` | ContextMenu |
@@ -52,7 +52,21 @@ suggestions are not implemented.
 
 Add Friend trims, drops one leading `@` from an untagged name and accepts
 Discord's username pattern or a legacy `name#0000` tag, at most 37 characters.
-Request notes are not sent.
+Personalized requests accept an optional note, limited to 120 UTF-16 code units
+before normalization. Newlines become spaces, surrounding whitespace is trimmed,
+and an empty result is omitted from the POST body. The original normalized note
+is retained through CAPTCHA replay. Both READY and live relationship events
+carry the note; full reads use the same decoder. Pending shows outgoing notes
+and reveals incoming notes on “View Request”, a local action with no REST call.
+The note is request metadata, separate from the account's private user note.
+Acceptance causes Discord to emit a DM `MESSAGE_CREATE` of type 67 containing
+the note; the client must not send a duplicate message. This was observed when
+accepting a personalized request in SakuraCord and in the official client.
+
+These note contracts were observed in both saved accounts on 2026-10-08 against
+the same official stable build, with module237309 supplying the UTF-16 validation
+and normalization rules. Notes and their reveal state remain in session memory
+and clear on account teardown.
 
 ## CAPTCHA
 

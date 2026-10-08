@@ -20,6 +20,8 @@ final class FriendsState {
     var searchTextBySection: [FriendsSection: String] = [:]
     var isSearchFocused = false
     var addFriendText = ""
+    var addFriendNote = ""
+    var revealedRequestIDs: Set<UserID> = []
     var addFriendError: String?
     /// The username a request was just sent to.
     var addFriendSuccess: String?
@@ -32,6 +34,80 @@ final class FriendsState {
     /// Sections whose full relationship read was requested on this connection.
     @ObservationIgnored var loadedSections: Set<FriendsSection> = []
 
+    private(set) var listRevision: UInt64 = 0
+    private(set) var incomingCount = 0
+    private(set) var availableSections: [FriendsSection] = [.addFriend]
+    private(set) var initialSection: FriendsSection = .addFriend
+    @ObservationIgnored private var records: [Relationship] = []
+    @ObservationIgnored private var sortedRows: [FriendRow] = []
+    @ObservationIgnored private var rowIndexes: [UserID: Int] = [:]
+    @ObservationIgnored private var projections: [FriendsSection: FriendsProjection] = [:]
+
+    func replaceRelationships(_ relationships: [Relationship]) {
+        records = relationships
+        sortedRows = FriendsListPolicy.rows(relationships, presences: presences)
+        rowIndexes = Dictionary(uniqueKeysWithValues: sortedRows.enumerated().map { ($0.element.id, $0.offset) })
+        incomingCount = FriendsListPolicy.incomingRequestCount(relationships)
+        initialSection = FriendsListPolicy.initialSection(relationships)
+        revealedRequestIDs.formIntersection(Set(relationships.filter { $0.type == .incomingRequest }.map(\.id)))
+        invalidateProjection()
+    }
+
+    func updatePresences(_ values: [UserID: UserPresence], isComplete: Bool) {
+        if isComplete { presences = values } else { presences.merge(values) { _, newer in newer } }
+        var changed = false
+        var onlineMembershipChanged = false
+        let ids = isComplete ? Array(rowIndexes.keys) : Array(values.keys)
+        for id in ids {
+            guard let index = rowIndexes[id] else { continue }
+            let old = sortedRows[index]
+            let presence = presences[id] ?? UserPresence(status: .offline)
+            guard old.presence != presence else { continue }
+            let row = FriendRow(relationship: old.relationship, user: old.user, presence: presence)
+            sortedRows[index] = row
+            guard old.relationship.type == .friend else { continue }
+            if FriendsListPolicy.isOnline(old) != FriendsListPolicy.isOnline(row) {
+                onlineMembershipChanged = true
+                projections[.online] = nil
+            } else {
+                projections[.online]?.updatePresence(row)
+            }
+            projections[.all]?.updatePresence(row)
+            changed = true
+        }
+        if onlineMembershipChanged {
+            availableSections = FriendsListPolicy.visibleSections(records, presences: presences)
+        }
+        if changed { listRevision &+= 1 }
+    }
+
+    func row(for id: UserID) -> FriendRow? {
+        _ = listRevision
+        return rowIndexes[id].map { sortedRows[$0] }
+    }
+
+    func revealRequest(_ id: UserID) {
+        guard revealedRequestIDs.insert(id).inserted else { return }
+        projections[.pending] = nil
+        listRevision &+= 1
+    }
+
+    /// Memoized per category/query; drawing and hover never sort or rebuild rows.
+    func projection(for section: FriendsSection, query: String) -> FriendsProjection {
+        _ = listRevision
+        if let cached = projections[section], cached.query == query { return cached }
+        let groups = FriendsListPolicy.groups(for: section, rows: sortedRows, query: query)
+        let value = FriendsProjection(section: section, query: query, groups: groups, revealed: revealedRequestIDs)
+        projections[section] = value
+        return value
+    }
+
+    private func invalidateProjection() {
+        projections.removeAll(keepingCapacity: true)
+        availableSections = FriendsListPolicy.visibleSections(records, presences: presences)
+        listRevision &+= 1
+    }
+
     func reset() {
         captcha.cancel()
         isPresented = false
@@ -40,17 +116,20 @@ final class FriendsState {
         searchTextBySection = [:]
         isSearchFocused = false
         resetAddFriendForm()
+        isSendingRequest = false
         pendingUserIDs = []
         actionError = nil
         confirmation = nil
         loadedSections = []
+        revealedRequestIDs = []
+        replaceRelationships([])
     }
 
     func resetAddFriendForm() {
         addFriendText = ""
+        addFriendNote = ""
         addFriendError = nil
         addFriendSuccess = nil
-        isSendingRequest = false
     }
 }
 

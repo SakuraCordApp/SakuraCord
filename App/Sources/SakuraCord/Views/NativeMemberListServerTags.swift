@@ -38,7 +38,7 @@ extension NativeMemberListCanvasView {
             + (prepared.serverTag.map { [$0.width] } ?? [])
         let layout = NativeMemberNameLayout.layout(
             measuredNameWidth: prepared.nameWidth,
-            availableWidth: max(0, row.maxX - 4 - nameX),
+            availableWidth: max(0, row.maxX - 4 - nameX - InterfaceScale.metric(presentation.trailingAccessoryWidth)),
             accessoryWidths: accessoryWidths
         )
         let tagIndex = member.user.isBot ? 1 : 0

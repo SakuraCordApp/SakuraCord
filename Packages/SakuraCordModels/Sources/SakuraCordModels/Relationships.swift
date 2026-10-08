@@ -20,6 +20,8 @@ public struct Relationship: Identifiable, Codable, Hashable, Sendable {
     public var user: User?
     /// The private friend nickname, visible only to the current account.
     public var nickname: String?
+    /// Optional personal message attached to a friend request.
+    public var note: String?
     public var since: Date?
     public var isSpamRequest: Bool
     public var isUserIgnored: Bool
@@ -30,6 +32,7 @@ public struct Relationship: Identifiable, Codable, Hashable, Sendable {
         user: User? = nil,
         nickname: String? = nil,
         since: Date? = nil,
+        note: String? = nil,
         isSpamRequest: Bool = false,
         isUserIgnored: Bool = false
     ) {
@@ -38,6 +41,7 @@ public struct Relationship: Identifiable, Codable, Hashable, Sendable {
         self.user = user
         self.nickname = nickname
         self.since = since
+        self.note = note
         self.isSpamRequest = isSpamRequest
         self.isUserIgnored = isUserIgnored
     }
@@ -94,5 +98,20 @@ public enum RelationshipActionError: Error, LocalizedError, Equatable, Sendable 
         case .strangerConfirmationRequired: "Confirm that you know this person before accepting their request."
         case .failed(let reason): reason
         }
+    }
+}
+
+/// Official client note validation counts UTF-16 before normalizing line breaks.
+public enum FriendRequestNote {
+    public static let maximumLength = 120
+    public static let validationMessage = "Notes can only contain plain text and must be under 120 characters."
+
+    public static func normalized(_ value: String?) throws -> String? {
+        guard let value else { return nil }
+        guard value.utf16.count <= maximumLength else {
+            throw RelationshipActionError.failed(validationMessage)
+        }
+        let note = value.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return note.isEmpty ? nil : note
     }
 }

@@ -140,12 +140,14 @@ extension NativeMemberListCanvasView {
             let configuration = AvatarOverlayConfiguration(
                 member: member,
                 isHovered: hoveredIndex == index && !isScrolling && !interactionsBlocked
-                    && WindowModalCoordinator.allowsInput(for: self)
+                    && WindowModalCoordinator.allowsInput(for: self),
+                showsPresence: self.presentation.status(for: member) != nil,
+                opacity: self.presentation.opacity(for: member)
             )
             if avatarOverlayConfigurations[id] != configuration {
                 host.rootView = AnyView(
-                    MemberAvatar(member: member, isHovered: configuration.isHovered)
-                        .opacity(member.isListedOnline ? 1 : 0.55)
+                    MemberAvatar(member: member, isHovered: configuration.isHovered, showsPresence: configuration.showsPresence)
+                        .opacity(configuration.opacity)
                         .allowsHitTesting(false)
                 )
                 avatarOverlayConfigurations[id] = configuration
@@ -205,7 +207,7 @@ extension NativeMemberListCanvasView {
                 )
                 let configuration = ActivityEmojiOverlayConfiguration(
                     url: url,
-                    opacity: member.isListedOnline ? 1 : 0.55
+                    opacity: presentation.opacity(for: member)
                 )
                 visibleOverlays.append(ActivityEmojiOverlayPresentation(
                     id: id,
@@ -268,9 +270,22 @@ extension NativeMemberListCanvasView {
 
     func installAccessibilityRows(in range: Range<Int>) {
         var visibleIDs: Set<ItemID> = []
+        var headerIDs: Set<ItemID> = []
         var tagIDs: Set<ItemID> = []
         var children: [Any] = []
         for index in range {
+            if case .header(let header) = items[index], !header.title.isEmpty, !header.isLoadingSkeleton {
+                let id = items[index].id
+                headerIDs.insert(id)
+                let element = accessibilityHeaders[id] ?? NSAccessibilityElement()
+                element.setAccessibilityRole(.heading)
+                element.setAccessibilityLabel("\(header.title) — \(header.totalCount)")
+                element.setAccessibilityParent(self)
+                element.accessibilityFrameInParentSpace = itemRect(at: index)
+                accessibilityHeaders[id] = element
+                children.append(element)
+                continue
+            }
             guard case .member(let member, _) = items[index] else { continue }
             let id = items[index].id
             visibleIDs.insert(id)
@@ -280,7 +295,16 @@ extension NativeMemberListCanvasView {
                 accessibilityRows[id] = value
                 return value
             }()
-            proxy.member = member
+            if proxy.member != member {
+                proxy.member = member
+                if presentation.presenceHiddenUserIDs.contains(member.id) {
+                    proxy.setAccessibilityValue(member.activityText ?? "")
+                }
+                if rowMenu != nil {
+                    proxy.toolTip = [member.user.username, member.activityText].compactMap { $0 }.joined(separator: "\n")
+                }
+                proxy.setAccessibilityCustomActions(rowAccessibilityActions?(member) ?? [])
+            }
             proxy.activation = { [weak self] member in
                 guard let self, !self.interactionsBlocked,
                       WindowModalCoordinator.allowsInput(for: self)
@@ -309,6 +333,9 @@ extension NativeMemberListCanvasView {
         for (id, proxy) in accessibilityRows where !visibleIDs.contains(id) {
             proxy.removeFromSuperview()
             accessibilityRows[id] = nil
+        }
+        for id in accessibilityHeaders.keys where !headerIDs.contains(id) {
+            accessibilityHeaders[id] = nil
         }
         for (id, button) in serverTagAccessibilityButtons where !tagIDs.contains(id) {
             button.removeFromSuperview()
@@ -357,14 +384,19 @@ extension NativeMemberListCanvasView {
         }
         setNeedsDisplay(itemRect(at: index))
         let isSelected = selectedMemberID == member.id
-        host.rootView = AnyView(
-            MemberRow(
-                member: member,
-                isSelected: isSelected,
-                showsContents: false,
-                select: { [weak self] in self?.selectMember(member) }
-            )
+        let row = MemberRow(
+            member: member,
+            isSelected: isSelected,
+            showsContents: false,
+            select: { [weak self] in self?.selectMember(member) }
         )
+        if let accessory = rowAccessory?(member) {
+            host.rootView = AnyView(row.overlay(alignment: .trailing) {
+                accessory.padding(.trailing, InterfaceScale.metric(8))
+            })
+        } else {
+            host.rootView = AnyView(row)
+        }
         host.frame = CGRect(
             x: NativeMemberListMetrics.horizontalInset,
             y: origins[index],
@@ -577,6 +609,7 @@ extension NativeMemberListCanvasView {
         avatarOverlays.removeAll()
         activityEmojiOverlays.removeAll()
         accessibilityRows.removeAll()
+        accessibilityHeaders.removeAll()
     }
 
 }

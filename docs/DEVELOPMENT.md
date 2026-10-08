@@ -47,6 +47,7 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-forum-performance` | Large forum |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
+| `./script/build_and_run.sh --offline-friends-performance` | 1,000 friends plus 200 requests; 20-second scroll with 20 presence updates/second, then 80 category switches |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
 
 The offline sign-in fixture uses the production sign-in views and state handling

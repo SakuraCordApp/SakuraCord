@@ -8,12 +8,13 @@ struct GatewayRelationshipDTO: Decodable {
     var type: Int?
     var nickname: String?
     var since: String?
+    var note: String?
     var isSpamRequest: Bool?
     var userIgnored: Bool?
     var user: UserDTO?
 
     enum CodingKeys: String, CodingKey {
-        case id, type, nickname, since, user
+        case id, type, nickname, since, note, user
         case isSpamRequest = "is_spam_request"
         case userIgnored = "user_ignored"
     }
@@ -29,6 +30,7 @@ struct GatewayRelationshipDTO: Decodable {
             type: type,
             nickname: replacing ? nickname : nickname ?? existing?.nickname,
             since: replacing ? since : since ?? existing?.since,
+            note: replacing ? note : note ?? existing?.note,
             isSpamRequest: isSpamRequest ?? (replacing ? false : existing?.isSpamRequest ?? false),
             isUserIgnored: userIgnored ?? (replacing ? false : existing?.isUserIgnored ?? false)
         )
@@ -39,6 +41,7 @@ struct RelationshipRecord: Equatable, Sendable {
     var type: RelationshipType
     var nickname: String?
     var since: Date?
+    var note: String?
     var isSpamRequest: Bool
     var isUserIgnored: Bool
 }
@@ -126,13 +129,14 @@ extension DiscordRESTProvider {
     /// once after a completed human challenge. The Sent row arrives through
     /// `RELATIONSHIP_ADD`, not the empty response.
     public func sendFriendRequest(
-        username: String, discriminator: Int?, captchaHandler: DiscordCaptchaHandler?
+        username: String, discriminator: Int?, note: String? = nil, captchaHandler: DiscordCaptchaHandler?
     ) async throws {
         let tag = discriminator.map { "\(username)#\(String(format: "%04d", $0))" } ?? username
-        let body: [String: JSONValue] = [
+        var body: [String: JSONValue] = [
             "username": .string(username),
             "discriminator": discriminator.map { .number(Double($0)) } ?? .null,
         ]
+        if let note = try FriendRequestNote.normalized(note) { body["note"] = .string(note) }
         try await relationshipMutation(
             "/users/@me/relationships", method: "POST", body: body, location: "Add Friend",
             captchaHandler: captchaHandler, failure: { Self.friendRequestFailureMessage(code: $0, status: $1, discordTag: tag) }
@@ -165,10 +169,10 @@ extension DiscordRESTProvider {
     }
 
     /// Blocks a user, replacing any friendship or request.
-    public func blockUser(_ userID: UserID) async throws {
+    public func blockUser(_ userID: UserID, captchaHandler: DiscordCaptchaHandler? = nil) async throws {
         try await relationshipMutation(
             "/users/@me/relationships/\(userID)", method: "PUT", body: ["type": .number(Double(RelationshipType.blocked.rawValue))],
-            location: "ContextMenu", captchaHandler: nil,
+            location: "ContextMenu", captchaHandler: captchaHandler,
             failure: { Self.relationshipUpdateFailureMessage(code: $0, status: $1) }
         )
     }
@@ -200,6 +204,10 @@ extension DiscordRESTProvider {
         if response.statusCode == 401 {
             authorizationValue = nil
             throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
+        }
+        if method == "POST", path == "/users/@me/relationships",
+           let fields = try? JSONDecoder().decode([String: JSONValue].self, from: data), fields["note"] != nil {
+            throw RelationshipActionError.failed(FriendRequestNote.validationMessage)
         }
         let code = Self.discordErrorCode(from: data)
         if response.statusCode == 400 || response.statusCode == 429 || response.statusCode == 403 {
@@ -318,7 +326,7 @@ extension DiscordRESTProvider {
             Relationship(
                 id: userID, type: record.type,
                 user: cachedGatewayUsersByID[userID.description].flatMap { try? $0.domain() },
-                nickname: record.nickname, since: record.since,
+                nickname: record.nickname, since: record.since, note: record.note,
                 isSpamRequest: record.isSpamRequest, isUserIgnored: record.isUserIgnored
             )
         }

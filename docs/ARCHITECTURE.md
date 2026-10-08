@@ -39,6 +39,13 @@ are mapped in [Testing](TESTING.md#choose-the-verification-boundary).
 | Bug reports and suggestions | [IssueReportStore.swift](../App/Sources/SakuraCord/Models/IssueReportStore.swift); [AppModelIssueReports.swift](../App/Sources/SakuraCord/Models/AppModelIssueReports.swift) | [IssueReportHubClient.swift](../App/Sources/SakuraCord/Services/IssueReportHubClient.swift) (sakuracord.app); [report-service sign-in](protocol/SESSION.md#report-service-sign-in) | [IssueReportView.swift](../App/Sources/SakuraCord/Views/IssueReport/IssueReportView.swift) |
 | Voice and screen sharing | [AppModelVoice.swift](../App/Sources/SakuraCord/Models/AppModelVoice.swift); [AppModelScreenSharing.swift](../App/Sources/SakuraCord/Models/AppModelScreenSharing.swift) | [DiscordVoiceSession.swift](../Packages/MediaPipeline/Sources/MediaPipeline/DiscordVoiceSession.swift) | [ScreenShareWindowOverlay.swift](../App/Sources/SakuraCord/Views/ScreenShareWindowOverlay.swift) |
 
+Friends uses the existing native member canvas for visible-row drawing, media
+reuse and accessibility. `FriendsState` sorts hydrated relationships when their
+records change, applies presence deltas by identity, and caches each category's
+search projection. `FriendsProjection` adapts those rows to the canvas; the
+provider remains authoritative for relationship metadata and mutations. These
+caches and request-note reveal state are session-scoped.
+
 ## Runtime and account lifetime
 
 [AppModel](../App/Sources/SakuraCord/Models/AppModel.swift) is a Main Actor observable

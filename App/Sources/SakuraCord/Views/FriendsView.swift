@@ -12,13 +12,18 @@ struct FriendsView: View {
         let friends = model.friends
         Group {
             if model.friendsSection == .addFriend {
-                AddFriendView(model: model)
+                ScrollView {
+                    AddFriendView(model: model)
+                }
+                .scrollBounceBehavior(.always, axes: .vertical)
+                .scrollEdgeEffectStyle(.soft, for: .top)
             } else {
                 FriendsListView(model: model)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(HumanCaptchaPresentation(store: friends.captcha))
+        .onDisappear { friends.captcha.cancel() }
         .alert(
             confirmationTitle(friends.confirmation),
             isPresented: Binding(get: { friends.confirmation != nil }, set: { if !$0 { friends.confirmation = nil } }),
@@ -88,30 +93,48 @@ private struct FriendsListView: View {
     let model: AppModel
 
     var body: some View {
-        let groups = model.friendsListGroups()
+        let projection = model.friendsProjection
         let query = model.friendsSearchText
-        List {
-            ForEach(groups) { group in
-                Section {
-                    ForEach(group.rows) { row in
-                        FriendRowView(model: model, row: row, isPending: model.friends.pendingUserIDs.contains(row.id))
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(
-                                top: InterfaceScale.metric(2), leading: InterfaceScale.metric(12),
-                                bottom: InterfaceScale.metric(2), trailing: InterfaceScale.metric(12)
-                            ))
+        NativeMemberListView(
+            sections: projection.displaySections, customEmojiURLsByID: model.customEmojiURLsByID,
+            profilePresentation: nil, isProfilePresented: false,
+            selectMember: { member in
+                guard let row = model.friends.row(for: member.id) else { return }
+                if row.relationship.type == .friend {
+                    model.openDirectMessage(with: row.user)
+                } else if row.relationship.type == .incomingRequest, row.relationship.note != nil,
+                          !model.friends.revealedRequestIDs.contains(row.id) {
+                    model.friends.revealRequest(row.id)
+                } else { model.showFriendProfile(row) }
+            },
+            dismissProfile: {}, runsPerformanceAutoScroll: false, viewportIdentity: nil,
+            presentation: NativeMemberListPresentation(
+                roleColorDisplay: .hidden, dimsOfflineMembers: false,
+                presenceHiddenUserIDs: projection.pendingIDs, trailingAccessoryWidth: 90
+            ),
+            rowAccessory: { member in
+                AnyView(Group {
+                    if let row = model.friends.row(for: member.id) {
+                        FriendRowControls(model: model, row: row)
                     }
-                } header: {
-                    Text(group.title)
-                        .font(.interface(.subheadline).weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
+                })
+            },
+            rowMenu: { member in
+                guard let row = model.friends.row(for: member.id) else { return nil }
+                return FriendRowControls(model: model, row: row).nativeMenu()
+            },
+            rowAccessibilityActions: { member in
+                guard let row = model.friends.row(for: member.id) else { return [] }
+                return FriendRowControls(model: model, row: row).accessibilityActions()
+            },
+            contentIdentity: "friends-\(model.friendsSection)-\(query)"
+        )
+        // Like the message timeline, let rows pass beneath the native toolbar.
+        // NSScrollView supplies the initial inset for the overlapping title bar.
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .ignoresSafeArea(.container, edges: .top)
         .overlay {
-            if groups.allSatisfy(\.rows.isEmpty) {
+            if projection.count == 0 {
                 if !query.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
@@ -143,92 +166,16 @@ private struct FriendsListView: View {
     }
 }
 
-private struct FriendRowView: View {
+private struct FriendRowControls: View {
     let model: AppModel
     let row: FriendRow
-    let isPending: Bool
-    @State private var isHovered = false
+    private var isPending: Bool { model.friends.pendingUserIDs.contains(row.id) }
 
     var body: some View {
-        HStack(spacing: InterfaceScale.metric(12)) {
-            AvatarPresenceView(
-                status: row.relationship.type == .friend ? row.presence.status : nil,
-                avatarSize: InterfaceScale.metric(36),
-                indicatorSize: InterfaceScale.metric(36) * 0.3,
-                isMobile: row.presence.showsMobileIndicator
-            ) {
-                AvatarView(name: row.name, url: row.user.avatarURL, size: InterfaceScale.metric(36), animates: true, isHovered: isHovered)
-            }
-
-            VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
-                HStack(spacing: InterfaceScale.metric(6)) {
-                    Text(row.name)
-                        .font(.interface(.body).weight(.semibold))
-                        .lineLimit(1)
-                    if isHovered || row.relationship.type != .friend {
-                        Text(row.user.username)
-                            .font(.interface(.callout))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                subtitle
-                    .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(14), alignment: .leading)
-            }
-
-            Spacer(minLength: InterfaceScale.metric(8))
-
-            if isPending {
-                ProgressView().controlSize(.small)
-            }
-            actions
-                .disabled(isPending)
+        HStack(spacing: InterfaceScale.metric(6)) {
+            if isPending { ProgressView().controlSize(.small) }
+            actions.disabled(isPending)
         }
-        .padding(.horizontal, InterfaceScale.metric(10))
-        .frame(minHeight: InterfaceScale.metric(56))
-        .background {
-            ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous)
-                .fill(Color.primary.opacity(isHovered ? 0.06 : 0))
-        }
-        .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous))
-        .onModalHover { isHovered = $0 }
-        .onTapGesture(perform: primaryAction)
-        .pointerStyle(.link)
-        .contextMenu { menuItems }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: row.relationship.type == .friend ? "Message" : "Profile", primaryAction)
-    }
-
-    @ViewBuilder private var subtitle: some View {
-        switch row.relationship.type {
-        case .incomingRequest:
-            secondaryText("Incoming Friend Request")
-        case .outgoingRequest:
-            secondaryText("Outgoing Friend Request")
-        default:
-            if let status = row.presence.customStatus?.trimmingCharacters(in: .whitespacesAndNewlines), !status.isEmpty {
-                ProfileStatusTextView(source: status, isExpanded: false, fontSize: 12, usesSecondaryColor: true)
-                    .frame(maxHeight: InterfaceScale.metric(16))
-                    .lineLimit(1)
-                    .allowsHitTesting(false)
-            } else if let activity = row.presence.activityText, !activity.isEmpty {
-                Label(activity, systemImage: row.presence.isListeningToMusic ? "music.note" : "gamecontroller.fill")
-                    .labelStyle(.titleAndIcon)
-                    .font(.interface(.caption))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            } else {
-                secondaryText(PresenceIndicatorPresentation.accessibilityLabel(for: row.presence.status, isMobile: false))
-            }
-        }
-    }
-
-    private func secondaryText(_ value: String) -> some View {
-        Text(value)
-            .font(.interface(.caption))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
     }
 
     @ViewBuilder private var actions: some View {
@@ -280,42 +227,50 @@ private struct FriendRowView: View {
         .help(title)
     }
 
-    @ViewBuilder private var menuItems: some View {
-        Button("Profile", systemImage: "person.crop.circle") { model.showFriendProfile(row) }
+    private var menuActions: [NicknameMenuAction] {
+        var actions = [NicknameMenuAction(title: "Profile", systemImage: "person.crop.circle") { model.showFriendProfile(row) }]
         if row.relationship.type == .friend {
-            Button("Message", systemImage: "bubble.left") { model.openDirectMessage(with: row.user) }
-            ForEach(model.nicknameMenuActions(for: row.user, in: nil), id: \.title) { action in
-                Button(action.title, systemImage: action.systemImage, action: action.perform)
+            actions.append(.init(title: "Message", systemImage: "bubble.left") { model.openDirectMessage(with: row.user) })
+            actions += model.nicknameMenuActions(for: row.user, in: nil)
+            actions.append(.init(title: "Remove Friend", systemImage: "person.badge.minus") { model.friends.confirmation = .removeFriend(row.user) })
+        } else if row.relationship.type == .incomingRequest {
+            if row.relationship.note != nil {
+                actions.append(.init(title: "View Request", systemImage: "text.bubble") { model.friends.revealRequest(row.id) })
             }
+            actions.append(.init(title: "Accept", systemImage: "checkmark") { model.acceptFriendRequest(from: row.user) })
+            actions.append(.init(title: "Ignore", systemImage: "xmark") { model.removeRelationship(with: row.user, as: .declineIncomingRequest) })
+        } else if row.relationship.type == .outgoingRequest {
+            actions.append(.init(title: "Cancel Request", systemImage: "xmark") { model.removeRelationship(with: row.user, as: .cancelOutgoingRequest) })
         }
-        Divider()
-        switch row.relationship.type {
-        case .friend:
-            Button("Remove Friend", systemImage: "person.badge.minus", role: .destructive) {
-                model.friends.confirmation = .removeFriend(row.user)
-            }
-        case .incomingRequest:
-            Button("Accept", systemImage: "checkmark") { model.acceptFriendRequest(from: row.user) }
-            Button("Ignore", systemImage: "xmark") { model.removeRelationship(with: row.user, as: .declineIncomingRequest) }
-        case .outgoingRequest:
-            Button("Cancel Request", systemImage: "xmark") { model.removeRelationship(with: row.user, as: .cancelOutgoingRequest) }
-        default:
-            EmptyView()
-        }
-        Button("Block", systemImage: "hand.raised", role: .destructive) { model.friends.confirmation = .block(row.user) }
-        Divider()
-        Button("Copy User ID", systemImage: "doc.on.doc") {
+        actions.append(.init(title: "Block", systemImage: "hand.raised") { model.friends.confirmation = .block(row.user) })
+        actions.append(.init(title: "Copy User ID", systemImage: "doc.on.doc") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(row.user.id.description, forType: .string)
+        })
+        return actions
+    }
+
+    @ViewBuilder private var menuItems: some View {
+        ForEach(menuActions, id: \.title) { action in
+            Button(action.title, systemImage: action.systemImage, action: action.perform)
+                .disabled(isPending)
         }
     }
 
-    private func primaryAction() {
-        if row.relationship.type == .friend {
-            model.openDirectMessage(with: row.user)
-        } else {
-            model.showFriendProfile(row)
+    func accessibilityActions() -> [NSAccessibilityCustomAction] {
+        menuActions.map { action in
+            NSAccessibilityCustomAction(name: action.title) {
+                guard !model.friends.pendingUserIDs.contains(row.id), model.isFriendsPresented else { return false }
+                action.perform()
+                return true
+            }
         }
+    }
+
+    func nativeMenu() -> NSMenu? {
+        let menu = NicknameContextMenu.menu(for: menuActions)
+        if isPending { menu?.items.forEach { $0.isEnabled = false } }
+        return menu
     }
 }
 
@@ -326,6 +281,7 @@ private struct AddFriendView: View {
     var body: some View {
         @Bindable var friends = model.friends
         let canSend = !friends.addFriendText.isEmpty && !friends.isSendingRequest
+            && friends.addFriendNote.utf16.count <= FriendRequestNote.maximumLength
         VStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
             Text("Add Friend")
                 .font(.interface(.title2).weight(.bold))
@@ -347,6 +303,7 @@ private struct AddFriendView: View {
                         if !value.isEmpty { friends.addFriendSuccess = nil }
                     }
                     .accessibilityLabel("Username")
+                    .disabled(friends.isSendingRequest)
                     .padding(.leading, InterfaceScale.metric(14))
 
                 Button {
@@ -379,6 +336,28 @@ private struct AddFriendView: View {
                     .stroke(borderColor(friends), lineWidth: 1)
                     .allowsHitTesting(false)
             }
+
+            VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
+                HStack {
+                    Text("Personalize your request (Optional)")
+                    Spacer()
+                    Text("\(friends.addFriendNote.utf16.count)/\(FriendRequestNote.maximumLength)")
+                        .monospacedDigit()
+                        .foregroundStyle(friends.addFriendNote.utf16.count > FriendRequestNote.maximumLength ? Color.red : .secondary)
+                }
+                .font(.interface(.callout))
+                TextField("Say something about yourself", text: $friends.addFriendNote, axis: .vertical)
+                    .lineLimit(2 ... 3)
+                    .textFieldStyle(.plain)
+                    .padding(InterfaceScale.metric(14))
+                    .background(.quaternary.opacity(0.5), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous))
+                    .accessibilityLabel("Personalize your request")
+                    .disabled(friends.isSendingRequest)
+                Text("Your note will also appear in the DM if you become friends.")
+                    .font(.interface(.callout))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, InterfaceScale.metric(12))
 
             if let error = friends.addFriendError {
                 Text(error)

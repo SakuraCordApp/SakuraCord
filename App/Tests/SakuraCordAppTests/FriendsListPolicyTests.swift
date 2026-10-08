@@ -40,4 +40,27 @@ struct FriendsListPolicyTests {
         #expect(FriendsListPolicy.parseUsername("@@double") == .invalid)
         #expect(FriendsListPolicy.parseUsername("bad#12") == .invalid)
     }
+    @Test @MainActor func `cached friends projections follow presence, relationships, reveal and account reset`() {
+        let state = FriendsState()
+        let id = UserID(rawValue: 1)
+        let user = User(id: id, username: "example", displayName: "Example")
+        state.replaceRelationships([Relationship(id: id, type: .friend, user: user)])
+        #expect(state.projection(for: .online, query: "").count == 0)
+        #expect(state.projection(for: .all, query: "").count == 1)
+        state.updatePresences([id: UserPresence(status: .dnd)], isComplete: false)
+        #expect(state.projection(for: .all, query: "").sections.first?.members.first?.status == .dnd)
+        #expect(state.projection(for: .online, query: "").count == 1)
+        state.updatePresences([:], isComplete: true)
+        #expect(state.projection(for: .online, query: "").count == 0)
+        state.replaceRelationships([Relationship(id: id, type: .incomingRequest, user: user, note: "Hello")])
+        #expect(state.projection(for: .all, query: "").count == 0)
+        #expect(state.projection(for: .pending, query: "").sections.first?.members.first?.activityText == "View Request")
+        state.revealRequest(id)
+        #expect(state.projection(for: .pending, query: "").sections.first?.members.first?.activityText == "“Hello”")
+        state.reset()
+        #expect(state.projection(for: .pending, query: "").count == 0)
+        #expect(state.revealedRequestIDs.isEmpty)
+        #expect(state.row(for: id) == nil)
+    }
+
 }

@@ -97,10 +97,10 @@ public protocol ChatProvider: Sendable {
     func setFriendNickname(_ nickname: String?, for userID: UserID) async throws -> String?
     /// Reads every relationship at most once per Gateway connection.
     func loadRelationships() async throws
-    func sendFriendRequest(username: String, discriminator: Int?, captchaHandler: DiscordCaptchaHandler?) async throws
+    func sendFriendRequest(username: String, discriminator: Int?, note: String?, captchaHandler: DiscordCaptchaHandler?) async throws
     func acceptFriendRequest(from userID: UserID, confirmingStranger: Bool, captchaHandler: DiscordCaptchaHandler?) async throws
     func removeRelationship(with userID: UserID, as removal: RelationshipRemoval) async throws
-    func blockUser(_ userID: UserID) async throws
+    func blockUser(_ userID: UserID, captchaHandler: DiscordCaptchaHandler?) async throws
     func saveProfileChanges(
         _ changes: ProfileEditChanges, in scope: ProfileEditingScope,
         didSave: @Sendable (ProfileSaveConfirmation) async -> Void
@@ -470,7 +470,7 @@ public extension ChatProvider {
 
     func loadRelationships() async throws {}
 
-    func sendFriendRequest(username: String, discriminator: Int?, captchaHandler: DiscordCaptchaHandler?) async throws {
+    func sendFriendRequest(username: String, discriminator: Int?, note: String?, captchaHandler: DiscordCaptchaHandler?) async throws {
         throw RelationshipActionError.failed("Friend requests are unavailable for this session.")
     }
 
@@ -482,7 +482,7 @@ public extension ChatProvider {
         throw RelationshipActionError.failed("Friend management is unavailable for this session.")
     }
 
-    func blockUser(_ userID: UserID) async throws {
+    func blockUser(_ userID: UserID, captchaHandler: DiscordCaptchaHandler? = nil) async throws {
         throw RelationshipActionError.failed("Blocking is unavailable for this session.")
     }
 
