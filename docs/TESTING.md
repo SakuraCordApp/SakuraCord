@@ -105,3 +105,5 @@ path on a Mac without Apple Intelligence. Do not remove a user's existing models
 merely to run this check. Judge meaningful translation and exact protected-token
 integrity, not a permanent golden output from a changing model. Record these runtime
 checks separately from fake-based tests in the PR; unavailable checks remain unverified.
+
+<!-- CI cache probe; this pull request will be closed without merging. -->
