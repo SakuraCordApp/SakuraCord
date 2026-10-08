@@ -1,13 +1,19 @@
 import SakuraCordModels
 import SwiftUI
 
+/// The Direct Messages home destinations: Friends above every conversation.
+nonisolated enum DirectMessageSidebarSelection: Hashable, Sendable {
+    case friends
+    case channel(ChannelID)
+}
+
 struct DirectMessageInboxView: View {
     let model: AppModel
     let channels: [Channel]
     let membersByID: [UserID: Member]
     let privateCallsByChannel: [ChannelID: PrivateCall]
     let animatesAvatars: Bool
-    @Binding var selection: ChannelID?
+    @Binding var selection: DirectMessageSidebarSelection?
     let bottomContentInset: CGFloat
 
     var body: some View {
@@ -18,6 +24,17 @@ struct DirectMessageInboxView: View {
         )
 
         List(selection: $selection) {
+            FriendsSidebarRow(
+                requestCount: model.incomingFriendRequestCount,
+                isSelected: selection == .friends
+            )
+            .tag(DirectMessageSidebarSelection.friends)
+            .pointerStyle(.link)
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: InterfaceScale.metric(8))
+                    .fill(selection == .friends ? Color.primary.opacity(0.08) : .clear)
+            )
+
             Section {
                 ForEach(directMessages) { channel in
                     DirectMessageInboxRow(
@@ -31,11 +48,11 @@ struct DirectMessageInboxView: View {
                         call: privateCallsByChannel[channel.id],
                         animatesAvatar: animatesAvatars
                     )
-                    .tag(channel.id)
+                    .tag(DirectMessageSidebarSelection.channel(channel.id))
                     .pointerStyle(.link)
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: InterfaceScale.metric(8))
-                            .fill(selection == channel.id ? Color.primary.opacity(0.08) : .clear)
+                            .fill(selection == .channel(channel.id) ? Color.primary.opacity(0.08) : .clear)
                     )
                 }
 
@@ -59,6 +76,37 @@ struct DirectMessageInboxView: View {
                 .allowsHitTesting(false)
             }
         }
+    }
+}
+
+private struct FriendsSidebarRow: View {
+    let requestCount: Int
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(10)) {
+            Image(systemName: "person.2.fill")
+                .font(.interfaceSystem(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
+                .glassEffect(.regular, in: Circle())
+            Text("Friends")
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if requestCount > 0 {
+                Text(requestCount, format: .number)
+                    .font(.interface(.caption2).bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, InterfaceScale.metric(6))
+                    .padding(.vertical, InterfaceScale.metric(2))
+                    .background(Color(hex: 0xF23F43), in: Capsule())
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(requestCount == 0 ? "" : requestCount == 1 ? "1 pending friend request" : "\(requestCount) pending friend requests")
     }
 }
 

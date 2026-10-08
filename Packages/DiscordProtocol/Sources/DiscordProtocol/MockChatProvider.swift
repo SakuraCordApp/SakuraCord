@@ -174,6 +174,19 @@ public actor MockChatProvider: ChatProvider {
         continuation?.yield(.connectionChanged(.connecting))
         try await Task.sleep(for: .milliseconds(180))
         continuation?.yield(.connectionChanged(.ready))
+        let referenceMembers = Dictionary(
+            (membersByGuild[GuildID(rawValue: 100)] ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { _, newer in newer }
+        )
+        let presences = Dictionary(uniqueKeysWithValues: snapshot.relationships.map { relationship in
+            let member = referenceMembers[relationship.id]
+            return (relationship.id, UserPresence(
+                status: member?.status ?? .offline,
+                customStatus: member?.customStatus, activityText: member?.activityText,
+                isListeningToMusic: member?.isListeningToMusic ?? false, isMobileOnly: member?.isMobileOnly ?? false
+            ))
+        })
+        continuation?.yield(.relationshipPresencesChanged(presences, isComplete: true))
         return snapshot
     }
 

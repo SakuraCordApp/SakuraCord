@@ -6,9 +6,9 @@ import SakuraCordModels
 import Testing
 
 @MainActor
-struct ServerInviteCaptchaTests {
+struct HumanCaptchaTests {
     @Test func `CAPTCHA completion ignores stale callbacks and consumes its continuation once`() async throws {
-        let store = ServerInviteCaptchaStore()
+        let store = HumanCaptchaStore.serverInvites()
         let challenge = makeChallenge()
         let task = Task { try await store.solution(for: challenge) }
         #expect(await presented(store, id: challenge.id))
@@ -74,7 +74,7 @@ struct ServerInviteCaptchaTests {
         .init(siteKey: "fixture", rqdata: nil, rqtoken: nil, sessionID: nil, shouldServeInvisible: false)
     }
 
-    private func presented(_ store: ServerInviteCaptchaStore, id: UUID) async -> Bool {
+    private func presented(_ store: HumanCaptchaStore, id: UUID) async -> Bool {
         if store.challenge?.id == id { return true }
         // Wait for publication rather than racing other main-actor tests
         // against a wall-clock deadline on a busy CI runner.

@@ -3,17 +3,37 @@ import Foundation
 import Observation
 import SakuraCordModels
 
-/// One account-scoped human challenge. Completion resumes the original join task once.
+/// One account-scoped human challenge. Completion resumes the original
+/// request's task once; dismissal, cancellation and account reset reject it.
 @Observable
-final class ServerInviteCaptchaStore {
+final class HumanCaptchaStore {
     private(set) var challenge: DiscordCaptchaChallenge?
     @ObservationIgnored private var continuation: CheckedContinuation<String, any Error>?
+    @ObservationIgnored private let busyError: any Error
+    @ObservationIgnored private let failureError: any Error
+
+    init(busyError: any Error, failureError: any Error) {
+        self.busyError = busyError
+        self.failureError = failureError
+    }
+
+    static func serverInvites() -> HumanCaptchaStore {
+        HumanCaptchaStore(
+            busyError: ServerInviteError.failed("Finish the current CAPTCHA before joining another server."),
+            failureError: ServerInviteError.failed("CAPTCHA verification failed or expired. Try joining again.")
+        )
+    }
+
+    static func friends() -> HumanCaptchaStore {
+        HumanCaptchaStore(
+            busyError: RelationshipActionError.failed("Finish the current CAPTCHA first."),
+            failureError: RelationshipActionError.failed("CAPTCHA verification failed or expired. Try again.")
+        )
+    }
 
     func solution(for challenge: DiscordCaptchaChallenge) async throws -> String {
         try Task.checkCancellation()
-        guard self.challenge == nil else {
-            throw ServerInviteError.failed("Finish the current CAPTCHA before joining another server.")
-        }
+        guard self.challenge == nil else { throw busyError }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 guard !Task.isCancelled else {
@@ -34,7 +54,7 @@ final class ServerInviteCaptchaStore {
         if let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             result = .success(token)
         } else {
-            result = .failure(ServerInviteError.failed("CAPTCHA verification failed or expired. Try joining again."))
+            result = .failure(failureError)
         }
         finish(result)
     }

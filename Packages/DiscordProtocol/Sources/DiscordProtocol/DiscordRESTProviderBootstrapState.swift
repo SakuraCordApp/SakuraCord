@@ -56,6 +56,7 @@ extension DiscordRESTProvider {
             friendUserIDs: cachedFriendUserIDs,
             blockedOrIgnoredUserIDs: cachedBlockedOrIgnoredUserIDs,
             relationshipNicknamesByUserID: cachedRelationshipNicknamesByUserID,
+            relationships: publishedRelationships(),
             userSearchAliasesByUserID: userSearchAliasesByUserID,
             quickSwitcherGuildMemberUserIDs: currentQuickSwitcherGuildMemberUserIDs(),
             quickSwitcherJoinedGuildMemberUserIDs:

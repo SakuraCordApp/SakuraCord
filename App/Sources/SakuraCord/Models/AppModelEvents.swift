@@ -476,6 +476,7 @@ extension AppModel {
         // Discord saves pending command uses as soon as its connection closes.
         if state == .disconnected, previousState == .ready { flushCommandFrecencyNow() }
         if state == .ready, previousState != .ready, inbox.isPresented { refreshInbox() }
+        if state == .ready, previousState != .ready { friendsConnectionChanged() }
         if state != .ready {
             if previousState == .ready {
                 // A resumed session can reconcile missed messages through the

@@ -984,8 +984,8 @@ extension DiscordRESTProvider {
         if let discordCode, [40001, 40002, 40003, 40004, 40012, 40333].contains(discordCode) {
             return true
         }
-        // Only supported join challenges reach the explicit human-completion path.
-        if DiscordCaptchaChallenge.joinChallenge(data: data, status: status, method: method, path: path) != nil { return false }
+        // Only supported join and friend-request challenges reach the explicit human-completion path.
+        if DiscordCaptchaChallenge.routeChallenge(data: data, status: status, method: method, path: path) != nil { return false }
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            object["captcha_key"] != nil || object["captcha_sitekey"] != nil
            || object["captcha_service"] != nil
@@ -999,6 +999,10 @@ extension DiscordRESTProvider {
         if status == 400, profileValidationError(data: data, method: method, path: path) != nil { return false }
         // A rejected friend nickname (for example, no longer a friend) is local to that edit.
         if status == 400, method == "PATCH", path.hasPrefix("/users/@me/relationships/") { return false }
+        // Friend-request outcomes Discord explains to the user (official module395422).
+        // Account restrictions such as quarantine keep the safety boundary.
+        if status == 400, path.hasPrefix("/users/@me/relationships"), method == "POST" || method == "PUT", let discordCode,
+           [80000, 80001, 80002, 80003, 80004, 80007, 80013, 30002, 30059, 30078].contains(discordCode) { return false }
         if status == 400, isExpectedPollFailure(discordCode: discordCode, method: method, path: path) { return false }
         if status == 400, DiscordCaptchaChallenge.isJoinRoute(method: method, path: path), let discordCode,
            [10006, 50270, 40007, 30001].contains(discordCode) { return false }
@@ -1014,8 +1018,11 @@ extension DiscordRESTProvider {
     static func isExpectedResourceNotFound(method: String, path: String) -> Bool {
         let inviteParts = path.split(separator: "/")
         if method == "GET" || method == "POST", inviteParts.count == 2, inviteParts[0] == "invites" { return true }
-        guard method == "GET" else { return false }
         let segments = path.split(separator: "/")
+        // A relationship another session already changed can be gone.
+        if method != "GET", segments.count == 4, segments[0] == "users", segments[1] == "@me",
+           segments[2] == "relationships", UInt64(segments[3]) != nil { return true }
+        guard method == "GET" else { return false }
         if segments.count == 3, segments[0] == "channels", UInt64(segments[1]) != nil,
            segments[2] == "application-command-index" { return true }
         return segments.count == 3

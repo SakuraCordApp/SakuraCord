@@ -143,7 +143,7 @@ extension DiscordRESTProvider {
         forwardSearchEligibleUserOrder = []
         await loadStartupSearchCaches()
         cachedBlockedOrIgnoredUserIDs = ready.blockedOrIgnoredUserIDs
-        cachedRelationshipNicknamesByUserID = ready.relationshipNicknamesByUserID
+        adoptReadyRelationships(ready.relationships)
         profileApexAssignments = ready.apexExperiments
         resetProfileEditingState()
     }
@@ -258,11 +258,11 @@ extension DiscordRESTProvider {
             }
         )
         cachedChannels = [nil: privateChannels]
-        cachedFriendUserIDs = ready.friendUserIDs
         for presence in ready.privatePresences {
             cachePrivatePresence(presence)
         }
         continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
+        publishRelationshipPresences(complete: true)
     }
 
     private func applyReadyGuildProjection(
@@ -549,6 +549,7 @@ extension DiscordRESTProvider {
     private func cacheReadySupplementalPrivateState(
         _ supplemental: GatewayReadyGuildsDTO
     ) {
+        let hydratedRelationshipUserIDs = hydratedRelationshipUserIDs
         let supplementalMemberUserIDs = Set(
             supplemental.mergedMembers.flatMap { members in
                 members.compactMap { UserID($0.userID) }
@@ -603,6 +604,9 @@ extension DiscordRESTProvider {
         {
             continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
         }
+        publishRelationshipsIfHydrationChanged(previouslyHydrated: hydratedRelationshipUserIDs)
+        // READY_SUPPLEMENTAL's merged friend presences are the initial source.
+        publishRelationshipPresences(complete: true)
     }
 
     private func applyReadySupplementalGuildProjection(

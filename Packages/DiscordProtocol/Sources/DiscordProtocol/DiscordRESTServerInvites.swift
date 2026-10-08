@@ -79,31 +79,20 @@ public extension DiscordRESTProvider {
         _ path: String, method: String, query: [URLQueryItem], body: [String: JSONValue], context: String,
         sessionID: String, captchaHandler: DiscordCaptchaHandler?
     ) async throws -> (Data, HTTPURLResponse) {
-        var headers = ["X-Context-Properties": context]
-        let original = try await perform(path, method: method, query: query, body: body, headers: headers, maximumAttempts: 1)
-        guard let challenge = DiscordCaptchaChallenge.joinChallenge(
-            data: original.0, status: original.1.statusCode, method: method, path: path
-        ) else { return original }
-        guard let captchaHandler else {
-            throw ServerInviteError.failed("Discord requires a CAPTCHA to join this server. Join it in Discord.")
+        do {
+            // Keep the original account, request context and Gateway session. Never replay a stale join.
+            return try await performChallengeable(
+                path, method: method, query: query, body: body, headers: ["X-Context-Properties": context],
+                captchaHandler: captchaHandler,
+                replayIsCurrent: { [weak self] in await self?.gatewaySession?.snapshot().sessionID == sessionID }
+            )
+        } catch let failure as CaptchaReplayFailure {
+            switch failure {
+            case .handlerUnavailable: throw ServerInviteError.failed("Discord requires a CAPTCHA to join this server. Join it in Discord.")
+            case .emptySolution: throw ServerInviteError.failed("CAPTCHA verification did not return a solution. Try joining again.")
+            case .rejected: throw ServerInviteError.failed("Discord did not accept the CAPTCHA. Try joining again to get a new challenge.")
+            }
         }
-        try Task.checkCancellation()
-        let token = try await captchaHandler(challenge)
-        try Task.checkCancellation()
-        guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ServerInviteError.failed("CAPTCHA verification did not return a solution. Try joining again.")
-        }
-        // Keep the original account, request context and Gateway session. Never replay a stale join.
-        let currentSessionID = await gatewaySession?.snapshot().sessionID
-        guard !requestSafetyCircuitIsOpen, currentSessionID == sessionID else { throw CancellationError() }
-        headers["X-Captcha-Key"] = token
-        headers["X-Captcha-Rqtoken"] = challenge.rqtoken
-        headers["X-Captcha-Session-Id"] = challenge.sessionID
-        let completed = try await perform(path, method: method, query: query, body: body, headers: headers, maximumAttempts: 1)
-        if DiscordCaptchaChallenge.joinChallenge(data: completed.0, status: completed.1.statusCode, method: method, path: path) != nil {
-            throw ServerInviteError.failed("Discord did not accept the CAPTCHA. Try joining again to get a new challenge.")
-        }
-        return completed
     }
 
     func createServerInvite(in channelID: ChannelID, guildID: GuildID, settings: ServerInviteSettings) async throws -> CreatedServerInvite {

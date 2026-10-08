@@ -95,7 +95,8 @@ struct RootView: View {
             ZStack {
                 MessageSearchToolbarBridge(
                     model: model,
-                    isVisible: showsMessageSearchToolbar || (model.isBrowsingGuildChannels && !model.hasOpenGuildSupplementaryConversation),
+                    isVisible: showsMessageSearchToolbar || model.isFriendsSearchActive
+                        || (model.isBrowsingGuildChannels && !model.hasOpenGuildSupplementaryConversation),
                     metrics: $toolbarSearchFieldMetrics
                 )
                 ToolbarSearchFieldLoadingStyler(isActive: showsSessionLoadingChrome)
@@ -163,7 +164,8 @@ struct RootView: View {
     }
 
     private var messageSearchPrompt: Text {
-        Text(showsSessionLoadingChrome ? "" : (model.isBrowsingGuildChannels ? "Search Channels" : model.messageSearchPromptTitle))
+        Text(showsSessionLoadingChrome ? "" : model.isFriendsSearchActive ? "Search"
+            : (model.isBrowsingGuildChannels ? "Search Channels" : model.messageSearchPromptTitle))
     }
 
     private var showsSessionLoadingChrome: Bool {
@@ -576,6 +578,9 @@ private struct ChatRootView: View {
         ToolbarSpacer(.fixed, placement: .navigation)
 
         if !model.isSwitchingAccounts {
+            if model.isFriendsPresented {
+                FriendsToolbarSections(model: model)
+            }
             if model.guildWorkspacePage == .channelsAndRoles, model.featuresSettings.channelManagement,
                let guildID = model.selectedGuildID, model.hasCustomizationQuestions(in: guildID) {
                 ToolbarItemGroup(placement: .principal) {
@@ -770,7 +775,7 @@ private struct ChatRootView: View {
         }
 
         if model.isSwitchingAccounts
-            || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil
+            || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil && !model.isFriendsPresented
                 && !hasOpenSupplementaryToolbarConversation && selectedVoiceChannel == nil)
         {
             if !model.isSwitchingAccounts {
@@ -988,6 +993,7 @@ private struct ChatRootView: View {
             return .init(title: page == .guide ? "Server Guide" : model.customizationTitle(in: model.selectedGuildID),
                          systemImage: page == .guide ? "signpost.right" : "slider.horizontal.3")
         }
+        if model.isFriendsPresented { return .init(title: "Friends", systemImage: "person.2.fill") }
         guard let channel = model.selectedChannel else { return nil }
         return .init(title: channel.name, systemImage: channelToolbarSymbol(channel),
                      subtitle: isDirectMessageSelected ? directMessageToolbarSubtitle(for: channel) : nil,
@@ -1164,18 +1170,33 @@ private struct MessageSearchToolbarBridge: View {
         @Bindable var model = model
         @Bindable var search = model.messageSearch
         @Bindable var onboarding = model.onboarding
-        let local = model.isBrowsingGuildChannels
+        @Bindable var friends = model.friends
+        let friendsSearch = model.isFriendsSearchActive
+        let local = friendsSearch || model.isBrowsingGuildChannels
         ToolbarSearchFieldGeometryReader(
-            searchText: local ? $onboarding.channelSearch : $model.messageSearchInputText,
+            searchText: friendsSearch ? $model.friendsSearchText : local ? $onboarding.channelSearch : $model.messageSearchInputText,
             searchTokens: local ? .constant([]) : $search.tokens,
-            isSearchFocused: local ? $onboarding.isChannelSearchFocused : $search.isInputFocused,
+            isSearchFocused: friendsSearch ? $friends.isSearchFocused
+                : local ? $onboarding.isChannelSearchFocused : $search.isInputFocused,
             isToolbarItemVisible: isVisible,
             preferredFieldWidth: ChatChromeMetrics.toolbarSearchMaximumFieldWidth,
             didUseBuiltInClear: {
-                if local { onboarding.channelSearch = "" } else { model.clearMessageSearchUsingBuiltInButton() }
+                if friendsSearch {
+                    model.friendsSearchText = ""
+                } else if local {
+                    onboarding.channelSearch = ""
+                } else {
+                    model.clearMessageSearchUsingBuiltInButton()
+                }
             },
             didEndEditing: {
-                if local { onboarding.isChannelSearchFocused = false } else { model.messageSearchEditingDidEnd() }
+                if friendsSearch {
+                    friends.isSearchFocused = false
+                } else if local {
+                    onboarding.isChannelSearchFocused = false
+                } else {
+                    model.messageSearchEditingDidEnd()
+                }
             },
             pasteCanonicalSyntax: { value in
                 if local { return .init(tokens: [], text: value) }
@@ -1199,12 +1220,15 @@ private struct MessageSearchToolbarModifier: ViewModifier {
         @Bindable var model = model
         @Bindable var search = search
         @Bindable var onboarding = model.onboarding
-        let local = model.isBrowsingGuildChannels
+        @Bindable var friends = model.friends
+        let friendsSearch = model.isFriendsSearchActive
+        let local = friendsSearch || model.isBrowsingGuildChannels
         content
             .searchable(
-                text: local ? $onboarding.channelSearch : $model.messageSearchInputText,
+                text: friendsSearch ? $model.friendsSearchText : local ? $onboarding.channelSearch : $model.messageSearchInputText,
                 tokens: local ? .constant([]) : $search.tokens,
-                isPresented: local ? $onboarding.isChannelSearchFocused : $search.isInputFocused,
+                isPresented: friendsSearch ? $friends.isSearchFocused
+                    : local ? $onboarding.isChannelSearchFocused : $search.isInputFocused,
                 placement: .toolbar,
                 prompt: prompt
             ) { token in
@@ -1467,5 +1491,53 @@ private struct ChannelTopicPopover: View {
             .padding(InterfaceScale.metric(16))
             .frame(width: InterfaceScale.metric(320), alignment: .leading)
             .interfaceScaleRoot()
+    }
+}
+
+/// Friends sections as native toolbar toggles, following Discord's visibility rules.
+private struct FriendsToolbarSections: ToolbarContent {
+    let model: AppModel
+
+    var body: some ToolbarContent {
+        let sections = model.visibleFriendsSections
+        let selected = model.friendsSection
+        ToolbarItemGroup(placement: .principal) {
+            ForEach(sections.filter { $0 != .addFriend }, id: \.self) { section in
+                Toggle(isOn: Binding(get: { selected == section }, set: { if $0 { model.selectFriendsSection(section) } })) {
+                    Label(title(section), systemImage: symbol(section))
+                }
+                .labelStyle(.titleAndIcon)
+                .tint(SakuraCordAccentColor.color)
+                .badge(section == .pending ? model.incomingFriendRequestCount : 0)
+                .accessibilityValue(section == .pending && model.incomingFriendRequestCount > 0
+                    ? "\(model.incomingFriendRequestCount) incoming" : "")
+            }
+        }
+        ToolbarSpacer(.fixed, placement: .principal)
+        ToolbarItem(placement: .principal) {
+            Toggle(isOn: Binding(get: { selected == .addFriend }, set: { if $0 { model.selectFriendsSection(.addFriend) } })) {
+                Label("Add Friend", systemImage: "person.badge.plus")
+            }
+            .labelStyle(.titleAndIcon)
+            .tint(SakuraCordAccentColor.color)
+        }
+    }
+
+    private func title(_ section: FriendsSection) -> String {
+        switch section {
+        case .online: "Online"
+        case .all: "All"
+        case .pending: "Pending"
+        case .addFriend: "Add Friend"
+        }
+    }
+
+    private func symbol(_ section: FriendsSection) -> String {
+        switch section {
+        case .online: "dot.radiowaves.left.and.right"
+        case .all: "person.2"
+        case .pending: "clock"
+        case .addFriend: "person.badge.plus"
+        }
     }
 }

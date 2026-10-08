@@ -40,6 +40,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
     public var friendUserIDs: Set<UserID>
     public var blockedOrIgnoredUserIDs: Set<UserID>
     public var relationshipNicknamesByUserID: [UserID: String]
+    public var relationships: [Relationship]
     public var userSearchAliasesByUserID: [UserID: [String]]
     public var quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]]
     public var quickSwitcherJoinedGuildMemberUserIDs: [GuildID: [UserID]]
@@ -66,6 +67,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         friendUserIDs: Set<UserID> = [],
         blockedOrIgnoredUserIDs: Set<UserID> = [],
         relationshipNicknamesByUserID: [UserID: String] = [:],
+        relationships: [Relationship] = [],
         userSearchAliasesByUserID: [UserID: [String]] = [:],
         quickSwitcherGuildMemberUserIDs: [GuildID: [UserID]] = [:],
         quickSwitcherJoinedGuildMemberUserIDs: [GuildID: [UserID]] = [:],
@@ -92,6 +94,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         self.friendUserIDs = friendUserIDs
         self.blockedOrIgnoredUserIDs = blockedOrIgnoredUserIDs
         self.relationshipNicknamesByUserID = relationshipNicknamesByUserID
+        self.relationships = relationships
         self.userSearchAliasesByUserID = userSearchAliasesByUserID
         self.quickSwitcherGuildMemberUserIDs = quickSwitcherGuildMemberUserIDs
         self.quickSwitcherJoinedGuildMemberUserIDs = quickSwitcherJoinedGuildMemberUserIDs
@@ -114,7 +117,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         case currentUser, knownUsers, quickSwitcherUserIDs, messageSearchUsers
         case messageSearchUserBoosterChannelIDs, friendUserIDs
         case blockedOrIgnoredUserIDs
-        case relationshipNicknamesByUserID
+        case relationshipNicknamesByUserID, relationships
         case userSearchAliasesByUserID
         case quickSwitcherGuildMemberUserIDs
         case quickSwitcherJoinedGuildMemberUserIDs
@@ -150,6 +153,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
             try container.decodeIfPresent(
                 [UserID: String].self, forKey: .relationshipNicknamesByUserID
             ) ?? [:]
+        relationships = try container.decodeIfPresent([Relationship].self, forKey: .relationships) ?? []
         userSearchAliasesByUserID =
             try container.decodeIfPresent(
                 [UserID: [String]].self, forKey: .userSearchAliasesByUserID
@@ -216,6 +220,7 @@ public struct BootstrapSnapshot: Codable, Equatable, Sendable {
         try container.encode(
             relationshipNicknamesByUserID, forKey: .relationshipNicknamesByUserID
         )
+        try container.encode(relationships, forKey: .relationships)
         try container.encode(userSearchAliasesByUserID, forKey: .userSearchAliasesByUserID)
         try container.encode(
             quickSwitcherGuildMemberUserIDs,

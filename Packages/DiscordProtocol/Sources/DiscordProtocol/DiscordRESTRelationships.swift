@@ -1,12 +1,51 @@
 import Foundation
 import SakuraCordModels
 
-/// One relationship record from `RELATIONSHIP_ADD`, `RELATIONSHIP_UPDATE` or
-/// `RELATIONSHIP_REMOVE`.
+/// One relationship record from READY, `GET /users/@me/relationships`,
+/// `RELATIONSHIP_ADD`, `RELATIONSHIP_UPDATE` or `RELATIONSHIP_REMOVE`.
 struct GatewayRelationshipDTO: Decodable {
     var id: String
     var type: Int?
     var nickname: String?
+    var since: String?
+    var isSpamRequest: Bool?
+    var userIgnored: Bool?
+    var user: UserDTO?
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, nickname, since, user
+        case isSpamRequest = "is_spam_request"
+        case userIgnored = "user_ignored"
+    }
+
+    /// Discord's RelationshipStore keeps stored metadata when an add omits
+    /// it; a snapshot row or an update replaces it, clearing absent values.
+    func record(merging existing: RelationshipRecord?, replacing: Bool) -> RelationshipRecord? {
+        guard let type = (type ?? existing?.type.rawValue).flatMap(RelationshipType.init(rawValue:)),
+              type != .none else { return nil }
+        let nickname = DiscordRESTProvider.normalizedFriendNickname(nickname)
+        let since = since.flatMap(DiscordDate.parse)
+        return RelationshipRecord(
+            type: type,
+            nickname: replacing ? nickname : nickname ?? existing?.nickname,
+            since: replacing ? since : since ?? existing?.since,
+            isSpamRequest: isSpamRequest ?? (replacing ? false : existing?.isSpamRequest ?? false),
+            isUserIgnored: userIgnored ?? (replacing ? false : existing?.isUserIgnored ?? false)
+        )
+    }
+}
+
+struct RelationshipRecord: Equatable, Sendable {
+    var type: RelationshipType
+    var nickname: String?
+    var since: Date?
+    var isSpamRequest: Bool
+    var isUserIgnored: Bool
+}
+
+/// Where a relationship removal starts; Discord reports it as request context.
+public enum RelationshipRemoval: Sendable {
+    case removeFriend, cancelOutgoingRequest, declineIncomingRequest, unblock
 }
 
 extension DiscordRESTProvider {
@@ -19,26 +58,180 @@ extension DiscordRESTProvider {
                   let userID = UserID(dto.id)
             else { return true }
             relationshipRevisions[userID, default: 0] &+= 1
-            var friends = cachedFriendUserIDs
-            var nicknames = cachedRelationshipNicknamesByUserID
-            if let type = dto.type, name != "RELATIONSHIP_REMOVE" {
-                if type == 1 { friends.insert(userID) } else { friends.remove(userID) }
-            }
-            // Discord's RelationshipStore keeps an existing nickname when an
-            // add omits one, but an update without a nickname clears it.
+            if let user = dto.user { cacheRelationshipUser(user) }
+            var records = cachedRelationships
             switch name {
             case "RELATIONSHIP_REMOVE":
-                friends.remove(userID)
-                nicknames[userID] = nil
+                records[userID] = nil
             case "RELATIONSHIP_UPDATE":
-                nicknames[userID] = Self.normalizedFriendNickname(dto.nickname)
+                records[userID] = dto.record(merging: records[userID], replacing: true)
             default:
-                if let nickname = Self.normalizedFriendNickname(dto.nickname) { nicknames[userID] = nickname }
+                records[userID] = dto.record(merging: records[userID], replacing: false)
             }
-            publishRelationships(friendUserIDs: friends, nicknames: nicknames)
+            publishRelationships(records)
             return true
         default:
             return false
+        }
+    }
+
+    /// Hydrates an embedded identity without admitting it to search stores.
+    private func cacheRelationshipUser(_ user: UserDTO) {
+        _ = cacheGatewayUser(user, forwardSearchEligible: false, includeInKnownUserStore: false, messageSearchEligible: false)
+    }
+
+    // Official stable633029 FriendsStore: one full read per connection,
+    // started lazily by the first list other than Online or Add Friend.
+    /// Reads every relationship once per Gateway connection. READY already
+    /// lists them; this refreshes embedded identities and metadata. Records
+    /// changed by Gateway while the read is in flight keep their newer state.
+    public func loadRelationships() async throws {
+        guard currentUser != nil else { throw ChatProviderError.unauthenticated }
+        let generation = relationshipGeneration
+        guard relationshipLoadGeneration != generation else { return }
+        relationshipLoadGeneration = generation
+        let revisions = relationshipRevisions
+        let rows: [GatewayRelationshipDTO]
+        do {
+            let (data, response) = try await perform("/users/@me/relationships", method: "GET", query: [], body: nil)
+            guard (200 ..< 300).contains(response.statusCode) else {
+                throw apiDiagnostics.coalescing(ChatProviderError.transport(
+                    status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")
+                ), with: response)
+            }
+            rows = try JSONDecoder().decode(LossyList<GatewayRelationshipDTO>.self, from: data).elements
+        } catch {
+            // A later explicit selection may read again on this connection.
+            if relationshipLoadGeneration == generation { relationshipLoadGeneration = nil }
+            throw error
+        }
+        guard relationshipGeneration == generation else { return }
+        var records = cachedRelationships
+        var listed: Set<UserID> = []
+        for row in rows {
+            guard let userID = UserID(row.id) else { continue }
+            listed.insert(userID)
+            if let user = row.user { cacheRelationshipUser(user) }
+            guard relationshipRevisions[userID, default: 0] == revisions[userID, default: 0] else { continue }
+            records[userID] = row.record(merging: nil, replacing: true)
+        }
+        for userID in records.keys where !listed.contains(userID)
+            && relationshipRevisions[userID, default: 0] == revisions[userID, default: 0] {
+            records[userID] = nil
+        }
+        publishRelationships(records, force: true)
+    }
+
+    /// Sends a friend request by username; one POST, never replayed except
+    /// once after a completed human challenge. The Sent row arrives through
+    /// `RELATIONSHIP_ADD`, not the empty response.
+    public func sendFriendRequest(
+        username: String, discriminator: Int?, captchaHandler: DiscordCaptchaHandler?
+    ) async throws {
+        let tag = discriminator.map { "\(username)#\(String(format: "%04d", $0))" } ?? username
+        let body: [String: JSONValue] = [
+            "username": .string(username),
+            "discriminator": discriminator.map { .number(Double($0)) } ?? .null,
+        ]
+        try await relationshipMutation(
+            "/users/@me/relationships", method: "POST", body: body, location: "Add Friend",
+            captchaHandler: captchaHandler, failure: { Self.friendRequestFailureMessage(code: $0, status: $1, discordTag: tag) }
+        )
+    }
+
+    /// Accepts an incoming request. Discord answers code 80013 when it wants
+    /// confirmation the requester is known; only an explicit confirmation
+    /// repeats the request with `confirm_stranger_request: true`.
+    public func acceptFriendRequest(
+        from userID: UserID, confirmingStranger: Bool, captchaHandler: DiscordCaptchaHandler?
+    ) async throws {
+        try await relationshipMutation(
+            "/users/@me/relationships/\(userID)", method: "PUT",
+            body: ["confirm_stranger_request": .bool(confirmingStranger)], location: "Friends",
+            captchaHandler: captchaHandler, failure: { code, status in
+                code == 80013 && !confirmingStranger ? nil : Self.relationshipUpdateFailureMessage(code: code, status: status)
+            }
+        )
+    }
+
+    /// Removes a friend, cancels or declines a request, or unblocks. Each is
+    /// one DELETE of the per-user relationship.
+    public func removeRelationship(with userID: UserID, as removal: RelationshipRemoval) async throws {
+        try await relationshipMutation(
+            "/users/@me/relationships/\(userID)", method: "DELETE", body: nil,
+            location: removal == .unblock ? nil : "Friends", captchaHandler: nil,
+            failure: { Self.relationshipUpdateFailureMessage(code: $0, status: $1) }
+        )
+    }
+
+    /// Blocks a user, replacing any friendship or request.
+    public func blockUser(_ userID: UserID) async throws {
+        try await relationshipMutation(
+            "/users/@me/relationships/\(userID)", method: "PUT", body: ["type": .number(Double(RelationshipType.blocked.rawValue))],
+            location: "ContextMenu", captchaHandler: nil,
+            failure: { Self.relationshipUpdateFailureMessage(code: $0, status: $1) }
+        )
+    }
+
+    /// `failure` returns nil for the stranger-confirmation response.
+    private func relationshipMutation(
+        _ path: String, method: String, body: [String: JSONValue]?, location: String?,
+        captchaHandler: DiscordCaptchaHandler?, failure: (Int?, Int) -> String?
+    ) async throws {
+        guard let account = currentUser?.id else { throw ChatProviderError.unauthenticated }
+        var headers: [String: String] = [:]
+        if let location {
+            let context = try JSONSerialization.data(withJSONObject: ["location": location], options: [.sortedKeys])
+            headers["X-Context-Properties"] = context.base64EncodedString()
+        }
+        let data: Data
+        let response: HTTPURLResponse
+        do {
+            (data, response) = try await performChallengeable(
+                path, method: method, query: [], body: body, headers: headers, captchaHandler: captchaHandler,
+                replayIsCurrent: { [weak self] in await self?.currentUser?.id == account }
+            )
+        } catch let failure as CaptchaReplayFailure {
+            throw RelationshipActionError.failed(failure.message)
+        }
+        guard !(200 ..< 300).contains(response.statusCode) else { return }
+        // Another session already removed it; Gateway reconciles the list.
+        if response.statusCode == 404, method == "DELETE" { return }
+        if response.statusCode == 401 {
+            authorizationValue = nil
+            throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
+        }
+        let code = Self.discordErrorCode(from: data)
+        if response.statusCode == 400 || response.statusCode == 429 || response.statusCode == 403 {
+            guard let message = failure(code, response.statusCode) else {
+                throw RelationshipActionError.strangerConfirmationRequired
+            }
+            throw RelationshipActionError.failed(message)
+        }
+        throw apiDiagnostics.coalescing(ChatProviderError.transport(
+            status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")
+        ), with: response)
+    }
+
+    // Official stable633029 module395422 `vU` and module717398 HTTP 429 copy.
+    static func friendRequestFailureMessage(code: Int?, status: Int, discordTag: String) -> String {
+        if status == 429 { return "You’re sending friend requests too quickly!" }
+        return switch code {
+        case 80000: "\(discordTag) is not accepting friend requests. They’ll have to add you to become friends."
+        case 30002: "You’ve maxed out your friend list. Welcome to the elite 1,000 friends club!"
+        case 80007: "You’re already friends with that user!"
+        case 30059: "You’ve maxed out your block list."
+        case 30078: "You’ve maxed out your pending outgoing friend requests."
+        default: "Hm, didn’t work. Double check that the username is correct."
+        }
+    }
+
+    static func relationshipUpdateFailureMessage(code: Int?, status: Int) -> String {
+        if status == 429 { return "Discord is limiting friend changes. Wait a moment before trying again." }
+        return switch code {
+        case 30002: "You’ve maxed out your friend list. Welcome to the elite 1,000 friends club!"
+        case 30059: "You’ve maxed out your block list."
+        default: "Discord couldn’t update this relationship. Try again."
         }
     }
 
@@ -73,10 +266,12 @@ extension DiscordRESTProvider {
         // Only this friend's events supersede the save; the generation also
         // guards READY and disconnect, which clear the per-user revisions.
         guard currentUser?.id == user.id, profileEditingGeneration == generation,
-              relationshipRevisions[userID, default: 0] == revision else { return value }
-        var nicknames = cachedRelationshipNicknamesByUserID
-        nicknames[userID] = value
-        publishRelationships(friendUserIDs: cachedFriendUserIDs, nicknames: nicknames)
+              relationshipRevisions[userID, default: 0] == revision,
+              var record = cachedRelationships[userID] else { return value }
+        record.nickname = value
+        var records = cachedRelationships
+        records[userID] = record
+        publishRelationships(records)
         return value
     }
 
@@ -108,12 +303,47 @@ extension DiscordRESTProvider {
         return channel
     }
 
-    private func publishRelationships(friendUserIDs: Set<UserID>, nicknames: [UserID: String]) {
-        guard friendUserIDs != cachedFriendUserIDs || nicknames != cachedRelationshipNicknamesByUserID else { return }
+    /// Replaces READY's records without publishing; the bootstrap snapshot carries them.
+    func adoptReadyRelationships(_ records: [UserID: RelationshipRecord]) {
+        relationshipGeneration &+= 1
+        relationshipLoadGeneration = nil
+        cachedRelationships = records
+        cachedFriendUserIDs = Set(records.lazy.filter { $0.value.type == .friend }.map(\.key))
+        cachedRelationshipNicknamesByUserID = records.compactMapValues(\.nickname)
+    }
+
+    /// Relationship records with their hydrated identities.
+    func publishedRelationships() -> [Relationship] {
+        cachedRelationships.map { userID, record in
+            Relationship(
+                id: userID, type: record.type,
+                user: cachedGatewayUsersByID[userID.description].flatMap { try? $0.domain() },
+                nickname: record.nickname, since: record.since,
+                isSpamRequest: record.isSpamRequest, isUserIgnored: record.isUserIgnored
+            )
+        }
+    }
+
+    /// Republishes after identities arrive for records that lacked one.
+    func publishRelationshipsIfHydrationChanged(previouslyHydrated: Set<UserID>) {
+        let hydrated = Set(cachedRelationships.keys.filter { cachedGatewayUsersByID[$0.description] != nil })
+        guard hydrated != previouslyHydrated else { return }
+        continuation?.yield(.relationshipsChanged(publishedRelationships()))
+    }
+
+    var hydratedRelationshipUserIDs: Set<UserID> {
+        Set(cachedRelationships.keys.filter { cachedGatewayUsersByID[$0.description] != nil })
+    }
+
+    private func publishRelationships(_ records: [UserID: RelationshipRecord], force: Bool = false) {
+        guard force || records != cachedRelationships else { return }
+        let nicknames = records.compactMapValues(\.nickname)
         let nicknamesChanged = nicknames != cachedRelationshipNicknamesByUserID
-        cachedFriendUserIDs = friendUserIDs
+        cachedRelationships = records
+        cachedFriendUserIDs = Set(records.lazy.filter { $0.value.type == .friend }.map(\.key))
         cachedRelationshipNicknamesByUserID = nicknames
-        continuation?.yield(.relationshipsChanged(friendUserIDs: friendUserIDs, nicknames: nicknames))
+        continuation?.yield(.relationshipsChanged(publishedRelationships()))
+        publishRelationshipPresences(complete: true)
         guard nicknamesChanged else { return }
         if let channels = cachedChannels[nil] {
             let renamed = channels.map(applyingFriendNicknames)
@@ -123,5 +353,28 @@ extension DiscordRESTProvider {
             }
         }
         continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
+    }
+
+    // MARK: - Presence
+
+    /// Account-wide presence from the private presence cache. Other users'
+    /// Invisible is never disclosed, so it reads as offline like an absent one.
+    func relationshipPresence(for userID: UserID) -> UserPresence {
+        guard let member = cachedPrivateMembersByID[userID], member.status.isVisibleOnline else {
+            return UserPresence(status: .offline)
+        }
+        return UserPresence(
+            status: member.status, customStatus: member.customStatus, activityText: member.activityText,
+            isListeningToMusic: member.isListeningToMusic, isMobileOnly: member.isMobileOnly
+        )
+    }
+
+    func publishRelationshipPresences(complete: Bool, userIDs: [UserID]? = nil) {
+        let ids = userIDs ?? Array(cachedRelationships.keys)
+        let presences = Dictionary(uniqueKeysWithValues: ids.lazy
+            .filter { self.cachedRelationships[$0] != nil }
+            .map { ($0, self.relationshipPresence(for: $0)) })
+        guard complete || !presences.isEmpty else { return }
+        continuation?.yield(.relationshipPresencesChanged(presences, isComplete: complete))
     }
 }

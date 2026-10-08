@@ -512,6 +512,9 @@ extension AppModel {
         // activation is in flight, which must not replace the user's memory.
         let rememberedChannelID = guildID.flatMap { lastOpenedChannelIDsByGuild[$0] }
         dismissAllProfiles()
+        // Friends stays the Direct Messages home; clear the server channel
+        // first so automatic reselection does not replace it.
+        if guildID == nil, friends.isPresented { selectedChannelID = nil }
         selectedGuildID = guildID
         refreshSelectedGuildOnboarding()
         beginCurrentUserProfilePrefetch(in: guildID, account: session)
@@ -579,9 +582,8 @@ extension AppModel {
                 ? rememberedID
                 : nil
         }
-        if restoredChannelID != nil
-            || !visibleChannels.contains(where: { $0.id == selectedChannelID })
-        {
+        let keepsFriends = guildID == nil && friends.isPresented
+        if !keepsFriends, restoredChannelID != nil || !visibleChannels.contains(where: { $0.id == selectedChannelID }) {
             let preferredChannelID = restoredChannelID
                 ?? Self.preferredInitialChannelID(in: selectableChannels)
             pendingAutomaticChannelAccessID = preferredChannelID.flatMap { id in

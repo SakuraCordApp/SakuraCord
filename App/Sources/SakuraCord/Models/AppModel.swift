@@ -154,6 +154,7 @@ final class AppModel {
         ServerRailPresentationStore()
     @ObservationIgnored let onboarding = GuildOnboardingStore()
     @ObservationIgnored let serverInvites = ServerInvitePresentationStore()
+    @ObservationIgnored let friends = FriendsState()
     @ObservationIgnored let serverTagCards = ServerTagCardStore()
     @ObservationIgnored let issueReports = IssueReportStore()
     @ObservationIgnored let nicknameEditor = NicknameEditorStore()
@@ -879,6 +880,8 @@ final class AppModel {
     var selectedChannelID: ChannelID? {
         didSet {
             guard selectedChannelID != oldValue else { return }
+            // Only a conversation in Direct Messages replaces its Friends home.
+            if selectedChannelID != nil, selectedGuildID == nil { friends.isPresented = false }
             if onboarding.previewChannelID != selectedChannelID {
                 onboarding.presentedGuildID = nil
                 onboarding.previewChannelID = nil
