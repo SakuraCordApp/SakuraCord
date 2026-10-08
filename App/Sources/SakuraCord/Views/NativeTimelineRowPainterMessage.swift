@@ -225,15 +225,17 @@ extension NativeTimelineRowPainter {
             if let preview = input.row.replyPreview {
                 replyContext(
                     preview: preview,
+                    message: input.row.message,
                     frame: frame,
                     contentFrame: contentFrame,
-                    message: input.row.message,
+                    bubbleRegion: input.layout.bubbleRegion,
                     model: input.model
                 )
             } else {
                 unavailableReplyContext(
                     frame: frame,
-                    contentFrame: contentFrame
+                    contentFrame: contentFrame,
+                    bubbleRegion: input.layout.bubbleRegion
                 )
             }
         }
@@ -854,28 +856,42 @@ extension NativeTimelineRowPainter {
 
     static func replyContext(
         preview: MessageReplyPreview,
+        message: Message,
         frame: CGRect,
         contentFrame: CGRect,
-        message: Message,
+        bubbleRegion: NativeTimelineBubbleRegion?,
         model: AppModel?
     ) {
-        let connectorFrame = CGRect(
-            x: frame.minX,
-            y: frame.minY,
-            width: max(
-                0,
-                contentFrame.minX - frame.minX
-                    - NativeTimelineReplyMetrics.horizontalSpacing
-            ),
-            height: InterfaceScale.metric(20)
-        )
-        replyConnector(in: connectorFrame)
+        // Outgoing bubbles are right-aligned, so the full-row reply frame
+        // would stretch the connector across empty space and starve the
+        // summary. Anchor the reply to the bubble instead.
+        let isOutgoingBubble = bubbleRegion?.isOutgoing == true
+        let effectiveFrame: CGRect = if isOutgoingBubble,
+            let bubbleRegion
+        {
+            CGRect(
+                x: bubbleRegion.frame.minX,
+                y: frame.minY,
+                width: max(
+                    0,
+                    frame.maxX - bubbleRegion.frame.minX
+                ),
+                height: frame.height
+            )
+        } else {
+            frame
+        }
+        replyConnector(in: replyConnectorFrame(
+            frame: frame,
+            contentFrame: contentFrame,
+            bubbleRegion: bubbleRegion
+        ))
 
         replyPreviewLine(
             preview,
-            frame: frame,
+            frame: effectiveFrame,
             avatarFrame: NativeTimelineAvatarPresentation.replyAvatarFrame(in: contentFrame),
-            trailingInset: 48,
+            trailingInset: isOutgoingBubble ? 0 : 48,
             message: message,
             model: model
         )
@@ -944,19 +960,39 @@ extension NativeTimelineRowPainter {
         }
     }
 
+    /// Where the reply elbow sits. Incoming rows run it across the avatar
+    /// gutter. Outgoing bubbles put the content inside the bubble, so the
+    /// gap to the bubble edge is too narrow for the elbow; start it far
+    /// enough left of the content that the stem and its turn stay visible.
+    private static func replyConnectorFrame(
+        frame: CGRect,
+        contentFrame: CGRect,
+        bubbleRegion: NativeTimelineBubbleRegion?
+    ) -> CGRect {
+        let spacing = NativeTimelineReplyMetrics.horizontalSpacing
+        let minX: CGFloat = if let bubbleRegion, bubbleRegion.isOutgoing {
+            // The stem is drawn 19 points in; leave room for it to turn.
+            min(bubbleRegion.frame.minX, contentFrame.minX - spacing - InterfaceScale.metric(28))
+        } else {
+            frame.minX
+        }
+        return CGRect(
+            x: minX,
+            y: frame.minY,
+            width: max(0, contentFrame.minX - minX - spacing),
+            height: InterfaceScale.metric(20)
+        )
+    }
+
     static func unavailableReplyContext(
         frame: CGRect,
-        contentFrame: CGRect
+        contentFrame: CGRect,
+        bubbleRegion: NativeTimelineBubbleRegion?
     ) {
-        replyConnector(in: CGRect(
-            x: frame.minX,
-            y: frame.minY,
-            width: max(
-                0,
-                contentFrame.minX - frame.minX
-                    - NativeTimelineReplyMetrics.horizontalSpacing
-            ),
-            height: InterfaceScale.metric(20)
+        replyConnector(in: replyConnectorFrame(
+            frame: frame,
+            contentFrame: contentFrame,
+            bubbleRegion: bubbleRegion
         ))
         let baseFont = NativeTimelineReplyMetrics.summaryFont
         let italicFont = NSFont(
@@ -991,8 +1027,12 @@ extension NativeTimelineRowPainter {
             in: avatarFrame
         )
         let font = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: NativeTimelineReplyMetrics.authorFont)
+        // Discord prefixes the replied-to name with @ when the reply pinged them.
+        let displayName =
+            message.mentionedUsers.contains(where: { $0.id == preview.author.id })
+            ? "@\(author.displayName)" : author.displayName
         let width = NativeTimelineReplyMetrics.textWidth(
-            author.displayName,
+            displayName,
             font: font
         )
         let roleColor = roleColor(presentation?.roleColorHex)
@@ -1013,7 +1053,7 @@ extension NativeTimelineRowPainter {
             height: InterfaceScale.metric(20)
         )
         text(
-            author.displayName,
+            displayName,
             in: authorFrame,
             font: font,
             color: author.isBot

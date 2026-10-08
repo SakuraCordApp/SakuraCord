@@ -46,13 +46,16 @@ extension AppModel {
 
     func reply(to message: Message) {
         let destination: MessageComposerDestination
+        // Self-replies never ping (Discord's default; the toggle is hidden
+        // for them). Other replies use the user's last explicit choice.
+        let isSelf = message.author.id == snapshot?.currentUser.id
         if message.channelID == selectedChannelID {
             replyingTo = message
-            replyMentionsAuthor = true
+            replyMentionsAuthor = isSelf ? false : composer.replyMentionsAuthorChoice
             destination = .channel
         } else if message.channelID == openThread?.id {
             threadReplyingTo = message
-            threadReplyMentionsAuthor = true
+            threadReplyMentionsAuthor = isSelf ? false : composer.threadReplyMentionsAuthorChoice
             destination = .thread
         } else {
             return
@@ -137,8 +140,10 @@ extension AppModel {
         switch destination {
         case .channel:
             replyMentionsAuthor = mentionsAuthor
+            composer.replyMentionsAuthorChoice = mentionsAuthor
         case .thread:
             threadReplyMentionsAuthor = mentionsAuthor
+            composer.threadReplyMentionsAuthorChoice = mentionsAuthor
         }
     }
 

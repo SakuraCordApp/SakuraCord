@@ -17,6 +17,10 @@ final class MessageComposerState {
     var threadReplyingTo: Message?
     var replyMentionsAuthor = true
     var threadReplyMentionsAuthor = true
+    /// The user's last explicit ping choice, applied to each new reply
+    /// to someone else. Self-replies override the live value, not this.
+    @ObservationIgnored var replyMentionsAuthorChoice = true
+    @ObservationIgnored var threadReplyMentionsAuthorChoice = true
     var channelAttachments: [ForumPostAttachment] = []
     var threadAttachments: [ForumPostAttachment] = []
     @ObservationIgnored var outbox = OutgoingMessageState()
@@ -85,6 +89,8 @@ final class MessageComposerState {
         threadReplyingTo = nil
         replyMentionsAuthor = true
         threadReplyMentionsAuthor = true
+        replyMentionsAuthorChoice = true
+        threadReplyMentionsAuthorChoice = true
         channelAttachments = []
         threadAttachments = []
         outbox.reset()
