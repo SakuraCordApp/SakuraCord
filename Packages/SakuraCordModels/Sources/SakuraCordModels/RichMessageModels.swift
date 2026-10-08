@@ -77,6 +77,7 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
     public static let stageTopic = Self(rawValue: 31)
     public static let premiumReferral = Self(rawValue: 35)
     public static let pollResult = Self(rawValue: 46)
+    public static let friendRequestAccepted = Self(rawValue: 67)
 
     /// Exact set used by Discord desktop's current `FORWARDABLE` policy.
     public var isForwardable: Bool {
@@ -90,7 +91,7 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
 
     public var hasGeneratedContent: Bool {
         switch rawValue {
-        case 1 ... 12, 18, 22, 27 ... 31, 46:
+        case 1 ... 12, 18, 22, 27 ... 31, 46, 67:
             true
         default:
             false

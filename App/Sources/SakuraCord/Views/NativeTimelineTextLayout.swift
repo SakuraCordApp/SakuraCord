@@ -112,6 +112,7 @@ enum NativeTimelineTextPresentation {
             NativeTimelineTextPlan.make(
                 for: message,
                 currentUserID: model?.snapshot?.currentUser.id,
+                systemRecipient: model?.systemMessageRecipient(for: message),
                 systemActorColor: systemActorColor
             )
         } else {

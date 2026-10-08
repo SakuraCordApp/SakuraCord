@@ -122,6 +122,13 @@ extension AppModel {
         }
     }
 
+    func systemMessageRecipient(for message: Message) -> User? {
+        guard message.type == .friendRequestAccepted,
+              let channel = snapshot?.channels.first(where: { $0.id == message.channelID }),
+              channel.kind == .directMessage else { return nil }
+        return channel.recipients.first { $0.id != snapshot?.currentUser.id }
+    }
+
     func systemMessageUser(
         userID: UserID,
         sourceMessage: Message? = nil
@@ -133,6 +140,7 @@ extension AppModel {
         let sourceUser = sourceMessage.flatMap { message -> User? in
             if message.author.id == userID { return message.author }
             return message.mentionedUsers.first { $0.id == userID }
+                ?? systemMessageRecipient(for: message).flatMap { $0.id == userID ? $0 : nil }
         }
         return sourceUser
             ?? (messages + threadMessages).lazy.compactMap { message -> User? in

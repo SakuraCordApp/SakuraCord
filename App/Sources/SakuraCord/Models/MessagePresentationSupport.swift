@@ -72,6 +72,7 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
     nonisolated static func make(
         for message: Message,
         currentUserID: UserID? = nil,
+        systemRecipient: User? = nil,
         systemActorColor: NSColor? = nil
     ) -> Self {
         let baseFontSize: CGFloat =
@@ -84,7 +85,8 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
             if message.type.hasGeneratedContent {
                 SystemMessagePresentation.label(
                     for: message,
-                    currentUserID: currentUserID
+                    currentUserID: currentUserID,
+                    recipient: systemRecipient
                 )
             } else {
                 MessageEmbedPresentation.visibleMessageContent(
@@ -118,6 +120,7 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                 SystemMessagePresentation.attributedLabel(
                     for: message,
                     currentUserID: currentUserID,
+                    recipient: systemRecipient,
                     baseFontSize: baseFontSize,
                     actorColor: systemActorColor
                 )
