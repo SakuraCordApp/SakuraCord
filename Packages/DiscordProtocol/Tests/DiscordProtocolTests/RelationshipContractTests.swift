@@ -4,11 +4,13 @@ import SakuraCordModels
 import Synchronization
 import Testing
 
-@Suite(.serialized)
 struct RelationshipContractTests {
+    private let fixture = RelationshipFixture()
+
     @Test func `READY, Gateway events and a racing full read reduce to one authoritative record set`() async throws {
         let credentials = RelationshipInterleavingCredentials()
-        let provider = await makeProvider(credentials: credentials)
+        let (provider, session) = await makeProvider(credentials: credentials)
+        defer { session.invalidateAndCancel() }
         await provider.handleGatewayDispatch(name: "READY", body: .object([
             "user": user("1"),
             "users": .array([user("2"), user("3")]),
@@ -59,7 +61,7 @@ struct RelationshipContractTests {
         await credentials.interleave {
             await provider.handleGatewayDispatch(name: "RELATIONSHIP_REMOVE", body: row("2", type: 1))
         }
-        RelationshipURLProtocol.relationships.withLock {
+        fixture.relationships.withLock {
             $0 = """
             [{"id":"2","type":1,"nickname":"Stale","user":{"id":"2","username":"user2"}},
              {"id":"3","type":3,"is_spam_request":false,"user":{"id":"3","username":"renamed3"}},
@@ -86,7 +88,8 @@ struct RelationshipContractTests {
     @Test(arguments: ["relationship", "nickname", "identity"])
     func `older full reads preserve newer relationship metadata and user identities`(change: String) async throws {
         let credentials = RelationshipInterleavingCredentials()
-        let provider = await makeProvider(credentials: credentials)
+        let (provider, session) = await makeProvider(credentials: credentials)
+        defer { session.invalidateAndCancel() }
         await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("2", type: 1, extra: [
             "user": user("2"), "nickname": .string("Old"),
         ]))
@@ -108,7 +111,7 @@ struct RelationshipContractTests {
                 await provider.cacheLiveSearchUsers([renamedDTO])
             }
         }
-        RelationshipURLProtocol.relationships.withLock {
+        fixture.relationships.withLock {
             $0 = #"[{"id":"2","type":1,"nickname":"Old","user":{"id":"2","username":"user2"}}]"#
         }
         try await provider.loadRelationships()
@@ -120,7 +123,8 @@ struct RelationshipContractTests {
 
     @Test(arguments: [false, true])
     func `live user changes publish renamed or newly hydrated Friends`(startsHydrated: Bool) async throws {
-        let provider = await makeProvider()
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
         await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("2", type: 1,
             extra: startsHydrated ? ["user": user("2")] : [:]))
         await provider.relationshipUserPublicationTask?.value
@@ -146,7 +150,8 @@ struct RelationshipContractTests {
     }
 
     @Test func `relationship mutations use Discord's routes, bodies and context once each`() async throws {
-        let provider = await makeProvider()
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
         try await provider.sendFriendRequest(username: "example", discriminator: nil, captchaHandler: nil)
         try await provider.sendFriendRequest(username: "legacy", discriminator: 42, note: "  Hello\n🌸  ", captchaHandler: nil)
         try await provider.acceptFriendRequest(from: id(2), confirmingStranger: false, captchaHandler: nil)
@@ -155,7 +160,7 @@ struct RelationshipContractTests {
         try await provider.blockUser(id(5))
         // Another session already removed this one.
         try await provider.removeRelationship(with: id(404), as: .cancelOutgoingRequest)
-        let captured = RelationshipURLProtocol.requests.withLock { $0 }
+        let captured = fixture.requests.withLock { $0 }
         #expect(captured.map { "\($0.request.httpMethod!) \($0.request.url!.path)" } == [
             "POST /api/v9/users/@me/relationships", "POST /api/v9/users/@me/relationships",
             "PUT /api/v9/users/@me/relationships/2", "DELETE /api/v9/users/@me/relationships/3",
@@ -175,7 +180,8 @@ struct RelationshipContractTests {
     }
 
     @Test func `explained friend request failures stay scoped to the action and are never replayed`() async throws {
-        let provider = await makeProvider()
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
         await #expect(throws: RelationshipActionError.failed("You’re already friends with that user!")) {
             try await provider.sendFriendRequest(username: "already", discriminator: nil, captchaHandler: nil)
         }
@@ -190,7 +196,7 @@ struct RelationshipContractTests {
             try await provider.acceptFriendRequest(from: id(813), confirmingStranger: false, captchaHandler: nil)
         }
         try await provider.acceptFriendRequest(from: id(813), confirmingStranger: true, captchaHandler: nil)
-        let captured = RelationshipURLProtocol.requests.withLock { $0 }
+        let captured = fixture.requests.withLock { $0 }
         #expect(captured.count == 5)
         #expect(captured.suffix(2).map(\.body) == [
             .object(["confirm_stranger_request": .bool(false)]), .object(["confirm_stranger_request": .bool(true)]),
@@ -204,7 +210,8 @@ struct RelationshipContractTests {
     }
 
     @Test func `request note limits use UTF16 and reject before sending`() async throws {
-        let provider = await makeProvider()
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
         #expect(try FriendRequestNote.normalized(String(repeating: "🌸", count: 60))?.utf16.count == 120)
         #expect(try FriendRequestNote.normalized(" \n ") == nil)
         await #expect(throws: RelationshipActionError.self) {
@@ -217,7 +224,8 @@ struct RelationshipContractTests {
 
     @Test(arguments: ["hcaptcha", "recaptcha", "recaptcha_enterprise", "turnstile"])
     func `a friend request challenge is solved by a human once and replays the original request`(service: String) async throws {
-        let provider = await makeProvider()
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
         try await provider.sendFriendRequest(username: "captcha-\(service)", discriminator: nil, note: "Hello 🌸") { challenge in
             #expect(challenge.service.rawValue == service)
             #expect(challenge.siteKey == "site-key")
@@ -225,7 +233,7 @@ struct RelationshipContractTests {
             #expect(await !provider.requestSafetyCircuitIsOpen)
             return "human-solution"
         }
-        let captured = RelationshipURLProtocol.requests.withLock { $0 }
+        let captured = fixture.requests.withLock { $0 }
         #expect(captured.count == 2)
         let original = captured[0], replay = captured[1]
         #expect(original.request.url == replay.request.url)
@@ -241,12 +249,13 @@ struct RelationshipContractTests {
 
     @Test
     func `blocking presents the human challenge and preserves its original context`() async throws {
-        let provider = await makeProvider()
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
         try await provider.blockUser(id(990)) { challenge in
             #expect(challenge.service == .hcaptcha)
             return "human-solution"
         }
-        let captured = RelationshipURLProtocol.requests.withLock { $0 }
+        let captured = fixture.requests.withLock { $0 }
         #expect(captured.count == 2)
         #expect(captured.allSatisfy { $0.request.httpMethod == "PUT" && context($0.request) == "ContextMenu" })
         #expect(captured.allSatisfy { $0.body == .object(["type": .number(2)]) })
@@ -256,7 +265,8 @@ struct RelationshipContractTests {
 
     @Test(arguments: ["cancel", "empty", "repeated", "noHandler", "accountChanged"])
     func `cancelled, rejected or stale friend challenges never loop or cross accounts`(outcome: String) async throws {
-        let provider = await makeProvider()
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
         let username = outcome == "repeated" ? "captcha-repeated" : "captcha-hcaptcha"
         let handler: DiscordCaptchaHandler = { _ in
             if outcome == "cancel" { throw CancellationError() }
@@ -266,7 +276,7 @@ struct RelationshipContractTests {
         await #expect(throws: (any Error).self) {
             try await provider.sendFriendRequest(username: username, discriminator: nil, captchaHandler: outcome == "noHandler" ? nil : handler)
         }
-        #expect(RelationshipURLProtocol.requests.withLock { $0.count } == (outcome == "repeated" ? 2 : 1))
+        #expect(fixture.requests.withLock { $0.count } == (outcome == "repeated" ? 2 : 1))
         #expect(await !provider.requestSafetyCircuitIsOpen)
         // Unknown services and other routes keep the safety boundary.
         let challenge = Data(RelationshipURLProtocol.challenge(service: "hcaptcha").utf8)
@@ -288,7 +298,7 @@ struct RelationshipContractTests {
     }
 
     private func requests(method: String) -> [URLRequest] {
-        RelationshipURLProtocol.requests.withLock { $0.map(\.request).filter { $0.httpMethod == method } }
+        fixture.requests.withLock { $0.map(\.request).filter { $0.httpMethod == method } }
     }
 
     private func context(_ request: URLRequest) -> String? {
@@ -297,15 +307,13 @@ struct RelationshipContractTests {
             .flatMap { try? JSONDecoder().decode([String: String].self, from: $0) }?["location"]
     }
 
-    private func makeProvider(credentials: any CredentialStore = TestCredentialStore()) async -> DiscordRESTProvider {
-        RelationshipURLProtocol.requests.withLock { $0.removeAll() }
-        RelationshipURLProtocol.relationships.withLock { $0 = "[]" }
+    private func makeProvider(credentials: any CredentialStore = TestCredentialStore()) async -> (DiscordRESTProvider, URLSession) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RelationshipURLProtocol.self]
-        let provider = DiscordRESTProvider(credentials: credentials, handle: CredentialHandle(accountID: "relationships"),
-                                           session: URLSession(configuration: configuration))
+        let session = URLSession(configuration: configuration, delegate: fixture, delegateQueue: nil)
+        let provider = DiscordRESTProvider(credentials: credentials, handle: CredentialHandle(accountID: "relationships"), session: session)
         await provider.replaceCurrentUser(id: 1)
-        return provider
+        return (provider, session)
     }
 }
 
@@ -335,14 +343,20 @@ private actor RelationshipInterleavingCredentials: CredentialStore {
     func handles() async throws -> [CredentialHandle] { try await base.handles() }
 }
 
+private final class RelationshipFixture: NSObject, URLSessionTaskDelegate {
+    let requests = Mutex<[RelationshipURLProtocol.Captured]>([])
+    let relationships = Mutex("[]")
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        task.delegate = self
+    }
+}
+
 private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
     struct Captured: Sendable {
         let request: URLRequest
         let body: JSONValue?
     }
-
-    static let requests = Mutex<[Captured]>([])
-    static let relationships = Mutex("[]")
 
     static func challenge(service: String) -> String {
         """
@@ -351,28 +365,23 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
         """
     }
 
+    override static func canInit(with task: URLSessionTask) -> Bool { true }
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        var data = request.httpBody ?? Data()
-        if let stream = request.httpBodyStream {
-            stream.open()
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
-                let count = stream.read(&buffer, maxLength: buffer.count)
-                if count <= 0 { break }
-                data.append(buffer, count: count)
-            }
-            stream.close()
+        guard let fixture = task?.delegate as? RelationshipFixture else {
+            Issue.record("Relationship transport is missing its test-owned fixture")
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
         }
-        let body = try? JSONDecoder().decode(JSONValue.self, from: data)
-        Self.requests.withLock { $0.append(Captured(request: request, body: body)) }
+        let body = decodedRequestBody()
+        fixture.requests.withLock { $0.append(Captured(request: request, body: body)) }
         let solved = request.value(forHTTPHeaderField: "X-Captcha-Key") != nil
         var username: String?
         if case let .object(fields)? = body, case let .string(value)? = fields["username"] { username = value }
         let lastComponent = request.url!.lastPathComponent
         let (status, response): (Int, String) = switch (request.httpMethod!, username, lastComponent) {
-        case ("GET", _, _): (200, Self.relationships.withLock { $0 })
+        case ("GET", _, _): (200, fixture.relationships.withLock { $0 })
         case (_, "already"?, _): (400, #"{"code":80007,"message":"You are already friends with that user."}"#)
         case (_, "closed"?, _): (400, #"{"code":80000,"message":"Incoming friend requests disabled."}"#)
         case (_, "limited"?, _): (429, #"{"retry_after":0.01,"global":false}"#)
@@ -390,6 +399,21 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
                             cacheStoragePolicy: .notAllowed)
         if !response.isEmpty { client?.urlProtocol(self, didLoad: Data(response.utf8)) }
         client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private func decodedRequestBody() -> JSONValue? {
+        var data = request.httpBody ?? Data()
+        if let stream = request.httpBodyStream {
+            stream.open()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(buffer, count: count)
+            }
+            stream.close()
+        }
+        return try? JSONDecoder().decode(JSONValue.self, from: data)
     }
 
     override func stopLoading() {}

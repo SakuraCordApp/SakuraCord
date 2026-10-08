@@ -370,13 +370,12 @@ extension AppModel {
 
     private func acceptsLiveInboxMention(_ message: Message) -> Bool {
         !inbox.removedIDs.contains(message.id)
-            && snapshot?.blockedOrIgnoredUserIDs.contains(message.author.id) != true
             && readState.isInboxMention(message, query: inbox.query)
             && (inbox.query.guildID == nil || inbox.query.guildID == (message.guildID ?? readState.entries[message.channelID]?.guildID))
     }
 
     func reconcileInboxEligibility() {
-        inbox.mentions.removeAll { snapshot?.blockedOrIgnoredUserIDs.contains($0.author.id) == true }
+        refreshInboxMentionRestrictions()
         guard inbox.isPresented else { return }
         let eligible = Set(makeInboxUnreadGroups().map(\.id))
         inbox.groups.removeAll { !eligible.contains($0.id) }

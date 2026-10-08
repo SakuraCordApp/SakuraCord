@@ -34,7 +34,8 @@ Returning to All or Pending after reconnecting starts the eligible full read.
 Cached user changes republish hydrated relationships in a coalesced update so
 names, avatars, sorting and search follow live identities. Relationship changes
 also refresh derived blocked/ignored sets, forwarding suggestions and retained
-Inbox mentions; fetched mention pages apply the current block set.
+Inbox mentions. Blocking filters the retained pages without deleting messages,
+so unblocking restores older mentions without restarting pagination.
 
 `RELATIONSHIP_ADD` keeps stored nickname/since/note when omitted or null; `RELATIONSHIP_UPDATE`
 replaces them; `RELATIONSHIP_REMOVE` deletes the record. Mutations answer 204
