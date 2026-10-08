@@ -103,8 +103,8 @@ extension AppModel {
             inbox.mentionsQuery = inbox.query
         }
         publishInbox()
-        // Retained mentions page further only as the user scrolls.
-        if inbox.tab == .unread || inbox.mentions.isEmpty || inbox.needsMentionRevalidation { loadMoreInbox() }
+        // Page past hidden mentions even when retained pages are nonempty.
+        if inbox.tab == .unread || inbox.visibleMentions.isEmpty || inbox.needsMentionRevalidation { loadMoreInbox() }
     }
 
     func retryInboxLoad() {
@@ -383,6 +383,7 @@ extension AppModel {
             readState.entries[$0.channelID]?.isAccessible == false
         }
         publishInbox()
+        if inbox.tab == .mentions, inbox.visibleMentions.isEmpty { loadMoreInbox() }
     }
 
     func reconcileInboxReadState() {

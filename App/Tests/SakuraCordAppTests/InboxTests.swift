@@ -7,16 +7,24 @@ import Testing
 @MainActor
 struct InboxTests {
     @Test(arguments: [false, true])
-    func `blocking filters mentions without losing older pages when unblocked`(whileHidden: Bool) async throws {
+    func `blocking pages past hidden mentions and restores retained pages when unblocked`(whileHidden: Bool) async throws {
         let (model, _) = await fixture(mixedAuthors: true)
         model.inbox.tab = .mentions
         model.presentInbox()
         await model.inbox.loadTask?.value
-        model.loadMoreInbox()
+        #expect(model.inbox.mentions.count == 25)
+        let message = try #require(model.inbox.mentions.first)
+        // Both a visible page becoming hidden and returning from Unread must
+        // continue to the older page that has another author's mention.
+        if whileHidden { model.selectInboxTab(.unread) }
+        model.applyRelationships([Relationship(id: message.author.id, type: .blocked, user: message.author)])
+        #expect(model.inbox.visibleMentions.isEmpty)
+        if whileHidden { model.selectInboxTab(.mentions) }
         await model.inbox.loadTask?.value
+        #expect(model.inbox.visibleMentions.count == 1)
+        model.applyRelationships([])
         let originalIDs = model.inbox.visibleMentions.map(\.id)
         #expect(originalIDs.count == 30)
-        let message = try #require(model.inbox.mentions.first)
         if whileHidden { model.dismissInbox() }
         model.applyRelationships([Relationship(id: message.author.id, type: .blocked, user: message.author)])
         #expect(model.snapshot?.blockedOrIgnoredUserIDs == [message.author.id])
