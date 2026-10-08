@@ -85,7 +85,15 @@ jobs:
         id: build-cache
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node "$CI_CONTROL_ROOT/script/ci_reuse.mjs" restore ${{ matrix.suite }}
+        # Temporary experiment on ci-cache-probe only; do not merge this step.
+        # Hash the original key inputs while executing the diagnostic helper.
+        run: |
+          cp script/ci_reuse.mjs "$RUNNER_TEMP/ci_reuse.mjs"
+          cp .github/workflows/ci.yml "$RUNNER_TEMP/ci-probe.yml"
+          trap 'cp "$RUNNER_TEMP/ci_reuse.mjs" script/ci_reuse.mjs; cp "$RUNNER_TEMP/ci-probe.yml" .github/workflows/ci.yml' EXIT
+          git show 89e00c763aa8c7f1ff22f1fae69acadae96f0798:script/ci_reuse.mjs > script/ci_reuse.mjs
+          git show 89e00c763aa8c7f1ff22f1fae69acadae96f0798:.github/workflows/ci.yml > .github/workflows/ci.yml
+          node "$RUNNER_TEMP/ci_reuse.mjs" restore ${{ matrix.suite }}
       - name: Verify checked-out commit
         if: github.event_name != 'workflow_dispatch'
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"

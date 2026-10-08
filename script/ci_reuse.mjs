@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setTimeout } from 'node:timers/promises';
 
 const workflowPath = '.github/workflows/ci.yml';
 const releaseTag = /^v\d+\.\d+\.\d+(?:-Beta-\d+)?$/;
@@ -59,8 +60,34 @@ export async function findCache({ api, repository, key, configuration, currentRu
   return null;
 }
 
-function command(program, args) {
-  return execFileSync(program, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+function command(program, args, options = {}) {
+  return execFileSync(program, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...options }).trim();
+}
+
+function errorDetails(error) {
+  let detail = `${error.message}${error.stderr ? `\n${error.stderr}` : ''}`;
+  for (const token of [process.env.GH_TOKEN, process.env.GITHUB_TOKEN]) {
+    if (token) detail = detail.replaceAll(token, '[redacted]');
+  }
+  // Download errors can include signed storage URLs; retain the host/path only.
+  return detail.replace(/(https?:\/\/[^\s?"<>]+)\?[^\s"<>]+/g, '$1?[redacted]');
+}
+
+async function cacheRequest(stage, operation) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      const detail = errorDetails(error);
+      console.warn(`Cache ${stage} failed (attempt ${attempt}/3): ${detail}`);
+      const transient = /HTTP (?:429|5\d\d)\b|\b(?:ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN)\b|timed? out|TLS handshake timeout|connection reset|unexpected EOF|rate limit exceeded/i.test(detail)
+        || error.code === 'ETIMEDOUT';
+      if (!transient || attempt === 3) throw error;
+      const delay = attempt * 2000;
+      console.log(`Retrying cache ${stage} in ${delay / 1000}s.`);
+      await setTimeout(delay);
+    }
+  }
 }
 
 function api(endpoint) {
@@ -138,8 +165,14 @@ async function main() {
     console.log('Branch validation compiles from source.');
     return;
   }
+  let stage = 'lookup';
+  let directory;
   try {
-    const cached = await findCache({ api, repository, key, configuration, currentRun,
+    console.log(`Looking up ${configuration} compiler outputs.`);
+    const cached = await findCache({
+      api: endpoint => cacheRequest(`lookup: gh api ${endpoint}`, () =>
+        JSON.parse(command('gh', ['api', endpoint], { timeout: 120_000 }))),
+      repository, key, configuration, currentRun,
       isAncestor: sha => {
         try { command('git', ['merge-base', '--is-ancestor', sha, 'HEAD']); return true; }
         catch { return false; }
@@ -148,13 +181,27 @@ async function main() {
       console.log('No compatible build artifact; compiling from source.');
       return;
     }
-    const directory = join(process.env.RUNNER_TEMP, `restore-${configuration}`);
-    command('gh', ['run', 'download', String(cached.run.id), '--repo', repository,
-      '--name', key, '--dir', directory]);
+    stage = 'download';
+    console.log(`Downloading artifact ${cached.artifact.id} from ${cached.run.html_url}.`);
+    await cacheRequest('download: gh run download', () => {
+      if (directory) rmSync(directory, { recursive: true, force: true });
+      directory = mkdtempSync(join(process.env.RUNNER_TEMP, `restore-${configuration}-`));
+      command('gh', ['run', 'download', String(cached.run.id), '--repo', repository,
+        '--name', key, '--dir', directory], { timeout: 600_000 });
+    });
+    stage = 'extraction';
+    console.log(`Extracting ${configuration} compiler outputs.`);
     command('tar', ['-xf', join(directory, `swiftpm-${configuration}.tar`)]);
     console.log(`Restored ${configuration} compiler outputs from ${cached.run.html_url}`);
-  } catch {
+  } catch (error) {
+    console.warn(`Cache restore failed during ${stage}: ${errorDetails(error)}`);
+    if (stage === 'extraction') {
+      // A failed extraction must not leave partial compiler outputs for the build.
+      for (const path of archives[configuration]) rmSync(path, { recursive: true, force: true });
+    }
     console.log('Build artifact unavailable; continuing with a source build.');
+  } finally {
+    if (directory) rmSync(directory, { recursive: true, force: true });
   }
 }
 
