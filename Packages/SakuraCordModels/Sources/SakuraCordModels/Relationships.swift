@@ -48,6 +48,10 @@ public struct Relationship: Identifiable, Codable, Hashable, Sendable {
 }
 
 public extension Collection<Relationship> {
+    var blockedOrIgnoredUserIDs: Set<UserID> {
+        Set(lazy.filter { $0.type == .blocked || $0.isUserIgnored }.map(\.id))
+    }
+
     var friendUserIDs: Set<UserID> {
         Set(lazy.filter { $0.type == .friend }.map(\.id))
     }

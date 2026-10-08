@@ -23,6 +23,7 @@ struct FriendsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(HumanCaptchaPresentation(store: friends.captcha))
+        .onAppear { model.loadRelationshipsIfNeeded(for: model.friendsSection) }
         .onDisappear { friends.captcha.cancel() }
         .alert(
             confirmationTitle(friends.confirmation),

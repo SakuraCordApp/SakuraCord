@@ -26,8 +26,15 @@ per-friend presence request.
 
 `GET /users/@me/relationships` runs at most once per Gateway connection, started
 by the first All or Pending view; Online and Add Friend use READY. A record
-changed by Gateway while the read is in flight keeps its newer state, and a new
-READY discards the result.
+changed by Gateway or a successful nickname save while the read is in flight
+keeps its newer state. Embedded users cannot overwrite a newer cached identity.
+A new READY discards the result and replaces the app’s Friends projection.
+Returning to All or Pending after reconnecting starts the eligible full read.
+
+Cached user changes republish hydrated relationships in a coalesced update so
+names, avatars, sorting and search follow live identities. Relationship changes
+also refresh derived blocked/ignored sets, forwarding suggestions and retained
+Inbox mentions; fetched mention pages apply the current block set.
 
 `RELATIONSHIP_ADD` keeps stored nickname/since/note when omitted or null; `RELATIONSHIP_UPDATE`
 replaces them; `RELATIONSHIP_REMOVE` deletes the record. Mutations answer 204

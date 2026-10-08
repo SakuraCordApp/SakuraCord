@@ -225,6 +225,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var relationshipLoadGeneration: UInt64?
     /// Per-user revisions keep unrelated relationship events from suppressing saves.
     var relationshipRevisions: [UserID: UInt64] = [:]
+    var cachedUserRevisions: [String: UInt64] = [:]
+    var relationshipUserPublicationTask: Task<Void, Never>?
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
     var guildRoleTasks: [GuildID: Task<[GuildRoleDTO], Error>] = [:]
     var pendingMemberSearchRequests: [String: PendingMemberSearchRequest] = [:]

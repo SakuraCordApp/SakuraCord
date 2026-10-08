@@ -73,6 +73,7 @@ public extension MockChatProvider {
     }
 
     private func publishRelationships() {
+        snapshot.blockedOrIgnoredUserIDs = snapshot.relationships.blockedOrIgnoredUserIDs
         snapshot.friendUserIDs = snapshot.relationships.friendUserIDs
         snapshot.relationshipNicknamesByUserID = snapshot.relationships.nicknamesByUserID
         continuation?.yield(.relationshipsChanged(snapshot.relationships))

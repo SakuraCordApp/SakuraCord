@@ -893,6 +893,7 @@ extension AppModel {
         let previousGuildsByID = serverRailGuildsByID
         let previousAccessEvidence = readState.authoritativeAccessEvidenceChannelIDs()
         snapshot = value
+        friends.replaceRelationships(value.relationships)
         for (guildID, member) in value.currentMembersByGuildID {
             receiveOnboardingMember(member, guildID: guildID)
         }
@@ -950,6 +951,7 @@ extension AppModel {
         let retainedGuildID = selectedGuildID.flatMap { selected in
             value.guilds.contains { $0.id == selected } ? selected : value.guilds.first?.id
         }
+        reconcileInboxEligibility()
         selectGuild(retainedGuildID)
     }
 

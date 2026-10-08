@@ -24,7 +24,8 @@ extension AppModel {
         for message in inboxMessagesPreservingRefreshMutations(page.messages) where !inbox.removedIDs.contains(message.id) {
             combined[message.id] = message
         }
-        inbox.mentions = combined.values.sorted { $0.id > $1.id }
+        inbox.mentions = combined.values.filter { snapshot?.blockedOrIgnoredUserIDs.contains($0.author.id) != true }
+            .sorted { $0.id > $1.id }
         inbox.nextBefore = page.nextBefore
         inbox.hasMoreMentions = page.hasMore && page.nextBefore != nil && page.nextBefore != before
     }
@@ -43,7 +44,8 @@ extension AppModel {
         }.map { ($0.id, $0) })
         for message in fresh { combined[message.id] = message }
         let retainsOlderPages = combined.count > fresh.count
-        inbox.mentions = combined.values.sorted { $0.id > $1.id }
+        inbox.mentions = combined.values.filter { snapshot?.blockedOrIgnoredUserIDs.contains($0.author.id) != true }
+            .sorted { $0.id > $1.id }
         if !retainsOlderPages {
             inbox.nextBefore = page.nextBefore
             inbox.hasMoreMentions = page.hasMore && page.nextBefore != nil

@@ -376,12 +376,12 @@ extension AppModel {
     }
 
     func reconcileInboxEligibility() {
+        inbox.mentions.removeAll { snapshot?.blockedOrIgnoredUserIDs.contains($0.author.id) == true }
         guard inbox.isPresented else { return }
         let eligible = Set(makeInboxUnreadGroups().map(\.id))
         inbox.groups.removeAll { !eligible.contains($0.id) }
         inbox.mentions.removeAll {
             readState.entries[$0.channelID]?.isAccessible == false
-                || snapshot?.blockedOrIgnoredUserIDs.contains($0.author.id) == true
         }
         publishInbox()
     }

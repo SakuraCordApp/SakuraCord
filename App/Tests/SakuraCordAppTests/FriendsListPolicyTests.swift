@@ -33,6 +33,22 @@ struct FriendsListPolicyTests {
         #expect(FriendsListPolicy.groups(for: .all, rows: rows, query: "alp").first?.rows.map(\.name) == ["Alpha"])
     }
 
+    @Test @MainActor func `replacement snapshots refresh cached Friends and request counts`() async throws {
+        let model = AppModel(launchMode: .offlineTesting)
+        await model.start()
+        let user = User(id: UserID(rawValue: 9001), username: "newfriend", displayName: "New Friend")
+        model.applyRelationships([Relationship(id: user.id, type: .incomingRequest, user: user)])
+        #expect(model.incomingFriendRequestCount == 1)
+        #expect(model.friends.projection(for: .pending, query: "").count == 1)
+        var replacement = try #require(model.snapshot)
+        replacement.relationships = [Relationship(id: user.id, type: .friend, user: user)]
+        replacement.friendUserIDs = [user.id]
+        model.consumeSnapshotChanged(replacement)
+        #expect(model.incomingFriendRequestCount == 0)
+        #expect(model.friends.projection(for: .pending, query: "").count == 0)
+        #expect(model.friends.projection(for: .all, query: "newfriend").count == 1)
+    }
+
     @Test func `Add Friend input is parsed like Discord's request helper`() {
         #expect(FriendsListPolicy.parseUsername("  @example.name ") == .valid(username: "example.name", discriminator: nil))
         #expect(FriendsListPolicy.parseUsername("legacy#0042") == .valid(username: "legacy", discriminator: 42))

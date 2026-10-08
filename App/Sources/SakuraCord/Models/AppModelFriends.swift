@@ -100,10 +100,13 @@ extension AppModel {
     func applyRelationships(_ relationships: [Relationship]) {
         guard var value = snapshot else { return }
         friends.replaceRelationships(relationships)
+        let previousBlocked = value.blockedOrIgnoredUserIDs
         value.relationships = relationships
+        value.blockedOrIgnoredUserIDs = relationships.blockedOrIgnoredUserIDs
         value.friendUserIDs = relationships.friendUserIDs
         value.relationshipNicknamesByUserID = relationships.nicknamesByUserID
         snapshot = value
+        if previousBlocked != value.blockedOrIgnoredUserIDs { reconcileInboxEligibility() }
         forwardSearchSourceRevision &+= 1
         let ids = Set(relationships.map(\.id))
         friends.pendingUserIDs.formIntersection(ids)

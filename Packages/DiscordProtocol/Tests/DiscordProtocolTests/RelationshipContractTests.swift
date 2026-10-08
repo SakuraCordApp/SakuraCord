@@ -44,9 +44,14 @@ struct RelationshipContractTests {
         #expect(records[id(4)]?.type == .friend)
         #expect(records[id(4)]?.since != nil)
         #expect(await provider.publishedRelationships().first { $0.id == id(4) }?.user?.username == "user4")
+        let knownFriend = try JSONValueDecoder().decode(UserDTO.self, from: user("4"))
+        await provider.cacheLiveSearchUsers([knownFriend])
+        #expect(await provider.currentKnownUsers().contains { $0.id == id(4) })
         // Blocking replaces a friendship without a preceding removal.
         await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("4", type: 2))
         #expect(await provider.cachedRelationships[id(4)]?.type == .blocked)
+        #expect(await provider.cachedBlockedOrIgnoredUserIDs == [id(4), id(5)])
+        #expect(await !provider.currentKnownUsers().contains { $0.id == id(4) })
         #expect(await provider.cachedFriendUserIDs == [id(2)])
 
         // Gateway removes 2 while the full read is in flight: its older row
@@ -65,6 +70,7 @@ struct RelationshipContractTests {
         records = await provider.cachedRelationships
         #expect(records.mapValues(\.type) == [id(3): .incomingRequest, id(7): .incomingRequest])
         #expect(records[id(3)]?.isSpamRequest == false)
+        #expect(await provider.cachedBlockedOrIgnoredUserIDs.isEmpty)
         #expect(await provider.publishedRelationships().first { $0.id == id(3) }?.user?.username == "renamed3")
         // At most once per Gateway connection; READY makes it eligible again.
         try await provider.loadRelationships()
@@ -74,6 +80,68 @@ struct RelationshipContractTests {
         #expect(requests(method: "GET").count == 2)
         #expect(requests(method: "GET").allSatisfy { $0.url?.path == "/api/v9/users/@me/relationships" })
         #expect(await !provider.requestSafetyCircuitIsOpen)
+        await provider.disconnect()
+    }
+
+    @Test(arguments: ["relationship", "nickname", "identity"])
+    func `older full reads preserve newer relationship metadata and user identities`(change: String) async throws {
+        let credentials = RelationshipInterleavingCredentials()
+        let provider = await makeProvider(credentials: credentials)
+        await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("2", type: 1, extra: [
+            "user": user("2"), "nickname": .string("Old"),
+        ]))
+        let renamed: JSONValue = .object(["id": .string("2"), "username": .string("newname")])
+        let renamedDTO = try JSONValueDecoder().decode(UserDTO.self, from: renamed)
+        await credentials.interleave {
+            switch change {
+            case "relationship":
+                await provider.handleGatewayDispatch(name: "RELATIONSHIP_UPDATE", body: .object([
+                    "id": .string("2"), "type": .number(1), "user": renamed, "nickname": .string("Saved"),
+                ]))
+            case "nickname":
+                do {
+                    _ = try await provider.setFriendNickname("Saved", for: UserID(rawValue: 2))
+                } catch {
+                    Issue.record(error)
+                }
+            default:
+                await provider.cacheLiveSearchUsers([renamedDTO])
+            }
+        }
+        RelationshipURLProtocol.relationships.withLock {
+            $0 = #"[{"id":"2","type":1,"nickname":"Old","user":{"id":"2","username":"user2"}}]"#
+        }
+        try await provider.loadRelationships()
+        let relationship = try #require(await provider.publishedRelationships().first { $0.id == id(2) })
+        #expect(relationship.nickname == (change == "identity" ? "Old" : "Saved"))
+        #expect(relationship.user?.username == (change == "nickname" ? "user2" : "newname"))
+        await provider.disconnect()
+    }
+
+    @Test(arguments: [false, true])
+    func `live user changes publish renamed or newly hydrated Friends`(startsHydrated: Bool) async throws {
+        let provider = await makeProvider()
+        await provider.handleGatewayDispatch(name: "RELATIONSHIP_ADD", body: row("2", type: 1,
+            extra: startsHydrated ? ["user": user("2")] : [:]))
+        await provider.relationshipUserPublicationTask?.value
+        let events = SessionEventBuffer<ClientEvent>(overflowEvent: .connectionChanged(.disconnected))
+        await provider.installRelationshipTestEvents(events)
+        let renamed: JSONValue = .object(["id": .string("2"), "username": .string("renamed"), "global_name": .string("New Name")])
+        // A persisted search identity does not hydrate the Friends record.
+        let cachedUser = try JSONValueDecoder().decode(UserDTO.self, from: renamed)
+        _ = await provider.cacheForwardSearchMessageUsers([cachedUser])
+        await provider.handleGatewayDispatch(name: "GUILD_MEMBER_UPDATE", body: .object([
+            "guild_id": .string("100"), "roles": .array([]),
+            "user": renamed,
+        ]))
+        await provider.relationshipUserPublicationTask?.value
+        events.finish()
+        var published: [Relationship] = []
+        for await event in events.stream {
+            if case .relationshipsChanged(let value) = event { published = value }
+        }
+        #expect(published.first { $0.id == id(2) }?.user?.displayName == "New Name")
+        #expect(published.first { $0.id == id(2) }?.user?.username == "renamed")
         await provider.disconnect()
     }
 
@@ -242,6 +310,8 @@ struct RelationshipContractTests {
 }
 
 private extension DiscordRESTProvider {
+    func installRelationshipTestEvents(_ events: SessionEventBuffer<ClientEvent>) { continuation = events }
+
     func replaceCurrentUser(id: UInt64 = 99) {
         currentUser = User(id: .init(rawValue: id), username: "fixture\(id)", displayName: "Fixture")
     }

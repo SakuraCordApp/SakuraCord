@@ -549,7 +549,6 @@ extension DiscordRESTProvider {
     private func cacheReadySupplementalPrivateState(
         _ supplemental: GatewayReadyGuildsDTO
     ) {
-        let hydratedRelationshipUserIDs = hydratedRelationshipUserIDs
         let supplementalMemberUserIDs = Set(
             supplemental.mergedMembers.flatMap { members in
                 members.compactMap { UserID($0.userID) }
@@ -604,7 +603,6 @@ extension DiscordRESTProvider {
         {
             continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
         }
-        publishRelationshipsIfHydrationChanged(previouslyHydrated: hydratedRelationshipUserIDs)
         // READY_SUPPLEMENTAL's merged friend presences are the initial source.
         publishRelationshipPresences(complete: true)
     }

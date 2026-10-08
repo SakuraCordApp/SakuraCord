@@ -94,6 +94,7 @@ extension DiscordRESTProvider {
         guard relationshipLoadGeneration != generation else { return }
         relationshipLoadGeneration = generation
         let revisions = relationshipRevisions
+        let userRevisions = cachedUserRevisions
         let rows: [GatewayRelationshipDTO]
         do {
             let (data, response) = try await perform("/users/@me/relationships", method: "GET", query: [], body: nil)
@@ -114,8 +115,10 @@ extension DiscordRESTProvider {
         for row in rows {
             guard let userID = UserID(row.id) else { continue }
             listed.insert(userID)
-            if let user = row.user { cacheRelationshipUser(user) }
             guard relationshipRevisions[userID, default: 0] == revisions[userID, default: 0] else { continue }
+            if cachedUserRevisions[row.id, default: 0] == userRevisions[row.id, default: 0], let user = row.user {
+                cacheRelationshipUser(user)
+            }
             records[userID] = row.record(merging: nil, replacing: true)
         }
         for userID in records.keys where !listed.contains(userID)
@@ -276,6 +279,7 @@ extension DiscordRESTProvider {
         guard currentUser?.id == user.id, profileEditingGeneration == generation,
               relationshipRevisions[userID, default: 0] == revision,
               var record = cachedRelationships[userID] else { return value }
+        relationshipRevisions[userID, default: 0] &+= 1
         record.nickname = value
         var records = cachedRelationships
         records[userID] = record
@@ -332,19 +336,11 @@ extension DiscordRESTProvider {
         }
     }
 
-    /// Republishes after identities arrive for records that lacked one.
-    func publishRelationshipsIfHydrationChanged(previouslyHydrated: Set<UserID>) {
-        let hydrated = Set(cachedRelationships.keys.filter { cachedGatewayUsersByID[$0.description] != nil })
-        guard hydrated != previouslyHydrated else { return }
-        continuation?.yield(.relationshipsChanged(publishedRelationships()))
-    }
-
-    var hydratedRelationshipUserIDs: Set<UserID> {
-        Set(cachedRelationships.keys.filter { cachedGatewayUsersByID[$0.description] != nil })
-    }
-
     private func publishRelationships(_ records: [UserID: RelationshipRecord], force: Bool = false) {
         guard force || records != cachedRelationships else { return }
+        let blocked = Set(records.lazy.filter { $0.value.type == .blocked || $0.value.isUserIgnored }.map(\.key))
+        let blockedChanged = blocked != cachedBlockedOrIgnoredUserIDs
+        cachedBlockedOrIgnoredUserIDs = blocked
         let nicknames = records.compactMapValues(\.nickname)
         let nicknamesChanged = nicknames != cachedRelationshipNicknamesByUserID
         cachedRelationships = records
@@ -352,6 +348,7 @@ extension DiscordRESTProvider {
         cachedRelationshipNicknamesByUserID = nicknames
         continuation?.yield(.relationshipsChanged(publishedRelationships()))
         publishRelationshipPresences(complete: true)
+        if blockedChanged { continuation?.yield(.knownUsersChanged(currentKnownUsers())) }
         guard nicknamesChanged else { return }
         if let channels = cachedChannels[nil] {
             let renamed = channels.map(applyingFriendNicknames)
@@ -361,6 +358,23 @@ extension DiscordRESTProvider {
             }
         }
         continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
+    }
+
+    /// Batch identity changes from a Gateway payload or REST hydration into one
+    /// list publication. READY and disconnect cancel work from the old session.
+    func scheduleRelationshipUserPublication() {
+        guard relationshipUserPublicationTask == nil else { return }
+        let generation = profileEditingGeneration
+        relationshipUserPublicationTask = Task { [weak self] in
+            await Task.yield()
+            await self?.publishChangedRelationshipUsers(generation: generation)
+        }
+    }
+
+    private func publishChangedRelationshipUsers(generation: UInt64) {
+        guard !Task.isCancelled, profileEditingGeneration == generation else { return }
+        relationshipUserPublicationTask = nil
+        continuation?.yield(.relationshipsChanged(publishedRelationships()))
     }
 
     // MARK: - Presence
