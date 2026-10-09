@@ -321,5 +321,5 @@ account-mutating actions.
 
 ## Temporary PR build verification
 
-Build B exercises automatic discovery of a new PR push and preserves the PR’s settings.
+Build C verifies returning from a PR track to Nightly after the updater handoff fix.
 This test-only branch will be closed without merging.
