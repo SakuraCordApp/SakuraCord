@@ -18,6 +18,13 @@ enum SakuraCordSystemSymbol {
         return Image(emojiFaceGrinning, bundle: privateSymbolsBundle)
     }
 
+    static var stickerImage: Image {
+        guard let privateSymbolsBundle else {
+            return Image(systemName: "face.smiling")
+        }
+        return Image("sticker", bundle: privateSymbolsBundle)
+    }
+
     static var stickerFillImage: Image {
         guard let privateSymbolsBundle else {
             return Image(systemName: stickerFill)

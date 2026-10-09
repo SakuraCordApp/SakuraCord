@@ -573,9 +573,17 @@ struct ComposerTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView, !isNormalizing else { return }
             updateCompositionState(from: textView)
+            // Publishing uncommitted IME text makes the draft hold pinyin or
+            // kana; a later snapshot can then replace or duplicate the
+            // committed characters. The commit fires textDidChange again.
+            guard !textView.hasMarkedText() else {
+                updateSelection(from: textView)
+                textView.invalidateIntrinsicContentSize()
+                textView.enclosingScrollView?.invalidateIntrinsicContentSize()
+                return
+            }
             var raw = ComposerEmojiAttributedText.serialize(textView.attributedString())
-            if !textView.hasMarkedText(),
-               ComposerEmojiAttributedText.expression.firstMatch(
+            if ComposerEmojiAttributedText.expression.firstMatch(
                    in: raw, range: NSRange(location: 0, length: (raw as NSString).length)
                ) != nil
             {

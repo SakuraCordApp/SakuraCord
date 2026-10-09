@@ -4,8 +4,8 @@ extension ComposerIcon {
     var image: Image {
         switch self {
         case .gif: Image("gif.square", bundle: .module)
-        case .sticker: SakuraCordSystemSymbol.stickerFillImage
-        case .emoji: SakuraCordSystemSymbol.emojiFaceGrinningImage
+        case .sticker: SakuraCordSystemSymbol.stickerImage
+        case .emoji: Image(systemName: "face.smiling")
         }
     }
 
@@ -31,13 +31,23 @@ struct ComposerIconView: View {
             ComposerActionButton(
                 icon: icon.image,
                 help: icon.help,
-                iconSize: icon == .gif ? 20 : 19,
+                customGlyph: icon == .gif ? AnyView(ComposerGIFGlyph()) : nil,
                 size: appearance.accessoryButtonSize,
                 appearance: appearance,
                 action: action
             )
             .fixedSize()
         }
+    }
+}
+
+private struct ComposerGIFGlyph: View {
+    var body: some View {
+        Text(verbatim: "GIF")
+            .font(.interfaceSystem(size: 10, weight: .semibold))
+            .padding(.horizontal, 3)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(lineWidth: 1.2))
+            .accessibilityHidden(true)
     }
 }
 

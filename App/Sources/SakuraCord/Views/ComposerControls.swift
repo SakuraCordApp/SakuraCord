@@ -94,8 +94,6 @@ struct ComposerAttachmentButton: View {
         ComposerActionButton(
             icon: Image(systemName: "plus"),
             help: "Add attachments",
-            iconSize: 19,
-            iconWeight: .regular,
             showsHoverBackground: appearance == .legacy,
             appearance: appearance,
             action: action
@@ -106,8 +104,11 @@ struct ComposerAttachmentButton: View {
 struct ComposerActionButton: View {
     let icon: Image
     let help: String
-    var iconSize: CGFloat = 18
-    var iconWeight: Font.Weight = .medium
+    var isActive = false
+    /// Replaces `icon` for glyphs that aren't symbols, such as the GIF label.
+    var customGlyph: AnyView?
+    var iconSize: CGFloat = 17
+    var iconWeight: Font.Weight = .regular
     var size = ChatChromeMetrics.composerControlHeight
     var showsHoverBackground = true
     var appearance: ComposerBarAppearance = .defaultStyle
@@ -116,7 +117,6 @@ struct ComposerActionButton: View {
     let action: (() -> Void)?
 
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
 
     var body: some View {
@@ -131,17 +131,22 @@ struct ComposerActionButton: View {
         .background(hoverColor, in: buttonShape)
         .contentShape(buttonShape)
         .onModalHover {
-            isHovering = showsHoverBackground && $0
+            isHovering = $0
             onHoverChanged?($0)
         }
         .help(help)
     }
 
     private var buttonLabel: some View {
-        icon
-            .symbolVariant(.none)
+        Group {
+            if let customGlyph {
+                customGlyph
+            } else {
+                icon.symbolVariant(.none)
+            }
+        }
             .font(.interfaceSystem(size: iconSize, weight: iconWeight))
-            .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
+            .foregroundStyle(iconStyle)
             .frame(width: size, height: size)
             .contentShape(buttonShape)
     }
@@ -166,6 +171,11 @@ struct ComposerActionButton: View {
         }
     }
 
+    private var iconStyle: AnyShapeStyle {
+        if isActive { return AnyShapeStyle(.tint) }
+        return isHovering && isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
+    }
+
     private var hoverColor: Color {
         showsHoverBackground && isHovering && isEnabled
             ? .primary.opacity(0.14)
@@ -180,7 +190,6 @@ struct ComposerSendButton: View {
     var isSlowmodeBlocked = false
 
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
 
     var body: some View {
@@ -199,12 +208,12 @@ struct ComposerSendButton: View {
     }
 
     private var buttonLabel: some View {
-        Image(systemName: "paperplane.circle.fill")
-            .font(.interfaceSystem(size: 21, weight: .medium))
+        Image(systemName: "arrow.up.circle.fill")
+            .font(.interfaceSystem(size: 22, weight: .regular))
             .foregroundStyle(
                 isEnabled && !isSlowmodeBlocked
-                    ? (colorScheme == .dark ? Color.white : Color.black)
-                    : Color.gray.opacity(0.62)
+                    ? AnyShapeStyle(.tint)
+                    : AnyShapeStyle(.tertiary)
             )
             .frame(
                 width: ChatChromeMetrics.composerControlHeight,
