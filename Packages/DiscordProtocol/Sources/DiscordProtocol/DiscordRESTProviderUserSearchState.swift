@@ -125,14 +125,18 @@ extension DiscordRESTProvider {
         messageSearchEligible: Bool? = nil
     ) -> Bool {
         let userID = UserID(user.id)
-        let previous = cachedGatewayUsersByID[user.id].flatMap { try? $0.domain() }
-            ?? userID.flatMap { cachedForwardSearchUsersByID[$0] }
+        let previousGatewayUser = cachedGatewayUsersByID[user.id].flatMap { try? $0.domain() }
+        let previous = previousGatewayUser ?? userID.flatMap { cachedForwardSearchUsersByID[$0] }
         let insertedIntoKnownUserStore = includeInKnownUserStore
             && cachedGatewayUserIDs.insert(user.id).inserted
         if insertedIntoKnownUserStore {
             cachedGatewayUserOrder.append(user.id)
         }
         cachedGatewayUsersByID[user.id] = user
+        if previousGatewayUser != (try? user.domain()) {
+            cachedUserRevisions[user.id, default: 0] &+= 1
+            if let userID, cachedRelationships[userID] != nil { scheduleRelationshipUserPublication() }
+        }
         let becameForwardSearchEligible = userID.map {
             forwardSearchEligible && forwardSearchEligibleUserIDs.insert($0).inserted
         } ?? false

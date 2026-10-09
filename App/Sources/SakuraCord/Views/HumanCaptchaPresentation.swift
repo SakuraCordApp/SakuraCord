@@ -1,13 +1,13 @@
 import DiscordProtocol
 import SwiftUI
 
-struct ServerInviteCaptchaPresentation: ViewModifier {
-    let store: ServerInviteCaptchaStore
+struct HumanCaptchaPresentation: ViewModifier {
+    let store: HumanCaptchaStore
 
     func body(content: Content) -> some View {
         content.background {
             WindowModalOverlay(presentation: store.challenge, dismiss: { store.cancel() }, content: { challenge, context in
-                ServerInviteCaptchaContent(challenge: challenge, context: context, cancel: { store.cancel(id: challenge.id) }, onToken: { token in
+                HumanCaptchaContent(challenge: challenge, context: context, cancel: { store.cancel(id: challenge.id) }, onToken: { token in
                     store.complete(id: challenge.id, token: token)
                 })
                 .id(challenge.id)
@@ -16,7 +16,7 @@ struct ServerInviteCaptchaPresentation: ViewModifier {
     }
 }
 
-private struct ServerInviteCaptchaContent: View {
+private struct HumanCaptchaContent: View {
     let challenge: DiscordCaptchaChallenge
     let context: WindowModalContext
     let cancel: () -> Void
@@ -42,8 +42,7 @@ private struct ServerInviteCaptchaContent: View {
                         .allowsHitTesting(false)
                 }
                 // The backing fits the checkbox; the transparent canvas gives expanded challenges the whole window.
-                DiscordCaptchaView(challenge: challenge, onInteractionRequired: { interactionRequired = true },
-                                   onToken: onToken, onCancel: cancel, onWidgetBoundsChanged: { widgetBounds = $0 })
+                widget
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .opacity(interactionRequired ? 1 : 0)
                     .allowsHitTesting(interactionRequired)
@@ -54,5 +53,16 @@ private struct ServerInviteCaptchaContent: View {
         }
         .onAppear { context.escapeAction = cancel }
         .onDisappear { context.escapeAction = nil }
+    }
+
+    @ViewBuilder private var widget: some View {
+        switch challenge.service {
+        case .hcaptcha:
+            DiscordCaptchaView(challenge: challenge, onInteractionRequired: { interactionRequired = true },
+                               onToken: onToken, onCancel: cancel, onWidgetBoundsChanged: { widgetBounds = $0 })
+        case .recaptcha, .recaptchaEnterprise, .turnstile:
+            DiscordWebCaptchaView(challenge: challenge, onInteractionRequired: { interactionRequired = true },
+                                  onToken: onToken, onCancel: cancel, onWidgetBoundsChanged: { widgetBounds = $0 })
+        }
     }
 }

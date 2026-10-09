@@ -476,6 +476,7 @@ extension AppModel {
         // Discord saves pending command uses as soon as its connection closes.
         if state == .disconnected, previousState == .ready { flushCommandFrecencyNow() }
         if state == .ready, previousState != .ready, inbox.isPresented { refreshInbox() }
+        if state == .ready, previousState != .ready { friendsConnectionChanged() }
         if state != .ready {
             if previousState == .ready {
                 // A resumed session can reconcile missed messages through the
@@ -892,6 +893,7 @@ extension AppModel {
         let previousGuildsByID = serverRailGuildsByID
         let previousAccessEvidence = readState.authoritativeAccessEvidenceChannelIDs()
         snapshot = value
+        friends.replaceRelationships(value.relationships)
         for (guildID, member) in value.currentMembersByGuildID {
             receiveOnboardingMember(member, guildID: guildID)
         }
@@ -949,6 +951,7 @@ extension AppModel {
         let retainedGuildID = selectedGuildID.flatMap { selected in
             value.guilds.contains { $0.id == selected } ? selected : value.guilds.first?.id
         }
+        reconcileInboxEligibility()
         selectGuild(retainedGuildID)
     }
 

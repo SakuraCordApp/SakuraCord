@@ -20,6 +20,10 @@ struct NativeMemberListView: NSViewRepresentable {
 
     var openProfile: ((ProfilePresentationState) -> Void)?
     var nicknameActions: (Member) -> [NicknameMenuAction] = { _ in [] }
+    var rowAccessory: ((Member) -> AnyView)?
+    var rowMenu: ((Member) -> NSMenu?)?
+    var rowAccessibilityActions: ((Member) -> [NSAccessibilityCustomAction])?
+    var contentIdentity: String?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)

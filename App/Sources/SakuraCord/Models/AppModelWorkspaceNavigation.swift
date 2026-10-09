@@ -152,6 +152,10 @@ extension AppModel {
             onboarding.isChannelSearchFocused = true
             return
         }
+        if isFriendsSearchActive {
+            friends.isSearchFocused = true
+            return
+        }
         guard sessionState == .workspace,
               selectedChannelID != nil,
               MessageSearchSurfacePolicy.showsToolbar(
@@ -268,22 +272,7 @@ extension AppModel {
                 return
             }
             workspaceNavigationOverlay = nil
-            let session = accountSession()
-            startAccountChildTask(account: session) { model, session in
-                do {
-                    let channel = try await session.provider.ensurePrivateChannel(for: user.id)
-                    guard model.isCurrentAccountSession(session) else { return }
-                    if model.snapshot?.channels.contains(where: { $0.id == channel.id }) == false {
-                        model.snapshot?.channels.append(channel)
-                        model.forwardSearchSourceRevision &+= 1
-                    }
-                    model.navigate(to: channel.id)
-                } catch {
-                    guard model.isCurrentAccountSession(session) else { return }
-                    DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                    model.errorMessage = error.localizedDescription
-                }
-            }
+            openDirectMessage(with: user)
         }
     }
 

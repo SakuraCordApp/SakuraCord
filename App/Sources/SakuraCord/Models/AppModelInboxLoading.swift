@@ -25,6 +25,7 @@ extension AppModel {
             combined[message.id] = message
         }
         inbox.mentions = combined.values.sorted { $0.id > $1.id }
+        refreshInboxMentionRestrictions()
         inbox.nextBefore = page.nextBefore
         inbox.hasMoreMentions = page.hasMore && page.nextBefore != nil && page.nextBefore != before
     }
@@ -44,6 +45,7 @@ extension AppModel {
         for message in fresh { combined[message.id] = message }
         let retainsOlderPages = combined.count > fresh.count
         inbox.mentions = combined.values.sorted { $0.id > $1.id }
+        refreshInboxMentionRestrictions()
         if !retainsOlderPages {
             inbox.nextBefore = page.nextBefore
             inbox.hasMoreMentions = page.hasMore && page.nextBefore != nil

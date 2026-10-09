@@ -605,23 +605,23 @@ extension NativeMemberListCanvasView {
             }
             let item = items[index]
             guard case .member(let member, _) = item else { continue }
-            let nameFont = nameFont(for: member)
             if preparationSnapshot?.presentation == presentation,
                let previousIndex = preparationSnapshot?.itemIndexesByID[item.id],
                let previousItems = preparationSnapshot?.items,
                previousItems.indices.contains(previousIndex),
                previousItems[previousIndex] == item,
                let existing = preparationSnapshot?.preparedText[item.id],
-               existing.nameFont == nameFont
+               member.user.displayNameStyle == nil || existing.nameFont == nameFont(for: member)
             {
                 preparedText[item.id] = existing
                 continue
             }
+            let nameFont = nameFont(for: member)
             let nameColor = presentation.roleColorDisplay == .inNames
                 ? MessageAuthorPresentation.topRoleColor(in: member.roles)
                     .map(Self.color(hex:)) ?? labelColor
                 : labelColor
-            let alpha: CGFloat = !member.isListedOnline ? 0.55 : 1
+            let alpha = presentation.opacity(for: member)
             let name = Self.line(
                 member.user.displayName,
                 font: nameFont,

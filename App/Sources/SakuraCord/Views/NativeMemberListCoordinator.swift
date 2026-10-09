@@ -30,6 +30,8 @@ final class NativeMemberListCoordinator: NSObject {
     var lastViewportRange: ClosedRange<Int>?
     var pendingViewportRange: ClosedRange<Int>?
     var viewportIdentity: ChannelID?
+    var contentIdentity: String?
+    var contentPreparations: [String: NativeMemberListCanvasView.PreparationSnapshot] = [:]
     var performanceTicker: NativeTimelineDisplayLinkTicker?
     var performanceStartTask: Task<Void, Never>?
     var performanceStartGeneration: UInt64 = 0
@@ -115,7 +117,12 @@ final class NativeMemberListCoordinator: NSObject {
     }
 
     func update(parent: NativeMemberListView, scrollView: NSScrollView) {
-        if viewportIdentity != parent.viewportIdentity {
+        let contentChanged = contentIdentity != parent.contentIdentity
+        if contentChanged, let contentIdentity, let canvas {
+            if contentPreparations.count >= 4 { contentPreparations.removeAll(keepingCapacity: true) }
+            contentPreparations[contentIdentity] = canvas.preparationSnapshot()
+        }
+        if viewportIdentity != parent.viewportIdentity || contentChanged {
             canvas?.dismissServerTagCard()
             canvas?.clearServerTagHover()
             viewportTask?.cancel()
@@ -123,7 +130,10 @@ final class NativeMemberListCoordinator: NSObject {
             lastViewportRange = nil
             pendingViewportRange = nil
             viewportIdentity = parent.viewportIdentity
-            scrollView.contentView.scroll(to: .zero)
+            contentIdentity = parent.contentIdentity
+            scrollView.contentView.scroll(to: NSPoint(
+                x: -scrollView.contentInsets.left, y: -scrollView.contentInsets.top
+            ))
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
         self.parent = parent
@@ -139,6 +149,9 @@ final class NativeMemberListCoordinator: NSObject {
         canvas.serverTagCardModel = parent.serverTagCardModel
         canvas.openProfile = parent.openProfile
         canvas.nicknameActions = parent.nicknameActions
+        canvas.rowAccessory = parent.rowAccessory
+        canvas.rowMenu = parent.rowMenu
+        canvas.rowAccessibilityActions = parent.rowAccessibilityActions
         canvas.modalInputDidChange()
         AppPerformanceSignposts.measureSync("MemberListCanvasUpdate") {
             canvas.updatePresentation(
@@ -155,7 +168,8 @@ final class NativeMemberListCoordinator: NSObject {
             sections: parent.sections,
             presentation: parent.presentation,
             scrollView: scrollView,
-            canvas: canvas
+            canvas: canvas,
+            isNavigation: contentChanged
         )
         (scrollView as? NativeMemberListScrollView)?.synchronizeCanvasFrame()
         reportViewport(debounced: false)
@@ -254,14 +268,14 @@ final class NativeMemberListCoordinator: NSObject {
         sections: [MemberSection],
         presentation: NativeMemberListPresentation,
         scrollView: NSScrollView,
-        canvas: NativeMemberListCanvasView
+        canvas: NativeMemberListCanvasView,
+        isNavigation: Bool = false
     ) {
-        let presentation = NativeMemberListPresentation(
-            roleColorDisplay: presentation.roleColorDisplay,
-            isDark: scrollView.effectiveAppearance.bestMatch(
-                from: [.darkAqua, .aqua]
-            ) == .darkAqua
-        )
+        var resolvedPresentation = presentation
+        resolvedPresentation.isDark = scrollView.effectiveAppearance.bestMatch(
+            from: [.darkAqua, .aqua]
+        ) == .darkAqua
+        let presentation = resolvedPresentation
         let sections = sections.map { section in
             MemberSection(id: section.id, title: section.title, colorHex: section.colorHex,
                           totalCount: section.totalCount, members: section.members.map(parent.cosmeticPolicy.member),
@@ -287,9 +301,11 @@ final class NativeMemberListCoordinator: NSObject {
         documentPreparationGeneration &+= 1
         let generation = documentPreparationGeneration
         documentPreparationTask?.cancel()
-        let preparationSnapshot = canvas.preparationSnapshot()
+        let preparationSnapshot = isNavigation
+            ? contentIdentity.flatMap { contentPreparations[$0] } ?? canvas.preparationSnapshot()
+            : canvas.preparationSnapshot()
         let preparationPriority: TaskPriority =
-            canvas.isScrolling || AppScrollWorkGate.isActive
+            !isNavigation && (canvas.isScrolling || AppScrollWorkGate.isActive)
             ? .background
             : .userInitiated
         if preparationPriority == .background {
@@ -335,8 +351,6 @@ final class NativeMemberListCoordinator: NSObject {
             guard let self,
                   !Task.isCancelled,
                   self.documentPreparationGeneration == generation,
-                  self.requestedSections == sections,
-                  self.requestedPresentation == presentation,
                   let document,
                   let scrollView,
                   let canvas
@@ -357,10 +371,9 @@ final class NativeMemberListCoordinator: NSObject {
         scrollView: NSScrollView,
         canvas: NativeMemberListCanvasView
     ) {
-        guard documentPreparationGeneration == generation,
-              requestedSections == document.sections,
-              requestedPresentation == document.presentation
-        else { return }
+        // Every changed section/presentation advances this generation before
+        // starting work; avoid repeating full-list equality on the main actor.
+        guard documentPreparationGeneration == generation else { return }
         _ = AppPerformanceSignposts.measureSync("MemberListDocumentPublication") {
             canvas.applyPreparedDocument(document)
         }

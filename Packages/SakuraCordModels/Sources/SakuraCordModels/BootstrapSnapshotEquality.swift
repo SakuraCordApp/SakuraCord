@@ -28,6 +28,7 @@ public extension BootstrapSnapshot {
             && lhs.blockedOrIgnoredUserIDs == rhs.blockedOrIgnoredUserIDs
             && lhs.relationshipNicknamesByUserID
                 == rhs.relationshipNicknamesByUserID
+            && lhs.relationships == rhs.relationships
             && lhs.userSearchAliasesByUserID == rhs.userSearchAliasesByUserID
             && lhs.quickSwitcherGuildMemberUserIDs
                 == rhs.quickSwitcherGuildMemberUserIDs

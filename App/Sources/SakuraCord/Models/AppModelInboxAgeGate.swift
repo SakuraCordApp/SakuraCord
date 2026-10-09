@@ -9,7 +9,10 @@ extension AppModel {
                 guildID: message.guildID ?? readState.entries[message.channelID]?.guildID
             )
         }.map(\.id))
-        inbox.hiddenMentionIDs = snapshot?.currentUser.allowsAdultContent == true ? [] : restricted
+        let blocked = Set(inbox.mentions.filter {
+            snapshot?.blockedOrIgnoredUserIDs.contains($0.author.id) == true
+        }.map(\.id))
+        inbox.hiddenMentionIDs = blocked.union(snapshot?.currentUser.allowsAdultContent == true ? [] : restricted)
         inbox.obscuredMentionIDs = snapshot?.currentUser.allowsAdultContent == true ? restricted : []
     }
 

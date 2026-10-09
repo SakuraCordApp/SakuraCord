@@ -217,8 +217,16 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedFriendUserIDs: Set<UserID> = []
     var cachedBlockedOrIgnoredUserIDs: Set<UserID> = []
     var cachedRelationshipNicknamesByUserID: [UserID: String] = [:]
+    /// Authoritative relationship records; the friend and nickname caches derive from them.
+    var cachedRelationships: [UserID: RelationshipRecord] = [:]
+    /// Advances with each READY; a full relationship read is scoped to one.
+    var relationshipGeneration: UInt64 = 0
+    /// The generation whose full relationship read has started or finished.
+    var relationshipLoadGeneration: UInt64?
     /// Per-user revisions keep unrelated relationship events from suppressing saves.
     var relationshipRevisions: [UserID: UInt64] = [:]
+    var cachedUserRevisions: [String: UInt64] = [:]
+    var relationshipUserPublicationTask: Task<Void, Never>?
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
     var guildRoleTasks: [GuildID: Task<[GuildRoleDTO], Error>] = [:]
     var pendingMemberSearchRequests: [String: PendingMemberSearchRequest] = [:]

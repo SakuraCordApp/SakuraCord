@@ -246,6 +246,9 @@ extension DiscordRESTProvider {
         if update.guildID == nil {
             cachePrivatePresence(update)
             continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
+            if let userID = UserID(update.user.id) {
+                publishRelationshipPresences(complete: false, userIDs: [userID])
+            }
             return
         }
         guard let guildID = update.guildID.flatMap(GuildID.init),

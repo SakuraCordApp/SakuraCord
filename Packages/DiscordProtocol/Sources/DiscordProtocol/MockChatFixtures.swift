@@ -997,8 +997,15 @@ private struct MockFixtureAssembly {
             currentUser: nova,
             snapshot: BootstrapSnapshot(
                 currentUser: nova,
-                friendUserIDs: [maya.id, kai.id],
+                friendUserIDs: [maya.id, kai.id, theo.id],
                 relationshipNicknamesByUserID: friendNicknames,
+                relationships: [
+                    Relationship(id: maya.id, type: .friend, user: maya, since: base),
+                    Relationship(id: kai.id, type: .friend, user: kai, nickname: friendNicknames[kai.id], since: base),
+                    Relationship(id: theo.id, type: .friend, user: theo, since: base),
+                    Relationship(id: juniper.id, type: .incomingRequest, user: juniper),
+                    Relationship(id: rowan.id, type: .outgoingRequest, user: rowan),
+                ],
                 guilds: guilds,
                 guildRailItems: guildRailItems,
                 channels: snapshotChannels,

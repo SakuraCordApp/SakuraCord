@@ -14,6 +14,7 @@ dated observations establish why a wire shape was chosen.
 | [Messages and uploads](protocol/MESSAGING.md) | Sends, history, reactions, polls, threads, commands, media preparation. |
 | [Read state and Inbox](protocol/READ_STATE.md) | Acknowledgements, Undo, mentions, events, notifications. |
 | [Guilds and membership](protocol/GUILDS.md) | Invites, onboarding, channel customization, Guide, member discovery. |
+| [Friends and relationships](protocol/RELATIONSHIPS.md) | Relationship records, friend presence, requests, blocking, CAPTCHA replay. |
 | [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, widgets, status, protobuf updates, folders and favourites. |
 | [Voice and streams](protocol/VOICE.md) | Calls, screen sharing, voice recovery, soundboard. |
 
@@ -58,7 +59,8 @@ and each topic's contract tests before changing them.
 | Password/MFA | Original plus at most two bounded retries for the documented transient status set above. |
 | Report-service OAuth2 authorization | One ordinary read of the consent details, then one authorizing POST that is never replayed. See [report-service sign-in](protocol/SESSION.md#report-service-sign-in). |
 | Remote-auth ticket exchange | Original plus at most three bounded transient-status retries. |
-| User-completed login or server-join CAPTCHA | At most one challenged-request replay after human completion; a second challenge terminates the attempt. |
+| User-completed login, server-join or relationship CAPTCHA | At most one challenged-request replay after human completion; a second challenge terminates the attempt. |
+| Full relationship read | At most once per Gateway connection, on the ordinary read budget. |
 
 A later explicit user action is distinct from automatic retry. Message retry
 retains its nonce; operation-specific exceptions must be documented beside their

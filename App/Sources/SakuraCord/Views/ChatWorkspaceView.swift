@@ -34,6 +34,9 @@ struct ChatWorkspaceView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.isFriendsPresented {
+                FriendsView(model: model)
+                    .id("friends-\(model.currentUser?.id.description ?? "")")
             } else {
                 conversation
             }

@@ -41,8 +41,11 @@ public enum ClientEvent: Equatable, Sendable {
     case quickSwitcherGuildMemberUserIDsChanged([GuildID: [UserID]])
     case quickSwitcherJoinedMemberIDsChanged([GuildID: [UserID]])
     case quickSwitcherGuildMemberAliasesChanged([GuildID: [UserID: String]])
-    /// Current friends and the account's private friend nicknames.
-    case relationshipsChanged(friendUserIDs: Set<UserID>, nicknames: [UserID: String])
+    /// Every relationship record of the current account, in no particular order.
+    case relationshipsChanged([Relationship])
+    /// Presences of relationship users. A complete update replaces every
+    /// earlier value; otherwise only the listed users change.
+    case relationshipPresencesChanged([UserID: UserPresence], isComplete: Bool)
     case currentUserRolesChanged(guildID: GuildID, roleIDs: [RoleID])
     case currentUserRolesSnapshot([GuildID: [RoleID]])
     case emojisChanged(guildID: GuildID, emojis: [DiscordEmoji])

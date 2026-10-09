@@ -107,7 +107,10 @@ private struct ProfileStatusTextRepresentable: NSViewRepresentable {
         nsView textView: ProfileStatusNSTextView,
         context: Context
     ) -> CGSize? {
-        let width = proposal.width ?? InterfaceScale.metric(isExpanded ? 188 : 143)
+        // SwiftUI probes with an infinite width. A text view given that frame
+        // scrolls its enclosing scroll view during the update.
+        let width = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+            ?? InterfaceScale.metric(isExpanded ? 188 : 143)
         textView.frame.size.width = width
         textView.textContainer?.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {
@@ -187,7 +190,7 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
         nsView textView: HoverLinkTextView,
         context: Context
     ) -> CGSize? {
-        let width = proposal.width ?? 298
+        let width = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 298
         textView.frame.size.width = width
         textView.textContainer?.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {

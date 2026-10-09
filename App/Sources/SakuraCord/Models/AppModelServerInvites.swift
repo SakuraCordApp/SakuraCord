@@ -19,7 +19,7 @@ final class ServerInvitePresentationStore {
     var joining: Set<GuildID> = []
     var leaving: Set<GuildID> = []
     var expanded: Set<ServerInviteReference> = []
-    let captcha = ServerInviteCaptchaStore()
+    let captcha = HumanCaptchaStore.serverInvites()
     let creation = ServerInviteCreationStore()
     var showsJoinDialog = false
     var leaveConfirmation: Guild?

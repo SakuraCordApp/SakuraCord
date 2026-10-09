@@ -297,15 +297,21 @@ struct ChannelSidebarView: View {
         )
     }
 
-    private var directMessageSelection: Binding<ChannelID?> {
+    private var directMessageSelection: Binding<DirectMessageSidebarSelection?> {
         Binding(
-            get: { selection },
+            get: { voiceModel.isFriendsPresented ? .friends : selection.map(DirectMessageSidebarSelection.channel) },
             set: { newSelection in
-                guard selection != newSelection else { return }
-                if let newSelection {
-                    voiceModel.recordForwardDestinationVisit(newSelection)
+                switch newSelection {
+                case .friends:
+                    guard !voiceModel.isFriendsPresented else { return }
+                    voiceModel.openFriends()
+                case .channel(let channelID):
+                    guard selection != channelID || voiceModel.isFriendsPresented else { return }
+                    voiceModel.recordForwardDestinationVisit(channelID)
+                    selection = channelID
+                case nil:
+                    break
                 }
-                selection = newSelection
             }
         )
     }

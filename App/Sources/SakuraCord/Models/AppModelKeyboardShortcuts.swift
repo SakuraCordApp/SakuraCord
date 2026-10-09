@@ -179,7 +179,7 @@ extension AppModel {
         case .quickSwitch, .toggleChannelSidebar, .toggleMemberList:
             true
         case .messageSearch:
-            MessageSearchSurfacePolicy.showsToolbar(
+            isFriendsSearchActive || isBrowsingGuildChannels || MessageSearchSurfacePolicy.showsToolbar(
                 channelKind: selectedChannel?.kind,
                 hasOpenThread: hasThreadPane
             )
@@ -208,7 +208,7 @@ extension AppModel {
     private func messagingShortcutIsEnabled(_ action: KeyboardShortcutAction) -> Bool {
         switch action {
         case .searchCurrentConversation:
-            MessageSearchSurfacePolicy.showsToolbar(
+            isFriendsSearchActive || isBrowsingGuildChannels || MessageSearchSurfacePolicy.showsToolbar(
                 channelKind: selectedChannel?.kind,
                 hasOpenThread: hasThreadPane
             )
