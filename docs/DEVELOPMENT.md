@@ -318,3 +318,8 @@ same sanitized API export to its source conversation, with a destination-naming
 confirmation. Exporting locally does not send anything. Agents follow the
 repository's explicit authorization rules before sending files or reproducing
 account-mutating actions.
+
+## Temporary PR build verification
+
+Build A exercises installation and recovery through the published PR track.
+This test-only branch will be closed without merging.
