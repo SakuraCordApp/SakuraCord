@@ -321,5 +321,5 @@ account-mutating actions.
 
 ## Temporary PR build verification
 
-Build A exercises installation and recovery through the published PR track.
+Build B exercises automatic discovery of a new PR push and preserves the PR’s settings.
 This test-only branch will be closed without merging.
