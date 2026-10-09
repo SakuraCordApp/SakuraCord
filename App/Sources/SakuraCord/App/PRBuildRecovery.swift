@@ -116,14 +116,26 @@ final class PRBuildRecovery {
         guard let bundle = Bundle(url: url),
               bundle.bundleIdentifier == "dev.sakuracord.SakuraCord",
               bundle.object(forInfoDictionaryKey: "SakuraCordPullRequestBuildID") == nil,
-              let executable = bundle.executableURL,
-              FileManager.default.isExecutableFile(atPath: executable.path)
+              let executable = bundle.executableURL
         else { throw RecoveryError.invalidRecovery }
+        // X_OK checks this sandboxed process's execution permission, not whether
+        // Finder can launch the saved app. Inspect the preserved file mode;
+        // strict signature validation below authenticates its executable bytes.
+        let attributes = try FileManager.default.attributesOfItem(atPath: executable.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              let permissions = attributes[.posixPermissions] as? NSNumber,
+              permissions.uint16Value & 0o111 != 0 else {
+            throw RecoveryError.inaccessibleExecutable
+        }
         var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
-              let code,
-              SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode), nil) == errSecSuccess
-        else { throw RecoveryError.invalidRecovery }
+        let creationStatus = SecStaticCodeCreateWithPath(url as CFURL, [], &code)
+        guard creationStatus == errSecSuccess, let code else {
+            throw RecoveryError.signatureVerificationFailed(creationStatus)
+        }
+        let validationStatus = SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode), nil)
+        guard validationStatus == errSecSuccess else {
+            throw RecoveryError.signatureVerificationFailed(validationStatus)
+        }
     }
 }
 
@@ -131,6 +143,8 @@ private nonisolated enum RecoveryError: LocalizedError {
     case missingRecovery
     case invalidRecovery
     case invalidDestination
+    case inaccessibleExecutable
+    case signatureVerificationFailed(OSStatus)
 
     var errorDescription: String? {
         switch self {
@@ -140,6 +154,10 @@ private nonisolated enum RecoveryError: LocalizedError {
             "Choose a recovery folder outside SakuraCord.app."
         case .invalidRecovery:
             "The recovery app is missing, modified, or is itself a pull request build. Save an intact Regular or Nightly app before continuing."
+        case .inaccessibleExecutable:
+            "SakuraCord cannot access the recovery app’s executable."
+        case let .signatureVerificationFailed(status):
+            "The recovery app’s signature could not be verified: \(SecCopyErrorMessageString(status, nil) as String? ?? String(status))."
         }
     }
 }

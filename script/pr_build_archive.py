@@ -254,6 +254,8 @@ def verify_signatures(directory, context):
             'dev.sakuracord.SakuraCord-spks', 'dev.sakuracord.SakuraCord-spki')), 'Sparkle Mach entitlements missing')
         require(entitlements.get('com.apple.security.files.bookmarks.app-scope') is True,
                 'recovery bookmark entitlement missing')
+        require(entitlements.get('com.apple.security.files.user-selected.executable') is True,
+                'recovery executable-write entitlement missing')
     print('Validated bundle and nested signatures, app sandbox, Sparkle services, and recovery bookmarks.')
 
 
