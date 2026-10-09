@@ -592,15 +592,15 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate,
         }
         if let track = explicitReturnTrack, check == .updateInformation {
             if let version = returnBuildVersion, error == nil {
-                Task { @MainActor [weak self] in
-                    guard let self, explicitReturnTrack == track, returnBuildVersion == version else { return }
-                    do {
-                        try updaterController.updater.checkForUpdates(forVersion: version)
-                    } catch {
-                        explicitReturnTrack = nil
-                        updateVersionDowngradeComparison(for: releaseTrack)
-                        buildSwitchError = error.localizedDescription
-                    }
+                // Sparkle clears its driver/session before this callback. Start
+                // the selected operation before it reschedules automatic checks;
+                // deferring to another task lets that cycle take the idle slot.
+                do {
+                    try updaterController.updater.checkForUpdates(forVersion: version)
+                } catch {
+                    explicitReturnTrack = nil
+                    updateVersionDowngradeComparison(for: releaseTrack)
+                    buildSwitchError = error.localizedDescription
                 }
             } else {
                 explicitReturnTrack = nil
