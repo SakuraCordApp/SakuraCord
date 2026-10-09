@@ -152,8 +152,8 @@ enum NativeTimelineTextPresentation {
                 linkedImages: plan.linkedImages
             )
         }
-        // System messages keep their actor styling at other interface sizes.
-        if preservesCompactSystemStyle, let preparedBox = plan.attributedText {
+        // Preserve system-message styling and actions at every size, including bubbles.
+        if message.type.hasGeneratedContent, let preparedBox = plan.attributedText {
             let scaled = preparedBox.value.scalingTypography(
                 by: resolvedBaseFontSize / plan.baseFontSize
             )

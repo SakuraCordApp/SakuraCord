@@ -1,6 +1,29 @@
 import SakuraCordModels
 
 extension AppModel {
+    func invalidateChangedSystemMessageRecipients(replacing previous: BootstrapSnapshot?) {
+        func recipients(in snapshot: BootstrapSnapshot?) -> [ChannelID: User] {
+            var result: [ChannelID: User] = [:]
+            for channel in snapshot?.channels ?? [] where channel.kind == .directMessage {
+                result[channel.id] = channel.recipients.first { $0.id != snapshot?.currentUser.id }
+            }
+            return result
+        }
+
+        let oldRecipients = recipients(in: previous)
+        let newRecipients = recipients(in: snapshot)
+        let changedChannels = Set(oldRecipients.keys).union(newRecipients.keys).filter {
+            oldRecipients[$0]?.id != newRecipients[$0]?.id
+                || oldRecipients[$0]?.displayName != newRecipients[$0]?.displayName
+        }
+        guard !changedChannels.isEmpty,
+              retainedMessages.contains(where: {
+                  $0.type == .friendRequestAccepted && changedChannels.contains($0.channelID)
+              }) else { return }
+        // Include retained off-screen layouts and supplementary message surfaces.
+        invalidateTimelinePresentation()
+    }
+
     func applyingMessageUpdate(_ update: MessageUpdate) -> Message? {
         guard var message = retainedMessage(channelID: update.channelID, messageID: update.messageID) else { return nil }
         update.apply(to: &message)
