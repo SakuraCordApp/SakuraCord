@@ -982,7 +982,7 @@ extension NativeTimelineCanvasView {
             showReactionPicker(
                 for: hit.message,
                 anchor: hit.frame,
-                preferredEdge: .maxX
+                presentation: .inline
             )
         }
     }

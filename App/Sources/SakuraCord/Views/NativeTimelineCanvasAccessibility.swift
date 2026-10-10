@@ -391,11 +391,7 @@ extension NativeTimelineCanvasView {
         let header = makeMessageAccessibilityHeader(for: row, rowFrame: rowFrame)
         let element = header.element
         element.setAccessibilityCustomActions(
-            accessibilityMessageActions(
-                row,
-                rowFrame: rowFrame,
-                rowIndex: rowIndex
-            ).map { action in
+            accessibilityMessageActions(row, rowIndex: rowIndex).map { action in
                 let handler = action.handler
                 action.handler = { [weak self] in
                     guard let self, !self.sendTransitionBlocksInteractions else { return false }
@@ -970,7 +966,7 @@ extension NativeTimelineCanvasView {
                         dx: 0,
                         dy: self.displayedRowOrigin(at: rowIndex)
                     ),
-                    preferredEdge: .maxX
+                    presentation: .inline
                 )
                 return true
             })

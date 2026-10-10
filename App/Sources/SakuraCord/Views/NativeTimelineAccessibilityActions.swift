@@ -60,7 +60,6 @@ extension NativeTimelineCanvasView {
 
     func accessibilityMessageActions(
         _ row: MessageRowPresentation,
-        rowFrame: CGRect,
         rowIndex: Int
     ) -> [NSAccessibilityCustomAction] {
         let message = row.message
@@ -88,10 +87,7 @@ extension NativeTimelineCanvasView {
             })
             return result
         }
-        result.append(accessibilityReactionAction(
-            for: message,
-            rowFrame: rowFrame
-        ))
+        result.append(accessibilityReactionAction(for: message))
         if MessageReplyPresentationPolicy.allowsReplyAction(for: message),
            let reply = actions?.reply
         {
@@ -164,21 +160,11 @@ extension NativeTimelineCanvasView {
     }
 
     private func accessibilityReactionAction(
-        for message: Message,
-        rowFrame: CGRect
+        for message: Message
     ) -> NSAccessibilityCustomAction {
         NSAccessibilityCustomAction(name: "Add Reaction") { [weak self] in
             guard let self else { return false }
-            self.showReactionPicker(
-                for: message,
-                anchor: CGRect(
-                    x: rowFrame.maxX - InterfaceScale.metric(32),
-                    y: rowFrame.minY,
-                    width: InterfaceScale.metric(28),
-                    height: InterfaceScale.metric(28)
-                ),
-                preferredEdge: .minY
-            )
+            self.showReactionPicker(forMessageRow: message)
             return true
         }
     }
