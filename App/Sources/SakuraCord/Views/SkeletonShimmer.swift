@@ -3,6 +3,9 @@ import SwiftUI
 nonisolated enum SkeletonShimmerStyle {
     static let duration = 1.4
     static let minimumFrameInterval = 1.0 / 30.0
+    /// Poll rate while no placeholder is on screen; short enough that the
+    /// shimmer starts promptly when one scrolls into view.
+    static let idlePollInterval = 0.1
     static let bandWidthFraction = 0.72
     static let startingOffsetFraction = -0.68
     static let travelFraction = 1.58

@@ -59,19 +59,24 @@ extension NativeMemberListCanvasView {
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         else { return }
         placeholderShimmerTask = Task { @MainActor [weak self] in
+            var interval = SkeletonShimmerStyle.minimumFrameInterval
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(
-                        for: .seconds(
-                            SkeletonShimmerStyle.minimumFrameInterval
-                        )
-                    )
+                    try await Task.sleep(for: .seconds(interval))
                 } catch {
                     return
                 }
                 guard let self, self.hasLoadingPlaceholders else { return }
-                if let rect = self.visiblePlaceholderInvalidationRect() {
+                // Large guilds keep placeholder rows for unrequested ranges
+                // indefinitely, so only animate at frame rate while one is on
+                // screen in a visible window; otherwise poll slowly.
+                if self.window?.occlusionState.contains(.visible) == true,
+                   let rect = self.visiblePlaceholderInvalidationRect()
+                {
                     self.setNeedsDisplay(rect)
+                    interval = SkeletonShimmerStyle.minimumFrameInterval
+                } else {
+                    interval = SkeletonShimmerStyle.idlePollInterval
                 }
             }
         }
