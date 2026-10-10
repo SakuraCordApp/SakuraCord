@@ -130,6 +130,12 @@ struct ChannelRowHoverBridge: NSViewRepresentable {
     }
 }
 
+/// Edit Group and Leave Group, which Discord offers together on every group DM.
+struct GroupDirectMessageMenuActions {
+    let edit: () -> Void
+    let leave: () -> Void
+}
+
 struct ChannelContextMenuBridge: NSViewRepresentable {
     var subject: ChannelContextMenuSubject = .channel
     let isSelected: Bool
@@ -149,6 +155,8 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     /// Recipient actions for a direct message, such as a friend nickname.
     /// Resolved when the menu opens so rows don't observe relationship state.
     var userActions: () -> [NicknameMenuAction] = { [] }
+    /// Edit Group and Leave Group for a group DM.
+    var groupActions: GroupDirectMessageMenuActions?
     var usesCustomSelectionBackground = false
 
     func makeCoordinator() -> Coordinator {
@@ -198,6 +206,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         private var copyLink: () -> Void
         private var pinAction: ChannelPinMenuAction
         private var userActions: () -> [NicknameMenuAction]
+        private var groupActions: GroupDirectMessageMenuActions?
 
         init(from bridge: ChannelContextMenuBridge) {
             subject = bridge.subject
@@ -215,6 +224,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             copyLink = bridge.copyLink
             pinAction = bridge.pinAction
             userActions = bridge.userActions
+            groupActions = bridge.groupActions
         }
 
         func update(from bridge: ChannelContextMenuBridge) {
@@ -233,6 +243,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             copyLink = bridge.copyLink
             pinAction = bridge.pinAction
             userActions = bridge.userActions
+            groupActions = bridge.groupActions
         }
 
         func makeMenu() -> NSMenu {
@@ -260,6 +271,8 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 )
                 menu.addItem(.separator())
             }
+
+            addGroupItem("Edit Group", systemImage: "pencil", action: #selector(editGroupFromMenu), to: menu)
 
             let userItems = NicknameContextMenu.items(for: userActions())
             if !userItems.isEmpty {
@@ -318,6 +331,10 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             menu.addItem(notificationItem)
 
             menu.addItem(.separator())
+            addGroupItem(
+                "Leave Group", systemImage: "rectangle.portrait.and.arrow.right",
+                action: #selector(leaveGroupFromMenu), isDestructive: true, to: menu
+            )
             menu.addItem(
                 menuItem(
                     subject.copyIDTitle,
@@ -335,6 +352,17 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 )
             }
             return menu
+        }
+
+        /// A group DM action in its own section, as Discord's group menu lists it.
+        private func addGroupItem(
+            _ title: String, systemImage: String, action: Selector, isDestructive: Bool = false, to menu: NSMenu
+        ) {
+            guard groupActions != nil else { return }
+            menu.addItem(
+                menuItem(title, systemImage: systemImage, action: action, isEnabled: allowsMutations, isDestructive: isDestructive)
+            )
+            menu.addItem(.separator())
         }
 
         private var isDirectlyMuted: Bool {
@@ -375,7 +403,8 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             _ title: String,
             systemImage: String? = nil,
             action: Selector?,
-            isEnabled: Bool = true
+            isEnabled: Bool = true,
+            isDestructive: Bool = false
         ) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = action == nil ? nil : self
@@ -384,7 +413,8 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
                 ContextMenuItemSupport.configure(
                     item,
                     title: title,
-                    systemImage: systemImage
+                    systemImage: systemImage,
+                    isDestructive: isDestructive
                 )
             }
             return item
@@ -398,6 +428,14 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             if case let .available(_, toggle) = pinAction {
                 toggle()
             }
+        }
+
+        @objc private func editGroupFromMenu() {
+            groupActions?.edit()
+        }
+
+        @objc private func leaveGroupFromMenu() {
+            groupActions?.leave()
         }
 
         @objc private func muteFromMenu(_ sender: NSMenuItem) {

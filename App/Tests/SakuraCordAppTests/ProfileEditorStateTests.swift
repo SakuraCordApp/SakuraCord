@@ -607,3 +607,88 @@ private actor ProfileEditorCacheProvider: ChatProvider {
     model.membersByGuildID[guildID] = [guest.id: guest]
     #expect(!model.canChangeNickname(of: guest.id, in: guildID))
 }
+
+@MainActor
+@Test func `edit group drafts the saved name and saves only changes through the provider`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let groupID = ChannelID(rawValue: 401)
+    let store = model.groupDirectMessageEditor
+    model.presentGroupDirectMessageEditor(for: groupID)
+    let unchanged = try #require(store.presentation)
+    #expect(store.draftName == "Design crew")
+    #expect(unchanged.placeholder == unchanged.channel.recipients.map(\.displayName).joined(separator: ", "))
+    #expect(!store.showsIcon)
+    // Whitespace alone and removing an absent icon are not changes.
+    store.draftName = " Design crew "
+    store.icon = .removed
+    #expect(!store.changes.hasChanges)
+    model.saveGroupDirectMessage(unchanged)
+    #expect(store.presentation == nil)
+
+    model.presentGroupDirectMessageEditor(for: groupID)
+    let presentation = try #require(store.presentation)
+    let icon = ProfileImageUpload(data: Data([1, 2, 3]), mediaType: "image/png", description: "icon.png")
+    store.draftName = "  Road trip "
+    store.icon = .upload(icon)
+    #expect(store.changes == GroupDirectMessageChanges(name: .set("Road trip"), icon: .set(icon)))
+    model.saveGroupDirectMessage(presentation)
+    #expect(store.isSaving)
+    for task in Array(model.accountChildTasks.values) { await task.value }
+    #expect(store.presentation == nil)
+    #expect(store.error == nil)
+    let saved = try #require(await provider.snapshot.channels.first { $0.id == groupID })
+    #expect(saved.name == "Road trip")
+    #expect(saved.iconURL != nil)
+
+    // The provider's event publishes the group; clearing then returns it to
+    // its member-list title.
+    while model.snapshot?.channels.first(where: { $0.id == groupID })?.name != "Road trip", !Task.isCancelled {
+        await Task.yield()
+    }
+    model.presentGroupDirectMessageEditor(for: groupID)
+    #expect(store.draftName == "Road trip")
+    #expect(store.showsIcon)
+    store.draftName = ""
+    store.icon = .removed
+    #expect(store.changes == GroupDirectMessageChanges(name: .clear, icon: .clear))
+}
+
+@MainActor
+@Test func `leave group confirms, leaves once through the provider and moves selection off the group`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let groupID = ChannelID(rawValue: 401)
+    let store = model.groupDirectMessageLeave
+    // A 1:1 DM never offers Leave Group.
+    model.presentLeaveGroupDirectMessage(for: ChannelID(rawValue: 400))
+    #expect(store.confirmation == nil)
+
+    model.selectedGuildID = nil
+    model.selectedChannelID = groupID
+    // `/leave silent:True` opens the same confirmation with the checkbox checked.
+    let leave = try #require(DiscordBuiltInCommands.all.first { $0.name == "leave" })
+    model.runBuiltInCommand(ApplicationCommandInvocation(command: leave, channelID: groupID, guildID: nil, values: [
+        ApplicationCommandOptionValue(optionID: "-15/silent", name: "silent", type: .boolean, argument: .boolean(true)),
+    ]))
+    let confirmation = try #require(store.confirmation)
+    #expect(confirmation.id == groupID)
+    #expect(store.leavesSilently)
+
+    model.leaveGroupDirectMessage(confirmation, silently: store.leavesSilently)
+    model.leaveGroupDirectMessage(confirmation, silently: store.leavesSilently)
+    for task in Array(model.accountChildTasks.values) { await task.value }
+    let requests = await provider.groupLeaveRequests
+    #expect(requests.map(\.channelID) == [groupID])
+    #expect(requests.map(\.silently) == [true])
+    while model.snapshot?.channels.contains(where: { $0.id == groupID }) == true, !Task.isCancelled {
+        await Task.yield()
+    }
+    let selected = try #require(model.selectedChannelID)
+    #expect(selected != groupID)
+    #expect(model.snapshot?.channels.contains { $0.id == selected && $0.guildID == nil } == true)
+    #expect(model.errorMessage == nil)
+    #expect(store.leaving.isEmpty)
+}

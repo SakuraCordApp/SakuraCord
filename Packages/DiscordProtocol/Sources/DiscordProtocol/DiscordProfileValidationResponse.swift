@@ -30,6 +30,9 @@ extension DiscordRESTProvider {
                   segments[2] == "profile", segments[3] == "@me"
         {
             fields = ["bio", "pronouns", "banner"]
+        } else if segments.count == 2, segments[0] == "channels", UInt64(segments[1]) != nil {
+            // Edit Group's name and icon.
+            fields = ["name", "icon"]
         } else { return nil }
         struct FieldError: Decodable {
             struct Message: Decodable { var code: String; var message: String }

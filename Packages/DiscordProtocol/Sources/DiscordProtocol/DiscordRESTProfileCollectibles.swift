@@ -93,6 +93,7 @@ public extension DiscordRESTProvider {
         profileEditingGeneration &+= 1
         memberPresentationRevisions = [:]
         relationshipRevisions = [:]
+        privateChannelRevisions = [:]
         profileSaveID = nil
         invalidateSavedProfilePresentation()
         profileEditingResponses = [:]

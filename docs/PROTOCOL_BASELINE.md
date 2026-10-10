@@ -14,7 +14,7 @@ dated observations establish why a wire shape was chosen.
 | [Messages and uploads](protocol/MESSAGING.md) | Sends, history, reactions, polls, threads, commands, media preparation. |
 | [Read state and Inbox](protocol/READ_STATE.md) | Acknowledgements, Undo, mentions, events, notifications. |
 | [Guilds and membership](protocol/GUILDS.md) | Invites, onboarding, channel customization, Guide, member discovery. |
-| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, widgets, status, protobuf updates, folders and favourites. |
+| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, widgets, status, protobuf updates, folders and favourites. |
 | [Voice and streams](protocol/VOICE.md) | Calls, screen sharing, voice recovery, soundboard. |
 
 Architecture owns [component and persistence boundaries](ARCHITECTURE.md).

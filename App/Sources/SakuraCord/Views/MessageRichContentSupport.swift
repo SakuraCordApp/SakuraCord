@@ -88,6 +88,7 @@ nonisolated enum SystemMessagePresentation {
         case profile(UserID)
         case message(guildID: GuildID?, channelID: ChannelID, messageID: MessageID)
         case pins(ChannelID)
+        case editGroup(ChannelID)
 
         var url: URL {
             switch self {
@@ -97,6 +98,8 @@ nonisolated enum SystemMessagePresentation {
                 URL(string: "sakuracord-action://message/\(guildID?.description ?? "@me")/\(channelID)/\(messageID)")!
             case .pins(let channelID):
                 URL(string: "sakuracord-action://pins/\(channelID)")!
+            case .editGroup(let channelID):
+                URL(string: "sakuracord-action://edit-group/\(channelID)")!
             }
         }
     }
@@ -105,6 +108,8 @@ nonisolated enum SystemMessagePresentation {
         let text: String
         let isEmphasized: Bool
         let action: Action?
+        /// Drawn in link color, like Discord's trailing Edit Group action.
+        var isLink = false
 
         static func emphasized(_ text: String, action: Action? = nil) -> Self {
             Self(text: text, isEmphasized: true, action: action)
@@ -112,6 +117,10 @@ nonisolated enum SystemMessagePresentation {
 
         static func secondary(_ text: String) -> Self {
             Self(text: text, isEmphasized: false, action: nil)
+        }
+
+        static func link(_ text: String, action: Action) -> Self {
+            Self(text: text, isEmphasized: false, action: action, isLink: true)
         }
     }
 
@@ -128,7 +137,8 @@ nonisolated enum SystemMessagePresentation {
         for message: Message,
         currentUserID: UserID? = nil,
         baseFontSize: CGFloat,
-        actorColor: NSColor? = nil
+        actorColor: NSColor? = nil,
+        linkColor: NSColor? = nil
     ) -> NSAttributedString {
         let value = NSMutableAttributedString()
         for run in textRuns(for: message, currentUserID: currentUserID) {
@@ -139,7 +149,9 @@ nonisolated enum SystemMessagePresentation {
                         ),
                         .foregroundColor: run.action == .profile(message.author.id)
                             ? actorColor ?? NSColor.labelColor
-                            : run.isEmphasized
+                            : run.isLink
+                                ? linkColor ?? NSColor.linkColor
+                                : run.isEmphasized
                                 ? NSColor.labelColor
                                 : NSColor.secondaryLabelColor,
             ]
@@ -213,22 +225,26 @@ nonisolated enum SystemMessagePresentation {
                 .secondary(" from the group."),
             ]
         case .channelNameChange:
+            let editGroup = TextRun.link("Edit Group", action: .editGroup(message.channelID))
             if message.content.isEmpty {
                 return [
                     actorRun(message),
-                    .secondary(" changed the group name."),
+                    .secondary(" changed the group name. "),
+                    editGroup,
                 ]
             }
             return [
                 actorRun(message),
                 .secondary(" changed the group name to "),
                 .emphasized(message.content),
-                .secondary("."),
+                .secondary(". "),
+                editGroup,
             ]
         case .channelIconChange:
             return [
                 actorRun(message),
-                .secondary(" changed the group icon."),
+                .secondary(" changed the group icon. "),
+                .link("Edit Group", action: .editGroup(message.channelID)),
             ]
         case .channelPinnedMessage:
             let target = message.messageReference?.messageID.map {

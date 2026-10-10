@@ -231,7 +231,8 @@ struct NicknameCommandTests {
     }
 }
 
-private actor NicknameInterleavingCredentials: CredentialStore {
+/// Runs Gateway events after a mutation starts and before its request is sent.
+actor NicknameInterleavingCredentials: CredentialStore {
     private let base = TestCredentialStore()
     private var action: (@Sendable () async -> Void)?
 

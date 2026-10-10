@@ -93,7 +93,7 @@ struct ProfileEditingRequest: Equatable, Sendable {
     }
 }
 
-private extension ProfileChange {
+extension ProfileChange {
     func jsonValue(_ encode: (Value) -> JSONValue) -> JSONValue? {
         switch self {
         case .unchanged: nil
@@ -103,7 +103,7 @@ private extension ProfileChange {
     }
 }
 
-private extension ProfileImageUpload {
+extension ProfileImageUpload {
     var dataURI: JSONValue {
         .string("data:\(mediaType);base64,\(data.base64EncodedString())")
     }

@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | Profile saves and widgets | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordProfileWidgetEligibility.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileWidgetEligibility.swift) | [ProfileEditingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProfileEditingContractTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Nicknames | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordRESTRelationships.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTRelationships.swift); [AppModelNicknames.swift](../../App/Sources/SakuraCord/Models/AppModelNicknames.swift) | [NicknameCommandTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/NicknameCommandTests.swift) |
+| Group DM name, icon and leaving | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
 | Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
@@ -114,6 +115,60 @@ saved in SakuraCord produced `RELATIONSHIP_UPDATE` with `nickname: null` in the
 independent official session and restored its DM title without a reload. Native
 timeline presentation must also be invalidated when relationship nicknames
 change, so cached message author labels follow the live value.
+
+## Group DM name and icon
+
+Every group-DM member gets **Edit Group** in the group's context menu, after Pin.
+The dialog drafts the group's own name, with the member-list title (friend
+nicknames first) as the placeholder, or "{your name}'s Group" once nobody else
+remains. The icon is chosen from a file of at most 8 MiB and cropped to a circle
+by the profile avatar cropper (at most 1024 × 1024 PNG; animated GIF and WebP
+keep their format). Save sends one `PATCH /channels/{channel}` containing only
+the changed `name` and `icon`, with
+`X-Context-Properties` `{"location":"group dm context menu"}`. A cleared name
+is `""`, a removed icon `null`, and an unchanged dialog sends nothing. Names are
+trimmed and limited to 100 UTF-16 units. `name`/`icon` validation errors stay in
+the dialog rather than opening the session safety circuit, and `403` remains
+operation-scoped. The response updates the cached group only if no Gateway
+event or session reset has changed it meanwhile. In `CHANNEL_UPDATE`, an
+explicit `null` name or icon clears it; only an absent field keeps the cached
+value.
+
+The request comes from static analysis of first-party web build `633029`
+(`web.ae482d0492df0fb9.js`, Edit Group modal and channel action creators) on
+9 October 2026, which also sets the menu placement, labels and placeholder. The
+first-party menu hides Edit Group for application-managed groups; SakuraCord does
+not yet decode that flag. The public
+[Modify Channel](https://docs.discord.com/developers/resources/channel#modify-channel)
+route corroborates the group-DM fields. Pinned Paicord declares an unused
+group-DM PATCH that cannot send `""` or `null`; Swiftcord v1 has no equivalent.
+
+## Leaving a group DM
+
+Every group-DM member gets **Leave Group** in its own destructive section after
+the mute and notification items; 1:1 DMs never show it. The built-in `/leave`
+opens the same confirmation, with its `silent` option as the checkbox's initial
+state. The confirmation is titled "Leave '{group}'", explains that you can't
+rejoin unless re-invited, and offers "Leave without notifying other members".
+Leave Group sends one `DELETE /channels/{channel}` with query `silent=true` or
+`silent=false`, no body and no context header, and is never replayed. A failure
+keeps the group and appears in the workspace error alert; `403` stays
+operation-scoped. After a successful response the provider removes the group
+from the DM list unless a Gateway event or session reset changed it during the
+request, so a re-add is not undone. A selection on the group moves to the next
+conversation, as for any removed DM. The matching `CHANNEL_DELETE` finds the
+group already gone and publishes nothing further.
+
+The request and copy come from static analysis of first-party web build `634304`
+(`web.843cc7edc28c426c.js` `closePrivateChannel`, the `gdm-context` menu, its
+`leave-channel` item and confirmation modal, and the `/leave` built-in) on
+10 October 2026. The first-party client removes the group optimistically and
+goes to Friends; SakuraCord waits for the response and, having no Friends view,
+selects the next conversation. The first-party menu offers different copy for
+application-managed groups, which SakuraCord does not yet decode. The public
+[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
+route corroborates the request but does not document `silent`. Pinned Paicord
+declares the route without `silent` or any UI; Swiftcord v1 has no equivalent.
 
 ## Protobuf preservation
 

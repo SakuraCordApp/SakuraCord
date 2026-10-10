@@ -50,23 +50,27 @@ extension DiscordRESTProvider {
         }
         if let channelID = ChannelID(dto.id) {
             lazyPrivateChannelIDs.remove(channelID)
+            privateChannelRevisions[channelID, default: 0] &+= 1
         }
         cachePrivateRecipientReferences([dto])
         guard dto.type == 1 || dto.type == 3,
               var channel = try? privateChannel(from: dto)
         else { return }
         if name == "CHANNEL_UPDATE", let existing = privateChannel(id: channel.id) {
+            // An explicit `null` clears a group's name or icon; only an
+            // absent field keeps the cached value.
+            let fields: Set<String> = if case let .object(object) = body { Set(object.keys) } else { [] }
             if dto.recipients == nil, dto.recipientIDs == nil {
                 channel.recipients = existing.recipients
             }
-            if dto.name == nil, dto.recipients == nil, dto.recipientIDs == nil {
+            if !fields.contains("name"), dto.recipients == nil, dto.recipientIDs == nil {
                 channel.name = existing.name
                 channel.hasExplicitName = existing.hasExplicitName
             }
             if dto.ownerID == nil {
                 channel.ownerID = existing.ownerID
             }
-            if dto.icon == nil {
+            if !fields.contains("icon") {
                 channel.iconURL = existing.iconURL
             }
             if dto.lastMessageID == nil {
@@ -88,6 +92,7 @@ extension DiscordRESTProvider {
             var channel = privateChannel(id: channelID),
             let user = try? update.user.domain()
         else { return }
+        privateChannelRevisions[channelID, default: 0] &+= 1
         if name == "CHANNEL_RECIPIENT_ADD" {
             cacheLiveSearchUsers([update.user])
             if !channel.recipients.contains(where: { $0.id == user.id }) {
@@ -128,14 +133,7 @@ extension DiscordRESTProvider {
             publishGuildChannels(guildID)
             return
         }
-        if cachedChannels[nil]?.contains(where: { $0.id == channelID }) == true {
-            cachedChannels[nil]?.removeAll { $0.id == channelID }
-            lazyPrivateChannelIDs.remove(channelID)
-            continuation?.yield(
-                .channelsChanged(guildID: nil, channels: cachedChannels[nil] ?? [])
-            )
-            continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
-        }
+        removePrivateChannel(channelID)
     }
 
     func handleChannelPinsUpdateDispatch(

@@ -219,6 +219,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedRelationshipNicknamesByUserID: [UserID: String] = [:]
     /// Per-user revisions keep unrelated relationship events from suppressing saves.
     var relationshipRevisions: [UserID: UInt64] = [:]
+    /// Per-group revisions keep an Edit Group response from replacing a newer Gateway update.
+    var privateChannelRevisions: [ChannelID: UInt64] = [:]
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
     var guildRoleTasks: [GuildID: Task<[GuildRoleDTO], Error>] = [:]
     var pendingMemberSearchRequests: [String: PendingMemberSearchRequest] = [:]

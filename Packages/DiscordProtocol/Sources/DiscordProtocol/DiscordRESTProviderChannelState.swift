@@ -53,6 +53,17 @@ extension DiscordRESTProvider {
         continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
     }
 
+    /// Removes a DM or group and publishes the list once; an already removed
+    /// channel is left alone, so a later `CHANNEL_DELETE` does no extra work.
+    func removePrivateChannel(_ channelID: ChannelID) {
+        guard cachedChannels[nil]?.contains(where: { $0.id == channelID }) == true else { return }
+        privateChannelRevisions[channelID, default: 0] &+= 1
+        cachedChannels[nil]?.removeAll { $0.id == channelID }
+        lazyPrivateChannelIDs.remove(channelID)
+        continuation?.yield(.channelsChanged(guildID: nil, channels: cachedChannels[nil] ?? []))
+        continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
+    }
+
     func cachePrivateRecipientReferences(_ values: [ChannelDTO]) {
         for value in values {
             guard let channelID = ChannelID(value.id), value.type == 1 || value.type == 3,

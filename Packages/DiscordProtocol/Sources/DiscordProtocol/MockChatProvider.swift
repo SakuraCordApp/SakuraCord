@@ -38,6 +38,7 @@ public actor MockChatProvider: ChatProvider {
     var categoryCollapsedUpdatesAreSuspended = false
     var categoryCollapsedUpdateWaiters: [CheckedContinuation<Void, Never>] = []
     public internal(set) var threadNotificationRequests: [ThreadNotificationRequest] = []
+    public internal(set) var groupLeaveRequests: [(channelID: ChannelID, silently: Bool)] = []
     var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
 
     public init(

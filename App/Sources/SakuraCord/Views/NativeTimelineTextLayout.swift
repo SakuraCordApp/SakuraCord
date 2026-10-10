@@ -112,7 +112,8 @@ enum NativeTimelineTextPresentation {
             NativeTimelineTextPlan.make(
                 for: message,
                 currentUserID: model?.snapshot?.currentUser.id,
-                systemActorColor: systemActorColor
+                systemActorColor: systemActorColor,
+                systemLinkColor: SakuraCordAccentColor.nsColor
             )
         } else {
             row.textPlan
@@ -151,8 +152,9 @@ enum NativeTimelineTextPresentation {
                 linkedImages: plan.linkedImages
             )
         }
-        // System messages keep their actor styling at other interface sizes.
-        if preservesCompactSystemStyle, let preparedBox = plan.attributedText {
+        // System messages keep their actor styling and actions at other
+        // interface sizes and in bubbles, where text uses the message size.
+        if message.type.hasGeneratedContent, let preparedBox = plan.attributedText {
             let scaled = preparedBox.value.scalingTypography(
                 by: resolvedBaseFontSize / plan.baseFontSize
             )

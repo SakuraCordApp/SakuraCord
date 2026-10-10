@@ -108,6 +108,11 @@ struct RootView: View {
                 model.dismissMessageSearch()
             }
         }
+        // System-message actions such as Edit Group are drawn in the accent
+        // color, which depends on the whole committed theme.
+        .onChange(of: SakuraCordThemeStore.shared.committedTheme) { _, _ in
+            model.invalidateTimelinePresentation()
+        }
         .onChange(of: model.sessionState) { _, state in
             if model.launchMode == .normal,
                state == .workspace || !model.savedAccounts.isEmpty {
@@ -339,6 +344,8 @@ private struct ChatRootView: View {
         }
         .modifier(ExpandedProfilePresentationModifier(model: model))
         .modifier(NicknameEditorPresentationModifier(model: model))
+        .modifier(EditGroupPresentationModifier(model: model))
+        .modifier(LeaveGroupPresentationModifier(model: model))
         .modifier(ProfileGamePresentationModifier(model: model))
         .background {
             CommunicationWindowOverlays(model: model)

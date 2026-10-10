@@ -483,6 +483,12 @@ extension AppModel {
             }
             return nil
         }
+        func bool(_ name: String) -> Bool {
+            for value in invocation.values where value.name == name {
+                if case let .boolean(flag) = value.argument { return flag }
+            }
+            return false
+        }
         let message = string("message")
         if let text = Self.builtInMessageText(command: invocation.command.name, message: message) {
             _ = enqueueChannelMessage(
@@ -494,6 +500,9 @@ extension AppModel {
         switch invocation.command.name {
         case "nick":
             runNicknameCommand(string("new_nick"), invocation: invocation)
+        case "leave":
+            // Like Discord, /leave confirms before leaving the group.
+            presentLeaveGroupDirectMessage(for: channelID, silently: bool("silent"))
         case "msg":
             guard let recipient = user("user") else { return }
             startAccountChildTask(account: session) { [weak self] _, session in
