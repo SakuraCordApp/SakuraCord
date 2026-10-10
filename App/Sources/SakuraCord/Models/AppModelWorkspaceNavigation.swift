@@ -51,6 +51,10 @@ final class MessageSearchState {
     @ObservationIgnored let rowsUpdateJournal = MessageRowsUpdateJournal()
     @ObservationIgnored var requestTask: Task<Void, Never>?
     @ObservationIgnored var pollRefreshJournal: ConversationRefreshJournal?
+    /// True while a clicked result is opening, so the guild switch and
+    /// channel selections it makes on the way do not close the panel.
+    @ObservationIgnored var isNavigatingToResult = false
+    @ObservationIgnored var resultNavigationGeneration = 0
 
     var currentPage: Int {
         guard let submittedQuery else { return 1 }
@@ -776,6 +780,17 @@ extension AppModel {
             initialMessages: result.messages,
             isKnownThread: isGuildThreadResult
         )
+        messageSearch.resultNavigationGeneration &+= 1
+        let generation = messageSearch.resultNavigationGeneration
+        messageSearch.isNavigatingToResult = true
+        let navigationTask = guildActivationTask
+        Task { @MainActor [weak self] in
+            await navigationTask?.value
+            guard let self,
+                  messageSearch.resultNavigationGeneration == generation
+            else { return }
+            messageSearch.isNavigatingToResult = false
+        }
     }
 
     private func navigateToMessageResult(

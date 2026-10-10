@@ -910,6 +910,9 @@ final class AppModel {
                 AppPerformanceSignposts.cancelConversationNavigation()
             }
             dismissInspectorProfile()
+            if messageSearch.isPresented, !messageSearch.isNavigatingToResult {
+                dismissMessageSearch()
+            }
             if let oldValue {
                 cancelConversationRefresh(in: oldValue)
                 unreadDividerMessageIDs[oldValue] = nil
