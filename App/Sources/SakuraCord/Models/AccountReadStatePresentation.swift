@@ -29,6 +29,79 @@ extension AccountReadStateModel {
         let policy: UnreadPolicySource
         let forumPostArchivedByID: [ChannelID: Bool]
 
+        /// The server an entry's own unread lights. Joined threads are not in
+        /// the channel list, so a forum thread with its own read state lights
+        /// its forum's server.
+        func unreadGuildID(for entry: Entry) -> GuildID? {
+            if let guildID = policy.channelByID[entry.channelID]?.guildID {
+                return guildID
+            }
+            guard entry.hasAuthoritativeReadState,
+                  let parentID = entry.parentID,
+                  let parent = policy.channelByID[parentID],
+                  parent.kind == .forum
+            else { return nil }
+            return parent.guildID
+        }
+
+        /// The forum an unseen post counts toward, if the post is newer than
+        /// the forum's acknowledged boundary.
+        func newForumPostParentID(of entry: Entry) -> ChannelID? {
+            guard let parentID = entry.parentID,
+                  forumPostArchivedByID[entry.channelID] != true,
+                  !entry.hasAuthoritativeReadState,
+                  let parent = entries[parentID],
+                  parent.kind == .forum,
+                  parent.hasAuthoritativeReadState
+            else { return nil }
+            let boundary = parent.lastAcknowledgedMessageID
+                ?? MessageID(rawValue: 0)
+            return MessageID(rawValue: entry.channelID.rawValue) > boundary
+                ? parentID
+                : nil
+        }
+
+        /// The server a forum's unseen posts light, honouring its mutes.
+        func guildLitByNewPosts(inForum forumID: ChannelID, now: Date) -> GuildID? {
+            guard let forum = entries[forumID],
+                  forum.isAccessible,
+                  let guildID = policy.channelByID[forumID]?.guildID
+            else { return nil }
+            let effectivePolicy = policy.effectivePolicy(for: forum, now: now)
+            guard !effectivePolicy.categoryMuted,
+                  !effectivePolicy.guildMuted,
+                  !effectivePolicy.channelMuted,
+                  effectivePolicy.showsUnread
+            else { return nil }
+            return guildID
+        }
+
+        /// Scalar form of `projection().unreadByGuildID[guildID]`.
+        func guildUnread(_ guildID: GuildID, now: Date) -> Bool {
+            var checkedForumIDs: Set<ChannelID> = []
+            for entry in entries.values {
+                guard entry.isAccessible,
+                      !policy.isGuildResourceChannel(entry)
+                else { continue }
+                if entry.countsAsUnreadConversation,
+                   unreadGuildID(for: entry) == guildID,
+                   policy.contributesOwnGuildUnread(
+                       entry,
+                       effectivePolicy: policy.effectivePolicy(for: entry, now: now)
+                   )
+                {
+                    return true
+                }
+                if let forumID = newForumPostParentID(of: entry),
+                   checkedForumIDs.insert(forumID).inserted,
+                   guildLitByNewPosts(inForum: forumID, now: now) == guildID
+                {
+                    return true
+                }
+            }
+            return false
+        }
+
         func projection(
             now: Date = .now,
             cancelsCooperatively: Bool = false,
@@ -73,11 +146,10 @@ extension AccountReadStateModel {
                         || (!effectivePolicy.guildMuted
                             && !effectivePolicy.presentationChannelMuted
                             && effectivePolicy.showsUnread)
-                    contributesToGuildUnread = !effectivePolicy.categoryMuted
-                        && (entry.mentionCount > 0
-                            || (!effectivePolicy.guildMuted
-                                && !effectivePolicy.channelMuted
-                                && effectivePolicy.showsUnread))
+                    contributesToGuildUnread = policy.contributesOwnGuildUnread(
+                        entry,
+                        effectivePolicy: effectivePolicy
+                    )
                 }
                 mentionsByChannelID[channelID] = channelMentions
                 unreadByChannelID[channelID] = channelUnread
@@ -93,13 +165,12 @@ extension AccountReadStateModel {
                     mentionsByGuildID[guildID, default: 0] += channelMentions
                 }
                 if contributesToGuildUnread,
-                   let guildID = policy.channelByID[channelID]?.guildID
+                   let guildID = unreadGuildID(for: entry)
                 {
                     unreadByGuildID[guildID] = true
                 }
                 if isEligible,
-                   entry.isUnread,
-                   entry.kind != .voice || entry.mentionCount > 0,
+                   entry.countsAsUnreadConversation,
                    let guildID = entry.guildID,
                    let parentID = entry.parentID
                 {
@@ -110,17 +181,14 @@ extension AccountReadStateModel {
                     )
                 }
 
-                guard let parentID = entry.parentID,
-                      forumPostArchivedByID[channelID] != true,
-                      !entry.hasAuthoritativeReadState,
-                      let parent = entries[parentID],
-                      parent.kind == .forum,
-                      parent.hasAuthoritativeReadState
-                else { continue }
-                let boundary = parent.lastAcknowledgedMessageID
-                    ?? MessageID(rawValue: 0)
-                if MessageID(rawValue: channelID.rawValue) > boundary {
-                    newForumPostsByChannelID[parentID, default: 0] += 1
+                if isEligible, let forumID = newForumPostParentID(of: entry) {
+                    newForumPostsByChannelID[forumID, default: 0] += 1
+                }
+            }
+
+            for forumID in newForumPostsByChannelID.keys {
+                if let guildID = guildLitByNewPosts(inForum: forumID, now: now) {
+                    unreadByGuildID[guildID] = true
                 }
             }
 
@@ -276,6 +344,21 @@ extension AccountReadStateModel {
             return level == .allMessages
         }
 
+        /// Whether an entry's own unread lights its server. A forum's own
+        /// boundary trails its newest post, so a forum lights the server only
+        /// through mentions, its unseen posts and its joined threads.
+        func contributesOwnGuildUnread(
+            _ entry: Entry,
+            effectivePolicy: EffectivePolicy
+        ) -> Bool {
+            !effectivePolicy.categoryMuted
+                && (entry.mentionCount > 0
+                    || (entry.kind != .forum
+                        && !effectivePolicy.guildMuted
+                        && !effectivePolicy.channelMuted
+                        && effectivePolicy.showsUnread))
+        }
+
         func isGuildResourceChannel(_ entry: Entry) -> Bool {
             Self.isGuildResourceChannel(entry, channelByID: channelByID)
         }
@@ -339,6 +422,13 @@ extension AccountReadStateModel {
             guard let latestUnreadMessageID else { return false }
             guard let lastAcknowledgedMessageID else { return true }
             return latestUnreadMessageID > lastAcknowledgedMessageID
+        }
+
+        /// Unread that marks a server or category. Voice channels and a
+        /// forum's own boundary count only through mentions.
+        var countsAsUnreadConversation: Bool {
+            isUnread
+                && ((kind != .voice && kind != .forum) || mentionCount > 0)
         }
     }
 

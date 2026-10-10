@@ -1380,10 +1380,7 @@ extension AccountReadStateModel {
     }
 
     func guildUnread(_ guildID: GuildID, now: Date = .now) -> Bool {
-        channelByID.values.contains { channel in
-            channel.guildID == guildID
-                && contributesGuildUnread(channelID: channel.id, now: now)
-        }
+        unreadPresentationSource().guildUnread(guildID, now: now)
     }
 
     func guildMentions(_ guildID: GuildID) -> Int {

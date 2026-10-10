@@ -2,23 +2,6 @@ import Foundation
 import SakuraCordModels
 
 extension AccountReadStateModel {
-    func contributesGuildUnread(
-        channelID: ChannelID,
-        now: Date
-    ) -> Bool {
-        guard let entry = entries[channelID],
-              entry.isAccessible,
-              entry.isUnread
-        else { return false }
-        guard !isGuildResourceChannel(entry) else { return false }
-        if entry.kind == .voice && entry.mentionCount == 0 { return false }
-
-        let policy = effectivePolicy(for: entry, now: now)
-        guard !policy.categoryMuted else { return false }
-        return entry.mentionCount > 0
-            || (!policy.guildMuted && !policy.channelMuted && policy.showsUnread)
-    }
-
     func allowsNativeNotification(
         for mentionKind: MentionKind,
         policy: EffectivePolicy
@@ -151,9 +134,8 @@ extension AccountReadStateModel {
         for entry in entries.values {
             guard entry.guildID == guildID,
                   entry.isAccessible,
-                  entry.isUnread,
+                  entry.countsAsUnreadConversation,
                   !isGuildResourceChannel(entry),
-                  entry.kind != .voice || entry.mentionCount > 0,
                   let parentID = entry.parentID
             else { continue }
             let categoryID = unreadPolicySource.channelByID[parentID]?.categoryID ?? parentID
