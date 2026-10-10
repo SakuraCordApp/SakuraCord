@@ -846,9 +846,18 @@ extension NativeTimelineRowLayout {
                         width: ReactionActionMenuPresentation.inline.width,
                         height: MessageReactionMetrics.pillHeight
                     )]
+                // Reactions sit below the bubble, so a short bubble must not
+                // narrow them. They wrap against the bubble column instead.
+                let rowWidth = usesBubbles
+                    ? max(contentWidth, min(
+                        NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
+                        isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
+                    ))
+                    : contentWidth
+                let rowX = isOutgoingBubble ? contentX + contentWidth - rowWidth : contentX
                 let wrapping = InlineWrappingLayoutPlan.frames(
                     sizes: sizes,
-                    maximumWidth: contentWidth,
+                    maximumWidth: rowWidth,
                     horizontalSpacing: MessageReactionMetrics.horizontalSpacing,
                     verticalSpacing: MessageReactionMetrics.verticalSpacing
                 )
@@ -859,9 +868,9 @@ extension NativeTimelineRowLayout {
                 }
                 let frames = wrapping.frames.map { frame in
                     let lineShift = isOutgoingBubble
-                        ? max(0, contentWidth - (lineEnds[frame.minY] ?? frame.maxX))
+                        ? max(0, rowWidth - (lineEnds[frame.minY] ?? frame.maxX))
                         : 0
-                    return frame.offsetBy(dx: contentX + lineShift, dy: verticalOffset)
+                    return frame.offsetBy(dx: rowX + lineShift, dy: verticalOffset)
                 }
                 result.reactionRegions = zip(
                     presentedReactions,
