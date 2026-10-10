@@ -10,7 +10,7 @@
 | Nicknames | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordRESTRelationships.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTRelationships.swift); [AppModelNicknames.swift](../../App/Sources/SakuraCord/Models/AppModelNicknames.swift) | [NicknameCommandTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/NicknameCommandTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
-| Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
+| Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [QuickReactionPolicyTests.swift](../../App/Tests/SakuraCordAppTests/QuickReactionPolicyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
 | Favourites/frecency | [DiscordSettingsProtoStickers.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoStickers.swift); [DiscordSettingsProtoSoundboard.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoSoundboard.swift); [DiscordSettingsProtoCommandFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoCommandFrecency.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift); [ApplicationCommandFrecencyCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ApplicationCommandFrecencyCodecTests.swift) |
 
 ## Profile edits and private account data
@@ -208,6 +208,33 @@ previews, not permission to send. Subscription roles require a non-null
 `subscription_listing_id` and presence of the `available_for_purchase` tag
 (including null). This edge case is source-corroborated and covered by deterministic
 tests; the live comparison account had no restricted emoji in its usage history.
+
+The message hover toolbar's quick reactions rank Unicode and custom emoji
+together using reaction history, independently of emoji sent in messages.
+[QuickReactionPolicy](../../App/Sources/SakuraCord/Models/QuickReactionPolicy.swift)
+adds no request beyond the shared settings load. Nitro-locked emoji may appear
+in picker previews but are excluded from quick reactions. Resolve and fold as
+above, then drop custom emoji that cannot be a new reaction in that channel:
+external emoji without Use External Emojis in a server, unavailable
+emoji, other-server or DM custom emoji without Nitro, animated emoji without
+Nitro, and role-restricted emoji the member lacks. Discord exempts managed emoji
+from the Nitro lock; SakuraCord's reaction guard does not, so the toolbar
+follows the guard rather than offer an emoji it would reject. If fewer than
+three remain, append 💯 😆 💖, fold again and take three. Unicode emoji use the preferred skin tone. A reaction the user
+already added changes only the tooltip to “Click to remove”; clicking toggles
+it through the ordinary reaction path. Adding a reaction updates local usage;
+removing it does not reverse that usage. Other sessions adopt the ranking
+through type-2 settings updates, not reaction Gateway events.
+The section is hidden with its divider unless reaction creation is allowed: private
+channels other than the system DM, or server channels with Add Reactions where
+the member is not pending, outside archived threads. Discord also offers them in
+archived threads it can reopen because its reaction path unarchives the thread
+first; SakuraCord's shared reaction path does not unarchive. A timeline too
+narrow for the wider toolbar omits the section.
+Source: web build `634304` (`web.843cc7edc28c426c.js`, chunk
+`5c04c2e4ef438cd1.js`) on 10 October 2026. The official toolbar also hides quick
+reactions while Shift expands it; SakuraCord has no expanded toolbar. Animated
+subscription emoji exempt from the Nitro lock are not modelled.
 
 Pending uses persist per account and replay over received histories. A successful
 save acknowledges only the submitted prefix, so a use made while the request is
