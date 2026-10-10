@@ -394,39 +394,38 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    /// Presents the reaction picker beside the message's bubble, on the side
-    /// facing the open timeline, or from the top-right of a non-bubble row.
-    /// Anchors are clamped to the visible part so a partially scrolled
-    /// message still anchors on screen. The row is looked up when the picker
-    /// opens because the timeline may have changed while a context menu was
-    /// open.
+    /// Presents the reaction picker beside the message's visible bubble, on
+    /// the side facing the open timeline. Otherwise, such as for a non-bubble
+    /// row or a bubble scrolled away above its visible reactions, it opens
+    /// from the top-right of the row's visible part. The row is looked up
+    /// when the picker opens because the timeline may have changed while a
+    /// context menu was open.
     func showReactionPicker(forMessageRow message: Message) {
         guard let index = items.firstIndex(where: {
             $0.messageID == message.id
         }) else { return }
         let visibleBounds = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        func clamped(_ frame: CGRect) -> CGRect {
-            let visible = frame.intersection(visibleBounds)
-            return visible.isNull ? frame : visible
-        }
         let anchor: CGRect
         let presentation: ReactionActionMenuPresentation
         let preferredEdge: NSRectEdge?
         if layouts.indices.contains(index),
-           let bubble = layouts[index].bubbleRegion
+           let bubble = layouts[index].bubbleRegion,
+           case let visibleBubble = bubble.frame.offsetBy(
+               dx: 0,
+               dy: displayedRowOrigin(at: index)
+           ).intersection(visibleBounds),
+           !visibleBubble.isNull
         {
-            anchor = clamped(bubble.frame.offsetBy(
-                dx: 0,
-                dy: displayedRowOrigin(at: index)
-            ))
+            anchor = visibleBubble
             presentation = .inline
             preferredEdge = bubble.isOutgoing ? .minX : .maxX
         } else {
             let rowFrame = rowFrame(at: index)
+            let visibleRow = rowFrame.intersection(visibleBounds)
             let diameter = HoverActionPillMetrics.controlDiameter
             anchor = CGRect(
                 x: rowFrame.maxX - diameter - InterfaceScale.metric(4),
-                y: clamped(rowFrame).minY,
+                y: visibleRow.isNull ? rowFrame.minY : visibleRow.minY,
                 width: diameter,
                 height: diameter
             )
