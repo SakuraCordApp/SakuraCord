@@ -144,6 +144,7 @@ final class AppModel {
     var snapshot: BootstrapSnapshot? {
         didSet {
             refreshSnapshotPresentation(replacing: oldValue)
+            IntentConversationCatalog.scheduleSpotlightIndex(for: self)
         }
     }
     // Keep workspace chrome independent of unrelated channel and member changes.
@@ -325,7 +326,10 @@ final class AppModel {
     var savedAccounts: [SavedAccount] = []
     var activeAccountID: String?
     @ObservationIgnored var diagnosticsShareInFlight = false
-    var sessionState: SessionState
+    var sessionState: SessionState {
+        // Pauses indexing while signed out or switching accounts.
+        didSet { if sessionState != oldValue { IntentConversationCatalog.scheduleSpotlightIndex(for: self) } }
+    }
     var hasPendingLaunchWelcome: Bool
     let launchMode: AppLaunchMode
     let typingState: TypingStateModel

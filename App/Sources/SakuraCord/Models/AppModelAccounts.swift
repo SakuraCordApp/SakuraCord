@@ -431,6 +431,7 @@ extension AppModel {
         credentialHandlesByAccountID[accountID] = nil
         await savedAccountStore.remove(accountID: accountID)
         savedAccounts.removeAll { $0.accountID == accountID }
+        IntentConversationCatalog.removeSpotlightItems(forAccount: accountID, model: self)
         await savedAccountStore.setPreferredAccountID(
             activeAccountID != accountID ? activeAccountID ?? savedAccounts.first?.accountID : savedAccounts.first?.accountID
         )
