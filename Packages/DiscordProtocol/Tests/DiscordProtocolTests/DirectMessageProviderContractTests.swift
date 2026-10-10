@@ -673,22 +673,15 @@ extension DirectMessageProviderContractTests {
             }
         )
 
-        await provider.receiveGatewayDispatchForTesting(
-            name: "CHANNEL_CREATE",
-            data: privateChannel(id: "44", lastMessageID: nil)
-        )
-        #expect(
-            await provider.cachedPrivateChannelsForTesting().map(\.id) == [
-                ChannelID(rawValue: 43),
-                ChannelID(rawValue: 41),
-                ChannelID(rawValue: 42),
-                ChannelID(rawValue: 44),
-            ]
-        )
-        #expect(
-            await provider.cachedPrivateChannelsForTesting()
-                .first(where: { $0.id == ChannelID(rawValue: 44) })?.position == 3
-        )
+        // A new message-less group DM leads by its own snowflake; reopened
+        // DMs land by last message, not by their (newer) channel IDs.
+        let created: [(id: String, lastMessageID: String?)] = [("800", nil), ("801", "600"), ("802", "10")]
+        for channel in created {
+            await provider.receiveGatewayDispatchForTesting(name: "CHANNEL_CREATE", data: privateChannel(id: channel.id, lastMessageID: channel.lastMessageID))
+        }
+        let afterCreate = await provider.cachedPrivateChannelsForTesting()
+        #expect(afterCreate.map(\.id.rawValue) == [800, 43, 801, 41, 42, 802])
+        #expect(afterCreate.filter { $0.id.rawValue >= 800 }.map(\.position) == [3, 4, 5])
 
         await provider.receiveGatewayDispatchForTesting(
             name: "READY_SUPPLEMENTAL",
@@ -707,18 +700,12 @@ extension DirectMessageProviderContractTests {
             ])
         )
         let afterSupplemental = await provider.cachedPrivateChannelsForTesting()
-        #expect(afterSupplemental.map(\.id) == [
-            ChannelID(rawValue: 45),
-            ChannelID(rawValue: 43),
-            ChannelID(rawValue: 41),
-            ChannelID(rawValue: 44),
-            ChannelID(rawValue: 42),
-        ])
+        #expect(afterSupplemental.map(\.id.rawValue) == [45, 800, 43, 801, 41, 42, 802])
         #expect(
             afterSupplemental.first?.recipients.map(\.id)
                 == [UserID(rawValue: 3)]
         )
-        #expect(afterSupplemental.first?.position == 4)
+        #expect(afterSupplemental.first?.position == 6)
 
         await provider.receiveGatewayDispatchForTesting(
             name: "MESSAGE_CREATE",
@@ -738,13 +725,7 @@ extension DirectMessageProviderContractTests {
             ])
         )
         let reordered = await provider.cachedPrivateChannelsForTesting()
-        #expect(reordered.map(\.id) == [
-            ChannelID(rawValue: 42),
-            ChannelID(rawValue: 45),
-            ChannelID(rawValue: 43),
-            ChannelID(rawValue: 41),
-            ChannelID(rawValue: 44),
-        ])
+        #expect(reordered.map(\.id.rawValue) == [42, 45, 800, 43, 801, 41, 802])
         #expect(reordered.first?.lastMessageID == MessageID(rawValue: 1000))
         await provider.disconnect()
     }
