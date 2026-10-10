@@ -104,9 +104,9 @@ local credential guidance in the [development guide](docs/DEVELOPMENT.md).
 
 ## Contributing and support
 
-Start with the [documentation task index](docs/README.md) to find the owner and
-verification for a change. Development pull requests target `nightly`; install
-the repository hooks before committing or pushing.
+Start with the [contributing guide](CONTRIBUTING.md) for setup, change guidelines,
+verification, and pull requests. The [documentation task index](docs/README.md)
+points to the owner and detailed guidance for each area.
 
 For a bug report, include reproduction steps, expected and actual behaviour, and
 the app version/release track. The [support recipe](docs/DEVELOPMENT.md#report-a-problem)

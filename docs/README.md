@@ -6,6 +6,7 @@ belong in GitHub Issues and milestones, not these documents.
 
 | I need to… | Start here |
 | --- | --- |
+| Contribute a change or open a pull request | [Contributing](../CONTRIBUTING.md) |
 | Install or build the app | [Root README](../README.md#build-from-source) |
 | Run a local/offline build, choose credentials or signing | [Development](DEVELOPMENT.md) |
 | Find the model, provider and presentation owner | [Architecture](ARCHITECTURE.md#find-the-owner) |
