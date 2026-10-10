@@ -131,7 +131,12 @@ extension AppModel {
             return
         }
         do {
-            if inputResolution.requiresSwitch {
+            // Also switch back when capture fell back to the default and the
+            // requested microphone is present again.
+            let activeInputID = await session.activeInputDeviceID()
+            let returnsToRequestedInput = inputResolution.requestedDeviceID != nil
+                && activeInputID != inputResolution.requestedDeviceID
+            if inputResolution.requiresSwitch || returnsToRequestedInput {
                 try await session.selectInputDevice(inputResolution.requestedDeviceID)
             }
             if outputResolution.requiresSwitch {
