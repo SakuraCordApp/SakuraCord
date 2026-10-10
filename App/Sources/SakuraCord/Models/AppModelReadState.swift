@@ -53,7 +53,27 @@ extension AppModel {
     }
 
     func preserveUnreadDividerIfNeeded(channelID: ChannelID) {
-        guard unreadDividerMessageIDs[channelID] == nil else { return }
+        guard unreadDividerMessageIDs[channelID] == nil,
+              let summary = presentedUnreadSummary(channelID: channelID),
+              !summary.isLowerBound
+        else { return }
+        unreadDividerMessageIDs[channelID] = summary.firstUnreadMessageID
+    }
+
+    /// True while a long backlog's first unread row is not loaded, so the
+    /// timeline can show only its loaded tail.
+    func hasUnresolvedUnreadBoundary(channelID: ChannelID) -> Bool {
+        guard let summary = presentedUnreadSummary(channelID: channelID),
+              summary.isLowerBound
+        else { return false }
+        guard let divider = unreadDividerMessageIDs[channelID] else { return true }
+        let loaded = channelID == openThread?.id ? threadMessages : messages
+        return !loaded.contains { $0.id == divider }
+    }
+
+    private func presentedUnreadSummary(
+        channelID: ChannelID
+    ) -> AccountReadStateModel.TimelineUnreadSummary? {
         let conversationMessages: [Message]
         let hasMoreBefore: Bool
         if channelID == openThread?.id {
@@ -65,15 +85,13 @@ extension AppModel {
             hasMoreBefore = hasMoreMessages
                 || (isLoadingMessages && !messages.isEmpty)
         } else {
-            return
+            return nil
         }
-        guard let summary = readState.timelineUnreadSummary(
+        return readState.timelineUnreadSummary(
             channelID: channelID,
             messages: conversationMessages,
             hasMoreBefore: hasMoreBefore
-        ), !summary.isLowerBound
-        else { return }
-        unreadDividerMessageIDs[channelID] = summary.firstUnreadMessageID
+        )
     }
 
     func markMessageAndFollowingUnread(_ message: Message) {

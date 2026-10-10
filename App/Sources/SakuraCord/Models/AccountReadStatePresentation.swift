@@ -348,15 +348,17 @@ extension AccountReadStateModel {
         var initialPositionEstablished = false
         var windowIsActive = false
         var hasReachedReadBoundary = false
-        var blocksAutomaticAcknowledgement = false
+        /// Newest message of an unread run that passive viewing must not
+        /// acknowledge. The hold lapses once that message is acknowledged by
+        /// any path, so it needs no separate release when read elsewhere.
+        var heldThroughMessageID: MessageID?
 
-        var canAcknowledge: Bool {
+        var meetsViewingConditions: Bool {
             isPresented
                 && initialHistoryLoaded
                 && initialPositionEstablished
                 && windowIsActive
                 && hasReachedReadBoundary
-                && !blocksAutomaticAcknowledgement
         }
     }
 

@@ -734,6 +734,13 @@ nonisolated enum NativeTimelineReadBoundaryPolicy {
         newestMessageMaximumY >= viewportMinimumY - tolerance
             && newestMessageMaximumY <= viewportMaximumY + tolerance
     }
+
+    /// AppKit reports wheel and trackpad deltas after applying the natural
+    /// scrolling preference, so a negative vertical delta moves the viewport
+    /// toward the newest message at the bottom of the timeline.
+    static func isScrollTowardNewest(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        deltaY < 0 && abs(deltaY) > abs(deltaX)
+    }
 }
 
 nonisolated enum NativeTimelineInitialPlacementPolicy {

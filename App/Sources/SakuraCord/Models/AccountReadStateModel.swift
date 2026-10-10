@@ -1171,10 +1171,23 @@ extension AccountReadStateModel {
             value.hasReachedReadBoundary = hasReachedReadBoundary
         }
         if let blocksAutomaticAcknowledgement {
-            value.blocksAutomaticAcknowledgement = blocksAutomaticAcknowledgement
+            value.heldThroughMessageID = blocksAutomaticAcknowledgement
+                ? entries[channelID]?.latestKnownMessageID ?? MessageID(rawValue: 0)
+                : nil
         }
         presentations[channelID] = value
-        return value.canAcknowledge ? newestUnacknowledgedMessage(in: channelID) : nil
+        return canAcknowledge(channelID) ? newestUnacknowledgedMessage(in: channelID) : nil
+    }
+
+    func canAcknowledge(_ channelID: ChannelID) -> Bool {
+        presentations[channelID]?.meetsViewingConditions == true
+            && !holdsAutomaticAcknowledgement(channelID)
+    }
+
+    func holdsAutomaticAcknowledgement(_ channelID: ChannelID) -> Bool {
+        guard let held = presentations[channelID]?.heldThroughMessageID else { return false }
+        guard let acknowledged = entries[channelID]?.lastAcknowledgedMessageID else { return true }
+        return acknowledged < held
     }
 
     func markAcknowledgementPending(channelID: ChannelID, messageID: MessageID) {
@@ -1233,8 +1246,9 @@ extension AccountReadStateModel {
         )
     }
 
-    func unblockAutomaticAcknowledgement(channelID: ChannelID) {
-        _ = updatePresentation(
+    @discardableResult
+    func unblockAutomaticAcknowledgement(channelID: ChannelID) -> MessageID? {
+        updatePresentation(
             channelID: channelID,
             blocksAutomaticAcknowledgement: false
         )
@@ -1443,7 +1457,7 @@ extension AccountReadStateModel {
     }
 
     func isVisibleAtNewest(_ channelID: ChannelID) -> Bool {
-        presentations[channelID]?.canAcknowledge == true
+        canAcknowledge(channelID)
     }
 
     func isActivelyPresentedAtNewest(_ channelID: ChannelID) -> Bool {

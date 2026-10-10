@@ -408,7 +408,8 @@ private struct ThreadMessageTimelineView: View {
             onScrollStateChange: handleScrollState,
             onInitialPositionEstablished: handleInitialPosition,
             onUserScrollBegan: handleUserScrollBegan,
-            onUserScrollEnded: handleUserScrollEnded
+            onUserScrollEnded: handleUserScrollEnded,
+            onUserScrollTowardNewest: handleUserScrollTowardNewest
         )
         .scrollEdgeEffectStyle(.soft, for: .top)
         .ignoresSafeArea(.container, edges: .top)
@@ -439,9 +440,7 @@ private struct ThreadMessageTimelineView: View {
                 messageCount: model.threadMessages.count
             ), hasEstablishedInitialPosition {
                 Button {
-                    if let threadID = model.openThread?.id {
-                        model.reportTimelineUserInteraction(channelID: threadID)
-                    }
+                    handleUserScrollTowardNewest()
                     requestScroll(.bottom)
                 } label: {
                     Label("New replies", systemImage: "arrow.down")
@@ -627,7 +626,6 @@ private struct ThreadMessageTimelineView: View {
             channelID: threadID,
             hasReachedReadBoundary:
                 TimelineReadEligibilityPolicy.hasReachedReadBoundary(state)
-                && !hasUnresolvedInitialUnreadBoundary
         )
     }
 
@@ -666,7 +664,6 @@ private struct ThreadMessageTimelineView: View {
             channelID: threadID,
             hasReachedReadBoundary:
                 TimelineReadEligibilityPolicy.hasReachedReadBoundary(state)
-                && !hasUnresolvedInitialUnreadBoundary
         )
     }
 
@@ -675,8 +672,11 @@ private struct ThreadMessageTimelineView: View {
         if hasUnresolvedInitialUnreadBoundary {
             hasEarlierHistoryScrollIntent = true
         }
+    }
+
+    private func handleUserScrollTowardNewest() {
         guard let threadID = model.openThread?.id else { return }
-        model.reportTimelineUserInteraction(channelID: threadID)
+        model.reportTimelineScrollTowardNewest(channelID: threadID)
     }
 
     private func handleUserScrollEnded(_ state: TimelineScrollState) {

@@ -414,6 +414,12 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
     )
 }
 
+@Test func `wheel input toward newest is downward and vertical`() {
+    #expect(NativeTimelineReadBoundaryPolicy.isScrollTowardNewest(deltaX: 0, deltaY: -4))
+    #expect(!NativeTimelineReadBoundaryPolicy.isScrollTowardNewest(deltaX: 0, deltaY: 4))
+    #expect(!NativeTimelineReadBoundaryPolicy.isScrollTowardNewest(deltaX: -6, deltaY: -2))
+}
+
 @Test func `read eligibility uses established newest message geometry`() {
     #expect(
         TimelineReadEligibilityPolicy.hasReachedReadBoundary(

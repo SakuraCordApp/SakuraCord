@@ -76,7 +76,8 @@ struct MessageTimelineView: View {
             onScrollStateChange: handleScrollState,
             onInitialPositionEstablished: handleInitialPosition,
             onUserScrollBegan: handleUserScrollBegan,
-            onUserScrollEnded: handleUserScrollEnded
+            onUserScrollEnded: handleUserScrollEnded,
+            onUserScrollTowardNewest: handleUserScrollTowardNewest
         )
         .scrollEdgeEffectStyle(.soft, for: .top)
         .ignoresSafeArea(.container, edges: .top)
@@ -111,9 +112,7 @@ struct MessageTimelineView: View {
                !model.messages.isEmpty
             {
                 Button {
-                    if let channelID = model.selectedChannelID {
-                        model.reportTimelineUserInteraction(channelID: channelID)
-                    }
+                    handleUserScrollTowardNewest()
                     if model.hasMoreLaterMessages {
                         Task {
                             await model.loadNewestMessageWindow()
@@ -319,7 +318,6 @@ struct MessageTimelineView: View {
         latestScrollState = state
         let hasReachedReadBoundary =
             TimelineReadEligibilityPolicy.hasReachedReadBoundary(state)
-            && !hasUnresolvedInitialUnreadBoundary
         if hasReachedReadBoundary {
             scrollPolicy.didRequestBottom()
         } else {
@@ -388,7 +386,6 @@ struct MessageTimelineView: View {
                 channelID: channelID,
                 hasReachedReadBoundary:
                     TimelineReadEligibilityPolicy.hasReachedReadBoundary(value)
-                    && !hasUnresolvedInitialUnreadBoundary
             )
         }
     }
@@ -438,8 +435,11 @@ struct MessageTimelineView: View {
             // strands the viewport against a still-provisional boundary.
             hasEarlierHistoryScrollIntent = true
         }
+    }
+
+    private func handleUserScrollTowardNewest() {
         if let channelID = model.selectedChannelID {
-            model.reportTimelineUserInteraction(channelID: channelID)
+            model.reportTimelineScrollTowardNewest(channelID: channelID)
         }
     }
 

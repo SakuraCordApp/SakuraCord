@@ -21,6 +21,14 @@ the actual visible conversation/read geometry, not row construction or a tempora
 pre-position viewport. The UI's visit boundary can remain stable while provider
 acknowledgements advance in the background.
 
+A visit acknowledges when the bottom edge of the newest message enters the
+viewport, even if the first unread row of a long backlog is not loaded (a
+lower-bound `N+` count). Opening such a backlog directly at its newest message
+shows only its tail, so, as in Discord, that visit stays unread until the reader
+scrolls toward the newest message again or chooses Mark as Read. Opening above
+the newest message needs no extra gesture, and a fully visible unread run with
+a loaded divider acknowledges on open.
+
 A channel ACK posts to `/channels/{channel}/messages/{message}/ack` with applicable
 flags, `last_viewed` and the latest server-issued token. Serialize account requests
 and coalesce per channel; retain each optimistic intent's rollback boundary.
