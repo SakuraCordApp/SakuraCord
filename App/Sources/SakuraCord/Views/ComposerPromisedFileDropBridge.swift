@@ -67,7 +67,18 @@ final class ComposerPromisedFileDropView: NSView {
         targetChanged(false, .zero, false)
     }
 
+    override func draggingEnded(_ sender: any NSDraggingInfo) {
+        targetChanged(false, .zero, false)
+    }
+
+    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        targetChanged(false, .zero, false)
+    }
+
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        // Clear before the guards and before the async promise reads so the
+        // overlay never outlives the drop.
+        targetChanged(false, .zero, false)
         let receivers = promisedFileReceivers(from: sender.draggingPasteboard)
         guard isEnabled, !receivers.isEmpty,
               let directory = try? Self.makeReceivingDirectory()
@@ -92,7 +103,6 @@ final class ComposerPromisedFileDropView: NSView {
                 collector.receive(url: url, error: error)
             }
         }
-        targetChanged(false, .zero, false)
         return true
     }
 

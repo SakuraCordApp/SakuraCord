@@ -192,6 +192,7 @@ private struct ChatRootView: View {
     @State private var sidebarWidth = ChatChromeMetrics.serverRailWidth + InterfaceScale.metric(230)
     @State private var presentsForumComposer = false
     @State private var isFileDropTargeted = false
+    @State private var tracksFileDropPointer = false
     @State private var isInstantUpload = false
     @State private var hoveredFileDropDestination: MessageComposerDestination?
     @State private var modifierPollingTask: Task<Void, Never>?
@@ -425,13 +426,25 @@ private struct ChatRootView: View {
             },
             isTargeted: { targeted in
                 isFileDropTargeted = targeted
+                tracksFileDropPointer = targeted
                 isInstantUpload = targeted && NSEvent.modifierFlags.contains(.shift)
                 hoveredFileDropDestination =
                     targeted ? composerDestinationForCurrentPointer() : nil
-                updateModifierPolling(isTargeted: targeted)
+                if targeted { composerDropInteraction.noteDragActivity() }
             }
         )
         .overlay { promisedFileDropBridge }
+        .onChange(of: showsFileDropEffect) { _, isShown in
+            // Driven by the combined state, not per-target callbacks: during a
+            // handoff the next target lights up before the previous one exits.
+            if isShown {
+                if modifierPollingTask == nil { startFileDropWatchdog() }
+            } else {
+                modifierPollingTask?.cancel()
+                modifierPollingTask = nil
+                tracksFileDropPointer = false
+            }
+        }
         .onPreferenceChange(ThreadPaneFramePreferenceKey.self) { frame in
             supplementaryPaneFrame = frame
         }
@@ -538,17 +551,44 @@ private struct ChatRootView: View {
         }
     }
 
-    private func updateModifierPolling(isTargeted: Bool) {
+    private func startFileDropWatchdog() {
         modifierPollingTask?.cancel()
-        modifierPollingTask = nil
-        guard isTargeted else { return }
         modifierPollingTask = Task { @MainActor in
+            var lastPointer = NSEvent.mouseLocation
             while !Task.isCancelled {
-                isInstantUpload = NSEvent.modifierFlags.contains(.shift)
-                hoveredFileDropDestination = composerDestinationForCurrentPointer()
+                let pointer = NSEvent.mouseLocation
+                if pointer != lastPointer {
+                    lastPointer = pointer
+                    composerDropInteraction.noteDragActivity()
+                }
+                // Some drag sessions (notably promised files such as the
+                // screenshot thumbnail) end without an exit callback. Drag lock
+                // and three-finger drag hold no button, so also require a quiet
+                // second with no target updates or pointer movement.
+                let idle = ContinuousClock.now - composerDropInteraction.lastDragActivity
+                if NSEvent.pressedMouseButtons == 0, idle > .seconds(1) {
+                    resetFileDropState()
+                    return
+                }
+                // The AppKit targets report their own destination; only the
+                // SwiftUI target needs the pointer and modifiers polled.
+                if tracksFileDropPointer {
+                    isInstantUpload = NSEvent.modifierFlags.contains(.shift)
+                    hoveredFileDropDestination = composerDestinationForCurrentPointer()
+                }
                 try? await Task.sleep(for: .milliseconds(50))
             }
         }
+    }
+
+    private func resetFileDropState() {
+        modifierPollingTask?.cancel()
+        modifierPollingTask = nil
+        isFileDropTargeted = false
+        tracksFileDropPointer = false
+        isInstantUpload = false
+        hoveredFileDropDestination = nil
+        composerDropInteraction.reset()
     }
 
     @ToolbarContentBuilder
@@ -823,6 +863,7 @@ private struct ChatRootView: View {
             ComposerPromisedFileDropBridge(
                 isEnabled: canAcceptWindowDrops,
                 targetChanged: { targeted, location, instant in
+                    if targeted { composerDropInteraction.noteDragActivity() }
                     let destination = targeted ? composerDestination(at: location) : nil
                     isFileDropTargeted = destination != nil
                     isInstantUpload = destination != nil && instant
