@@ -298,6 +298,6 @@ import Testing
         #expect(!model.canDeleteMessage(message))
         #expect(!model.canManagePins(for: message))
         #expect(!message.isForwardable)
-        #expect(canvas.accessibilityMessageActions(row, rowFrame: canvas.bounds, rowIndex: 0).isEmpty)
+        #expect(canvas.accessibilityMessageActions(row, rowIndex: 0).isEmpty)
     }
 }

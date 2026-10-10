@@ -394,10 +394,57 @@ extension NativeTimelineCanvasView {
         )
     }
 
+    /// Presents the reaction picker beside the message's visible bubble, on
+    /// the side facing the open timeline. Otherwise, such as for a non-bubble
+    /// row or a bubble scrolled away above its visible reactions, it opens
+    /// from the top-right of the row's visible part. The row is looked up
+    /// when the picker opens because the timeline may have changed while a
+    /// context menu was open.
+    func showReactionPicker(forMessageRow message: Message) {
+        guard let index = items.firstIndex(where: {
+            $0.messageID == message.id
+        }) else { return }
+        let visibleBounds = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        let anchor: CGRect
+        let presentation: ReactionActionMenuPresentation
+        let preferredEdge: NSRectEdge?
+        if layouts.indices.contains(index),
+           let bubble = layouts[index].bubbleRegion,
+           case let visibleBubble = bubble.frame.offsetBy(
+               dx: 0,
+               dy: displayedRowOrigin(at: index)
+           ).intersection(visibleBounds),
+           !visibleBubble.isNull
+        {
+            anchor = visibleBubble
+            presentation = .inline
+            preferredEdge = bubble.isOutgoing ? .minX : .maxX
+        } else {
+            let rowFrame = rowFrame(at: index)
+            let visibleRow = rowFrame.intersection(visibleBounds)
+            let diameter = HoverActionPillMetrics.controlDiameter
+            anchor = CGRect(
+                x: rowFrame.maxX - diameter - InterfaceScale.metric(4),
+                y: visibleRow.isNull ? rowFrame.minY : visibleRow.minY,
+                width: diameter,
+                height: diameter
+            )
+            presentation = .toolbar
+            preferredEdge = nil
+        }
+        showReactionPicker(
+            for: message,
+            anchor: anchor,
+            presentation: presentation,
+            preferredEdge: preferredEdge
+        )
+    }
+
     func showReactionPicker(
         for message: Message,
         anchor: CGRect,
-        preferredEdge: NSRectEdge
+        presentation: ReactionActionMenuPresentation,
+        preferredEdge: NSRectEdge? = nil
     ) {
         guard let model else { return }
         reactionPickerSource.frame = anchor
@@ -430,11 +477,8 @@ extension NativeTimelineCanvasView {
         reactionPickerCoordinator.update(
             sourceView: reactionPickerSource,
             isPresented: true,
-            preferredEdge: preferredEdge,
-            accessibilityIdentifier:
-                preferredEdge == .maxX
-                    ? "reaction-picker-inline"
-                    : "reaction-picker-toolbar",
+            preferredEdge: preferredEdge ?? presentation.popoverEdge,
+            accessibilityIdentifier: presentation.pickerAccessibilityIdentifier,
             content: content,
             setPresented: { [weak self] isPresented in
                 if !isPresented {
@@ -1312,7 +1356,7 @@ extension NativeTimelineCanvasView {
         case .retrySending:
             { actions.retry(row.message) }
         case .addReaction:
-            { actions.react("👍", row.message) }
+            { [weak self] in self?.showReactionPicker(forMessageRow: row.message) }
         case .reply:
             {
                 guard let reply = actions.reply else { return }
