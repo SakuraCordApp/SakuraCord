@@ -138,7 +138,7 @@ extension AppModel {
         } ?? false
     }
 
-    private func messagePermissionContext(
+    func messagePermissionContext(
         for channelID: ChannelID
     ) -> (channel: Channel, isThread: Bool)? {
         if let channel = rootMessageChannel(channelID) {

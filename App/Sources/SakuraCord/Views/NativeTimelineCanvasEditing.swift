@@ -221,6 +221,7 @@ extension NativeTimelineCanvasView {
                 removeActionCapsule()
                 return
             }
+            refreshActionCapsuleMessage(row.message)
             positionActionCapsule(at: index)
             return
         }
@@ -247,6 +248,7 @@ extension NativeTimelineCanvasView {
         }
 
         if actionCapsuleMessageID == row.id {
+            refreshActionCapsuleMessage(row.message)
             positionActionCapsule(at: index)
             return
         }
@@ -266,21 +268,6 @@ extension NativeTimelineCanvasView {
         model: AppModel,
         actions: NativeTimelineRowActions
     ) {
-        let state = NativeTimelineActionCapsuleState()
-        state.presentationDidChange = { [weak self, weak state] isPresented in
-            Task { @MainActor [weak self, weak state] in
-                await Task.yield()
-                guard let self,
-                      let state,
-                      self.actionCapsuleState === state
-                else { return }
-                if isPresented {
-                    self.refreshActionCapsuleSizeAndPosition()
-                } else {
-                    self.reconcileActionCapsule()
-                }
-            }
-        }
         let canEdit = row.message.author.id == model.snapshot?.currentUser.id
             && !row.message.hasPoll
             && !row.message.flags.contains(.voiceMessage)
@@ -314,9 +301,39 @@ extension NativeTimelineCanvasView {
         let openThread = row.message.thread.map { thread in
             { actions.openThread(thread) }
         }
+        let controlCount = jumpToMessage == nil
+            ? (row.message.outboxState == .failed
+                ? 2
+                : 3
+                + (retry == nil ? 0 : 1)
+                + (reply == nil ? 0 : 1)
+                + (forward == nil ? 0 : 1)
+                + (canEdit ? 1 : 0)
+                + (canDelete ? 1 : 0)
+                + (openThread == nil ? 0 : 1))
+            : 1 + (unpinMessage == nil ? 0 : 1) + (messageInteractionContext == .inboxMention ? 1 : 0)
+        let state = NativeTimelineActionCapsuleState(
+            message: row.message,
+            controlCount: controlCount,
+            allowsQuickReactions: jumpToMessage == nil && model.canCreateReactions(on: row.message)
+        )
+        state.updateAvailableWidth(bounds.width)
+        state.presentationDidChange = { [weak self, weak state] isPresented in
+            Task { @MainActor [weak self, weak state] in
+                await Task.yield()
+                guard let self,
+                      let state,
+                      self.actionCapsuleState === state
+                else { return }
+                if isPresented {
+                    self.refreshActionCapsuleSizeAndPosition()
+                } else {
+                    self.reconcileActionCapsule()
+                }
+            }
+        }
         let root = NativeTimelineActionCapsuleOverlay(
             model: model,
-            message: row.message,
             canEdit: canEdit,
             canDelete: canDelete,
             state: state,
@@ -338,6 +355,14 @@ extension NativeTimelineCanvasView {
             openThread: openThread,
             delete: { actions.delete(row.message) }
         )
+        actionCapsuleState = state
+        actionCapsuleHost = addActionCapsuleHost(root, identifier: "message-action-capsule-\(row.id)")
+        actionCapsuleMessageID = row.id
+        actionCapsuleSize = state.actionSize
+        positionActionCapsule(at: index)
+    }
+
+    private func addActionCapsuleHost(_ root: some View, identifier: String) -> NativeTimelineActionCapsuleHost {
         // The canvas owns the capsule's exact document-coordinate frame.
         // Nested thread timelines extend beneath their top toolbar, so this
         // host must not inherit that container's safe-area displacement.
@@ -346,26 +371,9 @@ extension NativeTimelineCanvasView {
         host.setContentHuggingPriority(.required, for: .vertical)
         host.setContentCompressionResistancePriority(.required, for: .horizontal)
         host.setContentCompressionResistancePriority(.required, for: .vertical)
-        host.setAccessibilityIdentifier("message-action-capsule-\(row.id)")
+        host.setAccessibilityIdentifier(identifier)
         addSubview(host, positioned: .above, relativeTo: nil)
-        actionCapsuleState = state
-        actionCapsuleHost = host
-        actionCapsuleMessageID = row.id
-        let controlCount = jumpToMessage == nil
-            ? (row.message.outboxState == .failed
-                ? 2
-                : 3
-                + (retry == nil ? 0 : 1)
-                + (reply == nil ? 0 : 1)
-                + (forward == nil ? 0 : 1)
-                + (canEdit ? 1 : 0)
-                + (canDelete ? 1 : 0)
-                + (openThread == nil ? 0 : 1))
-            : 1 + (unpinMessage == nil ? 0 : 1) + (messageInteractionContext == .inboxMention ? 1 : 0)
-        actionCapsuleSize = HoverActionPillMetrics.size(
-            controlCount: controlCount
-        )
-        positionActionCapsule(at: index)
+        return host
     }
 
     func refreshActionCapsuleSizeAndPosition(at knownIndex: Int? = nil) {
@@ -380,6 +388,13 @@ extension NativeTimelineCanvasView {
     }
 
     func positionActionCapsule(at knownIndex: Int? = nil) {
+        if let state = actionCapsuleState {
+            let previouslyShown = state.showsQuickReactions
+            state.updateAvailableWidth(bounds.width)
+            if state.showsQuickReactions != previouslyShown, !state.isDeleteConfirmationPresented {
+                actionCapsuleSize = state.actionSize
+            }
+        }
         guard let host = actionCapsuleHost,
               let size = actionCapsuleSize,
               let messageID = actionCapsuleMessageID,
@@ -412,6 +427,13 @@ extension NativeTimelineCanvasView {
                 height: size.height
             )
         }
+    }
+
+    /// Keeps a shown capsule on the row's current message, such as after a
+    /// reaction toggles, without reinstalling it.
+    private func refreshActionCapsuleMessage(_ message: Message) {
+        guard let state = actionCapsuleState, state.message != message else { return }
+        state.message = message
     }
 
     func removeActionCapsule() {

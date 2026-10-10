@@ -259,6 +259,36 @@ nonisolated enum NativeTimelineTransientRowGeometry {
 
 @MainActor
 final class NativeTimelineActionCapsuleState: ObservableObject {
+    /// The hovered message; the canvas replaces it when the row changes so
+    /// reaction-dependent controls stay current while the capsule is shown.
+    @Published var message: Message
+
+    let controlCount: Int
+    let allowsQuickReactions: Bool
+    @Published var showsQuickReactions = false
+
+    init(message: Message, controlCount: Int, allowsQuickReactions: Bool) {
+        self.message = message
+        self.controlCount = controlCount
+        self.allowsQuickReactions = allowsQuickReactions
+    }
+
+    var actionSize: CGSize {
+        HoverActionPillMetrics.size(
+            controlCount: controlCount + (showsQuickReactions ? QuickReactionPolicy.limit : 0),
+            dividerCount: showsQuickReactions ? 1 : 0
+        )
+    }
+
+    func updateAvailableWidth(_ width: CGFloat) {
+        let showsQuickReactions = allowsQuickReactions
+            && HoverActionPillMetrics.size(controlCount: controlCount + QuickReactionPolicy.limit, dividerCount: 1).width
+            <= width - InterfaceScale.metric(16)
+        if self.showsQuickReactions != showsQuickReactions {
+            self.showsQuickReactions = showsQuickReactions
+        }
+    }
+
     @Published var isReactionPickerPresented = false {
         didSet {
             guard oldValue != isReactionPickerPresented else { return }
@@ -282,7 +312,6 @@ final class NativeTimelineActionCapsuleState: ObservableObject {
 
 struct NativeTimelineActionCapsuleOverlay: View {
     let model: AppModel
-    let message: Message
     let canEdit: Bool
     let canDelete: Bool
     @ObservedObject var state: NativeTimelineActionCapsuleState
@@ -327,9 +356,10 @@ struct NativeTimelineActionCapsuleOverlay: View {
             } else {
                 MessageActionCapsule(
                     model: model,
-                    message: message,
+                    message: state.message,
                     canEdit: canEdit,
                     canDelete: canDelete,
+                    showsQuickReactions: state.showsQuickReactions,
                     isReactionPickerPresented: $state.isReactionPickerPresented,
                     isDeleteConfirmationPresented:
                         $state.isDeleteConfirmationPresented,

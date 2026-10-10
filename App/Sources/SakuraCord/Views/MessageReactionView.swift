@@ -339,7 +339,7 @@ struct MessageReactionPill: View {
     }
 }
 
-private struct MessageReactionEmoji: View {
+struct MessageReactionEmoji: View {
     let reaction: Reaction
     let url: URL?
     let size: CGFloat

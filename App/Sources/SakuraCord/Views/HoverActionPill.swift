@@ -5,16 +5,29 @@ nonisolated enum HoverActionPillMetrics {
     static var spacing: CGFloat { InterfaceScale.metric(1) }
     static var padding: CGFloat { InterfaceScale.metric(4) }
 
-    static func size(controlCount: Int) -> CGSize {
+    static var dividerWidth: CGFloat { 1 + InterfaceScale.metric(3) * 2 }
+
+    static func size(controlCount: Int, dividerCount: Int = 0) -> CGSize {
         let count = max(1, controlCount)
         let diameter = controlDiameter
         return CGSize(
             width:
                 padding * 2
                 + diameter * CGFloat(count)
-                + spacing * CGFloat(count - 1),
+                + spacing * CGFloat(count - 1)
+                + (dividerWidth + spacing) * CGFloat(dividerCount),
             height: padding * 2 + diameter
         )
+    }
+}
+
+struct HoverActionPillDivider: View {
+    var body: some View {
+        Capsule()
+            .fill(Color.primary.opacity(0.16))
+            .frame(width: 1, height: HoverActionPillMetrics.controlDiameter * 0.6)
+            .frame(width: HoverActionPillMetrics.dividerWidth)
+            .accessibilityHidden(true)
     }
 }
 

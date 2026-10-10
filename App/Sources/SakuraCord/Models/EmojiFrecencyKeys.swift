@@ -5,6 +5,9 @@ import SakuraCordModels
 /// Discord's unique names include skin tones; picker presentation folds tones
 /// back to the base emoji only after ranking and the 42-candidate cutoff.
 enum EmojiFrecencyKeys {
+    /// Discord's frequently used cutoff, applied to resolved keys before folding.
+    static let frequentlyUsedCandidateLimit = 42
+
     private struct Catalog: Decodable { var entries: [String: [String]] }
     private static let entries: [String: [String]] = {
         guard let url = Bundle.module.url(forResource: "emoji-frecency-keys", withExtension: "json"),
@@ -52,7 +55,8 @@ enum EmojiFrecencyKeys {
         text.compactMap { keysByValue[normalized(String($0))] }
     }
 
-    private static func normalized(_ value: String) -> String {
+    /// Emoji identity ignores the U+FE0F variation selector.
+    static func normalized(_ value: String) -> String {
         value.replacingOccurrences(of: "\u{FE0F}", with: "")
     }
 }
