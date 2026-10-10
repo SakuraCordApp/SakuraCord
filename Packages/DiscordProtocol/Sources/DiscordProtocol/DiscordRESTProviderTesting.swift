@@ -31,6 +31,10 @@ import SakuraCordModels
             }
         }
 
+        func setPendingMemberGuildForTesting(_ guildID: GuildID) {
+            pendingMemberGuildID = guildID
+        }
+
         func seedGuildChannelForTesting(_ channel: Channel) {
             guard let guildID = channel.guildID else { return }
             cachedChannels[guildID, default: []].removeAll {

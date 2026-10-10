@@ -70,6 +70,48 @@ extension DiscordRESTProvider {
                 groups: cachedMemberListGroups[guildID]?[update.id] ?? []
             )
         }
+        await resubscribeInvalidatedMemberListRanges(update, guildID: guildID)
+    }
+
+    /// INVALIDATE keeps the last rows of an accessible list, but Discord
+    /// also sends it for ranges that are still on screen (permission or
+    /// list-id changes). Every retained list with an overlapping range is
+    /// marked for refresh; the selected one is re-sent now so Discord answers
+    /// with a fresh SYNC, and the others are re-sent when selected again.
+    func resubscribeInvalidatedMemberListRanges(
+        _ update: GuildMemberListUpdateDTO,
+        guildID: GuildID
+    ) async {
+        guard let subscription = memberListSubscriptions[guildID]?[update.id],
+              isMemberListAccessible(guildID: guildID, memberListID: update.id)
+        else { return }
+        let invalidatedOverlapsSubscription = update.ops.contains { operation in
+            guard operation.op == "INVALIDATE",
+                  let range = operation.range, range.count == 2,
+                  range[0] <= range[1]
+            else { return false }
+            let invalidated = range[0] ... range[1]
+            return subscription.ranges.contains { $0.overlaps(invalidated) }
+        }
+        guard invalidatedOverlapsSubscription else { return }
+        memberListsNeedingRefresh[guildID, default: []].insert(update.id)
+        guard guildID == pendingMemberGuildID,
+              update.id == selectedMemberListID[guildID]
+        else { return }
+        do {
+            // subscribeToMemberList clears the marker only after a successful
+            // send, so a rate-limited send is retried by the next viewport
+            // report or reconnect.
+            try await subscribeToMemberList(
+                guildID: guildID,
+                channelID: subscription.channelID,
+                ranges: subscription.ranges
+            )
+        } catch {
+            gatewayLogger.error(
+                "Member-list resubscribe after INVALIDATE failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     func handleGuildMembersChunkDispatch(

@@ -193,6 +193,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var memberListSubscriptions:
         [GuildID: [String: DiscordMemberListSubscription]] = [:]
     var memberListSubscriptionOrder: [GuildID: [String]] = [:]
+    /// Retained member lists whose subscribed ranges were invalidated and
+    /// still need a subscription send to get a fresh SYNC.
+    var memberListsNeedingRefresh: [GuildID: Set<String>] = [:]
     var cachedGatewayUsersByID: [String: UserDTO] = [:]
     var cachedGatewayUserOrder: [String] = []
     var cachedGatewayUserIDs: Set<String> = []

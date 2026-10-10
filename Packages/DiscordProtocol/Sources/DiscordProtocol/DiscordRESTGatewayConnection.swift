@@ -379,6 +379,9 @@ extension DiscordRESTProvider {
         let selectedChannel = requestedChannelID.flatMap { requestedID in
             cachedChannels[guildID]?.first(where: { $0.id == requestedID })
         } ?? channel
+        let previousSubscriptions = memberListSubscriptions[guildID]
+        let previousOrder = memberListSubscriptionOrder[guildID]
+        var selectedListID: String?
         let subscriptionState = selectedChannel.map { channel in
             let memberListID = DiscordMemberListIdentity.id(
                 for: channel,
@@ -386,6 +389,7 @@ extension DiscordRESTProvider {
                 roles: cachedGuildRoles[guildID] ?? []
             )
             selectedMemberListID[guildID] = memberListID
+            selectedListID = memberListID
             return DiscordMemberListRangePolicy.subscriptionState(
                 selecting: memberListID,
                 channelID: channel.id,
@@ -401,7 +405,16 @@ extension DiscordRESTProvider {
                 threadMemberLists: threadMemberSubscriptions[guildID]
             )
         )
-        if let subscriptionState {
+        if let selectedListID {
+            memberListsNeedingRefresh[guildID]?.remove(selectedListID)
+        }
+        // Another subscription send may have committed newer state while this
+        // one awaited; that state already reflects the later request, so a
+        // value computed before the await must not overwrite it.
+        if let subscriptionState,
+           memberListSubscriptions[guildID] == previousSubscriptions,
+           memberListSubscriptionOrder[guildID] == previousOrder
+        {
             memberListSubscriptionOrder[guildID] = subscriptionState.memberListOrder
             memberListSubscriptions[guildID] =
                 subscriptionState.subscriptionsByMemberListID
@@ -444,11 +457,14 @@ extension DiscordRESTProvider {
                 groups: cachedMemberListGroups[guildID]?[memberListID] ?? []
             )
         }
-        if !DiscordMemberListRangePolicy.requiresSubscriptionUpdate(
-            memberListID: memberListID,
-            ranges: ranges,
-            currentSubscriptions: memberListSubscriptions[guildID] ?? [:]
-        ) {
+        let needsRefresh = memberListsNeedingRefresh[guildID]?.contains(memberListID) == true
+        if !needsRefresh,
+           !DiscordMemberListRangePolicy.requiresSubscriptionUpdate(
+               memberListID: memberListID,
+               ranges: ranges,
+               currentSubscriptions: memberListSubscriptions[guildID] ?? [:]
+           )
+        {
             return
         }
         try await subscribeToMemberList(

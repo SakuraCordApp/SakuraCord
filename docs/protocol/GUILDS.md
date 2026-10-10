@@ -133,6 +133,11 @@ identities separately from message bodies; member-list presentation should neith
 scan history nor create a REST fan-out. Full profile reads are explicit/coalesced
 and are not a substitute for guild member state. Check current access before
 publishing a cached channel or member result after asynchronous work.
+A member-list `INVALIDATE` keeps the last known rows only while the list's channel
+is still accessible and resolves to the same list; otherwise the rows are cleared.
+An overlapping `INVALIDATE` marks the retained list for refresh: the selected list
+is re-sent at once, others on their next viewport report, and a failed send keeps
+the marker for the next viewport report or reconnect.
 
 ### Thread member inspector
 

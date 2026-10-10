@@ -33,6 +33,7 @@ extension DiscordRESTProvider {
         selectedMemberListID[guildID] = nil
         memberListSubscriptions[guildID] = nil
         memberListSubscriptionOrder[guildID] = nil
+        memberListsNeedingRefresh[guildID] = nil
         cachedMemberListGroups[guildID] = nil
         requestedHistoryMemberIDs[guildID] = nil
         resolvingHistoryMemberIDs[guildID] = nil
