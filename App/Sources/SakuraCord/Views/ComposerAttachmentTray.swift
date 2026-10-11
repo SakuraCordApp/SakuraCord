@@ -5,6 +5,7 @@ struct ComposerAttachmentTray: View {
     static var thumbnailCornerRadius: CGFloat { InterfaceScale.metric(16) }
 
     @AppStorage(PrivacySafetySettingsStore.anonymiseFileNamesKey, store: PRBuildProfile.defaults) private var anonymisesFileNames = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let attachments: [ForumPostAttachment]
     var sendTransitionAnchor: ComposerSendTransitionAnchor?
     let open: (UUID) -> Void
@@ -13,6 +14,7 @@ struct ComposerAttachmentTray: View {
     let remove: (UUID) -> Void
     @State private var hoveredID: UUID?
     @State private var editingTarget: ComposerAttachmentEditorTarget?
+    @State private var hasAppeared = false
 
     private let tileSize: CGFloat = InterfaceScale.metric(230)
     private let filenameRowHeight: CGFloat = InterfaceScale.metric(38)
@@ -29,8 +31,15 @@ struct ComposerAttachmentTray: View {
             .padding(.vertical, InterfaceScale.metric(14))
         }
         .scrollIndicators(.hidden)
-        .frame(height: tileSize + 28)
+        .frame(height: reduceMotion || hasAppeared ? tileSize + 28 : 0)
+        .opacity(reduceMotion || hasAppeared ? 1 : 0)
         .accessibilityLabel("Message attachments")
+        .onAppear {
+            guard !hasAppeared else { return }
+            withAnimation(reduceMotion ? nil : .smooth(duration: 0.18)) {
+                hasAppeared = true
+            }
+        }
         .onChange(of: anonymisesFileNames) { _, enabled in
             for var attachment in attachments {
                 attachment.setFilenameAnonymised(enabled)
@@ -115,6 +124,7 @@ struct ComposerAttachmentTray: View {
                 maximumPixelDimension: 480,
                 preservesImageAspectRatio: true,
                 imageCornerRadius: Self.thumbnailCornerRadius,
+                animatesImageAppearance: true,
                 onImageLoaded: { [sendTransitionAnchor] image in
                     sendTransitionAnchor?.recordAttachmentThumbnail(image, for: attachment.id)
                 }

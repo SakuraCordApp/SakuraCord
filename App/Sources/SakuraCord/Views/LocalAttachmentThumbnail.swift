@@ -10,6 +10,7 @@ struct LocalAttachmentThumbnail: View {
     var cachedImage: NSImage?
     var preservesImageAspectRatio = false
     var imageCornerRadius: CGFloat = 0
+    var animatesImageAppearance = false
     var onImageLoaded: ((NSImage) -> Void)?
     @State private var image: NSImage?
 
@@ -24,6 +25,7 @@ struct LocalAttachmentThumbnail: View {
                         .clipShape(
                             ConcentricRectangle(cornerRadius: imageCornerRadius, style: .continuous)
                         )
+                        .modifier(AttachmentImageReveal(isEnabled: animatesImageAppearance && isImageFile))
                 } else {
                     Image(nsImage: displayImage)
                         .resizable()
@@ -31,6 +33,7 @@ struct LocalAttachmentThumbnail: View {
                         .clipShape(
                             ConcentricRectangle(cornerRadius: imageCornerRadius, style: .continuous)
                         )
+                        .modifier(AttachmentImageReveal(isEnabled: animatesImageAppearance && isImageFile))
                 }
                 if isVideoFile {
                     Image(systemName: "play.fill")
@@ -122,5 +125,50 @@ struct LocalAttachmentThumbnail: View {
             height: maximumPixelDimension
         )
         return try? await generator.image(at: .zero).image
+    }
+}
+
+private struct AttachmentImageReveal: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hasAppeared = false
+    let isEnabled: Bool
+
+    private var progress: CGFloat {
+        isEnabled && !reduceMotion && !hasAppeared ? 0 : 1
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .animation(isEnabled && !reduceMotion ? .easeOut(duration: 0.18) : nil) { image in
+                image.opacity(progress)
+            }
+            .blur(radius: InterfaceScale.metric(3) * (1 - progress))
+            .offset(y: InterfaceScale.metric(6) * (1 - progress))
+            .mask {
+                AttachmentImageRevealMask(progress: progress)
+            }
+            .onAppear {
+                guard !hasAppeared else { return }
+                // Start when the decoded image appears, rather than when loading begins.
+                withAnimation(isEnabled && !reduceMotion ? .smooth(duration: 0.28) : nil) {
+                    hasAppeared = true
+                }
+            }
+    }
+}
+
+@Animatable
+private struct AttachmentImageRevealMask: View {
+    var progress: CGFloat
+
+    var body: some View {
+        let feather: CGFloat = 0.18
+        let edge = 1 - progress * (1 + feather)
+        // Move the feather fully above the image so the finished preview stays opaque.
+        LinearGradient(
+            colors: [.clear, .black],
+            startPoint: UnitPoint(x: 0.5, y: edge),
+            endPoint: UnitPoint(x: 0.5, y: edge + feather)
+        )
     }
 }
