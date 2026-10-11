@@ -1294,7 +1294,7 @@ struct ComposerView: View {
 }
 
 private extension ComposerView {
-    /// Bubble timelines animate a sent message out of the field; the
+    /// Timelines animate a sent message out of the field; the
     /// timeline consumes this when the optimistic row arrives.
     func registerSendTransition(
         channelID: ChannelID,
@@ -1302,13 +1302,12 @@ private extension ComposerView {
     ) {
         // A send from older history first loads the newest messages, so
         // the field stays editable and nothing arrives to take it over yet.
-        guard model.appearanceSettings.messageAppearance == .bubbles,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               conversation == .thread || !model.hasMoreLaterMessages,
               let source = sendTransitionAnchor.source(
                   channelID: channelID,
                   content: draft.trimmingCharacters(in: .whitespacesAndNewlines),
-                  attachments: attachments
+                  attachments: model.appearanceSettings.messageAppearance == .bubbles ? attachments : []
               )
         else { return }
         model.timelineSendTransitionStore.register(source)

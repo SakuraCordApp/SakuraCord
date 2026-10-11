@@ -259,6 +259,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     /// Destination geometry in this view's (unflipped) coordinates.
     struct Geometry {
         let fieldFrame: CGRect
+        let usesBubble: Bool
         let bubbleFrame: CGRect
         let bubbleCornerRadius: CGFloat
         /// Relative to the bubble's bottom trailing corner.
@@ -380,7 +381,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             fadeIn(tailLayer, duration: Timing.tailFadeDuration, delay: Timing.tailFadeDelay)
         }
 
-        clipLayer.masksToBounds = true
+        clipLayer.masksToBounds = geometry.usesBubble
         morph(
             clipLayer, from: field, to: bubble,
             cornerRadius: (fieldCornerRadius, geometry.bubbleCornerRadius)
@@ -652,15 +653,18 @@ extension NativeTimelineCanvasView {
               case let .message(row, _, _) = items[index]
         else { return nil }
         let layout = layouts[index]
-        guard let region = layout.bubbleRegion, region.isOutgoing else { return nil }
+        guard layout.bubbleRegion?.isOutgoing != false,
+              let destination = Self.sendTransitionFrame(of: layout)
+        else { return nil }
+        let region = layout.bubbleRegion
         let rowFrame = rowFrame(at: index)
         let toWindow = { (rect: CGRect) in
             self.convert(rect.offsetBy(dx: rowFrame.minX, dy: rowFrame.minY), to: nil)
         }
-        let bubbleInWindow = toWindow(region.frame)
+        let bubbleInWindow = toWindow(destination)
         guard convert(visibleRect, to: nil).intersects(bubbleInWindow) else { return nil }
         let flyingAttachments = Set(source.attachments.indices.filter {
-            source.attachments[$0] != nil && layout.attachmentRegions.indices.contains($0)
+            region != nil && source.attachments[$0] != nil && layout.attachmentRegions.indices.contains($0)
         })
         // A preview that fades out, such as a file icon, reveals what the
         // bubble draws there instead.
@@ -700,17 +704,20 @@ extension NativeTimelineCanvasView {
         }
         var fillColor = NSColor.clear.cgColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            fillColor = NativeTimelineBubbleDrawing.fillColor(for: region).cgColor
+            if let region {
+                fillColor = NativeTimelineBubbleDrawing.fillColor(for: region).cgColor
+            }
         }
         let geometry = NativeTimelineSendTransitionOverlay.Geometry(
             fieldFrame: fieldFrame,
+            usesBubble: region != nil,
             bubbleFrame: bubbleFrame,
             bubbleCornerRadius: min(
                 NativeTimelineBubbleDrawing.cornerRadius,
                 bubbleFrame.height / 2,
                 bubbleFrame.width / 2
             ),
-            tailPath: region.showsTail ? Self.sendTransitionTailPath() : nil,
+            tailPath: region?.showsTail == true ? Self.sendTransitionTailPath() : nil,
             fillColor: fillColor,
             contentImage: content.image,
             contentFrame: toOverlay(content.frameInWindow),
@@ -732,13 +739,13 @@ extension NativeTimelineCanvasView {
     private func reconcileSendTransition(_ transition: NativeTimelineSendTransition) {
         guard let index = items.lastIndex(where: { $0.identifier == transition.identifier }),
               layouts.indices.contains(index),
-              let region = layouts[index].bubbleRegion
+              let destination = Self.sendTransitionFrame(of: layouts[index])
         else {
             finishSendTransition(transition)
             return
         }
         let rowFrame = rowFrame(at: index)
-        let bubbleInWindow = convert(region.frame.offsetBy(dx: rowFrame.minX, dy: rowFrame.minY), to: nil)
+        let bubbleInWindow = convert(destination.offsetBy(dx: rowFrame.minX, dy: rowFrame.minY), to: nil)
         let previous = transition.bubbleFrameInWindow
         guard abs(bubbleInWindow.width - previous.width) < 0.5,
               abs(bubbleInWindow.height - previous.height) < 0.5
@@ -862,17 +869,20 @@ extension NativeTimelineCanvasView {
         rowFrame: CGRect
     ) {
         guard hidesRowForSendTransition(item.identifier),
-              let region = layout.bubbleRegion,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
         context.saveGState()
         context.setBlendMode(.clear)
-        context.addPath(NativeTimelineBubbleDrawing.path(for: NativeTimelineBubbleRegion(
-            frame: region.frame.offsetBy(dx: rowFrame.minX, dy: rowFrame.minY).insetBy(dx: -1, dy: -1),
-            isOutgoing: region.isOutgoing,
-            showsTail: region.showsTail
-        )).cgPath)
-        context.fillPath()
+        if let region = layout.bubbleRegion {
+            context.addPath(NativeTimelineBubbleDrawing.path(for: NativeTimelineBubbleRegion(
+                frame: region.frame.offsetBy(dx: rowFrame.minX, dy: rowFrame.minY).insetBy(dx: -1, dy: -1),
+                isOutgoing: region.isOutgoing,
+                showsTail: region.showsTail
+            )).cgPath)
+            context.fillPath()
+        } else if let frame = Self.sendTransitionFrame(of: layout) {
+            context.fill(frame.offsetBy(dx: rowFrame.minX, dy: rowFrame.minY))
+        }
         context.restoreGState()
     }
 
@@ -1003,9 +1013,9 @@ extension NativeTimelineCanvasView {
         rowFrame: CGRect,
         omittingAttachments omitted: Set<Int>
     ) -> SendTransitionContent? {
-        guard let region = layout.bubbleRegion else { return nil }
-        let bubblePath = NativeTimelineBubbleDrawing.path(for: region)
-        let drawRect = bubblePath.bounds.insetBy(dx: -1, dy: -1).integral
+        guard let frame = Self.sendTransitionFrame(of: layout) else { return nil }
+        let bubblePath = layout.bubbleRegion.map { NativeTimelineBubbleDrawing.path(for: $0) }
+        let drawRect = (bubblePath?.bounds ?? frame).insetBy(dx: -1, dy: -1).integral
         guard let image = NativeTimelineSendTransitionSnapshot.render(
             size: drawRect.size,
             scale: window?.backingScaleFactor ?? 2,
@@ -1013,7 +1023,11 @@ extension NativeTimelineCanvasView {
                 guard let context = NSGraphicsContext.current?.cgContext else { return }
                 context.translateBy(x: -drawRect.minX, y: -drawRect.minY)
                 effectiveAppearance.performAsCurrentDrawingAppearance {
-                    bubblePath.addClip()
+                    if let bubblePath {
+                        bubblePath.addClip()
+                    } else {
+                        context.clip(to: frame)
+                    }
                     NativeTimelineRowPainter.draw(
                         item: item,
                         layout: layout,
@@ -1046,6 +1060,15 @@ extension NativeTimelineCanvasView {
                 convert(CGPoint(x: rowFrame.minX + $0.x, y: rowFrame.minY + $0.y), to: nil)
             }
         )
+    }
+
+    /// Regular rows keep their avatar, author and accessories in place.
+    /// Only the text's drawing area participates in the send transition.
+    private static func sendTransitionFrame(of layout: NativeTimelineRowLayout) -> CGRect? {
+        if let region = layout.bubbleRegion { return region.frame }
+        return layout.contentFrame.map {
+            NativeTimelineTextGeometry.messageContentDrawingFrame($0).insetBy(dx: -1, dy: -1).integral
+        }
     }
 
     /// The leading end of the message text's first baseline in row
@@ -1104,7 +1127,6 @@ extension NativeMessageTimelineCoordinator {
         for parent: NativeMessageTimelineView
     ) -> SendTransitionTranscriptAnchor? {
         guard parent.conversation == self.parent.conversation,
-              parent.model.appearanceSettings.messageAppearance == .bubbles,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               let channelID = parent.conversation.sendTransitionChannelID,
               let canvas
