@@ -296,17 +296,31 @@ extension AppModel {
         let guide = onboarding.guides[guildID]?.configuration
         let resources = guide?.enabled == true ? Set(guide?.resourceChannels.map(\.channelID) ?? []) : []
         let settings = presentedGuildChannelSettings(in: guildID)
-        let filtersSelection = !showsAllChannels(in: guildID)
+        // `showsAllChannels` re-derives the same settings struct; read the one
+        // flag it needs from the copy already taken instead of building a second.
+        let filtersSelection = featuresSettings.channelManagement
+            && hasChannelsAndRoles(in: guildID)
+            && settings.flags & GuildChannelSelection.enabledFlag != 0
+        // `hasGuildGuide` scans every channel in the snapshot, and
+        // `GuildChannelSelection.isSelected` linearly scans the guild's
+        // overrides. Both are independent of the channel being filtered, so
+        // resolve them once here instead of once per channel.
         let hasGuide = filtersSelection && hasGuildGuide(in: guildID)
+        let selectedChannelIDs = Set(
+            settings.channelOverrides
+                .filter { $0.flags & GuildChannelSelection.selectedFlag != 0 }
+                .map(\.channelID)
+        )
         let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
         return groups.compactMap { group -> ChannelGroup? in
             var group = group
+            let categoryIsSelected = group.categoryID.map { selectedChannelIDs.contains($0) } ?? false
             group.channels.removeAll { channel in
                 guard filtersSelection else { return false }
                 if hasGuide, resources.contains(channel.id) || channel.flags & (1 << 7) != 0,
                    channel.id != activeChannelID { return true }
-                guard !GuildChannelSelection.isSelected(channel.id, settings: settings),
-                      !(group.categoryID.map { GuildChannelSelection.isSelected($0, settings: settings) } ?? false),
+                guard !selectedChannelIDs.contains(channel.id),
+                      !categoryIsSelected,
                       channel.id != activeVoiceChannel?.id, channel.id != activeChannelID,
                       channel.mentionCount == 0 else { return false }
                 return true

@@ -408,7 +408,777 @@ import UserNotifications
 }
 
 @MainActor
-@Test func `app model loads demo and sends message`() async {
+@Test(.timeLimit(.minutes(1)))
+func `leaving a busy channel keeps its cached window and returns to it warm`() async throws {
+    let user = User(id: UserID(rawValue: 7_001), username: "busy", displayName: "Busy")
+    let firstChannel = Channel(id: ChannelID(rawValue: 7_100), guildID: nil, name: "first")
+    let secondChannel = Channel(id: ChannelID(rawValue: 7_101), guildID: nil, name: "second")
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: firstChannel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    let provider = MockChatProvider(
+        snapshot: BootstrapSnapshot(
+            currentUser: user,
+            guilds: [],
+            channels: [firstChannel, secondChannel],
+            members: []
+        ),
+        messages: [message(7_200), message(7_201)]
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [firstChannel, secondChannel],
+        members: []
+    )
+    model.visibleChannels = [firstChannel, secondChannel]
+    model.selectedChannel = firstChannel
+    model.selectedChannelID = firstChannel.id
+    await model.start()
+    #expect(await until { model.hasCompletedInitialMessageLoad })
+    #expect(model.messages.map(\.id.rawValue) == [7_200, 7_201])
+
+    // A message arriving above the viewport is the state that used to discard
+    // the entire cached window on the way out.
+    model.hasMoreLaterMessages = true
+    model.selectedChannelID = secondChannel.id
+
+    #expect(model.messageCache[firstChannel.id]?.map(\.id.rawValue) == [
+        7_200, 7_201,
+    ])
+    #expect(model.staleCachedTailChannelIDs == [firstChannel.id])
+
+    // Coming back presents the cached window immediately instead of cold
+    // loading, and the stale-tail marker is cleared once the tail is verified.
+    model.selectedChannelID = firstChannel.id
+    #expect(model.messages.map(\.id.rawValue) == [7_200, 7_201])
+    #expect(!model.isLoadingMessages)
+    #expect(model.hasCompletedInitialMessageLoad)
+    #expect(model.hasMoreCache[firstChannel.id] == false)
+    // The cached window is unchanged because the provider's newest page is
+    // the same page, so the reconcile must not replace or drop anything.
+    #expect(model.messages.map(\.id.rawValue) == [7_200, 7_201])
+    #expect(
+        await eventually {
+            !model.staleCachedTailChannelIDs.contains(firstChannel.id)
+        }
+    )
+    #expect(model.messages.map(\.id.rawValue) == [7_200, 7_201])
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a failed cached tail refresh keeps the window and retries on the next return`() async
+    throws
+{
+    let user = User(id: UserID(rawValue: 7_801), username: "retry", displayName: "Retry")
+    let channel = Channel(id: ChannelID(rawValue: 7_800), guildID: nil, name: "retained")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    // The provider knows nothing about this channel, so the tail refresh fails
+    // with channelNotFound instead of returning a page.
+    let provider = MockChatProvider(snapshot: snapshot, messages: [])
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(
+        with: [
+            Message(
+                id: MessageID(rawValue: UInt64(7_900)),
+                channelID: channel.id,
+                author: user,
+                content: "survives",
+                timestamp: Date(timeIntervalSince1970: 1)
+            )
+        ]
+    )
+    model.hasMoreCache[channel.id] = false
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    #expect(
+        await until {
+            !model.staleCachedTailChannelIDs.isEmpty
+                && model.hasCompletedInitialMessageLoad
+        }
+    )
+
+    let account = model.accountSession()
+    #expect(
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: account
+        ) == false
+    )
+
+    // A failed refresh must neither blank the window the user is reading nor
+    // forget that the tail is still unverified.
+    #expect(model.messages.map(\.id.rawValue) == [7_900])
+    #expect(model.staleCachedTailChannelIDs == [channel.id])
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `newest window reconciliation keeps older history and superseded messages`() {
+    let user = User(id: UserID(rawValue: 7_301), username: "tail", displayName: "Tail")
+    let channelID = ChannelID(rawValue: 7_300)
+    let older = Message(
+        id: MessageID(rawValue: UInt64(7_400)),
+        channelID: channelID,
+        author: user,
+        content: "kept",
+        timestamp: Date(timeIntervalSince1970: 1)
+    )
+    let superseded = Message(
+        id: MessageID(rawValue: UInt64(7_403)),
+        channelID: channelID,
+        author: user,
+        content: "superseded",
+        timestamp: Date(timeIntervalSince1970: 4)
+    )
+    let arriving = Message(
+        id: MessageID(rawValue: UInt64(7_401)),
+        channelID: channelID,
+        author: user,
+        content: "arriving",
+        timestamp: Date(timeIntervalSince1970: 5)
+    )
+    let model = AppModel(launchMode: .offlineTesting)
+    model.selectedChannelID = channelID
+    model.replaceSelectedMessages(with: [older, superseded])
+    model.hasMoreLaterMessages = true
+
+    let page = MessagePage(
+        messages: [arriving],
+        hasMoreBefore: false,
+        hasMoreAfter: false
+    )
+
+    // With older history still available, confirmed messages the fresh page
+    // supersedes are dropped and everything older stays on screen.
+    let keptOlderIDs = AppModel.reconcilingNewestPage(
+        current: model.messages,
+        fresh: page.messages,
+        hasMoreBefore: true,
+        authoritativeOldestMessageID: page.messages.map(\.id).min()
+    ).map(\.id)
+
+    // When the fresh page is the whole conversation, every confirmed message
+    // is replaced by it and only unconfirmed outbox messages survive.
+    let replacedIDs = AppModel.reconcilingNewestPage(
+        current: model.messages,
+        fresh: page.messages,
+        hasMoreBefore: page.hasMoreBefore,
+        authoritativeOldestMessageID: page.messages.map(\.id).min()
+    ).map(\.id)
+
+    #expect(keptOlderIDs == [
+        MessageID(rawValue: UInt64(7_400)),
+        MessageID(rawValue: UInt64(7_401)),
+    ])
+    #expect(replacedIDs == [MessageID(rawValue: UInt64(7_401))])
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a cached tail reconcile that cannot complete restores the marker`() async throws {
+    let user = User(id: UserID(rawValue: 7_901), username: "mid", displayName: "Mid")
+    let cached = Channel(id: ChannelID(rawValue: 7_900), guildID: nil, name: "cached")
+    let selected = Channel(id: ChannelID(rawValue: 7_902), guildID: nil, name: "selected")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [cached, selected],
+        members: []
+    )
+    let provider = MockChatProvider(snapshot: snapshot, messages: [])
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [cached, selected]
+    model.selectedChannel = selected
+    model.selectedChannelID = selected.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(
+        with: [
+            Message(
+                id: MessageID(rawValue: UInt64(7_950)),
+                channelID: cached.id,
+                author: user,
+                content: "cached",
+                timestamp: Date(timeIntervalSince1970: 1)
+            )
+        ]
+    )
+    model.hasMoreCache[cached.id] = false
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [cached.id]
+
+    // The conversation is no longer selected — the state a navigation away
+    // mid-read leaves behind. The read must not complete and the marker must
+    // come back, or a later return would present a stale tail as final.
+    #expect(
+        await model.reconcileCachedConversationTail(
+            channelID: cached.id,
+            account: model.accountSession()
+        ) == false
+    )
+    #expect(model.staleCachedTailChannelIDs == [cached.id])
+    #expect(model.messages.map(\.id.rawValue) == [7_950])
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a cached tail reconcile with nothing new leaves the window untouched`() async throws {
+    let user = User(id: UserID(rawValue: 7_501), username: "quiet", displayName: "Quiet")
+    let channel = Channel(id: ChannelID(rawValue: 7_500), guildID: nil, name: "quiet")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: [message(7_600), message(7_601)]
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(with: [message(7_600), message(7_601)])
+    model.hasMoreCache[channel.id] = false
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    #expect(
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: model.accountSession()
+        )
+    )
+
+    // The newest page ends at the message the cached window already ends at,
+    // so nothing arrived and the window must not be replaced.
+    #expect(model.messages.map(\.id.rawValue) == [7_600, 7_601])
+    #expect(!model.hasMoreLaterMessages)
+    #expect(model.hasMoreCache[channel.id] == false)
+    #expect(!model.staleCachedTailChannelIDs.contains(channel.id))
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a cached tail reconcile keeps a contiguous window when the fresh page straddles it`() async throws {
+    let user = User(id: UserID(rawValue: 7_801), username: "straddle", displayName: "Straddle")
+    let channel = Channel(id: ChannelID(rawValue: 7_800), guildID: nil, name: "straddle")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // The provider's newest page starts inside the cached window, so the
+    // reconcile must keep the older cached messages and append the page rather
+    // than splicing a non-adjacent run.
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: [
+            message(7_900), message(7_901), message(7_902),
+            message(7_903), message(7_904),
+        ]
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    // A window the user scrolled away from the newest end of.
+    model.replaceSelectedMessages(with: [message(7_900), message(7_901), message(7_902)])
+    // A warm restore sets both flags from the cache together; the merge
+    // keeps these oldest rows, so the restored boundary must survive it.
+    model.hasMoreMessages = true
+    model.hasMoreCache[channel.id] = true
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    #expect(
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: model.accountSession()
+        )
+    )
+
+    let ids = model.messages.map(\.id.rawValue)
+    #expect(ids == [7_900, 7_901, 7_902, 7_903, 7_904])
+    #expect(ids == ids.sorted())
+    #expect(!model.staleCachedTailChannelIDs.contains(channel.id))
+    #expect(model.hasMoreMessages)
+    #expect(model.hasMoreCache[channel.id] == true)
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a cached tail reconcile brings in messages that arrived while away`() async throws {
+    let user = User(id: UserID(rawValue: 7_701), username: "busy", displayName: "Busy")
+    let channel = Channel(id: ChannelID(rawValue: 7_700), guildID: nil, name: "busy")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // The provider holds a message the cached window predates.
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: [message(7_800), message(7_801), message(7_802)]
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(with: [message(7_800), message(7_801)])
+    model.hasMoreCache[channel.id] = false
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    #expect(
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: model.accountSession()
+        )
+    )
+
+    #expect(model.messages.map(\.id.rawValue) == [7_800, 7_801, 7_802])
+    #expect(!model.hasMoreLaterMessages)
+    #expect(!model.staleCachedTailChannelIDs.contains(channel.id))
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a live message arriving during the read survives the tail reconcile`() async throws {
+    let user = User(id: UserID(rawValue: 7_711), username: "live", displayName: "Live")
+    let channel = Channel(id: ChannelID(rawValue: 7_710), guildID: nil, name: "live")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // The provider's newest page ends at 7_802. Message 7_803 is created
+    // after the fetch and arrives through the Gateway mid-read, so the
+    // journal upserts it and the merge must preserve the live arrival even
+    // though the fetched page postdates nothing past 7_802.
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: [message(7_800), message(7_801), message(7_802)]
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(with: [message(7_800), message(7_801)])
+    model.hasMoreCache[channel.id] = false
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    let task = Task {
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: model.accountSession()
+        )
+    }
+    // The refresh sets its loading flag before awaiting the fetch, so
+    // observing it guarantees the journal exists when the arrival lands.
+    for _ in 0 ..< 1_000 where !model.isLoadingMessages {
+        await Task.yield()
+    }
+    #expect(model.isLoadingMessages)
+    var live = message(7_803)
+    model.consumeMessageCreated(&live, preparedTextPlan: nil)
+    #expect(await task.value)
+
+    #expect(model.messages.map(\.id.rawValue) == [7_800, 7_801, 7_802, 7_803])
+    #expect(!model.hasMoreLaterMessages)
+    #expect(!model.staleCachedTailChannelIDs.contains(channel.id))
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a message deleted before the fetch stays deleted after the tail reconcile`() async throws {
+    let user = User(id: UserID(rawValue: 7_731), username: "gone", displayName: "Gone")
+    let channel = Channel(id: ChannelID(rawValue: 7_730), guildID: nil, name: "gone")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // The cached window ends at 7_804, but the server deleted it while its
+    // Gateway event was missed: the newest page ends at 7_803. Preserving
+    // every cached row above the page's newest ID would resurrect the
+    // deletion, so only rows that actually arrived during the refresh may
+    // survive beyond the fetched page.
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: [message(7_800), message(7_801), message(7_802), message(7_803)]
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(
+        with: [message(7_800), message(7_801), message(7_802), message(7_803), message(7_804)]
+    )
+    model.hasMoreCache[channel.id] = false
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    #expect(
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: model.accountSession()
+        )
+    )
+
+    #expect(model.messages.map(\.id.rawValue) == [7_800, 7_801, 7_802, 7_803])
+    #expect(!model.hasMoreLaterMessages)
+    #expect(!model.staleCachedTailChannelIDs.contains(channel.id))
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `an edit below the fetched page hides no cached messages`() async throws {
+    let user = User(id: UserID(rawValue: 7_741), username: "edit", displayName: "Edit")
+    let channel = Channel(id: ChannelID(rawValue: 7_740), guildID: nil, name: "edit")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64, content: String? = nil) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: content ?? "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // Eighty-one messages on the provider, so the newest 50-message page
+    // starts inside the cached window. An edit to 8_178 arrives mid-read and
+    // is journaled onto the fresh page; the merge must still treat the
+    // original page span as the replaced range, or messages 8_179 and 8_180
+    // fall into a hole neither direction can load across.
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: (8_150 ... 8_230).map { message(UInt64($0)) }
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(with: (8_175 ... 8_195).map { message(UInt64($0)) })
+    // A warm restore sets both flags from the cache together; the window
+    // stops short of the conversation's beginning here.
+    model.hasMoreMessages = true
+    model.hasMoreCache[channel.id] = true
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    let task = Task {
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: model.accountSession()
+        )
+    }
+    for _ in 0 ..< 1_000 where !model.isLoadingMessages {
+        await Task.yield()
+    }
+    #expect(model.isLoadingMessages)
+    model.consumeMessageUpdated(message(8_178, content: "edited 8_178"), preparedTextPlan: nil)
+    #expect(await task.value)
+
+    #expect(model.messages.map(\.id.rawValue) == Array(8_175 ... 8_230))
+    #expect(model.messages.first(where: { $0.id.rawValue == 8_178 })?.content == "edited 8_178")
+    #expect(model.hasMoreMessages)
+    #expect(model.hasMoreCache[channel.id] == true)
+    #expect(!model.staleCachedTailChannelIDs.contains(channel.id))
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `an earlier page racing a replaced window is discarded`() async throws {
+    let user = User(id: UserID(rawValue: 8_311), username: "race", displayName: "Race")
+    let channel = Channel(id: ChannelID(rawValue: 8_310), guildID: nil, name: "race")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // The cached window is [101..150] with more history before it, so an
+    // earlier load anchors before message 101. The tail refresh's gap branch
+    // replaces the window with [501..550] while that page is in flight.
+    // Committing it would splice a non-adjacent run and adopt a boundary
+    // that strands 101..500; discarding it leaves the replacement's
+    // boundary so normal scrolling re-anchors below and fills downward.
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: (1 ... 150).map { message(UInt64($0)) }
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(with: (101 ... 150).map { message(UInt64($0)) })
+    // A warm restore sets both flags from the cache together.
+    model.hasMoreMessages = true
+    model.hasMoreCache[channel.id] = true
+    model.hasCompletedInitialMessageLoad = true
+
+    let task = Task { await model.loadEarlier() }
+    // The loading flag is set before the fetch is awaited, so observing it
+    // guarantees the request anchored against the restored window.
+    for _ in 0 ..< 1_000 where !model.isLoadingEarlier {
+        await Task.yield()
+    }
+    #expect(model.isLoadingEarlier)
+    model.replaceSelectedMessages(with: (501 ... 550).map { message(UInt64($0)) })
+    model.hasMoreMessages = true
+    model.hasMoreCache[channel.id] = true
+    model.hasMoreLaterMessages = false
+    await task.value
+
+    #expect(model.messages.map(\.id.rawValue) == Array(501 ... 550))
+    #expect(model.hasMoreMessages)
+    #expect(model.hasMoreCache[channel.id] == true)
+    #expect(!model.hasMoreLaterMessages)
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a prepend racing a replaced window is rejected at commit`() async throws {
+    let user = User(id: UserID(rawValue: 8_611), username: "gate", displayName: "Gate")
+    let channel = Channel(id: ChannelID(rawValue: 8_610), guildID: nil, name: "gate")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // The page was requested against a window starting at 8_401, but the
+    // window now starts at 8_501. The check sits adjacent to the mutation
+    // with no await between, so on the main actor the rejection is atomic:
+    // no replacement landing during row preparation can slip a splice
+    // through, and the caller leaves the boundary untouched.
+    let provider = MockChatProvider(snapshot: snapshot, messages: [])
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(
+        with: [message(8_501), message(8_502), message(8_503)]
+    )
+    model.hasMoreMessages = true
+    model.hasMoreCache[channel.id] = true
+
+    #expect(
+        await model.prependSelectedMessages(
+            [message(8_401), message(8_402)],
+            channelID: channel.id,
+            anchorID: MessageID(rawValue: 8_401)
+        ) == false
+    )
+
+    #expect(model.messages.map(\.id.rawValue) == [8_501, 8_502, 8_503])
+    #expect(model.hasMoreMessages)
+    #expect(model.hasMoreCache[channel.id] == true)
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `a tail reconcile that keeps the oldest rows preserves the earlier-history boundary`() async throws {
+    let user = User(id: UserID(rawValue: 7_721), username: "bound", displayName: "Bound")
+    let channel = Channel(id: ChannelID(rawValue: 7_720), guildID: nil, name: "bound")
+    let snapshot = BootstrapSnapshot(
+        currentUser: user,
+        guilds: [],
+        channels: [channel],
+        members: []
+    )
+    func message(_ rawID: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: rawID),
+            channelID: channel.id,
+            author: user,
+            content: "message \(rawID)",
+            timestamp: Date(timeIntervalSince1970: Double(rawID))
+        )
+    }
+    // Sixty-one messages on the provider, so the newest 50-message page still
+    // reports more history before it. The cached window already reaches the
+    // conversation's beginning, and the merge keeps those oldest rows.
+    let provider = MockChatProvider(
+        snapshot: snapshot,
+        messages: (7_850 ... 7_910).map { message(UInt64($0)) }
+    )
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    model.snapshot = snapshot
+    model.visibleChannels = [channel]
+    model.selectedChannel = channel
+    model.selectedChannelID = channel.id
+    // The assignment above ran with an empty cache and spawned a cold load
+    // for it; drain that setup artifact before establishing warm-cache
+    // state. Production never cold-loads a channel it is warm-returning to.
+    await model.channelLoadTask?.value
+    model.replaceSelectedMessages(with: (7_850 ... 7_870).map { message(UInt64($0)) })
+    // A warm restore sets both flags from the cache together; the window
+    // already reaches the conversation's beginning here.
+    model.hasMoreMessages = false
+    model.hasMoreCache[channel.id] = false
+    model.hasCompletedInitialMessageLoad = true
+    model.staleCachedTailChannelIDs = [channel.id]
+
+    #expect(
+        await model.reconcileCachedConversationTail(
+            channelID: channel.id,
+            account: model.accountSession()
+        )
+    )
+
+    #expect(model.messages.map(\.id.rawValue) == Array(7_850 ... 7_910))
+    // Adopting the page's flag here would send one wasted fetch before
+    // messages already held; the boundary stays as restored from the cache.
+    #expect(!model.hasMoreMessages)
+    #expect(model.hasMoreCache[channel.id] == false)
+    #expect(!model.staleCachedTailChannelIDs.contains(channel.id))
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func `app model loads demo and sends message`() async {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
     #expect(model.snapshot != nil)
@@ -4234,7 +5004,10 @@ func `gateway mutations keep exact indexes after repeated history prepends`(
     for _ in 0 ..< 13 {
         await model.loadEarlier()
     }
-    #expect(model.messages.count == initialCount + 13 * (whileScrolling ? 100 : 20))
+    // Every page asks for the full ceiling now, so the count is the same
+    // whether or not the timeline is live-scrolling. The parameter still
+    // exercises the scroll-activity gate itself.
+    #expect(model.messages.count == initialCount + 13 * model.historyPageLimit)
 
     let updateTarget = model.messages[173]
     var updated = updateTarget
@@ -4277,12 +5050,14 @@ func `gateway mutations keep exact indexes after repeated history prepends`(
     #expect(model.hasMoreLaterMessages)
 
     await model.loadEarlier()
-    #expect(model.messages.map(\.id) == (55 ... 124).map {
+    // The earlier page is bounded by Discord's 100-message ceiling, so it
+    // reaches the start of the fixture instead of stopping after 20.
+    #expect(model.messages.map(\.id) == (0 ... 124).map {
         MessageID(rawValue: 5_000_000 + UInt64($0))
     })
 
     await model.loadLater()
-    #expect(model.messages.map(\.id) == (55 ... 144).map {
+    #expect(model.messages.map(\.id) == (0 ... 224).map {
         MessageID(rawValue: 5_000_000 + UInt64($0))
     })
     #expect(model.hasMoreLaterMessages)

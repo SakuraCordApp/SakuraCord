@@ -191,7 +191,24 @@ struct MessageTimelineView: View {
             isEarlierHistoryScrollGestureActive = false
             hasLaterHistoryScrollIntent = false
             isLaterHistoryScrollGestureActive = false
-            try? await Task.sleep(for: .milliseconds(350))
+            // Gate automatic history loading on the native timeline having
+            // established its initial scroll position, not on a fixed
+            // interval. The original fixed delay charged every channel switch
+            // the same wait even when the position settled on the first frame
+            // after the page arrived. The bound keeps the original protection
+            // for a slow first layout, and a channel with nothing more behind
+            // or ahead of it skips the wait entirely.
+            if model.hasMoreMessages || model.hasMoreLaterMessages {
+                let deadline = ContinuousClock.now.advanced(
+                    by: .milliseconds(350)
+                )
+                while !latestScrollState.hasEstablishedInitialPosition,
+                    !Task.isCancelled,
+                    ContinuousClock.now < deadline
+                {
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+            }
             guard !Task.isCancelled else { return }
             allowsAutomaticHistoryLoading = true
             loadHistoryIfNeeded(.earlier, for: latestScrollState)

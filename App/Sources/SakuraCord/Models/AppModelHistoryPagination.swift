@@ -54,16 +54,33 @@ extension AppModel {
             let page = try await session.provider.messages(
                 in: request.channelID,
                 anchoredAt: request.anchor,
-                // Amortize network and member-resolution latency while the
-                // viewport is consuming history. Row preparation remains off
-                // the main actor, and the viewport controls further prefetch.
-                limit: liveScrollingConversationIDs.contains(request.channelID)
-                    ? 100 : 20
+                // Filling the timeline's 8 000 pt prefetch window is a fixed
+                // amount of history, so chunk size only changes how many
+                // serialized reads it takes. Each page also awaits its own
+                // Gateway member resolution (`hydrateHistoryMembers`), which
+                // made a 20-message page cost two round trips. 100 is Discord's
+                // ceiling and the ceiling `requestMembersByID` batches into, so
+                // the same window now resolves members in one round trip.
+                limit: historyPageLimit
             )
             guard !Task.isCancelled,
                   isCurrentAccountSession(session),
                   selectedChannelID == request.channelID
             else { return }
+            // A cached-tail refresh can replace the window while this page is
+            // in flight (gap case: the fetched page starts strictly newer
+            // than the restored window ends). Committing the stale page
+            // against the replaced window would splice a non-adjacent run
+            // and adopt a boundary that strands everything between them. The
+            // preserved boundary lets normal scrolling re-anchor below the
+            // replacement and fill downward instead. Later pages need no
+            // check: the refresh clears their flag, and live appends merge
+            // by identifier.
+            if case .before(let anchorID) = request.anchor,
+               messages.first?.id != anchorID
+            {
+                return
+            }
             let reconcileStart = ProcessInfo.processInfo.systemUptime
             let inserted = AppPerformanceSignposts.measureSync(
                 "HistoryPageReconciliation"
@@ -73,13 +90,22 @@ extension AppModel {
                 }
             }
             let filterEnd = ProcessInfo.processInfo.systemUptime
+            // The oldest row this page was requested against. Later pages
+            // carry none: their flag is cleared by a tail refresh, and live
+            // appends merge by identifier.
+            let anchorID: MessageID?
+            switch (direction, request.anchor) {
+            case (.earlier, .before(let id)): anchorID = id
+            case (.earlier, _), (.later, _): anchorID = nil
+            }
             let committed = await AppPerformanceSignposts.measure(
                 "HistoryPageCommit"
             ) {
                 await commitSelectedMessageHistory(
                     inserted,
                     direction: direction,
-                    channelID: request.channelID
+                    channelID: request.channelID,
+                    anchorID: anchorID
                 )
             }
             guard committed else { return }
@@ -156,14 +182,16 @@ extension AppModel {
     private func commitSelectedMessageHistory(
         _ inserted: [Message],
         direction: SelectedMessageHistoryDirection,
-        channelID: ChannelID
+        channelID: ChannelID,
+        anchorID: MessageID?
     ) async -> Bool {
         guard !inserted.isEmpty else { return true }
         switch direction {
         case .earlier:
             return await prependSelectedMessages(
                 inserted,
-                channelID: channelID
+                channelID: channelID,
+                anchorID: anchorID
             )
         case .later:
             return await appendSelectedHistoryMessages(

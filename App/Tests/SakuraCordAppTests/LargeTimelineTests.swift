@@ -1461,6 +1461,105 @@ func `benchmark run finalization does not require coordinator lifetime`() {
     #expect(canvas.accessibilityProxyRowsInTimelineOrder().count == 1)
 }
 
+/// The canvas resolves an overlay's row index in O(1) through a lazily built
+/// map. Every structural item mutation has to invalidate it, or a stale index
+/// would place a video/Lottie overlay on the wrong row.
+@MainActor
+@Test func `timeline row index resolves correctly after every structural mutation`() {
+    let channelID = ChannelID(rawValue: 9_201)
+    let author = User(
+        id: UserID(rawValue: 9_400),
+        username: "fixture",
+        displayName: "Fixture"
+    )
+    func message(_ index: Int) -> Message {
+        Message(
+            id: MessageID(rawValue: UInt64(9_300 + index)),
+            channelID: channelID,
+            author: author,
+            content: "message \(index)",
+            timestamp: Date(timeIntervalSince1970: Double(index)),
+            attachments: []
+        )
+    }
+    func row(_ index: Int) -> MessageRowPresentation {
+        MessageRowPresentation(
+            message: message(index),
+            startsGroup: true,
+            startsDay: false,
+            replyPreview: nil,
+            isReplyAvailable: false
+        )
+    }
+    func item(_ index: Int) -> NativeMessageTimelineItem {
+        .message(row(index), isUnreadBoundary: false, isHighlighted: false)
+    }
+
+    let identifiers = (0 ..< 8).map { MessageRowIdentity(message($0)) }
+        .map(NativeMessageTimelineItem.Identifier.message)
+    let storage = NativeTimelineCanvasStorage()
+    storage.items = (0 ..< 8).map(item)
+    storage.invalidateItemIndex()
+
+    func expectResolved(_ expected: [Int?]) {
+        for (index, value) in expected.enumerated() {
+            #expect(storage.itemIndex(of: identifiers[index]) == value)
+        }
+    }
+
+    expectResolved([0, 1, 2, 3, 4, 5, 6, 7])
+
+    // Structural items are unique by identifier, so a second lookup without an
+    // intervening mutation still resolves correctly.
+    for (index, identifier) in identifiers.enumerated() {
+        #expect(storage.itemIndex(of: identifier) == index)
+    }
+
+    // Removal from the middle shifts every later row and drops the removed one.
+    var trimmed = storage.items
+    trimmed.remove(at: 5)
+    storage.items = trimmed
+    storage.invalidateItemIndex()
+    expectResolved([0, 1, 2, 3, 4, nil, 5, 6])
+
+    // Prepend at the front shifts every existing row by one.
+    var prepended = trimmed
+    prepended.insert(prepended[prepended.count - 1], at: 0)
+    storage.items = prepended
+    storage.invalidateItemIndex()
+    expectResolved([1, 2, 3, 4, 5, nil, 6, 0])
+
+    // Append a new row after the last one.
+    storage.items.append(item(8))
+    storage.invalidateItemIndex()
+    expectResolved([1, 2, 3, 4, 5, nil, 6, 0])
+    #expect(storage.itemIndex(of: identifiers[7]) == 0)
+
+    // A duplicated identifier keeps its first occurrence, so a stale overlay
+    // can never shadow the real row it still wants.
+    storage.items.append(item(0))
+    storage.invalidateItemIndex()
+    #expect(storage.itemIndex(of: identifiers[0]) == 1)
+
+    // An emptied timeline resolves nothing rather than reporting a stale row.
+    storage.items = []
+    storage.invalidateItemIndex()
+    expectResolved([nil, nil, nil, nil, nil, nil, nil, nil])
+
+    // Unknown identifiers are absent rather than defaulted.
+    storage.items = [item(0)]
+    storage.invalidateItemIndex()
+    #expect(storage.itemIndex(of: .loader) == nil)
+    #expect(storage.itemIndex(of: .message(.outgoing(
+        channelID: channelID,
+        nonce: "unseen"
+    ))) == nil)
+    #expect(storage.itemIndex(of: .message(.server(
+        channelID: channelID,
+        messageID: MessageID(rawValue: UInt64(999_999))
+    ))) == nil)
+}
+
 @MainActor
 @Test func `retained row media survives volatile cache eviction`() throws {
     let key = NativeTimelineMediaKey.media(try #require(URL(
