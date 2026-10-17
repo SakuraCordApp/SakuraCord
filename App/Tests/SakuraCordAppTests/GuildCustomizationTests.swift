@@ -35,6 +35,44 @@ struct GuildCustomizationTests {
     }
 
     @Test
+    func `guide resource filtering is gated on an active server guide`() async throws {
+        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        await model.start()
+        let guildID = try #require(model.snapshot?.guilds.first?.id)
+        let selected = Channel(id: .init(rawValue: 210), guildID: guildID, name: "selected")
+        // A resource channel carries the official-navigation flag and is also
+        // selected, so the two branches disagree about what to do with it.
+        let resource = Channel(id: .init(rawValue: 211), guildID: guildID, name: "resource", flags: 128)
+        let groups = ChannelGroup.make(from: [selected, resource])
+        model.snapshot?.channels = [selected, resource]
+        model.snapshot?.guilds[0].features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
+        model.serverRailGuildsByID[guildID]?.features = ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]
+        model.serverRailGuildsByID[guildID]?.currentUserPermissions = .max
+        model.onboarding.members[guildID] = nil
+        model.onboarding.presentedGuildID = nil
+        model.selectedChannelID = nil
+        model.featuresSettings.channelManagement = true
+        model.applyNotificationSettings(.init(guildID: guildID, flags: GuildChannelSelection.enabledFlag,
+            channelOverrides: [
+                .init(channelID: selected.id, flags: GuildChannelSelection.selectedFlag),
+                .init(channelID: resource.id, flags: GuildChannelSelection.selectedFlag),
+            ]))
+
+        // With a server guide active the resource branch wins over selection.
+        #expect(model.hasGuildGuide(in: guildID))
+        #expect(model.selectedChannelGroups(groups, guildID: guildID).flatMap(\.channels).map(\.id) == [selected.id])
+
+        // Drop the guide: no snapshot channel carries the flag and the guild no
+        // longer advertises the server guide, so the channel is ordinary and its
+        // selection keeps it. `hasGuildGuide` must short-circuit the branch.
+        model.snapshot?.channels = [selected]
+        model.snapshot?.guilds[0].features = ["COMMUNITY"]
+        model.serverRailGuildsByID[guildID]?.features = ["COMMUNITY"]
+        #expect(!model.hasGuildGuide(in: guildID))
+        #expect(model.selectedChannelGroups(groups, guildID: guildID).flatMap(\.channels).map(\.id) == [selected.id, resource.id])
+    }
+
+    @Test
     func `channel filtering respects community capabilities local override resources and mentions`() async throws {
         let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
         await model.start()

@@ -304,6 +304,7 @@ extension AppModel {
         messageRowCache = [:]
         messageRowCacheOrder = []
         hasMoreCache = [:]
+        staleCachedTailChannelIDs = []
         threadPreviewMessages = [:]
         threadPreviewParentIDs = [:]
         membersByGuildID = [:]

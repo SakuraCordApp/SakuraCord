@@ -10,6 +10,40 @@ final class NativeTimelineCanvasStorage {
     var rowHeights: [CGFloat] = []
     var rowOrigins: [CGFloat] = []
     var contentHeight: CGFloat = 0
+
+    /// Identifier → index resolution for row lookup that happens while a
+    /// gesture is in flight (overlay placement, text selection). Rebuilt
+    /// lazily after the structural item mutations, so a viewport re-anchor
+    /// resolves in O(1) instead of linear-scanning the whole timeline.
+    var itemIndexByIdentifier:
+        [NativeMessageTimelineItem.Identifier: Int] = [:]
+    var isItemIndexValid = false
+
+    func invalidateItemIndex() {
+        isItemIndexValid = false
+        itemIndexByIdentifier.removeAll(keepingCapacity: true)
+    }
+
+    /// Returns the index of `identifier`, rebuilding the map first when a
+    /// structural mutation has invalidated it. Returns `nil` for an
+    /// identifier that is no longer present.
+    func itemIndex(
+        of identifier: NativeMessageTimelineItem.Identifier
+    ) -> Int? {
+        guard isItemIndexValid else {
+            itemIndexByIdentifier.removeAll(keepingCapacity: true)
+            // Structural items are unique by identifier; keep the first
+            // occurrence so a duplicate can never shadow a real row.
+            for (index, item) in items.enumerated()
+            where itemIndexByIdentifier[item.identifier] == nil
+            {
+                itemIndexByIdentifier[item.identifier] = index
+            }
+            isItemIndexValid = true
+            return itemIndexByIdentifier[identifier]
+        }
+        return itemIndexByIdentifier[identifier]
+    }
 }
 
 nonisolated final class NativeTimelineAccessibilityElement:

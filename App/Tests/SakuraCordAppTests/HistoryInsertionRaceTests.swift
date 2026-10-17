@@ -34,7 +34,7 @@ func `history insertion reconciles an overlapping timeline before publishing row
     let incoming = includesExistingID ? page : page.filter { $0.id != current.id }
 
     let committed = if loadsEarlier {
-        await model.prependSelectedMessages(incoming, channelID: channelID)
+        await model.prependSelectedMessages(incoming, channelID: channelID, anchorID: current.id)
     } else {
         await model.appendSelectedHistoryMessages(incoming, channelID: channelID)
     }

@@ -52,6 +52,7 @@ extension NativeMessageTimelineCoordinator {
                 }
                 items = newItems
                 messageIDs = newRows.map(\.id)
+                storage.invalidateItemIndex()
                 rowHeights = layouts.map(\.height)
                 didMutateItems = true
                 requiresVisibleRedraw = true
@@ -243,6 +244,7 @@ extension NativeMessageTimelineCoordinator {
                 layouts.insert(insertedLayout, at: itemIndex)
                 rowHeights.insert(insertedLayout.height, at: itemIndex)
             }
+            storage.invalidateItemIndex()
             for rowIndex in newRows.indices
             where changedMessageIDs.contains(newRows[rowIndex].id) {
                 refreshItemPresentation(

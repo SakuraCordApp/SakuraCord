@@ -927,15 +927,22 @@ final class AppModel {
                     conversationNewestRequest = nil
                 }
                 if hasMoreLaterMessages {
-                    messageCache[oldValue] = nil
-                    messageCacheOrder.removeAll { $0 == oldValue }
-                    messageRowCache[oldValue] = nil
-                    messageRowCacheOrder.removeAll { $0 == oldValue }
-                    hasMoreCache[oldValue] = nil
-                } else {
-                    storeCachedMessages(messages, for: oldValue)
-                    storeCachedMessageRows(messageRows, for: oldValue)
+                    // A conversation whose tail is not authoritative used to
+                    // have its entire window discarded here, which made every
+                    // busy channel cold on return. Keep the window instead:
+                    // the cached rows still present instantly, and only the
+                    // newest page is re-read to reconcile what arrived while
+                    // the conversation was not selected.
+                    staleCachedTailChannelIDs.insert(oldValue)
                 }
+                // The marker is owned by the refresh itself, which clears it
+                // once the tail is verified and restores it on failure. Do not
+                // clear it here: a refresh that failed while the conversation
+                // was selected left `hasMoreLaterMessages` false, and removing
+                // the marker would make the next return present a stale tail
+                // as final and never retry.
+                storeCachedMessages(messages, for: oldValue)
+                storeCachedMessageRows(messageRows, for: oldValue)
                 lastTypingRequestAt[oldValue] = nil
                 _ = readState.updatePresentation(channelID: oldValue, isPresented: false)
                 readState.endForumVisit(channelID: oldValue)
@@ -1076,6 +1083,13 @@ final class AppModel {
     @ObservationIgnored var failedReactionReactorLoads: [ReactionReactorLoadKey: Date] = [:]
     @ObservationIgnored var liveScrollingConversationIDs:
         Set<ChannelID> = []
+    /// The native timeline amortizes its history prefetch over an 8 000 pt
+    /// window, so filling that window is a fixed cost regardless of how the
+    /// reads are chunked. Chunking it into 20-message pages instead serializes
+    /// one Gateway member-resolution round trip per page, because
+    /// `hydrateHistoryMembers` is awaited before each page is returned. 100 is
+    /// Discord's ceiling and also the ceiling `requestMembersByID` batches into.
+    @ObservationIgnored let historyPageLimit: Int = 100
     @ObservationIgnored var timelineScrollActivityRevision: UInt64 = 0
     @ObservationIgnored let reactionReactorLoadLimiter = ReactionReactorLoadLimiter(
         maximumConcurrentLoads: maximumConcurrentReactionReactorLoads
@@ -1124,6 +1138,10 @@ final class AppModel {
         [ChannelID: [MessageRowPresentation]] = [:]
     @ObservationIgnored var messageRowCacheOrder: [ChannelID] = []
     @ObservationIgnored var hasMoreCache: [ChannelID: Bool] = [:]
+    /// Conversations whose cached tail may be missing messages that arrived
+    /// after the user left them. The window is still cached and still
+    /// presented immediately on return; only the newest page is re-read.
+    @ObservationIgnored var staleCachedTailChannelIDs: Set<ChannelID> = []
     /// Latest known message per thread, drawn in timeline thread cards.
     @ObservationIgnored var threadPreviewMessages: [ChannelID: Message] = [:]
     @ObservationIgnored var threadPreviewParentIDs: [ChannelID: ChannelID] = [:]

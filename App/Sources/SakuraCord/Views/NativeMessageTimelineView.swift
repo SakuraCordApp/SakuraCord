@@ -1108,6 +1108,7 @@ extension NativeMessageTimelineCoordinator {
                 let oldLayouts = layouts
                 items = newItems
                 messageIDs = rows.map(\.id)
+                storage.invalidateItemIndex()
                 layouts = items.map { item in
                     if let index = reusableLayouts[item.identifier],
                        oldItems[index] == item,
@@ -1422,6 +1423,7 @@ extension NativeMessageTimelineCoordinator {
                 rowHeights.remove(at: index)
             }
             for index in plan.removals.reversed() { messageIDs.remove(at: index) }
+            storage.invalidateItemIndex()
             didMutateItems = true
             if itemIndexes.contains(where: { itemAffectsVisibleCoordinates(at: $0) }) {
                 requiresVisibleRedraw = true
@@ -1564,6 +1566,7 @@ extension NativeMessageTimelineCoordinator {
             layouts.insert(contentsOf: insertedLayouts, at: oldLeadingCount)
             rowHeights.insert(contentsOf: insertedLayouts.map(\.height), at: oldLeadingCount)
             messageIDs.insert(contentsOf: rows.map(\.id), at: 0)
+            storage.invalidateItemIndex()
             didMutateItems = true
             requiresVisibleRedraw = true
             requiresAnchorRestore = true
@@ -1599,6 +1602,7 @@ extension NativeMessageTimelineCoordinator {
             layouts.append(contentsOf: insertedLayouts)
             rowHeights.append(contentsOf: insertedLayouts.map(\.height))
             messageIDs.append(contentsOf: rows.map(\.id))
+            storage.invalidateItemIndex()
             didMutateItems = true
             if prefixCount == 0, !requiresFullOriginRebuild { appendedLayoutCount = rows.count }
             dirtyItemIndexes.insert(integersIn: firstInsertedIndex ..< items.count)

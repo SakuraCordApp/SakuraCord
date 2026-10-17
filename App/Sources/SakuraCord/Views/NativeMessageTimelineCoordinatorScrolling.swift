@@ -211,11 +211,18 @@ extension NativeMessageTimelineCoordinator {
                 return
             }
             guard items[index] != item else { return }
+            let previousIdentifier = items[index].identifier
             let previousHeight = layouts[index].height
             let updatedLayout = layout(for: item, width: width)
             items[index] = item
             layouts[index] = updatedLayout
             rowHeights[index] = updatedLayout.height
+            if item.identifier != previousIdentifier {
+                // The row index map keys on identifiers. A replacement that
+                // swaps which message occupies this row must invalidate it, or
+                // overlay placement resolves the previous occupant's index.
+                storage.invalidateItemIndex()
+            }
             didMutateItems = true
             dirtyItemIndexes.insert(index)
             if abs(previousHeight - updatedLayout.height) >= 0.5 {

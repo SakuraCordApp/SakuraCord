@@ -633,9 +633,9 @@ extension NativeTimelineCanvasView {
         var didCreateOverlay = false
         for item in desired {
             let rowOrigin: CGFloat
-            guard let rowIndex = items.firstIndex(where: {
-                $0.identifier == item.key.row
-            }) else { continue }
+            guard let rowIndex = storage.itemIndex(of: item.key.row),
+                  layouts.indices.contains(rowIndex)
+            else { continue }
             rowOrigin = displayedRowOrigin(at: rowIndex)
             let mediaFrame = item.mediaFrame.offsetBy(
                 dx: 0,
@@ -747,7 +747,7 @@ extension NativeTimelineCanvasView {
         })
         for row in rows {
             invalidateBitmap(row)
-            if let index = items.firstIndex(where: { $0.identifier == row }) {
+            if let index = storage.itemIndex(of: row) {
                 setNeedsDisplay(rowFrame(at: index))
             }
         }
@@ -765,7 +765,24 @@ extension NativeTimelineCanvasView {
     static let maximumActivityIndicatorCount = 32
 
     func reconcileActivityIndicators() {
-        reconcileInboxHeaders()
+        // `installViewportGeometry` already reconciles inbox headers once per
+        // geometry change. Repeating it here walked the visible rows a second
+        // time on every viewport re-anchor. The guard must also run when inbox
+        // views from a previous surface remain, because this is what removes
+        // them: switching from Unread to a reused non-empty tab would otherwise
+        // leave stale header, forum-post, and event views over the content.
+        if case .inboxGroup = items.first {
+            // `installViewportGeometry` already reconciled inbox headers for
+            // this surface; doing it again would walk the visible rows twice
+            // per viewport re-anchor.
+        } else if !inboxHeaderHosts.isEmpty
+            || !inboxForumPostHosts.isEmpty || !inboxEventHosts.isEmpty
+        {
+            // Leftover views from a previous surface must still be removed:
+            // switching from Unread to a reused non-empty tab would otherwise
+            // leave stale header, forum-post, and event views over the content.
+            reconcileInboxHeaders()
+        }
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {
@@ -909,11 +926,10 @@ extension NativeTimelineCanvasView {
     }
 
     func positionInlineVideoOverlays() {
+        guard !inlineVideoOverlays.isEmpty else { return }
         var removed: [InlineVideoOverlayKey] = []
         for (key, overlay) in inlineVideoOverlays {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == key.row
-            }),
+            guard let index = storage.itemIndex(of: key.row),
                layouts.indices.contains(index),
                let frame = layouts[index].embedRegions.first(where: {
                    $0.embedID == key.embedID
@@ -1022,11 +1038,10 @@ extension NativeTimelineCanvasView {
     }
 
     func positionLottieStickerOverlays() {
+        guard !lottieStickerOverlays.isEmpty else { return }
         var removed: [LottieStickerOverlayKey] = []
         for (key, overlay) in lottieStickerOverlays {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == key.row
-            }),
+            guard let index = storage.itemIndex(of: key.row),
                layouts.indices.contains(index),
                case let .message(row, _, _) = items[index],
                let stickerIndex = row.message.stickers.firstIndex(where: {

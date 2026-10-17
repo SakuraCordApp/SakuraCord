@@ -495,7 +495,8 @@ extension AppModel {
 
     func prependSelectedMessages(
         _ earlier: [Message],
-        channelID: ChannelID
+        channelID: ChannelID,
+        anchorID: MessageID?
     ) async -> Bool {
         guard !earlier.isEmpty else { return true }
         // History preparation performs Markdown/CoreText setup for an entire
@@ -516,7 +517,32 @@ extension AppModel {
                 priority: preparationPriority
             )
         }
+        return commitPrependedMessages(
+            earlier,
+            channelID: channelID,
+            anchorID: anchorID,
+            preparedInsertedRows: preparedInsertedRows
+        )
+    }
+
+    /// Commits already-prepared earlier rows. Synchronous throughout, so on
+    /// the main actor the anchor rejection below is atomic with the commit:
+    /// no replacement landing mid-commit can slip a stale splice through.
+    private func commitPrependedMessages(
+        _ earlier: [Message],
+        channelID: ChannelID,
+        anchorID: MessageID?,
+        preparedInsertedRows: [MessageRowPresentation]
+    ) -> Bool {
         guard !Task.isCancelled, selectedChannelID == channelID else { return false }
+        // The window may have been replaced after this page was requested
+        // (a cached-tail refresh swaps it wholesale on a gap). No await sits
+        // between this check and the mutations below, so on the main actor
+        // the rejection is atomic with the commit: a stale page is dropped
+        // instead of spliced, and the caller leaves the boundary untouched.
+        if let anchorID, messages.first?.id != anchorID {
+            return false
+        }
         // The timeline can change while rows are prepared off the main actor.
         // Revalidate the insertion against the current window, not the IDs
         // that pagination filtered before awaiting preparation.
@@ -993,6 +1019,7 @@ extension AppModel {
             messageRowCache[evicted] = nil
             messageRowCacheOrder.removeAll { $0 == evicted }
             hasMoreCache[evicted] = nil
+            staleCachedTailChannelIDs.remove(evicted)
         }
     }
 
