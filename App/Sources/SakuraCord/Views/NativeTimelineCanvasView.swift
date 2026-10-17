@@ -194,7 +194,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var contentOriginY: CGFloat = 0
     var historySkeleton:
         TimelineHistorySkeletonPresentation?
-    var historySkeletonShimmerTask: Task<Void, Never>?
+    let historySkeletonShimmer = SkeletonShimmer()
+    var historySkeletonShimmerFrame = CGRect.null
+    var historySkeletonShimmerScale = InterfaceScale.factor
+    var historySkeletonShimmerPresentation: TimelineHistorySkeletonPresentation?
     var messageJumpHighlight: MessageJumpHighlight?
     var messageJumpHighlightTask: Task<Void, Never>?
     var sendTransitions: [NativeTimelineSendTransition] = []
@@ -377,6 +380,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         // mouse event. Async layer drawing visibly leaves the previous row's
         // hover behind even though hit testing has already moved on.
         layer?.drawsAsynchronously = false
+        layer?.addSublayer(historySkeletonShimmer.layer)
         beginningSelectionOverlay.imageAlignment = .alignTopLeft
         beginningSelectionOverlay.imageScaling = .scaleNone
         beginningSelectionOverlay.isHidden = true
@@ -420,6 +424,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         finishSendTransitions(reconcilesHeldMedia: true)
         invalidatePresentationCaches()
         reconcileBeginningSelectionOverlay()
+        reconcileHistorySkeletonShimmer()
     }
 
     deinit {
@@ -432,7 +437,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             pollPopover?.close()
             mediaInvalidationTask?.cancel()
             visibleMediaRequestTask?.cancel()
-            historySkeletonShimmerTask?.cancel()
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
             for transition in sendTransitions {
