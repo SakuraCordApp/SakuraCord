@@ -1,3 +1,4 @@
+import AppIntents
 import SakuraCordModels
 import SwiftUI
 
@@ -100,6 +101,15 @@ struct ChatWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: model.showInspector)
+        .userActivity(
+            "com.sakuracord.conversation",
+            isActive: model.selectedChannelID != nil
+        ) { activity in
+            // Lets Siri, Shortcuts and Apple Intelligence act on "this conversation".
+            guard let entity = IntentConversationCatalog.onScreenEntity(for: model) else { return }
+            activity.title = entity.title
+            activity.appEntityIdentifier = EntityIdentifier(for: entity)
+        }
         .onChange(of: model.selectedChannelID) { _, channelID in
             guard let channelID else {
                 AppPerformanceSignposts.cancelConversationNavigation()
