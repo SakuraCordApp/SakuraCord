@@ -769,7 +769,7 @@ extension NativeTimelineRowPainter {
                 inset: 0
             )
             text(
-                "Failed",
+                MessageOutboxPresentation.failureText(for: input.row.message),
                 in: CGRect(
                     x: frame.minX + InterfaceScale.metric(16),
                     y: frame.minY,
@@ -777,7 +777,8 @@ extension NativeTimelineRowPainter {
                     height: frame.height
                 ),
                 font: .interfacePreferredFont(forTextStyle: .caption2),
-                color: .systemRed
+                color: .systemRed,
+                lineBreakMode: .byWordWrapping
             )
         }
     }

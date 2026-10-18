@@ -900,13 +900,30 @@ extension NativeTimelineRowLayout {
                 {
                     verticalOffset += InterfaceScale.metric(4)
                 }
-                result.failedFrame = CGRect(
-                    x: contentX,
-                    y: verticalOffset,
-                    width: contentWidth,
-                    height: InterfaceScale.metric(14)
+                // The notice is below the bubble, so short message content
+                // must not squeeze a moderation explanation into that bubble.
+                let failureWidth = usesBubbles && message.sendFailure != nil
+                    ? max(contentWidth, min(
+                        NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
+                        isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
+                    ))
+                    : contentWidth
+                let failureX = isOutgoingBubble ? contentX + contentWidth - failureWidth : contentX
+                let failureText = NSAttributedString(
+                    string: MessageOutboxPresentation.failureText(for: message),
+                    attributes: [.font: NSFont.interfacePreferredFont(forTextStyle: .caption2)]
                 )
-                verticalOffset += InterfaceScale.metric(14)
+                let failureHeight = max(InterfaceScale.metric(14), ceil(failureText.boundingRect(
+                    with: CGSize(width: max(1, failureWidth - InterfaceScale.metric(16)), height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading]
+                ).height))
+                result.failedFrame = CGRect(
+                    x: failureX,
+                    y: verticalOffset,
+                    width: failureWidth,
+                    height: failureHeight
+                )
+                verticalOffset += failureHeight
             }
 
             if row.pinnedAt != nil {

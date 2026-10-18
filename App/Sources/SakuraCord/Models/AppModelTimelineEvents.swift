@@ -843,12 +843,13 @@ extension AppModel {
         return result
     }
 
-    func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID) {
+    func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID, failure: MessageSendFailure? = nil) {
         composer.outbox.updateState(state, nonce: nonce, channelID: channelID)
         if openThread?.id == channelID,
            let index = threadMessages.firstIndex(where: { $0.nonce == nonce })
         {
             threadMessages[index].outboxState = state
+            threadMessages[index].sendFailure = failure
             return
         }
         if selectedChannelID == channelID,
@@ -856,6 +857,7 @@ extension AppModel {
         {
             mutateSelectedMessages {
                 $0[index].outboxState = state
+                $0[index].sendFailure = failure
             }
             return
         }
@@ -863,6 +865,7 @@ extension AppModel {
               let index = cached.firstIndex(where: { $0.nonce == nonce })
         else { return }
         cached[index].outboxState = state
+        cached[index].sendFailure = failure
         messageCache[channelID] = cached
     }
 

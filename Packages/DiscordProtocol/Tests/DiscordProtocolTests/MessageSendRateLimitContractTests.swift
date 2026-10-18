@@ -29,6 +29,28 @@ struct MessageSendRateLimitContractTests {
         #expect(fixture.bodies.count == DiscordRESTProvider.maximumMessageSendAttempts)
         await provider.disconnect()
     }
+
+    @Test(arguments: [200000, 200001, 50013])
+    func `autoMod rejection is scoped and never replays a rejected send`(code: Int) async throws {
+        let fixture = MessageSendRateLimitFixture(rateLimitedAttempts: 0, rejectionCode: code)
+        let provider = fixture.provider()
+        do {
+            _ = try await provider.send(SendMessageDraft(channelID: .init(rawValue: 200), content: "blocked"))
+            Issue.record("The server rejected this message")
+        } catch {
+            if code == 200000 {
+                #expect(error as? ChatProviderError == .autoModerationBlocked(explanation: "Synthetic rule explanation"))
+            } else {
+                #expect(error as? ChatProviderError == .transport(status: 400, requestID: nil))
+            }
+        }
+        #expect(fixture.bodies.count == 1)
+        // The rejection leaves the provider usable for a subsequent user send.
+        _ = try await provider.send(SendMessageDraft(channelID: .init(rawValue: 200), content: "allowed"))
+        #expect(fixture.bodies.count == 2)
+        await provider.disconnect()
+    }
+
 }
 
 /// Owns one test's responses. The URL protocol routes each request here by the
@@ -42,15 +64,19 @@ private final class MessageSendRateLimitFixture {
     private final class Storage: Sendable {
         let remainingRateLimits: Mutex<Int>
         let bodies = Mutex<[SentBody]>([])
-        init(rateLimitedAttempts: Int) { remainingRateLimits = Mutex(rateLimitedAttempts) }
+        let rejectionCode: Mutex<Int?>
+        init(rateLimitedAttempts: Int, rejectionCode: Int?) {
+            remainingRateLimits = Mutex(rateLimitedAttempts)
+            self.rejectionCode = Mutex(rejectionCode)
+        }
     }
 
     let id = UUID().uuidString
     private let storage: Storage
     private var observer: NSObjectProtocol?
 
-    init(rateLimitedAttempts: Int) {
-        let storage = Storage(rateLimitedAttempts: rateLimitedAttempts)
+    init(rateLimitedAttempts: Int, rejectionCode: Int? = nil) {
+        let storage = Storage(rateLimitedAttempts: rateLimitedAttempts, rejectionCode: rejectionCode)
         self.storage = storage
         let id = id
         observer = NotificationCenter.default.addObserver(
@@ -66,6 +92,11 @@ private final class MessageSendRateLimitFixture {
                 return true
             }
             exchange.isRateLimited.withLock { $0 = isRateLimited }
+            let rejection = storage.rejectionCode.withLock { code in
+                defer { code = nil }
+                return code
+            }
+            exchange.rejectionCode.withLock { $0 = rejection }
         }
     }
 
@@ -92,6 +123,7 @@ private final class MessageSendRateLimitURLProtocol: URLProtocol, @unchecked Sen
         let fixtureID: String?
         let body: MessageSendRateLimitFixture.SentBody
         let isRateLimited = Mutex(false)
+        let rejectionCode = Mutex<Int?>(nil)
 
         init(fixtureID: String?, body: MessageSendRateLimitFixture.SentBody) {
             self.fixtureID = fixtureID
@@ -112,13 +144,17 @@ private final class MessageSendRateLimitURLProtocol: URLProtocol, @unchecked Sen
         )
         NotificationCenter.default.post(name: Self.received, object: exchange)
         let nonce = exchange.body.nonce ?? ""
-        let (status, data) = exchange.isRateLimited.withLock { $0 }
+        var (status, data) = exchange.isRateLimited.withLock { $0 }
             ? (429, Data(#"{"message":"You are being rate limited.","retry_after":0.01,"global":false}"#.utf8))
             : (200, Data("""
             {"id":"50","channel_id":"200","author":{"id":"1","username":"tester","global_name":"Tester","avatar":null},
             "content":"queued","timestamp":"2026-10-09T12:00:00.000Z","edited_timestamp":null,
             "type":0,"flags":0,"attachments":[],"reactions":[],"nonce":"\(nonce)"}
             """.utf8))
+        if let code = exchange.rejectionCode.withLock({ $0 }) {
+            status = 400
+            data = Data("{\"code\":\(code),\"message\":\"Synthetic rule explanation\"}".utf8)
+        }
         guard let response = HTTPURLResponse(
             url: url, statusCode: status, httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]

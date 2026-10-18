@@ -1,3 +1,4 @@
+import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
@@ -85,7 +86,15 @@ extension DiscordRESTProvider {
             headers: ["X-Context-Properties": draft.poll == nil ? DiscordClientMetadata.messageContextHeader : "eyJsb2NhdGlvbiI6InBvbGxfY3JlYXRpb24ifQ=="],
             maximumAttempts: Self.maximumMessageSendAttempts
         )
-        let dto: MessageDTO = try decodedResponse(data, response, method: "POST", path: path)
+        let dto: MessageDTO = try decodedResponse(data, response, method: "POST", path: path) { status, code in
+            // A definite content rejection, not authentication failure or proof
+            // of a timeout. Membership updates own timeout restrictions.
+            guard status == 400, code == 200000 else { return nil }
+            let rejection = try? JSONDecoder().decode(AutoModerationRejectionDTO.self, from: data)
+            return apiDiagnostics.coalescing(
+                ChatProviderError.autoModerationBlocked(explanation: rejection?.message), with: response
+            )
+        }
         var message = try dto.domain()
         message.nonce = draft.nonce
         if draft.poll != nil, let current = cachedMessages[message.id]?.poll, current.results != nil {
@@ -130,4 +139,8 @@ extension DiscordRESTProvider {
         payload["waveform"] = .string(metadata.waveform)
         return .object(payload)
     }
+}
+
+private struct AutoModerationRejectionDTO: Decodable {
+    let message: String?
 }

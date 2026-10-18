@@ -80,6 +80,61 @@ the [message author contract](https://docs.discord.com/developers/resources/mess
 and Swiftcord's webhook profile-fetch exclusion; pinned Paicord retains the
 raw author fields but has no equivalent dedicated profile path.
 
+### AutoMod rejections
+
+An ordinary message POST returning HTTP `400` with Discord code `200000` is a
+**definite message rejection**. The provider maps only that status/code pair to
+`ChatProviderError.autoModerationBlocked`, retaining the optional response
+`message` as plain explanatory text. Other errors, including title-block code
+`200001`, retain their existing handling. Do not infer a rule type or a member
+timeout from this rejection, stop the account session, or replay it automatically.
+
+The outbox retains the original text, attachments, reply and nonce in the failed
+row. The existing red failure tint remains, with “Blocked by AutoMod” and the
+server explanation when supplied, including accessibility. Explicit retry clears
+the old notice; authoritative REST/Gateway confirmation replaces the failed row.
+A simultaneous [server timeout](GUILDS.md#server-timeouts) independently disables
+communication through membership state, including queued delivery and retries.
+The block explanation survives timeout expiry; later composer edits are preserved.
+
+Official Fresh host `0.0.411`, web build `641004`
+([`web.4d4b2f75fdea5470.js`](https://discord.com/assets/web.4d4b2f75fdea5470.js)),
+observed on 18 October 2026, returned one HTTP `400`/`200000` for each controlled
+custom-keyword, regex, built-in severe-profanity preset, attachment/reply, and
+existing-thread send. Custom rule text arrived in response `message`; the preset
+returned a generic server-block explanation. No matching `MESSAGE_CREATE` was
+captured. For a custom rule combining block and a 60-second timeout,
+`GUILD_MEMBER_UPDATE.communication_disabled_until` preceded the rejected POST
+response. The client showed both the private red-tinted blocked row and a disabled
+composer/countdown, then restored the composer at expiry. This ordering and the
+absence of a matching create are observations, not universal delivery guarantees.
+Suspected-spam detection and image safety filters were not triggered by this pass.
+A scoped native pass also verified single-attempt rejections for the preset,
+attachment/reply and thread cases, retained outbox metadata across navigation,
+both composers recovering at timeout expiry, and a successful message in the
+same session afterward. Temporary rules and the successful verification message
+were removed; a fresh official rules read matched the original configuration.
+
+The same bundle's modules `148494`, `93474`, `232835` and `753738` retain an
+AutoMod notice separately from timeout state and display the response explanation;
+`779185` retries `429`, not these `400` rejections. The official queue cancels
+waiting sends in the same channel after a failure. SakuraCord deliberately keeps
+its existing queue policy: later sends recheck eligibility individually and
+unrelated conversations remain usable. It also keeps attachments/replies in the
+outbox and offers explicit retry; the observed official attachment rejection
+restored text and the attachment to the composer while dropping its reply target.
+
+Discord's [error codes](https://docs.discord.com/developers/topics/opcodes-and-status-codes)
+and [Auto Moderation contract](https://docs.discord.com/developers/resources/auto-moderation)
+define message blocking, keyword/regex/preset triggers, optional custom block
+text and the separate timeout action. Pinned
+[Paicord error codes](https://github.com/llsc12/Paicord/blob/5c76f3674e2cace7a6a4369497fcf482f3d9ebe3/PaicordLib/Sources/DiscordModels/Types/Error%20Codes.swift)
+corroborate `200000`; its drain retains an unclassified error and paints failed
+content red. Pinned
+[Swiftcord v1 send handling](https://github.com/SwiftcordApp/Swiftcord/blob/14465d927ebe1ba34b3befa00f9365fad7b56eb9/Swiftcord/Utils/Extensions/MessagesView%2B.swift)
+uses a generic send error with explicit retry. Neither establishes a competing
+AutoMod-specific presentation contract.
+
 ### Embed media
 
 The provider normalizes wire media before presentation: `article` and `image`

@@ -2361,6 +2361,89 @@ private func downArrowKeyEvent(
 }
 
 @MainActor
+@Test func `autoMod preserves the failed reply and attachments without replacing a newer draft`() async throws {
+    let provider = TypingTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/synthetic-automod.txt"))
+    await provider.blockNextSendWithAutoMod()
+    await provider.suspendNextSend()
+    let delivery = try #require(model.enqueueChannelMessage(
+        channelID: channelID, content: "blocked", replyTo: .init(rawValue: 42),
+        replyPreview: nil, attachments: [attachment], clearsComposer: true
+    ))
+    await provider.waitUntilSendStarts()
+    model.updateDraft("New draft")
+    await provider.releaseSend()
+    #expect(!(await delivery.value))
+    let failed = try #require(model.messages.first { $0.content == "blocked" })
+    let nonce = try #require(failed.nonce)
+    #expect(failed.outboxState == .failed)
+    #expect(failed.sendFailure == .autoModeration(explanation: "Synthetic rule explanation"))
+    #expect(failed.replyTo == .init(rawValue: 42))
+    #expect(model.composer.outbox.draftsByNonce[nonce]?.attachments == [attachment])
+    #expect(model.draft == "New draft")
+    #expect(model.errorMessage == nil)
+    #expect(await provider.sendCount == 1)
+
+    // An explicit retry retains the nonce and clears the old failure notice.
+    await provider.suspendNextSend()
+    let retry = Task { await model.retrySending(failed) }
+    await provider.waitUntilSendStarts()
+    #expect(model.messages.first { $0.nonce == nonce }?.sendFailure == nil)
+    await provider.releaseSend()
+    #expect(await retry.value)
+    let confirmed = try #require(model.messages.first { $0.nonce == nonce })
+    #expect(confirmed.outboxState == .confirmed)
+    #expect(confirmed.sendFailure == nil)
+    #expect(model.composer.outbox.draftsByNonce[nonce] == nil)
+    #expect(await provider.sentNonces == [nonce, nonce])
+    #expect(model.draft == "New draft")
+}
+
+@MainActor
+@Test func `autoMod timeout stops queued delivery without relabeling unrelated failures`() async throws {
+    let permissions = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
+        | DiscordPermissionBits.sendMessages
+    let guild = Guild(id: .init(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
+    let provider = TypingTestProvider(guild: guild)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = try #require(model.selectedChannelID)
+    await provider.blockNextSendWithAutoMod()
+    await provider.suspendNextSend()
+    let first = try #require(model.enqueueChannelMessage(
+        channelID: channelID, content: "blocked", replyTo: nil, replyPreview: nil,
+        attachments: [], clearsComposer: false
+    ))
+    await provider.waitUntilSendStarts()
+    let queued = try #require(model.enqueueChannelMessage(
+        channelID: channelID, content: "queued", replyTo: nil, replyPreview: nil,
+        attachments: [], clearsComposer: false
+    ))
+    var member = Member(user: provider.currentUser, roleName: "Member", isOnline: false)
+    member.communicationDisabledUntil = .now.addingTimeInterval(300)
+    model.receiveOnboardingMember(member, guildID: guild.id)
+    await provider.releaseSend()
+    #expect(!(await first.value))
+    #expect(!(await queued.value))
+    #expect(await provider.sendCount == 1)
+    #expect(!model.selectedConversationAccess.canSend)
+    let blocked = try #require(model.messages.first { $0.content == "blocked" })
+    let waiting = try #require(model.messages.first { $0.content == "queued" })
+    #expect(blocked.sendFailure == .autoModeration(explanation: "Synthetic rule explanation"))
+    #expect(waiting.outboxState == .failed)
+    #expect(waiting.sendFailure == nil)
+    #expect(model.composer.outbox.draftsByNonce[try #require(waiting.nonce)]?.content == "queued")
+    member.communicationDisabledUntil = nil
+    model.receiveOnboardingMember(member, guildID: guild.id)
+    #expect(model.selectedConversationAccess.canSend)
+    #expect(model.messages.first { $0.id == blocked.id }?.sendFailure == blocked.sendFailure)
+    #expect(await provider.sendCount == 1)
+}
+
+@MainActor
 @Test func `definite send failure keeps the optimistic message retryable`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -3163,6 +3246,7 @@ private actor TypingTestProvider: ChatProvider {
     private enum SendFailure {
         case definite
         case timedOut
+        case autoModeration
     }
 
     let currentUser = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
@@ -3291,6 +3375,8 @@ private actor TypingTestProvider: ChatProvider {
                 throw ChatProviderError.invalidRequest("Synthetic send failure")
             case .timedOut:
                 throw URLError(.timedOut)
+            case .autoModeration:
+                throw ChatProviderError.autoModerationBlocked(explanation: "Synthetic rule explanation")
             }
         }
         nextMessageID += 1
@@ -3346,6 +3432,10 @@ private actor TypingTestProvider: ChatProvider {
 
     func failNextSend() {
         nextSendFailure = .definite
+    }
+
+    func blockNextSendWithAutoMod() {
+        nextSendFailure = .autoModeration
     }
 
     func timeOutNextSend() {

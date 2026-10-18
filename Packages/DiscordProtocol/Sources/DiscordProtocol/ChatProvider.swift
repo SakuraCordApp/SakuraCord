@@ -1083,6 +1083,7 @@ public enum ChatProviderError: LocalizedError, Equatable, Sendable {
     case channelNotFound
     case slowmode(retryAfter: TimeInterval)
     case messageNotFound
+    case autoModerationBlocked(explanation: String?)
     case invalidRequest(String)
     case rateLimited(retryAfter: TimeInterval, requestID: String?)
     case transport(status: Int, requestID: String?)
@@ -1094,6 +1095,7 @@ public enum ChatProviderError: LocalizedError, Equatable, Sendable {
         case .slowmode: "This conversation is on a slowmode cooldown. Please wait before sending again."
         case .channelNotFound: "The selected channel is unavailable."
         case .messageNotFound: "The message no longer exists."
+        case .autoModerationBlocked: "This message was blocked by AutoMod."
         case let .invalidRequest(message): message
         case let .rateLimited(_, requestID):
             ChatProviderError.transport(status: 429, requestID: requestID).errorDescription

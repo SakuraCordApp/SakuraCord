@@ -508,7 +508,7 @@ extension NativeTimelineCanvasView {
         let element = accessibilityElement(
             role: .row,
             label: ([baseLabel] + metadata).joined(separator: ", "),
-            value: MessageOutboxPresentation.accessibilityStatus(for: message.outboxState),
+            value: MessageOutboxPresentation.accessibilityStatus(for: message),
             help: actions?.openMessage == nil ? nil : "Jump to message",
             identifier: "timeline-message-\(message.id)",
             frame: rowFrame,
@@ -1000,7 +1000,7 @@ extension NativeTimelineCanvasView {
         if let frame = layout.failedFrame {
             children.append(accessibilityElement(
                 role: .staticText,
-                label: "Failed",
+                label: MessageOutboxPresentation.failureText(for: message),
                 frame: accessibilityChildFrame(
                     frame,
                     rowIndex: rowIndex

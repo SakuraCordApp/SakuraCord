@@ -600,6 +600,14 @@ struct MockMessageFixtureBuilder {
                     guildID: nativeLabID
                 ),
                 Message(
+                    id: MessageID(rawValue: 3199), channelID: ChannelID(rawValue: 301), author: nova,
+                    content: "Hello",
+                    timestamp: base.addingTimeInterval(1_240),
+                    outboxState: .failed,
+                    sendFailure: .autoModeration(explanation: "From server moderators: Please revise this message."),
+                    guildID: nativeLabID
+                ),
+                Message(
                     id: MessageID(rawValue: 3112),
                     channelID: ChannelID(rawValue: 301),
                     author: nova,

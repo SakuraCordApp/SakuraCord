@@ -216,6 +216,11 @@ public enum OutboxState: String, Codable, Hashable, Sendable {
     case confirmed, queued, uploading, sending, awaitingReconciliation, failed
 }
 
+/// A definite rejection of a local send, independent of guild membership restrictions.
+public enum MessageSendFailure: Codable, Hashable, Sendable {
+    case autoModeration(explanation: String?)
+}
+
 public struct MessageReplyPreview: Codable, Hashable, Sendable {
     public var messageID: MessageID
     public var author: User
@@ -331,6 +336,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     public var isPinned: Bool
     public var nonce: String?
     public var outboxState: OutboxState
+    public var sendFailure: MessageSendFailure?
     public var type: DiscordMessageType
     public var flags: MessageFlags
     public var applicationID: ApplicationID?
@@ -369,6 +375,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         isPinned: Bool = false,
         nonce: String? = nil,
         outboxState: OutboxState = .confirmed,
+        sendFailure: MessageSendFailure? = nil,
         type: DiscordMessageType = .default,
         flags: MessageFlags = [],
         applicationID: ApplicationID? = nil,
@@ -406,6 +413,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         self.isPinned = isPinned
         self.nonce = nonce
         self.outboxState = outboxState
+        self.sendFailure = sendFailure
         self.type = type
         self.flags = flags
         self.applicationID = applicationID
@@ -433,7 +441,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         case id, channelID, author, guildMember, content, timestamp, editedTimestamp, replyTo,
              replyPreview
         case attachments, reactions, isPinned, nonce, outboxState, type, flags, applicationID, application
-        case interactionMetadata, guildID, webhookID
+        case interactionMetadata, guildID, webhookID, sendFailure
         case embeds, components, stickers, thread, mentionedUsers, mentionedRoleIDs, mentionsEveryone
         case call, poll, hasPoll, hasActivity, hasSharedClientTheme, hasActivityInstance
         case messageReference, forwardedSnapshot
@@ -457,6 +465,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         nonce = try values.decodeIfPresent(String.self, forKey: .nonce)
         outboxState =
             try values.decodeIfPresent(OutboxState.self, forKey: .outboxState) ?? .confirmed
+        sendFailure = try values.decodeIfPresent(MessageSendFailure.self, forKey: .sendFailure)
         type = try values.decodeIfPresent(DiscordMessageType.self, forKey: .type) ?? .default
         flags = try values.decodeIfPresent(MessageFlags.self, forKey: .flags) ?? []
         applicationID = try values.decodeIfPresent(ApplicationID.self, forKey: .applicationID)
