@@ -570,7 +570,7 @@ struct UserProfileDTO: Decodable {
     }
 
     private static func firstNonEmpty(_ values: String?...) -> String? {
-        values.compactMap { value in
+        values.compactMap { (value: String?) -> String? in
             guard let value else { return nil }
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : value

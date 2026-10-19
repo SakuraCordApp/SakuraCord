@@ -24,8 +24,11 @@ struct ProfileWidgetsBoard: View {
                     .contentShape(.interaction, .rect(cornerRadius: InterfaceScale.metric(16)))
                     .contentShape(.dragPreview, .rect(cornerRadius: InterfaceScale.metric(16)))
                 }
+#if compiler(>=6.4)
                 .reorderable()
+#endif
             }
+#if compiler(>=6.4)
             .reorderContainer(for: ProfileWidget.self, isEnabled: editor.canEditWidgets) { difference in
                 let before: String?
                 switch difference.destination.position {
@@ -34,6 +37,7 @@ struct ProfileWidgetsBoard: View {
                 }
                 editor.moveWidgets(difference.sources, before: before)
             }
+#endif
         }
         .overlay(alignment: .topTrailing) {
             Button { showsAddPicker = true } label: { Label("Add Widget", systemImage: "plus") }

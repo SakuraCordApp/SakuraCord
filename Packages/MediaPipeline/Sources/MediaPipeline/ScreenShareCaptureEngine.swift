@@ -442,7 +442,7 @@ public final class ScreenShareCaptureEngine: NSObject, @unchecked Sendable {
     private func makeConfiguration(
         filter: SCContentFilter
     ) -> (SCStreamConfiguration, ScreenShareVideoFormat) {
-        let (settings, isEncoding) = lock.withLock { (settings, isEncoding) }
+        let (settings, isEncoding) = lock.withLock { () -> (ScreenShareSettings, Bool) in (self.settings, self.isEncoding) }
         let sourceWidth = max(2, Int(filter.contentRect.width * CGFloat(filter.pointPixelScale)))
         let sourceHeight = max(2, Int(filter.contentRect.height * CGFloat(filter.pointPixelScale)))
         let outputSize = Self.outputSize(

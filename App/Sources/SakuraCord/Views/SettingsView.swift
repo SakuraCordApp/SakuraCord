@@ -97,7 +97,7 @@ struct SettingsView: View {
         } message: {
             Text(profileEditor?.isSaving == true ? "Wait for your profile changes to finish saving." : "Your profile has unsaved changes.", bundle: #bundle)
         }
-        .confirmationDialog("Profile Changes", item: $pendingNavigation, titleVisibility: .visible) { request in
+        .confirmationDialog("Profile Changes", isPresented: Binding(get: { pendingNavigation != nil }, set: { if !$0 { pendingNavigation = nil } }), titleVisibility: .visible, presenting: pendingNavigation) { request in
             if profileEditor?.isSaving != true {
                 Button("Discard Changes", role: .destructive) {
                     guard let profileEditor, !profileEditor.isSaving else { return }

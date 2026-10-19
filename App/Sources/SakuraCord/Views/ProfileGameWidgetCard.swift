@@ -222,7 +222,7 @@ private struct ProfileWidgetGameComment: View {
                     Spacer(minLength: 0)
                 }
                 if isEditing {
-                    TextField("Add a comment", text: Binding(get: { draft }, set: updateDraft), axis: .vertical)
+                    TextField("Add a comment", text: Binding(get: { draft }, set: { updateDraft($0) }), axis: .vertical)
                         .lineLimit(3 ... 3).textFieldStyle(.plain).focused($focused)
                         .profileEditorTextHover(isEditing: true)
                         .onSubmit(commit)

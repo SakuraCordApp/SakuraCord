@@ -296,7 +296,7 @@ struct ProfileWidgetText: View {
                         if draft.isEmpty { Text(placeholder) } else { Text(draft) }
                     }
                     .hidden().accessibilityHidden(true)
-                    TextField(placeholder, text: Binding(get: { draft }, set: updateDraft), axis: lines > 1 ? .vertical : .horizontal)
+                    TextField(placeholder, text: Binding(get: { draft }, set: { updateDraft($0) }), axis: lines > 1 ? .vertical : .horizontal)
                         .textFieldStyle(.plain).lineLimit(1 ... lines).focused($focused)
                         .onSubmit(commit)
                         .onKeyPress(.return, phases: .down) { event in

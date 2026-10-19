@@ -343,11 +343,11 @@ struct SelectionField<ID: Hashable & Sendable>: View {
         VStack(spacing: 0) {
             if configuration.searches {
                 PickerSearchHeader(
-                    text: Binding(get: { model.query }, set: model.updateQuery),
+                    text: Binding(get: { model.query }, set: { model.updateQuery($0) }),
                     focus: { searchIsFocused = true },
                     input: {
                     SelectionFieldSearchInput(
-                        query: Binding(get: { model.query }, set: model.updateQuery),
+                        query: Binding(get: { model.query }, set: { model.updateQuery($0) }),
                         placeholder: configuration.searchPlaceholder,
                         wantsFocus: searchIsFocused,
                         searches: true,

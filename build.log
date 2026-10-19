@@ -1,0 +1,12 @@
+Building for debugging...
+[0/7] Write sources
+[1/7] Write swift-version--58304C5D6DBC2206.txt
+[3/7] Emitting module SakuraCord
+[4/7] Compiling SakuraCord RootView.swift
+[5/10] Compiling SakuraCord ChatDetailView.swift
+[6/10] Compiling SakuraCord ChatWorkspaceView.swift
+[7/10] Compiling SakuraCord SakuraCordApp.swift
+[7/10] Write Objects.LinkFileList
+[8/10] Linking SakuraCord
+[9/10] Applying SakuraCord
+Build complete! (36.05s)

@@ -1,9 +1,9 @@
-// swift-tools-version: 6.4
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
     name: "SakuraCordPersistence",
-    platforms: [.macOS(.v27)],
+    platforms: [.macOS(.v26)],
     products: [.library(name: "SakuraCordPersistence", targets: ["SakuraCordPersistence"])],
     dependencies: [
         .package(path: "../SakuraCordModels"),

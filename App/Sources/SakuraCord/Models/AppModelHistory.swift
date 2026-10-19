@@ -192,7 +192,7 @@ extension AppModel {
         async let storedDraft = AppPerformanceSignposts.measure(
             "ConversationDraftLoad"
         ) {
-            await storedDraft(in: channelID, account: account)
+            await self.storedDraft(in: channelID, account: account)
         }
         // Discord lets already-dispatched history reads finish when the user
         // switches channels. Besides retaining the response in MessageStore,

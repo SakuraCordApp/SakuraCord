@@ -13,7 +13,7 @@ enum NativeTimelineCompactTimestampMetrics {
         if let cachedWidth, cachedWidth.key == key { return cachedWidth.width }
         // Measure every hour once, so changing digit counts and day periods
         // never shift the message column between rows or clip hovered times.
-        let width = (0 ..< 24).map { hour in
+        let width: CGFloat = (0 ..< 24).map { hour -> CGFloat in
             let text = InterfaceTimestampFormatter.text(
                 for: Date(timeIntervalSince1970: Double(hour * 3600 + 59 * 60 + 59)),
                 format: settings.timestampFormat,

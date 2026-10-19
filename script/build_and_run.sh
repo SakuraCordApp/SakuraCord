@@ -174,7 +174,7 @@ ICON_PARTIAL_PLIST="$DIST_DIR/SakuraCordIcon-Info.plist"
 xcrun actool \
   --compile "$RESOURCES" \
   --platform macosx \
-  --minimum-deployment-target 27.0 \
+  --minimum-deployment-target 26.4 \
   --app-icon "$APP_ICON_NAME" \
   --output-partial-info-plist "$ICON_PARTIAL_PLIST" \
   --warnings --notices --errors \
@@ -218,7 +218,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$BUNDLE_SHORT_VERSION</string>
   <key>SakuraCordReleaseDisplayVersion</key><string>$BUNDLE_DISPLAY_VERSION</string>
   <key>CFBundleVersion</key><string>$BUNDLE_BUILD_VERSION</string>
-  <key>LSMinimumSystemVersion</key><string>27.0</string>
+  <key>LSMinimumSystemVersion</key><string>26.4</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>SakuraCord uses your microphone when you join a voice call.</string>

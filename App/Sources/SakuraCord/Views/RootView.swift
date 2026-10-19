@@ -197,7 +197,7 @@ private struct ChatRootView: View {
     @State private var modifierPollingTask: Task<Void, Never>?
     @State private var composerDropInteraction = ComposerDropInteractionState()
 
-    @ViewBuilder private var workspace: some View {
+    @ViewBuilder private var workspaceSplitView: some View {
         @Bindable var model = model
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
@@ -263,15 +263,13 @@ private struct ChatRootView: View {
             }
         }
         .toolbar {
-            if model.onboardingEntryGuildID != nil {
-                ToolbarItem(placement: .navigation) {
-                    ConversationToolbarTitle(presentation: .init(title: "Server Onboarding", systemImage: "sparkles"))
-                }
-            } else {
-                conversationToolbar
-            }
+            rootToolbar
         }
         .environment(\.composerDropInteraction, composerDropInteraction)
+    }
+
+    @ViewBuilder private var workspaceChrome: some View {
+        workspaceSplitView
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 SakuraCordTextInputAccentBridge()
@@ -290,7 +288,7 @@ private struct ChatRootView: View {
                     } else {
                         Text(sidebarDisplayName)
                             .font(.interfaceSystem(
-                                size: InterfaceTypographyMetrics.interfaceTextSize + 2,
+                                size: InterfaceTypographyMetrics.interfaceTextSize + CGFloat(2),
                                 weight: .semibold
                             ))
                             .lineLimit(1)
@@ -337,6 +335,10 @@ private struct ChatRootView: View {
             )
             .frame(width: 0, height: 0)
         }
+    }
+
+    @ViewBuilder private var workspace: some View {
+        workspaceChrome
         .modifier(ExpandedProfilePresentationModifier(model: model))
         .modifier(NicknameEditorPresentationModifier(model: model))
         .modifier(ProfileGamePresentationModifier(model: model))
@@ -1467,5 +1469,18 @@ private struct ChannelTopicPopover: View {
             .padding(InterfaceScale.metric(16))
             .frame(width: InterfaceScale.metric(320), alignment: .leading)
             .interfaceScaleRoot()
+    }
+}
+
+extension ChatRootView {
+    @ToolbarContentBuilder
+    var rootToolbar: some ToolbarContent {
+        if model.onboardingEntryGuildID != nil {
+            ToolbarItem(placement: .navigation) {
+                ConversationToolbarTitle(presentation: .init(title: "Server Onboarding", systemImage: "sparkles"))
+            }
+        } else {
+            conversationToolbar
+        }
     }
 }

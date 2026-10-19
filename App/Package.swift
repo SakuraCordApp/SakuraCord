@@ -1,9 +1,9 @@
-// swift-tools-version: 6.4
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
     name: "SakuraCordApp",
-    platforms: [.macOS(.v27)],
+    platforms: [.macOS("26.4")],
     products: [
         .executable(name: "SakuraCord", targets: ["SakuraCord"]),
         .executable(name: "SakuraCordPluginHost", targets: ["SakuraCordPluginHost"])
@@ -17,8 +17,8 @@ let package = Package(
         .package(path: "../Packages/SakuraCordPluginSDK"),
         .package(url: "https://github.com/airbnb/lottie-ios.git", exact: "4.6.1"),
         .package(
-            url: "https://github.com/SakuraCordApp/Sparkle",
-            exact: "2.9.6-sakuracord.2"
+            url: "https://github.com/sparkle-project/Sparkle",
+            exact: "2.9.6"
         ),
         .package(
             url: "https://github.com/llsc12/hcaptcha",
