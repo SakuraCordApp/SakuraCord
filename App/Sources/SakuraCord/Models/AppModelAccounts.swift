@@ -81,6 +81,7 @@ extension AppModel {
                 errorMessage = "That saved Discord account is no longer available."
                 return false
             }
+            SettingsConversationRestorationStore.shared.prepareAccountSwitch(to: accountID)
             return await connectAuthenticatedAccount(
                 handle,
                 preservesInteractivePresentation: preservesWorkspace
