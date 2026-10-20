@@ -43,6 +43,12 @@ nonisolated enum ChatChromeMetrics {
     /// Native toolbar search keeps its own outer item margin. An eight-point
     /// field inset centers the visible glass inside the fixed inspector pane.
     static var toolbarPaneEdgeInset: CGFloat { InterfaceScale.metric(8) }
+    /// The window toolbar's own edge margin. Toolbar items keep system sizing,
+    /// so a pane title uses the same unscaled inset from the pane edge.
+    static let toolbarItemEdgeInset: CGFloat = 8
+    /// System toolbar metrics that bound a pane title before it is measured.
+    static let toolbarIconButtonWidth: CGFloat = 37
+    static let toolbarTitleActionSpacing: CGFloat = 8
     static var toolbarSearchMaximumFieldWidth: CGFloat {
         memberListWidth - (toolbarPaneEdgeInset * 2)
     }

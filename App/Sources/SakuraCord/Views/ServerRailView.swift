@@ -165,6 +165,8 @@ struct ServerRailView: View {
         }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
+        // Scrolled icons must not draw beneath the window's traffic lights.
+        .scrollEdgeEffectStyle(.hard, for: .top)
         .background {
             ScrollInputPerformanceProbeAttachment(surface: .serverList)
                 .allowsHitTesting(false)

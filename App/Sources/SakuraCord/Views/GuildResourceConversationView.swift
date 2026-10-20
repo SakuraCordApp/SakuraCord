@@ -36,6 +36,8 @@ struct GuildResourceConversationView: View {
                     loadLater: { model.loadGuideResource() }, openReply: { _ in },
                     onScrollActivityChange: { _ in }, onScrollStateChange: { _ in }, onUserScrollBegan: {}, onUserScrollEnded: { _ in }
                 )
+                // Like the other side chats, scroll beneath the toolbar glass.
+                .ignoresSafeArea(.container, edges: .top)
             }
         }
     }

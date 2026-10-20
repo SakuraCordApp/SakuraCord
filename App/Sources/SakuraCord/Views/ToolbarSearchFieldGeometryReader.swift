@@ -362,15 +362,18 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         private weak var searchField: NSSearchField?
         private weak var searchToolbarItem: NSSearchToolbarItem?
         private var originalSearchToolbarItemIsHidden: Bool?
+        /// SwiftUI precedes the search item with a flexible space. It would
+        /// share the toolbar's free width with the detail column's own leading
+        /// flexible space, centring trailing actions, and its minimum width
+        /// would push a trailing item in from the edge while search is hidden.
+        private weak var hiddenSearchSpacer: NSToolbarItem?
         private var appliedSearchToolbarItemIsHidden: Bool?
         private weak var sizedSearchToolbarItem: NSSearchToolbarItem?
-        private weak var sizedSearchField: NSSearchField?
         private var originalPreferredSearchFieldWidth: CGFloat?
         private var appliedPreferredSearchFieldWidth: CGFloat?
         private weak var searchContainerWidthConstraint: NSLayoutConstraint?
         private var originalSearchContainerWidth: CGFloat?
         private var appliedSearchContainerWidth: CGFloat?
-        private var searchFieldWidthConstraint: NSLayoutConstraint?
         private var observers: [NSObjectProtocol] = []
         private var searchFieldDelegateProxy: ToolbarSearchFieldDelegateProxy?
         private var retryTask: Task<Void, Never>?
@@ -454,6 +457,10 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             guard let window else { return }
             observe(NSWindow.didResizeNotification, object: window)
             observe(NSWindow.didEndLiveResizeNotification, object: window)
+            if let toolbar = window.toolbar {
+                observe(NSToolbar.willAddItemNotification, object: toolbar)
+                observe(NSToolbar.didRemoveItemNotification, object: toolbar)
+            }
             observe(NSMenu.didBeginTrackingNotification, object: nil)
             observe(NSMenu.didEndTrackingNotification, object: nil)
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -607,16 +614,22 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             let isHidden = isToolbarItemVisible
                 ? (originalSearchToolbarItemIsHidden ?? false)
                 : true
-            if item.isHidden != isHidden {
+            let spacer = searchSpacer(before: item, in: window)
+            if item.isHidden != isHidden || spacer?.isHidden == false {
                 // Search disappears together with the channel actions. Finish
                 // that native layout without morphing its glass into the title.
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0
                     context.allowsImplicitAnimation = false
                     item.isHidden = isHidden
+                    spacer?.isHidden = true
                     window.contentView?.superview?.layoutSubtreeIfNeeded()
                 }
             }
+            if hiddenSearchSpacer !== spacer {
+                restoreSearchSpacerVisibility()
+            }
+            hiddenSearchSpacer = spacer
             appliedSearchToolbarItemIsHidden = isHidden
             return true
         }
@@ -632,25 +645,9 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                     item.preferredWidthForSearchField
             }
 
-            let field = item.searchField
-            if sizedSearchField !== field {
-                searchFieldWidthConstraint?.isActive = false
-                sizedSearchField = field
-                let constraint = field.widthAnchor.constraint(
-                    equalToConstant: width
-                )
-                constraint.identifier = "SakuraCord.ToolbarSearchFieldWidth"
-                constraint.priority = NSLayoutConstraint.Priority(999)
-                constraint.isActive = true
-                searchFieldWidthConstraint = constraint
-            } else if let searchFieldWidthConstraint,
-                      abs(searchFieldWidthConstraint.constant - width) > 0.5
-            {
-                searchFieldWidthConstraint.constant = width
-            } else {
-                return false
-            }
-
+            // The native item keeps this width when the toolbar has room, then
+            // shrinks and finally collapses before titles and actions overflow.
+            guard abs(item.preferredWidthForSearchField - width) > 0.5 else { return false }
             item.preferredWidthForSearchField = width
             appliedPreferredSearchFieldWidth = width
             return true
@@ -692,7 +689,21 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             appliedSearchContainerWidth = nil
         }
 
+        private func searchSpacer(before item: NSToolbarItem, in window: NSWindow) -> NSToolbarItem? {
+            guard let items = window.toolbar?.items,
+                  let index = items.firstIndex(where: { $0 === item }), index > 0,
+                  items[index - 1].itemIdentifier == .flexibleSpace
+            else { return nil }
+            return items[index - 1]
+        }
+
+        private func restoreSearchSpacerVisibility() {
+            hiddenSearchSpacer?.isHidden = false
+            hiddenSearchSpacer = nil
+        }
+
         private func restoreSearchToolbarItemVisibility() {
+            restoreSearchSpacerVisibility()
             if let searchToolbarItem,
                let originalSearchToolbarItemIsHidden,
                let appliedSearchToolbarItemIsHidden,
@@ -706,9 +717,6 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         }
 
         private func restoreSearchToolbarItemSizing() {
-            searchFieldWidthConstraint?.isActive = false
-            searchFieldWidthConstraint = nil
-            sizedSearchField = nil
             restoreSearchContainerWidth()
             if let sizedSearchToolbarItem,
                let originalPreferredSearchFieldWidth,

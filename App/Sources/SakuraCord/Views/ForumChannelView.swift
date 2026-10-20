@@ -11,24 +11,28 @@ struct ForumChannelView: View {
 
     var body: some View {
         if let channel = model.selectedChannel {
-            VStack(spacing: 0) {
-                ForumBrowseHeader(
-                    model: model,
-                    channel: channel,
-                    searchText: $searchText,
-                    presentsComposer: $presentsComposer
-                )
-                if let error = model.forumActionError {
-                    ForumActionErrorBanner(
-                        message: error,
-                        dismiss: model.dismissForumActionError
-                    )
+            forumContent(channel: channel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Posts scroll beneath the header and the window toolbar, as
+                // conversation timelines do. The header's controls need the
+                // opaque edge to stay legible over moving cards.
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    VStack(spacing: 0) {
+                        ForumBrowseHeader(
+                            model: model,
+                            channel: channel,
+                            searchText: $searchText,
+                            presentsComposer: $presentsComposer
+                        )
+                        if let error = model.forumActionError {
+                            ForumActionErrorBanner(
+                                message: error,
+                                dismiss: model.dismissForumActionError
+                            )
+                        }
+                    }
                 }
-                Divider()
-                forumContent(channel: channel)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .scrollEdgeEffectStyle(.hard, for: .top)
             .onChange(of: channel.id) {
                 searchText = model.forumSearchText
                 reportPresentedForum(channel.id)
@@ -337,6 +341,8 @@ private struct ForumSortMenu: View {
                 .font(.interface(.caption2).weight(.bold))
         }
         .font(.interface(.callout).weight(.semibold))
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, InterfaceScale.metric(10))
         .frame(height: InterfaceScale.metric(30))
         .contentShape(Capsule())

@@ -244,7 +244,8 @@ extension NativeTimelineCanvasView {
               contentOriginMoved,
               window != nil,
               max(previousContentOriginY, contentOriginY)
-                > ChatDetailLayoutPolicy.timelineTopPadding + 0.5
+                > ChatDetailLayoutPolicy.timelineTopPadding
+                    + (enclosingScrollView?.scrollerInsets.top ?? 0) + 0.5
         else { return }
         // Bottom-aligned timelines move every existing row when a live
         // message consumes some of their leading space. With

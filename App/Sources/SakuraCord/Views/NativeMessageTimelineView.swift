@@ -11,6 +11,17 @@ private final class NativeTimelineInputShieldScrollView: NSScrollView {
     var onUserScrollTowardNewest: (() -> Void)?
     var onScrollWheel: (() -> Void)?
 
+    /// Called when the window toolbar starts covering a different height.
+    var onToolbarObscuredHeightChange: (() -> Void)?
+
+    override func tile() {
+        if keepScrollerBelowWindowToolbar() {
+            // Content insets follow on the next turn, outside AppKit's tiling.
+            Task { @MainActor [weak self] in self?.onToolbarObscuredHeightChange?() }
+        }
+        super.tile()
+    }
+
     override func scrollWheel(with event: NSEvent) {
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         onScrollWheel?()
@@ -369,6 +380,9 @@ extension NativeMessageTimelineCoordinator {
             }
             // The reader's own scrolling always wins over a jump's glide.
             scrollView.onScrollWheel = { [weak self] in self?.cancelGlide() }
+            scrollView.onToolbarObscuredHeightChange = { [weak self] in
+                self?.updateInsetsForToolbarObscuredHeightChange()
+            }
             scrollView.documentView = documentView
             scrollView.drawsBackground = false
             scrollView.borderType = .noBorder
