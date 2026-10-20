@@ -35,6 +35,8 @@ nonisolated enum NativeTimelineMessageMenuAction: Equatable {
     case viewReactions
     case reply
     case forward
+    case createThread
+    case viewThread
     case markUnread
     case dismissInboxMention
     case endPoll
@@ -74,6 +76,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         canReply: Bool,
         canEndPoll: Bool = false,
         canForward: Bool = false,
+        threadAction: NativeTimelineMessageMenuAction? = nil,
         canPin: Bool = false,
         isPinned: Bool = false,
         translationTitle: String? = nil,
@@ -109,6 +112,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
             canDelete: canDelete,
             canReply: canReply,
             canForward: canForward,
+            threadAction: threadAction,
             canPin: canPin,
             isPinned: isPinned
         )
@@ -168,6 +172,7 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
         canDelete: Bool,
         canReply: Bool,
         canForward: Bool,
+        threadAction: NativeTimelineMessageMenuAction?,
         canPin: Bool,
         isPinned: Bool
     ) -> [NativeTimelineMessageMenuEntry] {
@@ -196,6 +201,16 @@ nonisolated enum NativeTimelineMessageMenuPolicy {
                 title: "Forward",
                 systemImage: "arrowshape.turn.up.right"
             ))
+        }
+        // The first-party menu offers Create Thread after Forward; a message
+        // that already has a thread opens it instead.
+        switch threadAction {
+        case .createThread?:
+            result.append(.action(.createThread, title: "Create Thread", systemImage: SakuraCordSystemSymbol.thread))
+        case .viewThread?:
+            result.append(.action(.viewThread, title: "View Thread", systemImage: SakuraCordSystemSymbol.thread))
+        default:
+            break
         }
         if canEdit {
             result.append(.action(

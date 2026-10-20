@@ -95,8 +95,12 @@ private struct ThreadCreationView: View {
                 .background(.quaternary, in: Circle())
                 .accessibilityHidden(true)
 
+            if let starter = creation.starterMessage {
+                ThreadStarterMessagePreview(model: model, message: starter)
+            }
+
             VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
-                Text("Thread Name")
+                Text(creation.starterMessage == nil ? "Thread Name" : "Thread Name (Optional)")
                     .font(.interface(.headline))
                 ZStack(alignment: .leading) {
                     TextField("", text: $creation.name)
@@ -107,7 +111,8 @@ private struct ThreadCreationView: View {
                         .accessibilityLabel("Thread Name")
                         .onSubmit { model.validateThreadCreation() }
                     if creation.name.isEmpty {
-                        Text("New Thread")
+                        Text(creation.starterMessage == nil ? "New Thread" : creation.defaultName)
+                            .lineLimit(1)
                             .font(.interfaceSystem(size: 15))
                             .foregroundStyle(.tertiary)
                             .allowsHitTesting(false)
@@ -126,7 +131,7 @@ private struct ThreadCreationView: View {
                 }
                 .contentShape(fieldShape)
                 .simultaneousGesture(TapGesture().onEnded { isNameFocused = true })
-                if creation.showsValidationErrors, creation.trimmedName.isEmpty {
+                if creation.showsValidationErrors, creation.nameToCreate == nil {
                     ThreadCreationError(message: "Thread Name is required")
                 }
             }
@@ -144,6 +149,9 @@ private struct ThreadCreationView: View {
 
             if creation.showsValidationErrors, isMissingStarterMessage {
                 ThreadCreationError(message: "Starter Message is required")
+            }
+            if let error = creation.submissionError {
+                ThreadCreationError(message: error)
             }
         }
         .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
@@ -166,6 +174,39 @@ private struct ThreadCreationView: View {
     private var isMissingStarterMessage: Bool {
         model.threadDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && model.threadComposerAttachments.isEmpty
+    }
+}
+
+/// The message a thread is being started from, as the first-party creation
+/// pane shows it above the name field.
+private struct ThreadStarterMessagePreview: View {
+    let model: AppModel
+    let message: Message
+
+    var body: some View {
+        let author = model.authorPresentation(for: message)
+        VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
+            Text(author.user.displayName)
+                .font(.interface(.callout).weight(.semibold))
+                .foregroundStyle(author.roleColorHex.map { Color(hex: $0) } ?? .primary)
+            Text(previewText)
+                .font(.interface(.callout))
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+        }
+        .padding(InterfaceScale.metric(12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Starting a thread from \(author.user.displayName): \(previewText)")
+    }
+
+    private var previewText: String {
+        let content = model.readableThreadStarterContent(message)
+        if !content.isEmpty { return content }
+        if let title = message.embeds.first?.title { return title }
+        if let question = message.poll?.question { return question }
+        return message.attachments.isEmpty ? "Message" : "Attachment"
     }
 }
 

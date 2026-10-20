@@ -271,13 +271,36 @@ final class ThreadCreationDraft {
     /// Required-field errors appear after an invalid submission, never while a valid draft is consumed.
     var showsValidationErrors = false
     var isSubmitting = false
+    /// Discord's reason when creating the thread failed; the draft stays.
+    var submissionError: String?
+    /// The parent-channel message a thread started from it takes its ID from.
+    /// Such a thread is public and its name is optional.
+    let starterMessage: Message?
+    /// The first-party default name used when the optional name is blank.
+    let defaultName: String
 
     var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+
+    /// The name to create the thread with, or nil when one is required.
+    var nameToCreate: String? {
+        if !trimmedName.isEmpty { return trimmedName }
+        return starterMessage == nil ? nil : defaultName
+    }
 
     init(parentID: ChannelID, permissions: ThreadCreationPermissions) {
         self.parentID = parentID
         self.permissions = permissions
         isPrivate = !permissions.canCreatePublic
+        starterMessage = nil
+        defaultName = ""
+    }
+
+    init(startingFrom message: Message, defaultName: String) {
+        parentID = message.channelID
+        permissions = ThreadCreationPermissions(canCreatePublic: true, canCreatePrivate: false)
+        isPrivate = false
+        starterMessage = message
+        self.defaultName = defaultName
     }
 }
 

@@ -71,3 +71,36 @@ import Testing
     #expect(await eventually { model.snapshot?.activeJoinedThreads.first { $0.id == thread.id }?.name == "Renamed thread" })
     #expect(await eventually { model.messages.first { $0.id == starter.id }?.thread?.name == "Renamed thread" })
 }
+
+@MainActor
+@Test func `a thread from a message keeps its draft when creation fails and sends its first message once created`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    model.selectGuild(GuildID(rawValue: 101))
+    await model.guildActivationTask?.value
+    model.selectedChannelID = ChannelID(rawValue: 301)
+    #expect(await eventually { model.messages.count >= 2 })
+    let parent = try #require(model.selectedChannel)
+    let eligible = model.messages.filter { model.canCreateThread(from: $0) }
+    let taken = try #require(eligible.last)
+    let starter = try #require(eligible.dropLast().last)
+
+    // Another client starts a thread on the message while the pane is open.
+    model.beginThreadCreation(from: taken)
+    let failed = try #require(model.threadCreation)
+    #expect(failed.starterMessage?.id == taken.id && failed.nameToCreate == failed.defaultName)
+    _ = try await provider.createThread(.startingFrom(taken, in: parent, name: "Elsewhere"))
+    model.threadDraft = "First message"
+    #expect(await !model.submitThreadComposerMessage(attachments: []).consumedComposer)
+    #expect(model.threadCreation === failed && failed.submissionError != nil)
+    #expect(model.threadDraft == "First message" && model.openThread == nil)
+
+    model.beginThreadCreation(from: starter)
+    model.threadDraft = "First message"
+    let result = await model.submitThreadComposerMessage(attachments: [])
+    #expect(await result.serverConfirmation())
+    #expect(model.openThread?.id == ChannelID(rawValue: starter.id.rawValue))
+    #expect(await eventually { model.threadMessages.contains { $0.content == "First message" } })
+    #expect(await eventually { model.messages.first { $0.id == starter.id }?.thread != nil })
+}

@@ -1220,6 +1220,9 @@ extension NativeTimelineCanvasView {
                 ),
             canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.currentUser?.id && row.message.poll?.isClosed() == false,
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
+            threadAction: row.message.thread != nil
+                ? .viewThread
+                : (model?.canCreateThread(from: row.message) == true ? .createThread : nil),
             canPin: model?.canManagePins(for: row.message) == true,
             isPinned: row.message.isPinned,
             translationTitle: row.isResource ? nil : model?.messageTranslationMenuTitle(for: row.message),
@@ -1350,14 +1353,34 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    private func threadMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        actions: NativeTimelineRowActions
+    ) -> (() -> Void)? {
+        switch action {
+        case .createThread:
+            { [weak model] in model?.beginThreadCreation(from: row.message) }
+        case .viewThread:
+            {
+                guard let thread = row.message.thread else { return }
+                actions.openThread(thread)
+            }
+        default:
+            nil
+        }
+    }
+
     private func nonPinMessageMenuHandler(
         action: NativeTimelineMessageMenuAction,
         row: MessageRowPresentation,
         index: Int,
         actions: NativeTimelineRowActions
     ) -> () -> Void {
-        if let copyHandler = copyMessageMenuHandler(action: action, row: row) {
-            return copyHandler
+        if let handler = copyMessageMenuHandler(action: action, row: row)
+            ?? threadMessageMenuHandler(action: action, row: row, actions: actions)
+        {
+            return handler
         }
         return switch action {
         case .jumpToMessage:

@@ -100,6 +100,7 @@ public extension DiscordRESTProvider {
         cacheForwardSearchMessageAliases(values)
         for index in values.indices {
             attachKnownThread(to: &values[index])
+            attachKnownStarterPreview(to: &values[index])
             if let existing = cachedMessages[values[index].id] {
                 values[index].guildMember = MessageGuildMember.merging(
                     incoming: values[index].guildMember,

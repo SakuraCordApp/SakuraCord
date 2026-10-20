@@ -1054,6 +1054,16 @@ extension DiscordRESTProvider {
         }
     }
 
+    /// A thread's starter reference (type 21) arrives from the Gateway
+    /// without the message it quotes; use the parent message when known.
+    func attachKnownStarterPreview(to message: inout Message) {
+        guard message.type == .threadStarter, message.replyPreview == nil,
+              let starterID = message.messageReference?.messageID,
+              let starter = cachedMessages[starterID]
+        else { return }
+        message.replyPreview = MessageReplyPreview(message: starter)
+    }
+
     /// A thread-created system message names its thread only through its
     /// reference; attach the known thread so the timeline can draw its card.
     func attachKnownThread(to message: inout Message) {
@@ -1084,8 +1094,10 @@ extension DiscordRESTProvider {
     ) {
         for (parentID, posts) in cachedForumPosts {
             guard var post = posts[message.channelID] else { continue }
+            // The type-21 starter reference is not a reply Discord counts.
             let isNewerReply =
                 marksUnread
+                && message.type != .threadStarter
                 && message.id.rawValue != post.id.rawValue
                 && (post.thread.lastMessageID.map { message.id > $0 } ?? true)
             if message.id.rawValue == post.id.rawValue || post.firstMessage?.id == message.id {

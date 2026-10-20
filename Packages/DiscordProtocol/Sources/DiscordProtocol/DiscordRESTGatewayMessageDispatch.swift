@@ -100,6 +100,7 @@ extension DiscordRESTProvider {
                     .first { $0.id == message.channelID }?.guildID
             }
             attachKnownThread(to: &message)
+            attachKnownStarterPreview(to: &message)
             cacheMessageSearchUsers(dto.searchIndexUsers)
             cacheForwardSearchMessageAliases([message])
             cachedMessages[message.id] = message

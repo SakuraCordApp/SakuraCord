@@ -60,10 +60,19 @@ extension AppModel {
         guard openThread?.id != thread.id else { return }
         cancelConversationNavigation()
         let starter = messages.first { $0.thread?.id == thread.id }
+        // The thread's creator started it, who may not have written the
+        // message it was started from. An unknown creator shows no credit.
+        let creator: User? = if let ownerID = thread.ownerID {
+            starter?.author.id == ownerID ? starter?.author
+                : ownerID == currentUser?.id ? currentUser
+                : membersByID[ownerID]?.user
+        } else {
+            starter?.author
+        }
         openThreadConversation(
             thread,
-            starter: starter?.author,
-            startedAt: starter?.timestamp,
+            starter: creator,
+            startedAt: thread.createdAt ?? starter?.timestamp,
             starterMessageID: nil,
             initialMessages: []
         )
@@ -608,29 +617,74 @@ extension AppModel {
         }
     }
 
+    /// Starting a public thread from a confirmed message posted directly in
+    /// the selected text or announcement channel, as ThreadActionPolicy allows.
+    func canCreateThread(from message: Message) -> Bool {
+        guard message.channelID == selectedChannelID, let channel = selectedChannel,
+              conversationAccess(for: channel).isReadable,
+              let permissions = effectiveMessagePermissions(in: channel)
+        else { return false }
+        return ThreadActionPolicy.canCreateThread(from: message, in: channel, permissions: permissions)
+    }
+
+    /// A starter message's text as readers see it, with mentions named.
+    func readableThreadStarterContent(_ message: Message) -> String {
+        let names = mentionNames
+        return ThreadNamePolicy.readableContent(of: message, channelNames: names.channels, roleNames: names.roles)
+    }
+
+    private var mentionNames: (channels: [ChannelID: String], roles: [RoleID: String]) {
+        (
+            messagePresentationChannelsByID.mapValues(\.name),
+            Dictionary(guildRoles.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        )
+    }
+
+    /// The message context menu's Create Thread: the creation side chat with
+    /// the starter message, an optional name and a required first message.
+    func beginThreadCreation(from message: Message) {
+        guard canCreateThread(from: message) else { return }
+        let names = mentionNames
+        let defaultName = ThreadNamePolicy.defaultName(
+            for: message, channelNames: names.channels, roleNames: names.roles
+        )
+        openSideConversation(.threadCreation(ThreadCreationDraft(startingFrom: message, defaultName: defaultName)))
+        dismissPinnedMessages()
+        if !isConversationPresented(message.channelID) { suspendSelectedConversationPresentation() }
+    }
+
     /// Shows required-field errors only for invalid submissions. A valid send
     /// consumes the draft while the creation pane is still visible.
     @discardableResult
     func validateThreadCreation() -> Bool {
         guard let creation = threadCreation else { return false }
-        let isValid = !creation.trimmedName.isEmpty
+        let isValid = creation.nameToCreate != nil
             && (!threadDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || !threadComposerAttachments.isEmpty)
         creation.showsValidationErrors = !isValid
         return isValid
     }
 
-    /// Creates the thread, then sends the composed message as its first message.
+    /// Creates the thread, then sends the composed message as its first
+    /// message, as the first-party client does. A failed creation keeps the
+    /// draft with Discord's reason; once the thread exists it opens, and a
+    /// failed first message stays in its outbox for retry instead of creating
+    /// another thread.
     func submitThreadCreation(
         _ creation: ThreadCreationDraft,
         attachments: [ForumPostAttachment]
     ) async -> ComposerSubmissionResult {
         guard threadCreation === creation, !creation.isSubmitting else { return .rejected }
-        let permissions = selectedChannelThreadCreationPermissions
         let originalDraft = threadDraft
         let content = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard creation.isPrivate ? permissions.canCreatePrivate : permissions.canCreatePublic,
-              !creation.trimmedName.isEmpty, !content.isEmpty || !attachments.isEmpty,
+        let isAllowed: Bool = if let starter = creation.starterMessage {
+            canCreateThread(from: starter)
+        } else {
+            creation.isPrivate
+                ? selectedChannelThreadCreationPermissions.canCreatePrivate
+                : selectedChannelThreadCreationPermissions.canCreatePublic
+        }
+        guard isAllowed, let name = creation.nameToCreate, !content.isEmpty || !attachments.isEmpty,
               validateAttachmentCount(attachments),
               allowOnboardingSubmission(in: creation.parentID)
         else { return .rejected }
@@ -642,12 +696,14 @@ extension AppModel {
         let session = accountSession()
         let draft = CreateThreadDraft(
             channelID: creation.parentID,
-            name: creation.trimmedName,
+            name: name,
             isPrivate: creation.isPrivate,
-            autoArchiveDuration: selectedChannel?.defaultAutoArchiveDuration ?? 4_320
+            autoArchiveDuration: selectedChannel?.defaultAutoArchiveDuration ?? 4_320,
+            starterMessageID: creation.starterMessage?.id
         )
         translation.resetDraft(.thread)
         creation.isSubmitting = true
+        creation.submissionError = nil
         defer { creation.isSubmitting = false }
         let thread: MessageThreadSummary
         do {
@@ -655,7 +711,9 @@ extension AppModel {
         } catch {
             guard isCurrentAccountSession(session) else { return .rejected }
             DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            errorMessage = error.localizedDescription
+            creation.submissionError = error is CancellationError
+                ? "The thread was not created. Try again."
+                : error.localizedDescription
             return .rejected
         }
         guard isCurrentAccountSession(session) else { return .rejected }
@@ -663,6 +721,8 @@ extension AppModel {
         if presentsCreatedThread {
             openThreadConversation(
                 thread,
+                // The creator started the thread; the source message's author
+                // appears only in its quoted starter.
                 starter: currentUser,
                 startedAt: thread.createdAt ?? .now,
                 initialMessages: []
@@ -742,6 +802,54 @@ extension AppModel {
         }
         if !redrawnMessageIDs.isEmpty {
             publishMessageRowsUpdate(changedMessageIDs: redrawnMessageIDs)
+        }
+    }
+}
+
+extension AppModel {
+    /// A thread's type-21 starter row quotes the parent message it started
+    /// from. Keep the open thread's and cached threads' quotes in step with
+    /// edits to that message; a deleted message leaves the quote unavailable.
+    func refreshThreadStarterQuotes(messageID: MessageID, with message: Message?) {
+        let preview = message.map(MessageReplyPreview.init(message:))
+        updateThreadStarterQuotes(quoting: messageID) { _ in preview }
+    }
+
+    /// Refreshes starter quotes after a partial edit. When the original
+    /// message is no longer retained, only the patch's content is known.
+    func refreshThreadStarterQuotes(after update: MessageUpdate, patched: Message?) {
+        if let patched {
+            refreshThreadStarterQuotes(messageID: patched.id, with: patched)
+            return
+        }
+        guard let content = update.content else { return }
+        updateThreadStarterQuotes(quoting: update.messageID) { preview in
+            guard var preview else { return nil }
+            preview.content = content
+            return preview
+        }
+    }
+
+    private func updateThreadStarterQuotes(
+        quoting messageID: MessageID,
+        _ transform: (MessageReplyPreview?) -> MessageReplyPreview?
+    ) {
+        func isQuote(_ candidate: Message) -> Bool {
+            candidate.type == .threadStarter && candidate.messageReference?.messageID == messageID
+        }
+        if let index = threadMessages.firstIndex(where: isQuote) {
+            let preview = transform(threadMessages[index].replyPreview)
+            if preview != threadMessages[index].replyPreview {
+                threadMessages[index].replyPreview = preview
+            }
+        }
+        for (channelID, cached) in messageCache {
+            guard let index = cached.firstIndex(where: isQuote) else { continue }
+            let preview = transform(cached[index].replyPreview)
+            guard preview != cached[index].replyPreview else { continue }
+            messageCache[channelID]?[index].replyPreview = preview
+            messageRowCache[channelID] = nil
+            messageRowCacheOrder.removeAll { $0 == channelID }
         }
     }
 }

@@ -260,21 +260,25 @@ extension AppModel {
             invalidateMessageTranslation(incoming.id, content: incoming.content)
             let reconciled = applyingPendingPinIntent(to: incoming)
             consumeMessageUpdated(reconciled, preparedTextPlan: preparedTextPlan)
+            refreshThreadStarterQuotes(messageID: incoming.id, with: incoming)
         case .messagePatched(let update):
             if let content = update.content { invalidateMessageTranslation(update.messageID, content: content) }
             reconcilePollVoteConfirmation(update)
             recordConversationRefreshMutation(.patch(update), messageID: update.messageID, channelID: update.channelID)
-            if let message = applyingMessageUpdate(update) {
-                let reconciled = applyingPendingPinIntent(to: message)
+            let patched = applyingMessageUpdate(update)
+            if let patched {
+                let reconciled = applyingPendingPinIntent(to: patched)
                 consumeMessageUpdated(
                     reconciled, preparedTextPlan: preparedTextPlan,
                     recordsRefreshMutation: false, preparedTextPlanSource: preparedTextPlanSource
                 )
             }
+            refreshThreadStarterQuotes(after: update, patched: patched)
         case .messageReactionUpdated(let update):
             applyReactionUpdate(update)
         case .messageDeleted(let channelID, let messageID):
             consumeMessageDeleted(channelID: channelID, messageID: messageID)
+            refreshThreadStarterQuotes(messageID: messageID, with: nil)
             removeDeletedPinnedMessage(channelID: channelID, messageID: messageID)
             removeInboxMessage(messageID, mentionsOnly: false)
         case .channelPinsInvalidated(let channelID):

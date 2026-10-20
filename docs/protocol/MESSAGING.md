@@ -456,7 +456,10 @@ The 201 thread has the message's ID and the creator's `member`; its first messag
 is an ordinary send. Discord usually delivers, before that response, a starter
 `MESSAGE_UPDATE` carrying only `flags: 32`, a member-less `THREAD_CREATE`
 (`newly_created`), `THREAD_MEMBER_UPDATE`, and a type-21 starter reference in the
-thread; the parent receives no type-18 message. Whichever arrives first, the
+thread. The parent can also receive a type-18 "started a thread" message; it was
+observed for an older starter but not for the channel's newest message. The
+type-21 reference quotes the starter only through `message_reference`, so the
+quote comes from the cached parent message, and it is not counted as a reply. Whichever arrives first, the
 provider attaches the known thread to the starter so its card appears without a
 history reload. A confirmed message of type 0, 19, 20, 23, 26, 41, 45, 47 or 68
 posted directly in a text, announcement or forum parent qualifies when it lacks

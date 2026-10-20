@@ -32,7 +32,7 @@ public enum ThreadNamePolicy {
         {
             return truncated(question, limit: 80)
         }
-        var line = readableContent(message, channelNames: channelNames, roleNames: roleNames)
+        var line = readableContent(of: message, channelNames: channelNames, roleNames: roleNames)
         if let newline = line.unicodeScalars.firstIndex(of: "\n") {
             line = String(line.unicodeScalars[..<newline])
         }
@@ -59,10 +59,10 @@ public enum ThreadNamePolicy {
     /// Discord's unparse step: stored mention and emoji tokens become the
     /// text a reader sees, and spoilers stay concealed as `<spoiler>`.
     /// Unknown channels and roles keep their raw token.
-    private static func readableContent(
-        _ message: Message,
-        channelNames: [ChannelID: String],
-        roleNames: [RoleID: String]
+    public static func readableContent(
+        of message: Message,
+        channelNames: [ChannelID: String] = [:],
+        roleNames: [RoleID: String] = [:]
     ) -> String {
         let usersByID = Dictionary(
             message.mentionedUsers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
