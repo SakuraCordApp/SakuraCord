@@ -980,7 +980,7 @@ extension NativeTimelineRowPainter {
             return
         }
         replyPreviewLine(
-            MessageReplyPreview(message: preview),
+            MessageReplyPreview.presenting(preview),
             frame: bodyFrame,
             avatarFrame: NativeTimelineAvatarPresentation.replyAvatarFrame(in: bodyFrame),
             trailingInset: 0,

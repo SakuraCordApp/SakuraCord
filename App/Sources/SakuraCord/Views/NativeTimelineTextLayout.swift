@@ -591,6 +591,14 @@ enum NativeTimelineEmbedLayout {
             return media
         }
 
+        /// The frame follows the video's shape only when its size is known.
+        /// A differently shaped poster (YouTube Shorts ship a padded 16:9
+        /// thumbnail) is then cropped; a fallback 16:9 frame fits it instead.
+        private var mediaPosterFillsFrame: Bool {
+            guard embed.video != nil, let media = mainMedia else { return false }
+            return NativeTimelineEmbedLayout.knownSize(of: media) != nil
+        }
+
         private var mediaPreviewURL: URL? {
             guard embed.video != nil else { return nil }
             if let preview = embed.thumbnail ?? embed.image,
@@ -628,6 +636,7 @@ enum NativeTimelineEmbedLayout {
                 mediaPreviewURL: mediaPreviewURL,
                 mediaIsVideo: embed.video != nil,
                 mediaAutoplaysInline: embed.type?.lowercased() == "gifv",
+                mediaPosterFillsFrame: mediaPosterFillsFrame,
                 accentColor: nil,
                 drawsTopSeparator: false
             )
@@ -968,6 +977,7 @@ enum NativeTimelineEmbedLayout {
                 mediaPreviewURL: mediaPreviewURL,
                 mediaIsVideo: embed.video != nil,
                 mediaAutoplaysInline: false,
+                mediaPosterFillsFrame: mediaPosterFillsFrame,
                 accentColor: embed.color,
                 drawsTopSeparator:
                     integratesWithBubble && drawsTopSeparator
@@ -1364,21 +1374,22 @@ enum NativeTimelineEmbedLayout {
         )
     }
 
+    /// The media's reported size, when both dimensions are positive. Without
+    /// it, embed media is laid out in a fallback 16:9 frame.
+    private static func knownSize(of media: MessageEmbedMedia) -> CGSize? {
+        guard let width = media.width, let height = media.height,
+              width > 0, height > 0
+        else { return nil }
+        return CGSize(width: CGFloat(width), height: CGFloat(height))
+    }
+
     private static func mediaSize(
         _ media: MessageEmbedMedia,
         maximumWidth: CGFloat,
         maximumHeight: CGFloat
     ) -> CGSize {
         let width = min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), maximumWidth))
-        if let rawWidth = media.width,
-           let rawHeight = media.height,
-           rawWidth > 0,
-           rawHeight > 0
-        {
-            let source = CGSize(
-                width: CGFloat(rawWidth),
-                height: CGFloat(rawHeight)
-            )
+        if let source = knownSize(of: media) {
             let scale = min(
                 1,
                 width / source.width,

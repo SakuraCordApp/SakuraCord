@@ -100,6 +100,41 @@ extension AppModel {
         !Task.isCancelled && ownsThreadLoad(threadID, generation: generation)
     }
 
+    /// Reads thread history. Discord omits the guild from history messages,
+    /// and the provider cannot add it for a thread it has not cached, so the
+    /// open thread supplies it for presentation that differs in servers.
+    func threadHistoryPage(
+        _ provider: any ChatProvider,
+        in threadID: ChannelID,
+        anchoredAt anchor: MessageHistoryAnchor,
+        limit: Int
+    ) async throws -> MessagePage {
+        var page = try await provider.messages(in: threadID, anchoredAt: anchor, limit: limit)
+        page.messages = page.messages.map(withOpenThreadGuild)
+        return page
+    }
+
+    /// Replays journaled live changes onto a thread page. A journaled copy
+    /// may lack the guild the page received, so the result receives it too.
+    func applyingThreadRefreshMutations(
+        _ mutations: ConversationRefreshMutations,
+        to messages: [Message],
+        within span: MessageHistorySpan
+    ) -> [Message] {
+        Self.applyingConversationRefreshMutations(mutations, to: messages, within: span).map(withOpenThreadGuild)
+    }
+
+    /// Supplies the open thread's guild to a message of it that omits one,
+    /// so history and live copies of a message present and compare alike.
+    func withOpenThreadGuild(_ message: Message) -> Message {
+        guard message.guildID == nil, message.channelID == openThread?.id,
+              let guildID = openThread?.guildID ?? openThreadParentChannel?.guildID
+        else { return message }
+        var message = message
+        message.guildID = guildID
+        return message
+    }
+
     /// Loads the open thread's first window: the newest page, or the page
     /// around `target`. With `preservingWindow`, the loaded window stays
     /// visible while its newest page is revalidated in the background.
@@ -141,7 +176,8 @@ extension AppModel {
                 )
             }
             do {
-                let page = try await account.provider.messages(
+                let page = try await model.threadHistoryPage(
+                    account.provider,
                     in: thread.id,
                     anchoredAt: target.map(MessageHistoryAnchor.around) ?? .newest,
                     limit: target == nil ? 100 : 50
@@ -189,7 +225,7 @@ extension AppModel {
     ) {
         let threadID = request.threadID
         let mutations = conversationRefreshMutations(in: threadID, revision: refreshRevision)
-        let refreshedMessages = Self.applyingConversationRefreshMutations(
+        let refreshedMessages = applyingThreadRefreshMutations(
             mutations,
             to: page.messages,
             within: MessageHistorySpan(page: page, closesNewerEdge: request.historyEpoch != historyEpoch)
@@ -232,7 +268,7 @@ extension AppModel {
         mutations: ConversationRefreshMutations
     ) {
         let threadID = request.threadID
-        let refreshedMessages = Self.applyingConversationRefreshMutations(
+        let refreshedMessages = applyingThreadRefreshMutations(
             mutations,
             to: page.messages,
             within: MessageHistorySpan(page: page, closesNewerEdge: request.historyEpoch != historyEpoch)
@@ -293,7 +329,8 @@ extension AppModel {
             endThreadWindowRequest(request)
         }
         do {
-            let page = try await session.provider.messages(
+            let page = try await threadHistoryPage(
+                session.provider,
                 in: threadID,
                 anchoredAt: .around(messageID),
                 limit: 50
@@ -354,7 +391,7 @@ extension AppModel {
             endThreadWindowRequest(request)
         }
         do {
-            let page = try await session.provider.messages(in: threadID, anchoredAt: .newest, limit: 100)
+            let page = try await threadHistoryPage(session.provider, in: threadID, anchoredAt: .newest, limit: 100)
             guard isCurrentAccountSession(session), isCurrentThreadWindow(request) else { return false }
             replaceThreadWindow(
                 with: page,
@@ -405,7 +442,8 @@ extension AppModel {
             }
         }
         do {
-            let page = try await session.provider.messages(
+            let page = try await threadHistoryPage(
+                session.provider,
                 in: thread.id,
                 anchoredAt: direction == .earlier ? .before(anchorID) : .after(anchorID),
                 limit: 50
@@ -471,7 +509,7 @@ extension AppModel {
         // Live replies and deletions during the request reconcile here. A
         // final forward page reaches the live tail, so replies after it are
         // admitted; otherwise only messages inside the page are.
-        let refreshed = Self.applyingConversationRefreshMutations(
+        let refreshed = applyingThreadRefreshMutations(
             mutations,
             to: page.messages,
             within: direction == .earlier

@@ -235,6 +235,24 @@ final class MessageRowPresentation: Identifiable, Equatable, Sendable {
         self.pinnedAt = pinnedAt
     }
 
+    /// The row with its own author header, as after a NEW divider, which
+    /// breaks a group like Discord's.
+    nonisolated func startingGroup() -> MessageRowPresentation {
+        guard !startsGroup else { return self }
+        return MessageRowPresentation(
+            message: message,
+            startsGroup: true,
+            endsGroup: endsGroup,
+            startsDay: startsDay,
+            replyPreview: replyPreview,
+            isReplyAvailable: isReplyAvailable,
+            textPlan: textPlan,
+            searchContext: searchContext,
+            pinnedAt: pinnedAt,
+            isResource: isResource
+        )
+    }
+
     nonisolated static func == (
         lhs: MessageRowPresentation,
         rhs: MessageRowPresentation

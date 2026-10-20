@@ -1083,9 +1083,10 @@ extension NativeMessageTimelineCoordinator {
             } else {
                 resolvedRow = row
             }
+            let isUnreadBoundary = parent.unreadMessageID == row.id
             return .message(
-                resolvedRow,
-                isUnreadBoundary: parent.unreadMessageID == row.id,
+                isUnreadBoundary ? resolvedRow.startingGroup() : resolvedRow,
+                isUnreadBoundary: isUnreadBoundary,
                 isHighlighted: parent.selectedMessageID == row.id
             )
         }

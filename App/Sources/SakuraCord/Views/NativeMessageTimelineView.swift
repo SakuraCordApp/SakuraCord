@@ -1368,10 +1368,14 @@ extension NativeMessageTimelineCoordinator {
             if oldParent.selectedMessageID != newParent.selectedMessageID {
                 affectedIDs.formUnion([oldParent.selectedMessageID, newParent.selectedMessageID].compactMap { $0 })
             }
+            let conversationRows = affectedIDs.isEmpty ? [] : newParent.conversation.rows(in: newParent.model)
             for id in affectedIDs {
                 guard let index = items.firstIndex(where: { $0.messageID == id }),
-                      let row = items[index].messageRow
+                      let storedRow = items[index].messageRow
                 else { continue }
+                // Rebuild from the conversation's row: a stored row may carry
+                // the extra group start of a divider that has since moved.
+                let row = conversationRows.first(where: { $0.id == id }) ?? storedRow
                 let item = messageItem(row, from: newParent)
                 if items[index] != item {
                     replaceItem(at: index, with: item, width: width)

@@ -124,6 +124,16 @@ nonisolated enum SystemMessagePresentation {
         }
     }
 
+    /// What a system message says after its author's name, for one-line
+    /// previews such as a thread card's latest message.
+    static func previewText(for message: Message) -> String {
+        if message.type == .channelPinnedMessage { return "pinned a message to this channel." }
+        var runs = textRuns(for: message)
+        if runs.first?.action == .profile(message.author.id) { runs.removeFirst() }
+        return runs.filter { !$0.isLink }.map(\.text).joined()
+            .trimmingCharacters(in: .whitespaces)
+    }
+
     static func label(
         for message: Message,
         currentUserID: UserID? = nil,
@@ -255,6 +265,13 @@ nonisolated enum SystemMessagePresentation {
                 .secondary(" removed "),
                 .emphasized(recipient, action: recipientUser.map { .profile($0.id) }),
                 .secondary(" from the group."),
+            ]
+        case .channelNameChange where message.guildID != nil:
+            // A renamed thread or forum post, worded as the first-party client does.
+            return [
+                actorRun(message),
+                .secondary(" changed the channel name: "),
+                .emphasized(message.content),
             ]
         case .channelNameChange:
             let editGroup = TextRun.link("Edit Group", action: .editGroup(message.channelID))
@@ -775,5 +792,18 @@ nonisolated enum DiscordComponentContainerLayoutPlan {
             available: available,
             maximum: maximum
         )
+    }
+}
+
+extension MessageReplyPreview {
+    /// A one-line preview of `message`. A system message is summarized,
+    /// since its content is empty or only a parameter such as a new name.
+    nonisolated static func presenting(_ message: Message) -> Self {
+        var preview = Self(message: message)
+        if message.type.hasGeneratedContent {
+            preview.content = SystemMessagePresentation.previewText(for: message)
+            preview.mediaKind = nil
+        }
+        return preview
     }
 }

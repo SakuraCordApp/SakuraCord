@@ -99,6 +99,9 @@ struct MessageMentionResolver {
             return MentionPresentation.fallback(for: mention)
         }
         let channel = channel(channelID)
+        if channel == nil, let thread = model.messagePresentationThread(channelID) {
+            return threadPresentation(thread, mention: mention)
+        }
         let guildName = channel?.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
         let label = if crossesGuild(targetGuildID: channel?.guildID),
                        let guildName,
@@ -141,13 +144,36 @@ struct MessageMentionResolver {
                 )
             )
         }
-        let post = model.forumCataloguePosts.first { $0.id == channelID }
-            ?? model.forumPosts.first { $0.id == channelID }
+        if let thread = model.messagePresentationThread(channelID) {
+            return threadPresentation(thread, mention: mention, linkGuildID: guildID)
+        }
         return MentionPresentation(
             rawToken: mention.rawToken,
-            label: post?.thread.name ?? "unknown-post",
+            label: MentionPresentation.unknownChannelLinkLabel,
             target: .linkedChannel(guildID: guildID, channelID: channelID),
-            systemImage: ChannelIconPresentation.forumPostSystemImage
+            systemImage: ChannelIconPresentation.systemImage(for: .unknown, isHidden: false)
+        )
+    }
+
+    /// A known thread or forum post, which opens like a thread link.
+    private func threadPresentation(
+        _ thread: MessageThreadSummary,
+        mention: RenderedMention,
+        linkGuildID: GuildID? = nil
+    ) -> MentionPresentation {
+        let guildID = thread.guildID ?? linkGuildID
+        let label = if crossesGuild(targetGuildID: guildID),
+                       let guildName = guildID.flatMap({ model.serverRailGuildsByID[$0]?.name })
+        {
+            "\(guildName) / \(thread.name)"
+        } else {
+            thread.name
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: label,
+            target: .linkedChannel(guildID: guildID, channelID: thread.id),
+            systemImage: ChannelIconPresentation.systemImage(forThreadInForum: model.isForumPost(thread))
         )
     }
 
@@ -159,15 +185,16 @@ struct MessageMentionResolver {
             return MentionPresentation.fallback(for: mention)
         }
         let guildID = mention.messageGuildID.flatMap(GuildID.init)
-        let channel = channel(channelID)
+        // A message in a thread or forum post is labeled with that thread.
+        let name = channel(channelID)?.name ?? model.messagePresentationThread(channelID)?.name
         let guildName = guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
         let channelLabel = if crossesGuild(targetGuildID: guildID),
                               let guildName,
-                              let channel
+                              let name
         {
-            "\(guildName) / \(channel.name) ›"
+            "\(guildName) / \(name) ›"
         } else {
-            "\(channel?.name ?? "unknown-channel") ›"
+            "\(name ?? MentionPresentation.unknownChannelLinkLabel) ›"
         }
         return MentionPresentation(
             rawToken: mention.rawToken,

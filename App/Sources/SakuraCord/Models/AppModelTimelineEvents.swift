@@ -906,6 +906,7 @@ extension AppModel {
     }
 
     func reconcileThread(_ message: Message) {
+        let message = withOpenThreadGuild(message)
         var updated = threadMessages
         let index = updated.firstIndex(where: {
             $0.id == message.id || ($0.nonce != nil && $0.nonce == message.nonce)
@@ -934,6 +935,7 @@ extension AppModel {
     }
 
     func reconcileThreadUpdate(_ message: Message) {
+        let message = withOpenThreadGuild(message)
         guard let index = threadMessages.firstIndex(where: {
             $0.id == message.id
         }) else { return }

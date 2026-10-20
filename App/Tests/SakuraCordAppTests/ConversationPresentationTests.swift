@@ -24,6 +24,37 @@ import Testing
     #expect(presentation.target == .unresolved)
 }
 
+@MainActor
+@Test func `thread links and mentions present the names of known threads`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    let parent = try #require(model.snapshot?.channels.first { $0.kind == .text && $0.guildID != nil })
+    let guildID = try #require(parent.guildID)
+    let joined = MessageThreadSummary(id: ChannelID(rawValue: 9_341_001), guildID: guildID, parentID: parent.id, name: "Joined thread")
+    model.snapshot?.activeJoinedThreads.append(joined)
+    let resolver = MessageMentionResolver(model: model)
+    func presentation(_ token: String) throws -> MentionPresentation {
+        try resolver.presentation(#require(RenderedMention(rawToken: token)))
+    }
+
+    for token in ["<#\(joined.id)>", "https://discord.com/channels/\(guildID)/\(joined.id)"] {
+        let value = try presentation(token)
+        #expect(value.label == "Joined thread")
+        #expect(value.target == .linkedChannel(guildID: guildID, channelID: joined.id))
+        #expect(value.systemImage == SakuraCordSystemSymbol.thread)
+    }
+    let unknown = try presentation("https://discord.com/channels/\(guildID)/9341002")
+    #expect(unknown.label == "unknown-channel")
+    #expect(unknown.isInteractive)
+
+    let messageID = MessageID(rawValue: 9_341_003)
+    let messageLink = try presentation("https://discord.com/channels/\(guildID)/\(joined.id)/\(messageID)")
+    #expect(messageLink.label == "Joined thread ›")
+    #expect(messageLink.target == .message(guildID: guildID, channelID: joined.id, messageID: messageID))
+    let unknownMessage = try presentation("https://discord.com/channels/\(guildID)/9341002/\(messageID)")
+    #expect(unknownMessage.label == "unknown-channel ›")
+}
+
 @Test func `permission resolver applies role overwrites together then member overwrite last`() throws {
     let guildID = GuildID(rawValue: 100)
     let userID = UserID(rawValue: 1)

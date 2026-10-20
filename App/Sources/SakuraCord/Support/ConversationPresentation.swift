@@ -154,6 +154,10 @@ nonisolated enum ChannelIconPresentation {
     }
 
     static let forumPostSystemImage = "bubble.left.fill"
+
+    static func systemImage(forThreadInForum isForumPost: Bool) -> String {
+        isForumPost ? forumPostSystemImage : SakuraCordSystemSymbol.thread
+    }
 }
 
 nonisolated struct HiddenChannelAccessPrincipal: Identifiable, Equatable {

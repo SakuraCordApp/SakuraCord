@@ -7,6 +7,25 @@ extension AppModel {
             ?? visibleChannels.first { $0.id == channelID }
     }
 
+    /// A thread or forum post the account already knows, for presenting a
+    /// link or mention to it. Rendering never fetches one.
+    func messagePresentationThread(_ threadID: ChannelID) -> MessageThreadSummary? {
+        if let thread = sidebarThread(threadID) { return thread }
+        if let post = forumCataloguePosts.first(where: { $0.id == threadID })
+            ?? forumPosts.first(where: { $0.id == threadID })
+        {
+            return post.thread
+        }
+        if let thread = inbox.threads[threadID] { return thread }
+        // A thread started from a loaded message carries its summary.
+        return messages.lazy.compactMap(\.thread).first { $0.id == threadID }
+            ?? threadMessages.lazy.compactMap(\.thread).first { $0.id == threadID }
+    }
+
+    func isForumPost(_ thread: MessageThreadSummary) -> Bool {
+        thread.parentID.flatMap(messagePresentationChannel)?.kind == .forum
+    }
+
     func restoreSelectedMessages(
         _ restoredMessages: [Message],
         preparedRows: [MessageRowPresentation]?

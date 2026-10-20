@@ -73,6 +73,7 @@ struct NativeTimelineRowLayout {
         let mediaPreviewURL: URL?
         let mediaIsVideo: Bool
         let mediaAutoplaysInline: Bool
+        let mediaPosterFillsFrame: Bool
         let accentColor: UInt32?
         let drawsTopSeparator: Bool
     }
