@@ -21,7 +21,7 @@ struct NativeTimelineTranslationPresentation {
         model: AppModel?,
         isOutgoingBubble: Bool
     ) -> Self? {
-        guard row.searchContext == nil, row.pinnedAt == nil, !row.isResource,
+        guard row.isConversationRow,
               let entry = model?.messageTranslationPresentation(for: row.message)
         else { return nil }
         switch entry.status {

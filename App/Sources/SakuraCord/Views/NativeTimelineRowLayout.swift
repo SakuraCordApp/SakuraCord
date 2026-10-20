@@ -140,6 +140,8 @@ struct NativeTimelineRowLayout {
     var bubbleRegion: NativeTimelineBubbleRegion?
     var highlightFrame: CGRect?
     var daySeparatorFrame: CGRect?
+    /// The rule closing a forum post's original message off from its replies.
+    var postStarterDividerFrame: CGRect?
     var unreadSeparatorFrame: CGRect?
     var avatarFrame: CGRect?
     var compactTimestampFrame: CGRect?

@@ -29,6 +29,10 @@ nonisolated enum TimelineInlineVideoPolicy {
     }
 }
 
+enum NativeTimelinePostStarterDividerMetrics {
+    static var rowHeight: CGFloat { InterfaceScale.metric(25) }
+}
+
 enum NativeTimelineDateSeparatorMetrics {
     static var rowHeight: CGFloat { InterfaceScale.metric(37) }
     static var verticalPadding: CGFloat { InterfaceScale.metric(12) }

@@ -977,6 +977,21 @@ extension NativeTimelineRowLayout {
             )
 
             result.height = rowHeight
+            appendPostStarterDivider()
+        }
+
+        /// A forum post's original message ends with a rule, so its replies
+        /// read as a separate conversation, as in Discord.
+        private mutating func appendPostStarterDivider() {
+            guard message.isPostStarter, row.isConversationRow else { return }
+            let height = NativeTimelinePostStarterDividerMetrics.rowHeight
+            result.postStarterDividerFrame = CGRect(
+                x: horizontalInset,
+                y: result.height,
+                width: width - horizontalInset * 2,
+                height: height
+            )
+            result.height += height
         }
     }
 }

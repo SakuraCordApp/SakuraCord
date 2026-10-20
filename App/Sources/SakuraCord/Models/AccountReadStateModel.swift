@@ -1115,7 +1115,7 @@ extension AccountReadStateModel {
 
         let isMention = mentionKind != .none
         let createsForumThread =
-            message.id.rawValue == message.channelID.rawValue
+            message.isPostStarter
             && entry.parentID.flatMap { channelByID[$0] }?.kind == .forum
         let allowsOrdinaryNotification =
             createsForumThread

@@ -114,6 +114,12 @@ extension NativeTimelineRowPainter {
         if let frame = input.layout.unreadSeparatorFrame {
             newMessagesSeparator(frame: frame)
         }
+        // While editing, the editor replaces the row's height, so the rule
+        // would sit at the starter's old bottom across later replies.
+        if let frame = input.layout.postStarterDividerFrame, !input.hidesMessageContent {
+            NSColor.labelColor.withAlphaComponent(0.16).setFill()
+            CGRect(x: frame.minX, y: frame.midY, width: frame.width, height: 1).fill()
+        }
     }
 
     private static func drawMessageIdentity(_ input: NativeTimelineMessageDrawInput) {
