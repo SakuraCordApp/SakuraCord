@@ -82,15 +82,21 @@ extension AppModel {
         )
     }
 
+    /// Opens a thread or forum post. With `historyTarget`, its first window
+    /// is the history around that message unless the cached window already
+    /// contains it; `initialMessages` that contain the target are shown
+    /// while it loads. Otherwise they preview the thread start.
     func openThreadConversation(
         _ thread: MessageThreadSummary,
         starter: User?,
         startedAt: Date?,
         starterMessageID: MessageID? = nil,
         initialMessages: [Message],
-        fullWidth: Bool = false
+        fullWidth: Bool = false,
+        historyTarget: MessageID? = nil
     ) {
         openSideConversation(.thread(thread, isFullWidth: fullWidth))
+        threadLoadGeneration &+= 1
         AppPerformanceSignposts.beginConversationNavigation(to: thread.id)
         readState.merge(thread: thread)
         if let selectedChannelID, !isConversationPresented(selectedChannelID) {
@@ -109,12 +115,38 @@ extension AppModel {
         openThreadStarter = starter
         openThreadStartedAt = startedAt
         openThreadStarterMessageID = starterMessageID
-        let cachedMessages = takeCachedMessages(for: thread.id)
+        threadDraft = ""
+        threadReplyingTo = nil
+        clearComposerAttachments(for: .thread)
+        translation.resetDraft(.thread)
+
+        if openThreadNeedsAccessResolution(thread) {
+            beginOpenThreadResolution()
+        }
+
         let cachedBoundary = hasMoreCache[thread.id]
+        let cacheContainsTarget = historyTarget.map { target in
+            messageCache[thread.id]?.contains { $0.id == target } == true
+        } ?? true
+        if let historyTarget, cachedBoundary == nil || !cacheContainsTarget {
+            // The cached window is not where the reader is going. Opening
+            // around the target replaces it rather than bridging the two.
+            let pendingSends = discardCachedHistory(for: thread.id)
+            let seeds = initialMessages.contains { $0.id == historyTarget } ? initialMessages : []
+            threadMessages = Self.merging(current: pendingSends, fresh: seeds)
+            hasMoreThreadMessages = true
+            hasMoreLaterThreadMessages = true
+            beginInitialThreadLoad(thread, around: historyTarget)
+            return
+        }
+
+        let cachedMessages = takeCachedMessages(for: thread.id)
         let previewMessages: [Message]
-        if cachedBoundary == true,
-           let starterMessageID,
-           !cachedMessages.contains(where: { $0.id == starterMessageID })
+        if historyTarget != nil {
+            previewMessages = []
+        } else if cachedBoundary == true,
+                  let starterMessageID,
+                  !cachedMessages.contains(where: { $0.id == starterMessageID })
         {
             // The cached newest page starts after the starter. Its older edge,
             // not the forum preview, must drive earlier pagination.
@@ -126,15 +158,24 @@ extension AppModel {
             current: previewMessages,
             fresh: cachedMessages
         )
-        threadDraft = ""
-        threadReplyingTo = nil
-        clearComposerAttachments(for: .thread)
-        translation.resetDraft(.thread)
         hasMoreThreadMessages = cachedBoundary ?? false
-        if openThreadNeedsAccessResolution(thread) {
-            beginOpenThreadResolution()
+        hasMoreLaterThreadMessages = false
+        let storedCursors = threadWindow.cachedCursors.removeValue(forKey: thread.id)
+        if cachedBoundary != nil {
+            // A cached window is a contiguous newest-backed REST window. The
+            // cache keeps its newest messages, so a trimmed window starts
+            // at its oldest retained message instead of its stored cursor.
+            let confirmedIDs = cachedMessages.lazy.filter { $0.outboxState == .confirmed }.map(\.id)
+            threadWindow.lowerCursor = [storedCursors?.lower, confirmedIDs.min()].compactMap(\.self).max()
+            threadWindow.upperCursor = storedCursors?.upper ?? confirmedIDs.max()
         }
-        beginInitialThreadLoad(thread)
+        if cachedBoundary == nil {
+            // Nothing shown yet is loaded history that a newest page can extend.
+            markHistoryContiguous(through: nil, in: thread.id)
+        }
+        // Gateway may not deliver every message of a closed thread, so a
+        // cached window is shown immediately and always revalidated.
+        beginInitialThreadLoad(thread, preservingWindow: cachedBoundary != nil)
     }
 
     /// Without Manage Threads a private thread is readable only to members, so
@@ -219,123 +260,29 @@ extension AppModel {
             hasReachedReadBoundary: false
         )
         // Messages sent while access was unknown, for example while
-        // disconnected, are missing from the loaded window. Fetch the newest
-        // page even when a boundary is cached; it reconciles with that window.
-        hasMoreCache[thread.id] = nil
-        beginInitialThreadLoad(thread)
-    }
-
-    func beginInitialThreadLoad(_ thread: MessageThreadSummary) {
-        threadLoadTask?.cancel()
-        threadErrorMessage = nil
-        threadErrorScope = nil
-        if hasMoreCache[thread.id] != nil {
-            isLoadingThread = false
-            hasCompletedInitialThreadLoad = true
-            readState.observeLoadedMessages(
-                channelID: thread.id,
-                messages: threadMessages
-            )
-            reportConversationHistoryLoaded(channelID: thread.id)
-            return
-        }
-        isLoadingThread = true
-        hasCompletedInitialThreadLoad = false
-        let account = accountSession()
-        threadLoadTask = startAccountChildTask(account: account) { model, account in
-            let refreshRevision = model.beginConversationRefresh(in: thread.id)
-            defer {
-                model.endConversationRefresh(
-                    in: thread.id,
-                    revision: refreshRevision
-                )
-            }
-            let loadSignpost = AppPerformanceSignposts.signposter.beginInterval(
-                "ThreadConversationLoad"
-            )
-            defer {
-                AppPerformanceSignposts.signposter.endInterval(
-                    "ThreadConversationLoad",
-                    loadSignpost
-                )
-            }
-            async let freshPage = account.provider.messages(
-                in: thread.id,
-                before: nil,
-                limit: 100
-            )
-            do {
-                let page = try await freshPage
-                guard !Task.isCancelled,
-                      model.isCurrentAccountSession(account),
-                      model.openThread?.id == thread.id
-                else { return }
-                try await model.finishInitialThreadLoad(
-                    page,
-                    threadID: thread.id,
-                    refreshRevision: refreshRevision,
-                    session: account
-                )
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled,
-                      model.isCurrentAccountSession(account),
-                      model.openThread?.id == thread.id
-                else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                model.threadErrorMessage = error.localizedDescription
-                model.threadErrorScope = .initialPage
-                model.isLoadingThread = false
-                model.hasCompletedInitialThreadLoad = true
-            }
+        // disconnected, may be missing from the loaded window. Like a Gateway
+        // gap, its newest edge is unverified until a current read; an initial
+        // load still in flight is that read.
+        if hasCompletedInitialThreadLoad {
+            markHistoryContiguous(through: threadMessages, in: thread.id)
+            threadWindow.isNewestUnverified = true
+            revalidateOpenThreadAfterReconnect()
         }
     }
 
-    func finishInitialThreadLoad(
-        _ page: MessagePage,
-        threadID: ChannelID,
-        refreshRevision: UInt64,
-        session: AppModelAccountSession
-    ) async throws {
-        guard isCurrentAccountSession(session) else { return }
-        let mutations = conversationRefreshMutations(
-            in: threadID,
-            revision: refreshRevision
-        )
-        let refreshedMessages = Self.applyingConversationRefreshMutations(
-            mutations,
-            to: page.messages
-        )
-        let currentMessages: [Message]
-        if page.hasMoreBefore,
-           let starterMessageID = openThreadStarterMessageID,
-           !page.messages.contains(where: { $0.id == starterMessageID })
-        {
-            // The preview is outside the newest page. Keeping it would hide a
-            // gap and make earlier pagination request messages before the starter.
-            currentMessages = threadMessages.filter { $0.id != starterMessageID }
-        } else {
-            currentMessages = threadMessages
-        }
-        threadMessages = Self.reconcilingNewestPage(
-            current: currentMessages,
-            fresh: refreshedMessages,
-            hasMoreBefore: page.hasMoreBefore,
-            authoritativeOldestMessageID: page.messages.map(\.id).min()
-        ).map(pollVotePresentationPreserving)
-        seedSlowmodeHistory(threadMessages)
-        hasMoreThreadMessages = page.hasMoreBefore
-        threadErrorMessage = nil
-        threadErrorScope = nil
-        isLoadingThread = false
-        hasCompletedInitialThreadLoad = true
-        readState.observeLoadedMessages(
-            channelID: threadID,
-            messages: threadMessages
-        )
-        reportConversationHistoryLoaded(channelID: threadID)
-        hasMoreCache[threadID] = page.hasMoreBefore
+    /// Forgets a conversation's cached window and its completeness, and
+    /// returns its unconfirmed sends, which are not history.
+    @discardableResult
+    func discardCachedHistory(for channelID: ChannelID) -> [Message] {
+        let pendingSends = messageCache[channelID]?.filter { $0.outboxState != .confirmed } ?? []
+        messageCache[channelID] = nil
+        messageCacheOrder.removeAll { $0 == channelID }
+        messageRowCache[channelID] = nil
+        messageRowCacheOrder.removeAll { $0 == channelID }
+        hasMoreCache[channelID] = nil
+        contiguousHistoryBoundaries[channelID] = nil
+        threadWindow.cachedCursors[channelID] = nil
+        return pendingSends
     }
 
     func consumeThreadEvent(_ event: ClientEvent) -> Bool {
@@ -367,11 +314,7 @@ extension AppModel {
         // Closing saves the current conversation, so evict only after it closes.
         if openThread?.id == channelID { closeThread() }
         cancelConversationRefresh(in: channelID)
-        messageCache[channelID] = nil
-        messageCacheOrder.removeAll { $0 == channelID }
-        messageRowCache[channelID] = nil
-        messageRowCacheOrder.removeAll { $0 == channelID }
-        hasMoreCache[channelID] = nil
+        discardCachedHistory(for: channelID)
         threadPreviewMessages[channelID] = nil
         threadPreviewParentIDs[channelID] = nil
         inbox.metadataTasks.removeValue(forKey: channelID)?.cancel()
@@ -391,13 +334,26 @@ extension AppModel {
         threadCommandComposer.resetForChannelChange()
         if let threadID = openThread?.id {
             cancelConversationRefresh(in: threadID)
-            let hasLoadedHistory = hasMoreCache[threadID] != nil
-            // Store the boundary before trimming so omitted older messages remain loadable.
-            hasMoreCache[threadID] = hasMoreThreadMessages
-            storeCachedMessages(threadMessages, for: threadID)
-            // A preview or interrupted initial load is not reusable history.
-            if !hasLoadedHistory {
-                hasMoreCache[threadID] = nil
+            // Only a loaded newest-backed window is reusable history; a
+            // preview, an interrupted initial load or a window detached from
+            // the newest message is not.
+            if hasMoreCache[threadID] != nil, hasCompletedInitialThreadLoad, !hasMoreLaterThreadMessages {
+                // Store the boundary before trimming so omitted older messages remain loadable.
+                hasMoreCache[threadID] = hasMoreThreadMessages
+                storeCachedMessages(threadMessages, for: threadID)
+                threadWindow.cachedCursors[threadID] = (threadWindow.lowerCursor, threadWindow.upperCursor)
+                // Gateway may not deliver a closed thread's messages, so
+                // later cached arrivals do not prove the window is current.
+                markHistoryContiguous(through: threadMessages, in: threadID)
+            } else {
+                discardCachedHistory(for: threadID)
+                // Unconfirmed sends, including failed ones awaiting Retry or
+                // Discard, return with the thread; its history is reloaded.
+                let pendingSends = threadMessages.filter { $0.outboxState != .confirmed }
+                if !pendingSends.isEmpty {
+                    storeCachedMessages(pendingSends, for: threadID)
+                    markHistoryContiguous(through: nil, in: threadID)
+                }
             }
             unreadDividerMessageIDs[threadID] = nil
             if conversationNewestRequest?.channelID == threadID {
@@ -407,6 +363,15 @@ extension AppModel {
         }
         threadLoadTask?.cancel()
         threadLoadTask = nil
+        threadLoadGeneration &+= 1
+        threadWindow.activeRevision = nil
+        threadWindow.revalidationPending = false
+        threadWindow.lowerCursor = nil
+        threadWindow.upperCursor = nil
+        threadWindow.isNewestUnverified = false
+        threadWindow.failedInitialTarget = nil
+        threadWindow.initialLoadTarget = nil
+        threadWindow.newestReadRevision = nil
         openThreadResolutionTask?.cancel()
         openThreadResolutionTask = nil
         openThreadResolution = nil
@@ -422,7 +387,9 @@ extension AppModel {
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false
         isLoadingEarlierThread = false
+        isLoadingLaterThread = false
         hasMoreThreadMessages = false
+        hasMoreLaterThreadMessages = false
         threadErrorMessage = nil
         threadErrorScope = nil
     }
@@ -444,63 +411,57 @@ extension AppModel {
         closeSideConversations()
     }
 
-    func loadEarlierThread(account: AppModelAccountSession? = nil) async {
-        let session = account ?? accountSession()
-        guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-        guard let thread = openThread, let first = threadMessages.first, hasMoreThreadMessages,
-              !isLoadingEarlierThread
-        else { return }
-        threadErrorMessage = nil
-        threadErrorScope = nil
-        isLoadingEarlierThread = true
-        defer {
-            if isCurrentAccountSession(session), openThread?.id == thread.id {
-                isLoadingEarlierThread = false
-            }
-        }
-        do {
-            let page = try await session.provider.messages(
-                in: thread.id,
-                before: first.id,
-                limit: 50
-            )
-            guard !Task.isCancelled,
-                  isCurrentAccountSession(session),
-                  openThread?.id == thread.id
-            else { return }
-            let ids = Set(threadMessages.map(\.id))
-            threadMessages.insert(contentsOf: page.messages.filter { !ids.contains($0.id) }, at: 0)
-            hasMoreThreadMessages = page.hasMoreBefore
-            threadErrorMessage = nil
-            threadErrorScope = nil
-            hasMoreCache[thread.id] = page.hasMoreBefore
-        } catch is CancellationError {
-            return
-        } catch {
-            guard isCurrentAccountSession(session),
-                  openThread?.id == thread.id
-            else { return }
-            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-            threadErrorMessage = error.localizedDescription
-            threadErrorScope = .earlierPage
-        }
-    }
-
     func retryThreadLoad() {
         guard let thread = openThread else { return }
         switch threadErrorScope {
         case .initialPage:
-            beginInitialThreadLoad(thread)
-        case .earlierPage:
-            threadErrorMessage = nil
-            threadErrorScope = nil
-            let account = accountSession()
-            startAccountChildTask(account: account) { model, account in
-                await model.loadEarlierThread(account: account)
+            if let target = threadWindow.failedInitialTarget {
+                retryThreadJump(thread, to: target)
+            } else {
+                beginInitialThreadLoad(thread, preservingWindow: hasMoreCache[thread.id] != nil)
             }
+        case .earlierPage:
+            // Without an edge to continue from, the error stays.
+            guard hasMoreThreadMessages, threadWindow.lowerCursor != nil, !isLoadingEarlierThread else { return }
+            retryThreadHistory { model, account in await model.loadEarlierThread(account: account) }
+        case .laterPage:
+            guard hasMoreLaterThreadMessages, threadWindow.upperCursor != nil, !isLoadingLaterThread else { return }
+            retryThreadHistory { model, account in await model.loadLaterThread(account: account) }
+        case .newestWindow:
+            guard !isLoadingThread else { return }
+            retryThreadHistory { model, account in _ = await model.loadNewestThreadWindow(account: account) }
         case .action, nil:
             return
         }
+    }
+
+    /// Reloads the window around a jump target and scrolls to it, unless a
+    /// later intent takes over the window first.
+    private func retryThreadJump(_ thread: MessageThreadSummary, to target: MessageID) {
+        beginInitialThreadLoad(thread, around: target)
+        let windowRevision = threadWindow.revision
+        let load = threadLoadTask
+        startAccountChildTask(account: accountSession()) { model, _ in
+            await load?.value
+            guard model.openThread?.id == thread.id, model.threadWindow.revision == windowRevision,
+                  model.threadMessages.contains(where: { $0.id == target })
+            else { return }
+            model.messageNavigationRequestID &+= 1
+            model.messageNavigationRequest = MessageNavigationRequest(
+                requestID: model.messageNavigationRequestID,
+                channelID: thread.id,
+                messageID: target,
+                glides: false
+            )
+        }
+    }
+
+    private func retryThreadHistory(
+        _ operation: @escaping @MainActor (AppModel, AppModelAccountSession) async -> Void
+    ) {
+        threadErrorMessage = nil
+        threadErrorScope = nil
+        startAccountChildTask(account: accountSession(), operation: operation)
     }
 
     @discardableResult
@@ -522,18 +483,39 @@ extension AppModel {
             return await submitThreadCreation(threadCreation, attachments: attachments)
         }
         guard let thread = openThread, openThreadAccess.canSend else { return .rejected }
-        guard allowSlowmodeSubmission(in: thread.id) else { return .rejected }
+        // Capture the submission before any await; the composer stays
+        // editable while a detached window returns to the newest messages.
         let content = threadDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reply = threadReplyingTo
+        let mentionsRepliedUser = threadReplyMentionsAuthor
+        let draftRevision = composer.threadDraftRevision
         guard !content.isEmpty || !attachments.isEmpty else { return .rejected }
+        var clearsComposer = true
+        var destination = thread
+        if isThreadWindowAwayFromNewest {
+            // Like the channel composer, a send returns to the newest messages.
+            let session = accountSession()
+            let generation = threadLoadGeneration
+            guard await loadNewestThreadWindow(account: session),
+                  isCurrentAccountSession(session),
+                  ownsThreadLoad(thread.id, generation: generation),
+                  !isThreadWindowAwayFromNewest,
+                  let current = openThread, openThreadAccess.canSend
+            else { return .rejected }
+            destination = current
+            // Keep edits made while the newest messages loaded.
+            clearsComposer = composer.threadDraftRevision == draftRevision && threadReplyingTo?.id == reply?.id
+        }
+        guard allowSlowmodeSubmission(in: destination.id) else { return .rejected }
         guard validateAttachmentCount(attachments), allowOutgoingQueueSubmission() else { return .rejected }
         guard let delivery = enqueueThreadMessage(
             content: content,
-            replyTo: threadReplyingTo?.id,
-            mentionsRepliedUser: threadReplyMentionsAuthor,
-            replyPreview: threadReplyingTo.map(MessageReplyPreview.init),
+            replyTo: reply?.id,
+            mentionsRepliedUser: mentionsRepliedUser,
+            replyPreview: reply.map(MessageReplyPreview.init),
             attachments: attachments,
-            thread: thread,
-            clearsComposer: true
+            thread: destination,
+            clearsComposer: clearsComposer
         ) else { return .rejected }
         return .enqueued(delivery: delivery)
     }

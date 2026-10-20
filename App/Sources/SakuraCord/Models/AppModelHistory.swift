@@ -59,6 +59,54 @@ struct ConversationRefreshJournal {
     }
 }
 
+/// A journal for one in-flight history request, so overlapping requests in
+/// the same conversation each reconcile the mutations made during their own
+/// flight.
+struct ScopedConversationRefreshJournal {
+    let channelID: ChannelID
+    var journal: ConversationRefreshJournal
+}
+
+/// The message IDs a fetched page vouches for. A message journaled outside
+/// them belongs to history the page does not cover, such as a live reply
+/// beyond an older window; inserting it would join the page to it across
+/// unloaded history.
+struct MessageHistorySpan {
+    /// Inclusive bounds; nil leaves that side open.
+    var lowerBound: MessageID?
+    var upperBound: MessageID?
+
+    static let unbounded = MessageHistorySpan()
+
+    init(lowerBound: MessageID? = nil, upperBound: MessageID? = nil) {
+        self.lowerBound = lowerBound
+        self.upperBound = upperBound
+    }
+
+    /// A page's span. An edge without more history is open; an edge the
+    /// request continued from is bounded by its anchor.
+    ///
+    /// - Parameter closesNewerEdge: The page cannot vouch for the live tail,
+    ///   as when it was read before a Gateway gap, so its newer edge ends at
+    ///   what it fetched.
+    init(
+        page: MessagePage,
+        continuingAfter lowerAnchor: MessageID? = nil,
+        continuingBefore upperAnchor: MessageID? = nil,
+        closesNewerEdge: Bool = false
+    ) {
+        let ids = page.messages.map(\.id)
+        lowerBound = page.hasMoreBefore ? ids.min() ?? lowerAnchor : lowerAnchor
+        upperBound = page.hasMoreAfter || closesNewerEdge
+            ? ids.max() ?? upperAnchor ?? lowerAnchor ?? MessageID(rawValue: 0)
+            : upperAnchor
+    }
+
+    func contains(_ messageID: MessageID) -> Bool {
+        (lowerBound.map { messageID >= $0 } ?? true) && (upperBound.map { messageID <= $0 } ?? true)
+    }
+}
+
 extension AppModel {
     func beginSelectedChannelLoad() {
         let cacheSignpost = AppPerformanceSignposts.signposter.beginInterval(
@@ -284,7 +332,8 @@ extension AppModel {
         )
         let initialRefreshedMessages = Self.applyingConversationRefreshMutations(
             initialMutations,
-            to: page.messages
+            to: page.messages,
+            within: MessageHistorySpan(page: page)
         )
         let initialReconciliationCurrent = hasMoreLaterMessages
             ? messages.filter { $0.outboxState != .confirmed }
@@ -293,7 +342,8 @@ extension AppModel {
             current: initialReconciliationCurrent,
             fresh: initialRefreshedMessages,
             hasMoreBefore: page.hasMoreBefore,
-            authoritativeOldestMessageID: page.messages.map(\.id).min()
+            authoritativeOldestMessageID: page.messages.map(\.id).min(),
+            contiguousThrough: contiguousHistoryBoundaries[channelID]
         )
         let preparedRows: [MessageRowPresentation]? =
             if initiallyMerged != messages {
@@ -316,7 +366,8 @@ extension AppModel {
             )
             let refreshedMessages = Self.applyingConversationRefreshMutations(
                 mutations,
-                to: page.messages
+                to: page.messages,
+                within: MessageHistorySpan(page: page)
             )
             let reconciliationCurrent = hasMoreLaterMessages
                 ? messages.filter { $0.outboxState != .confirmed }
@@ -325,7 +376,8 @@ extension AppModel {
                 current: reconciliationCurrent,
                 fresh: refreshedMessages,
                 hasMoreBefore: page.hasMoreBefore,
-                authoritativeOldestMessageID: page.messages.map(\.id).min()
+                authoritativeOldestMessageID: page.messages.map(\.id).min(),
+                contiguousThrough: contiguousHistoryBoundaries[channelID]
             )
             if merged != messages {
                 replaceSelectedMessages(with: merged, preparedRows: preparedRows)
@@ -443,7 +495,8 @@ extension AppModel {
         )
         let refreshedMessages = Self.applyingConversationRefreshMutations(
             mutations,
-            to: freshMessages
+            to: freshMessages,
+            within: MessageHistorySpan(lowerBound: hasMoreBefore ? freshMessages.map(\.id).min() : nil)
         )
         let reconciliationCurrent = hasMoreLaterMessages
             ? messages.filter { $0.outboxState != .confirmed }
@@ -452,7 +505,8 @@ extension AppModel {
             current: reconciliationCurrent,
             fresh: refreshedMessages,
             hasMoreBefore: hasMoreBefore,
-            authoritativeOldestMessageID: freshMessages.map(\.id).min()
+            authoritativeOldestMessageID: freshMessages.map(\.id).min(),
+            contiguousThrough: contiguousHistoryBoundaries[channelID]
         )
         if reconciledMessages != messages {
             replaceSelectedMessages(with: reconciledMessages)
@@ -460,6 +514,7 @@ extension AppModel {
         hasMoreMessages = hasMoreBefore
         hasMoreLaterMessages = false
         hasMoreCache[channelID] = hasMoreBefore
+        contiguousHistoryBoundaries[channelID] = nil
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
         messageLoadErrorIsLaterPage = false
@@ -574,6 +629,7 @@ extension AppModel {
             hasMoreMessages = page.hasMoreBefore
             hasMoreLaterMessages = false
             hasMoreCache[channelID] = page.hasMoreBefore
+            contiguousHistoryBoundaries[channelID] = nil
             requestNewestMessagePresentation(channelID: channelID)
             return true
         } catch is CancellationError {
@@ -588,7 +644,7 @@ extension AppModel {
         }
     }
 
-    private func requestNewestMessagePresentation(channelID: ChannelID) {
+    func requestNewestMessagePresentation(channelID: ChannelID) {
         conversationNewestRequestID &+= 1
         conversationNewestRequest = ConversationNewestRequest(
             requestID: conversationNewestRequestID,
@@ -645,6 +701,9 @@ extension AppModel {
             }
         }
         conversationRefreshJournals[channelID]?.record(mutation, messageID: messageID)
+        for revision in scopedRefreshJournals.keys where scopedRefreshJournals[revision]?.channelID == channelID {
+            scopedRefreshJournals[revision]?.journal.record(mutation, messageID: messageID)
+        }
         inbox.refreshJournal?.record(mutation, messageID: messageID)
         recordPollRefreshMutation(mutation, messageID: messageID, channelID: channelID)
         if guideResource?.channelID == channelID {
@@ -674,6 +733,26 @@ extension AppModel {
 
     func cancelConversationRefresh(in channelID: ChannelID) {
         conversationRefreshJournals[channelID] = nil
+        scopedRefreshJournals = scopedRefreshJournals.filter { $0.value.channelID != channelID }
+    }
+
+    func beginScopedConversationRefresh(in channelID: ChannelID) -> UInt64 {
+        conversationRefreshJournalRevision &+= 1
+        let revision = conversationRefreshJournalRevision
+        scopedRefreshJournals[revision] = ScopedConversationRefreshJournal(
+            channelID: channelID,
+            journal: ConversationRefreshJournal(revision: revision)
+        )
+        return revision
+    }
+
+    func scopedConversationRefreshMutations(_ revision: UInt64) -> ConversationRefreshMutations {
+        guard let journal = scopedRefreshJournals[revision]?.journal else { return .init() }
+        return ConversationRefreshMutations(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
+    }
+
+    func endScopedConversationRefresh(_ revision: UInt64) {
+        scopedRefreshJournals[revision] = nil
     }
 
     @discardableResult
@@ -701,6 +780,30 @@ extension AppModel {
     ) async -> String {
         guard isCurrentAccountSession(account), let database = account.database else { return "" }
         return (try? await composer.storedDraft(in: channelID, database: database)) ?? ""
+    }
+
+    /// Records that messages retained for `channelID` after this point may
+    /// follow a gap. An earlier, more conservative boundary is kept.
+    func markHistoryContiguous(through messages: [Message]?, in channelID: ChannelID) {
+        let newest = messages?.lazy.filter { $0.outboxState == .confirmed }.map(\.id).max()
+            ?? MessageID(rawValue: 0)
+        contiguousHistoryBoundaries[channelID] = min(contiguousHistoryBoundaries[channelID] ?? newest, newest)
+    }
+
+    /// A Gateway gap can drop live messages. Retained windows stay usable,
+    /// but only up to their current newest message.
+    func markHistoryGapForRetainedConversations() {
+        historyEpoch &+= 1
+        if let selectedChannelID { markHistoryContiguous(through: messages, in: selectedChannelID) }
+        if let threadID = openThread?.id {
+            markHistoryContiguous(through: threadMessages, in: threadID)
+            // Live replies may have been missed; the window's newest edge
+            // is unverified until a read in the new connection.
+            threadWindow.isNewestUnverified = true
+        }
+        for (channelID, cached) in messageCache {
+            markHistoryContiguous(through: cached, in: channelID)
+        }
     }
 
     func isCurrentLoad(_ channelID: ChannelID, generation: Int) -> Bool {
@@ -738,24 +841,42 @@ extension AppModel {
         return byID.values.sorted(by: messagePrecedes)
     }
 
+    /// Merges a newest page into a contiguous loaded window. Older confirmed
+    /// messages are retained only when the page reaches the window, so two
+    /// disjoint blocks are never joined across unloaded history.
+    ///
+    /// - Parameter contiguousThrough: The newest current message known to
+    ///   connect to the older ones. Defaults to the newest confirmed message;
+    ///   pass a recorded boundary when later messages arrived after a gap.
     static func reconcilingNewestPage(
         current: [Message],
         fresh: [Message],
         hasMoreBefore: Bool,
-        authoritativeOldestMessageID: MessageID? = nil
+        authoritativeOldestMessageID: MessageID? = nil,
+        contiguousThrough: MessageID? = nil
     ) -> [Message] {
         let oldestFreshID = authoritativeOldestMessageID ?? fresh.map(\.id).min()
+        let newestContiguousID = contiguousThrough
+            ?? current.lazy.filter { $0.outboxState == .confirmed }.map(\.id).max()
+        let reachesCurrent = if let oldestFreshID, let newestContiguousID {
+            oldestFreshID <= newestContiguousID
+        } else {
+            false
+        }
         let retainedCurrent = current.filter { message in
             guard message.outboxState == .confirmed else { return true }
-            guard hasMoreBefore, let oldestFreshID else { return false }
+            guard hasMoreBefore, reachesCurrent, let oldestFreshID else { return false }
             return message.id < oldestFreshID
         }
         return merging(current: retainedCurrent, fresh: fresh)
     }
 
+    /// - Parameter span: Journaled messages missing from `messages` are
+    ///   added only inside it.
     static func applyingConversationRefreshMutations(
         _ mutations: ConversationRefreshMutations,
-        to messages: [Message]
+        to messages: [Message],
+        within span: MessageHistorySpan = .unbounded
     ) -> [Message] {
         var byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
         // Message mutations already contain identity events that followed them.
@@ -767,6 +888,7 @@ extension AppModel {
         for (messageID, mutation) in mutations.messages {
             switch mutation {
             case .upsert(let message):
+                guard byID[messageID] != nil || span.contains(messageID) else { continue }
                 byID[messageID] = message
             case .patch(let update):
                 if var message = byID[messageID] {

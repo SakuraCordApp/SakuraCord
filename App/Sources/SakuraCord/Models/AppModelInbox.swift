@@ -415,6 +415,7 @@ extension AppModel {
         let lastViewed = readState[channelID]?.lastViewed
         acknowledgementTasks[channelID]?.cancel()
         acknowledgementTasks[channelID] = nil
+        debouncedAcknowledgementTargets[channelID] = nil
         readState.markAcknowledgementPending(channelID: channelID, messageID: boundary)
         enqueueAcknowledgement(channelID: channelID, mutation: ReadStateMutation(
             messageID: boundary, manual: false, mentionCount: nil,

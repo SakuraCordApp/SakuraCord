@@ -1306,6 +1306,56 @@ func `guild pages do not acknowledge the hidden selected conversation`(page: Gui
 }
 
 @MainActor
+@Test func `a coalesced acknowledgement dropped after scrolling away restores the real boundary`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        readAcknowledgementTiming: .init(debounce: .milliseconds(300))
+    )
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await eventually { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    model.reportMainWindowActive(true)
+    model.reportTimelineInitialPosition(channelID: channelID, hasReachedReadBoundary: true)
+    #expect(await eventually {
+        model.acknowledgementTasks[channelID] == nil
+            && model.readState.entries[channelID]?.pendingAcknowledgementID == nil
+    })
+    let sentBefore = await provider.acknowledgementRequests.count
+    let entry = try #require(model.readState.entries[channelID])
+    let currentUser = try #require(model.snapshot?.currentUser)
+    let author = User(id: UserID(rawValue: 2), username: "sender", displayName: "Sender")
+    func message(_ offset: UInt64) -> Message {
+        Message(
+            id: MessageID(rawValue: UInt64.max - 40 + offset),
+            channelID: channelID,
+            author: author,
+            content: "mention \(offset)",
+            guildID: GuildID(rawValue: 100),
+            mentionedUsers: [currentUser]
+        )
+    }
+
+    // Each arrival at the newest message schedules a debounced acknowledgement;
+    // the second replaces the first before either reaches Discord.
+    await provider.emit(.messageCreated(message(1)))
+    #expect(await eventually { model.readState.entries[channelID]?.pendingAcknowledgementID == message(1).id })
+    await provider.emit(.messageCreated(message(2)))
+    #expect(await eventually { model.readState.entries[channelID]?.pendingAcknowledgementID == message(2).id })
+    model.reportTimelinePosition(channelID: channelID, hasReachedReadBoundary: false)
+    #expect(await eventually { model.acknowledgementTasks[channelID] == nil })
+
+    let restored = try #require(model.readState.entries[channelID])
+    #expect(restored.lastAcknowledgedMessageID == entry.lastAcknowledgedMessageID)
+    #expect(restored.pendingAcknowledgementID == nil)
+    #expect(restored.mentionCount == entry.mentionCount + 2)
+    #expect(restored.unreadMessageCount == entry.unreadMessageCount + 2)
+    #expect(await provider.acknowledgementRequests.count == sentBefore)
+}
+
+@MainActor
 @Test func `ready read state arriving after timeline setup still permits automatic acknowledgement`() async
     throws
 {

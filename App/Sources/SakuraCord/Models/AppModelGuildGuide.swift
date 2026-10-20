@@ -34,6 +34,8 @@ struct GuildResourceState {
     var refreshJournal: ConversationRefreshJournal?
     // Live events and deletions must not move the REST pagination boundary.
     var nextAfter: MessageID?
+    /// A reconnect found a read in flight; read forward again once it ends.
+    var revalidationPending = false
 
     /// Publishes rows with the journal record the native timeline applies.
     mutating func publishRows(_ newRows: [MessageRowPresentation]) {
@@ -251,6 +253,20 @@ extension AppModel {
         loadGuideResource()
     }
 
+    /// Live messages stop at a Gateway gap. A resource that had reached its
+    /// newest message reads forward from its REST boundary again; live
+    /// arrivals wait until that read reaches the newest message.
+    func revalidateGuideResourceAfterReconnect() {
+        guard let resource = guideResource else { return }
+        guard !resource.loading else {
+            guideResource?.revalidationPending = true
+            return
+        }
+        guard !resource.hasMore else { return }
+        guideResource?.hasMore = true
+        loadGuideResource()
+    }
+
     func loadGuideResource() {
         guard var resource = guideResource, !resource.loading else { return }
         resource.loading = true
@@ -262,6 +278,7 @@ extension AppModel {
         let channelID = resource.channelID
         let existingIDs = Set(resource.messages.map(\.id))
         let anchor = resource.nextAfter ?? resource.messages.last?.id ?? MessageID(rawValue: channelID.rawValue)
+        let requestEpoch = historyEpoch
         guideResource = resource
         startAccountChildTask(account: accountSession()) { model, account in
             do {
@@ -275,7 +292,9 @@ extension AppModel {
                       current.requestID == requestID else { return }
                 let retainedIDs = Set(current.messages.map(\.id)).union(current.changedMessageIDs)
                 let cursor = page.messages.map(\.id).max() ?? anchor
-                let hasMore = page.hasMoreAfter && cursor > anchor
+                // A read from before a Gateway gap cannot reach the live tail.
+                let isStale = requestEpoch != model.historyEpoch
+                let hasMore = (page.hasMoreAfter && cursor > anchor) || isStale
                 let mutations = ConversationRefreshMutations(
                     messages: current.refreshJournal?.mutationsByMessageID ?? [:],
                     updatedUsers: current.refreshJournal?.updatedUsers ?? [:]
@@ -296,12 +315,16 @@ extension AppModel {
                 current.nextAfter = cursor
                 current.refreshJournal = nil
                 current.loading = false
+                let readsAgain = current.revalidationPending || isStale
+                current.revalidationPending = false
                 model.guideResource = current
                 NotificationCenter.default.post(name: .sakuracordMessageRowsDidChange, object: model)
+                if readsAgain { model.loadGuideResource() }
             } catch {
                 guard model.isCurrentAccountSession(account), model.guideResource?.requestID == requestID else { return }
                 model.guideResource?.loading = false
                 model.guideResource?.refreshJournal = nil
+                model.guideResource?.revalidationPending = false
                 model.guideResource?.error = error.localizedDescription
             }
         }

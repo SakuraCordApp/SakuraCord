@@ -20,6 +20,7 @@ extension AppModel {
             preserveUnreadDividerIfNeeded(channelID: target.channelID)
             acknowledgementTasks[target.channelID]?.cancel()
             acknowledgementTasks[target.channelID] = nil
+            debouncedAcknowledgementTargets[target.channelID] = nil
             queuedAcknowledgements[target.channelID] = nil
             acknowledgementQueueOrder.removeAll { $0 == target.channelID }
             readState.unblockAutomaticAcknowledgement(channelID: target.channelID)

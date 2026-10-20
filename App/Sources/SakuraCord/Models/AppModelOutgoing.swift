@@ -418,6 +418,10 @@ extension AppModel {
             timelineSendTransitionStore.noteLocalSend(nonce: nonce)
         }
         if message.channelID == openThread?.id {
+            // A send is a later intent than a window request in flight.
+            supersedeThreadWindowRequests()
+            // Pending sends keep a row in any window so Retry and Discard
+            // stay available; they sort after the loaded messages.
             var updated = threadMessages
             Self.insert(message, intoSorted: &updated)
             threadMessages = updated

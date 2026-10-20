@@ -215,6 +215,40 @@ struct ProviderRequestContractTests {
         ])
     }
 
+    @Test func `history boundaries count every returned message including undecodable ones`() async throws {
+        RateLimitURLProtocol.reset()
+        // Discord returned a full page of two messages; the second has no
+        // author and cannot be presented. History before it still exists.
+        RateLimitURLProtocol.messageHistoryJSON = #"""
+        [{
+          "id":"351","channel_id":"200",
+          "author":{"id":"4","username":"history-author","global_name":null,"avatar":null},
+          "content":"decodable","timestamp":"2026-07-11T19:01:00.000Z","edited_timestamp":null,
+          "attachments":[],"reactions":[],"mentions":[]
+        }, {"id":"350","channel_id":"200","content":"undecodable"}]
+        """#
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            installationID: "server-issued-installation"
+        )
+        let channelID = ChannelID(rawValue: 200)
+
+        let newest = try await provider.messages(in: channelID, anchoredAt: .newest, limit: 2)
+        let earlier = try await provider.messages(in: channelID, anchoredAt: .before(MessageID(rawValue: 400)), limit: 2)
+        let later = try await provider.messages(in: channelID, anchoredAt: .after(MessageID(rawValue: 300)), limit: 2)
+        let shortPage = try await provider.messages(in: channelID, anchoredAt: .newest, limit: 3)
+
+        #expect(newest.messages.map(\.id) == [MessageID(rawValue: 351)])
+        #expect(newest.hasMoreBefore)
+        #expect(earlier.hasMoreBefore)
+        #expect(later.hasMoreAfter)
+        #expect(!shortPage.hasMoreBefore)
+    }
+
     @Test(arguments: [false, true])
     func `history reports incomplete member hydration when Gateway lookup is unavailable`(isThread: Bool) async throws {
         RateLimitURLProtocol.reset()

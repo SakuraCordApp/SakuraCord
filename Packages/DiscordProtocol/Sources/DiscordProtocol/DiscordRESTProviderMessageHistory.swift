@@ -113,18 +113,24 @@ public extension DiscordRESTProvider {
         }
         let firstID = values.first?.id
         let lastID = values.last?.id
+        // A full page means Discord may hold more history beyond it, even
+        // when some returned messages could not be decoded. Pagination
+        // continues from the decoded edge, so a page with nothing decodable
+        // cannot advance and ends there.
+        let returnedFullPage = payload.elements.count + payload.skippedCount == boundedLimit
+            && !values.isEmpty
         let hasMoreBefore: Bool
         let hasMoreAfter: Bool
         switch anchor {
         case .newest:
-            hasMoreBefore = values.count == boundedLimit
+            hasMoreBefore = returnedFullPage
             hasMoreAfter = false
         case .before:
-            hasMoreBefore = values.count == boundedLimit
+            hasMoreBefore = returnedFullPage
             hasMoreAfter = true
         case .after:
             hasMoreBefore = false
-            hasMoreAfter = values.count == boundedLimit
+            hasMoreAfter = returnedFullPage
         case .around(let messageID):
             hasMoreBefore = firstID.map { $0 < messageID } ?? false
             hasMoreAfter = lastID.map { $0 > messageID } ?? false

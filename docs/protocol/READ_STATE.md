@@ -31,13 +31,18 @@ a loaded divider acknowledges on open. A conversation without a usable
 acknowledged boundary, including a READY `last_message_id` that is not a
 snowflake (such as the number `-11`), is not held: no scroll can reach its
 unread start. Wheel or scrollbar movement toward newer messages releases the
-hold; resizing and app-owned positioning do not. A remote
+hold; resizing and app-owned positioning do not. A window detached from the
+newest message never acknowledges automatically, and a debounced acknowledgement
+is dropped if the reader moved away from the newest message while the
+conversation stayed open; leaving after reaching it still counts. A remote
 ACK or failed Mark Unread rollback that releases the hold resumes ordinary
 viewing acknowledgements without requiring another geometry callback.
 
 A channel ACK posts to `/channels/{channel}/messages/{message}/ack` with applicable
 flags, `last_viewed` and the latest server-issued token. Serialize account requests
-and coalesce per channel; retain each optimistic intent's rollback boundary.
+and coalesce per channel; retain each optimistic intent's rollback boundary. A
+debounced intent replaced before it is sent is rolled back first, so only
+queued or in-flight intents remain as predecessors.
 Definite failure reverts that intent without undoing an earlier accepted ACK
 or discarding subsequent live messages and mentions.
 Reconnects overlay pending intent rather than cancelling it. No automatic replay

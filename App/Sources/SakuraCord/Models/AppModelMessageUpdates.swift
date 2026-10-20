@@ -59,6 +59,9 @@ extension AppModel {
         for channelID in conversationRefreshJournals.keys {
             conversationRefreshJournals[channelID]?.recordIdentityUpdate(user)
         }
+        for revision in scopedRefreshJournals.keys {
+            scopedRefreshJournals[revision]?.journal.recordIdentityUpdate(user)
+        }
         guideResource?.refreshJournal?.recordIdentityUpdate(user)
         var seen = Set<MessageID>()
         for message in retainedMessages where seen.insert(message.id).inserted {

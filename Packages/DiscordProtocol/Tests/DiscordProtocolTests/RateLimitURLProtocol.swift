@@ -44,6 +44,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var typingSuperProperties: String?
     nonisolated(unsafe) static var messageRequestCount = 0
     nonisolated(unsafe) static var messageHistoryQueryItems: [[String]] = []
+    nonisolated(unsafe) static var messageHistoryJSON: String?
     nonisolated(unsafe) static var messageSearchRequestCount = 0
     nonisolated(unsafe) static var messageSearchQueries: [[String: String]] = []
     nonisolated(unsafe) static var messageSearchQueryItems: [[String]] = []
@@ -139,6 +140,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
         typingSuperProperties = nil
         messageRequestCount = 0
         messageHistoryQueryItems = []
+        messageHistoryJSON = nil
         messageSearchRequestCount = 0
         messageSearchQueries = []
         messageSearchQueryItems = []
@@ -482,7 +484,7 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
                         ?? []
                 )
                 status = 200
-                json = #"""
+                json = RateLimitURLProtocol.messageHistoryJSON ?? #"""
                 [{
                   "id":"350",
                   "channel_id":"200",

@@ -62,9 +62,8 @@ extension AppModel {
                       previousOldestID.map({ oldestMessageID < $0 }) ?? true
                 else { return }
                 previousOldestID = oldestMessageID
-                // Keep history contiguous, including in threads, which do not
-                // have a separate later-history window. Existing loaders own
-                // permissions, pagination errors and account/selection guards.
+                // Keep history contiguous. Existing loaders own permissions,
+                // pagination errors and account/selection guards.
                 if isThread {
                     await model.loadEarlierThread(account: account)
                 } else {
@@ -88,6 +87,18 @@ extension AppModel {
             }
             return
         }
+        if channelID == openThread?.id, isThreadWindowAwayFromNewest {
+            let account = accountSession()
+            startAccountChildTask(account: account) { model, account in
+                guard await model.loadNewestThreadWindow(account: account),
+                      model.isCurrentAccountSession(account),
+                      model.openThread?.id == channelID
+                else { return }
+                model.completeConversationReadingAndAdvance(channelID: channelID)
+            }
+            return
+        }
+        if channelID == openThread?.id { supersedeThreadWindowRequests() }
         markConversationRead(channelID: channelID)
         unreadDividerMessageIDs[channelID] = nil
         conversationNewestRequestID &+= 1
@@ -161,6 +172,7 @@ extension AppModel {
         let target = MessageID(rawValue: message.id.rawValue - 1)
         acknowledgementTasks[channelID]?.cancel()
         acknowledgementTasks[channelID] = nil
+        debouncedAcknowledgementTargets[channelID] = nil
         queuedAcknowledgements[channelID] = nil
         acknowledgementQueueOrder.removeAll { $0 == channelID }
         readState.markUnread(
@@ -250,15 +262,29 @@ extension AppModel {
         )
     }
 
+    /// The conversation shows a window that ends before its newest message,
+    /// or a thread withheld while its access is resolved, so viewing it
+    /// cannot acknowledge the newest message.
+    func isDetachedFromNewest(_ channelID: ChannelID) -> Bool {
+        (channelID == openThread?.id && (isThreadWindowAwayFromNewest || openThreadResolution != nil))
+            || (channelID == selectedChannelID && hasMoreLaterMessages)
+    }
+
     func scheduleAcknowledgement(channelID: ChannelID, messageID: MessageID) {
-        guard !runsChatPerformanceBenchmark else { return }
+        guard !runsChatPerformanceBenchmark, !isDetachedFromNewest(channelID) else { return }
         if let pending = readState[channelID]?.pendingAcknowledgementID,
            pending >= messageID
         {
             return
         }
         acknowledgementTasks[channelID]?.cancel()
+        if let replaced = debouncedAcknowledgementTargets.removeValue(forKey: channelID) {
+            // The replaced debounce never reached Discord. Undo its optimistic
+            // intent so the new one rolls back to the last real boundary.
+            readState.failAcknowledgement(channelID: channelID, messageID: replaced)
+        }
         readState.markAcknowledgementPending(channelID: channelID, messageID: messageID)
+        debouncedAcknowledgementTargets[channelID] = messageID
         Self.unreadDiagnosticsLogger.info(
             "Read acknowledgement scheduled; channel=\(channelID.rawValue, privacy: .public), target=\(messageID.rawValue, privacy: .public)"
         )
@@ -269,6 +295,19 @@ extension AppModel {
             do {
                 try await Task.sleep(for: debounce)
                 guard let self, !Task.isCancelled else { return }
+                // While the conversation stays presented, the reader may
+                // have moved away from its newest message during the
+                // debounce. Leaving it after reaching the newest still counts.
+                let presentation = self.readState.presentations[channelID]
+                let movedAway = presentation?.isPresented == true
+                    && presentation?.hasReachedReadBoundary == false
+                self.debouncedAcknowledgementTargets[channelID] = nil
+                guard !movedAway, !self.isDetachedFromNewest(channelID) else {
+                    self.readState.failAcknowledgement(channelID: channelID, messageID: messageID)
+                    self.acknowledgementTasks[channelID] = nil
+                    self.refreshUnreadPresentation()
+                    return
+                }
                 self.enqueueAcknowledgement(
                     channelID: channelID,
                     mutation: self.readStateMutation(
@@ -391,6 +430,7 @@ extension AppModel {
         preserveUnreadDividerIfNeeded(channelID: channelID)
         acknowledgementTasks[channelID]?.cancel()
         acknowledgementTasks[channelID] = nil
+        debouncedAcknowledgementTargets[channelID] = nil
         queuedAcknowledgements[channelID] = nil
         acknowledgementQueueOrder.removeAll { $0 == channelID }
         readState.unblockAutomaticAcknowledgement(channelID: channelID)
@@ -418,6 +458,7 @@ extension AppModel {
             preserveUnreadDividerIfNeeded(channelID: target.channelID)
             acknowledgementTasks[target.channelID]?.cancel()
             acknowledgementTasks[target.channelID] = nil
+            debouncedAcknowledgementTargets[target.channelID] = nil
             queuedAcknowledgements[target.channelID] = nil
             acknowledgementQueueOrder.removeAll { $0 == target.channelID }
             readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
@@ -493,6 +534,7 @@ extension AppModel {
             preserveUnreadDividerIfNeeded(channelID: target.channelID)
             acknowledgementTasks[target.channelID]?.cancel()
             acknowledgementTasks[target.channelID] = nil
+            debouncedAcknowledgementTargets[target.channelID] = nil
             queuedAcknowledgements[target.channelID] = nil
             acknowledgementQueueOrder.removeAll { $0 == target.channelID }
             readState.unblockAutomaticAcknowledgement(channelID: target.channelID)

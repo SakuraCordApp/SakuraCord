@@ -185,7 +185,7 @@ extension AppModel {
         do {
             let updated = try await session.provider.endPoll(messageID: message.id, channelID: message.channelID)
             guard isCurrentAccountSession(session) else { return }
-            let reconciled = reconcileVisibleOrCached(updated)
+            let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
             recordAuthoritativeMessageUpsert(reconciled)
         } catch {
             guard isCurrentAccountSession(session) else { return }

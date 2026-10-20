@@ -57,6 +57,26 @@ and refreshes a reopened/selected channel once. Distant navigation replaces the
 window with `around` history; older/newer edges paginate independently. It must
 not masquerade as a newest-backed cache. A superseded selection may still finish
 its dispatched read and populate the account cache without changing selection.
+An edge stays open after a full page, counting returned messages that cannot be
+decoded. A newest page extends a loaded window only when it reaches messages
+known to be gap-free (not ones that arrived live after a Gateway gap);
+otherwise it replaces the window rather than joining disjoint blocks.
+
+Threads and forum posts use the same windows: a cold open reads the newest 100
+messages and a jump to a message opens its `around` window. Gateway does not
+guarantee a closed thread's messages, so a cached thread reopens at once and
+always revalidates its newest page. Until a current read establishes the newest
+edge after such a reopen or a Gateway gap, the window counts as detached: sends
+load the newest messages first and nothing is acknowledged automatically; a reconnect also revalidates the open
+thread and a Guide resource that had reached its newest message. Results for a
+closed instance of a side chat, including an earlier one of the same thread,
+are discarded, and of competing whole-window reads, sends and returns to the
+newest message the latest wins. A read that began before a Gateway gap may
+show its messages but cannot mark the window as reaching the newest message
+or admit messages past its fetched edge. Earlier and later pages continue from
+the window's REST edges, not from the messages it shows, and live messages,
+send confirmations and edits never join the window past an edge with more
+history beyond it.
 
 Search uses guild search or read-only DM search. Pagination and indexing follow
 server cursors and the [shared budgets](../PROTOCOL_BASELINE.md#attempt-budgets).

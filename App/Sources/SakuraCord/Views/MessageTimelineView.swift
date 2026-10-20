@@ -5,15 +5,12 @@ struct MessageTimelineView: View {
     let model: AppModel
     let bottomContentInset: CGFloat
     var editRequest: MessageTimelineEditRequest?
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let runsPerformanceAutoScroll =
         AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         .runsChatPerformanceAutoScroll
     @State private var scrollPolicy = MessageTimelineScrollPolicy()
     @State private var allowsAutomaticHistoryLoading = false
-    @State private var earlierHistoryIntent = TimelineHistoryScrollIntent()
-    @State private var laterHistoryIntent = TimelineHistoryScrollIntent()
+    @State private var historyPaging = TimelineHistoryPaging()
     @State private var highlightedMessageID: MessageID?
     @State private var hasEstablishedInitialPosition = false
     @State private var scrollRequest: MessageTimelineScrollRequest?
@@ -120,7 +117,12 @@ struct MessageTimelineView: View {
                !scrollPolicy.isNearBottom,
                !model.messages.isEmpty
             {
-                Button {
+                TimelineNewestButton(
+                    title: hasUnreadMessages ? "New messages" : "Scroll to bottom",
+                    hasUnread: hasUnreadMessages,
+                    bottomContentInset: bottomContentInset,
+                    accessibilityHint: "Scrolls to the latest message"
+                ) {
                     handleUserScrollTowardNewest()
                     if model.hasMoreLaterMessages {
                         Task {
@@ -130,40 +132,7 @@ struct MessageTimelineView: View {
                         scrollPolicy.didRequestBottom()
                         requestScroll(.bottom, glides: true)
                     }
-                } label: {
-                    Label {
-                        Text(hasUnreadMessages ? "New messages" : "Scroll to bottom")
-                            .contentTransition(.opacity)
-                    } icon: {
-                        Image(systemName: "arrow.down")
-                            .symbolEffect(.bounce, value: hasUnreadMessages)
-                            .symbolEffectsRemoved(reduceMotion)
-                    }
-                        .font(.interface(.callout).weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .environment(\.colorScheme, hasUnreadMessages ? .dark : colorScheme)
-                        .padding(.horizontal, InterfaceScale.metric(15))
-                        .padding(.vertical, InterfaceScale.metric(8))
-                        .contentShape(Capsule())
-                        .glassEffect(
-                            hasUnreadMessages
-                                ? .regular.tint(SakuraCordAccentColor.color).interactive()
-                                : .regular.interactive(),
-                            in: Capsule()
-                        )
-                        .animation(
-                            reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.18),
-                            value: hasUnreadMessages
-                        )
                 }
-                .buttonStyle(.plain)
-                .padding(
-                    .bottom,
-                    ChatDetailLayoutPolicy.newMessagesButtonBottomPadding(
-                        bottomContentInset: bottomContentInset
-                    )
-                )
-                .accessibilityHint("Scrolls to the latest message")
             }
         }
         .onChange(of: model.selectedChannelID) { oldID, _ in
@@ -174,8 +143,7 @@ struct MessageTimelineView: View {
                 )
             }
             hasEstablishedInitialPosition = false
-            earlierHistoryIntent = TimelineHistoryScrollIntent()
-            laterHistoryIntent = TimelineHistoryScrollIntent()
+            historyPaging = TimelineHistoryPaging()
             scrollPolicy.didBeginChannel()
             latestScrollState = TimelineScrollState(
                 isNearTop: false,
@@ -213,13 +181,11 @@ struct MessageTimelineView: View {
         }
         .task(id: model.selectedChannelID) {
             allowsAutomaticHistoryLoading = false
-            earlierHistoryIntent = TimelineHistoryScrollIntent()
-            laterHistoryIntent = TimelineHistoryScrollIntent()
+            historyPaging = TimelineHistoryPaging()
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
             allowsAutomaticHistoryLoading = true
-            loadHistoryIfNeeded(.earlier, for: latestScrollState)
-            loadHistoryIfNeeded(.later, for: latestScrollState)
+            loadHistoryIfNeeded(for: latestScrollState)
         }
         .onDisappear {
             if let conversationID {
@@ -333,23 +299,14 @@ struct MessageTimelineView: View {
 
     private func handleScrollState(_ value: TimelineScrollState) {
         latestScrollState = value
-        let retainedEarlierIntent = earlierHistoryIntent.retained(
-            isInProvisionalHistory: value.isInProvisionalHistory
-        )
-        if earlierHistoryIntent != retainedEarlierIntent {
-            earlierHistoryIntent = retainedEarlierIntent
-        }
-        let retainedLaterIntent = laterHistoryIntent.retained(
-            isInProvisionalHistory: value.isInProvisionalLaterHistory
-        )
-        if laterHistoryIntent != retainedLaterIntent {
-            laterHistoryIntent = retainedLaterIntent
+        let retainedPaging = historyPaging.retained(for: value)
+        if historyPaging != retainedPaging {
+            historyPaging = retainedPaging
         }
         if scrollPolicy.isNearBottom != value.isNearBottom {
             scrollPolicy.updateGeometry(isNearBottom: value.isNearBottom)
         }
-        loadHistoryIfNeeded(.earlier, for: value)
-        loadHistoryIfNeeded(.later, for: value)
+        loadHistoryIfNeeded(for: value)
         guard value.hasEstablishedInitialPosition else { return }
         if !hasEstablishedInitialPosition {
             // Exact viewport state is repeatable, so it also recovers if a
@@ -367,46 +324,31 @@ struct MessageTimelineView: View {
         }
     }
 
-    private func loadHistoryIfNeeded(
-        _ direction: TimelineHistoryDirection,
-        for state: TimelineScrollState
-    ) {
-        let isEarlier = direction == .earlier
-        guard TimelineHistoryLoadingPolicy.shouldLoad(
-            isNearBoundary:
-                isEarlier ? state.isNearTop : state.isNearLoadedBottom,
-            contentFitsViewport: state.contentFitsViewport,
+    private func loadHistoryIfNeeded(for state: TimelineScrollState) {
+        let directions = historyPaging.directionsToLoad(
+            for: state,
             allowsAutomaticLoading: allowsAutomaticHistoryLoading,
-            hasMoreMessages:
-                isEarlier
-                    ? model.hasMoreMessages
-                    : model.hasMoreLaterMessages,
-            isLoading:
-                isEarlier ? model.isLoadingEarlier : model.isLoadingLater,
-            requiresUserScrollIntent:
-                isEarlier && unreadPresentation.hasUnresolvedInitialBoundary,
-            hasUserScrollIntent:
-                isEarlier
-                    ? earlierHistoryIntent.hasIntent
-                    : laterHistoryIntent.hasIntent
+            edges: TimelineHistoryEdges(
+                hasMoreEarlier: model.hasMoreMessages,
+                hasMoreLater: model.hasMoreLaterMessages,
+                isLoadingEarlier: model.isLoadingEarlier,
+                isLoadingLater: model.isLoadingLater,
+                earlierRequiresIntent: unreadPresentation.hasUnresolvedInitialBoundary
+            )
         )
-        else { return }
-        if isEarlier {
-            loadEarlier()
-        } else {
-            loadLater()
+        for direction in directions {
+            switch direction {
+            case .earlier: loadEarlier()
+            case .later: loadLater()
+            }
         }
     }
 
     private func handleUserScrollBegan() {
         scrollPolicy.userScrollBegan()
-        laterHistoryIntent.gestureBegan(grantsIntent: latestScrollState.isNearLoadedBottom)
-        // Keep the intent for the complete live gesture. A fast upward
-        // scroll can consume more than one bounded history page before
-        // AppKit sends didEndLiveScroll; clearing it after the first page
-        // strands the viewport against a still-provisional boundary.
-        earlierHistoryIntent.gestureBegan(
-            grantsIntent: unreadPresentation.hasUnresolvedInitialBoundary
+        historyPaging.gestureBegan(
+            grantsEarlierIntent: unreadPresentation.hasUnresolvedInitialBoundary,
+            isNearLoadedBottom: latestScrollState.isNearLoadedBottom
         )
     }
 
@@ -417,11 +359,9 @@ struct MessageTimelineView: View {
     }
 
     private func handleUserScrollEnded(_ value: TimelineScrollState) {
-        earlierHistoryIntent.gestureEnded(isInProvisionalHistory: value.isInProvisionalHistory)
-        laterHistoryIntent.gestureEnded(isInProvisionalHistory: value.isInProvisionalLaterHistory)
+        historyPaging.gestureEnded(value)
         scrollPolicy.userScrollEnded(isNearBottom: value.isNearBottom)
-        loadHistoryIfNeeded(.earlier, for: value)
-        loadHistoryIfNeeded(.later, for: value)
+        loadHistoryIfNeeded(for: value)
     }
 }
 
@@ -600,6 +540,111 @@ struct TimelineHistoryScrollIntent: Equatable {
             isInProvisionalHistory: isInProvisionalHistory
         )
         return next
+    }
+}
+
+/// What a timeline's store can load at each history edge.
+struct TimelineHistoryEdges {
+    let hasMoreEarlier: Bool
+    let hasMoreLater: Bool
+    let isLoadingEarlier: Bool
+    let isLoadingLater: Bool
+    /// Earlier history waits for scroll intent until the unread boundary loads.
+    let earlierRequiresIntent: Bool
+}
+
+/// Automatic loading at a timeline's earlier and later history edges. The
+/// channel and thread timelines drive it from their own stores.
+struct TimelineHistoryPaging: Equatable {
+    private var earlierIntent = TimelineHistoryScrollIntent()
+    private var laterIntent = TimelineHistoryScrollIntent()
+
+    func retained(for state: TimelineScrollState) -> Self {
+        var next = self
+        next.earlierIntent = earlierIntent.retained(isInProvisionalHistory: state.isInProvisionalHistory)
+        next.laterIntent = laterIntent.retained(isInProvisionalHistory: state.isInProvisionalLaterHistory)
+        return next
+    }
+
+    /// Keeps intent for the whole live gesture. A fast scroll can consume
+    /// more than one bounded page before AppKit ends the live scroll;
+    /// clearing intent after the first page strands the viewport against a
+    /// still-provisional boundary.
+    mutating func gestureBegan(grantsEarlierIntent: Bool, isNearLoadedBottom: Bool) {
+        laterIntent.gestureBegan(grantsIntent: isNearLoadedBottom)
+        earlierIntent.gestureBegan(grantsIntent: grantsEarlierIntent)
+    }
+
+    mutating func gestureEnded(_ state: TimelineScrollState) {
+        earlierIntent.gestureEnded(isInProvisionalHistory: state.isInProvisionalHistory)
+        laterIntent.gestureEnded(isInProvisionalHistory: state.isInProvisionalLaterHistory)
+    }
+
+    func directionsToLoad(
+        for state: TimelineScrollState,
+        allowsAutomaticLoading: Bool,
+        edges: TimelineHistoryEdges
+    ) -> [TimelineHistoryDirection] {
+        TimelineHistoryDirection.allCases.filter { direction in
+            let isEarlier = direction == .earlier
+            return TimelineHistoryLoadingPolicy.shouldLoad(
+                isNearBoundary: isEarlier ? state.isNearTop : state.isNearLoadedBottom,
+                contentFitsViewport: state.contentFitsViewport,
+                allowsAutomaticLoading: allowsAutomaticLoading,
+                hasMoreMessages: isEarlier ? edges.hasMoreEarlier : edges.hasMoreLater,
+                isLoading: isEarlier ? edges.isLoadingEarlier : edges.isLoadingLater,
+                requiresUserScrollIntent: isEarlier && edges.earlierRequiresIntent,
+                hasUserScrollIntent: isEarlier ? earlierIntent.hasIntent : laterIntent.hasIntent
+            )
+        }
+    }
+}
+
+/// Returns a timeline to its newest message, highlighting unread messages.
+struct TimelineNewestButton: View {
+    let title: String
+    let hasUnread: Bool
+    let bottomContentInset: CGFloat
+    let accessibilityHint: String
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                Text(title)
+                    .contentTransition(.opacity)
+            } icon: {
+                Image(systemName: "arrow.down")
+                    .symbolEffect(.bounce, value: hasUnread)
+                    .symbolEffectsRemoved(reduceMotion)
+            }
+            .font(.interface(.callout).weight(.semibold))
+            .foregroundStyle(.primary)
+            .environment(\.colorScheme, hasUnread ? .dark : colorScheme)
+            .padding(.horizontal, InterfaceScale.metric(15))
+            .padding(.vertical, InterfaceScale.metric(8))
+            .contentShape(Capsule())
+            .glassEffect(
+                hasUnread
+                    ? .regular.tint(SakuraCordAccentColor.color).interactive()
+                    : .regular.interactive(),
+                in: Capsule()
+            )
+            .animation(
+                reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.18),
+                value: hasUnread
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(
+            .bottom,
+            ChatDetailLayoutPolicy.newMessagesButtonBottomPadding(
+                bottomContentInset: bottomContentInset
+            )
+        )
+        .accessibilityHint(accessibilityHint)
     }
 }
 

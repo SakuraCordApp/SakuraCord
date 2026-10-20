@@ -457,6 +457,15 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
             messageCount: 2
         )
     )
+    // A detached window's own bottom is not the newest reply.
+    #expect(
+        ThreadTimelinePresentationPolicy.showsNewRepliesButton(
+            isNearBottom: true,
+            hasUnreadReplies: false,
+            isDetachedFromNewest: true,
+            messageCount: 2
+        )
+    )
 }
 
 @Test func `wheel input toward newest is downward and vertical`() {

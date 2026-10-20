@@ -443,43 +443,30 @@ extension AppModel {
                 starterMessageID: post.firstMessage?.id,
                 initialMessages: initialMessages.isEmpty
                     ? post.firstMessage.map { [$0] } ?? [] : initialMessages,
-                fullWidth: fullWidth
+                fullWidth: fullWidth,
+                historyTarget: messageID
             )
         } else if fullWidth {
             presentOpenThreadFullWidth()
         }
         guard let messageID else { return }
+        let generation = threadLoadGeneration
+        let windowRevision = threadWindow.revision
+        // Whether the thread's first window is already the target's.
+        let initialLoadReadsTarget = threadWindow.initialLoadTarget == messageID
         await threadLoadTask?.value
-        guard !Task.isCancelled,
-              isCurrentAccountSession(session),
-              openThread?.id == post.id
+        // A later jump or return to the newest messages owns the window now.
+        guard isCurrentAccountSession(session),
+              isCurrentThreadLoad(post.id, generation: generation),
+              threadWindow.revision == windowRevision
         else { return }
-        if !threadMessages.contains(where: { $0.id == messageID }) {
-            do {
-                let page = try await session.provider.messages(
-                    in: post.id,
-                    anchoredAt: .around(messageID),
-                    limit: 50
-                )
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session),
-                      openThread?.id == post.id
-                else { return }
-                threadMessages = Self.merging(
-                    current: threadMessages,
-                    fresh: page.messages
-                )
-                hasMoreThreadMessages = page.hasMoreBefore
-            } catch is CancellationError {
-                return
-            } catch {
-                guard isCurrentAccountSession(session),
-                      openThread?.id == post.id
-                else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                errorMessage = error.localizedDescription
-                return
-            }
+        // A failed read around the target keeps it for an explicit Retry
+        // instead of repeating the read.
+        if initialLoadReadsTarget, threadWindow.failedInitialTarget == messageID { return }
+        if !initialLoadReadsTarget, !threadMessages.contains(where: { $0.id == messageID }) {
+            // Present the target's own window; it pages toward the newest
+            // message instead of being joined to unrelated history.
+            guard await loadThreadWindow(around: messageID, session: session) else { return }
         }
         guard threadMessages.contains(where: { $0.id == messageID }) else {
             errorMessage = "That message could not be found in the linked thread."
@@ -549,6 +536,7 @@ extension AppModel {
                     hasMoreMessages = page.hasMoreBefore
                     hasMoreLaterMessages = page.hasMoreAfter
                     hasMoreCache[channel.id] = page.hasMoreBefore
+                    contiguousHistoryBoundaries[channel.id] = nil
                 } catch is CancellationError {
                     return
                 } catch {
