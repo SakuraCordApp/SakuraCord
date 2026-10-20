@@ -1815,7 +1815,10 @@ extension NativeMessageTimelineCoordinator {
                     hasEstablishedInitialPosition,
                 hasReachedNewestMessageBoundary:
                     hasEstablishedInitialPosition
-                    && hasReachedNewestMessageBoundary(in: visibleRect),
+                    && hasReachedNewestMessageBoundary(
+                        in: visibleRect,
+                        isAtDocumentBottom: isAtDocumentBottom
+                    ),
                 isInProvisionalHistory:
                     parent.hasMoreMessages
                     && visibleRect.minY
@@ -1831,14 +1834,23 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func hasReachedNewestMessageBoundary(
-            in visibleRect: CGRect
+            in visibleRect: CGRect,
+            isAtDocumentBottom: Bool
         ) -> Bool {
             guard !parent.hasMoreLaterMessages else { return false }
             guard let newestIndex = items.lastIndex(where: {
                 $0.messageID != nil
-            }),
-                rowOrigins.indices.contains(newestIndex),
-                layouts.indices.contains(newestIndex)
+            }) else {
+                return NativeTimelineReadBoundaryPolicy
+                    .hasReachedEmptyTimelineBoundary(
+                        hasMoreEarlier: parent.hasMoreMessages,
+                        isLoadingEarlier: parent.isLoadingEarlier,
+                        isLoadingLater: parent.isLoadingLater,
+                        isAtDocumentBottom: isAtDocumentBottom
+                    )
+            }
+            guard rowOrigins.indices.contains(newestIndex),
+                  layouts.indices.contains(newestIndex)
             else {
                 return false
             }
