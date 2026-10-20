@@ -2066,33 +2066,6 @@ func `authoritative thread deletion removes open cached and resource conversatio
     #expect(!AppModel.isForumLoadCancellation(URLError(.timedOut)))
 }
 
-@Test func `forum post deletion is limited to its owner or a thread moderator`() {
-    let ownerID = UserID(rawValue: 10)
-    let otherID = UserID(rawValue: 11)
-
-    #expect(
-        AppModel.canDeleteForumPost(
-            ownerID: ownerID,
-            currentUserID: ownerID,
-            canManage: false
-        )
-    )
-    #expect(
-        !AppModel.canDeleteForumPost(
-            ownerID: ownerID,
-            currentUserID: otherID,
-            canManage: false
-        )
-    )
-    #expect(
-        AppModel.canDeleteForumPost(
-            ownerID: ownerID,
-            currentUserID: otherID,
-            canManage: true
-        )
-    )
-}
-
 @MainActor
 @Test func `forum creation clears queued upload progress after completion`() async throws {
     let model = AppModel(launchMode: .offlineTesting)

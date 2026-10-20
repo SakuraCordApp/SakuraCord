@@ -3,35 +3,16 @@ import SakuraCordModels
 import SwiftUI
 
 /// SwiftUI context menus currently discard item images in the macOS 27 menu
-/// adaptation. This bridge keeps forum state in SwiftUI while AppKit owns only
-/// the native right-click menu presentation and checked item state.
+/// adaptation. This bridge renders the shared thread actions as a native
+/// right-click menu and adds the forum card's tag picker with its emoji.
 struct ForumPostContextMenuBridge: NSViewRepresentable {
+    let actionsMenu: ThreadActionsMenu
     let tags: [ForumTag]
     let appliedTagIDs: [ForumTagID]
     let customEmojiURLsByID: CustomEmojiImageURLs
-    let isArchived: Bool
-    let isLocked: Bool
-    let isPinned: Bool
-    let isUnread: Bool
-    let isMutationPending: Bool
-    let notificationSettings: ThreadNotificationSettings?
-    let inheritedNotificationLevel: MessageNotificationLevel
     let requiresTag: Bool
     let canManage: Bool
-    let canArchive: Bool
-    let canEditTags: Bool
-    let canDelete: Bool
-    let markRead: () -> Void
-    let mute: (ChannelMuteDuration) -> Void
-    let unmute: () -> Void
-    let setNotificationLevel: (MessageNotificationLevel) -> Void
-    let copyLink: () -> Void
-    let copyThreadID: () -> Void
     let toggleTag: (ForumTagID) -> Void
-    let toggleArchive: () -> Void
-    let toggleLock: () -> Void
-    let togglePin: () -> Void
-    let delete: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(from: self)
@@ -54,62 +35,25 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject {
+        private var actionsMenu: ThreadActionsMenu
         private var tags: [ForumTag]
         private var appliedTagIDs: [ForumTagID]
         private var customEmojiURLsByID: CustomEmojiImageURLs
-        private var isArchived: Bool
-        private var isLocked: Bool
-        private var isPinned: Bool
-        private var isUnread: Bool
-        private var isMutationPending: Bool
-        private var notificationSettings: ThreadNotificationSettings?
-        private var inheritedNotificationLevel: MessageNotificationLevel
         private var requiresTag: Bool
         private var canManage: Bool
-        private var canArchive: Bool
-        private var canEditTags: Bool
-        private var canDelete: Bool
-        private var markRead: () -> Void
-        private var mute: (ChannelMuteDuration) -> Void
-        private var unmute: () -> Void
-        private var setNotificationLevel: (MessageNotificationLevel) -> Void
-        private var copyLink: () -> Void
-        private var copyThreadID: () -> Void
         private var toggleTag: (ForumTagID) -> Void
-        private var toggleArchive: () -> Void
-        private var toggleLock: () -> Void
-        private var togglePin: () -> Void
-        private var delete: () -> Void
+        private let renderer = ThreadActionsMenuRenderer()
         private var customTagImages: [ForumTagID: NSImage] = [:]
         private var imageTasks: [ForumTagID: Task<Void, Never>] = [:]
 
         init(from bridge: ForumPostContextMenuBridge) {
+            actionsMenu = bridge.actionsMenu
             tags = bridge.tags
             appliedTagIDs = bridge.appliedTagIDs
             customEmojiURLsByID = bridge.customEmojiURLsByID
-            isArchived = bridge.isArchived
-            isLocked = bridge.isLocked
-            isPinned = bridge.isPinned
-            isUnread = bridge.isUnread
-            isMutationPending = bridge.isMutationPending
-            notificationSettings = bridge.notificationSettings
-            inheritedNotificationLevel = bridge.inheritedNotificationLevel
             requiresTag = bridge.requiresTag
             canManage = bridge.canManage
-            canArchive = bridge.canArchive
-            canEditTags = bridge.canEditTags
-            canDelete = bridge.canDelete
-            markRead = bridge.markRead
-            mute = bridge.mute
-            unmute = bridge.unmute
-            setNotificationLevel = bridge.setNotificationLevel
-            copyLink = bridge.copyLink
-            copyThreadID = bridge.copyThreadID
             toggleTag = bridge.toggleTag
-            toggleArchive = bridge.toggleArchive
-            toggleLock = bridge.toggleLock
-            togglePin = bridge.togglePin
-            delete = bridge.delete
             super.init()
         }
 
@@ -118,140 +62,20 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
         }
 
         func update(from bridge: ForumPostContextMenuBridge) {
+            actionsMenu = bridge.actionsMenu
             tags = bridge.tags
             appliedTagIDs = bridge.appliedTagIDs
             customEmojiURLsByID = bridge.customEmojiURLsByID
-            isArchived = bridge.isArchived
-            isLocked = bridge.isLocked
-            isPinned = bridge.isPinned
-            isUnread = bridge.isUnread
-            isMutationPending = bridge.isMutationPending
-            notificationSettings = bridge.notificationSettings
-            inheritedNotificationLevel = bridge.inheritedNotificationLevel
             requiresTag = bridge.requiresTag
             canManage = bridge.canManage
-            canArchive = bridge.canArchive
-            canEditTags = bridge.canEditTags
-            canDelete = bridge.canDelete
-            markRead = bridge.markRead
-            mute = bridge.mute
-            unmute = bridge.unmute
-            setNotificationLevel = bridge.setNotificationLevel
-            copyLink = bridge.copyLink
-            copyThreadID = bridge.copyThreadID
             toggleTag = bridge.toggleTag
-            toggleArchive = bridge.toggleArchive
-            toggleLock = bridge.toggleLock
-            togglePin = bridge.togglePin
-            delete = bridge.delete
         }
 
         func makeMenu() -> NSMenu {
-            let menu = NSMenu()
-            menu.autoenablesItems = false
-
-            menu.addItem(
-                menuItem(
-                    "Mark as Read",
-                    systemImage: "envelope.open.fill",
-                    action: #selector(markReadFromMenu),
-                    isEnabled: isUnread
-                )
-            )
-            menu.addItem(.separator())
-
-            addMuteItems(to: menu)
-            addManagementItems(to: menu)
-            addCopyAndDeleteItems(to: menu)
-            return menu
-        }
-
-        private func addMuteItems(to menu: NSMenu) {
-            if isDirectlyMuted {
-                let unmuteItem = menuItem(
-                    "Unmute Post",
-                    systemImage: "bell.fill",
-                    action: #selector(unmuteFromMenu),
-                    isEnabled: !isMutationPending
-                )
-                if let subtitle = ChannelContextMenuSubtitle.muteRemaining(
-                    until: notificationSettings?.muteConfiguration?.endTime
-                ) {
-                    unmuteItem.subtitle = subtitle
-                }
-                menu.addItem(unmuteItem)
-            } else {
-                let muteItem = menuItem(
-                    "Mute Post",
-                    systemImage: "bell.slash.fill",
-                    action: nil,
-                    isEnabled: !isMutationPending
-                )
-                let muteMenu = NSMenu(title: "Mute Post")
-                muteMenu.autoenablesItems = false
-                for (index, duration) in ChannelMuteDuration.allCases.enumerated() {
-                    let item = menuItem(
-                        duration.title,
-                        action: #selector(muteFromMenu(_:)),
-                        isEnabled: !isMutationPending
-                    )
-                    item.representedObject = NSNumber(value: index)
-                    muteMenu.addItem(item)
-                }
-                muteItem.submenu = muteMenu
-                menu.addItem(muteItem)
-            }
-
-            let notificationItem = menuItem(
-                "Notification Settings",
-                systemImage: "bell.badge.fill",
-                action: nil,
-                isEnabled: !isMutationPending
-            )
-            notificationItem.subtitle =
-                ChannelContextMenuSubtitle.notificationSelection(
-                    configured: notificationSettings?.notificationLevel ?? .inherit,
-                    inherited: inheritedNotificationLevel
-                )
-            notificationItem.submenu = notificationMenu()
-            menu.addItem(notificationItem)
-            menu.addItem(.separator())
-        }
-
-        private func addManagementItems(to menu: NSMenu) {
-            if canEditTags || canArchive || canManage {
-                if canEditTags {
-                    preloadCustomTagImages()
-                    menu.addItem(tagsMenuItem())
-                }
-                if canArchive {
-                    menu.addItem(
-                        menuItem(
-                            isArchived ? "Reopen Post" : "Close Post",
-                            systemImage: isArchived
-                                ? "arrow.uturn.backward.circle.fill"
-                                : "archivebox.fill",
-                            action: #selector(toggleArchiveFromMenu)
-                        )
-                    )
-                }
-                if canManage {
-                    menu.addItem(
-                        menuItem(
-                            isLocked ? "Unlock Post" : "Lock Post",
-                            systemImage: isLocked ? "lock.open.fill" : "lock.fill",
-                            action: #selector(toggleLockFromMenu)
-                        )
-                    )
-                    menu.addItem(
-                        menuItem(
-                            isPinned ? "Unpin Post" : "Pin Post",
-                            systemImage: isPinned ? "pin.slash.fill" : "pin.fill",
-                            action: #selector(togglePinFromMenu)
-                        )
-                    )
-                }
-                menu.addItem(.separator())
+            renderer.makeMenu(actionsMenu) { [self] entry in
+                guard entry.id == ThreadActionsMenu.tagsSlotID else { return nil }
+                preloadCustomTagImages()
+                return tagsMenuItem()
             }
         }
 
@@ -279,35 +103,6 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
             }
             tagsItem.submenu = tagsMenu
             return tagsItem
-        }
-
-        private func addCopyAndDeleteItems(to menu: NSMenu) {
-            menu.addItem(
-                menuItem(
-                    "Copy Link",
-                    systemImage: "link",
-                    action: #selector(copyLinkFromMenu)
-                )
-            )
-            menu.addItem(
-                menuItem(
-                    "Copy Thread ID",
-                    systemImage: "number.square.fill",
-                    action: #selector(copyThreadIDFromMenu)
-                )
-            )
-
-            if canDelete {
-                menu.addItem(.separator())
-                menu.addItem(
-                    menuItem(
-                        "Delete Post…",
-                        systemImage: "trash",
-                        action: #selector(deletePostFromMenu),
-                        isDestructive: true
-                    )
-                )
-            }
         }
 
         private func preloadCustomTagImages() {
@@ -339,33 +134,6 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
                 return nativeEmojiImage(emoji)
             }
             return symbolImage("tag", accessibilityDescription: tag.name)
-        }
-
-        private var isDirectlyMuted: Bool {
-            notificationSettings?.isMuted == true
-                && (notificationSettings?.muteConfiguration?.isActive() ?? true)
-        }
-
-        private func notificationMenu() -> NSMenu {
-            let menu = NSMenu(title: "Notification Settings")
-            menu.autoenablesItems = false
-            let configured = notificationSettings?.notificationLevel ?? .inherit
-            let selected =
-                configured == .inherit ? inheritedNotificationLevel : configured
-            let levels: [MessageNotificationLevel] = [
-                .allMessages, .onlyMentions, .nothing,
-            ]
-            for level in levels {
-                let item = menuItem(
-                    level.menuTitle,
-                    action: #selector(setNotificationFromMenu(_:)),
-                    isEnabled: !isMutationPending
-                )
-                item.state = selected == level ? .on : .off
-                item.representedObject = NSNumber(value: level.rawValue)
-                menu.addItem(item)
-            }
-            return menu
         }
 
         private func menuItem(
@@ -425,56 +193,11 @@ struct ForumPostContextMenuBridge: NSViewRepresentable {
             item.preferredImageVisibility = .visible
         }
 
-        @objc private func markReadFromMenu() {
-            markRead()
-        }
-
-        @objc private func muteFromMenu(_ sender: NSMenuItem) {
-            guard let index = (sender.representedObject as? NSNumber)?.intValue,
-                  ChannelMuteDuration.allCases.indices.contains(index)
-            else { return }
-            mute(ChannelMuteDuration.allCases[index])
-        }
-
-        @objc private func unmuteFromMenu() {
-            unmute()
-        }
-
-        @objc private func setNotificationFromMenu(_ sender: NSMenuItem) {
-            guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
-                  let level = MessageNotificationLevel(rawValue: rawValue)
-            else { return }
-            setNotificationLevel(level)
-        }
-
-        @objc private func copyLinkFromMenu() {
-            copyLink()
-        }
-
-        @objc private func copyThreadIDFromMenu() {
-            copyThreadID()
-        }
-
         @objc private func toggleTagFromMenu(_ sender: NSMenuItem) {
             guard let value = sender.representedObject as? NSNumber else { return }
             toggleTag(ForumTagID(rawValue: value.uint64Value))
         }
 
-        @objc private func toggleLockFromMenu() {
-            toggleLock()
-        }
-
-        @objc private func toggleArchiveFromMenu() {
-            toggleArchive()
-        }
-
-        @objc private func togglePinFromMenu() {
-            togglePin()
-        }
-
-        @objc private func deletePostFromMenu() {
-            delete()
-        }
     }
 }
 

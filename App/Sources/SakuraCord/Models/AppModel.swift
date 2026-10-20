@@ -174,6 +174,7 @@ final class AppModel {
     @ObservationIgnored let nicknameEditor = NicknameEditorStore()
     @ObservationIgnored let groupDirectMessageEditor = GroupDirectMessageEditorStore()
     @ObservationIgnored let groupDirectMessageLeave = GroupDirectMessageLeaveStore()
+    @ObservationIgnored let threadActions = ThreadActionStore()
     @ObservationIgnored let voiceSidebarPresentation =
         VoiceSidebarPresentationStore()
     var serverRailGuildsByID: [GuildID: Guild] = [:] {
@@ -560,8 +561,7 @@ final class AppModel {
     var discordSyncedGuildAndChannelUsageScores: [String: Int] = [:]
     var discordGuildAndChannelUsage: [String: DiscordFrecencyUsage] = [:]
     var discordGuildAndChannelUsageOrder: [String] = []
-    @ObservationIgnored var forwardDestinationHistoryDefaultsKey =
-        "dev.sakuracord.forward-destination-history.signed-out"
+    @ObservationIgnored var forwardDestinationHistoryDefaultsKey = "dev.sakuracord.forward-destination-history.signed-out"
     @ObservationIgnored var pendingDiscordFrecencyUses: [(key: String, timestamp: UInt64)] = []
     @ObservationIgnored var persistedDiscordFrecencyUsageDeltas: [String: DiscordFrecencyUsage] = [:]
     @ObservationIgnored var discordFrecencyUsageDeltasDefaultsKey =

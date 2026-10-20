@@ -94,6 +94,7 @@ extension AppModel {
         nicknameEditor.reset()
         groupDirectMessageEditor.reset()
         groupDirectMessageLeave.reset()
+        threadActions.reset()
         onboarding.reset()
     }
 

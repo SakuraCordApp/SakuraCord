@@ -56,7 +56,6 @@ enum SideConversation: Equatable {
         case .thread:
             SideConversationCapabilities(
                 composerDestination: .thread,
-                canOpenFullWidth: true,
                 closeHelp: "Close thread"
             )
         case .threadCreation:
@@ -91,7 +90,6 @@ struct SideConversationCapabilities: Equatable {
     var presentsPrimaryConversation = false
     /// The composer that sends into this conversation; nil when read-only.
     var composerDestination: MessageComposerDestination?
-    var canOpenFullWidth = false
     var canAddToChannelList = false
     var closeHelp: String
 }

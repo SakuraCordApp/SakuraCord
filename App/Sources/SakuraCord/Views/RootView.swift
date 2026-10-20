@@ -395,6 +395,7 @@ private struct ChatRootView: View {
         .modifier(NicknameEditorPresentationModifier(model: model))
         .modifier(EditGroupPresentationModifier(model: model))
         .modifier(LeaveGroupPresentationModifier(model: model))
+        .modifier(ThreadActionPresentationModifier(model: model))
         .modifier(ProfileGamePresentationModifier(model: model))
         .background {
             CommunicationWindowOverlays(model: model)
@@ -727,6 +728,15 @@ private struct ChatRootView: View {
                 .visibilityPriority(.high)
             }
 
+            if model.isThreadFullWidth, let thread = model.openThread {
+                if ForumPostFollowToolbarButton.isOffered(model: model, thread: thread) {
+                    ToolbarItem {
+                        ForumPostFollowToolbarButton(model: model, thread: thread, surface: .forumPostHeader)
+                    }
+                    ToolbarSpacer(.fixed)
+                }
+            }
+
             if showsInboxToolbarItem {
                 if hasToolbarActionBeforeInbox {
                     ToolbarSpacer(.fixed)
@@ -790,10 +800,7 @@ private struct ChatRootView: View {
             }
         }
 
-        if model.isSwitchingAccounts
-            || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil && !model.isFriendsPresented
-                && model.workspacePresentation.paneSideConversation == nil && selectedVoiceChannel == nil)
-        {
+        if showsMemberInspectorToolbarItem {
             if !model.isSwitchingAccounts {
                 ToolbarSpacer(.fixed)
             }
@@ -819,8 +826,12 @@ private struct ChatRootView: View {
             }
             .visibilityPriority(.high)
 
+            fullWidthThreadActions
+
             ToolbarSpacer(.fixed)
                 .contentMarginsRemoved(true)
+        } else {
+            fullWidthThreadActions
         }
 
         if model.showsWorkspaceMessageSearch || model.showsLocalToolbarSearch {
@@ -994,6 +1005,25 @@ private struct ChatRootView: View {
         return model.selectedChannel
     }
 
+    private var showsMemberInspectorToolbarItem: Bool {
+        model.isSwitchingAccounts
+            || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil && !model.isFriendsPresented
+                && model.workspacePresentation.paneSideConversation == nil && selectedVoiceChannel == nil)
+    }
+
+    /// A full-width thread's actions end the trailing button group, as a
+    /// toolbar's overflow item does.
+    @ToolbarContentBuilder
+    private var fullWidthThreadActions: some ToolbarContent {
+        if !model.isSwitchingAccounts, model.isThreadFullWidth, let thread = model.openThread {
+            ToolbarSpacer(.fixed)
+            ToolbarItem(id: "full-width-thread-actions") {
+                ThreadActionsToolbarMenu(model: model, thread: thread, surface: .fullView)
+            }
+            .visibilityPriority(.high)
+        }
+    }
+
     private var hasToolbarActionBeforeInbox: Bool {
         selectedPrivateChannel != nil
             || (selectedVoiceChannel != nil && !model.isVoiceChatOpen)
@@ -1033,8 +1063,10 @@ private struct ChatRootView: View {
         let capabilities = conversation.capabilities
         let showsAddToChannelList = capabilities.canAddToChannelList
             && model.customizationPreviewChannel.map { !model.isChannelSelected($0) } == true
-        let showsOpenFullWidth = capabilities.canOpenFullWidth && model.openThread != nil
-        let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (showsOpenFullWidth ? 1 : 0)
+        let paneThread = conversation.isThread ? model.openThread : nil
+        let showsFollow = paneThread.map { ForumPostFollowToolbarButton.isOffered(model: model, thread: $0) } ?? false
+        // The Follow toggle is a text button about two icon buttons wide.
+        let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (paneThread != nil ? 1 : 0) + (showsFollow ? 2 : 0)
         if showsInboxToolbarItem {
             // Keep the primary column's last action inset from the pane edge.
             ToolbarSpacer(.fixed)
@@ -1073,15 +1105,15 @@ private struct ChatRootView: View {
             .visibilityPriority(.high)
         }
 
-        if showsOpenFullWidth, let thread = model.openThread {
-            ToolbarItem(id: "side-conversation-full-width") {
-                Button("Open in Full View", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    model.openSidebarThread(thread)
+        if let paneThread {
+            if showsFollow {
+                ToolbarItem(id: "side-conversation-follow") {
+                    ForumPostFollowToolbarButton(model: model, thread: paneThread, surface: .forumPostHeader)
                 }
-                .labelStyle(.iconOnly)
-                .help("Open thread in full view")
             }
-            .visibilityPriority(.high)
+            ToolbarItem(id: "side-conversation-thread-actions") {
+                ThreadActionsToolbarMenu(model: model, thread: paneThread, surface: .sidePane)
+            }
         }
 
         ToolbarItem(id: "side-conversation-close") {

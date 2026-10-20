@@ -117,6 +117,8 @@ public struct ThreadActionPolicy: Equatable, Sendable {
     /// Manage Threads: lock/unlock, pin, delete, and edits regardless of ownership.
     public var canManage = false
     public var canRename = false
+    /// Applied forum tags.
+    public var canEditTags = false
     public var canClose = false
     /// The explicit Reopen action.
     public var canReopen = false
@@ -127,6 +129,10 @@ public struct ThreadActionPolicy: Equatable, Sendable {
     public var canChangeNotifications = false
 
     public var canLock: Bool { canManage }
+    /// Close for an open thread, Reopen for an archived one.
+    public var canChangeArchive: Bool { isArchived ? canReopen : canClose }
+
+    private var isArchived = false
 
     public init() {}
 
@@ -141,12 +147,14 @@ public struct ThreadActionPolicy: Equatable, Sendable {
         let isJoined = thread.notificationSettings != nil
         guard !thread.isPrivate || isJoined || managesThreads else { return }
         canRead = true
+        isArchived = thread.isArchived
         canManage = managesThreads
         let ownsThread = thread.ownerID == currentUserID
         let canSend = permissions & DiscordPermissionBits.sendMessagesInThreads != 0
             && permissions & DiscordPermissionBits.sendMessages != 0
         let canEdit = managesThreads || (!thread.isLocked && ownsThread)
         canClose = canEdit
+        canEditTags = canEdit
         canReopen = thread.isLocked ? managesThreads : canSend
         canUnarchive = managesThreads || !thread.isLocked
         // An archived thread is edited only after an unarchive the user may

@@ -3,30 +3,9 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
-    func canDeleteForumPost(_ post: ForumPost) -> Bool {
-        return Self.canDeleteForumPost(
-            ownerID: post.thread.ownerID ?? post.owner?.id,
-            currentUserID: currentUser?.id,
-            canManage: canManageForumPosts
-        )
-    }
-
-    func canArchiveForumPost(_ post: ForumPost) -> Bool {
-        if canManageForumPosts { return true }
-        guard !post.thread.isLocked else { return false }
-        let ownerID = post.thread.ownerID ?? post.owner?.id
-        return ownerID != nil && ownerID == currentUser?.id
-    }
-
-    func canEditForumPostTags(_ post: ForumPost) -> Bool {
-        if canManageForumPosts { return true }
-        guard !post.thread.isLocked else { return false }
-        let ownerID = post.thread.ownerID ?? post.owner?.id
-        return ownerID != nil && ownerID == currentUser?.id
-    }
-
     func canToggleForumTag(_ tag: ForumTag, on post: ForumPost) -> Bool {
-        guard canEditForumPostTags(post), canManageForumPosts || !tag.isModerated else {
+        let policy = threadActionPolicy(post.thread)
+        guard policy.canEditTags, policy.canManage || !tag.isModerated else {
             return false
         }
         if selectedChannel?.requiresForumTag == true,
@@ -36,14 +15,6 @@ extension AppModel {
             return false
         }
         return true
-    }
-
-    nonisolated static func canDeleteForumPost(
-        ownerID: UserID?,
-        currentUserID: UserID?,
-        canManage: Bool
-    ) -> Bool {
-        canManage || (ownerID != nil && ownerID == currentUserID)
     }
 
     func resetForumLoadAndPresentationState() {
@@ -336,7 +307,9 @@ extension AppModel {
         forumCataloguePosts = posts.map { incoming in
             readState.merge(forumPost: incoming)
             guard let previous = previousByID[incoming.id] else { return incoming }
-            return forumPostPreservingReactionPresentation(incoming, previous: previous)
+            // The provider's catalogue carries authoritative membership, so a
+            // confirmed leave is not undone by the previous card's settings.
+            return forumPostPreservingReactionPresentation(incoming, previous: previous, preservesMembership: false)
         }
         // A page or provider list that omits the open post does not delete it.
         // Deletion closes the post before its catalogue is republished.
@@ -355,7 +328,8 @@ extension AppModel {
 
     func forumPostPreservingReactionPresentation(
         _ incoming: ForumPost,
-        previous: ForumPost
+        previous: ForumPost,
+        preservesMembership: Bool = true
     ) -> ForumPost {
         var result = incoming
         if let firstMessage = incoming.firstMessage {
@@ -373,7 +347,7 @@ extension AppModel {
             result.mostRecentMessage = previous.mostRecentMessage
         }
         result.owner = incoming.owner ?? previous.owner
-        if result.thread.notificationSettings == nil {
+        if preservesMembership, result.thread.notificationSettings == nil {
             result.thread.notificationSettings = previous.thread.notificationSettings
         }
         return result
@@ -480,21 +454,22 @@ extension AppModel {
     }
 
     func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async {
+        let policy = threadActionPolicy(post.thread)
         switch mutation {
         case .tags(let tagIDs):
             guard validateForumTagMutation(tagIDs, for: post) else { return }
         case .archived:
-            guard canArchiveForumPost(post) else {
+            guard policy.canChangeArchive else {
                 forumActionError = "You do not have permission to close or reopen this post."
                 return
             }
         case .name:
-            guard threadActionPolicy(post.thread).canRename else {
+            guard policy.canRename else {
                 forumActionError = "You do not have permission to rename this post."
                 return
             }
         case .locked, .pinned:
-            guard canManageForumPosts else {
+            guard policy.canManage else {
                 forumActionError = "Only moderators can change this post."
                 return
             }
@@ -521,7 +496,8 @@ extension AppModel {
         _ tagIDs: [ForumTagID],
         for post: ForumPost
     ) -> Bool {
-        guard canEditForumPostTags(post) else {
+        let policy = threadActionPolicy(post.thread)
+        guard policy.canEditTags else {
             forumActionError = "You do not have permission to edit this post’s tags."
             return false
         }
@@ -544,7 +520,7 @@ extension AppModel {
             forumActionError = "This forum requires every post to have at least one tag."
             return false
         }
-        if !canManageForumPosts {
+        if !policy.canManage {
             let changedTagIDs = uniqueTagIDs.symmetricDifference(post.thread.appliedTagIDs)
             guard changedTagIDs.allSatisfy({
                 availableTagsByID[$0]?.isModerated == false
@@ -557,7 +533,7 @@ extension AppModel {
     }
 
     func deleteForumPost(_ post: ForumPost) async {
-        guard canDeleteForumPost(post) else {
+        guard threadActionPolicy(post.thread).canDelete else {
             forumActionError = "You do not have permission to delete this post."
             return
         }

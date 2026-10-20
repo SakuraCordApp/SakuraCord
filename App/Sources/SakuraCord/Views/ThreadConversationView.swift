@@ -196,14 +196,15 @@ private struct ThreadConversationFooter: View {
             if thread.isLocked {
                 // Readers who cannot send see the lock once, in the disabled
                 // composer, as read-only channels present it.
-                if model.openThreadAccess.canSend || (canUpdateForumPost && model.canManageForumPosts) {
+                // Moderators who cannot send unlock from the thread's More menu.
+                if model.openThreadAccess.canSend {
                     ThreadStateBanner(
                         title: isForumPost ? "Locked post" : "Locked thread",
                         message: "Only moderators can send messages.",
                         systemImage: "lock.fill",
-                        actionTitle: canUpdateForumPost && model.canManageForumPosts ? "Unlock" : nil,
+                        actionTitle: policy.canManage ? "Unlock" : nil,
                         actionSystemImage: "lock.open.fill",
-                        action: { updateForumPost(.locked(false)) }
+                        action: { model.updateThread(thread, mutation: .locked(false)) }
                     )
                 }
             } else if thread.isArchived {
@@ -211,9 +212,9 @@ private struct ThreadConversationFooter: View {
                     title: isForumPost ? "Closed post" : "Archived thread",
                     message: "Sending a reply will reopen it.",
                     systemImage: "archivebox.fill",
-                    actionTitle: canUpdateForumPost && model.canArchiveForumPost(forumPost) ? "Reopen" : nil,
+                    actionTitle: policy.canChangeArchive ? "Reopen" : nil,
                     actionSystemImage: "arrow.uturn.backward.circle.fill",
-                    action: { updateForumPost(.archived(false)) }
+                    action: { model.updateThread(thread, mutation: .archived(false)) }
                 )
             }
             ThreadConversationComposer(
@@ -233,24 +234,13 @@ private struct ThreadConversationFooter: View {
         model.openThreadParentChannel?.kind == .forum
     }
 
+    private var policy: ThreadActionPolicy {
+        model.threadActionPolicy(thread)
+    }
+
     private var retryThreadLoad: (() -> Void)? {
         guard model.canRetryThreadLoad else { return nil }
         return { model.retryThreadLoad() }
-    }
-
-    private var forumPost: ForumPost {
-        model.forumCataloguePosts.first(where: { $0.id == thread.id })
-            ?? ForumPost(thread: thread)
-    }
-
-    private var canUpdateForumPost: Bool {
-        model.forumCataloguePosts.contains { $0.id == thread.id }
-    }
-
-    private func updateForumPost(_ mutation: ForumPostMutation) {
-        guard canUpdateForumPost else { return }
-        let post = forumPost
-        Task { await model.updateForumPost(post, mutation: mutation) }
     }
 }
 
