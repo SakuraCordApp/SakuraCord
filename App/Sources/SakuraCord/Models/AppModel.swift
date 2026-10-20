@@ -208,6 +208,7 @@ final class AppModel {
     var messageSearch = MessageSearchState()
     @ObservationIgnored var messageSearchesByGuildID: [GuildID?: MessageSearchState] = [:]
     let pinnedMessages = PinnedMessagesState()
+    let threadBrowser = ThreadBrowserState()
     let inbox = InboxState()
     @ObservationIgnored var lastDirectMessageSelection: DirectMessageSidebarSelection?
     @ObservationIgnored var lastOpenedChannelIDsByGuild: [GuildID: ChannelID] = [:]
@@ -564,8 +565,7 @@ final class AppModel {
     @ObservationIgnored var forwardDestinationHistoryDefaultsKey = "dev.sakuracord.forward-destination-history.signed-out"
     @ObservationIgnored var pendingDiscordFrecencyUses: [(key: String, timestamp: UInt64)] = []
     @ObservationIgnored var persistedDiscordFrecencyUsageDeltas: [String: DiscordFrecencyUsage] = [:]
-    @ObservationIgnored var discordFrecencyUsageDeltasDefaultsKey =
-        "dev.sakuracord.forward-frecency-deltas.signed-out"
+    @ObservationIgnored var discordFrecencyUsageDeltasDefaultsKey = "dev.sakuracord.forward-frecency-deltas.signed-out"
     @ObservationIgnored var appliedDiscordFrecencyDeltasKey: String?
     @ObservationIgnored var lastDiscordFrecencyChannelID: ChannelID?
     @ObservationIgnored var lastDiscordFrecencyGuildID: GuildID?

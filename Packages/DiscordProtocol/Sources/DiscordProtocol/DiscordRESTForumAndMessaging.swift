@@ -624,11 +624,15 @@ extension DiscordRESTProvider {
         // Offsets count Discord's records, including ones that failed to decode.
         let rawCount = result.threads.count + result.skippedThreadCount
         let nextOffset = result.hasMore && rawCount > 0 ? query.offset + rawCount : nil
+        // Ingestion drops threads deleted since the request began and takes
+        // newer records for reopened ones; both left Discord's archive.
+        let archivedAfterIngest = Set(posts.filter(\.thread.isArchived).map(\.id))
         return ForumPostPage(
             posts: posts,
             hasMore: result.hasMore && nextOffset != nil,
             nextOffset: nextOffset,
-            totalResults: result.totalResults
+            totalResults: result.totalResults,
+            departedCount: decodedPosts.count { $0.thread.isArchived && !archivedAfterIngest.contains($0.id) }
         )
     }
 

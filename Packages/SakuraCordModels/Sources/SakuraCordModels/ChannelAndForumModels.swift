@@ -404,12 +404,18 @@ public struct ForumPostPage: Equatable, Sendable {
     public var nextOffset: Int?
     /// Discord's `total_results` for the query, when reported.
     public var totalResults: Int?
+    /// Records Discord returned archived that were deleted or reopened before
+    /// the page was delivered. They no longer occupy Discord's offsets.
+    public var departedCount: Int
 
-    public init(posts: [ForumPost], hasMore: Bool, nextOffset: Int?, totalResults: Int? = nil) {
+    public init(
+        posts: [ForumPost], hasMore: Bool, nextOffset: Int?, totalResults: Int? = nil, departedCount: Int = 0
+    ) {
         self.posts = posts
         self.hasMore = hasMore
         self.nextOffset = nextOffset
         self.totalResults = totalResults
+        self.departedCount = departedCount
     }
 }
 

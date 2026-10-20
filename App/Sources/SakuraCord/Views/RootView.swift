@@ -643,6 +643,35 @@ private struct ChatRootView: View {
         }
     }
 
+    private var showsThreadsToolbarItem: Bool {
+        model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil
+            && !model.isThreadFullWidth && model.canBrowseThreadsInSelectedChannel
+    }
+
+    @ToolbarContentBuilder
+    private var threadsToolbarItem: some ToolbarContent {
+        ToolbarItem(id: "threads") {
+            Button(action: model.toggleThreadBrowser) {
+                Label {
+                    Text("Threads")
+                } icon: {
+                    SakuraCordSystemSymbol.swiftUIImage(named: SakuraCordSystemSymbol.thread)
+                }
+            }
+            .help("Threads")
+            .background {
+                StableAnchoredPopoverPresenter(
+                    isPresented: model.threadBrowser.isPresented,
+                    configuration: .toolbarPanel,
+                    onDismiss: model.dismissThreadBrowser,
+                    onWillDismiss: model.dismissThreadBrowser
+                ) { ThreadBrowserPopoverView(model: model) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .visibilityPriority(.high)
+    }
+
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         ToolbarSpacer(.flexible)
@@ -793,6 +822,11 @@ private struct ChatRootView: View {
                     }
                 }
                 .visibilityPriority(.high)
+            }
+
+            if showsThreadsToolbarItem {
+                ToolbarSpacer(.fixed)
+                threadsToolbarItem
             }
 
             if let conversation = model.workspacePresentation.paneSideConversation {

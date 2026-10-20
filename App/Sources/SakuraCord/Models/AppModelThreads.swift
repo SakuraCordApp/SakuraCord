@@ -321,6 +321,7 @@ extension AppModel {
     }
 
     func consumeThreadDeleted(channelID: ChannelID) {
+        threadBrowser.remove(threadID: channelID)
         // Closing saves the current conversation, so evict only after it closes.
         if openThread?.id == channelID { closeThread() }
         cancelConversationRefresh(in: channelID)
