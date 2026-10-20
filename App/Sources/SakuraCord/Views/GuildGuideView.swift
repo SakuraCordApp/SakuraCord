@@ -56,7 +56,7 @@ struct GuildGuideView: View {
         .task(id: "\(guildID)-\(model.currentUser?.id.description ?? "")-\(scenePhase)") {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
-                if model.mainWindowIsActive, entry.resource == nil { model.refreshGuildGuide(in: guildID) }
+                if model.mainWindowIsActive, model.presentedGuideResource == nil { model.refreshGuildGuide(in: guildID) }
                 do { try await Task.sleep(for: .seconds(30)) } catch { return }
             }
         }

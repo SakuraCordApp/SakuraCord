@@ -9,7 +9,7 @@ extension AppModel {
         if openThread?.id == channelID { return openThreadResolution == nil }
         guard !isThreadFullWidth, selectedChannelID == channelID else { return false }
         guard guildWorkspacePage != nil else { return true }
-        return !hasThreadPane && customizationPreviewChannel?.id == channelID
+        return presentedSideConversation?.capabilities.presentsPrimaryConversation == true
     }
 
     func suspendSelectedConversationPresentation() {

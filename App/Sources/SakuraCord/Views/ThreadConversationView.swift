@@ -23,84 +23,48 @@ nonisolated enum ThreadTimelinePresentationPolicy {
     }
 }
 
-struct ThreadPaneFramePreferenceKey: PreferenceKey {
-    static let defaultValue = CGRect.zero
-
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        let nextFrame = nextValue()
-        if nextFrame != .zero {
-            value = nextFrame
-        }
-    }
-}
-
-struct SupplementaryConversationPane<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        content
-            .frame(minWidth: InterfaceScale.metric(340), idealWidth: InterfaceScale.metric(400), maxWidth: InterfaceScale.metric(440), maxHeight: .infinity)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: ThreadPaneFramePreferenceKey.self,
-                        value: proxy.frame(in: .global)
-                    )
-                }
-            }
-    }
-}
-
 struct ThreadConversationView: View {
     let model: AppModel
     @State private var floatingFooterHeight: CGFloat =
         ChatDetailLayoutPolicy.defaultFloatingFooterHeight
     @State private var editRequest: MessageTimelineEditRequest?
 
-    var body: some View {
-        if model.isThreadFullWidth {
-            conversation.frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            SupplementaryConversationPane { conversation }
-        }
-    }
-
-    @ViewBuilder private var conversation: some View {
+    @ViewBuilder var body: some View {
         if let thread = model.openThread {
-                if model.withholdsOpenThreadContent {
-                    if model.openThreadResolution == .failed {
-                        ThreadUnavailableView(retry: model.retryOpenThreadResolution)
-                    } else if model.openThreadAccess == .hidden {
-                        ThreadUnavailableView()
-                    } else {
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+            if model.withholdsOpenThreadContent {
+                if model.openThreadResolution == .failed {
+                    ThreadUnavailableView(retry: model.retryOpenThreadResolution)
+                } else if model.openThreadAccess == .hidden {
+                    ThreadUnavailableView()
                 } else {
-                    ThreadMessageTimelineView(
-                        model: model,
-                        bottomContentInset: ChatDetailLayoutPolicy.bottomContentInset(
-                            measuredFooterHeight: floatingFooterHeight
-                        ),
-                        editRequest: editRequest
-                    )
-                    .overlay(alignment: .bottom) {
-                        ThreadConversationFooter(
-                            model: model,
-                            thread: thread,
-                            footerHeightChanged: { height in
-                                floatingFooterHeight = height
-                            },
-                            onEditMessage: { messageID in
-                                editRequest = MessageTimelineEditRequest(
-                                    messageID: messageID
-                                )
-                            }
-                        )
-                    }
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            } else if let creation = model.threadCreation {
-                ThreadCreationView(model: model, creation: creation)
+            } else {
+                ThreadMessageTimelineView(
+                    model: model,
+                    bottomContentInset: ChatDetailLayoutPolicy.bottomContentInset(
+                        measuredFooterHeight: floatingFooterHeight
+                    ),
+                    editRequest: editRequest
+                )
+                .overlay(alignment: .bottom) {
+                    ThreadConversationFooter(
+                        model: model,
+                        thread: thread,
+                        footerHeightChanged: { height in
+                            floatingFooterHeight = height
+                        },
+                        onEditMessage: { messageID in
+                            editRequest = MessageTimelineEditRequest(
+                                messageID: messageID
+                            )
+                        }
+                    )
+                }
             }
+        } else if let creation = model.threadCreation {
+            ThreadCreationView(model: model, creation: creation)
+        }
     }
 }
 
@@ -286,36 +250,21 @@ private struct ThreadConversationComposer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let until = model.guildTimeoutUntil(in: thread.id, guildID: thread.guildID) {
-                DisabledComposerView(
-                    message: "You are timed out.",
-                    appearance: model.appearanceSettings.composerBarAppearance,
-                    timeoutUntil: until
-                )
-            } else {
-            switch model.openThreadAccess {
-            case .checking:
-                DisabledComposerView(
-                    message: "Checking thread permissions…",
-                    appearance: model.appearanceSettings.composerBarAppearance
-                )
-            case .readable(canSend: true):
+            ConversationComposerSlot(
+                access: model.openThreadAccess,
+                timeoutUntil: model.guildTimeoutUntil(in: thread.id, guildID: thread.guildID),
+                appearance: model.appearanceSettings.composerBarAppearance,
+                checkingMessage: "Checking thread permissions…",
+                // The locked-thread banner already explains why replies are unavailable.
+                readOnlyMessage: thread.isLocked
+                    ? nil : "You do not have permission to send messages in this thread."
+            ) {
                 ComposerView(
                     model: model,
                     channelName: thread.name,
                     conversation: .thread,
                     onEditMessage: onEditMessage
                 )
-            case .readable(canSend: false):
-                if !thread.isLocked {
-                    DisabledComposerView(
-                        message: "You do not have permission to send messages in this thread.",
-                        appearance: model.appearanceSettings.composerBarAppearance
-                    )
-                }
-            case .hidden:
-                EmptyView()
-            }
             }
         }
     }
@@ -396,13 +345,13 @@ private struct ThreadMessageTimelineView: View {
     let editRequest: MessageTimelineEditRequest?
     @State private var isNearBottom = false
     @State private var hasEstablishedInitialPosition = false
-    @State private var hasEarlierHistoryScrollIntent = false
-    @State private var isEarlierHistoryScrollGestureActive = false
+    @State private var earlierHistoryIntent = TimelineHistoryScrollIntent()
     @State private var highlightedMessageID: MessageID?
     @State private var scrollRequest: MessageTimelineScrollRequest?
 
     var body: some View {
         let conversationID = model.openThread?.id
+        let unread = unreadPresentation
         NativeMessageTimelineView(
             model: model,
             conversation: .thread(conversationID),
@@ -416,10 +365,10 @@ private struct ThreadMessageTimelineView: View {
                     isLoadingEarlierPage: model.isLoadingEarlierThread
                 ),
             bottomContentInset: bottomContentInset,
-            unreadMessageID: exactUnreadBoundaryMessageID,
+            unreadMessageID: unread.dividerMessageID,
             highlightedMessageID: highlightedMessageID,
             selectedMessageID: model.threadReplyingTo?.id,
-            initialScrollTarget: initialScrollTarget,
+            initialScrollTarget: unread.initialScrollTarget,
             scrollRequest: scrollRequest,
             editRequest: editRequest,
             runsPerformanceAutoScroll: false,
@@ -453,7 +402,7 @@ private struct ThreadMessageTimelineView: View {
         }
         .overlay(alignment: .top) {
             if let threadID = model.openThread?.id,
-               let summary = unreadSummary
+               let summary = unread.summary
             {
                 UnreadMessagesBanner(
                     summary: summary,
@@ -471,7 +420,7 @@ private struct ThreadMessageTimelineView: View {
         .overlay(alignment: .bottom) {
             if ThreadTimelinePresentationPolicy.showsNewRepliesButton(
                 isNearBottom: isNearBottom,
-                hasUnreadReplies: unreadSummary != nil,
+                hasUnreadReplies: unread.summary != nil,
                 messageCount: model.threadMessages.count
             ), hasEstablishedInitialPosition {
                 Button {
@@ -507,8 +456,7 @@ private struct ThreadMessageTimelineView: View {
             }
             isNearBottom = false
             hasEstablishedInitialPosition = false
-            hasEarlierHistoryScrollIntent = false
-            isEarlierHistoryScrollGestureActive = false
+            earlierHistoryIntent = TimelineHistoryScrollIntent()
         }
         .onChange(of: model.messageNavigationRequest, initial: true) { _, request in
             guard let request,
@@ -547,17 +495,7 @@ private struct ThreadMessageTimelineView: View {
             }
         }
         .onExitCommand {
-            guard !model.consumeEscapeForMediaViewer() else { return }
-            guard !model.consumeEscapeForPinnedMessages() else { return }
-            guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
-            guard !model.consumeEscapeForReply(in: .thread) else { return }
-            guard !model.consumeEscapeForComposerAttachments(in: .thread) else { return }
-            guard !model.consumeEscapeForSupplementaryConversation() else { return }
-            if let conversationID {
-                model.completeConversationReadingAndAdvance(
-                    channelID: conversationID
-                )
-            }
+            model.handleTimelineEscape(in: .thread, conversationID: conversationID)
         }
     }
 
@@ -607,50 +545,21 @@ private struct ThreadMessageTimelineView: View {
         requestScroll(.message(messageID, anchor: .center), glides: true)
     }
 
-    private var unreadSummary: AccountReadStateModel.TimelineUnreadSummary? {
-        guard let threadID = model.openThread?.id else { return nil }
-        return model.timelineUnreadSummary(
-            channelID: threadID,
+    private var unreadPresentation: TimelineUnreadPresentation {
+        let isForumPost = model.openThreadParentChannel?.kind == .forum
+        return TimelineUnreadPresentation(
+            model: model,
+            conversationID: model.openThread?.id,
             messages: model.threadMessages,
-            hasMoreBefore:
-                model.hasMoreThreadMessages
-                || (model.isLoadingThread && !model.threadMessages.isEmpty)
-        )
-    }
-
-    private var exactUnreadBoundaryMessageID: MessageID? {
-        guard let threadID = model.openThread?.id else { return nil }
-        return model.unreadDividerMessageID(channelID: threadID)
-    }
-
-    private var loadedExactUnreadBoundaryMessageID: MessageID? {
-        guard let messageID = exactUnreadBoundaryMessageID,
-              model.threadMessages.contains(where: { $0.id == messageID })
-        else {
-            return nil
-        }
-        return messageID
-    }
-
-    private var hasUnresolvedInitialUnreadBoundary: Bool {
-        loadedExactUnreadBoundaryMessageID == nil
-            && unreadSummary?.isLowerBound == true
-    }
-
-    private var initialScrollTarget: MessageTimelineScrollRequest.Target? {
-        let summary = unreadSummary
-        let dividerMessageID = loadedExactUnreadBoundaryMessageID
-        let initialTarget = ThreadTimelinePresentationPolicy.initialScrollTarget(
-            isForumPost: model.openThreadParentChannel?.kind == .forum,
-            hasUnreadReplies: summary != nil
-        )
-        return TimelineInitialPositionPolicy.targetWhenReady(
-            hasCompletedInitialLoad:
-                model.hasCompletedInitialThreadLoad,
-            firstUnreadMessageID: dividerMessageID ?? summary?.firstUnreadMessageID,
-            hasExactUnreadBoundary:
-                dividerMessageID != nil || summary?.isLowerBound == false,
-            prefersNewest: initialTarget == .newest
+            hasMoreBefore: model.hasMoreThreadMessages,
+            isLoadingInitialPage: model.isLoadingThread,
+            hasCompletedInitialLoad: model.hasCompletedInitialThreadLoad,
+            prefersNewest: { hasUnread in
+                ThreadTimelinePresentationPolicy.initialScrollTarget(
+                    isForumPost: isForumPost,
+                    hasUnreadReplies: hasUnread
+                ) == .newest
+            }
         )
     }
 
@@ -672,14 +581,11 @@ private struct ThreadMessageTimelineView: View {
 
     private func handleScrollState(_ state: TimelineScrollState) {
         isNearBottom = state.isNearBottom
-        let retainedHistoryIntent =
-            TimelineHistoryScrollIntentPolicy.shouldRetain(
-                hasIntent: hasEarlierHistoryScrollIntent,
-                isGestureActive: isEarlierHistoryScrollGestureActive,
-                isInProvisionalHistory: state.isInProvisionalHistory
-            )
-        if hasEarlierHistoryScrollIntent != retainedHistoryIntent {
-            hasEarlierHistoryScrollIntent = retainedHistoryIntent
+        let retainedEarlierIntent = earlierHistoryIntent.retained(
+            isInProvisionalHistory: state.isInProvisionalHistory
+        )
+        if earlierHistoryIntent != retainedEarlierIntent {
+            earlierHistoryIntent = retainedEarlierIntent
         }
         if TimelineHistoryLoadingPolicy.shouldLoad(
             isNearBoundary: state.isNearTop,
@@ -688,9 +594,9 @@ private struct ThreadMessageTimelineView: View {
             hasMoreMessages: model.hasMoreThreadMessages,
             isLoading: model.isLoadingEarlierThread,
             requiresUserScrollIntent:
-                hasUnresolvedInitialUnreadBoundary,
+                unreadPresentation.hasUnresolvedInitialBoundary,
             hasUserScrollIntent:
-                hasEarlierHistoryScrollIntent
+                earlierHistoryIntent.hasIntent
         )
         {
             loadEarlier()
@@ -709,10 +615,9 @@ private struct ThreadMessageTimelineView: View {
     }
 
     private func handleUserScrollBegan() {
-        isEarlierHistoryScrollGestureActive = true
-        if hasUnresolvedInitialUnreadBoundary {
-            hasEarlierHistoryScrollIntent = true
-        }
+        earlierHistoryIntent.gestureBegan(
+            grantsIntent: unreadPresentation.hasUnresolvedInitialBoundary
+        )
     }
 
     private func handleUserScrollTowardNewest() {
@@ -721,13 +626,7 @@ private struct ThreadMessageTimelineView: View {
     }
 
     private func handleUserScrollEnded(_ state: TimelineScrollState) {
-        isEarlierHistoryScrollGestureActive = false
-        hasEarlierHistoryScrollIntent =
-            TimelineHistoryScrollIntentPolicy.shouldRetain(
-                hasIntent: hasEarlierHistoryScrollIntent,
-                isGestureActive: false,
-                isInProvisionalHistory: state.isInProvisionalHistory
-            )
+        earlierHistoryIntent.gestureEnded(isInProvisionalHistory: state.isInProvisionalHistory)
         isNearBottom = state.isNearBottom
         handleScrollState(state)
     }

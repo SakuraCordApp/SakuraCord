@@ -16,26 +16,8 @@ extension AppModel {
     }
 
     var customizationPreviewChannel: Channel? {
-        guard guildWorkspacePage == .channelsAndRoles, let id = onboarding.previewChannelID else { return nil }
-        return messagePresentationChannelsByID[id].flatMap { $0.guildID == selectedGuildID ? $0 : nil }
-    }
-
-    var hasOpenGuildSupplementaryConversation: Bool {
-        customizationPreviewChannel != nil
-            || (guildWorkspacePage == .guide && selectedGuildID.flatMap { onboarding.guides[$0]?.resource } != nil)
-    }
-
-    @discardableResult
-    func closeGuildSupplementaryConversation() -> Bool {
-        if customizationPreviewChannel != nil {
-            closeCustomizationPreview()
-            return true
-        }
-        if guildWorkspacePage == .guide, let guildID = selectedGuildID, onboarding.guides[guildID]?.resource != nil {
-            onboarding.guides[guildID]?.resource = nil
-            return true
-        }
-        return false
+        guard case .channelPreview(let channelID, _)? = presentedSideConversationContext else { return nil }
+        return messagePresentationChannelsByID[channelID]
     }
 
     func loadCustomizationProfile(in guildID: GuildID) async {
@@ -61,22 +43,20 @@ extension AppModel {
     func openCustomizationPreview(_ channel: Channel) {
         guard featuresSettings.channelManagement, channel.guildID == selectedGuildID, conversationAccess(for: channel).isReadable,
               channel.kind == .text || channel.kind == .announcement else { return }
-        if onboarding.previewChannelID == nil { onboarding.previewReturnChannelID = selectedChannelID }
-        onboarding.previewChannelID = channel.id
+        // Successive previews return to the conversation selected before the first.
+        let returnChannelID: ChannelID? = if case .channelPreview(_, let returnTo)? = sideConversations.context {
+            returnTo
+        } else {
+            selectedChannelID
+        }
+        openSideConversation(.channelPreview(channel.id, returnTo: returnChannelID))
         selectedChannelID = channel.id
     }
 
     func closeCustomizationPreview() {
-        if onboarding.previewChannelID != nil { closeThread() }
-        if onboarding.previewChannelID != nil, guildWorkspacePage == .channelsAndRoles {
-            // Reuse the chat machinery without making a preview the main conversation.
-            let previous = onboarding.previewReturnChannelID
-            onboarding.previewChannelID = previous
-            selectedChannelID = previous
-        }
-        onboarding.previewChannelID = nil
-        onboarding.previewReturnChannelID = nil
-        if let selectedChannelID, !isConversationPresented(selectedChannelID) {
+        if case .channelPreview? = sideConversations.context {
+            closeSideConversations()
+        } else if let selectedChannelID, !isConversationPresented(selectedChannelID) {
             suspendSelectedConversationPresentation()
         }
     }

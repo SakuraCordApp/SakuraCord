@@ -210,18 +210,6 @@ extension AppModel {
         return true
     }
 
-    @discardableResult
-    func consumeEscapeForSupplementaryConversation() -> Bool {
-        if hasThreadPane {
-            dismissOpenThread()
-            return true
-        }
-        if closeGuildSupplementaryConversation() { return true }
-        guard isVoiceChatOpen else { return false }
-        closeVoiceChat()
-        return true
-    }
-
     func restoreComposerAttachments(
         _ restoredAttachments: [ForumPostAttachment],
         to destination: MessageComposerDestination

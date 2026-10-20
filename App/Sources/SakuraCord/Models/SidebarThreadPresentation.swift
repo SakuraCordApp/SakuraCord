@@ -220,8 +220,7 @@ extension AppModel {
             // Establish presentation before loading history so the hidden parent
             // cannot acknowledge messages while the thread occupies the workspace.
             if model.openThread?.id == thread.id {
-                model.isThreadFullWidth = true
-                model.suspendSelectedConversationPresentation()
+                model.presentOpenThreadFullWidth()
             } else {
                 model.openThreadConversation(
                     thread, starter: nil, startedAt: thread.createdAt,

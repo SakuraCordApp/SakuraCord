@@ -30,8 +30,6 @@ final class GuildOnboardingStore {
     @ObservationIgnored var timeoutExpiryTasks: [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var timeoutRevisions: [GuildID: UInt64] = [:]
     var presentedGuildID: GuildID?
-    var previewChannelID: ChannelID?
-    var previewReturnChannelID: ChannelID?
     var profiles: [GuildID: UserProfile] = [:]
     var browsingChannels = false
     var channelSearch = ""
@@ -50,8 +48,6 @@ final class GuildOnboardingStore {
         timeoutRevisions = [:]
         guides = [:]
         presentedGuildID = nil
-        previewChannelID = nil
-        previewReturnChannelID = nil
         profiles = [:]
         browsingChannels = false
         channelSearch = ""
@@ -101,16 +97,13 @@ extension AppModel {
     }
 
     func openChannelsAndRoles(in guildID: GuildID) {
-        closeCustomizationPreview()
-        closeThread()
-        closeVoiceChat()
+        closeSideConversations()
         onboarding.browsingChannels = false
         onboarding.channelSearch = ""
         onboarding.isChannelSearchFocused = false
         onboarding.page = .channelsAndRoles
         if onboarding.entries[guildID] == nil { onboarding.entries[guildID] = .init() }
         onboarding.presentedGuildID = guildID
-        onboarding.previewChannelID = nil
         suspendSelectedConversationPresentation()
         if hasCustomizationQuestions(in: guildID) || requiresOnboarding(in: guildID) { refreshOnboarding(in: guildID) }
     }

@@ -214,8 +214,8 @@ enum NativeTimelineConversation: Hashable {
             model.pinnedMessages.rows
         case .inbox:
             model.inbox.rows
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.rows ?? []
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.rows ?? []
         }
     }
 
@@ -232,8 +232,8 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsRevision
         case .pins:
             model.pinnedMessages.rowsRevision
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.revision ?? 0
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.revision ?? 0
         }
     }
 
@@ -262,8 +262,8 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsUpdateJournal
         case .pins:
             model.pinnedMessages.rowsUpdateJournal
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.journal ?? MessageRowsUpdateJournal()
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.journal ?? MessageRowsUpdateJournal()
         }
     }
 

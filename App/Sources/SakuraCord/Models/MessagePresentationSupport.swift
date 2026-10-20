@@ -504,6 +504,31 @@ nonisolated enum MessageGrouping {
         )
     }
 
+    /// Guide resources read as a document: every message is an ungrouped,
+    /// undated row without reply previews.
+    static func resourceRow(for message: Message) -> MessageRowPresentation {
+        MessageRowPresentation(
+            message: message,
+            startsGroup: false,
+            startsDay: false,
+            replyPreview: nil,
+            isReplyAvailable: false,
+            isResource: true
+        )
+    }
+
+    /// Resource rows for `messages`, reusing each unchanged existing row.
+    static func resourceRows(
+        for messages: [Message],
+        reusing existing: [MessageRowPresentation]
+    ) -> [MessageRowPresentation] {
+        let existingByID = Dictionary(existing.map { ($0.message.id, $0) }, uniquingKeysWith: { _, newer in newer })
+        return messages.map { message in
+            if let row = existingByID[message.id], row.message == message { return row }
+            return resourceRow(for: message)
+        }
+    }
+
     private static func isGroupable(_ message: Message) -> Bool {
         !message.type.hasGeneratedContent && message.type != .chatInputCommand
     }

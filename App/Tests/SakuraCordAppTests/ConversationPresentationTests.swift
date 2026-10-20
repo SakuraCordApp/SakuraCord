@@ -390,6 +390,51 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
     )
 }
 
+@MainActor
+@Test func `workspace trailing column prefers search then side chats then members`() {
+    let thread = MessageThreadSummary(id: ChannelID(rawValue: 2), parentID: ChannelID(rawValue: 1), name: "Thread")
+    let paneThread = SideConversation.thread(thread, isFullWidth: false)
+    let preview = SideConversation.channelPreview(ChannelID(rawValue: 3), returnTo: nil)
+    func presentation(
+        page: GuildWorkspacePage? = nil,
+        friends: Bool = false,
+        kind: ChannelKindValue? = .text,
+        side: SideConversation? = nil,
+        search: Bool = false,
+        inspector: Bool = true
+    ) -> WorkspacePresentation {
+        WorkspacePresentation(
+            guildPage: page,
+            isFriendsPresented: friends,
+            channelKind: kind,
+            sideConversation: side,
+            showsMessageSearch: search,
+            showsInspector: inspector
+        )
+    }
+
+    #expect(presentation(side: paneThread).supplementaryPane == .sideConversation(paneThread))
+    #expect(presentation(side: paneThread, search: true).supplementaryPane == .messageSearch)
+    #expect(presentation(search: true).supplementaryPane == .messageSearch)
+    #expect(presentation().supplementaryPane == .memberInspector)
+    #expect(presentation(inspector: false).supplementaryPane == nil)
+    // A full-width thread replaces the primary column and keeps the member list.
+    let fullWidth = presentation(page: .guide, side: .thread(thread, isFullWidth: true))
+    #expect(fullWidth.primary == .fullWidthThread)
+    #expect(fullWidth.supplementaryPane == .memberInspector)
+    // Search results stay beside a full-width thread, with or without members.
+    let fullWidthThread = SideConversation.thread(thread, isFullWidth: true)
+    #expect(presentation(side: fullWidthThread, search: true).supplementaryPane == .messageSearch)
+    #expect(presentation(side: fullWidthThread, search: true, inspector: false).supplementaryPane == .messageSearch)
+    #expect(presentation(side: fullWidthThread, inspector: false).supplementaryPane == nil)
+    // Voice channels show only their chat; guild pages only their side chats.
+    #expect(presentation(kind: .voice).supplementaryPane == nil)
+    #expect(presentation(kind: .voice, side: .voiceChat(ChannelID(rawValue: 4))).paneSideConversation == .voiceChat(ChannelID(rawValue: 4)))
+    #expect(presentation(page: .channelsAndRoles, search: true).supplementaryPane == nil)
+    #expect(presentation(page: .channelsAndRoles, side: preview).paneSideConversation == preview)
+    #expect(presentation(friends: true, side: paneThread).supplementaryPane == nil)
+}
+
 @Test func `new replies button requires actual unread replies below the viewport`() {
     #expect(
         ThreadTimelinePresentationPolicy.showsNewRepliesButton(

@@ -273,8 +273,18 @@ items, menus, alerts) keeps the system size.
 `WindowModalOverlay` supplies the shared custom modal host. Closing transitions
 retain input ownership until removal. Native sheets and anchored popovers keep
 their platform behaviour; event monitors must respect modal ownership.
-Threads, channel previews and Guide resources reuse the supplementary conversation
-pane and native timeline rather than creating another workspace shell.
+
+Side chats (threads and forum posts, thread creation, voice channel chat, Guide
+resources and Browse Channels previews) are one concept. AppModel's
+`sideConversations` is their single source of truth;
+[AppModelSideConversations.swift](../App/Sources/SakuraCord/Models/AppModelSideConversations.swift)
+owns opening, closing and mutual exclusion. A thread opens above a context side
+chat and returns to it when closed. `WorkspacePresentation` alone decides the
+workspace's primary content and trailing column for the views, toolbar,
+commands and file drops. Every pane uses `SideConversationPane` and the native
+timeline; kinds differ by `SideConversationCapabilities` and message store.
+Voice chat and previews present the selected channel's store; threads and Guide
+resources keep their own.
 
 Profile drafts belong to the editor; permissions, entitlement checks and
 confirmed values belong to the provider. MediaPipeline owns crop/encoding work.

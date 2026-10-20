@@ -75,20 +75,17 @@ private struct ChatDetailFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let until = model.guildTimeoutUntil(in: channel.id) {
-                DisabledComposerView(
-                    message: "You are timed out.",
-                    appearance: model.appearanceSettings.composerBarAppearance,
-                    timeoutUntil: until
-                )
-            } else {
-            switch access {
-            case .checking:
-                DisabledComposerView(
-                    message: "Checking channel permissions…",
-                    appearance: model.appearanceSettings.composerBarAppearance
-                )
-            case .readable(canSend: true):
+            ConversationComposerSlot(
+                access: access,
+                timeoutUntil: model.guildTimeoutUntil(in: channel.id),
+                appearance: model.appearanceSettings.composerBarAppearance,
+                checkingMessage: "Checking channel permissions…",
+                readOnlyMessage: channel.isOfficialSystemDirectMessage
+                    ? "This chat is reserved for official Discord notifications."
+                    : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
+                       ? "Complete this server’s member screening in Discord to send messages."
+                       : "You do not have permission to send messages in this channel.")
+            ) {
                 if model.messageAppearance(for: channel.id) == .bubbles {
                     TypingBubbleIndicatorView(model: model, channel: channel)
                 } else {
@@ -99,18 +96,41 @@ private struct ChatDetailFooter: View {
                     channelName: channel.name,
                     onEditMessage: onEditMessage
                 )
+            }
+        }
+    }
+}
+
+/// The composer slot shared by every conversation footer. A timeout,
+/// permission check or read-only notice takes the composer's place.
+struct ConversationComposerSlot<Composer: View>: View {
+    let access: ConversationAccess
+    let timeoutUntil: Date?
+    let appearance: ComposerBarAppearance
+    let checkingMessage: String
+    /// Shown when the conversation is readable but not writable.
+    let readOnlyMessage: String?
+    @ViewBuilder let composer: Composer
+
+    var body: some View {
+        if let timeoutUntil {
+            DisabledComposerView(
+                message: "You are timed out.",
+                appearance: appearance,
+                timeoutUntil: timeoutUntil
+            )
+        } else {
+            switch access {
+            case .checking:
+                DisabledComposerView(message: checkingMessage, appearance: appearance)
+            case .readable(canSend: true):
+                composer
             case .readable(canSend: false):
-                DisabledComposerView(
-                    message: channel.isOfficialSystemDirectMessage
-                        ? "This chat is reserved for official Discord notifications."
-                        : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
-                           ? "Complete this server’s member screening in Discord to send messages."
-                           : "You do not have permission to send messages in this channel."),
-                    appearance: model.appearanceSettings.composerBarAppearance
-                )
+                if let readOnlyMessage {
+                    DisabledComposerView(message: readOnlyMessage, appearance: appearance)
+                }
             case .hidden:
                 EmptyView()
-            }
             }
         }
     }

@@ -1212,7 +1212,7 @@ struct ComposerView: View {
     }
 
     private var capturesUnfocusedTyping: Bool {
-        conversation == (model.hasThreadPane ? .thread : .channel)
+        conversation == model.activeComposerDestination
             && model.threadCreation?.isSubmitting != true
             && !showEmojiPicker && !showGIFPicker && !showStickerPicker
             && !isVoiceMessageActive

@@ -245,8 +245,4 @@ extension AppModel {
         }
     }
 
-    private var activeComposerDestination: MessageComposerDestination {
-        hasThreadPane ? .thread : .channel
-    }
-
 }

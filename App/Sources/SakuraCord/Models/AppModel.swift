@@ -393,16 +393,15 @@ final class AppModel {
     var forumLayout: ForumLayout = .list
     var forumTagMatch: ForumTagMatch = .matchSome
     var interactionModalForm: InteractionModalFormState?
-    var isVoiceChatOpen = false
-    var openThread: MessageThreadSummary?
+    /// The open side chats: the single source of truth for threads, voice
+    /// chat, Guide resources and channel previews beside the primary
+    /// conversation. Change it through AppModelSideConversations.swift.
+    var sideConversations = SideConversationStack()
+    /// The Guide resource store; it lives exactly as long as its side chat.
+    var guideResource: GuildResourceState?
     /// Re-resolution of the open private thread after a fresh READY did not
     /// confirm it. Closing or reopening the conversation clears it.
     var openThreadResolution: OpenThreadResolution?
-    var isThreadFullWidth = false
-    /// A thread being composed in the supplementary pane. It is mutually
-    /// exclusive with `openThread` and becomes it once Discord creates the thread.
-    var threadCreation: ThreadCreationDraft?
-    var hasThreadPane: Bool { openThread != nil || threadCreation != nil }
     var openThreadStarter: User?
     var openThreadStartedAt: Date?
     @ObservationIgnored var openThreadStarterMessageID: MessageID?
@@ -889,15 +888,14 @@ final class AppModel {
             channelVoiceMessageComposer.discard(playback: voiceMessagePlayback)
             // Only a conversation in Direct Messages replaces its Friends home.
             if selectedChannelID != nil, selectedGuildID == nil { friends.isPresented = false }
-            if onboarding.previewChannelID != selectedChannelID {
+            let keepsGuildPage = selectionChangeKeepsGuildPage
+            if !keepsGuildPage {
                 onboarding.presentedGuildID = nil
-                onboarding.previewChannelID = nil
-                onboarding.previewReturnChannelID = nil
             }
             refreshServerRailSelection()
-            if onboarding.previewChannelID == nil { recordConversationNavigation() }
+            if !keepsGuildPage { recordConversationNavigation() }
             timelineSpoilerRevealStore.reset()
-            if onboarding.previewChannelID == nil, let previousChannel = selectedChannel,
+            if !keepsGuildPage, let previousChannel = selectedChannel,
                let guildID = previousChannel.guildID
             {
                 lastOpenedChannelIDsByGuild[guildID] = previousChannel.id
@@ -954,8 +952,7 @@ final class AppModel {
             commandComposer.resetForChannelChange()
             clearComposerAttachments(for: .channel)
             translation.resetDraft(.channel)
-            isVoiceChatOpen = selectedChannel?.kind == .voice
-            closeThread()
+            synchronizeSideConversationsWithSelection(keepsGuildPage: keepsGuildPage)
             if let selectedChannelID {
                 _ = readState.updatePresentation(
                     channelID: selectedChannelID,
@@ -1049,6 +1046,8 @@ final class AppModel {
     @ObservationIgnored var forumNextOffset: Int?
     @ObservationIgnored var forumLoadGeneration: UInt64 = 0
     @ObservationIgnored var threadLoadTask: Task<Void, Never>?
+    /// Set while closing a channel preview restores the selection it borrowed.
+    @ObservationIgnored var isRestoringPreviewSelection = false
     @ObservationIgnored var gifSearchTask: Task<Void, Never>?
     @ObservationIgnored var gifPickerLoadTask: Task<Void, Never>?
     @ObservationIgnored var gifPickerLoadGeneration: UInt64 = 0

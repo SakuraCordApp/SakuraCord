@@ -17,8 +17,7 @@ struct KeyboardShortcutNavigationTests {
         model.snapshot?.activeJoinedThreads = [thread]
         model.selectedChannelID = parentID
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: false) == thread.id)
-        model.openThread = thread
-        model.isThreadFullWidth = true
+        model.sideConversations.thread = .thread(thread, isFullWidth: true)
         #expect(model.isConversationPresented(thread.id))
         #expect(!model.isConversationPresented(parentID))
         #expect(model.keyboardShortcutConversationDestination(direction: -1, unreadOnly: false) == parentID)

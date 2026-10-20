@@ -446,8 +446,7 @@ extension AppModel {
                 fullWidth: fullWidth
             )
         } else if fullWidth {
-            isThreadFullWidth = true
-            suspendSelectedConversationPresentation()
+            presentOpenThreadFullWidth()
         }
         guard let messageID else { return }
         await threadLoadTask?.value

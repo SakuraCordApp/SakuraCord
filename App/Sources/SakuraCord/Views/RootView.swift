@@ -97,7 +97,7 @@ struct RootView: View {
                 MessageSearchToolbarBridge(
                     model: model,
                     isVisible: showsMessageSearchToolbar || model.isFriendsSearchActive
-                        || (model.isBrowsingGuildChannels && !model.hasOpenGuildSupplementaryConversation),
+                        || (model.isBrowsingGuildChannels && model.presentedSideConversation == nil),
                     metrics: $toolbarSearchFieldMetrics
                 )
                 ToolbarSearchFieldLoadingStyler(isActive: showsSessionLoadingChrome)
@@ -429,7 +429,7 @@ private struct ChatRootView: View {
                 fileDropWatchdogTask = nil
             }
         }
-        .onPreferenceChange(ThreadPaneFramePreferenceKey.self) { frame in
+        .onPreferenceChange(SupplementaryPaneFramePreferenceKey.self) { frame in
             supplementaryPaneFrame = frame
         }
         .onChange(of: hasOpenSupplementaryConversation) { _, isOpen in
@@ -608,11 +608,13 @@ private struct ChatRootView: View {
                     .labelsHidden()
                 }
             }
-            if let presentation = supplementaryToolbarPresentation {
+            if let conversation = model.workspacePresentation.paneSideConversation {
+                let label = model.sideConversationLabel(conversation)
+                let capabilities = conversation.capabilities
                 ToolbarItem {
                     ConversationToolbarLabel(
-                        title: presentation.title,
-                        systemImage: presentation.systemImage,
+                        title: label.title,
+                        systemImage: label.systemImage,
                         subtitle: nil,
                         textSize: InterfaceTypographyMetrics.interfaceTextSize
                     )
@@ -638,7 +640,7 @@ private struct ChatRootView: View {
 
                 ToolbarSpacer(.fixed)
 
-                if !model.hasThreadPane, let channel = model.customizationPreviewChannel,
+                if capabilities.canAddToChannelList, let channel = model.customizationPreviewChannel,
                    let guildID = channel.guildID, !model.isChannelSelected(channel) {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Add to Channel List", systemImage: "plus") {
@@ -649,7 +651,7 @@ private struct ChatRootView: View {
                     }
                 }
 
-                if let thread = model.openThread {
+                if capabilities.canOpenFullWidth, let thread = model.openThread {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Open in Full View", systemImage: "arrow.up.left.and.arrow.down.right") {
                             model.openSidebarThread(thread)
@@ -660,11 +662,13 @@ private struct ChatRootView: View {
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Button(action: closeSupplementaryConversation) {
+                    Button {
+                        model.closeSideConversation()
+                    } label: {
                         Label("Close conversation", systemImage: "xmark")
                             .labelStyle(.iconOnly)
                     }
-                    .help(supplementaryCloseHelp)
+                    .help(capabilities.closeHelp)
                     .keyboardShortcut(model.guildWorkspacePage == .guide ? .cancelAction : nil)
                 }
                 .visibilityPriority(.high)
@@ -792,7 +796,7 @@ private struct ChatRootView: View {
 
         if model.isSwitchingAccounts
             || (model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil && !model.isFriendsPresented
-                && !hasOpenSupplementaryToolbarConversation && selectedVoiceChannel == nil)
+                && model.workspacePresentation.paneSideConversation == nil && selectedVoiceChannel == nil)
         {
             if !model.isSwitchingAccounts {
                 ToolbarSpacer(.fixed)
@@ -906,7 +910,10 @@ private struct ChatRootView: View {
     }
 
     private func proposedComposerDestination(atX horizontalPosition: CGFloat) -> MessageComposerDestination {
-        if model.hasThreadPane, supplementaryPaneFrame != .zero {
+        let presentation = model.workspacePresentation
+        // A full-width thread is the only visible composer.
+        if presentation.primary == .fullWidthThread { return .thread }
+        if presentation.paneSideConversation?.isThread == true, supplementaryPaneFrame != .zero {
             let localThreadLeadingEdge = supplementaryPaneFrame.minX - workspaceFrame.minX
             return horizontalPosition >= localThreadLeadingEdge ? .thread : .channel
         }
@@ -978,15 +985,12 @@ private struct ChatRootView: View {
         return topic
     }
 
+    /// The trailing column holds a side chat or message search.
     private var hasOpenSupplementaryConversation: Bool {
-        hasOpenSupplementaryToolbarConversation
-            || model.isMessageSearchVisible
-    }
-
-    private var hasOpenSupplementaryToolbarConversation: Bool {
-        (model.hasThreadPane && !model.isThreadFullWidth)
-            || model.isVoiceChatOpen
-            || model.hasOpenGuildSupplementaryConversation
+        switch model.workspacePresentation.supplementaryPane {
+        case .sideConversation, .messageSearch: true
+        case .memberInspector, nil: false
+        }
     }
 
     private var selectedVoiceChannel: Channel? {
@@ -1001,14 +1005,15 @@ private struct ChatRootView: View {
 
     private var toolbarPinsChannelID: ChannelID? {
         guard model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil,
-              selectedVoiceChannel == nil, !model.hasThreadPane || model.isThreadFullWidth
+              selectedVoiceChannel == nil, model.workspacePresentation.paneSideConversation == nil
         else { return nil }
         return model.activePinsChannelID
     }
 
     private var conversationToolbarPresentation: ConversationToolbarPresentation? {
-        if model.isThreadFullWidth, let thread = model.openThread {
-            return .init(title: thread.name, systemImage: SakuraCordSystemSymbol.thread)
+        if let conversation = model.presentedSideConversation, conversation.isFullWidth {
+            let label = model.sideConversationLabel(conversation)
+            return .init(title: label.title, systemImage: label.systemImage)
         }
         if let page = model.guildWorkspacePage {
             return .init(title: page == .guide ? "Server Guide" : model.customizationTitle(in: model.selectedGuildID),
@@ -1022,35 +1027,6 @@ private struct ChatRootView: View {
                      avatarChannel: isDirectMessageSelected ? channel : nil,
                      avatarStatus: isDirectMessageSelected ? directMessageToolbarStatus(for: channel) : nil,
                      avatarIsMobile: isDirectMessageSelected && directMessageRecipient(for: channel)?.showsMobileIndicator == true)
-    }
-
-    private var supplementaryToolbarPresentation: SupplementaryToolbarPresentation? {
-        guard !model.isThreadFullWidth else { return nil }
-        if model.hasThreadPane {
-            return SupplementaryToolbarPresentation(
-                title: model.openThread?.name ?? "New Thread",
-                systemImage: model.openThreadParentChannel?.kind == .forum
-                    ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread
-            )
-        }
-        if let channel = model.customizationPreviewChannel {
-            return .init(title: channel.name, systemImage: channelToolbarSymbol(channel))
-        }
-        if model.guildWorkspacePage == .guide, let guildID = model.selectedGuildID,
-           let entry = model.onboarding.guides[guildID], let resource = entry.resource {
-            return .init(title: entry.configuration?.resourceChannels.first { $0.channelID == resource.channelID }?.title ?? "Resource", systemImage: "doc.text")
-        }
-        guard model.isVoiceChatOpen, let channel = model.selectedChannel else { return nil }
-        return SupplementaryToolbarPresentation(
-            title: channel.name,
-            systemImage: "bubble.left.fill"
-        )
-    }
-
-    private var supplementaryCloseHelp: String {
-        if model.hasThreadPane { return "Close thread" }
-        if model.hasOpenGuildSupplementaryConversation { return "Close preview" }
-        return "Close voice channel chat"
     }
 
     private func alignSupplementaryToolbarTitle(_ titleFrame: CGRect) {
@@ -1067,14 +1043,6 @@ private struct ChatRootView: View {
             0,
             supplementaryToolbarSpacerWidth + correction
         )
-    }
-
-    private func closeSupplementaryConversation() {
-        if model.hasThreadPane {
-            model.dismissOpenThread()
-        } else if !model.closeGuildSupplementaryConversation() {
-            model.closeVoiceChat()
-        }
     }
 
     private var selectedGuild: Guild? {
@@ -1271,25 +1239,21 @@ private struct ComposerFileDropOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let presentation = model.workspacePresentation
             Group {
-                if model.hasThreadPane, supplementaryPaneFrame != .zero {
+                if presentation.primary == .fullWidthThread, let thread = model.sideConversations.thread {
+                    destinationZone(.thread, label: model.sideConversationLabel(thread))
+                } else if let thread = presentation.paneSideConversation, thread.isThread,
+                          supplementaryPaneFrame != .zero
+                {
                     HStack(spacing: 0) {
-                        destinationZone(
-                            .channel,
-                            title: model.selectedChannel?.name ?? "Channel"
-                        )
-                        .frame(width: primaryWidth(in: proxy.size.width))
+                        destinationZone(.channel, label: channelLabel)
+                            .frame(width: primaryWidth(in: proxy.size.width))
 
-                        destinationZone(
-                            .thread,
-                            title: model.openThread?.name ?? "New Thread"
-                        )
+                        destinationZone(.thread, label: model.sideConversationLabel(thread))
                     }
                 } else {
-                    destinationZone(
-                        .channel,
-                        title: model.selectedChannel?.name ?? "Channel"
-                    )
+                    destinationZone(.channel, label: channelLabel)
                 }
             }
             .animation(.smooth(duration: 0.22), value: hoveredDestination)
@@ -1302,10 +1266,14 @@ private struct ComposerFileDropOverlay: View {
         )
     }
 
+    private var channelLabel: SideConversationLabel {
+        SideConversationLabel(title: model.selectedChannel?.name ?? "Channel", systemImage: "number")
+    }
+
     @ViewBuilder
     private func destinationZone(
         _ destination: MessageComposerDestination,
-        title: String
+        label: SideConversationLabel
     ) -> some View {
         if hoveredDestination == destination, model.isComposerDropEligible(destination) {
             ZStack {
@@ -1327,13 +1295,9 @@ private struct ComposerFileDropOverlay: View {
                             .font(.interface(.title2).weight(.bold))
 
                         Label {
-                            Text(title)
+                            Text(label.title)
                         } icon: {
-                            SakuraCordSystemSymbol.swiftUIImage(
-                                named: destination == .thread
-                                    ? (model.selectedChannel?.kind == .forum
-                                        ? "bubble.left.and.bubble.right.fill" : SakuraCordSystemSymbol.thread) : "number"
-                            )
+                            SakuraCordSystemSymbol.swiftUIImage(named: label.systemImage)
                         }
                         .font(.interface(.headline).weight(.semibold))
                         .lineLimit(1)
@@ -1394,11 +1358,6 @@ private struct ComposerFileDropOverlay: View {
         guard workspaceFrame != .zero else { return totalWidth / 2 }
         return max(0, min(totalWidth, supplementaryPaneFrame.minX - workspaceFrame.minX))
     }
-}
-
-private struct SupplementaryToolbarPresentation {
-    let title: String
-    let systemImage: String
 }
 
 private struct ConversationToolbarPresentation {

@@ -1902,12 +1902,10 @@ func `authoritative thread deletion removes open cached and resource conversatio
         model.selectedGuildID = guildID
         model.onboarding.presentedGuildID = guildID
         model.onboarding.page = .guide
-        model.onboarding.guides[guildID] = GuildGuideEntry(resource: GuildResourceState(
-            channelID: parent, messages: [starter], rows: [MessageRowPresentation(
-                message: starter, startsGroup: false, startsDay: false,
-                replyPreview: nil, isReplyAvailable: false, isResource: true
-            )]
-        ))
+        model.sideConversations.context = .guideResource(guildID, parent)
+        model.guideResource = GuildResourceState(
+            channelID: parent, messages: [starter], rows: [MessageGrouping.resourceRow(for: starter)]
+        )
     } else {
         model.storeCachedMessages([starter], for: parent)
     }
@@ -3802,20 +3800,28 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 }
 
 @MainActor
-@Test func `supplementary Escape closes thread before voice chat`() {
+@Test func `side chats close from the top and a thread returns to its context`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
-    model.openThread = MessageThreadSummary(
+    await model.start()
+    let voiceChannel = try #require(model.visibleChannels.first(where: { $0.kind == .voice }))
+    model.selectedChannelID = voiceChannel.id
+    let thread = MessageThreadSummary(
         id: ChannelID(rawValue: 88_001),
         parentID: ChannelID(rawValue: 88_000),
         name: "Escape priority"
     )
-    model.isVoiceChatOpen = true
+    model.openThread = thread
+    #expect(model.workspacePresentation.paneSideConversation == .thread(thread, isFullWidth: false))
 
     #expect(model.consumeEscapeForSupplementaryConversation())
     #expect(model.openThread == nil)
     #expect(model.isVoiceChatOpen)
+    #expect(model.workspacePresentation.paneSideConversation == .voiceChat(voiceChannel.id))
 
-    #expect(model.consumeEscapeForSupplementaryConversation())
+    // Closing the context also closes a thread opened above it.
+    model.openThread = thread
+    model.closeVoiceChat()
+    #expect(model.openThread == nil)
     #expect(!model.isVoiceChatOpen)
     #expect(!model.consumeEscapeForSupplementaryConversation())
 }
@@ -4218,6 +4224,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
     #expect(model.isVoiceChatOpen)
     try await Task.sleep(for: .milliseconds(40))
     #expect(!model.isLoadingMessages)
+    #expect(model.messages.map(\.channelID) == [voiceChannel])
     #expect(await provider.requestCount(for: voiceChannel) == 1)
     #expect(model.activeVoiceChannel == nil)
 }
