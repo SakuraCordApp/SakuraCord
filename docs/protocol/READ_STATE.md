@@ -116,7 +116,14 @@ thread read state is not evidence of membership: archived, left or orphaned
 threads keep their read history without contributing to those aggregates.
 Thread membership changes refresh both indicators. A forum contributes unseen
 posts, not its raw message boundary, while active joined posts retain their own
-conversation unread state. Mention totals remain a separate projection.
+conversation unread state. Mention totals remain a separate projection with
+the same membership rule as Discord's `ReadState.canHaveMentions`: a thread's
+mention count reaches its row, the server badge and every total only while the
+account has joined the active thread. The count is still tracked, so it appears
+if a starter, user or role mention later adds the account to the post. Do not
+roll such counts up onto the parent forum row: the official client has no
+aggregate forum badge (observed in web build 641803, 20 October 2026, live and
+from READY), and a counted mention must always have a visible row.
 
 Inbox tab/collapse settings use the shared type-1 protobuf writer and preserve
 unknown fields. A `400 / 50105` invalid-data rejection reloads settings and reports
