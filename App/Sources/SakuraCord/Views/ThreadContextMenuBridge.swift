@@ -37,13 +37,13 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
             let model = bridge.model
             let row = bridge.row
             let thread = model.sidebarThread(row.id) ?? row.thread
-            let permissions = model.sidebarThreadPermissions(thread)
+            let permissions = model.threadActionPolicy(thread)
             let isForum = thread.parentID.flatMap { model.messagePresentationChannelsByID[$0] }?.kind == .forum
             let noun = isForum ? "Post" : "Thread"
             let menu = NSMenu()
             menu.autoenablesItems = false
             menu.addItem(item("Mark as Read", symbol: "envelope.open.fill", enabled: permissions.canRead && (row.isUnread || row.mentionCount > 0)) {
-                guard model.sidebarThreadPermissions(thread).canRead else { return }
+                guard model.threadActionPolicy(thread).canRead else { return }
                 model.markConversationRead(channelID: thread.id)
             })
             menu.addItem(.separator())

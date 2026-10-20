@@ -488,6 +488,11 @@ extension AppModel {
                 forumActionError = "You do not have permission to close or reopen this post."
                 return
             }
+        case .name:
+            guard threadActionPolicy(post.thread).canRename else {
+                forumActionError = "You do not have permission to rename this post."
+                return
+            }
         case .locked, .pinned:
             guard canManageForumPosts else {
                 forumActionError = "Only moderators can change this post."

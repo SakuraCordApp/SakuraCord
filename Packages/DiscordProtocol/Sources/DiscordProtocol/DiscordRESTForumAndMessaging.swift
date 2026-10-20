@@ -31,8 +31,9 @@ extension DiscordRESTProvider {
             }
             do {
                 let remotePage = try await olderForumPosts(channel: channel, query: query)
+                // Re-read the cache: Gateway events may have changed it meanwhile.
                 let page = Self.mergedForumCataloguePage(
-                    cachedPosts: cachedPosts,
+                    cachedPosts: Array(cachedForumPosts[channelID, default: [:]].values),
                     olderPage: remotePage,
                     query: query
                 )
@@ -202,6 +203,12 @@ extension DiscordRESTProvider {
             ? response.thread.notificationSettings
             : current.thread.notificationSettings
         guard updated != current, let parentID = current.thread.parentID else { return current }
+        // A read that changes state invalidates older reads, never a pending mutation.
+        advanceThreadRecordRevision(
+            updated.id,
+            includesMembership: updated.thread.notificationSettings != current.thread.notificationSettings,
+            authoritative: false
+        )
         cachedForumPosts[parentID]?[updated.id] = updated
         let settings = updated.thread.notificationSettings
         if settings == nil {
@@ -219,16 +226,21 @@ extension DiscordRESTProvider {
         cachedForumPosts.values.lazy.compactMap { $0[threadID] }.first
     }
 
+    /// Every accepted membership change advances the revision that
+    /// invalidates reads in flight. An `authoritative` change, a Gateway
+    /// event or a local join/leave, also supersedes a pending one.
     @discardableResult
-    func advanceThreadMembershipRevision(_ threadID: ChannelID) -> UInt64 {
+    func advanceThreadMembershipRevision(_ threadID: ChannelID, authoritative: Bool = true) -> UInt64 {
         let revision = (threadMembershipRevisions[threadID] ?? 0) &+ 1
         threadMembershipRevisions[threadID] = revision
+        if authoritative { threadMembershipEpochs[threadID] = (threadMembershipEpochs[threadID] ?? 0) &+ 1 }
         return revision
     }
 
-    func advanceThreadRecordRevision(_ threadID: ChannelID, includesMembership: Bool) {
+    func advanceThreadRecordRevision(_ threadID: ChannelID, includesMembership: Bool, authoritative: Bool = true) {
         threadRecordRevisions[threadID] = (threadRecordRevisions[threadID] ?? 0) &+ 1
-        if includesMembership { advanceThreadMembershipRevision(threadID) }
+        if authoritative { threadRecordEpochs[threadID] = (threadRecordEpochs[threadID] ?? 0) &+ 1 }
+        if includesMembership { advanceThreadMembershipRevision(threadID, authoritative: authoritative) }
     }
 
     public func createForumPost(
@@ -241,8 +253,7 @@ extension DiscordRESTProvider {
                 $0.id == draft.channelID && $0.kind == .forum
             })
         else { throw ChatProviderError.channelNotFound }
-        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (1 ... 100).contains(title.count) else {
+        guard let title = ThreadNamePolicy.validatedName(draft.title) else {
             throw ChatProviderError.invalidRequest(
                 "Post titles must be between 1 and 100 characters.")
         }
@@ -305,6 +316,7 @@ extension DiscordRESTProvider {
             "message": .object(message),
         ]
         progress(.submitting)
+        let baseline = threadRevisionBaseline()
         let dto: ChannelDTO = try await request(
             "/channels/\(draft.channelID)/threads",
             method: "POST",
@@ -313,15 +325,14 @@ extension DiscordRESTProvider {
         )
         var post = try dto.forumPost(fallbackGuildID: channel.guildID)
         if post.owner == nil { post.owner = currentUser }
-        cachedForumPosts[draft.channelID, default: [:]][post.id] = post
-        cacheForumPreviewMessages(post)
-        publishForumPosts(parentID: draft.channelID)
+        post.thread = try commitCreatedThread(post, respondedMember: dto.member != nil, since: baseline)
+        post = cachedForumPosts[draft.channelID]?[post.id] ?? post
         progress(.completed(messageID: MessageID(rawValue: post.id.rawValue)))
         return post
     }
 
-    /// Mirrors the first-party composer Plus Button action. The starter
-    /// message is an ordinary send to the returned thread.
+    /// Mirrors the first-party composer Plus Button and message Create Thread
+    /// actions. The starter message is an ordinary send to the returned thread.
     public func createThread(_ draft: CreateThreadDraft) async throws -> MessageThreadSummary {
         try requireGuildCommunication(in: draft.channelID)
         guard
@@ -329,30 +340,40 @@ extension DiscordRESTProvider {
                 $0.id == draft.channelID && ($0.kind == .text || $0.kind == .announcement)
             })
         else { throw ChatProviderError.channelNotFound }
-        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (1 ... 100).contains(name.count) else {
+        guard let name = ThreadNamePolicy.validatedName(draft.name) else {
             throw ChatProviderError.invalidRequest("Thread names must be between 1 and 100 characters.")
         }
         guard !draft.isPrivate || channel.kind == .text else {
             throw ChatProviderError.invalidRequest("Announcement channels cannot have private threads.")
         }
+        guard !draft.isPrivate || draft.starterMessageID == nil else {
+            throw ChatProviderError.invalidRequest("Threads started from a message are public.")
+        }
         guard Self.validForumAutoArchiveDurations.contains(draft.autoArchiveDuration) else {
             throw ChatProviderError.invalidRequest("The selected auto-archive duration is invalid.")
         }
         let type = draft.isPrivate ? 12 : (channel.kind == .announcement ? 10 : 11)
+        let baseline = threadRevisionBaseline()
         let dto: ChannelDTO = try await request(
-            "/channels/\(draft.channelID)/threads",
+            Self.threadCreationPath(parentID: draft.channelID, starterMessageID: draft.starterMessageID),
             method: "POST",
             body: [
                 "name": .string(name),
                 "type": .number(Double(type)),
                 "auto_archive_duration": .number(Double(draft.autoArchiveDuration)),
-                "location": .string("Plus Button"),
+                "location": .string(draft.starterMessageID == nil ? "Plus Button" : "Message"),
             ]
         )
-        let thread = try dto.forumPost(fallbackGuildID: channel.guildID).thread
-        ingestForumThreads([dto], fallbackGuildID: channel.guildID)
+        let thread = try commitCreatedThread(
+            dto.forumPost(fallbackGuildID: channel.guildID), respondedMember: dto.member != nil, since: baseline
+        )
+        attachStartedThreadToCachedStarter(thread.id)
         return thread
+    }
+
+    nonisolated static func threadCreationPath(parentID: ChannelID, starterMessageID: MessageID?) -> String {
+        starterMessageID.map { "/channels/\(parentID)/messages/\($0)/threads" }
+            ?? "/channels/\(parentID)/threads"
     }
 
     public func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async throws
@@ -361,8 +382,40 @@ extension DiscordRESTProvider {
         guard let parentID = post.thread.parentID else {
             throw ChatProviderError.invalidRequest("The forum post has no parent channel.")
         }
-        var working = post
+        // Edits to one thread run one at a time, so each starts from the
+        // previous one's committed record instead of being discarded as stale.
+        let previous = threadMutationTails[post.id]
+        let (done, finish) = AsyncStream<Never>.makeStream()
+        let tail = Task { for await _ in done {} }
+        threadMutationTails[post.id] = tail
+        defer {
+            finish.finish()
+            if threadMutationTails[post.id] == tail { threadMutationTails[post.id] = nil }
+        }
+        await previous?.value
+        // Each completed PATCH is committed as it returns, so a completed
+        // unarchive stays applied when a following change fails.
+        var working = cachedForumPosts[parentID]?[post.id] ?? post
+        try await applyForumPostMutation(mutation, parentID: parentID, to: &working)
+        return working
+    }
+
+    private func applyForumPostMutation(
+        _ mutation: ForumPostMutation,
+        parentID: ChannelID,
+        to working: inout ForumPost
+    ) async throws {
         switch mutation {
+        case .name(let value):
+            // The first-party settings save sends its whole form; only the name
+            // changes here, so other settings cannot be overwritten with stale values.
+            guard let name = ThreadNamePolicy.validatedName(value) else {
+                throw ChatProviderError.invalidRequest("Names must be between 1 and 100 characters.")
+            }
+            if working.thread.isArchived {
+                working = try await patchForumPost(working, body: ["archived": .bool(false)])
+            }
+            working = try await patchForumPost(working, body: ["name": .string(name)])
         case .tags(let tags):
             guard
                 let channel = cachedChannels.values.lazy.flatMap(\.self).first(where: {
@@ -411,9 +464,6 @@ extension DiscordRESTProvider {
             if value, working.thread.isArchived { body["archived"] = .bool(false) }
             working = try await patchForumPost(working, body: body)
         }
-        cachedForumPosts[parentID, default: [:]][working.id] = working
-        publishForumPosts(parentID: parentID)
-        return working
     }
 
     nonisolated static func orderedUniqueForumTagIDs(
@@ -505,14 +555,24 @@ extension DiscordRESTProvider {
         return joined
     }
 
-    /// Sidebar Follow/Leave. Discord confirms through THREAD_MEMBERS_UPDATE,
-    /// which updates the joined-thread catalogue.
-    public func setThreadMembership(threadID: ChannelID, isJoined: Bool) async throws {
+    /// Join/Follow or Leave/Unfollow. Discord's THREAD_MEMBERS_UPDATE carries
+    /// the authoritative member; the confirmed response updates the catalogue first.
+    public func setThreadMembership(
+        threadID: ChannelID,
+        isJoined: Bool,
+        location: ThreadMembershipLocation
+    ) async throws {
+        advanceThreadMembershipRevision(threadID)
+        let epoch = threadMembershipEpochs[threadID]
         try await requestEmpty(
             "/channels/\(threadID)/thread-members/@me",
             method: isJoined ? "POST" : "DELETE",
-            query: [URLQueryItem(name: "location", value: "Context Menu")]
+            query: [URLQueryItem(name: "location", value: location.rawValue)]
         )
+        // A Gateway membership event or a newer join/leave supersedes this
+        // answer; an overlapping read does not.
+        guard threadMembershipEpochs[threadID] == epoch else { return }
+        reconcileConfirmedThreadMembership(threadID: threadID, isJoined: isJoined)
     }
 
     func patchThreadNotificationSettings(
@@ -548,6 +608,7 @@ extension DiscordRESTProvider {
         -> ForumPostPage
     {
         let items = Self.forumCatalogueQueryItems(query: query)
+        let baseline = threadRevisionBaseline()
         let result: ForumThreadCatalogueResponseDTO = try await request(
             Self.forumThreadSearchPath(channelID: channel.id), query: items
         )
@@ -559,14 +620,15 @@ extension DiscordRESTProvider {
             hasMore=\(result.hasMore) total=\(result.totalResults ?? -1)
             """
         )
-        let posts = ingestForumPosts(decodedPosts, channel: channel)
-        let nextOffset = result.hasMore && !result.threads.isEmpty
-            ? query.offset + result.threads.count
-            : nil
+        let posts = ingestForumPosts(decodedPosts, channel: channel, since: baseline)
+        // Offsets count Discord's records, including ones that failed to decode.
+        let rawCount = result.threads.count + result.skippedThreadCount
+        let nextOffset = result.hasMore && rawCount > 0 ? query.offset + rawCount : nil
         return ForumPostPage(
             posts: posts,
             hasMore: result.hasMore && nextOffset != nil,
-            nextOffset: nextOffset
+            nextOffset: nextOffset,
+            totalResults: result.totalResults
         )
     }
 
@@ -576,36 +638,63 @@ extension DiscordRESTProvider {
         searchText: String
     ) async throws -> ForumPostPage {
         let items = Self.forumNameSearchQueryItems(searchText: searchText, query: query)
+        let baseline = threadRevisionBaseline()
         let result: ForumThreadSearchResponseDTO = try await request(
             "/channels/\(channel.id)/threads/search", query: items
         )
         var posts = ingestForumPosts(
-            result.posts(fallbackGuildID: channel.guildID), channel: channel
+            result.posts(fallbackGuildID: channel.guildID), channel: channel, since: baseline
         )
         posts = Self.filteredAndSortedForumPosts(posts, query: query)
-        return ForumPostPage(posts: posts, hasMore: false, nextOffset: nil)
+        return ForumPostPage(
+            posts: posts, hasMore: false, nextOffset: nil, totalResults: result.totalResults
+        )
     }
 
+    /// Catalogue and browser records answer the request that started at
+    /// `baseline`. A thread record or deletion that arrived meanwhile wins, so
+    /// a deleted thread is omitted and a newer record is kept; a membership
+    /// event that arrived meanwhile keeps the provider's membership.
     func ingestForumPosts(
         _ incomingPosts: [ForumPost],
-        channel: Channel
+        channel: Channel,
+        since baseline: ThreadRevisionBaseline
     ) -> [ForumPost] {
-        var posts = incomingPosts
-        for index in posts.indices {
-            if let existing = cachedForumPosts[channel.id]?[posts[index].id] {
-                posts[index] = Self.mergingForumPostCatalogueMetadata(
-                    incoming: posts[index],
-                    existing: existing
-                )
+        var posts: [ForumPost] = []
+        posts.reserveCapacity(incomingPosts.count)
+        var joinedThreadsChanged = false
+        for var post in incomingPosts {
+            let existing = cachedForumPosts[channel.id]?[post.id]
+            if threadRecordRevisions[post.id] != baseline.records[post.id] {
+                if let existing { posts.append(existing) }
+                continue
             }
-            if posts[index].owner == nil, let ownerID = posts[index].thread.ownerID,
+            let respondedMembership = post.thread.notificationSettings
+            if let existing {
+                post = Self.mergingForumPostCatalogueMetadata(incoming: post, existing: existing)
+            }
+            if threadMembershipRevisions[post.id] != baseline.memberships[post.id] {
+                post.thread.notificationSettings = existing?.thread.notificationSettings
+                    ?? cachedJoinedThreads[post.id]?.notificationSettings
+            } else if let respondedMembership,
+                      respondedMembership != existing?.thread.notificationSettings
+            {
+                // A returned member is the server's current membership; record
+                // it as a transition so older pending reads cannot undo it.
+                advanceThreadMembershipRevision(post.id, authoritative: false)
+                reconcileJoinedThread(post.thread)
+                joinedThreadsChanged = true
+            }
+            if post.owner == nil, let ownerID = post.thread.ownerID,
                let ownerDTO = cachedGatewayUsersByID[ownerID.description]
             {
-                posts[index].owner = try? ownerDTO.domain()
+                post.owner = try? ownerDTO.domain()
             }
-            cachedForumPosts[channel.id, default: [:]][posts[index].id] = posts[index]
-            cacheForumPreviewMessages(posts[index])
+            cachedForumPosts[channel.id, default: [:]][post.id] = post
+            cacheForumPreviewMessages(post)
+            posts.append(post)
         }
+        if joinedThreadsChanged { publishActiveJoinedThreads() }
         return posts
     }
 
@@ -769,6 +858,8 @@ extension DiscordRESTProvider {
     func patchForumPost(_ post: ForumPost, body: [String: JSONValue]) async throws
         -> ForumPost
     {
+        let epoch = threadRecordEpochs[post.id]
+        let membershipRevision = threadMembershipRevisions[post.id]
         let dto: ChannelDTO = try await request(
             "/channels/\(post.id)", method: "PATCH", body: body
         )
@@ -777,6 +868,43 @@ extension DiscordRESTProvider {
         updated.mostRecentMessage = post.mostRecentMessage
         updated.owner = post.owner
         updated.isUnread = post.isUnread
+        guard let parentID = updated.thread.parentID ?? post.thread.parentID else { return updated }
+        let cached = cachedForumPosts[parentID]?[post.id]
+        // A Gateway record or deletion that arrived meanwhile is authoritative.
+        // Discord sends THREAD_UPDATE before answering, so it usually holds this
+        // change; a record that is gone was deleted while the request was pending.
+        guard threadRecordEpochs[post.id] == epoch else {
+            guard let cached else { throw ChatProviderError.channelNotFound }
+            return cached
+        }
+        // The provider's latest membership, including a removal; the caller's
+        // copy only for a thread the provider has never known.
+        let latestMembership = cached.map(\.thread.notificationSettings)
+            ?? cachedJoinedThreads[post.id]?.notificationSettings
+        let respondedMembership = dto.member == nil ? nil : updated.thread.notificationSettings
+        if let cached {
+            updated = Self.mergingForumPostCatalogueMetadata(incoming: updated, existing: cached)
+        }
+        if threadMembershipRevisions[post.id] != membershipRevision {
+            // A membership event arrived meanwhile; whatever this response
+            // carries is older.
+            updated.thread.notificationSettings = latestMembership
+        } else if let respondedMembership {
+            updated.thread.notificationSettings = respondedMembership
+            if respondedMembership != latestMembership {
+                advanceThreadMembershipRevision(post.id, authoritative: false)
+            }
+        } else {
+            // A response without `member` carries no membership.
+            updated.thread.notificationSettings = cached == nil
+                ? post.thread.notificationSettings : latestMembership
+        }
+        // An accepted mutation invalidates older reads before it is published.
+        advanceThreadRecordRevision(post.id, includesMembership: false)
+        cachedForumPosts[parentID, default: [:]][post.id] = updated
+        reconcileJoinedThread(updated.thread)
+        publishForumPosts(parentID: parentID)
+        publishActiveJoinedThreads()
         return updated
     }
 

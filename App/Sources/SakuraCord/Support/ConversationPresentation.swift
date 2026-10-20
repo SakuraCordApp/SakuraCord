@@ -17,33 +17,6 @@ nonisolated enum ConversationAccess: Equatable, Sendable {
     }
 }
 
-nonisolated enum DiscordPermissionBits {
-    static let createInstantInvite: UInt64 = 1 << 0
-    static let administrator: UInt64 = 1 << 3
-    static let addReactions: UInt64 = 1 << 6
-    static let viewChannel: UInt64 = 1 << 10
-    static let sendMessages: UInt64 = 1 << 11
-    static let manageMessages: UInt64 = 1 << 13
-    static let embedLinks: UInt64 = 1 << 14
-    static let attachFiles: UInt64 = 1 << 15
-    static let readMessageHistory: UInt64 = 1 << 16
-    static let useExternalEmojis: UInt64 = 1 << 18
-    static let connect: UInt64 = 1 << 20
-    static let speak: UInt64 = 1 << 21
-    static let changeNickname: UInt64 = 1 << 26
-    static let manageNicknames: UInt64 = 1 << 27
-    static let manageThreads: UInt64 = 1 << 34
-    static let createPublicThreads: UInt64 = 1 << 35
-    static let createPrivateThreads: UInt64 = 1 << 36
-    static let useExternalStickers: UInt64 = 1 << 37
-    static let sendMessagesInThreads: UInt64 = 1 << 38
-    static let useSoundboard: UInt64 = 1 << 42
-    static let sendVoiceMessages: UInt64 = 1 << 46
-    static let useExternalSounds: UInt64 = 1 << 45
-    static let pinMessages: UInt64 = 1 << 51
-    static let bypassSlowmode: UInt64 = 1 << 52
-}
-
 nonisolated enum ForwardDestinationPermissionPolicy {
     static func canSearchChannel(
         _ channel: Channel,

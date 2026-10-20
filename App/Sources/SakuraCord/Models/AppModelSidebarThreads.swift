@@ -19,43 +19,47 @@ extension AppModel {
         }
     }
 
-    func sidebarThreadPermissions(_ thread: MessageThreadSummary) -> SidebarThreadPermissions {
+    /// Eligibility shared by menu construction and action execution. Thread permissions
+    /// inherit from the actual parent, independently of the selected conversation.
+    func threadActionPolicy(_ thread: MessageThreadSummary) -> ThreadActionPolicy {
         let thread = sidebarThread(thread.id) ?? thread
         guard let parent = thread.parentID.flatMap({ messagePresentationChannelsByID[$0] }),
               conversationAccess(for: parent).isReadable,
               let permissions = effectiveMessagePermissions(in: parent),
               let currentUserID = currentUser?.id else { return .init() }
-        return SidebarThreadPermissions(
+        return ThreadActionPolicy(
             thread: thread, currentUserID: currentUserID,
-            permissions: permissions, isForum: parent.kind == .forum
+            parentPermissions: permissions, parentKind: parent.kind
         )
     }
 
     func canManageSidebarThread(_ thread: MessageThreadSummary) -> Bool {
-        sidebarThreadPermissions(thread).canManage
+        threadActionPolicy(thread).canManage
     }
 
     func canArchiveSidebarThread(_ thread: MessageThreadSummary) -> Bool {
-        let permissions = sidebarThreadPermissions(thread)
+        let permissions = threadActionPolicy(thread)
         return thread.isArchived ? permissions.canReopen : permissions.canClose
     }
 
     func setSidebarThreadMute(_ thread: MessageThreadSummary, isMuted: Bool, until: Date?) {
-        guard sidebarThreadPermissions(thread).canChangeNotifications else { return }
+        guard threadActionPolicy(thread).canChangeNotifications else { return }
         setForumPostMute(isMuted, until: until, for: ForumPost(thread: thread), reportErrorInAlert: true)
     }
 
     func setSidebarThreadNotificationLevel(_ thread: MessageThreadSummary, level: MessageNotificationLevel) {
-        guard sidebarThreadPermissions(thread).canChangeNotifications else { return }
+        guard threadActionPolicy(thread).canChangeNotifications else { return }
         setForumPostNotificationLevel(level, for: ForumPost(thread: thread), reportErrorInAlert: true)
     }
 
     func setSidebarThreadMembership(_ thread: MessageThreadSummary, isJoined: Bool) {
-        guard sidebarThreadPermissions(thread).canChangeMembership else { return }
+        guard threadActionPolicy(thread).canChangeMembership else { return }
         startAccountChildTask(account: accountSession()) { model, account in
-            guard model.sidebarThreadPermissions(thread).canChangeMembership else { return }
+            guard model.threadActionPolicy(thread).canChangeMembership else { return }
             do {
-                try await account.provider.setThreadMembership(threadID: thread.id, isJoined: isJoined)
+                try await account.provider.setThreadMembership(
+                    threadID: thread.id, isJoined: isJoined, location: .contextMenu
+                )
             } catch {
                 guard model.isCurrentAccountSession(account) else { return }
                 model.errorMessage = error.localizedDescription
@@ -66,12 +70,13 @@ extension AppModel {
     func updateSidebarThread(_ thread: MessageThreadSummary, mutation: ForumPostMutation) {
         switch mutation {
         case .archived(let archived):
-            let permissions = sidebarThreadPermissions(thread)
+            let permissions = threadActionPolicy(thread)
             guard archived ? permissions.canClose : permissions.canReopen else { return }
         case .locked: guard canManageSidebarThread(thread) else { return }
         case .pinned:
             guard canManageSidebarThread(thread),
                   thread.parentID.flatMap({ messagePresentationChannelsByID[$0] })?.kind == .forum else { return }
+        case .name: guard threadActionPolicy(thread).canRename else { return }
         case .tags: return
         }
         startAccountChildTask(account: accountSession()) { model, account in
@@ -87,9 +92,9 @@ extension AppModel {
     }
 
     func deleteSidebarThread(_ thread: MessageThreadSummary) {
-        guard sidebarThreadPermissions(thread).canDelete else { return }
+        guard threadActionPolicy(thread).canDelete else { return }
         startAccountChildTask(account: accountSession()) { model, account in
-            guard model.sidebarThreadPermissions(thread).canDelete else { return }
+            guard model.threadActionPolicy(thread).canDelete else { return }
             do {
                 try await account.provider.deleteForumPost(ForumPost(thread: thread))
                 guard model.isCurrentAccountSession(account) else { return }
@@ -99,37 +104,5 @@ extension AppModel {
                 model.errorMessage = error.localizedDescription
             }
         }
-    }
-}
-
-/// Eligibility shared by menu construction and action execution. Thread permissions
-/// inherit from the actual parent, independently of the selected conversation.
-nonisolated struct SidebarThreadPermissions {
-    var canRead = false
-    var canManage = false
-    var canClose = false
-    var canReopen = false
-    var canDelete = false
-    var canChangeMembership = false
-    var canChangeNotifications = false
-
-    init() {}
-
-    init(thread: MessageThreadSummary, currentUserID: UserID, permissions: UInt64, isForum: Bool) {
-        guard permissions & DiscordPermissionBits.viewChannel != 0 else { return }
-        let managesThreads = permissions & DiscordPermissionBits.manageThreads != 0
-        guard !thread.isPrivate || thread.notificationSettings != nil || managesThreads else { return }
-        canRead = true
-        canManage = managesThreads
-        let ownsThread = thread.ownerID == currentUserID
-        canClose = canManage || (!thread.isLocked && ownsThread)
-        let canSend = permissions & DiscordPermissionBits.sendMessagesInThreads != 0
-            && permissions & DiscordPermissionBits.sendMessages != 0
-        canReopen = thread.isLocked ? canManage : canSend
-        // A regular thread's creator cannot delete it. Forum authors may delete
-        // an empty post; deleting only its starter once replies exist is distinct.
-        canDelete = canManage || (isForum && ownsThread && thread.messageCount == 0)
-        canChangeMembership = thread.notificationSettings != nil || !thread.isArchived
-        canChangeNotifications = thread.notificationSettings != nil
     }
 }

@@ -116,6 +116,10 @@ public actor MockChatProvider: ChatProvider {
                 messagesByChannel[post.id] = [message]
             }
         }
+        Self.seedThreadCatalogue(
+            forumPosts: &forumPostsByChannel, messages: &messagesByChannel,
+            channels: fixture.snapshot.channels, owner: fixture.currentUser
+        )
         profilesByUser = fixture.profilesByUser
         if let friendCount {
             let fixture = Self.performanceRelationships(friendCount: friendCount)

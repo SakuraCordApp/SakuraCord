@@ -37,6 +37,7 @@ extension DiscordRESTProvider {
             fallbackGuildID: dto.guildID.flatMap(GuildID.init),
             advancesParentLatestThreadID: true
         )
+        if let threadID = ChannelID(dto.id) { attachStartedThreadToCachedStarter(threadID) }
     }
 
     func handleThreadUpdateDispatch(

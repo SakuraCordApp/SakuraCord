@@ -247,18 +247,11 @@ nonisolated enum MessageComposerDestination: Hashable, Sendable {
     case thread
 }
 
-nonisolated struct ThreadCreationPermissions: Equatable, Sendable {
-    let canCreatePublic: Bool
-    let canCreatePrivate: Bool
-
-    var canCreateAny: Bool { canCreatePublic || canCreatePrivate }
-}
-
 /// A reference type so editing the name does not invalidate every view that
 /// only observes whether a thread is being created.
 @Observable
 final class ThreadCreationDraft {
-    static let maximumNameLength = 100
+    static let maximumNameLength = ThreadNamePolicy.maximumLength
 
     let identity = UUID()
     let parentID: ChannelID

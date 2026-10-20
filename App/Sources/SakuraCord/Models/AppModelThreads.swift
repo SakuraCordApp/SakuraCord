@@ -611,15 +611,9 @@ extension AppModel {
     /// only support public announcement threads.
     var selectedChannelThreadCreationPermissions: ThreadCreationPermissions {
         guard let channel = selectedChannel, channel.guildID != nil,
-              channel.kind == .text || channel.kind == .announcement,
-              let permissions = selectedEffectivePermissions,
-              permissions & DiscordPermissionBits.readMessageHistory != 0
+              let permissions = selectedEffectivePermissions
         else { return ThreadCreationPermissions(canCreatePublic: false, canCreatePrivate: false) }
-        return ThreadCreationPermissions(
-            canCreatePublic: permissions & DiscordPermissionBits.createPublicThreads != 0,
-            canCreatePrivate: channel.kind == .text
-                && permissions & DiscordPermissionBits.createPrivateThreads != 0
-        )
+        return ThreadActionPolicy.creationPermissions(parentKind: channel.kind, permissions: permissions)
     }
 
     var canCreateThreadInSelectedChannel: Bool {

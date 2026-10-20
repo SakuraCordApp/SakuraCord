@@ -165,10 +165,21 @@ public protocol ChatProvider: Sendable {
         _ draft: CreateForumPostDraft,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async throws -> ForumPost
+    /// Creates a thread, or starts one from `draft.starterMessageID`.
     func createThread(_ draft: CreateThreadDraft) async throws -> MessageThreadSummary
+    /// Applies one thread or forum-post change, unarchiving first when it requires.
     func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async throws -> ForumPost
     func deleteForumPost(_ post: ForumPost) async throws
-    func setThreadMembership(threadID: ChannelID, isJoined: Bool) async throws
+    func setThreadMembership(
+        threadID: ChannelID,
+        isJoined: Bool,
+        location: ThreadMembershipLocation
+    ) async throws
+    /// One archived page or name-search result for a parent channel's threads.
+    func threadBrowserPage(in parentID: ChannelID, query: ThreadBrowserQuery) async throws
+        -> ForumPostPage
+    /// Known active threads in a parent channel, joined or not, newest activity first.
+    func activeThreads(in parentID: ChannelID) async -> [ForumPost]
     func updateForumPostNotificationLevel(
         _ post: ForumPost,
         level: MessageNotificationLevel
@@ -989,9 +1000,21 @@ public extension ChatProvider {
         throw ChatProviderError.capabilityDisabled(.forums)
     }
 
-    func setThreadMembership(threadID: ChannelID, isJoined: Bool) async throws {
+    func setThreadMembership(
+        threadID: ChannelID,
+        isJoined: Bool,
+        location: ThreadMembershipLocation
+    ) async throws {
         throw ChatProviderError.capabilityDisabled(.forums)
     }
+
+    func threadBrowserPage(in parentID: ChannelID, query: ThreadBrowserQuery) async throws
+        -> ForumPostPage
+    {
+        throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func activeThreads(in parentID: ChannelID) async -> [ForumPost] { [] }
 
     func updateForumPostNotificationLevel(
         _ post: ForumPost,

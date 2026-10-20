@@ -100,38 +100,3 @@ private let day: TimeInterval = 86_400
         hasUnread: false, showsUnread: false, mentionCount: 0)
     #expect(SidebarThreadPolicy.relevanceDeadline(for: updated) == now + 7 * day)
 }
-
-@Test func `thread actions distinguish creators moderators membership and reopen permission`() {
-    let userID = UserID(rawValue: 1)
-    let view = DiscordPermissionBits.viewChannel
-    let send = DiscordPermissionBits.sendMessages | DiscordPermissionBits.sendMessagesInThreads
-    var thread = MessageThreadSummary(id: ChannelID(rawValue: 2), name: "thread", ownerID: userID)
-    var permissions = SidebarThreadPermissions(thread: thread, currentUserID: userID, permissions: view, isForum: false)
-    #expect(permissions.canClose)
-    #expect(!permissions.canDelete)
-    #expect(!permissions.canChangeNotifications)
-    #expect(!permissions.canReopen)
-    thread.isArchived = true
-    permissions = SidebarThreadPermissions(thread: thread, currentUserID: UserID(rawValue: 3), permissions: view | send, isForum: false)
-    #expect(permissions.canReopen)
-    #expect(!permissions.canChangeMembership)
-    thread.isLocked = true
-    permissions = SidebarThreadPermissions(thread: thread, currentUserID: userID, permissions: view | send, isForum: false)
-    #expect(!permissions.canClose)
-    #expect(!permissions.canReopen)
-    permissions = SidebarThreadPermissions(thread: thread, currentUserID: userID, permissions: view | DiscordPermissionBits.manageThreads, isForum: false)
-    #expect(permissions.canDelete && permissions.canClose && permissions.canReopen)
-    permissions = SidebarThreadPermissions(thread: thread, currentUserID: userID, permissions: DiscordPermissionBits.manageThreads, isForum: false)
-    #expect(!permissions.canRead && !permissions.canDelete)
-}
-
-@Test func `private thread membership is required unless the viewer manages threads`() {
-    var thread = MessageThreadSummary(id: ChannelID(rawValue: 2), name: "private", isPrivate: true)
-    let userID = UserID(rawValue: 1)
-    let view = DiscordPermissionBits.viewChannel
-    #expect(!SidebarThreadPermissions(thread: thread, currentUserID: userID, permissions: view, isForum: false).canRead)
-    thread.notificationSettings = ThreadNotificationSettings()
-    #expect(SidebarThreadPermissions(thread: thread, currentUserID: userID, permissions: view, isForum: false).canRead)
-    thread.notificationSettings = nil
-    #expect(SidebarThreadPermissions(thread: thread, currentUserID: userID, permissions: view | DiscordPermissionBits.manageThreads, isForum: false).canRead)
-}

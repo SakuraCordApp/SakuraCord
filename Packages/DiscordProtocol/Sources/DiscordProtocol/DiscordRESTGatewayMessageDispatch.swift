@@ -206,7 +206,8 @@ extension DiscordRESTProvider {
             ?? cachedJoinedThreads[channelID]?.guildID
             ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread.guildID }.first
             ?? cachedChannels.values.lazy.flatMap(\.self).first { $0.id == channelID }?.guildID
-        guard let update = dto.domain(guildID: guildID) else { return }
+        guard var update = dto.domain(guildID: guildID) else { return }
+        attachKnownStartedThread(to: &update)
         if var message = cachedMessages[messageID] {
             update.apply(to: &message)
             cachedMessages[messageID] = message

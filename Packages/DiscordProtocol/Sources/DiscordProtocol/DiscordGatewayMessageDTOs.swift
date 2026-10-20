@@ -683,12 +683,14 @@ struct ForumThreadSearchResponseDTO: Decodable {
     fileprivate var firstMessages: [MessageDTO]
     fileprivate var mostRecentMessages: [MessageDTO]
     var hasMore: Bool?
+    var totalResults: Int?
 
     enum CodingKeys: String, CodingKey {
         case threads, members
         case firstMessages = "first_messages"
         case mostRecentMessages = "most_recent_messages"
         case hasMore = "has_more"
+        case totalResults = "total_results"
     }
 
     init(from decoder: any Decoder) throws {
@@ -709,6 +711,7 @@ struct ForumThreadSearchResponseDTO: Decodable {
                 LossyList<MessageDTO>.self, forKey: .mostRecentMessages
             )?.elements ?? []
         hasMore = try values.decodeIfPresent(Bool.self, forKey: .hasMore)
+        totalResults = try values.decodeIfPresent(Int.self, forKey: .totalResults)
     }
 
     func posts(fallbackGuildID: GuildID?) -> [ForumPost] {

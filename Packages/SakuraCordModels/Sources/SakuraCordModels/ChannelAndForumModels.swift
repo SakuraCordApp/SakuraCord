@@ -402,12 +402,55 @@ public struct ForumPostPage: Equatable, Sendable {
     public var posts: [ForumPost]
     public var hasMore: Bool
     public var nextOffset: Int?
+    /// Discord's `total_results` for the query, when reported.
+    public var totalResults: Int?
 
-    public init(posts: [ForumPost], hasMore: Bool, nextOffset: Int?) {
+    public init(posts: [ForumPost], hasMore: Bool, nextOffset: Int?, totalResults: Int? = nil) {
         self.posts = posts
         self.hasMore = hasMore
         self.nextOffset = nextOffset
+        self.totalResults = totalResults
     }
+}
+
+/// One thread-browser request for a text or announcement channel. Active
+/// threads come from local state; Discord serves archived pages and name search.
+public struct ThreadBrowserQuery: Hashable, Sendable {
+    public enum Scope: Hashable, Sendable {
+        /// Archived threads, newest activity first, from a raw-record offset.
+        case archived(offset: Int)
+        /// Active and archived threads whose names match, as one page.
+        case search(String)
+    }
+
+    public static let pageSize = 25
+
+    public var scope: Scope
+    public var selectedTagIDs: Set<ForumTagID>
+    public var tagMatch: ForumTagMatch
+
+    public init(
+        scope: Scope = .archived(offset: 0),
+        selectedTagIDs: Set<ForumTagID> = [],
+        tagMatch: ForumTagMatch = .matchSome
+    ) {
+        self.scope = scope
+        self.selectedTagIDs = selectedTagIDs
+        self.tagMatch = tagMatch
+    }
+}
+
+/// The surface that joins or leaves a thread, reported as Discord's
+/// `location` analytics value.
+public enum ThreadMembershipLocation: String, Hashable, Sendable {
+    /// Channel-list and forum-card context menus.
+    case contextMenu = "Context Menu"
+    /// The side-pane thread menu.
+    case sidePaneMenu = "Sidebar Overflow"
+    /// The full-view thread menu.
+    case fullViewMenu = "Toolbar Overflow"
+    /// The forum post header Follow toggle.
+    case forumToolbar = "Forum Toolbar"
 }
 
 public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
@@ -494,28 +537,54 @@ public struct CreateForumPostDraft: Equatable, Sendable {
     }
 }
 
-/// A thread started from a text or announcement channel without a starter
-/// message. Its first message is sent separately once Discord creates it.
+/// A thread started in a text or announcement channel, either on its own or
+/// from an existing message there. Its first message is sent separately once
+/// Discord creates it.
 public struct CreateThreadDraft: Equatable, Sendable {
     public var channelID: ChannelID
     public var name: String
     public var isPrivate: Bool
     public var autoArchiveDuration: Int
+    /// The parent-channel message the thread starts from. The thread takes
+    /// the message's ID; message threads are always public.
+    public var starterMessageID: MessageID?
 
     public init(
         channelID: ChannelID,
         name: String,
         isPrivate: Bool = false,
-        autoArchiveDuration: Int = 4_320
+        autoArchiveDuration: Int = 4_320,
+        starterMessageID: MessageID? = nil
     ) {
         self.channelID = channelID
         self.name = name
         self.isPrivate = isPrivate
         self.autoArchiveDuration = autoArchiveDuration
+        self.starterMessageID = starterMessageID
+    }
+
+    /// Starting from `message` with the parent's default inactivity period.
+    /// A blank name uses the first-party default derived from the message.
+    public static func startingFrom(
+        _ message: Message,
+        in parent: Channel,
+        name: String = ""
+    ) -> Self {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self(
+            channelID: parent.id,
+            name: trimmed.isEmpty ? ThreadNamePolicy.defaultName(for: message) : trimmed,
+            autoArchiveDuration: parent.defaultAutoArchiveDuration ?? 4_320,
+            starterMessageID: message.id
+        )
     }
 }
 
+/// One thread or forum-post change. Changes other than archiving first
+/// unarchive an archived thread, which stays open afterwards.
 public enum ForumPostMutation: Equatable, Sendable {
+    /// Renames the thread; see `ThreadNamePolicy`.
+    case name(String)
     case tags([ForumTagID])
     case archived(Bool)
     case locked(Bool)
