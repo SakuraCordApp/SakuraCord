@@ -8,6 +8,15 @@ struct SideConversationLabel: Equatable {
     let systemImage: String
 }
 
+/// Where the open thread's timeline is read, so moving it between the pane
+/// and full width reopens it at the same place.
+struct ThreadTimelinePosition {
+    /// The latest reading position the timeline reported.
+    var reading: MessageTimelineScrollRequest.Target?
+    /// The position a recreated timeline opens at instead of its default.
+    var restore: MessageTimelineScrollRequest.Target?
+}
+
 extension AppModel {
     // MARK: - Presentation
 
@@ -137,33 +146,49 @@ extension AppModel {
     /// workspace at full width. Any other side chat replaces the context and
     /// the thread above it. Kind-specific entry points prepare the store.
     func openSideConversation(_ conversation: SideConversation) {
-        closeThread()
-        if conversation.isThread {
-            if conversation.isFullWidth { discardSideConversationContext() }
-            sideConversations.thread = conversation
-        } else {
-            discardSideConversationContext()
-            sideConversations.context = conversation
+        func open() {
+            closeThread()
+            if conversation.isThread {
+                if conversation.isFullWidth { discardSideConversationContext() }
+                sideConversations.thread = conversation
+            } else {
+                discardSideConversationContext()
+                sideConversations.context = conversation
+            }
         }
+        // A thread opened straight into full width replaces the workspace,
+        // as navigation does; a pane slides in beside its conversation.
+        if conversation.isFullWidth { open() } else { WorkspaceLayoutMotion.perform(open) }
     }
 
     /// Moves the open pane thread into the primary column.
     func presentOpenThreadFullWidth() {
         guard let thread = openThread else { return }
-        discardSideConversationContext()
-        sideConversations.thread = .thread(thread, isFullWidth: true)
+        threadTimelinePosition.restore = threadTimelinePosition.reading
+        WorkspaceLayoutMotion.perform {
+            discardSideConversationContext()
+            sideConversations.thread = .thread(thread, isFullWidth: true)
+        }
         suspendSelectedConversationPresentation()
+    }
+
+    /// Shows or hides the member list beside the conversation.
+    func toggleMemberInspector() {
+        prepareInspectorProfileForPresentation()
+        WorkspaceLayoutMotion.perform { showInspector.toggle() }
     }
 
     /// Closes the side chat on top, as Escape and the pane's close button do.
     @discardableResult
     func closeSideConversation() -> Bool {
         if sideConversations.thread != nil {
-            dismissOpenThread()
+            // Leaving a full-width thread returns to its parent, as
+            // navigation does; a pane slides away beside its conversation.
+            if isThreadFullWidth { dismissOpenThread() } else { WorkspaceLayoutMotion.perform(dismissOpenThread) }
             return true
         }
         guard presentedSideConversationContext != nil else { return false }
-        closeSideConversations()
+        WorkspaceLayoutMotion.perform(closeSideConversations)
         return true
     }
 

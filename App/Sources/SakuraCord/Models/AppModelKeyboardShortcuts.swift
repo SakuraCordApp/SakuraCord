@@ -37,13 +37,7 @@ extension AppModel {
             if let channel = selectedChannel, channel.kind == .voice {
                 if isVoiceChatOpen { closeVoiceChat() } else { openVoiceChat(for: channel) }
             } else {
-                prepareInspectorProfileForPresentation()
-                withAnimation(
-                    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                        ? nil : .spring(ChatChromeMetrics.sidebarSpring)
-                ) {
-                    showInspector.toggle()
-                }
+                toggleMemberInspector()
             }
         default:
             performConversationNavigationShortcut(action)

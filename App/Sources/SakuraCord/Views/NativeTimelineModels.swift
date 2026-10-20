@@ -50,6 +50,9 @@ struct MessageTimelineScrollRequest: Equatable {
         case top
         case bottom
         case message(MessageID, anchor: UnitPoint)
+        /// A reading position: the message at the top of the viewport and
+        /// its offset from the viewport's top edge.
+        case readingPosition(MessageID, offsetFromViewportTop: CGFloat)
     }
 
     let id = UUID()

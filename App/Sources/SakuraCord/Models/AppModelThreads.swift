@@ -330,6 +330,7 @@ extension AppModel {
 
     func closeThread() {
         noteSideConversationChange()
+        threadTimelinePosition = ThreadTimelinePosition()
         threadVoiceMessageComposer.discard(playback: voiceMessagePlayback)
         threadCommandComposer.resetForChannelChange()
         if let threadID = openThread?.id {
@@ -408,7 +409,7 @@ extension AppModel {
 
     func closeVoiceChat() {
         guard isVoiceChatOpen else { return }
-        closeSideConversations()
+        WorkspaceLayoutMotion.perform(closeSideConversations)
     }
 
     func retryThreadLoad() {

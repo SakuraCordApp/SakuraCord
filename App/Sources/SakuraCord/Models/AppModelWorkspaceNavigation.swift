@@ -227,7 +227,7 @@ extension AppModel {
         messageSearch.requestTask = nil
         messageSearch.isSearching = false
         messageSearch.pollRefreshJournal = nil
-        messageSearch.isPresented = false
+        WorkspaceLayoutMotion.perform { messageSearch.isPresented = false }
         messageSearch.isInputFocused = false
     }
 
@@ -429,7 +429,7 @@ extension AppModel {
     private func presentMessageSearchResultsIfNeeded() {
         guard !messageSearch.isPresented else { return }
         AppPerformanceSignposts.beginMessageSearchOpen()
-        messageSearch.isPresented = true
+        WorkspaceLayoutMotion.perform { messageSearch.isPresented = true }
     }
 
     func submitMessageSearchInput() {

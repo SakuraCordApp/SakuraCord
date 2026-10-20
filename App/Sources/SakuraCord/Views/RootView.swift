@@ -777,13 +777,7 @@ private struct ChatRootView: View {
             ToolbarItem {
                 ZStack {
                     Button {
-                        model.prepareInspectorProfileForPresentation()
-                        withAnimation(
-                            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                                ? nil : .spring(ChatChromeMetrics.sidebarSpring)
-                        ) {
-                            model.showInspector.toggle()
-                        }
+                        model.toggleMemberInspector()
                     } label: {
                         inspectorToolbarLabel
                     }

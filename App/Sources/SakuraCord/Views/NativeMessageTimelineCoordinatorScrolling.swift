@@ -1272,6 +1272,9 @@ extension NativeMessageTimelineCoordinator {
 
         func liveScrollTrackingDidEnd() {
             liveScrollViewport = nil
+            // Scroll states compare reading positions by message only, so
+            // report the settled offset once the gesture ends.
+            defer { reportScrollState(force: true) }
             let interval = Self.performanceSignposter.beginInterval(
                 "TimelineLiveScrollEnd"
             )
@@ -1612,6 +1615,7 @@ extension NativeMessageTimelineCoordinator {
             }
             cancelGlide()
             scroll(toDocumentY: targetY, scrollView: scrollView)
+            reportScrollState(force: true)
             return true
         }
 
@@ -1642,6 +1646,13 @@ extension NativeMessageTimelineCoordinator {
                 let obscuredHeight = min(scrollView.scrollerInsets.top, viewportHeight)
                 proposedY = rowY - obscuredHeight
                     - (viewportHeight - obscuredHeight - rowHeight) * anchor.y
+            case let .readingPosition(messageID, offsetFromViewportTop):
+                guard let index = items.firstIndex(where: {
+                    $0.containsMessage(messageID)
+                }), rowOrigins.indices.contains(index)
+                else { return nil }
+                proposedY = contentOriginY(viewportHeight: viewportHeight)
+                    + rowOrigins[index] - offsetFromViewportTop
             }
             return clampedDocumentY(proposedY, scrollView: scrollView)
         }
@@ -1857,7 +1868,10 @@ extension NativeMessageTimelineCoordinator {
                         > materializedHistoryScrollBoundaryY(
                             .later,
                             viewportHeight: visibleRect.height
-                        ) + 0.5
+                        ) + 0.5,
+                readingMessage: canvas?.firstVisibleMessage(in: visibleRect).map {
+                    TimelineScrollState.ReadingMessage(id: $0.0, offsetFromViewportTop: $0.1)
+                }
             )
         }
 

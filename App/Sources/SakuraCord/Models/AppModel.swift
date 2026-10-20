@@ -210,6 +210,7 @@ final class AppModel {
     let inbox = InboxState()
     @ObservationIgnored var lastDirectMessageSelection: DirectMessageSidebarSelection?
     @ObservationIgnored var lastOpenedChannelIDsByGuild: [GuildID: ChannelID] = [:]
+    @ObservationIgnored var threadTimelinePosition = ThreadTimelinePosition()
     @ObservationIgnored var messages: [Message] = []
     @ObservationIgnored var messageRows: [MessageRowPresentation] = []
     @ObservationIgnored var messageRowsRevision: UInt64 = 0
@@ -1018,8 +1019,7 @@ final class AppModel {
     @ObservationIgnored var batchedSelectedMessages: [Message] = []
     @ObservationIgnored var batchedSelectedTextPlansByID:
         [MessageID: NativeTimelineTextPlan] = [:]
-    @ObservationIgnored var batchedUnreadPresentationNeedsRefresh =
-        false
+    @ObservationIgnored var batchedUnreadPresentationNeedsRefresh = false
     @ObservationIgnored var hasDeferredUnreadPresentationRefresh = false
     @ObservationIgnored var unreadPresentationRefreshTask: Task<Void, Never>?
     @ObservationIgnored var unreadPresentationPreparationTask: Task<Void, Never>?

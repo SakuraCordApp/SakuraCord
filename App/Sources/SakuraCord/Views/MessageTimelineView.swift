@@ -657,6 +657,28 @@ nonisolated struct TimelineScrollState: Equatable, Sendable {
     let hasReachedNewestMessageBoundary: Bool
     let isInProvisionalHistory: Bool
     let isInProvisionalLaterHistory: Bool
+    /// Where the reader is: the message at the viewport's top and its
+    /// offset from the viewport's top edge.
+    let readingMessage: ReadingMessage?
+
+    struct ReadingMessage: Equatable, Sendable {
+        let id: MessageID
+        let offsetFromViewportTop: CGFloat
+    }
+
+    /// Ignores the reading offset, which changes on every scrolled frame;
+    /// the timeline reports it again when a scroll gesture settles.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.isNearTop == rhs.isNearTop
+            && lhs.isNearBottom == rhs.isNearBottom
+            && lhs.isNearLoadedBottom == rhs.isNearLoadedBottom
+            && lhs.contentFitsViewport == rhs.contentFitsViewport
+            && lhs.hasEstablishedInitialPosition == rhs.hasEstablishedInitialPosition
+            && lhs.hasReachedNewestMessageBoundary == rhs.hasReachedNewestMessageBoundary
+            && lhs.isInProvisionalHistory == rhs.isInProvisionalHistory
+            && lhs.isInProvisionalLaterHistory == rhs.isInProvisionalLaterHistory
+            && lhs.readingMessage?.id == rhs.readingMessage?.id
+    }
 
     init(
         isNearTop: Bool,
@@ -666,7 +688,8 @@ nonisolated struct TimelineScrollState: Equatable, Sendable {
         hasEstablishedInitialPosition: Bool = false,
         hasReachedNewestMessageBoundary: Bool = false,
         isInProvisionalHistory: Bool = false,
-        isInProvisionalLaterHistory: Bool = false
+        isInProvisionalLaterHistory: Bool = false,
+        readingMessage: ReadingMessage? = nil
     ) {
         self.isNearTop = isNearTop
         self.isNearBottom = isNearBottom
@@ -679,6 +702,7 @@ nonisolated struct TimelineScrollState: Equatable, Sendable {
         self.isInProvisionalHistory = isInProvisionalHistory
         self.isInProvisionalLaterHistory =
             isInProvisionalLaterHistory
+        self.readingMessage = readingMessage
     }
 
 }

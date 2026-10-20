@@ -2,7 +2,6 @@ import SakuraCordModels
 import SwiftUI
 
 struct ChatWorkspaceView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: AppModel
     @Binding var presentsForumComposer: Bool
     let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
@@ -56,6 +55,8 @@ struct ChatWorkspaceView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if let conversation = presentation.paneSideConversation {
                 SideConversationView(model: model, conversation: conversation)
+                    .id(conversation.motionIdentity)
+                    .transition(.move(edge: .trailing))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,11 +82,13 @@ struct ChatWorkspaceView: View {
                     pane: pane,
                     toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
                 )
+                // Swapping what the column shows slides the old content out
+                // and the new content in, as opening and closing do.
+                .id(pane.motionIdentity)
                 .transition(.move(edge: .trailing))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(reduceMotion ? nil : .spring(ChatChromeMetrics.sidebarSpring), value: model.showInspector)
         .onChange(of: model.selectedChannelID) { _, channelID in
             guard let channelID else {
                 AppPerformanceSignposts.cancelConversationNavigation()
@@ -259,6 +262,29 @@ private struct DirectMessageProfileInspector: View {
             if model.inspectorProfilePresentation?.member.id != recipient.id {
                 model.showInspectorProfile(for: recipient)
             }
+        }
+    }
+}
+
+private extension SupplementaryPane {
+    /// Which content the trailing column shows, ignoring changes to it.
+    var motionIdentity: String {
+        switch self {
+        case .sideConversation(let conversation): "side-\(conversation.motionIdentity)"
+        case .memberInspector: "members"
+        case .messageSearch: "search"
+        }
+    }
+}
+
+private extension SideConversation {
+    var motionIdentity: String {
+        switch self {
+        case .thread(let thread, _): "thread-\(thread.id)"
+        case .threadCreation: "thread-creation"
+        case .voiceChat(let channelID): "voice-\(channelID)"
+        case .guideResource(_, let channelID): "resource-\(channelID)"
+        case .channelPreview(let channelID, _): "preview-\(channelID)"
         }
     }
 }
