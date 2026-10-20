@@ -118,6 +118,12 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
     var cachedJoinedThreadOrder: [ChannelID] = []
+    /// Advanced by each authoritative thread record or deletion; a REST
+    /// result is applied only when no newer record arrived meanwhile.
+    var threadRecordRevisions: [ChannelID: UInt64] = [:]
+    /// Advanced by authoritative membership changes; a REST result carries
+    /// membership only when none arrived meanwhile.
+    var threadMembershipRevisions: [ChannelID: UInt64] = [:]
     var cachedGuildNotificationSettings: [GuildID?: GuildNotificationSettings] = [:]
     var forumCatalogueTasks: [ForumCatalogueLoadKey: Task<Void, Never>] = [:]
     var forumCatalogueTaskIDs: [ForumCatalogueLoadKey: UUID] = [:]

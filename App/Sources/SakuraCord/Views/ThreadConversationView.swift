@@ -67,8 +67,14 @@ struct ThreadConversationView: View {
 
     @ViewBuilder private var conversation: some View {
         if let thread = model.openThread {
-                if model.openThreadAccess == .hidden {
-                    ThreadUnavailableView()
+                if model.withholdsOpenThreadContent {
+                    if model.openThreadResolution == .failed {
+                        ThreadUnavailableView(retry: model.retryOpenThreadResolution)
+                    } else if model.openThreadAccess == .hidden {
+                        ThreadUnavailableView()
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else {
                     ThreadMessageTimelineView(
                         model: model,
@@ -368,12 +374,18 @@ private struct ThreadStateBanner: View {
 }
 
 private struct ThreadUnavailableView: View {
+    var retry: (() -> Void)?
+
     var body: some View {
-        ContentUnavailableView(
-            "Thread unavailable",
-            systemImage: "lock.fill",
-            description: Text("You cannot view messages in this thread.")
-        )
+        ContentUnavailableView {
+            Label("Thread unavailable", systemImage: "lock.fill")
+        } description: {
+            Text("You cannot view messages in this thread.")
+        } actions: {
+            if let retry {
+                Button("Try Again", action: retry)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

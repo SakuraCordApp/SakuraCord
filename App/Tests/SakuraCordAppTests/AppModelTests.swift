@@ -1604,7 +1604,7 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 }
 
 @MainActor
-@Test func `remote forum deletion closes the open post`() async throws {
+@Test func `forum catalogue omissions keep the open post open and listed`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -1615,15 +1615,46 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
     let post = try #require(model.forumPosts.first)
     model.open(post)
     #expect(model.openThread?.id == post.id)
+    let synced = ForumPost(thread: MessageThreadSummary(
+        id: ChannelID(rawValue: 999_003), guildID: forum.guildID, parentID: forum.id, name: "Synced post"
+    ))
 
+    // Omission from a catalogue is not deletion; only THREAD_DELETE closes it.
     await provider.emit(
         .forumPostsChanged(
             channelID: forum.id,
-            posts: model.forumPosts.filter { $0.id != post.id }
+            posts: model.forumPosts.filter { $0.id != post.id } + [synced]
         )
     )
 
-    #expect(await until { model.openThread == nil })
+    #expect(await until { model.forumPosts.contains { $0.id == synced.id } })
+    #expect(model.openThread?.id == post.id)
+    #expect(model.forumPosts.contains { $0.id == post.id })
+}
+
+@MainActor
+@Test func `inbox navigation resolves a thread no local projection knows`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    let otherChannel = try #require(model.snapshot?.channels.first {
+        $0.guildID == forum.guildID && $0.kind == .text
+    })
+    let page = try await provider.forumPosts(in: forum.id, query: ForumPostQuery(limit: 100))
+    let post = try #require(page.posts.first { $0.firstMessage != nil })
+    var message = try #require(post.firstMessage)
+    message.guildID = forum.guildID
+    model.selectedChannelID = otherChannel.id
+    // The background inbox metadata lookup has not completed.
+    model.snapshot?.threads.removeAll { $0.id == post.id }
+    model.snapshot?.activeJoinedThreads.removeAll { $0.id == post.id }
+    model.inbox.threads = [:]
+
+    model.navigateToInboxResult(message)
+
+    #expect(await until { model.selectedChannelID == forum.id && model.openThread?.id == post.id })
+    #expect(model.errorMessage == nil)
 }
 
 @MainActor
@@ -1674,6 +1705,185 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
     await Task.yield()
 
     #expect(model.openThread?.id == thread.id)
+}
+
+@MainActor
+@Test(arguments: [false, true])
+func `an open private thread a fresh READY omits is withheld from viewing until resolved`(
+    recoversThroughGateway: Bool
+) async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let snapshot = try #require(model.snapshot)
+    let guildID = try #require(model.selectedGuildID)
+    let channel = try #require(snapshot.channels.first { $0.kind == .text && $0.guildID == guildID })
+    let forum = try #require(snapshot.channels.first { $0.kind == .forum && $0.guildID == guildID })
+    // The Gateway case uses a thread the provider cannot look up; the other a
+    // thread its lookup resolves.
+    let resolvable = try #require(
+        try await provider.forumPosts(in: forum.id, query: ForumPostQuery(limit: 100)).posts.first
+    )
+    model.selectedChannelID = channel.id
+    var thread = MessageThreadSummary(
+        id: recoversThroughGateway ? ChannelID(rawValue: 999_005) : resolvable.id,
+        guildID: guildID, parentID: channel.id, name: "Private thread",
+        notificationSettings: ThreadNotificationSettings(), isPrivate: true
+    )
+    model.open(thread)
+    let author = try #require(model.currentUser)
+    let reply = Message(id: MessageID(rawValue: 999_006), channelID: thread.id, author: author, content: "Reply")
+    model.threadDraft = "Unsent draft"
+    model.threadReplyingTo = reply
+    let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
+    defer { ComposerPromisedFileStorage.removeDirectory(directory) }
+    let file = directory.appendingPathComponent("note.txt")
+    try Data("fixture".utf8).write(to: file)
+    #expect(await model.addPromisedComposerAttachments(
+        ComposerPromisedFileBatch(directory: directory, urls: [file]), to: .thread
+    ))
+    // An already-positioned thread at its read boundary in an active window.
+    _ = model.readState.updatePresentation(
+        channelID: thread.id, isPresented: true, initialHistoryLoaded: true,
+        initialPositionEstablished: true, windowIsActive: true, hasReachedReadBoundary: true
+    )
+    #expect(model.isConversationPresented(thread.id))
+    let newestMessageID = resolvable.firstMessage?.id
+    if !recoversThroughGateway {
+        // Its loaded window misses a message sent while disconnected, although
+        // a history boundary is cached.
+        #expect(await until { model.hasCompletedInitialThreadLoad })
+        model.threadMessages = []
+        #expect(model.hasMoreCache[thread.id] != nil)
+    }
+
+    await provider.emit(.snapshotChanged(snapshot))
+
+    #expect(await until { model.withholdsOpenThreadContent || model.openThread?.isPrivate == false })
+    if recoversThroughGateway {
+        #expect(!model.isConversationPresented(thread.id))
+        #expect(!model.readState.canAcknowledge(thread.id))
+        // The provider cannot resolve this thread: a terminal state, not a spinner.
+        #expect(await until { model.openThreadResolution == .failed })
+        #expect(model.openThreadAccess == .hidden)
+        // A Gateway record carrying the current user's member resolves it.
+        thread.name = "Private thread renamed"
+        await provider.emit(.forumPostsChanged(channelID: channel.id, posts: [ForumPost(thread: thread)]))
+        #expect(await until { model.openThreadResolution == nil && model.openThread?.name == thread.name })
+    } else {
+        #expect(await until { model.openThreadResolution == nil && model.openThread?.isPrivate == false })
+        // Resolution fetched the newest page despite the cached boundary.
+        #expect(await until { model.threadMessages.contains { $0.id == newestMessageID } })
+    }
+    // Resolved in place: the composer keeps its work, and the recreated
+    // timeline must establish its position before acknowledging.
+    #expect(!model.withholdsOpenThreadContent)
+    #expect(model.isConversationPresented(thread.id))
+    #expect(model.readState.presentations[thread.id]?.initialPositionEstablished == false)
+    #expect(model.threadDraft == "Unsent draft")
+    #expect(model.threadReplyingTo?.id == reply.id)
+    #expect(model.composerAttachments(for: .thread).count == 1)
+}
+
+@MainActor
+@Test func `reopening a private thread without membership evidence resolves its access again`() async throws {
+    let provider = ThreadAccessRecoveryTestProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let thread = provider.memberlessThread
+
+    // The first resolution fails, and the provider holds only a member-less
+    // record, as after a metadata-only THREAD_UPDATE.
+    model.open(thread)
+    #expect(await until { model.openThreadResolution == .failed })
+    model.dismissOpenThread()
+    #expect(model.openThread == nil)
+
+    model.navigate(to: thread.guildID, linkedChannelID: thread.id)
+
+    #expect(await until {
+        model.openThread?.id == thread.id && model.openThreadResolution == nil
+            && model.openThread?.notificationSettings != nil
+    })
+    #expect(await provider.accessResolutionCount() == 2)
+}
+
+@MainActor
+@Test func `directly opening another post retires a pending link navigation`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    let posts = try await provider.forumPosts(in: forum.id, query: ForumPostQuery(limit: 100)).posts
+    let linked = try #require(posts.first { $0.firstMessage != nil })
+    let other = try #require(posts.first { $0.id != linked.id })
+    let messageID = try #require(linked.firstMessage?.id)
+    let target = ConversationNavigationTarget.message(linked.id, messageID, fullWidthThread: false)
+
+    // No navigation task runs before this test suspends, so the link is pending.
+    model.navigate(to: forum.guildID, linkedChannelID: linked.id, messageID: messageID)
+    #expect(model.isNavigating(to: target))
+    model.open(other)
+    #expect(!model.isNavigating(to: target))
+    #expect(model.openThread?.id == other.id)
+
+    model.navigate(to: forum.guildID, linkedChannelID: linked.id, messageID: messageID)
+
+    #expect(await until { model.openThread?.id == linked.id })
+}
+
+@MainActor
+@Test func `creating a thread makes a repeated pending link a new navigation`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let guildID = try #require(model.selectedGuildID)
+    let channel = try #require(model.snapshot?.channels.first { $0.kind == .text && $0.guildID == guildID })
+    let forum = try #require(model.snapshot?.channels.first { $0.kind == .forum && $0.guildID == guildID })
+    let linked = try #require(
+        try await provider.forumPosts(in: forum.id, query: ForumPostQuery(limit: 100)).posts
+            .first { $0.firstMessage != nil }
+    )
+    let messageID = try #require(linked.firstMessage?.id)
+    let target = ConversationNavigationTarget.message(linked.id, messageID, fullWidthThread: false)
+    model.selectedChannelID = channel.id
+    var creatable = try #require(model.selectedChannel)
+    let user = try #require(model.currentUser)
+    creatable.permissionOverwrites = [ChannelPermissionOverwrite(
+        id: user.id.description, type: 1, allow: DiscordPermissionBits.createPublicThreads
+    )]
+    model.selectedChannel = creatable
+
+    // No navigation task runs before this test suspends, so the link is pending.
+    model.navigate(to: guildID, linkedChannelID: linked.id, messageID: messageID)
+    #expect(model.isNavigating(to: target))
+    model.beginThreadCreation()
+    #expect(model.threadCreation != nil)
+    #expect(!model.isNavigating(to: target))
+
+    model.navigate(to: guildID, linkedChannelID: linked.id, messageID: messageID)
+
+    #expect(await until { model.openThread?.id == linked.id })
+}
+
+@MainActor
+@Test func `deleting a guild's last channel clears its selection and open thread`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let guildID = try #require(model.selectedGuildID)
+    let channel = try #require(model.snapshot?.channels.first {
+        $0.kind == .text && $0.guildID == guildID
+    })
+    model.selectedChannelID = channel.id
+    model.open(MessageThreadSummary(
+        id: ChannelID(rawValue: 999_004), guildID: channel.guildID, parentID: channel.id, name: "Thread"
+    ))
+
+    // An authoritative empty list is removal, unlike a guild not yet loaded.
+    await provider.emit(.channelsChanged(guildID: channel.guildID, channels: []))
+
+    #expect(await until { model.selectedChannelID == nil && model.openThread == nil })
 }
 
 @MainActor
@@ -7095,6 +7305,73 @@ private actor ForumPaginationTestProvider: ChatProvider {
     func paginationRequestCount() -> Int {
         paginationRequests
     }
+}
+
+/// Holds a private thread's member-less record; access resolution fails once
+/// and then reports the current user's membership.
+private actor ThreadAccessRecoveryTestProvider: ChatProvider {
+    private let guild = Guild(id: GuildID(rawValue: 95_000), name: "Threads")
+    private let user = User(id: UserID(rawValue: 95_200), username: "member", displayName: "Member")
+    private let channel = Channel(
+        id: ChannelID(rawValue: 95_001), guildID: GuildID(rawValue: 95_000), name: "general"
+    )
+    nonisolated let memberlessThread = MessageThreadSummary(
+        id: ChannelID(rawValue: 95_010), guildID: GuildID(rawValue: 95_000),
+        parentID: ChannelID(rawValue: 95_001), name: "Private thread", isPrivate: true
+    )
+    private var accessResolutions = 0
+
+    func bootstrap() async throws -> BootstrapSnapshot {
+        BootstrapSnapshot(currentUser: user, guilds: [guild], channels: [channel], members: [])
+    }
+
+    func channels(in guildID: GuildID?) async throws -> [Channel] {
+        guildID == guild.id ? [channel] : []
+    }
+
+    func members(in guildID: GuildID?) async throws -> [Member] { [] }
+
+    func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
+        throw ChatProviderError.invalidRequest("Profiles are not part of this test.")
+    }
+
+    func currentStatus() async -> PresenceStatus { .online }
+
+    func updateStatus(_ status: PresenceStatus) async throws {}
+
+    func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage {
+        MessagePage(messages: [], hasMoreBefore: false)
+    }
+
+    func forumPost(threadID: ChannelID) async throws -> ForumPost {
+        ForumPost(thread: memberlessThread)
+    }
+
+    func resolveThreadAccess(threadID: ChannelID) async throws -> ForumPost {
+        accessResolutions += 1
+        guard accessResolutions > 1 else { throw ChatProviderError.transport(status: 503, requestID: nil) }
+        var thread = memberlessThread
+        thread.notificationSettings = ThreadNotificationSettings()
+        return ForumPost(thread: thread)
+    }
+
+    func accessResolutionCount() -> Int { accessResolutions }
+
+    func send(_ draft: SendMessageDraft) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Sending is not part of this test.")
+    }
+
+    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+        throw ChatProviderError.invalidRequest("Editing is not part of this test.")
+    }
+
+    func delete(messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
+
+    func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }
+
+    func disconnect() async {}
 }
 
 private actor LinkedChannelNavigationTestProvider: ChatProvider {

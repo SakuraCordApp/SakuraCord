@@ -2,16 +2,37 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
+nonisolated enum OpenThreadResolution: Equatable, Sendable {
+    case pending(UUID)
+    /// Terminal until the user retries or authoritative membership arrives.
+    case failed
+}
+
 extension AppModel {
+    /// The selected channel is the parent's live projection: a guild channel
+    /// update that removes it also clears the selection and closes the thread.
     var openThreadParentChannel: Channel? {
         guard let parentID = openThread?.parentID else { return nil }
-        if let selectedChannel, selectedChannel.id == parentID { return selectedChannel }
+        if let selectedChannel, selectedChannelID == parentID, selectedChannel.id == parentID {
+            return selectedChannel
+        }
         return messagePresentationChannelsByID[parentID]
             ?? visibleChannels.first { $0.id == parentID }
     }
 
     var openThreadAccess: ConversationAccess {
-        guard let thread = openThread, let channel = openThreadParentChannel else { return .checking }
+        guard let thread = openThread else { return .checking }
+        switch openThreadResolution {
+        case .pending: return .checking
+        case .failed: return .hidden
+        case nil: break
+        }
+        guard let channel = openThreadParentChannel else {
+            // Once the thread's guild has a channel list, a parent missing from
+            // it is gone or not visible; only an unloaded list is pending.
+            let hasChannelList = snapshot?.channels.contains { $0.guildID == thread.guildID } == true
+            return hasChannelList ? .hidden : .checking
+        }
         guard let guildID = channel.guildID else { return .readable(canSend: true) }
         if thread.isPrivate, thread.notificationSettings == nil {
             guard let permissions = effectiveMessagePermissions(in: channel) else { return .checking }
@@ -27,8 +48,17 @@ extension AppModel {
         return access
     }
 
+    /// Messages, including cached ones, stay hidden while access is unknown
+    /// or denied. Hidden content is not presented for read acknowledgements.
+    var withholdsOpenThreadContent: Bool {
+        openThread != nil && (openThreadResolution != nil || openThreadAccess == .hidden)
+    }
+
+    /// Directly opening another conversation supersedes any navigation in
+    /// flight; navigation opens threads through `openThreadConversation`.
     func open(_ thread: MessageThreadSummary) {
         guard openThread?.id != thread.id else { return }
+        cancelConversationNavigation()
         let starter = messages.first { $0.thread?.id == thread.id }
         openThreadConversation(
             thread,
@@ -41,6 +71,7 @@ extension AppModel {
 
     func open(_ post: ForumPost) {
         guard openThread?.id != post.id else { return }
+        cancelConversationNavigation()
         readState.merge(forumPost: post)
         openThreadConversation(
             post.thread,
@@ -102,6 +133,97 @@ extension AppModel {
         clearComposerAttachments(for: .thread)
         translation.resetDraft(.thread)
         hasMoreThreadMessages = cachedBoundary ?? false
+        if openThreadNeedsAccessResolution(thread) {
+            beginOpenThreadResolution()
+        }
+        beginInitialThreadLoad(thread)
+    }
+
+    /// Without Manage Threads a private thread is readable only to members, so
+    /// a record without membership evidence, such as one built from a
+    /// member-less Gateway update, must be resolved before it is shown. Public
+    /// threads follow their parent's permissions and stay cache-first.
+    private func openThreadNeedsAccessResolution(_ thread: MessageThreadSummary) -> Bool {
+        guard thread.isPrivate, thread.notificationSettings == nil else { return false }
+        guard let parent = openThreadParentChannel,
+              let permissions = effectiveMessagePermissions(in: parent)
+        else { return true }
+        return permissions & DiscordPermissionBits.manageThreads == 0
+    }
+
+    /// The user closing the thread retires a navigation still heading to it.
+    func dismissOpenThread() {
+        if let threadID = openThread?.id {
+            switch conversationNavigationTarget?.target {
+            case .thread(threadID, _), .message(threadID, _, _):
+                cancelConversationNavigation()
+            default:
+                break
+            }
+        }
+        closeThread()
+    }
+
+    /// A fresh READY lists only joined active threads and the provider drops
+    /// retained private ones, whose access follows membership. The open
+    /// private thread READY did not list is withheld, and stops counting as
+    /// viewed, while one provider lookup resolves it again. Success reopens it
+    /// from the fresh record; failure is terminal until the user retries.
+    func beginOpenThreadResolution() {
+        guard let thread = openThread else { return }
+        let token = UUID()
+        openThreadResolution = .pending(token)
+        _ = readState.updatePresentation(
+            channelID: thread.id,
+            isPresented: false,
+            initialPositionEstablished: false,
+            hasReachedReadBoundary: false
+        )
+        openThreadResolutionTask?.cancel()
+        openThreadResolutionTask = startAccountChildTask(account: accountSession()) { model, account in
+            do {
+                let post = try await account.provider.resolveThreadAccess(threadID: thread.id)
+                guard !Task.isCancelled, model.openThreadResolution == .pending(token) else { return }
+                model.presentResolvedOpenThread(post.thread)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled,
+                      model.isCurrentAccountSession(account),
+                      model.openThreadResolution == .pending(token)
+                else { return }
+                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+                model.openThreadResolution = .failed
+            }
+        }
+    }
+
+    func retryOpenThreadResolution() {
+        guard openThreadResolution == .failed else { return }
+        beginOpenThreadResolution()
+    }
+
+    /// Resolves the same open instance in place: the composer's draft, reply,
+    /// attachments and pending composition stay. The timeline is recreated
+    /// when withholding ends, so it must establish its position again before
+    /// anything is acknowledged, and its newest page is refreshed.
+    func presentResolvedOpenThread(_ thread: MessageThreadSummary) {
+        guard openThread?.id == thread.id else { return }
+        openThreadResolutionTask?.cancel()
+        openThreadResolutionTask = nil
+        openThreadResolution = nil
+        openThread = thread
+        _ = readState.updatePresentation(
+            channelID: thread.id,
+            isPresented: isConversationPresented(thread.id),
+            initialPositionEstablished: false,
+            windowIsActive: mainWindowIsActive,
+            hasReachedReadBoundary: false
+        )
+        // Messages sent while access was unknown, for example while
+        // disconnected, are missing from the loaded window. Fetch the newest
+        // page even when a boundary is cached; it reconciles with that window.
+        hasMoreCache[thread.id] = nil
         beginInitialThreadLoad(thread)
     }
 
@@ -266,6 +388,7 @@ extension AppModel {
     }
 
     func closeThread() {
+        noteSideConversationChange()
         threadVoiceMessageComposer.discard(playback: voiceMessagePlayback)
         threadCommandComposer.resetForChannelChange()
         if let threadID = openThread?.id {
@@ -286,6 +409,9 @@ extension AppModel {
         }
         threadLoadTask?.cancel()
         threadLoadTask = nil
+        openThreadResolutionTask?.cancel()
+        openThreadResolutionTask = nil
+        openThreadResolution = nil
         openThread = nil
         isThreadFullWidth = false
         threadCreation = nil
@@ -605,7 +731,13 @@ extension AppModel {
     /// message; its latest-message preview mirrors the provider's catalogue.
     func refreshTimelineThreadCards(parentID: ChannelID, posts: [ForumPost], replacesAll: Bool = true) {
         if let updated = posts.first(where: { $0.id == openThread?.id }) {
-            openThread = updated.thread
+            if openThreadResolution != nil, updated.thread.notificationSettings != nil {
+                // A Gateway record carrying the current user's member settles
+                // access before, or instead of, the pending lookup.
+                presentResolvedOpenThread(updated.thread)
+            } else {
+                openThread = updated.thread
+            }
         }
         var changedPreviewThreadIDs = Set<ChannelID>()
         if replacesAll {

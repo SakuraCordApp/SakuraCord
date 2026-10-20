@@ -197,15 +197,24 @@ extension AppModel {
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
         onboarding.presentedGuildID = nil
-        startConversationNavigation(to: historyDestination) { model, account in
+        let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
+        if historyDestination == nil, isNavigating(to: target) { return }
+        startConversationNavigation(target: target, to: historyDestination) { model, account in
             let guildID = thread.guildID ?? model.selectedGuildID
             if model.selectedGuildID != guildID {
                 await model.activateGuild(guildID, account: account)
             }
-            guard !Task.isCancelled, model.isCurrentAccountSession(account),
-                  let parentID = thread.parentID,
-                  let parent = model.snapshot?.channels.first(where: { $0.id == parentID }),
-                  model.conversationAccess(for: parent).isReadable else { return }
+            guard !Task.isCancelled, model.isCurrentAccountSession(account) else { return }
+            guard let parentID = thread.parentID,
+                  let parent = model.knownRootChannel(parentID)
+            else {
+                model.errorMessage = "That thread's parent channel has not been discovered yet."
+                return
+            }
+            guard model.conversationAccess(for: parent) != .hidden else {
+                model.errorMessage = "You do not have permission to view that thread."
+                return
+            }
             model.onboarding.presentedGuildID = nil
             if model.selectedChannelID != parentID { model.selectedChannelID = parentID }
             // Establish presentation before loading history so the hidden parent

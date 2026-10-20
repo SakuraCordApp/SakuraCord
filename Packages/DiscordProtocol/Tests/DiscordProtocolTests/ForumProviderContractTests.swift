@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import SakuraCordModels
 import Testing
 @testable import DiscordProtocol
@@ -712,21 +713,354 @@ struct ThreadCreationContractTests {
     #expect(response.posts(fallbackGuildID: GuildID(rawValue: 1)).first?.thread.name == "Valid post")
 }
 
-@Test func `thread list replacement retains locked forum posts`() {
-    let locked = ForumPost(
-        thread: MessageThreadSummary(
-            id: ChannelID(rawValue: 100),
-            guildID: GuildID(rawValue: 1),
-            parentID: ChannelID(rawValue: 2),
-            name: "Locked",
-            isLocked: true
-        )
-    )
-    var open = locked
-    open.thread.isLocked = false
+private func retentionThreadPayload(
+    _ id: String, parentID: String = "7", member: JSONValue? = nil
+) -> JSONValue {
+    var thread: [String: JSONValue] = [
+        "id": .string(id), "guild_id": .string("1"), "parent_id": .string(parentID),
+        "name": .string("Thread \(id)"), "type": .number(11),
+        "thread_metadata": .object(["archived": .bool(false), "locked": .bool(false)]),
+    ]
+    if let member { thread["member"] = member }
+    return .object(thread)
+}
 
-    #expect(DiscordRESTProvider.shouldPreserveForumPostDuringThreadListReplacement(locked))
-    #expect(!DiscordRESTProvider.shouldPreserveForumPostDuringThreadListReplacement(open))
+private func retentionPost(
+    _ id: UInt64, parentID: UInt64 = 7, isArchived: Bool = false, isPrivate: Bool = false
+) -> ForumPost {
+    ForumPost(thread: MessageThreadSummary(
+        id: ChannelID(rawValue: id), guildID: GuildID(rawValue: 1),
+        parentID: ChannelID(rawValue: parentID), name: "Post \(id)",
+        isArchived: isArchived, notificationSettings: ThreadNotificationSettings(),
+        isPrivate: isPrivate
+    ))
+}
+
+/// The desktop op-37 THREAD_LIST_SYNC lists every viewable active thread
+/// without `channel_ids` or members. Every official thread store only merges it.
+@Test func `thread list sync adds threads without evicting omitted posts or memberships`() async throws {
+    let provider = DiscordRESTProvider(
+        credentials: ForumPostDeletionCredentialStore(),
+        handle: CredentialHandle(accountID: "forum-thread-retention")
+    )
+    let forum = Channel(
+        id: ChannelID(rawValue: 7), guildID: GuildID(rawValue: 1), name: "forum", kind: .forum
+    )
+    // A later archived catalogue page and an active post resolved by Get Channel.
+    await provider.seedForumChannelForTesting(
+        forum,
+        posts: [retentionPost(500, isArchived: true), retentionPost(510)],
+        currentUser: User(id: UserID(rawValue: 9), username: "tester", displayName: "Tester")
+    )
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_MEMBER_UPDATE",
+        data: .object(["id": .string("510"), "flags": .number(0), "muted": .bool(false)])
+    )
+    let joinedMember: JSONValue = .object(["flags": .number(0), "muted": .bool(false)])
+    for id in ["520", "530"] {
+        await provider.receiveGatewayDispatchForTesting(
+            name: "THREAD_CREATE", data: retentionThreadPayload(id, member: joinedMember)
+        )
+    }
+    #expect(Set(await provider.activeJoinedThreadsForTesting().map(\.id)) == [
+        ChannelID(rawValue: 510), ChannelID(rawValue: 520), ChannelID(rawValue: 530),
+    ])
+
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_LIST_SYNC",
+        data: .object([
+            "guild_id": .string("1"),
+            "threads": .array([retentionThreadPayload("520"), retentionThreadPayload("540")]),
+            "most_recent_messages": .array([]),
+        ])
+    )
+    // A channel-scoped sync is equally additive for the channels it names.
+    await provider.receiveGatewayDispatchForTesting(
+        name: "THREAD_LIST_SYNC",
+        data: .object([
+            "guild_id": .string("1"),
+            "channel_ids": .array([.string("7")]),
+            "threads": .array([retentionThreadPayload("540")]),
+        ])
+    )
+
+    for id: UInt64 in [500, 510, 520, 530, 540] {
+        #expect(await provider.cachedForumPostForTesting(threadID: ChannelID(rawValue: id)) != nil)
+    }
+    // A member-less listing is not leaving, and an unjoined listing is not joining.
+    #expect(Set(await provider.activeJoinedThreadsForTesting().map(\.id)) == [
+        ChannelID(rawValue: 510), ChannelID(rawValue: 520), ChannelID(rawValue: 530),
+    ])
+    await provider.disconnect()
+}
+
+private func retentionReadyPayload() -> JSONValue {
+    .object([
+        "user": .object(["id": .string("9"), "username": .string("tester")]),
+        "guilds": .array([.object([
+            "id": .string("1"), "name": .string("Guild"),
+            "channels": .array([
+                .object(["id": .string("7"), "type": .number(15), "name": .string("forum")]),
+            ]),
+        ])]),
+    ])
+}
+
+@Test func `fresh ready retains public REST known posts while their parent is listed`() async throws {
+    let provider = DiscordRESTProvider(
+        credentials: ForumPostDeletionCredentialStore(),
+        handle: CredentialHandle(accountID: "forum-ready-retention")
+    )
+    await provider.seedForumChannelForTesting(
+        Channel(id: ChannelID(rawValue: 7), guildID: GuildID(rawValue: 1), name: "forum", kind: .forum),
+        posts: [
+            retentionPost(500, isArchived: true), retentionPost(510),
+            retentionPost(520, isArchived: true, isPrivate: true),
+        ]
+    )
+    await provider.seedForumChannelForTesting(
+        Channel(id: ChannelID(rawValue: 8), guildID: GuildID(rawValue: 1), name: "removed", kind: .forum),
+        posts: [retentionPost(600, parentID: 8)]
+    )
+
+    await provider.receiveGatewayDispatchForTesting(name: "READY", data: retentionReadyPayload())
+
+    // READY lists only joined active threads; a public thread's content follows
+    // its parent, so it is kept, but its membership is no longer evidence.
+    for id: UInt64 in [500, 510] {
+        let retained = await provider.cachedForumPostForTesting(threadID: ChannelID(rawValue: id))
+        #expect(retained != nil && retained?.thread.notificationSettings == nil)
+    }
+    // A private thread's access follows membership READY cannot settle.
+    #expect(await provider.cachedForumPostForTesting(threadID: ChannelID(rawValue: 520)) == nil)
+    #expect(await provider.cachedForumPostForTesting(threadID: ChannelID(rawValue: 600)) == nil)
+    await provider.disconnect()
+}
+
+/// Each case holds the Get Channel response, produced while the user was a
+/// member of the unlocked private thread, until a newer Gateway event was applied.
+@Test(arguments: ["leave", "delete", "lock", "ready"])
+func `a delayed thread lookup cannot override newer gateway evidence`(event: String) async throws {
+    let fixture = ThreadLookupFixture { index in
+        ThreadLookupFixture.Answer(includesMember: index == 0, isGated: index == 0)
+    }
+    let provider = DiscordRESTProvider(
+        credentials: ForumPostDeletionCredentialStore(),
+        handle: CredentialHandle(accountID: "forum-lookup-\(event)"),
+        session: URLSession(configuration: fixture.configuration)
+    )
+    // The READY case resolves a retained public thread whose membership the
+    // fresh READY clears; the others look up an uncached thread.
+    await provider.seedForumChannelForTesting(
+        Channel(id: ChannelID(rawValue: 7), guildID: GuildID(rawValue: 1), name: "forum", kind: .forum),
+        posts: event == "ready" ? [retentionPost(700)] : [],
+        currentUser: User(id: UserID(rawValue: 9), username: "tester", displayName: "Tester")
+    )
+    let threadID = "700"
+    let lookup = Task {
+        event == "ready"
+            ? try await provider.resolveThreadAccess(threadID: ChannelID(rawValue: 700))
+            : try await provider.forumPost(threadID: ChannelID(rawValue: 700))
+    }
+    await fixture.waitUntilGated()
+    switch event {
+    case "leave":
+        await provider.receiveGatewayDispatchForTesting(name: "THREAD_MEMBERS_UPDATE", data: .object([
+            "id": .string(threadID), "guild_id": .string("1"), "member_count": .number(0),
+            "removed_member_ids": .array([.string("9")]),
+        ]))
+    case "delete":
+        await provider.receiveGatewayDispatchForTesting(name: "THREAD_DELETE", data: .object([
+            "id": .string(threadID), "guild_id": .string("1"), "parent_id": .string("7"),
+        ]))
+    case "ready":
+        await provider.receiveGatewayDispatchForTesting(name: "READY", data: retentionReadyPayload())
+    default:
+        await provider.receiveGatewayDispatchForTesting(
+            name: "THREAD_UPDATE", data: lockedPrivateThreadUpdate(threadID)
+        )
+    }
+    fixture.releaseGatedResponse()
+
+    switch event {
+    case "leave":
+        // The leave makes the provider ask again; the newer answer has no member.
+        let post = try await lookup.value
+        #expect(post.thread.notificationSettings == nil)
+        #expect(await provider.activeJoinedThreadsForTesting().isEmpty)
+    case "delete":
+        await #expect(throws: ChatProviderError.channelNotFound) { try await lookup.value }
+        #expect(await provider.cachedForumPostForTesting(threadID: ChannelID(rawValue: 700)) == nil)
+    case "ready":
+        // The response predates READY, which cleared the retained membership.
+        let post = try await lookup.value
+        #expect(post.thread.notificationSettings == nil)
+        #expect(await provider.cachedForumPostForTesting(threadID: ChannelID(rawValue: 700))?
+            .thread.notificationSettings == nil)
+        #expect(await provider.activeJoinedThreadsForTesting().isEmpty)
+    default:
+        // The newer metadata is kept, and a member-less record is no evidence
+        // of leaving: the response's member still grants private access.
+        let post = try await lookup.value
+        #expect(post.thread.isLocked && post.thread.name == "Locked thread")
+        #expect(post.thread.isPrivate && post.thread.notificationSettings != nil)
+        let cached = await provider.cachedForumPostForTesting(threadID: ChannelID(rawValue: 700))
+        #expect(cached?.thread.isLocked == true && cached?.thread.notificationSettings != nil)
+        #expect(await provider.activeJoinedThreadsForTesting().map(\.id) == [ChannelID(rawValue: 700)])
+    }
+    // The leave case asks again after the release; keep the fixture answering.
+    withExtendedLifetime(fixture) {}
+    await provider.disconnect()
+}
+
+/// Failed resolution, then a member-less record caches the thread, then Try
+/// Again: a cache hit would settle nothing, so the resolution asks Discord.
+@Test func `thread access resolution asks again over a member-less cached record`() async throws {
+    let fixture = ThreadLookupFixture { index in
+        ThreadLookupFixture.Answer(status: index == 0 ? 404 : 200)
+    }
+    let provider = DiscordRESTProvider(
+        credentials: ForumPostDeletionCredentialStore(),
+        handle: CredentialHandle(accountID: "forum-access-retry"),
+        session: URLSession(configuration: fixture.configuration)
+    )
+    await provider.seedForumChannelForTesting(
+        Channel(id: ChannelID(rawValue: 7), guildID: GuildID(rawValue: 1), name: "forum", kind: .forum),
+        currentUser: User(id: UserID(rawValue: 9), username: "tester", displayName: "Tester")
+    )
+    let threadID = ChannelID(rawValue: 700)
+    await #expect(throws: (any Error).self) { try await provider.resolveThreadAccess(threadID: threadID) }
+    await provider.receiveGatewayDispatchForTesting(name: "THREAD_UPDATE", data: lockedPrivateThreadUpdate("700"))
+    #expect(await provider.cachedForumPostForTesting(threadID: threadID)?.thread.notificationSettings == nil)
+
+    let resolved = try await provider.resolveThreadAccess(threadID: threadID)
+
+    #expect(fixture.requestCount == 2)
+    // No record arrived during this read, so its fresher metadata (Discord now
+    // reports the thread unlocked) replaces the cached record's.
+    #expect(!resolved.thread.isLocked && resolved.thread.name == "Thread")
+    #expect(resolved.thread.notificationSettings != nil)
+    #expect(await provider.cachedForumPostForTesting(threadID: threadID)?.thread.isLocked == false)
+    // Ordinary navigation stays a cache hit.
+    #expect(try await provider.forumPost(threadID: threadID).thread.notificationSettings != nil)
+    #expect(fixture.requestCount == 2)
+    await provider.disconnect()
+}
+
+private func lockedPrivateThreadUpdate(_ threadID: String) -> JSONValue {
+    .object([
+        "id": .string(threadID), "guild_id": .string("1"), "parent_id": .string("7"),
+        "type": .number(12), "name": .string("Locked thread"),
+        "thread_metadata": .object(["archived": .bool(false), "locked": .bool(true)]),
+    ])
+}
+
+/// A Get Channel fixture scoped to one test invocation: only requests carrying
+/// its identity header reach it, its script decides each answer, and releasing
+/// it frees a held response.
+private final class ThreadLookupFixture {
+    struct Answer: Sendable {
+        var status = 200
+        /// The response states that user 9 is a member.
+        var includesMember = true
+        /// The response waits for `releaseGatedResponse()`.
+        var isGated = false
+    }
+
+    private final class Storage: Sendable {
+        let requestCount = Mutex(0)
+        let reached = DispatchSemaphore(value: 0)
+        let released = DispatchSemaphore(value: 0)
+    }
+
+    let id = UUID().uuidString
+    private let storage = Storage()
+    private var observer: NSObjectProtocol?
+
+    init(script: @escaping @Sendable (Int) -> Answer) {
+        let id = id, storage = storage
+        observer = NotificationCenter.default.addObserver(
+            forName: ThreadLookupURLProtocol.requested, object: nil, queue: nil
+        ) { note in
+            guard let lookup = note.object as? ThreadLookupURLProtocol,
+                  lookup.request.value(forHTTPHeaderField: ThreadLookupURLProtocol.fixtureHeader) == id
+            else { return }
+            let index = storage.requestCount.withLock { count in
+                defer { count += 1 }
+                return count
+            }
+            let answer = script(index)
+            guard answer.isGated else {
+                lookup.answer(answer)
+                return
+            }
+            storage.reached.signal()
+            DispatchQueue.global().async {
+                storage.released.wait()
+                lookup.answer(answer)
+            }
+        }
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        storage.released.signal()
+    }
+
+    var configuration: URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ThreadLookupURLProtocol.self]
+        configuration.httpAdditionalHeaders = [ThreadLookupURLProtocol.fixtureHeader: id]
+        return configuration
+    }
+
+    var requestCount: Int { storage.requestCount.withLock { $0 } }
+
+    func waitUntilGated() async {
+        let storage = storage
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                storage.reached.wait()
+                continuation.resume()
+            }
+        }
+    }
+
+    func releaseGatedResponse() { storage.released.signal() }
+}
+
+private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
+    static let requested = Notification.Name("ForumProviderContract.threadLookup")
+    static let fixtureHeader = "X-Thread-Lookup-Test"
+
+    override static func canInit(with request: URLRequest) -> Bool { true }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() { NotificationCenter.default.post(name: Self.requested, object: self) }
+    override func stopLoading() {}
+
+    func answer(_ answer: ThreadLookupFixture.Answer) {
+        let threadID = request.url?.lastPathComponent ?? ""
+        let member = answer.includesMember
+            ? #", "member": {"id": "\#(threadID)", "user_id": "9", "flags": 1, "muted": false}"#
+            : ""
+        let body = answer.status == 200
+            ? """
+            {"id": "\(threadID)", "guild_id": "1", "parent_id": "7", "type": 12, "name": "Thread",
+             "thread_metadata": {"archived": false, "locked": false}\(member)}
+            """
+            : #"{"message": "Unknown Channel", "code": 10003}"#
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                  url: url, statusCode: answer.status, httpVersion: "HTTP/1.1", headerFields: nil
+              )
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
 }
 
 @Test func `catalogue refresh retains hydrated forum preview data`() throws {

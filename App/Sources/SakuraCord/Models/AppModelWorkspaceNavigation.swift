@@ -697,6 +697,13 @@ extension AppModel {
     }
 
     func navigateToInboxResult(_ message: Message, messageID: MessageID? = nil) {
+        if message.guildID != nil, knownRootChannel(message.channelID) == nil,
+           inbox.threads[message.channelID] == nil,
+           readState.entries[message.channelID]?.parentID == nil
+        {
+            resolveInboxThreadThenNavigate(message, messageID: messageID)
+            return
+        }
         if let guildID = message.guildID, inboxRequiresAgeAgreement(channelID: message.channelID, guildID: guildID) {
             requestInboxAgeAgreement(guildID: guildID) { [weak self] in self?.navigateToInboxResult(message, messageID: messageID) }
             return
@@ -705,6 +712,37 @@ extension AppModel {
             || snapshot?.activeJoinedThreads.contains { $0.id == message.channelID } == true
         dismissInbox()
         navigateToMessageResult(source: message, messageID: messageID ?? message.id, initialMessages: isThread ? [message] : nil, isKnownThread: isThread)
+    }
+
+    /// The age gate and thread presentation need the thread's parent. Resolve
+    /// it through the provider now rather than waiting for the background
+    /// inbox metadata lookup, and report a failed lookup.
+    private func resolveInboxThreadThenNavigate(_ message: Message, messageID: MessageID?) {
+        let channelID = message.channelID
+        // The same destination the resolved navigation uses, so a repeated
+        // selection joins the pending lookup instead of restarting it.
+        let target = ConversationNavigationTarget.message(
+            channelID, messageID ?? message.id, fullWidthThread: false
+        )
+        if isNavigating(to: target) { return }
+        startConversationNavigation(target: target) { model, session in
+            let post: ForumPost
+            do {
+                post = try await session.provider.forumPost(threadID: channelID)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
+                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+                model.errorMessage = Self.threadResolutionErrorMessage(error)
+                return
+            }
+            guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
+            model.inbox.threads[channelID] = post.thread
+            // Hand off to the resolved navigation, which shares this target.
+            model.conversationNavigationTarget = nil
+            model.navigateToInboxResult(message, messageID: messageID)
+        }
     }
 
     func openInboxGroup(_ channelID: ChannelID) {

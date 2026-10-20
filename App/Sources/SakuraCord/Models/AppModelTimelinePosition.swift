@@ -5,7 +5,8 @@ extension AppModel {
     // Guild pages retain sidebar selection while replacing its conversation.
     func isConversationPresented(_ channelID: ChannelID) -> Bool {
         guard onboardingEntryGuildID == nil else { return false }
-        if openThread?.id == channelID { return true }
+        // A thread withheld while its access is resolved again is not viewed.
+        if openThread?.id == channelID { return openThreadResolution == nil }
         guard !isThreadFullWidth, selectedChannelID == channelID else { return false }
         guard guildWorkspacePage != nil else { return true }
         return !hasThreadPane && customizationPreviewChannel?.id == channelID

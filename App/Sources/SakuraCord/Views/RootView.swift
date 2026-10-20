@@ -1071,7 +1071,7 @@ private struct ChatRootView: View {
 
     private func closeSupplementaryConversation() {
         if model.hasThreadPane {
-            model.closeThread()
+            model.dismissOpenThread()
         } else if !model.closeGuildSupplementaryConversation() {
             model.closeVoiceChat()
         }

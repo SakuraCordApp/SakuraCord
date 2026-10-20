@@ -158,6 +158,9 @@ public protocol ChatProvider: Sendable {
     ) async throws
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws -> ForumPostPage
     func forumPost(threadID: ChannelID) async throws -> ForumPost
+    /// Looks the thread up afresh, even when cached, so the result states the
+    /// current user's membership; newer cached metadata is kept.
+    func resolveThreadAccess(threadID: ChannelID) async throws -> ForumPost
     func createForumPost(
         _ draft: CreateForumPostDraft,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
@@ -961,6 +964,10 @@ public extension ChatProvider {
 
     func forumPost(threadID: ChannelID) async throws -> ForumPost {
         throw ChatProviderError.capabilityDisabled(.forums)
+    }
+
+    func resolveThreadAccess(threadID: ChannelID) async throws -> ForumPost {
+        try await forumPost(threadID: threadID)
     }
 
     func createForumPost(

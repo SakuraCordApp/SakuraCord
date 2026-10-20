@@ -265,6 +265,82 @@ Thread lifecycle events advance the parent forum boundary before unread
 projection. Metadata, archive, lock, pin and delete are explicit, permission-gated
 mutations. Message-created thread cards use cached thread/message data.
 
+### Thread retention
+
+A cached thread leaves the provider only through `THREAD_DELETE`, removal of its
+parent channel or guild, or a fresh READY that no longer lists its parent.
+Opening a guild channel subscribes it through opcode 37 with `threads: true`.
+The resulting `THREAD_LIST_SYNC` carries `threads` and `most_recent_messages`
+for every active thread the user can view, joined or not, with no `channel_ids`,
+`members` or per-thread `member`. Archived threads are never included. The sync is
+add-or-update only, including when `channel_ids` scopes it: absence is not
+deletion, archiving or leaving, so archived catalogue pages, linked-thread Get
+Channel results and unjoined posts survive it. A `members` entry, when present,
+only adds membership. Joined state comes from READY, a `THREAD_CREATE` carrying
+`member` (also for a known thread), `THREAD_MEMBER_UPDATE`, and
+`THREAD_MEMBERS_UPDATE`, where the current user's ID in `removed_member_ids`
+means leaving. Member events apply to any thread known to the post cache or the
+joined-thread catalogue. `THREAD_UPDATE` with `archived: true` changes state only.
+
+A fresh READY lists only joined active threads. Public threads learned through
+REST survive it while their parent is still listed; their content follows the
+parent's permissions, so READY's records restore active membership and the rest
+show as unjoined until a member event. Private threads READY does not list are
+dropped, because their access follows membership that READY's silence cannot
+settle. An open private thread READY does not list is withheld and not presented
+for read acknowledgements, with its timeline position reset, while one lookup
+resolves it again. Success, or a Gateway record carrying the current user's
+member, resolves it in place, keeping its composer work while the recreated
+timeline establishes its position; a failure stays unavailable until the user
+retries.
+
+A known thread is answered from the provider cache; an unknown one costs one
+Get Channel, whose thread `member` states the membership. Thread records and
+deletions advance a per-thread record revision, and membership events a
+membership revision. A lookup over a cached record applies the response's metadata,
+keeping cached previews and owner, unless a record superseded the read; its
+`member` applies unless the membership revision moved, because a member-less
+record is not evidence of leaving. A lookup whose
+record was deleted meanwhile reports the thread as not found; one whose
+membership revision moved for an uncached thread asks once more. Resolving an
+open private thread's access always performs that Get Channel, even over a
+cached record, because a member-less record settles no membership. Opening a
+private thread whose record carries no membership, without Manage Threads,
+enters that resolution from every entry point; public threads stay cache-first.
+
+The official client instead clears thread channels on `CONNECTION_OPEN` and
+refetches the selected thread with Get Channel. Retention keeps an open post and
+the loaded catalogue across reconnection; a thread deleted during the disconnect
+can stay listed until the account session restarts. RESUMED replays missed events
+and resets nothing.
+
+The open thread or forum post closes only on `THREAD_DELETE`, removal of its
+parent or guild, or a user action; lost parent access shows it as unavailable.
+Leaving it keeps it open. A catalogue page or Gateway list that omits it keeps it
+open and listed. Automatic channel reselection happens only when the selected
+channel is gone from a loaded channel list of the selected guild or DM scope, or a
+guild's channel update or a replacement READY that still lists the guild removes
+it, including its last channel. READY offers no cached guild versions, so each
+available guild arrives with its complete channel list. An unloaded list or a
+guild switch in progress is not removal.
+
+Inbox, pin, search, mention and message-link navigation to a thread no local
+projection knows resolves it on demand (cache, else one Get Channel) and reports
+failures instead of waiting for background metadata; not-found and forbidden
+lookups say that the thread does not exist or is not accessible. Repeating an in-flight
+navigation destination, including the requested side-pane or full-width
+presentation, does not restart it while nothing else has replaced the side
+conversation or guild page since it started; any other destination supersedes it,
+as does directly opening another thread or closing the one it is heading to.
+
+Official Fresh host 0.0.411, web build 641004 (`web.4d4b2f75fdea5470.js`),
+observed on 19 October 2026 with a moderator and a plain member, confirmed the
+opcode-37 sync shape, member-less listing of unjoined threads, join and leave
+events, and an open pane surviving a leave. Its ChannelStore, ActiveThreadsStore
+and JoinedThreadsStore handlers merge syncs and establish the `CONNECTION_OPEN`
+reset and selected-thread refetch; forum-specific branches are source evidence
+only, as the test server had no forum.
+
 ### Sidebar threads
 
 The channel list needs no request. READY and `GUILD_CREATE` `threads` contain only

@@ -419,9 +419,7 @@ extension AppModel {
         if selectedGuildChannels != visibleChannels {
             visibleChannels = selectedGuildChannels
         }
-        if let selectedChannelID,
-           !selectedGuildChannels.contains(where: { $0.id == selectedChannelID })
-        {
+        if selectedChannelIsGone(fromScopeChannels: selectedGuildChannels) {
             self.selectedChannelID = Self.preferredInitialChannelID(
                 in: selectedGuildChannels.filter {
                     conversationAccess(for: $0) != .hidden
@@ -436,5 +434,20 @@ extension AppModel {
         if projectedSelectedChannel != selectedChannel {
             selectedChannel = projectedSelectedChannel
         }
+    }
+
+    /// Reselection replaces the conversation, closing any open thread, so it
+    /// requires the selected channel to be authoritatively gone from the
+    /// selected scope. A guild whose channels have not arrived, or a channel of
+    /// another guild while activation or navigation moves between guilds, is a
+    /// projection gap.
+    func selectedChannelIsGone(fromScopeChannels channels: [Channel]) -> Bool {
+        guard let selectedChannelID,
+              !channels.contains(where: { $0.id == selectedChannelID }),
+              !channels.isEmpty || selectedGuildID == nil
+        else { return false }
+        return snapshot?.channels.contains {
+            $0.id == selectedChannelID && $0.guildID != selectedGuildID
+        } != true
     }
 }

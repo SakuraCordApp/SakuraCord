@@ -213,7 +213,7 @@ extension AppModel {
     @discardableResult
     func consumeEscapeForSupplementaryConversation() -> Bool {
         if hasThreadPane {
-            closeThread()
+            dismissOpenThread()
             return true
         }
         if closeGuildSupplementaryConversation() { return true }

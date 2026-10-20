@@ -338,6 +338,14 @@ extension AppModel {
             guard let previous = previousByID[incoming.id] else { return incoming }
             return forumPostPreservingReactionPresentation(incoming, previous: previous)
         }
+        // A page or provider list that omits the open post does not delete it.
+        // Deletion closes the post before its catalogue is republished.
+        if let openThreadID = openThread?.id,
+           let openPost = previousByID[openThreadID],
+           !posts.contains(where: { $0.id == openThreadID })
+        {
+            forumCataloguePosts.append(openPost)
+        }
         forumCatalogueIndexByID = Dictionary(
             uniqueKeysWithValues: forumCataloguePosts.indices.map {
                 (forumCataloguePosts[$0].id, $0)

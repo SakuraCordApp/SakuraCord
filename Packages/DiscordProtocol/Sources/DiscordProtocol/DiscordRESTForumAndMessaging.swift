@@ -130,22 +130,105 @@ extension DiscordRESTProvider {
         }
     }
 
+    /// A known thread is answered from the cache. An unknown one costs one
+    /// Get Channel, whose thread `member` states the current membership; a
+    /// membership event during that read makes it ask once more.
     public func forumPost(threadID: ChannelID) async throws -> ForumPost {
-        for posts in cachedForumPosts.values {
-            if let post = posts[threadID] {
-                return post
+        try await lookUpThread(threadID: threadID, refreshesCachedRecord: false)
+    }
+
+    /// A cached record may come from a member-less Gateway record, which
+    /// settles no membership, so private-thread access resolution always asks.
+    public func resolveThreadAccess(threadID: ChannelID) async throws -> ForumPost {
+        try await lookUpThread(threadID: threadID, refreshesCachedRecord: true)
+    }
+
+    private func lookUpThread(
+        threadID: ChannelID,
+        refreshesCachedRecord: Bool
+    ) async throws -> ForumPost {
+        for attempt in 0 ..< 2 {
+            if !refreshesCachedRecord, let cached = cachedForumPost(threadID: threadID) {
+                return cached
             }
+            let recordRevision = threadRecordRevisions[threadID]
+            let membershipRevision = threadMembershipRevisions[threadID]
+            let payload: ChannelDTO = try await request("/channels/\(threadID)")
+            guard payload.isThread else {
+                throw ChatProviderError.invalidRequest("That link does not point to a thread.")
+            }
+            var post = try payload.forumPost(fallbackGuildID: nil)
+            let membershipIsCurrent = threadMembershipRevisions[threadID] == membershipRevision
+            if let current = cachedForumPost(threadID: threadID) {
+                return reconcileLookedUpThread(
+                    post,
+                    with: current,
+                    recordIsCurrent: threadRecordRevisions[threadID] == recordRevision,
+                    membershipIsCurrent: membershipIsCurrent
+                )
+            }
+            // The record was deleted while the request was pending.
+            guard threadRecordRevisions[threadID] == recordRevision else {
+                throw ChatProviderError.channelNotFound
+            }
+            if !membershipIsCurrent {
+                guard attempt == 1 else { continue }
+                // Still moving: keep only what the provider itself knows.
+                post.thread.notificationSettings = cachedJoinedThreads[threadID]?.notificationSettings
+            }
+            if let parentID = post.thread.parentID {
+                cachedForumPosts[parentID, default: [:]][post.id] = post
+            }
+            cacheForumPreviewMessages(post)
+            return post
         }
-        let payload: ChannelDTO = try await request("/channels/\(threadID)")
-        guard payload.isThread else {
-            throw ChatProviderError.invalidRequest("That link does not point to a thread.")
+        throw ChatProviderError.channelNotFound
+    }
+
+    /// Metadata and membership are reconciled separately. The response's
+    /// metadata applies unless a thread record superseded the read, keeping
+    /// the cache's previews and owner; its member applies unless a membership
+    /// event did, since a member-less record is no evidence of leaving.
+    private func reconcileLookedUpThread(
+        _ response: ForumPost,
+        with current: ForumPost,
+        recordIsCurrent: Bool,
+        membershipIsCurrent: Bool
+    ) -> ForumPost {
+        var updated = recordIsCurrent
+            ? Self.mergingForumPostCatalogueMetadata(incoming: response, existing: current)
+            : current
+        updated.thread.notificationSettings = membershipIsCurrent
+            ? response.thread.notificationSettings
+            : current.thread.notificationSettings
+        guard updated != current, let parentID = current.thread.parentID else { return current }
+        cachedForumPosts[parentID]?[updated.id] = updated
+        let settings = updated.thread.notificationSettings
+        if settings == nil {
+            cachedJoinedThreads[updated.id] = nil
+            cachedJoinedThreadOrder.removeAll { $0 == updated.id }
+        } else {
+            reconcileJoinedThread(updated.thread)
         }
-        let post = try payload.forumPost(fallbackGuildID: nil)
-        if let parentID = post.thread.parentID {
-            cachedForumPosts[parentID, default: [:]][post.id] = post
-        }
-        cacheForumPreviewMessages(post)
-        return post
+        publishForumPosts(parentID: parentID)
+        publishActiveJoinedThreads()
+        return updated
+    }
+
+    func cachedForumPost(threadID: ChannelID) -> ForumPost? {
+        cachedForumPosts.values.lazy.compactMap { $0[threadID] }.first
+    }
+
+    @discardableResult
+    func advanceThreadMembershipRevision(_ threadID: ChannelID) -> UInt64 {
+        let revision = (threadMembershipRevisions[threadID] ?? 0) &+ 1
+        threadMembershipRevisions[threadID] = revision
+        return revision
+    }
+
+    func advanceThreadRecordRevision(_ threadID: ChannelID, includesMembership: Bool) {
+        threadRecordRevisions[threadID] = (threadRecordRevisions[threadID] ?? 0) &+ 1
+        if includesMembership { advanceThreadMembershipRevision(threadID) }
     }
 
     public func createForumPost(
@@ -350,6 +433,7 @@ extension DiscordRESTProvider {
             throw ChatProviderError.invalidRequest("The forum post has no parent channel.")
         }
         try await requestEmpty(Self.forumPostDeletionPath(postID: post.id), method: "DELETE")
+        advanceThreadRecordRevision(post.id, includesMembership: true)
         cachedForumPosts[parentID]?[post.id] = nil
         let messageIDs = cachedMessages.values
             .filter { $0.channelID == post.id }
@@ -449,6 +533,7 @@ extension DiscordRESTProvider {
         guard let parentID = post.thread.parentID else { return }
         var cached = cachedForumPosts[parentID]?[post.id] ?? post
         cached.thread.notificationSettings = settings
+        advanceThreadMembershipRevision(post.id)
         cachedForumPosts[parentID, default: [:]][post.id] = cached
         reconcileJoinedThread(cached.thread)
         publishForumPosts(parentID: parentID)
@@ -720,9 +805,12 @@ extension DiscordRESTProvider {
         continuation?.yield(.activeJoinedThreadsChanged(currentActiveJoinedThreads()))
     }
 
+    /// Thread payloads only add or update known threads. Like the official
+    /// client's channel and active-thread stores, absence from a Gateway thread
+    /// list never removes a thread; THREAD_DELETE, parent or guild removal,
+    /// and a fresh READY's reconciliation are the removal authorities.
     func ingestForumThreads(
         _ threadDTOs: [ChannelDTO], fallbackGuildID: GuildID?,
-        replacingParents: Set<ChannelID>? = nil,
         advancesParentLatestThreadID: Bool = false
     ) {
         if advancesParentLatestThreadID {
@@ -730,13 +818,6 @@ extension DiscordRESTProvider {
                 threadDTOs,
                 fallbackGuildID: fallbackGuildID
             )
-        }
-        if let replacingParents {
-            for parentID in replacingParents {
-                cachedForumPosts[parentID] = cachedForumPosts[parentID, default: [:]].filter {
-                    Self.shouldPreserveForumPostDuringThreadListReplacement($0.value)
-                }
-            }
         }
         var changed = Set<ChannelID>()
         for dto in threadDTOs {
@@ -757,22 +838,64 @@ extension DiscordRESTProvider {
                     existing: existing
                 )
                 post.isUnread = existing.isUnread
-            } else if let state = forumReadStates[post.id] {
-                post.isUnread =
-                    state.mentionCount > 0
-                        || post.thread.lastMessageID.map { lastMessageID in
-                            state.lastReadMessageID.map { lastMessageID > $0 } ?? true
-                        } ?? false
+            } else if let isUnread = forumPostReadStateUnread(post) {
+                post.isUnread = isUnread
             }
+            advanceThreadRecordRevision(post.id, includesMembership: dto.member != nil)
             cachedForumPosts[parentID, default: [:]][post.id] = post
             reconcileJoinedThread(post.thread)
             cacheForumPreviewMessages(post)
             changed.insert(parentID)
         }
-        for parentID in changed.union(replacingParents ?? []) {
+        for parentID in changed {
             publishForumPosts(parentID: parentID)
         }
         publishActiveJoinedThreads()
+    }
+
+    func forumPostReadStateUnread(_ post: ForumPost) -> Bool? {
+        guard let state = forumReadStates[post.id] else { return nil }
+        return state.mentionCount > 0
+            || post.thread.lastMessageID.map { lastMessageID in
+                state.lastReadMessageID.map { lastMessageID > $0 } ?? true
+            } ?? false
+    }
+
+    /// A fresh READY lists only the active threads the account has joined.
+    /// Threads learned through catalogue pages or linked-thread lookups are
+    /// not invalidated by a new session, so they survive while their parent
+    /// is still listed in the guild; a removed parent or guild drops them.
+    /// READY is authoritative for active membership, so a retained active
+    /// thread is unjoined until READY's own thread record restores it.
+    /// Private threads are dropped as before: their access follows membership,
+    /// which READY's silence cannot settle (the thread may have been left, or
+    /// archived while disconnected). A public thread's content follows its
+    /// parent, so only its Follow state can be stale, shown as unjoined.
+    func restoreForumPostsAfterReady(
+        _ previous: (posts: [ChannelID: [ChannelID: ForumPost]], order: [ChannelID]),
+        guildID: GuildID
+    ) {
+        var restoredIDs = Set<ChannelID>()
+        for channel in cachedChannels[guildID] ?? [] {
+            guard let posts = previous.posts[channel.id], !posts.isEmpty else { continue }
+            let publicPosts = posts.filter { !$0.value.thread.isPrivate }
+            guard !publicPosts.isEmpty else { continue }
+            cachedForumPosts[channel.id] = publicPosts.mapValues { post in
+                var post = post
+                post.thread.notificationSettings = nil
+                if let isUnread = forumPostReadStateUnread(post) {
+                    post.isUnread = isUnread
+                }
+                restoredIDs.insert(post.id)
+                return post
+            }
+        }
+        cachedForumThreadOrder.append(contentsOf: previous.order.filter(restoredIDs.contains))
+        // Replace projections that still carry the previous session's
+        // membership or a dropped private thread.
+        for channel in cachedChannels[guildID] ?? [] where previous.posts[channel.id] != nil {
+            publishForumPosts(parentID: channel.id)
+        }
     }
 
     func advanceForumParentLatestThreadIDs(
@@ -801,12 +924,6 @@ extension DiscordRESTProvider {
                 )
             )
         }
-    }
-
-    nonisolated static func shouldPreserveForumPostDuringThreadListReplacement(
-        _ post: ForumPost
-    ) -> Bool {
-        post.thread.isArchived || post.thread.isLocked
     }
 
     /// A thread-created system message names its thread only through its

@@ -8,6 +8,26 @@ nonisolated enum DirectMessageSidebarSelection: Hashable, Sendable {
     case channel(ChannelID)
 }
 
+/// Marks work performed by a conversation navigation's own task, including the
+/// tasks it starts, so its presentation changes do not count as user changes.
+nonisolated enum ConversationNavigationContext {
+    @TaskLocal static var isActive = false
+}
+
+nonisolated struct PendingConversationNavigation: Sendable {
+    let id: UUID
+    let target: ConversationNavigationTarget
+    let sideConversationRevision: UInt64
+}
+
+/// The destination of an asynchronous conversation navigation. Repeating the
+/// in-flight destination is redundant; any other destination supersedes it.
+nonisolated enum ConversationNavigationTarget: Hashable, Sendable {
+    case channel(ChannelID)
+    case thread(ChannelID, fullWidth: Bool)
+    case message(ChannelID, MessageID, fullWidthThread: Bool)
+}
+
 extension AppModel {
     func selectGuild(_ guildID: GuildID?) {
         startConversationNavigation { model, account in
@@ -27,11 +47,13 @@ extension AppModel {
             ?? visibleChannels.first { $0.id == selectedChannelID }
     }
 
-    // Sidebar choices supersede asynchronous navigation immediately.
+    // Sidebar choices supersede asynchronous navigation to another destination
+    // immediately; re-selecting the in-flight destination leaves it running.
     var channelSidebarSelection: ChannelID? {
         get { guildWorkspacePage == nil ? selectedChannelID : nil }
         set {
             onboarding.presentedGuildID = nil
+            if let newValue, isNavigating(to: .channel(newValue)) { return }
             cancelConversationNavigation()
             selectedChannelID = newValue
             recordConversationNavigation()
@@ -41,16 +63,31 @@ extension AppModel {
     func cancelConversationNavigation() {
         guildActivationTask?.cancel()
         guildActivationTask = nil
+        conversationNavigationTarget = nil
         conversationNavigationHistory.cancelNavigation()
     }
 
+    /// A repeated destination is a duplicate only while nothing else replaced
+    /// the side conversation or guild page since its navigation started.
+    func isNavigating(to target: ConversationNavigationTarget) -> Bool {
+        guard let pending = conversationNavigationTarget else { return false }
+        return pending.target == target
+            && pending.sideConversationRevision == sideConversationRevision
+    }
+
+    func noteSideConversationChange() {
+        guard !ConversationNavigationContext.isActive else { return }
+        sideConversationRevision &+= 1
+    }
+
     func startConversationNavigation(
+        target: ConversationNavigationTarget? = nil,
         to destination: ConversationNavigationHistory.Destination? = nil,
         operation: @escaping @MainActor (AppModel, AppModelAccountSession) async -> Void
     ) {
         cancelConversationNavigation()
         let account = accountSession()
-        guildActivationTask = startAccountChildTask(account: account) { model, account in
+        let task = startAccountChildTask(account: account) { model, account in
             // A task cancelled before it starts never opens a history transaction.
             let navigation = model.conversationNavigationHistory.beginNavigation(to: destination)
             defer {
@@ -58,7 +95,23 @@ extension AppModel {
                     ? model.navigationChannel : nil
                 model.conversationNavigationHistory.finishNavigation(navigation, at: channel)
             }
-            await operation(model, account)
+            await ConversationNavigationContext.$isActive.withValue(true) {
+                await operation(model, account)
+            }
+        }
+        guildActivationTask = task
+        guard let target else { return }
+        let navigationID = UUID()
+        conversationNavigationTarget = PendingConversationNavigation(
+            id: navigationID, target: target, sideConversationRevision: sideConversationRevision
+        )
+        // The operation may never run after an account change, so completion
+        // of the task itself retires its destination.
+        Task { @MainActor [weak self] in
+            await task.value
+            if self?.conversationNavigationTarget?.id == navigationID {
+                self?.conversationNavigationTarget = nil
+            }
         }
     }
 
@@ -217,6 +270,11 @@ extension AppModel {
         )
     }
 
+    func knownRootChannel(_ channelID: ChannelID) -> Channel? {
+        snapshot?.channels.first(where: { $0.id == channelID })
+            ?? visibleChannels.first(where: { $0.id == channelID })
+    }
+
     func navigate(
         to channelID: ChannelID,
         historyDestination: ConversationNavigationHistory.Destination? = nil
@@ -226,14 +284,20 @@ extension AppModel {
             openSidebarThread(thread, historyDestination: historyDestination)
             return
         }
-        guard
-            let channel = snapshot?.channels.first(where: { $0.id == channelID })
-            ?? visibleChannels.first(where: { $0.id == channelID })
-        else {
-            errorMessage = "That mentioned channel has not been discovered yet."
+        guard let channel = knownRootChannel(channelID) else {
+            // A mention or history entry can name a thread the sidebar does
+            // not list; resolve it through the provider like a channel link.
+            navigate(
+                to: selectedGuildID,
+                linkedChannelID: channelID,
+                fullWidthThread: true,
+                historyDestination: historyDestination
+            )
             return
         }
-        startConversationNavigation(to: historyDestination) { model, account in
+        let target = ConversationNavigationTarget.channel(channel.id)
+        if historyDestination == nil, isNavigating(to: target) { return }
+        startConversationNavigation(target: target, to: historyDestination) { model, account in
             if model.selectedGuildID != channel.guildID {
                 await model.activateGuild(channel.guildID, account: account)
             }
@@ -251,83 +315,111 @@ extension AppModel {
         linkedChannelID channelID: ChannelID,
         messageID: MessageID? = nil,
         initialMessages: [Message] = [],
-        fullWidthThread: Bool = false
+        fullWidthThread: Bool = false,
+        historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
-        let isKnownRootChannel =
-            snapshot?.channels.contains(where: { $0.id == channelID }) == true
-                || visibleChannels.contains(where: { $0.id == channelID })
-        if messageID == nil, isKnownRootChannel {
-            navigate(to: channelID)
+        if messageID == nil, knownRootChannel(channelID) != nil {
+            navigate(to: channelID, historyDestination: historyDestination)
             return
         }
-
-        startConversationNavigation { [weak self] _, session in
-            guard let self else { return }
-            let knownPost =
-                forumCataloguePosts.first(where: { $0.id == channelID })
-                    ?? forumPosts.first(where: { $0.id == channelID })
-            if selectedGuildID != guildID {
-                await activateGuild(guildID, account: session)
+        let target: ConversationNavigationTarget = messageID.map {
+            .message(channelID, $0, fullWidthThread: fullWidthThread)
+        } ?? .thread(channelID, fullWidth: fullWidthThread)
+        if historyDestination == nil, isNavigating(to: target) { return }
+        startConversationNavigation(target: target, to: historyDestination) { model, session in
+            if model.selectedGuildID != guildID {
+                await model.activateGuild(guildID, account: session)
             }
-            guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-            if messageID == nil, let channel =
-                snapshot?.channels.first(where: { $0.id == channelID })
-                    ?? visibleChannels.first(where: { $0.id == channelID })
-            {
-                selectedChannelID = channel.id
+            guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
+            if messageID == nil, let channel = model.knownRootChannel(channelID) {
+                model.selectedChannelID = channel.id
                 return
             }
-
-            let post: ForumPost
-            do {
-                post = if let knownPost {
-                    knownPost
-                } else {
-                    try await session.provider.forumPost(threadID: channelID)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled,
-                      isCurrentAccountSession(session)
-                else { return }
-                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                errorMessage = error.localizedDescription
-                return
-            }
-
-            let targetGuildID = post.thread.guildID ?? guildID
-            if selectedGuildID != targetGuildID {
-                await activateGuild(targetGuildID, account: session)
-            }
-            guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-            guard let parentID = post.thread.parentID,
-                  let parent =
-                  snapshot?.channels.first(where: { $0.id == parentID })
-                      ?? visibleChannels.first(where: { $0.id == parentID })
-            else {
-                errorMessage = "That thread's parent channel has not been discovered yet."
-                return
-            }
-            if selectedChannelID != parent.id {
-                selectedChannelID = parent.id
-            }
-            await channelLoadTask?.value
-            guard !Task.isCancelled,
-                  isCurrentAccountSession(session),
-                  selectedChannelID == parent.id
-            else { return }
-            if parent.kind == .forum {
-                mergeForumCatalogue([post])
-                applyForumPresentation()
-            }
-            await openLinkedThread(
-                post,
-                initialMessages: initialMessages,
+            await model.openThreadDestination(
+                channelID,
+                guildID: guildID,
                 messageID: messageID,
+                initialMessages: initialMessages,
                 fullWidth: fullWidthThread,
                 session: session
             )
+        }
+    }
+
+    /// Resolves a thread or forum post that may be unknown to every local
+    /// projection through the provider (its cache, else one Get Channel),
+    /// selects its parent and opens it. Failures are user-visible.
+    private func openThreadDestination(
+        _ channelID: ChannelID,
+        guildID: GuildID?,
+        messageID: MessageID?,
+        initialMessages: [Message],
+        fullWidth: Bool,
+        session: AppModelAccountSession
+    ) async {
+        let post: ForumPost
+        do {
+            post = if let knownPost = forumCataloguePosts.first(where: { $0.id == channelID })
+                ?? forumPosts.first(where: { $0.id == channelID })
+            {
+                knownPost
+            } else {
+                try await session.provider.forumPost(threadID: channelID)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled,
+                  isCurrentAccountSession(session)
+            else { return }
+            DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+            errorMessage = Self.threadResolutionErrorMessage(error)
+            return
+        }
+        guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
+
+        // The parent's guild is authoritative; a link or message can omit it.
+        let parentGuildID = post.thread.parentID.flatMap { knownRootChannel($0)?.guildID }
+        let targetGuildID = parentGuildID ?? post.thread.guildID ?? guildID
+        if selectedGuildID != targetGuildID {
+            await activateGuild(targetGuildID, account: session)
+        }
+        guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
+        guard let parentID = post.thread.parentID,
+              let parent = knownRootChannel(parentID)
+        else {
+            errorMessage = "That thread's parent channel has not been discovered yet."
+            return
+        }
+        if selectedChannelID != parent.id {
+            selectedChannelID = parent.id
+        }
+        await channelLoadTask?.value
+        guard !Task.isCancelled,
+              isCurrentAccountSession(session),
+              selectedChannelID == parent.id
+        else { return }
+        if parent.kind == .forum {
+            mergeForumCatalogue([post])
+            applyForumPresentation()
+        }
+        await openLinkedThread(
+            post,
+            initialMessages: initialMessages,
+            messageID: messageID,
+            fullWidth: fullWidth,
+            session: session
+        )
+    }
+
+    nonisolated static func threadResolutionErrorMessage(_ error: any Error) -> String {
+        switch error as? ChatProviderError {
+        case .channelNotFound, .transport(status: 404, _):
+            "This thread doesn’t exist or was deleted."
+        case .transport(status: 403, _):
+            "You don’t have access to this thread."
+        default:
+            error.localizedDescription
         }
     }
 
@@ -408,17 +500,27 @@ extension AppModel {
         channelID: ChannelID,
         messageID: MessageID
     ) {
-        startConversationNavigation { [weak self] _, session in
+        let target = ConversationNavigationTarget.message(
+            channelID, messageID, fullWidthThread: false
+        )
+        if isNavigating(to: target) { return }
+        startConversationNavigation(target: target) { [weak self] _, session in
             guard let self else { return }
             if selectedGuildID != guildID {
                 await activateGuild(guildID, account: session)
             }
             guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-            guard
-                let channel = snapshot?.channels.first(where: { $0.id == channelID })
-                ?? visibleChannels.first(where: { $0.id == channelID })
-            else {
-                errorMessage = "That message's channel has not been discovered yet."
+            guard let channel = knownRootChannel(channelID) else {
+                // Not a known root channel: the message may be in a thread
+                // that no local projection has discovered yet.
+                await openThreadDestination(
+                    channelID,
+                    guildID: guildID,
+                    messageID: messageID,
+                    initialMessages: [],
+                    fullWidth: false,
+                    session: session
+                )
                 return
             }
             let wasShowingMessage = !isThreadFullWidth && selectedChannelID == channel.id
