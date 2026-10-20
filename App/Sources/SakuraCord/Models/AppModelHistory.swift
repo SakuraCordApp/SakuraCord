@@ -588,7 +588,7 @@ extension AppModel {
         }
     }
 
-    private func requestNewestMessagePresentation(channelID: ChannelID) {
+    func requestNewestMessagePresentation(channelID: ChannelID) {
         conversationNewestRequestID &+= 1
         conversationNewestRequest = ConversationNewestRequest(
             requestID: conversationNewestRequestID,

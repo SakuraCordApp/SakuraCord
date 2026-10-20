@@ -1612,6 +1612,64 @@ func `read state completion releases a held backlog without another geometry cal
 }
 
 @MainActor
+@Test func `local send releases a held backlog like scrolling to the newest message`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await until { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    model.reportMainWindowActive(true)
+    makeLowerBoundBacklog(in: model, channelID: channelID)
+    model.reportTimelineInitialPosition(channelID: channelID, hasReachedReadBoundary: true)
+    #expect(model.readState.holdsAutomaticAcknowledgement(channelID))
+
+    #expect(model.advanceTimelineForLocalSend(channelID: channelID))
+    #expect(!model.readState.holdsAutomaticAcknowledgement(channelID))
+}
+
+@MainActor
+@Test func `local send scrolls once and confirmation leaves unseen messages unread`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        readAcknowledgementTiming: .init(debounce: .milliseconds(10))
+    )
+    await model.start()
+    let channelID = ChannelID(rawValue: 210)
+    model.selectedChannelID = channelID
+    #expect(await until { !model.isLoadingMessages && model.selectedChannelID == channelID })
+    // Before the initial position exists a backlog hold can still appear, so
+    // that send takes the confirmation path instead.
+    #expect(!model.advanceTimelineForLocalSend(channelID: channelID))
+    #expect(model.conversationNewestRequest == nil)
+
+    model.reportTimelineInitialPosition(channelID: channelID, hasReachedReadBoundary: false)
+    model.reportTimelinePosition(channelID: channelID, hasReachedReadBoundary: false)
+    let divider = try #require(model.unreadDividerMessageID(channelID: channelID))
+    #expect(model.conversationNewestRequest == nil)
+
+    #expect(model.advanceTimelineForLocalSend(channelID: channelID))
+    let request = try #require(model.conversationNewestRequest)
+    #expect(request.channelID == channelID)
+    model.completeConversationNewestRequest(requestID: request.requestID)
+
+    // The reader scrolled away while delivery was pending.
+    model.completeConfirmedSend(channelID: channelID, advancedLocally: true)
+    #expect(model.conversationNewestRequest == nil)
+    #expect(model.isChannelUnread(channelID))
+    #expect(model.unreadDividerMessageID(channelID: channelID) == divider)
+
+    // An older page keeps the local row and loads nothing before delivery.
+    model.hasMoreLaterMessages = true
+    #expect(!model.advanceTimelineForLocalSend(channelID: channelID))
+    model.completeConfirmedSend(channelID: channelID, advancedLocally: true)
+    #expect(model.conversationNewestRequest == nil)
+    #expect(!model.isLoadingMessages)
+}
+
+@MainActor
 @Test func `mark unread sends one backward manual acknowledgement`() async throws {
     let provider = MockChatProvider()
     let model = AppModel(

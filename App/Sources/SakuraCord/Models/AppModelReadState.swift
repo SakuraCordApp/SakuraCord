@@ -75,6 +75,41 @@ extension AppModel {
         }
     }
 
+    /// Jumps to the newest message as soon as a send appends its local row.
+    /// Returns false on an older page (reloading would replace the local row)
+    /// or before the initial position (a backlog hold can still appear); those
+    /// sends advance on confirmation instead.
+    func advanceTimelineForLocalSend(channelID: ChannelID) -> Bool {
+        guard channelID == selectedChannelID || channelID == openThread?.id,
+              !(channelID == selectedChannelID && hasMoreLaterMessages),
+              readState.presentations[channelID]?.initialPositionEstablished == true
+        else { return false }
+        // Sending is an explicit move to the newest message, so it releases a
+        // held backlog the way scrolling toward the newest message does.
+        reportTimelineScrollTowardNewest(channelID: channelID)
+        requestNewestMessagePresentation(channelID: channelID)
+        return true
+    }
+
+    func completeConfirmedSend(channelID: ChannelID, advancedLocally: Bool) {
+        if advancedLocally {
+            acknowledgeConfirmedLocalSend(channelID: channelID)
+        } else {
+            completeConversationReadingAndAdvance(channelID: channelID)
+        }
+    }
+
+    /// A send that already jumped neither moves the viewport nor loads history
+    /// on confirmation, and acknowledges only at the read boundary, so messages
+    /// that arrived out of view stay unread.
+    private func acknowledgeConfirmedLocalSend(channelID: ChannelID) {
+        guard channelID == selectedChannelID || channelID == openThread?.id,
+              readState.canAcknowledge(channelID)
+        else { return }
+        markConversationRead(channelID: channelID)
+        unreadDividerMessageIDs[channelID] = nil
+    }
+
     func completeConversationReadingAndAdvance(channelID: ChannelID) {
         guard channelID == selectedChannelID || channelID == openThread?.id else { return }
         if channelID == selectedChannelID, hasMoreLaterMessages {
@@ -90,11 +125,7 @@ extension AppModel {
         }
         markConversationRead(channelID: channelID)
         unreadDividerMessageIDs[channelID] = nil
-        conversationNewestRequestID &+= 1
-        conversationNewestRequest = ConversationNewestRequest(
-            requestID: conversationNewestRequestID,
-            channelID: channelID
-        )
+        requestNewestMessagePresentation(channelID: channelID)
     }
 
     func preserveUnreadDividerIfNeeded(channelID: ChannelID) {
