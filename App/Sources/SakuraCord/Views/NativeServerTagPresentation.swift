@@ -11,7 +11,7 @@ nonisolated enum NativeAppBadgePresentation {
         let size = InterfaceScale.fontSize(ServerTagAppearance.fontSize)
         return cachedText.withLock { cached in
             if let cached, cached.size == size { return cached.text }
-            let text = NativeIdentityTextPresentation("APP", font: .systemFont(ofSize: size, weight: .bold))
+            let text = NativeIdentityTextPresentation("APP", font: .systemFont(ofSize: size, weight: .medium))
             cached = (size, text)
             return text
         }
@@ -19,8 +19,18 @@ nonisolated enum NativeAppBadgePresentation {
 
     static var width: CGFloat { text.width + ServerTagAppearance.horizontalPadding * 2 }
 
+    static func width(isVerified: Bool) -> CGFloat {
+        width + (isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0)
+    }
+
+    @MainActor private static let checkmark = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
+        .withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: ServerTagAppearance.fontSize, weight: .bold)
+                .applying(.init(paletteColors: [.white]))
+        )
+
     @MainActor
-    static func draw(in frame: CGRect, color: NSColor, context: CGContext, text: NativeIdentityTextPresentation? = nil) {
+    static func draw(in frame: CGRect, color: NSColor, context: CGContext, text: NativeIdentityTextPresentation? = nil, isVerified: Bool = false) {
         context.saveGState()
         context.setFillColor(color.cgColor)
         context.addPath(CGPath(
@@ -28,8 +38,23 @@ nonisolated enum NativeAppBadgePresentation {
             cornerHeight: ServerTagAppearance.cornerRadius, transform: nil
         ))
         context.fillPath()
+        let iconInset = isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0
+        if isVerified, let checkmark {
+            let slot = CGRect(
+                x: frame.minX + ServerTagAppearance.horizontalPadding,
+                y: frame.midY - ServerTagAppearance.badgeSize / 2,
+                width: ServerTagAppearance.badgeSize, height: ServerTagAppearance.badgeSize
+            )
+            let target = NativeTimelineSymbolGeometry.opticallyFitted(
+                sourceSize: checkmark.size, alignmentRect: checkmark.alignmentRect, in: slot
+            )
+            checkmark.draw(in: target, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
         (text ?? Self.text).draw(
-            in: frame.insetBy(dx: ServerTagAppearance.horizontalPadding, dy: 0),
+            in: CGRect(
+                x: frame.minX + ServerTagAppearance.horizontalPadding + iconInset, y: frame.minY,
+                width: max(0, frame.width - ServerTagAppearance.horizontalPadding * 2 - iconInset), height: frame.height
+            ),
             color: .white, context: context
         )
         context.restoreGState()

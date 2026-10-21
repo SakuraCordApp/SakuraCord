@@ -607,7 +607,7 @@ private struct ProfileHeroSection: View {
                 primaryGuildIdentity: profile?.user.primaryGuild ?? member.user.primaryGuild,
                 showsServerTag: !cosmeticPolicy.disables(.serverTag, for: member.id),
                 isBot: profile?.user.isBot ?? member.user.isBot,
-                isVerifiedApp: isVerifiedApp,
+                isVerifiedApp: isVerifiedApp || (profile?.user ?? member.user).isVerifiedBot,
                 badges: profile.map(SakuraCordBadges.badges) ?? [],
                 premiumSince: profile?.premiumSince,
                 premiumGuildSince: profile?.premiumGuildSince,

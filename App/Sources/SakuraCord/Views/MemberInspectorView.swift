@@ -475,7 +475,7 @@ struct MemberRow: View {
                                         .lineLimit(1)
                                 }
                                 if member.user.isBot {
-                                    AppIdentityBadge()
+                                    AppIdentityBadge(isVerified: member.user.isVerifiedBot)
                                 }
                                 if !cosmeticPolicy.disables(.serverTag, for: member.id),
                                    let identity = member.user.primaryGuild, identity.tag != nil {
