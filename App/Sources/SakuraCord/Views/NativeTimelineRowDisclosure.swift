@@ -153,7 +153,7 @@ extension NativeTimelineCanvasView {
         disclosureTicker.stop()
         resetDisclosureGeometry()
         guard let disclosure else { return }
-        if redraws { redrawForDisclosure() }
+        if redraws { redrawForRowMotion() }
         // Drops held rows from the next published item list.
         if disclosure.isCollapsing, !disclosure.isFinished { releaseHeldRows(of: disclosure) }
     }
@@ -207,7 +207,7 @@ extension NativeTimelineCanvasView {
     func visibleRowSpan(at index: Int) -> Range<CGFloat> {
         let minY = displayedRowOrigin(at: index)
         let maxY = minY + displayedRowHeight(at: index)
-        guard disclosureRange.contains(index) else { return minY ..< maxY }
+        guard disclosureRange.contains(index) else { return unreadDividerGapSpan(at: index, minY: minY, maxY: maxY) }
         let clippedMin = min(disclosureClipMaxY, max(disclosureClipMinY, minY))
         let clippedMax = min(disclosureClipMaxY, max(disclosureClipMinY, maxY))
         return clippedMin ..< clippedMax
@@ -238,6 +238,8 @@ extension NativeTimelineCanvasView {
         isCollapsing: Bool,
         keepsHeaderPosition: Bool
     ) -> DisclosureStart? {
+        // Two row motions would fight over the same displacement.
+        finishUnreadDividerGap()
         let previous = rowDisclosure?.key == key ? rowDisclosure : nil
         // Reversing the same group continues from where it is; another group snaps to its end.
         if previous == nil { finishDisclosure() } else { rowDisclosure = nil }
@@ -320,7 +322,7 @@ extension NativeTimelineCanvasView {
                 rowDisclosure = disclosure
                 disclosureTicker.stop()
                 refreshDisclosureGeometry()
-                redrawForDisclosure()
+                redrawForRowMotion()
                 if case .suppressedMessages = disclosure.key { pendingDisclosureScrollAnchor = disclosure.key }
                 releaseHeldRows(of: disclosure)
             } else {
@@ -330,7 +332,7 @@ extension NativeTimelineCanvasView {
         }
         rowDisclosure = disclosure
         refreshDisclosureGeometry()
-        redrawForDisclosure()
+        redrawForRowMotion()
     }
 
     private func releaseHeldRows(of disclosure: NativeTimelineRowDisclosure) {
@@ -340,7 +342,7 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private var viewportMinY: CGFloat {
+    var viewportMinY: CGFloat {
         enclosingScrollView?.contentView.bounds.minY ?? visibleRect.minY
     }
 
@@ -365,7 +367,15 @@ extension NativeTimelineCanvasView {
         disclosureRelativeClipMaxY = .greatestFiniteMagnitude
     }
 
-    private func redrawForDisclosure() {
+    func redrawForRowMotion() {
+        // Hover regions are cached at the rows' displaced positions.
+        mentionPointerRegionCache.removeAll(keepingCapacity: true)
+        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, !suppressesHoverPresentation {
+            // The motion has landed: tracking areas and cursor rects follow the rows.
+            updateTrackingAreas()
+            window?.invalidateCursorRects(for: self)
+        }
         invalidateVisibleContent()
         reconcileInboxHeaders()
         positionAnimatedMediaOverlays()

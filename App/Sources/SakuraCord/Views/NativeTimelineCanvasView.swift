@@ -209,6 +209,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var sendTransitions: [NativeTimelineSendTransition] = []
     var transcriptGlide: NativeTimelineTranscriptGlide?
     var transcriptGlideFinishTask: Task<Void, Never>?
+    var unreadDividerFades: [NativeMessageTimelineItem.Identifier: NativeTimelineUnreadDividerFade] = [:]
+    var unreadDividerGap: NativeTimelineUnreadDividerGap?
+    /// Pins the NEW divider's Reduce Motion setting; nil follows the system.
+    var unreadDividerReducesMotionOverride: Bool?
+    let unreadDividerGapTicker = NativeTimelineDisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
@@ -446,6 +451,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             visibleMediaRequestTask?.cancel()
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
+            unreadDividerGapTicker.stop()
+            for fade in unreadDividerFades.values {
+                fade.finishTask?.cancel()
+                fade.overlay.removeFromSuperview()
+            }
             for transition in sendTransitions {
                 transition.finishTask?.cancel()
                 transition.overlay.removeFromSuperview()

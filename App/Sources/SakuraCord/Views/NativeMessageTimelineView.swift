@@ -403,6 +403,7 @@ extension NativeMessageTimelineCoordinator {
         ) {
             guard let canvas else { return }
             let sendTransitionAnchor = sendTransitionTranscriptAnchor(for: parent)
+            let unreadDivider = unreadDividerChange(to: parent, canvas: canvas)
             let (preparation, measurement) = prepareTimelineUpdate(
                 parent: parent,
                 scrollView: scrollView,
@@ -489,6 +490,7 @@ extension NativeMessageTimelineCoordinator {
                 preparation: preparation,
                 transcriptAnchor: sendTransitionAnchor
             )
+            if let unreadDivider { canvas.transitionUnreadDivider(unreadDivider) }
             Self.performanceSignposter.endInterval(
                 "MessageTimelineReload",
                 measurement.signpost
