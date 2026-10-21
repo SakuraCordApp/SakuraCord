@@ -835,10 +835,8 @@ private struct MessageTimelineSkeletonMessage: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: InterfaceScale.metric(12)) {
-            Circle()
-                .fill(.secondary.opacity(0.16))
+            SkeletonShape(Circle())
                 .frame(width: InterfaceScale.metric(40), height: InterfaceScale.metric(40))
-                .skeletonShimmer()
 
             VStack(alignment: .leading, spacing: InterfaceScale.metric(7)) {
                 HStack(spacing: InterfaceScale.metric(8)) {
@@ -859,10 +857,8 @@ private struct MessageTimelineSkeletonMessage: View {
     }
 
     private func skeletonLine(width: CGFloat, height: CGFloat) -> some View {
-        Capsule()
-            .fill(.secondary.opacity(0.16))
+        SkeletonShape(Capsule())
             .frame(width: width, height: height)
-            .skeletonShimmer()
     }
 }
 

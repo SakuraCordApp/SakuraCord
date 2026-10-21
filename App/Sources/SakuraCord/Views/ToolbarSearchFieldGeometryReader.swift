@@ -37,7 +37,7 @@ private enum ToolbarSearchFieldLocator {
 }
 
 private final class ToolbarSearchFieldSkeletonOverlay: NSView {
-    private let shimmerLayer = CAGradientLayer()
+    private let shimmer = SkeletonShimmer()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -45,11 +45,8 @@ private final class ToolbarSearchFieldSkeletonOverlay: NSView {
         layer?.cornerRadius = 10
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
-
-        shimmerLayer.startPoint = CGPoint(x: 0, y: 0.5)
-        shimmerLayer.endPoint = CGPoint(x: 1, y: 0.5)
-        layer?.addSublayer(shimmerLayer)
-        updateColorsForEffectiveAppearance()
+        layer?.addSublayer(shimmer.layer)
+        updateShimmer()
     }
 
     @available(*, unavailable)
@@ -59,40 +56,27 @@ private final class ToolbarSearchFieldSkeletonOverlay: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateColorsForEffectiveAppearance()
+        updateShimmer()
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateColorsForEffectiveAppearance()
-    }
-
-    private func updateColorsForEffectiveAppearance() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.labelColor
-                .withAlphaComponent(0.09).cgColor
-            shimmerLayer.colors = [
-                NSColor.clear.cgColor,
-                NSColor.labelColor.withAlphaComponent(0.04).cgColor,
-                NSColor.labelColor.withAlphaComponent(0.2).cgColor,
-                NSColor.labelColor.withAlphaComponent(0.04).cgColor,
-                NSColor.clear.cgColor,
-            ]
-        }
+        updateShimmer()
     }
 
     override func layout() {
         super.layout()
-        shimmerLayer.frame = bounds.insetBy(dx: -bounds.width, dy: 0)
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              shimmerLayer.animation(forKey: "skeletonShimmer") == nil
-        else { return }
-        let animation = CABasicAnimation(keyPath: "transform.translation.x")
-        animation.fromValue = -bounds.width
-        animation.toValue = bounds.width
-        animation.duration = SkeletonShimmerStyle.duration
-        animation.repeatCount = .infinity
-        shimmerLayer.add(animation, forKey: "skeletonShimmer")
+        updateShimmer()
+    }
+
+    private func updateShimmer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = SkeletonShimmerStyle.baseColor().cgColor
+            shimmer.update(
+                frame: bounds, color: .labelColor,
+                animates: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            )
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

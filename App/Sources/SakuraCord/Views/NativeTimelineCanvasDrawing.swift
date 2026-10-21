@@ -1249,7 +1249,7 @@ extension NativeTimelineCanvasView {
             width: InterfaceScale.metric(38),
             height: InterfaceScale.metric(38)
         ))
-        if drawsBase { NSColor.placeholderTextColor.withAlphaComponent(0.18).setFill() }
+        if drawsBase { SkeletonShimmerStyle.baseColor().setFill() }
         if drawsBase { avatarPath.fill() }
         shimmerMask.append(avatarPath)
 
@@ -1267,7 +1267,6 @@ extension NativeTimelineCanvasView {
             xRadius: InterfaceScale.metric(5),
             yRadius: InterfaceScale.metric(5)
         )
-        if drawsBase { NSColor.placeholderTextColor.withAlphaComponent(0.16).setFill() }
         if drawsBase { authorPath.fill() }
         shimmerMask.append(authorPath)
 
@@ -1281,7 +1280,6 @@ extension NativeTimelineCanvasView {
             xRadius: InterfaceScale.metric(3.5),
             yRadius: InterfaceScale.metric(3.5)
         )
-        if drawsBase { NSColor.placeholderTextColor.withAlphaComponent(0.11).setFill() }
         if drawsBase { timestampPath.fill() }
         shimmerMask.append(timestampPath)
 
