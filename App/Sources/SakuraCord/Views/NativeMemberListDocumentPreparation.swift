@@ -574,7 +574,7 @@ extension NativeMemberListCanvasView {
 
     private nonisolated static func nameFont(for member: Member) -> NSFont {
         ProfileNameFontCache.font(id: member.user.displayNameStyle?.fontID, fallback: .interfaceSystemFont(
-            ofSize: InterfaceTypographyMetrics.interfaceTextSize, weight: .semibold
+            ofSize: NSFont.authorNameSize, weight: .medium
         ))
     }
 
@@ -640,9 +640,9 @@ extension NativeMemberListCanvasView {
             } else {
                 gradientColors = nil
             }
-            let activityColor = presentation.activityTextPrimaryOpacity.map {
-                labelColor.withAlphaComponent(alpha * $0)
-            } ?? Self.memberActivityColor.withAlphaComponent(alpha)
+            let activityColor = labelColor.withAlphaComponent(
+                alpha * (presentation.activityTextPrimaryOpacity ?? 0.5)
+            )
             let name = Self.line(
                 member.user.displayName,
                 font: nameFont,

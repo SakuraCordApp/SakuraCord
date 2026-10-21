@@ -465,12 +465,12 @@ struct MemberRow: View {
                             HStack(spacing: InterfaceScale.metric(5)) {
                                 NameRoleColorIndicator(colorHex: MessageAuthorPresentation.topRoleColor(in: member.roles))
                                 if let style = member.user.displayNameStyle {
-                                    ProfileDisplayName(name: member.user.displayName, style: style, size: 13,
+                                    ProfileDisplayName(name: member.user.displayName, style: style, size: NSFont.authorNameSize,
                                                        showsEffects: false, plainColor: nameColor)
                                         .allowsHitTesting(false)
                                 } else {
                                     Text(member.user.displayName)
-                                        .font(.interface(.body).weight(.semibold))
+                                        .font(.interfaceSystem(size: NSFont.authorNameSize, weight: .medium))
                                         .foregroundStyle(nameColor)
                                         .lineLimit(1)
                                 }

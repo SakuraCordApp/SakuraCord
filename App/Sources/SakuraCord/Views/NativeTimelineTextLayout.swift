@@ -1882,7 +1882,7 @@ extension NativeTimelineRowLayout {
         }
 
         init(settings: InterfaceSettingsSnapshot) {
-            authorFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize + 1, weight: .medium)
+            authorFont = .interfaceSystemFont(ofSize: NSFont.authorNameSize, weight: .medium)
             timestampFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 1)
             editedFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize + 1)
             timestampGutterWidth = NativeTimelineCompactTimestampMetrics.width(settings: settings)

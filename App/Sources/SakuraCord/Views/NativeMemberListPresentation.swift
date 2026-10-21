@@ -51,7 +51,7 @@ nonisolated struct NativeMemberListPresentation: Equatable, Sendable {
     var presenceHiddenUserIDs: Set<UserID> = []
     /// Space reserved for hover controls on wider people lists.
     var trailingAccessoryWidth: CGFloat = 0
-    /// Overrides the usual activity gray for lists displaying secondary names.
+    /// Overrides the default primary-label opacity for secondary text.
     var activityTextPrimaryOpacity: CGFloat?
 
     func opacity(for member: Member) -> CGFloat {

@@ -60,7 +60,7 @@ extension NativeMemberListCanvasView {
             ofSize: InterfaceTypographyMetrics.interfaceTextSize,
             weight: .semibold
         )
-        let color = NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7)
+        let color = NSColor.labelColor.withAlphaComponent(0.5)
         let labelY = origins[index] + InterfaceScale.metric(16)
         var labelX = InterfaceScale.metric(14)
         if let role = section.role, role.hasIcon {
