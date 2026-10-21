@@ -261,7 +261,11 @@ final class ExternalLinkConfirmationPresenter {
         self.windowProvider = windowProvider
     }
 
-    func present(_ assessment: ExternalLinkSafetyAssessment) {
+    func present(
+        _ assessment: ExternalLinkSafetyAssessment,
+        opener: ((URL) -> Void)? = nil
+    ) {
+        let open = opener ?? self.opener
         guard assessment.isAllowed else {
             NSSound.beep()
             return
@@ -271,7 +275,7 @@ final class ExternalLinkConfirmationPresenter {
             for: assessment,
             trustedDomains: settings.trustedDomains
         ) else {
-            opener(assessment.url)
+            open(assessment.url)
             return
         }
         guard activeAlert == nil, let window = windowProvider() else {
@@ -327,7 +331,7 @@ final class ExternalLinkConfirmationPresenter {
                 if trustDomainCheckbox?.state == .on {
                     settingsStore.trust(domain)
                 }
-                opener(url)
+                open(url)
             }
         }
     }
