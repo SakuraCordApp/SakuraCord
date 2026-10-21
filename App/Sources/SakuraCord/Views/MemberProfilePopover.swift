@@ -684,7 +684,7 @@ struct ProfileStatusBubble: View {
 
     @ViewBuilder
     private func bubbleContent(isExpanded: Bool) -> some View {
-        if isEmojiOnly {
+        if NativeMemberActivityPresentation.isEmojiOnly(text) {
             let fontSize: CGFloat = isExpandedProfile ? 24 : 18
             ProfileStatusTextView(source: text, isExpanded: true, fontSize: fontSize)
                 .frame(width: contentWidth(fontSize: fontSize), height: ceil(InterfaceScale.fontSize(fontSize) * 1.3))
@@ -717,14 +717,6 @@ struct ProfileStatusBubble: View {
             stylesLinks: false
         )
         return ceil(attributedText.size().width) + 2
-    }
-
-    private var isEmojiOnly: Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if EmojiReference(rawToken: value).id != nil { return true }
-        return value.count == 1 && value.unicodeScalars.contains {
-            $0.properties.isEmojiPresentation || $0.value == 0xFE0F
-        }
     }
 
     private var displayText: String {

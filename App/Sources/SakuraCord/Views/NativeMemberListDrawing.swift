@@ -354,13 +354,13 @@ extension NativeMemberListCanvasView {
         if let activity = prepared.activity,
            let truncationToken = prepared.activityTruncationToken
         {
-            let maximumWidth = max(0, row.maxX - textX - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth))
+            let activityFrame = activityTextFrame(at: index)
             let visibleActivity = cachedFittedTextLine(
                 activity,
                 token: truncationToken,
-                maximumWidth: maximumWidth
+                maximumWidth: activityFrame.width
             )
-            let origin = CGPoint(x: textX, y: row.minY + InterfaceScale.metric(24))
+            let origin = activityFrame.origin
             Self.draw(line: visibleActivity, at: origin, context: context)
             for region in NativeMemberActivityPresentation.emojiRegions(
                 in: visibleActivity,

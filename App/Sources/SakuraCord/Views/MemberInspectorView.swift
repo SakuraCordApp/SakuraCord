@@ -482,15 +482,15 @@ struct MemberRow: View {
                                     PrimaryGuildTag(identity: identity)
                                 }
                             }
-                            if let activity = member.memberListActivityText, !activity.isEmpty {
+                            let activityContent = member.memberListActivityContent
+                            if let activity = activityContent.text, !activity.isEmpty {
                                 HStack(spacing: InterfaceScale.metric(4)) {
                                     if member.isListeningToMusic {
                                         Image(systemName: "music.note")
-                                            .foregroundStyle(Color(hex: 0x1DB954))
-                                        if member.memberListShowsMusicSeparator {
-                                            Text("·")
-                                                .foregroundStyle(.secondary)
-                                        }
+                                            .foregroundStyle(Color(nsColor: NativeMemberActivityPresentation.iconColor))
+                                    }
+                                    if activityContent.separatesMusicIcon {
+                                        activitySeparator
                                     }
                                     ProfileStatusTextView(
                                         source: activity,
@@ -498,6 +498,10 @@ struct MemberRow: View {
                                         fontSize: 12,
                                         usesSecondaryColor: true
                                     )
+                                    if let emoji = activityContent.trailingEmoji {
+                                        activitySeparator
+                                        ProfileStatusTextView(source: emoji, isExpanded: false, fontSize: 12, usesSecondaryColor: true)
+                                    }
                                 }
                                 .font(.interfaceSystem(size: 12))
                                 .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(14), maxHeight: InterfaceScale.metric(16), alignment: .leading)
@@ -517,7 +521,11 @@ struct MemberRow: View {
         }
         .buttonStyle(.plain)
         .onModalHover { isHovered = $0 }
-        .help(member.user.username)
+        .help(member.memberListTooltip)
+    }
+
+    private var activitySeparator: some View {
+        Text("·").fontWeight(.bold).foregroundStyle(.primary.opacity(0.5))
     }
 
     private var nameColor: Color {

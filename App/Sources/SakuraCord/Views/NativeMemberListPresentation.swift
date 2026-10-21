@@ -13,15 +13,25 @@ extension Member {
         user.usesHTTPInteractions ? nil : status
     }
 
-    nonisolated var memberListActivityText: String? {
-        if isListeningToMusic, let customStatus, !customStatus.isEmpty {
-            return customStatus
+    nonisolated var memberListActivityContent: NativeMemberActivityPresentation.Content {
+        guard isListeningToMusic,
+              let customStatus, !customStatus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return .init(text: activityText) }
+        if NativeMemberActivityPresentation.isEmojiOnly(customStatus) {
+            if let activityText, !activityText.isEmpty, activityText != customStatus {
+                return .init(text: activityText, trailingEmoji: customStatus)
+            }
+            return .init(text: customStatus)
         }
-        return activityText
+        return .init(text: customStatus, separatesMusicIcon: true)
     }
 
-    nonisolated var memberListShowsMusicSeparator: Bool {
-        isListeningToMusic && customStatus?.isEmpty == false
+    nonisolated var memberListActivityText: String? {
+        memberListActivityContent.displayText
+    }
+
+    nonisolated var memberListTooltip: String {
+        [user.username, activityText].compactMap { $0 }.joined(separator: "\n")
     }
 }
 

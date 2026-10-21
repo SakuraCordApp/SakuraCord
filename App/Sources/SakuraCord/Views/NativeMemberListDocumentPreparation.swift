@@ -624,21 +624,11 @@ extension NativeMemberListCanvasView {
                 ? topRole?.colorHex.map(Self.color(hex:)) ?? labelColor
                 : labelColor
             let alpha = presentation.opacity(for: member)
-            let gradientColors: [NSColor]?
-            if let topRole,
-               let primary = topRole.colorHex,
-               let secondary = topRole.secondaryColorHex
-            {
-                let primaryColor = Self.color(hex: primary).withAlphaComponent(alpha)
-                let secondaryColor = Self.color(hex: secondary).withAlphaComponent(alpha)
-                if let tertiary = topRole.tertiaryColorHex {
-                    let tertiaryColor = Self.color(hex: tertiary).withAlphaComponent(alpha)
-                    gradientColors = [primaryColor, secondaryColor, tertiaryColor]
-                } else {
-                    gradientColors = [primaryColor, secondaryColor]
+            let gradientColors = topRole.flatMap { role -> [NSColor]? in
+                guard let primary = role.colorHex, let secondary = role.secondaryColorHex else { return nil }
+                return [primary, secondary, role.tertiaryColorHex].compactMap {
+                    $0.map { Self.color(hex: $0).withAlphaComponent(alpha) }
                 }
-            } else {
-                gradientColors = nil
             }
             let activityColor = labelColor.withAlphaComponent(
                 alpha * (presentation.activityTextPrimaryOpacity ?? 0.5)
@@ -648,14 +638,16 @@ extension NativeMemberListCanvasView {
                 font: nameFont,
                 color: nameColor.withAlphaComponent(alpha)
             )
-            let activity = member.memberListActivityText.flatMap { text -> CTLine? in
+            let activityContent = member.memberListActivityContent
+            let activity = activityContent.text.flatMap { text -> CTLine? in
                 guard !text.isEmpty else { return nil }
                 return NativeMemberActivityPresentation.line(
                     text,
                     font: activityFont,
                     color: activityColor,
                     showsMusicIcon: member.isListeningToMusic,
-                    showsMusicSeparator: member.memberListShowsMusicSeparator
+                    showsActivitySeparator: activityContent.separatesMusicIcon,
+                    trailingEmoji: activityContent.trailingEmoji
                 )
             }
             let activityTruncationToken = activity.map { _ in

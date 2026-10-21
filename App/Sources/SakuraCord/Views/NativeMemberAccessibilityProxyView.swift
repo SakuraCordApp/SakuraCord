@@ -21,7 +21,7 @@ final class NativeMemberAccessibilityProxyView: NSButton {
                 member.isListeningToMusic ? "Listening to music, \($0)" : $0
             }
             setAccessibilityValue([presence, activityLabel].compactMap { $0 }.joined(separator: ", "))
-            toolTip = member.user.username
+            toolTip = member.memberListTooltip
         }
     }
     var activation: ((Member) -> Void)?

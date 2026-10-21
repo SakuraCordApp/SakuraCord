@@ -12,6 +12,32 @@ nonisolated struct NativeMemberActivityEmojiRegion: Equatable {
 }
 
 nonisolated enum NativeMemberActivityPresentation {
+    static let iconColor = NSColor(srgbRed: 29.0 / 255, green: 185.0 / 255, blue: 84.0 / 255, alpha: 1)
+
+    nonisolated struct Content: Sendable {
+        let text: String?
+        /// An emoji-only custom status shown after the listening activity.
+        var trailingEmoji: String?
+        /// A custom status replaced the listening activity, so a separator
+        /// sets it apart from the music icon.
+        var separatesMusicIcon = false
+
+        var displayText: String? {
+            guard let text, let trailingEmoji else { return text }
+            return "\(text) · \(trailingEmoji)"
+        }
+    }
+
+    static func isEmojiOnly(_ source: String) -> Bool {
+        let value = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        if EmojiReference(rawToken: value).id != nil { return true }
+        guard value.count == 1 else { return false }
+        let scalars = value.unicodeScalars
+        return scalars.contains { $0.properties.isEmojiPresentation }
+            || scalars.contains { $0.value == 0xFE0F || $0.value == 0x20E3 }
+            || (scalars.count > 1 && scalars.contains { $0.properties.isEmoji })
+    }
+
     private static let emojiExpression = RegularExpressionFactory.make(
         #"<(a?):([A-Za-z0-9_~]+):([0-9]+)>"#
     )
@@ -24,17 +50,35 @@ nonisolated enum NativeMemberActivityPresentation {
         font: NSFont,
         color: NSColor,
         showsMusicIcon: Bool = false,
-        showsMusicSeparator: Bool = false
+        showsActivitySeparator: Bool = false,
+        trailingEmoji: String? = nil
     ) -> CTLine {
         let output = NSMutableAttributedString()
+        func appendSeparator() {
+            output.append(text("·", font: .systemFont(ofSize: font.pointSize, weight: .bold), color: color))
+            output.append(text(" ", font: font, color: color))
+        }
         if showsMusicIcon {
             output.append(text(
                 "♫",
                 font: font,
-                color: NSColor(red: 29.0 / 255, green: 185.0 / 255, blue: 84.0 / 255, alpha: 1)
+                color: iconColor
             ))
-            output.append(text(showsMusicSeparator ? " · " : " ", font: font, color: color))
+            output.append(text(" ", font: font, color: color))
         }
+        if showsActivitySeparator {
+            appendSeparator()
+        }
+        appendSource(source, to: output, font: font, color: color)
+        if let trailingEmoji {
+            output.append(text(" ", font: font, color: color))
+            appendSeparator()
+            appendSource(trailingEmoji, to: output, font: font, color: color)
+        }
+        return CTLineCreateWithAttributedString(output)
+    }
+
+    private static func appendSource(_ source: String, to output: NSMutableAttributedString, font: NSFont, color: NSColor) {
         let sourceString = source as NSString
         let matches = emojiExpression.matches(
             in: source,
@@ -79,7 +123,6 @@ nonisolated enum NativeMemberActivityPresentation {
                 color: color
             ))
         }
-        return CTLineCreateWithAttributedString(output)
     }
 
     static func emojiRegions(
