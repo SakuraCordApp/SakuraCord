@@ -78,16 +78,25 @@ nonisolated enum NativeTimelineThreadCard {
 
     static func countText(_ thread: MessageThreadSummary) -> String {
         let count = thread.messageCount
-        guard count > 0 else { return "See Thread ›" }
-        guard count > 1 else { return "1 Message ›" }
-        let shown = if count >= 100_000 {
+        guard count > 0 else { return "See Thread" }
+        guard count > 1 else { return "1 Message" }
+        return "\(shownCount(thread)) Messages"
+    }
+
+    /// The count alone, for cards too narrow for the full label.
+    static func compactCountText(_ thread: MessageThreadSummary) -> String? {
+        thread.messageCount > 0 ? shownCount(thread) : nil
+    }
+
+    private static func shownCount(_ thread: MessageThreadSummary) -> String {
+        let count = thread.messageCount
+        return if count >= 100_000 {
             "100k+"
         } else if count >= 50, thread.id.createdAt <= cappedCountCutoff {
             "50+"
         } else {
             "\(count)"
         }
-        return "\(shown) Messages ›"
     }
 
     static func activityText(_ date: Date, now: Date = .now) -> String {
