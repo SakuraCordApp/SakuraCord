@@ -17,6 +17,20 @@ extension AppModel {
         return true
     }
 
+    /// Adds or removes a tag from a post; Discord allows at most five.
+    func toggleForumTag(_ tagID: ForumTagID, on post: ForumPost, in channel: Channel) {
+        guard let tag = channel.availableTags.first(where: { $0.id == tagID }),
+              canToggleForumTag(tag, on: post)
+        else { return }
+        var tags = Set(post.thread.appliedTagIDs)
+        if tags.contains(tagID) {
+            tags.remove(tagID)
+        } else if tags.count < 5 {
+            tags.insert(tagID)
+        }
+        Task { await updateForumPost(post, mutation: .tags(Array(tags))) }
+    }
+
     func resetForumLoadAndPresentationState() {
         forumLoadTask?.cancel()
         forumLoadTask = nil

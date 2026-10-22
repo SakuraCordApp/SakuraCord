@@ -11,7 +11,7 @@ import Testing
         name: "Complete",
         isModerated: true
     )
-    let bridge = ForumPostContextMenuBridge(
+    let menu = ForumPostMenuBuilder().makeMenu(
         actionsMenu: ThreadActionsMenu(sections: [[
             ThreadMenuEntry(id: ThreadActionsMenu.tagsSlotID, title: "Tags", content: .slot),
         ]]),
@@ -23,7 +23,6 @@ import Testing
         toggleTag: { _ in }
     )
 
-    let menu = bridge.makeCoordinator().makeMenu()
     let tagsMenu = try #require(menu.item(withTitle: "Tags")?.submenu)
     #expect(tagsMenu.item(withTitle: ordinary.name)?.isEnabled == true)
     #expect(tagsMenu.item(withTitle: moderated.name)?.isEnabled == false)
@@ -32,7 +31,7 @@ import Testing
 @MainActor
 @Test func `required forum tag cannot be removed when it is the last applied tag`() throws {
     let required = ForumTag(id: ForumTagID(rawValue: 1), name: "Required")
-    let bridge = ForumPostContextMenuBridge(
+    let menu = ForumPostMenuBuilder().makeMenu(
         actionsMenu: ThreadActionsMenu(sections: [[
             ThreadMenuEntry(id: ThreadActionsMenu.tagsSlotID, title: "Tags", content: .slot),
         ]]),
@@ -44,7 +43,6 @@ import Testing
         toggleTag: { _ in }
     )
 
-    let menu = bridge.makeCoordinator().makeMenu()
     let tagsMenu = try #require(menu.item(withTitle: "Tags")?.submenu)
     #expect(tagsMenu.item(withTitle: required.name)?.isEnabled == false)
 }

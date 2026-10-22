@@ -129,8 +129,6 @@ private final class ForumBenchmarkCompletion {
 /// `register(scrollView:)`; otherwise the benchmark finds the SwiftUI one.
 @MainActor
 enum ForumBoardBenchmark {
-    static let scrollIdentifier = "forum-post-scroll"
-
     private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ForumBenchmark")
     private static let scrollSpeed: CGFloat = 2_000
     private static let scrollDuration: TimeInterval = 15
@@ -183,27 +181,10 @@ enum ForumBoardBenchmark {
     private static func findScrollView() async -> NSScrollView? {
         var found: NSScrollView?
         _ = await waitUntil({
-            found = registeredScrollView ?? swiftUIScrollView()
+            found = registeredScrollView
             return found.map { ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height } ?? false
         }, seconds: 15)
         return found
-    }
-
-    /// The scroll view tagged by the SwiftUI board, else the tallest wide one.
-    private static func swiftUIScrollView() -> NSScrollView? {
-        guard let root = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain })?.contentView else {
-            return nil
-        }
-        var candidates: [NSScrollView] = []
-        func visit(_ view: NSView) {
-            if let scrollView = view as? NSScrollView, scrollView.frame.width > 400 {
-                candidates.append(scrollView)
-            }
-            view.subviews.forEach(visit)
-        }
-        visit(root)
-        return candidates.first { $0.accessibilityIdentifier() == scrollIdentifier }
-            ?? candidates.max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
     }
 
     private static func scroll(_ scrollView: NSScrollView, model: AppModel, into result: inout Result) async {
@@ -285,37 +266,5 @@ enum ForumBoardBenchmark {
         FileHandle.standardOutput.write(Data((line + "\n").utf8))
         logger.notice("\(line, privacy: .public)")
     }
-}
-
-private struct ForumLayoutStabilityModifier: ViewModifier {
-    let postID: ChannelID
-
-    func body(content: Content) -> some View {
-        content.onGeometryChange(for: CGSize.self, of: \.size) { size in
-            let probe = ForumLayoutStabilityProbe.shared
-            probe.record(postID: postID, size: size, containerWidth: probe.containerWidth)
-        }
-    }
-}
-
-extension View {
-    /// Reports a post card's measured size to the layout stability probe.
-    func forumLayoutStabilityProbe(postID: ChannelID) -> some View {
-        modifier(ForumLayoutStabilityModifier(postID: postID))
-    }
-
-    /// Tags the board's scroll view for the benchmark and reports the width
-    /// its post cards are laid out in.
-    func forumBoardProbe() -> some View {
-        accessibilityIdentifier(ForumBoardBenchmark.scrollIdentifier)
-            .onGeometryChange(for: CGFloat.self, of: \.size.width) {
-                ForumLayoutStabilityProbe.shared.containerWidth = $0
-            }
-    }
-}
-#else
-extension View {
-    func forumLayoutStabilityProbe(postID: ChannelID) -> some View { self }
-    func forumBoardProbe() -> some View { self }
 }
 #endif
