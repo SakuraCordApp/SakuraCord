@@ -411,12 +411,41 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         refreshVisibleCards(transition: .none)
         updateHoverFromCurrentPointer()
         requestNextPageIfNeeded()
+        rememberScrollPosition()
+    }
+
+    /// The visit's remembered position, once the first posts are in; if its
+    /// post is not among them, the forum starts at the top.
+    private func takeScrollRestore() -> ScrollAnchor? {
+        guard let model, let channel, snapshot?.posts.isEmpty == false,
+              let position = model.forumViewMemory.takePendingRestore(for: channel.id),
+              postsByID[position.postID] != nil
+        else { return nil }
+        return ScrollAnchor(id: .post(position.postID), offset: position.offset)
+    }
+
+    /// Keeps where this forum is scrolled, so coming back to it later in the
+    /// session shows the same posts.
+    private func rememberScrollPosition() {
+        guard let model, let channel, snapshot?.posts.isEmpty == false,
+              !model.forumViewMemory.hasPendingRestore(for: channel.id)
+        else { return }
+        // Anchored on the first visible post, past any section header.
+        let position = scrollAnchor(postsOnly: true).flatMap { anchor -> ForumViewMemory.ScrollPosition? in
+            guard case let .post(postID) = anchor.id else { return nil }
+            return ForumViewMemory.ScrollPosition(postID: postID, offset: anchor.offset)
+        }
+        model.forumViewMemory.rememberScrollPosition(position, for: channel.id)
     }
 
     private func relayout(transition: ForumBoardTransition, scrollsToTop: Bool) {
         guard let scrollView = enclosingScrollView else { return }
         let width = scrollView.contentView.bounds.width
         guard width > 0 else { return }
+        // The first layout of a visit with posts restores where it was left,
+        // whether an update or the board's first sizing runs it.
+        let restoring = takeScrollRestore()
+        let scrollsToTop = scrollsToTop && restoring == nil
         if metrics.scale != InterfaceScale.factor {
             metrics = ForumBoardMetrics.current()
             titleCounter = ForumTitleLineCounter(font: metrics.titleFont, maximumLines: metrics.maximumTitleLines)
@@ -424,7 +453,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             // Excerpt fonts and emoji sizes follow the interface size.
             reconfigureRealizedExcerpts()
         }
-        let anchor = transition == .none && !scrollsToTop ? scrollAnchor() : nil
+        let anchor = restoring ?? (transition == .none && !scrollsToTop ? scrollAnchor() : nil)
         let counter = titleCounter
         let signpost = AppPerformanceSignposts.signposter.beginInterval("ForumBoardLayout")
         let newLayout = ForumBoardLayout.make(
@@ -457,6 +486,8 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         window?.invalidateCursorRects(for: self)
         // A page that leaves the end of the board on screen asks for the next.
         requestNextPageIfNeeded()
+        // A live reorder can change the first visible post without scrolling.
+        rememberScrollPosition()
     }
 
     private struct ScrollAnchor {
@@ -464,11 +495,15 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let offset: CGFloat
     }
 
-    private func scrollAnchor() -> ScrollAnchor? {
+    /// The first entry at the top of the view and how far it sits below the
+    /// view's top; nil at the very top, where nothing needs keeping.
+    private func scrollAnchor(postsOnly: Bool = false) -> ScrollAnchor? {
         guard let layoutState else { return nil }
         let visible = visibleRect
         guard visible.minY > 1,
-              let entry = layoutState.entries(intersecting: visible).first(where: { $0.frame.maxY > visible.minY })
+              let entry = layoutState.entries(intersecting: visible).first(where: {
+                  $0.frame.maxY > visible.minY && (!postsOnly || $0.item.postID != nil)
+              })
         else { return nil }
         return ScrollAnchor(id: entry.item.id, offset: entry.frame.minY - visible.minY)
     }

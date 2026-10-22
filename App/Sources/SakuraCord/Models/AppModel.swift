@@ -397,6 +397,7 @@ final class AppModel {
     var forumSortOrder: ForumSortOrder = .latestActivity
     var forumLayout: ForumLayout = .list
     var forumTagMatch: ForumTagMatch = .matchSome
+    @ObservationIgnored lazy var forumViewMemory = ForumViewMemory(defaults: launchMode == .normal ? PRBuildProfile.defaults : nil)
     var interactionModalForm: InteractionModalFormState?
     /// The open side chats: the single source of truth for threads, voice
     /// chat, Guide resources and channel previews beside the primary

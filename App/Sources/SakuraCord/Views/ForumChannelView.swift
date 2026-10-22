@@ -190,12 +190,7 @@ private struct ForumFilterBar: View {
                     customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
                     isSelected: model.forumSelectedTagIDs.contains(tag.id)
                 ) {
-                    if model.forumSelectedTagIDs.contains(tag.id) {
-                        model.forumSelectedTagIDs.remove(tag.id)
-                    } else {
-                        model.forumSelectedTagIDs.insert(tag.id)
-                    }
-                    model.reloadForumPosts()
+                    model.toggleForumFilterTag(tag.id)
                 }
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
@@ -389,36 +384,16 @@ private struct ForumSortMenu: View {
                 sortOrder: model.forumSortOrder,
                 layout: model.forumLayout,
                 tagMatch: model.forumTagMatch,
-                selectSortOrder: selectSort,
-                selectLayout: { model.forumLayout = $0 },
-                selectTagMatch: selectTagMatch,
-                reset: resetToDefault,
+                selectSortOrder: model.setForumSortOrder,
+                selectLayout: model.setForumLayout,
+                selectTagMatch: model.setForumTagMatch,
+                reset: model.resetForumView,
                 onHover: { isHovered = $0 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private func selectSort(_ value: ForumSortOrder) {
-        guard model.forumSortOrder != value else { return }
-        model.forumSortOrder = value
-        model.reloadForumPosts()
-    }
-
-    private func selectTagMatch(_ value: ForumTagMatch) {
-        guard model.forumTagMatch != value else { return }
-        model.forumTagMatch = value
-        model.reloadForumPosts()
-    }
-
-    private func resetToDefault() {
-        model.forumSortOrder = model.selectedChannel?.defaultSortOrder ?? .latestActivity
-        let layout = model.selectedChannel?.defaultForumLayout ?? .list
-        model.forumLayout = layout == .defaultLayout ? .list : layout
-        model.forumTagMatch = model.selectedChannel?.defaultTagMatch ?? .matchSome
-        model.forumSelectedTagIDs = []
-        model.reloadForumPosts()
-    }
 }
 
 private struct NativeForumSortMenuButton: NSViewRepresentable {

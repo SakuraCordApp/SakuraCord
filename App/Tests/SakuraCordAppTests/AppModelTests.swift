@@ -1603,6 +1603,87 @@ func `reaction cooldown drops cancelled intent and cleared mutations`(clearMutat
 }
 
 @MainActor
+@Test func `returning to a forum keeps its sort and view but not its filters`() async throws {
+    let provider = MockChatProvider()
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let forum = try #require(model.snapshot?.channels.first(where: { $0.kind == .forum }))
+    let otherChannel = try #require(
+        model.snapshot?.channels.first {
+            $0.guildID == forum.guildID && $0.id != forum.id && $0.kind != .forum
+        }
+    )
+    let tagID = try #require(forum.availableTags.first?.id)
+
+    model.selectedChannelID = forum.id
+    #expect(await until { model.hasLoadedForumPosts })
+    model.setForumSortOrder(.creationDate)
+    model.setForumLayout(.gallery)
+    model.setForumTagMatch(.matchAll)
+    model.toggleForumFilterTag(tagID)
+
+    model.selectedChannelID = otherChannel.id
+    model.selectedChannelID = forum.id
+
+    #expect(model.forumSortOrder == .creationDate)
+    #expect(model.forumLayout == .gallery)
+    #expect(model.forumTagMatch == .matchAll)
+    #expect(model.forumSelectedTagIDs.isEmpty)
+
+    model.resetForumView()
+    model.selectedChannelID = otherChannel.id
+    model.selectedChannelID = forum.id
+
+    #expect(model.forumSortOrder == (forum.defaultSortOrder ?? .latestActivity))
+    #expect(model.forumTagMatch == forum.defaultTagMatch)
+}
+
+@MainActor
+@Test func `a forum restores its scroll position once per visit unless the query changes`() {
+    let memory = ForumViewMemory(defaults: nil)
+    let forum = ChannelID(rawValue: 10)
+    let position = ForumViewMemory.ScrollPosition(postID: ChannelID(rawValue: 11), offset: 24)
+    memory.rememberScrollPosition(position, for: forum)
+
+    memory.beginVisit(forum)
+    #expect(memory.takePendingRestore(for: ChannelID(rawValue: 12)) == nil)
+    #expect(memory.takePendingRestore(for: forum) == position)
+    // A board rebuilt later in the same visit restores nothing.
+    #expect(memory.takePendingRestore(for: forum) == nil)
+
+    memory.beginVisit(forum)
+    memory.cancelPendingRestore()
+    #expect(memory.takePendingRestore(for: forum) == nil)
+
+    memory.beginVisit(forum)
+    memory.forget(forum)
+    #expect(memory.takePendingRestore(for: forum) == nil)
+    // Forgetting drops the position itself, not just this visit's restore.
+    memory.beginVisit(forum)
+    #expect(memory.takePendingRestore(for: forum) == nil)
+}
+
+@MainActor
+@Test func `a forum's sort and view survive a relaunch until reset`() throws {
+    let suiteName = "forum-view-memory-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let forum = ChannelID(rawValue: 20)
+
+    ForumViewMemory(defaults: defaults)
+        .remember(sortOrder: .creationDate, layout: .gallery, tagMatch: .matchAll, for: forum)
+
+    let relaunched = ForumViewMemory(defaults: defaults)
+    let saved = try #require(relaunched.preferences(for: forum))
+    #expect(saved.sortOrder == .creationDate)
+    #expect(saved.layout == .gallery)
+    #expect(saved.tagMatch == .matchAll)
+
+    relaunched.forget(forum)
+    #expect(ForumViewMemory(defaults: defaults).preferences(for: forum) == nil)
+}
+
+@MainActor
 @Test func `ordinary linked channels load their guild before forum resolution`() async {
     let provider = LinkedChannelNavigationTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
