@@ -116,6 +116,7 @@ private struct ForumPostCollection: View {
                 listContent
             }
         }
+        .forumBoardProbe()
         .scrollPosition($scrollPosition)
         .onChange(of: query) {
             // A new query starts at its first post; keeping a deep offset
@@ -814,6 +815,7 @@ private struct ForumListPostCard: View {
             }
             .padding(InterfaceScale.metric(14))
         }
+        .forumLayoutStabilityProbe(postID: post.id)
     }
 
     private var starterMessage: Message? {
@@ -886,6 +888,7 @@ private struct ForumGalleryPostCard: View {
             .padding(InterfaceScale.metric(14))
             .frame(height: ForumPostCardMetrics.galleryCardHeight, alignment: .top)
         }
+        .forumLayoutStabilityProbe(postID: post.id)
     }
 }
 

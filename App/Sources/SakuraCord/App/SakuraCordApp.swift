@@ -14,6 +14,7 @@ struct SakuraCordApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
     private let opensForumPerformanceFixture: Bool
+    private let runsForumPerformanceAutoScroll: Bool
     private let opensChatPerformanceFixture: Bool
     private let opensPinsPerformanceFixture: Bool
     private let runsFriendsPerformanceBenchmark: Bool
@@ -35,6 +36,10 @@ struct SakuraCordApp: App {
         DiagnosticsPreferences.restore()
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
+        runsForumPerformanceAutoScroll = configuration.runsForumPerformanceAutoScroll
+#if DEBUG
+        ForumLayoutStabilityProbe.shared.isEnabled = configuration.includesForumPerformanceFixture
+#endif
         opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
         opensPinsPerformanceFixture = configuration.includesPinsPerformanceFixture
         runsFriendsPerformanceBenchmark = configuration.runsFriendsPerformanceBenchmark
@@ -67,6 +72,7 @@ struct SakuraCordApp: App {
             ? MockChatProvider(
                 includesLongServerList: configuration.includesLongServerList,
                 forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
+                forumPreviewsHydrateLate: configuration.includesForumPerformanceFixture,
                 timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
                 pinnedMessageCount: configuration.includesPinsPerformanceFixture ? 5_000 : nil,
                 timelineIncludesAnimatedMedia:
@@ -166,6 +172,11 @@ struct SakuraCordApp: App {
                     } else if opensChatPerformanceFixture {
                         model.selectedChannelID = ChannelID(rawValue: 210)
                     }
+#if DEBUG
+                    if runsForumPerformanceAutoScroll {
+                        await ForumBoardBenchmark.run(model: model)
+                    }
+#endif
                     if runsFriendsPerformanceBenchmark {
                         await FriendsPerformanceBenchmark.run(model: model, provider: performanceMockProvider)
                     }

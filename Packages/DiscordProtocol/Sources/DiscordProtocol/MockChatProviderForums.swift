@@ -5,6 +5,11 @@ public extension MockChatProvider {
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
         -> ForumPostPage
     {
+        let page = try forumPage(in: channelID, query: query)
+        return forumPreviewsHydrateLate ? hydratingPreviewsLater(page, in: channelID) : page
+    }
+
+    private func forumPage(in channelID: ChannelID, query: ForumPostQuery) throws -> ForumPostPage {
         forumQueriesByChannel[channelID, default: []].append(query)
         guard snapshot.channels.contains(where: { $0.id == channelID && $0.kind == .forum }) else {
             throw ChatProviderError.channelNotFound
@@ -40,6 +45,36 @@ public extension MockChatProvider {
             sortOrder: query.sortOrder
         )
         return ForumPostPage(posts: posts, hasMore: false, nextOffset: nil)
+    }
+
+    /// Strips a page's previews and republishes them later, like the live
+    /// provider's post-data hydration, so cards first lay out without them.
+    /// The delay outlasts the first paint, so previews land on visible cards.
+    private func hydratingPreviewsLater(_ page: ForumPostPage, in channelID: ChannelID) -> ForumPostPage {
+        var stripped = page
+        for index in stripped.posts.indices {
+            // Like a live catalogue entry, the stripped post keeps its
+            // activity order through its last message ID.
+            if let latest = stripped.posts[index].mostRecentMessage {
+                stripped.posts[index].thread.lastMessageID = .messageSearchBoundary(at: latest.timestamp)
+            }
+            stripped.posts[index].firstMessage = nil
+            stripped.posts[index].mostRecentMessage = nil
+        }
+        let postIDs = Set(page.posts.map(\.id))
+        Task {
+            do {
+                try await Task.sleep(for: .milliseconds(1_200))
+            } catch {
+                return
+            }
+            // Republish current records, so a post edited or deleted during
+            // the delay is not restored.
+            let current = (forumPostsByChannel[channelID] ?? []).filter { postIDs.contains($0.id) }
+            guard !current.isEmpty else { return }
+            continuation?.yield(.forumPostPreviewsChanged(channelID: channelID, posts: current))
+        }
+        return stripped
     }
 
     func forumQueries(in channelID: ChannelID) -> [ForumPostQuery] {

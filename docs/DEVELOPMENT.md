@@ -59,7 +59,8 @@ contacting Discord:
 | --- | --- |
 | `./script/build_and_run.sh --offline-sign-in` | Welcome animation and shared native sign-in flow |
 | `./script/build_and_run.sh --offline-long-server-list` | Extended server rail |
-| `./script/build_and_run.sh --offline-forum-performance` | Large forum |
+| `./script/build_and_run.sh --offline-forum-performance` | Large forum; post previews arrive 1.2 s after each page |
+| `./script/build_and_run.sh --offline-forum-performance-autoscroll` | Same forum, then a 15-second, 2,000-point/second scroll; writes frame timing and layout-jump counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` and logs a `ForumBenchmark:` line |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-chat-voice-performance` | Large native timeline where every fifth message is a voice message |
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |

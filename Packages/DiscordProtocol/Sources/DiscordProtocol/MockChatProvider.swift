@@ -11,6 +11,9 @@ public actor MockChatProvider: ChatProvider {
     var messagesByChannel: [ChannelID: [Message]]
     var pinnedAtByMessageID: [MessageID: Date]
     let pinMutationFailureStatus: Int?
+    /// Serves forum pages without previews, then publishes them as Discord's
+    /// batched post-data hydration does.
+    let forumPreviewsHydrateLate: Bool
     var forumPostsByChannel: [ChannelID: [ForumPost]]
     private var profilesByUser: [UserID: UserProfile]
     var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
@@ -45,6 +48,7 @@ public actor MockChatProvider: ChatProvider {
     public init(
         includesLongServerList: Bool = false,
         forumPostCount: Int? = nil,
+        forumPreviewsHydrateLate: Bool = false,
         timelineMessageCount: Int? = nil,
         pinnedMessageCount: Int? = nil,
         pinMutationFailureStatus: Int? = nil,
@@ -61,6 +65,7 @@ public actor MockChatProvider: ChatProvider {
         )
         currentUser = fixture.currentUser
         self.pinMutationFailureStatus = pinMutationFailureStatus
+        self.forumPreviewsHydrateLate = forumPreviewsHydrateLate
         nextMessageID = UInt64(ClientNonce.make()) ?? 9000
         snapshot = fixture.snapshot
         for (index, guild) in fixture.snapshot.guilds.enumerated() {
@@ -164,6 +169,7 @@ public actor MockChatProvider: ChatProvider {
             uniqueKeysWithValues: messages.filter(\.isPinned).map { ($0.id, $0.timestamp) }
         )
         pinMutationFailureStatus = nil
+        forumPreviewsHydrateLate = false
         forumPostsByChannel = [:]
         profilesByUser = Dictionary(uniqueKeysWithValues: snapshot.knownUsers.map {
             ($0.id, UserProfile(user: $0))
