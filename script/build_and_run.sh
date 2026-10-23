@@ -179,10 +179,12 @@ xcrun actool \
   --platform macosx \
   --minimum-deployment-target 27.0 \
   --app-icon "$APP_ICON_NAME" \
+  --accent-color AccentColor \
   --output-partial-info-plist "$ICON_PARTIAL_PLIST" \
   --warnings --notices --errors \
   "$ICON_STAGING_DIR/$APP_ICON_NAME.icon" \
-  "$ROOT_DIR/App/Packaging/SettingsDocument.xcassets"
+  "$ROOT_DIR/App/Packaging/SettingsDocument.xcassets" \
+  "$ROOT_DIR/App/Packaging/Appearance.xcassets"
 rm -f "$ICON_PARTIAL_PLIST"
 
 cat >"$CONTENTS/Info.plist" <<PLIST
@@ -198,6 +200,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>$DISPLAY_NAME</string>
   <key>CFBundleIconFile</key><string>$APP_ICON_NAME</string>
   <key>CFBundleIconName</key><string>$APP_ICON_NAME</string>
+  <key>NSAccentColorName</key><string>AccentColor</string>
   <key>UTExportedTypeDeclarations</key>
   <array><dict>
     <key>UTTypeIdentifier</key><string>dev.sakuracord.settings</string>

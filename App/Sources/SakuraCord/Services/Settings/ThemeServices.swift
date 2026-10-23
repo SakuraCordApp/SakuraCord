@@ -788,21 +788,6 @@ final class SakuraCordThemeStore {
         commit()
     }
 
-    func accentNSColor() -> NSColor {
-        let theme = committedTheme
-        let accentColor = theme.activeColors.first ?? SakuraCordGradientTheme.defaultTheme.colors[0]
-        return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
-            let source = SakuraCordThemeRGB(
-                hue: accentColor.hue,
-                saturation: accentColor.saturation,
-                brightness: 0.82
-            )
-            return NSColor(theme.readableForeground(source, for: themeAppearance))
-        }
-    }
-
     func roleNSColor(for colorHex: UInt32) -> NSColor {
         let source = SakuraCordThemeRGB(
             red: Double((colorHex >> 16) & 0xFF) / 255,
@@ -814,22 +799,6 @@ final class SakuraCordThemeStore {
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
             return NSColor(theme.readableForeground(source, for: themeAppearance))
-        }
-    }
-
-    func textSelectionNSColor() -> NSColor {
-        return NSColor(name: nil) { appearance in
-            var result = NSColor.selectedTextBackgroundColor
-            appearance.performAsCurrentDrawingAppearance {
-                let accent = self.accentNSColor().usingColorSpace(.sRGB)
-                    ?? self.accentNSColor()
-                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                result = accent.blended(
-                    withFraction: isDark ? 0.38 : 0.70,
-                    of: .windowBackgroundColor
-                ) ?? accent
-            }
-            return result
         }
     }
 

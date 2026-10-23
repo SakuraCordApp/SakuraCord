@@ -19,39 +19,6 @@ import Testing
 }
 
 @MainActor
-@Test func `Theme accent resolves adaptively in the destination appearance`() throws {
-    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
-    let themeStore = SakuraCordThemeStore(
-        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
-    )
-    themeStore.setHue(0.04, at: 0)
-    themeStore.setHue(0.96, at: 1)
-    themeStore.setIntensity(0.72)
-    themeStore.finishInteraction()
-    let effectiveAccent = themeStore.accentNSColor()
-    var resolvedComponents: [NSColor] = []
-    for appearanceName in [
-        NSAppearance.Name.aqua,
-        .darkAqua,
-        .accessibilityHighContrastAqua,
-        .accessibilityHighContrastDarkAqua,
-    ] {
-        let appearance = try #require(NSAppearance(named: appearanceName))
-        var actual: NSColor?
-        appearance.performAsCurrentDrawingAppearance {
-            actual = effectiveAccent.usingColorSpace(.sRGB)
-        }
-        let actualComponents = try #require(actual)
-        #expect(actualComponents.alphaComponent == 1)
-        #expect(actualComponents.redComponent.isFinite)
-        #expect(actualComponents.greenComponent.isFinite)
-        #expect(actualComponents.blueComponent.isFinite)
-        resolvedComponents.append(actualComponents)
-    }
-    #expect(resolvedComponents[0].brightnessComponent < resolvedComponents[1].brightnessComponent)
-}
-
-@MainActor
 @Test func `Zero intensity uses the native system surface`() {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
