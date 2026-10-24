@@ -96,7 +96,7 @@ struct SakuraCordApp: App {
             notificationService: notificationService,
             soundPlayer: soundPlayer
         )
-        appModel.showInspector = GeneralWindowRestorationStore.shared.memberListIsVisible
+        appModel.inspectorVisibility = GeneralWindowRestorationStore.shared.loadInspectorVisibility()
         AppAppearanceController.shared.apply(
             appModel.appearanceSettings.colorScheme
         )

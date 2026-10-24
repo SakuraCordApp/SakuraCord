@@ -23,8 +23,8 @@ extension AppModel {
         if pages.contains(.accessibility) {
             applyAccessibilitySettings(AccessibilitySettingsStore.shared.load(), persists: false)
         }
-        if ids.contains(SettingsControlID.memberListVisibility.rawValue) {
-            showInspector = GeneralWindowRestorationStore.shared.memberListIsVisible
+        if SettingsControlID.inspectorVisibilityIDs.contains(where: { ids.contains($0.rawValue) }) {
+            applyInspectorVisibility(GeneralWindowRestorationStore.shared.loadInspectorVisibility())
         }
         if pages.contains(.notifications) {
             notificationPreferences.reload()

@@ -99,7 +99,7 @@ struct ChatWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(reduceMotion ? nil : .spring(ChatChromeMetrics.sidebarSpring), value: model.showInspector)
+        .animation(reduceMotion ? nil : .spring(ChatChromeMetrics.sidebarSpring), value: model.inspectorVisibility)
         .onChange(of: model.selectedChannelID) { _, channelID in
             guard let channelID else {
                 AppPerformanceSignposts.cancelConversationNavigation()

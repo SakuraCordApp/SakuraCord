@@ -104,22 +104,42 @@ final class SettingsConversationRestorationStore {
 final class GeneralWindowRestorationStore {
     static let shared = GeneralWindowRestorationStore()
 
-    private static let memberListVisibleKey = "settings.memberListVisible"
+    private static let legacyMemberListVisibleKey = "settings.memberListVisible"
     private let defaults: any PreferenceStoring
 
     init(defaults: any PreferenceStoring = PRBuildProfile.defaults) {
         self.defaults = defaults
     }
 
-    var memberListIsVisible: Bool {
-        guard let value = defaults.object(forKey: Self.memberListVisibleKey) as? Bool else {
-            return true
+    static func visibilityKey(for context: InspectorContext) -> String {
+        switch context {
+        case .server: legacyMemberListVisibleKey
+        case .directMessage: "settings.directMessageProfileVisible"
+        case .groupDirectMessage: "settings.groupDirectMessageMembersVisible"
         }
-        return value
     }
 
-    func recordMemberListVisibility(_ isVisible: Bool) {
-        defaults.set(isVisible, forKey: Self.memberListVisibleKey)
+    /// Conversation kinds saved before they had separate keys start from the shared
+    /// member-list value, then keep their own copy so later changes stay independent.
+    func loadInspectorVisibility() -> InspectorVisibility {
+        let legacyValue = defaults.object(forKey: Self.legacyMemberListVisibleKey) as? Bool
+        var visibility = InspectorVisibility()
+        for context in InspectorContext.allCases {
+            let key = Self.visibilityKey(for: context)
+            if let value = defaults.object(forKey: key) as? Bool {
+                visibility[context] = value
+            } else if let legacyValue {
+                visibility[context] = legacyValue
+                defaults.set(legacyValue, forKey: key)
+            }
+        }
+        return visibility
+    }
+
+    func recordInspectorVisibility(_ visibility: InspectorVisibility) {
+        for context in InspectorContext.allCases {
+            defaults.set(visibility[context], forKey: Self.visibilityKey(for: context))
+        }
     }
 }
 

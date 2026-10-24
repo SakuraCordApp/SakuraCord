@@ -129,6 +129,14 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             storage: .appWide(key: "settings.memberListVisible"), defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .directMessageProfileVisibility, page: .interface,
+            storage: .appWide(key: "settings.directMessageProfileVisible"), defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .groupDirectMessageMembersVisibility, page: .interface,
+            storage: .appWide(key: "settings.groupDirectMessageMembersVisible"), defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
             id: .launchDestination,
             page: .general,
             storage: .appWide(key: "settings.launchDestination"),

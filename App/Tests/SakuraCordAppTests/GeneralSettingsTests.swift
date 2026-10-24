@@ -140,7 +140,6 @@ import Testing
     let store = SettingsPreferenceStore(defaults: defaults)
     #expect(store.value(for: .launchDestination) == .string(SettingsLaunchDestination.lastVisitedConversation.rawValue))
     #expect(defaults.object(forKey: "settings.showMainWindowAtLaunch") == nil)
-    #expect(!GeneralWindowRestorationStore(defaults: defaults).memberListIsVisible)
     store.set(.string(SettingsLaunchDestination.accountPicker.rawValue), for: .launchDestination)
     store.set(.bool(false), for: .confirmQuitActiveWork)
 
@@ -157,9 +156,14 @@ import Testing
     #expect(store.value(for: .confirmQuitActiveWork) == .bool(true))
 
     let windowStore = GeneralWindowRestorationStore(defaults: defaults)
-    #expect(!windowStore.memberListIsVisible)
-    windowStore.recordMemberListVisibility(true)
-    #expect(windowStore.memberListIsVisible)
+    var visibility = windowStore.loadInspectorVisibility()
+    #expect(visibility == InspectorVisibility(server: false, directMessage: false, groupDirectMessage: false))
+    visibility.server = true
+    windowStore.recordInspectorVisibility(visibility)
+    #expect(
+        GeneralWindowRestorationStore(defaults: defaults).loadInspectorVisibility()
+            == InspectorVisibility(server: true, directMessage: false, groupDirectMessage: false)
+    )
 }
 
 @MainActor
