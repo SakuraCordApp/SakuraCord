@@ -24,7 +24,7 @@ struct ThreadActionPresentationModifier: ViewModifier {
 /// Edit Thread / Edit Post: the thread's name, saved once on Save.
 private struct ThreadRenameView: View {
     let model: AppModel
-    let presentation: ThreadActionStore.RenamePresentation
+    let presentation: ThreadActionStore.ThreadPresentation
     @Environment(\.windowModalContext) private var modal
     @Environment(\.windowModalAvailableSize) private var availableSize
 

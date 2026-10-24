@@ -27,20 +27,14 @@ nonisolated enum ThreadActionSurface: Equatable, Sendable {
 /// renamed thread through its response and THREAD_UPDATE.
 @Observable
 final class ThreadActionStore {
-    struct RenamePresentation: Identifiable, Equatable {
+    struct ThreadPresentation: Identifiable, Equatable {
         /// The thread as it was when the dialog opened.
         let thread: MessageThreadSummary
         let isForumPost: Bool
         var id: ChannelID { thread.id }
     }
 
-    struct DeletionConfirmation: Identifiable, Equatable {
-        let thread: MessageThreadSummary
-        let isForumPost: Bool
-        var id: ChannelID { thread.id }
-    }
-
-    var renaming: RenamePresentation? {
+    var renaming: ThreadPresentation? {
         didSet {
             guard renaming?.id != oldValue?.id else { return }
             revision &+= 1
@@ -55,7 +49,7 @@ final class ThreadActionStore {
     var draftName = ""
     var isSaving = false
     var error: String?
-    var deletion: DeletionConfirmation?
+    var deletion: ThreadPresentation?
     @ObservationIgnored var revision: UInt64 = 0
 
     /// The trimmed name to save, or nil while it is empty or unchanged.

@@ -14,6 +14,12 @@ struct ConversationRefreshMutations {
     var updatedUsers: [UserID: User] = [:]
 }
 
+extension ConversationRefreshMutations {
+    init(_ journal: ConversationRefreshJournal) {
+        self.init(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
+    }
+}
+
 struct ConversationRefreshJournal {
     let revision: UInt64
     var mutationsByMessageID: [MessageID: ConversationRefreshMutation] = [:]
@@ -718,7 +724,7 @@ extension AppModel {
         guard let journal = conversationRefreshJournals[channelID],
               journal.revision == revision
         else { return .init() }
-        return ConversationRefreshMutations(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
+        return ConversationRefreshMutations(journal)
     }
 
     func endConversationRefresh(
@@ -748,7 +754,7 @@ extension AppModel {
 
     func scopedConversationRefreshMutations(_ revision: UInt64) -> ConversationRefreshMutations {
         guard let journal = scopedRefreshJournals[revision]?.journal else { return .init() }
-        return ConversationRefreshMutations(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
+        return ConversationRefreshMutations(journal)
     }
 
     func endScopedConversationRefresh(_ revision: UInt64) {

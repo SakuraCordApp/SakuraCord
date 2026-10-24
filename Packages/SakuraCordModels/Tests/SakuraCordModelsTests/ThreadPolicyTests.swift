@@ -58,7 +58,7 @@ struct ThreadPolicyCase: Sendable, CustomTestStringConvertible {
     var isLocked = false
     var permissions: UInt64
     var kind = ChannelKindValue.text
-    /// read, rename, close, reopen, unarchive, delete, membership, notifications, lock
+    /// read, rename, close, reopen, delete, membership, notifications, manage
     var expected: [Bool]
 }
 
@@ -68,25 +68,25 @@ private let manage = DiscordPermissionBits.manageThreads
 
 @Test(arguments: [
     ThreadPolicyCase(testDescription: "owner of an active thread", owned: true, permissions: view | send,
-                     expected: [true, true, true, true, true, false, true, false, false]),
+                     expected: [true, true, true, true, false, true, false, false]),
     ThreadPolicyCase(testDescription: "member of another user's thread", isJoined: true, permissions: view | send,
-                     expected: [true, false, false, true, true, false, true, true, false]),
+                     expected: [true, false, false, true, false, true, true, false]),
     ThreadPolicyCase(testDescription: "owner of an archived thread without send", owned: true, isArchived: true,
-                     permissions: view, expected: [true, false, true, false, true, false, false, false, false]),
+                     permissions: view, expected: [true, false, true, false, false, false, false, false]),
     ThreadPolicyCase(testDescription: "owner of an archived thread with send", owned: true, isArchived: true,
-                     permissions: view | send, expected: [true, true, true, true, true, false, false, false, false]),
+                     permissions: view | send, expected: [true, true, true, true, false, false, false, false]),
     ThreadPolicyCase(testDescription: "owner of a locked thread", owned: true, isLocked: true, permissions: view | send,
-                     expected: [true, false, false, false, false, false, true, false, false]),
+                     expected: [true, false, false, false, false, true, false, false]),
     ThreadPolicyCase(testDescription: "moderator of an archived locked thread", isArchived: true, isLocked: true,
-                     permissions: view | manage, expected: [true, false, true, true, true, true, false, false, true]),
+                     permissions: view | manage, expected: [true, false, true, true, true, false, false, true]),
     ThreadPolicyCase(testDescription: "forum author of an empty post", owned: true, permissions: view, kind: .forum,
-                     expected: [true, true, true, false, true, true, true, false, false]),
+                     expected: [true, true, true, false, true, true, false, false]),
     ThreadPolicyCase(testDescription: "unjoined private thread", isPrivate: true, permissions: view | send,
-                     expected: [false, false, false, false, false, false, false, false, false]),
+                     expected: [false, false, false, false, false, false, false, false]),
     ThreadPolicyCase(testDescription: "joined private thread", isPrivate: true, isJoined: true, permissions: view,
-                     expected: [true, false, false, false, true, false, true, true, false]),
+                     expected: [true, false, false, false, false, true, true, false]),
     ThreadPolicyCase(testDescription: "moderator without view", permissions: manage,
-                     expected: [false, false, false, false, false, false, false, false, false]),
+                     expected: [false, false, false, false, false, false, false, false]),
 ])
 func `thread actions follow first-party ownership, lock and archive rules`(_ value: ThreadPolicyCase) {
     let userID = UserID(rawValue: 1)
@@ -99,8 +99,8 @@ func `thread actions follow first-party ownership, lock and archive rules`(_ val
         thread: thread, currentUserID: userID, parentPermissions: value.permissions, parentKind: value.kind
     )
     #expect([
-        policy.canRead, policy.canRename, policy.canClose, policy.canReopen, policy.canUnarchive,
-        policy.canDelete, policy.canChangeMembership, policy.canChangeNotifications, policy.canLock,
+        policy.canRead, policy.canRename, policy.canClose, policy.canReopen,
+        policy.canDelete, policy.canChangeMembership, policy.canChangeNotifications, policy.canManage,
     ] == value.expected)
 }
 

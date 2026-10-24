@@ -159,8 +159,6 @@ final class ThreadBrowserState {
         ThreadBrowserSections.make(records: Array(records.values), listing: listing)
     }
 
-    var isSearching: Bool { search.map { !$0.hasLoaded } ?? false }
-
     func present(parentID: ChannelID) {
         cancelWork()
         if self.parentID != parentID { records = [:] }

@@ -17,8 +17,7 @@ struct ThreadMenuEntry: Identifiable {
     var systemImage: String?
     var subtitle: String?
     var isEnabled = true
-    /// A choice among siblings; `isChecked` marks the current one.
-    var isCheckable = false
+    /// Marks the current choice among siblings.
     var isChecked = false
     var isDestructive = false
     var content: Content
@@ -127,7 +126,7 @@ struct ThreadActionsMenu {
             management.append(ThreadMenuEntry(
                 id: "lock", title: thread.isLocked ? "Unlock \(noun)" : "Lock \(noun)",
                 systemImage: thread.isLocked ? "lock.open.fill" : "lock.fill",
-                content: Self.guarded(model, thread, \.canLock) { model.updateThread(thread, mutation: .locked(!thread.isLocked)) }
+                content: Self.guarded(model, thread, \.canManage) { model.updateThread(thread, mutation: .locked(!thread.isLocked)) }
             ))
         }
         if !management.isEmpty { sections.append(management) }
@@ -203,7 +202,7 @@ struct ThreadActionsMenu {
                     // as the channel menu presents its default.
                     title: level == .inherit ? "Use Channel Default" : level.menuTitle,
                     subtitle: level == .inherit ? inherited.menuTitle : nil,
-                    isCheckable: true, isChecked: configured == level,
+                    isChecked: configured == level,
                     content: Self.guarded(model, thread, \.canChangeNotifications) {
                         model.setThreadNotificationLevel(thread, level: level)
                     }

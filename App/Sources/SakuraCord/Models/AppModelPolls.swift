@@ -282,7 +282,7 @@ extension AppModel {
                 guard !Task.isCancelled, isCurrentAccountSession(session),
                       let journal = pollResultRefreshJournals[message.id], journal.revision == revision,
                       let fetched = page.messages.first(where: { $0.id == message.id }) else { return }
-                let mutations = ConversationRefreshMutations(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
+                let mutations = ConversationRefreshMutations(journal)
                 guard let poll = Self.applyingConversationRefreshMutations(mutations, to: [fetched]).first?.poll else { return }
                 if poll.results == nil, fetched.poll?.results != nil {
                     guard attempt == 0 else {

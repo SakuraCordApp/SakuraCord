@@ -9,14 +9,15 @@ struct ThreadBrowserPopoverView: View {
 
     var body: some View {
         @Bindable var browser = model.threadBrowser
+        let sections = model.threadBrowserSections
         VStack(spacing: 0) {
             header(browser)
             Divider()
-            content(browser)
+            content(browser, sections: sections)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: InterfaceScale.metric(440), height: InterfaceScale.metric(560))
-        .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: model.threadBrowserSections)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: sections)
         .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: browser.search)
         .onExitCommand { model.dismissThreadBrowser() }
         .onChange(of: model.selectedChannelID) { model.dismissThreadBrowser() }
@@ -58,11 +59,11 @@ struct ThreadBrowserPopoverView: View {
     }
 
     @ViewBuilder
-    private func content(_ browser: ThreadBrowserState) -> some View {
+    private func content(_ browser: ThreadBrowserState, sections: ThreadBrowserSections) -> some View {
         if let search = browser.search {
             searchContent(search, browser: browser)
         } else {
-            sectionsContent(browser)
+            sectionsContent(browser, sections: sections)
         }
     }
 
@@ -78,22 +79,24 @@ struct ThreadBrowserPopoverView: View {
             } actions: {
                 Button("Try Again", action: model.submitThreadBrowserSearch)
             }
-        } else if model.threadBrowserSearchResults.isEmpty {
-            ContentUnavailableView.search(text: search.query)
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    rows(model.threadBrowserSearchResults, showsJoined: true)
+            let results = model.threadBrowserSearchResults
+            if results.isEmpty {
+                ContentUnavailableView.search(text: search.query)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        rows(results, showsJoined: true)
+                    }
+                    .padding(InterfaceScale.metric(8))
                 }
-                .padding(InterfaceScale.metric(8))
+                .scrollEdgeEffectStyle(.soft, for: .top)
             }
-            .scrollEdgeEffectStyle(.soft, for: .top)
         }
     }
 
     @ViewBuilder
-    private func sectionsContent(_ browser: ThreadBrowserState) -> some View {
-        let sections = model.threadBrowserSections
+    private func sectionsContent(_ browser: ThreadBrowserState, sections: ThreadBrowserSections) -> some View {
         let listing = browser.listing
         let isLoadingFirstPage = listing?.hasLoadedFirstPage != true && browser.archivedErrorMessage == nil
         if sections.isEmpty, isLoadingFirstPage {

@@ -98,11 +98,7 @@ extension AppModel {
 
     private func prepareInboxBulkChannels(_ targets: [BulkReadStateAcknowledgement]) {
         for target in targets where target.readStateType == 0 {
-            acknowledgementTasks[target.channelID]?.cancel()
-            acknowledgementTasks[target.channelID] = nil
-            debouncedAcknowledgementTargets[target.channelID] = nil
-            queuedAcknowledgements[target.channelID] = nil
-            acknowledgementQueueOrder.removeAll { $0 == target.channelID }
+            discardPendingAcknowledgement(for: target.channelID)
             readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
             readState.markAcknowledgementPending(channelID: target.channelID, messageID: target.messageID)
         }

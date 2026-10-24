@@ -33,14 +33,6 @@ extension AppModel {
         )
     }
 
-    func canManageSidebarThread(_ thread: MessageThreadSummary) -> Bool {
-        threadActionPolicy(thread).canManage
-    }
-
-    func canArchiveSidebarThread(_ thread: MessageThreadSummary) -> Bool {
-        threadActionPolicy(thread).canChangeArchive
-    }
-
     func setThreadMute(_ thread: MessageThreadSummary, isMuted: Bool, until: Date?) {
         guard threadActionPolicy(thread).canChangeNotifications else { return }
         setForumPostMute(isMuted, until: until, for: ForumPost(thread: thread), reportErrorInAlert: true)
@@ -132,7 +124,7 @@ extension AppModel {
     func presentThreadRename(_ thread: MessageThreadSummary) {
         let thread = currentThreadSummary(thread)
         guard threadActionPolicy(thread).canRename else { return }
-        threadActions.renaming = ThreadActionStore.RenamePresentation(
+        threadActions.renaming = ThreadActionStore.ThreadPresentation(
             thread: thread, isForumPost: isForumThread(thread)
         )
     }
@@ -192,12 +184,12 @@ extension AppModel {
     func requestThreadDeletion(_ thread: MessageThreadSummary) {
         let thread = currentThreadSummary(thread)
         guard threadActionPolicy(thread).canDelete else { return }
-        threadActions.deletion = ThreadActionStore.DeletionConfirmation(
+        threadActions.deletion = ThreadActionStore.ThreadPresentation(
             thread: thread, isForumPost: isForumThread(thread)
         )
     }
 
-    func confirmThreadDeletion(_ confirmation: ThreadActionStore.DeletionConfirmation) {
+    func confirmThreadDeletion(_ confirmation: ThreadActionStore.ThreadPresentation) {
         threadActions.deletion = nil
         deleteSidebarThread(confirmation.thread)
     }

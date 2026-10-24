@@ -170,11 +170,7 @@ extension AppModel {
             currentUserID: currentUserID
         )
         let target = MessageID(rawValue: message.id.rawValue - 1)
-        acknowledgementTasks[channelID]?.cancel()
-        acknowledgementTasks[channelID] = nil
-        debouncedAcknowledgementTargets[channelID] = nil
-        queuedAcknowledgements[channelID] = nil
-        acknowledgementQueueOrder.removeAll { $0 == channelID }
+        discardPendingAcknowledgement(for: channelID)
         readState.markUnread(
             channelID: channelID,
             after: target,
@@ -268,6 +264,15 @@ extension AppModel {
     func isDetachedFromNewest(_ channelID: ChannelID) -> Bool {
         (channelID == openThread?.id && (isThreadWindowAwayFromNewest || openThreadResolution != nil))
             || (channelID == selectedChannelID && hasMoreLaterMessages)
+    }
+
+    /// Drops any debounced or queued acknowledgement for the channel.
+    func discardPendingAcknowledgement(for channelID: ChannelID) {
+        acknowledgementTasks[channelID]?.cancel()
+        acknowledgementTasks[channelID] = nil
+        debouncedAcknowledgementTargets[channelID] = nil
+        queuedAcknowledgements[channelID] = nil
+        acknowledgementQueueOrder.removeAll { $0 == channelID }
     }
 
     func scheduleAcknowledgement(channelID: ChannelID, messageID: MessageID) {
@@ -428,11 +433,7 @@ extension AppModel {
               let target = readState[channelID]?.latestKnownMessageID
         else { return }
         preserveUnreadDividerIfNeeded(channelID: channelID)
-        acknowledgementTasks[channelID]?.cancel()
-        acknowledgementTasks[channelID] = nil
-        debouncedAcknowledgementTargets[channelID] = nil
-        queuedAcknowledgements[channelID] = nil
-        acknowledgementQueueOrder.removeAll { $0 == channelID }
+        discardPendingAcknowledgement(for: channelID)
         readState.unblockAutomaticAcknowledgement(channelID: channelID)
         readState.markAcknowledgementPending(channelID: channelID, messageID: target)
         refreshUnreadPresentation()
@@ -456,11 +457,7 @@ extension AppModel {
 
         for target in targets {
             preserveUnreadDividerIfNeeded(channelID: target.channelID)
-            acknowledgementTasks[target.channelID]?.cancel()
-            acknowledgementTasks[target.channelID] = nil
-            debouncedAcknowledgementTargets[target.channelID] = nil
-            queuedAcknowledgements[target.channelID] = nil
-            acknowledgementQueueOrder.removeAll { $0 == target.channelID }
+            discardPendingAcknowledgement(for: target.channelID)
             readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
             readState.markAcknowledgementPending(
                 channelID: target.channelID,
@@ -532,11 +529,7 @@ extension AppModel {
 
         for target in targets {
             preserveUnreadDividerIfNeeded(channelID: target.channelID)
-            acknowledgementTasks[target.channelID]?.cancel()
-            acknowledgementTasks[target.channelID] = nil
-            debouncedAcknowledgementTargets[target.channelID] = nil
-            queuedAcknowledgements[target.channelID] = nil
-            acknowledgementQueueOrder.removeAll { $0 == target.channelID }
+            discardPendingAcknowledgement(for: target.channelID)
             readState.unblockAutomaticAcknowledgement(channelID: target.channelID)
             readState.markAcknowledgementPending(
                 channelID: target.channelID,

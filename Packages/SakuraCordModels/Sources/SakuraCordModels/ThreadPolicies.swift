@@ -122,13 +122,10 @@ public struct ThreadActionPolicy: Equatable, Sendable {
     public var canClose = false
     /// The explicit Reopen action.
     public var canReopen = false
-    /// The implicit unarchive that precedes edits to an archived thread.
-    public var canUnarchive = false
     public var canDelete = false
     public var canChangeMembership = false
     public var canChangeNotifications = false
 
-    public var canLock: Bool { canManage }
     /// Close for an open thread, Reopen for an archived one.
     public var canChangeArchive: Bool { isArchived ? canReopen : canClose }
 
@@ -156,7 +153,6 @@ public struct ThreadActionPolicy: Equatable, Sendable {
         canClose = canEdit
         canEditTags = canEdit
         canReopen = thread.isLocked ? managesThreads : canSend
-        canUnarchive = managesThreads || !thread.isLocked
         // An archived thread is edited only after an unarchive the user may
         // perform by sending; Discord offers no edit for an archived locked thread.
         canRename = canEdit && (!thread.isArchived || (!thread.isLocked && canSend))
@@ -187,7 +183,7 @@ public struct ThreadActionPolicy: Equatable, Sendable {
     }
 
     /// User-authored message types that can start a thread.
-    public static let threadStarterMessageTypes: Set<Int> = [0, 19, 20, 23, 26, 41, 45, 47, 68]
+    private static let threadStarterMessageTypes: Set<Int> = [0, 19, 20, 23, 26, 41, 45, 47, 68]
 
     /// Starting a public thread from a confirmed message posted directly in
     /// `parent`. Messages inside threads or voice-channel chats never qualify,

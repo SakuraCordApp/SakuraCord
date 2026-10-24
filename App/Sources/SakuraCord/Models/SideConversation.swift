@@ -1,12 +1,6 @@
 import SakuraCordModels
 
-/// A conversation opened beside the primary conversation: a side chat. A
-/// thread or forum post can also replace the primary conversation at full
-/// width.
-///
-/// AppModel owns which side chats are open (`sideConversations`, opened and
-/// closed in AppModelSideConversations.swift). This value names a side chat
-/// and what its pane offers; each kind keeps its own message store.
+/// A side chat, or a thread presented at full width.
 enum SideConversation: Equatable {
     /// A thread or forum post, read through the thread store.
     case thread(MessageThreadSummary, isFullWidth: Bool)
@@ -53,12 +47,7 @@ enum SideConversation: Equatable {
 
     var capabilities: SideConversationCapabilities {
         switch self {
-        case .thread:
-            SideConversationCapabilities(
-                composerDestination: .thread,
-                closeHelp: "Close thread"
-            )
-        case .threadCreation:
+        case .thread, .threadCreation:
             SideConversationCapabilities(
                 composerDestination: .thread,
                 closeHelp: "Close thread"
@@ -82,11 +71,9 @@ enum SideConversation: Equatable {
     }
 }
 
-/// What a side chat's pane offers. Views and commands read these rather than
-/// checking which kind of side chat is open.
+/// What a side chat's pane offers.
 struct SideConversationCapabilities: Equatable {
-    /// The pane shows the selected channel through the primary conversation
-    /// store, timeline and composer.
+    /// The pane shows the selected channel through the primary conversation.
     var presentsPrimaryConversation = false
     /// The composer that sends into this conversation; nil when read-only.
     var composerDestination: MessageComposerDestination?
@@ -94,10 +81,7 @@ struct SideConversationCapabilities: Equatable {
     var closeHelp: String
 }
 
-/// Open side chats. A thread (or thread being created) can sit above a context
-/// side chat that belongs to the primary workspace; closing the thread
-/// returns to that context. Closing or replacing the context also closes the
-/// thread opened from it.
+/// Closing the top thread reveals its context; replacing the context closes both.
 struct SideConversationStack: Equatable {
     /// A voice chat, channel preview or Guide resource.
     var context: SideConversation? {
@@ -117,9 +101,7 @@ enum SupplementaryPane: Equatable {
     case messageSearch
 }
 
-/// The single decision of what the chat workspace shows: its primary content
-/// and trailing column. The workspace, toolbar, file drops and commands read
-/// this instead of re-deriving it from individual flags.
+/// The primary content and trailing pane shown by the workspace.
 struct WorkspacePresentation: Equatable {
     enum Primary: Equatable {
         case guildPage(GuildWorkspacePage)
@@ -151,7 +133,7 @@ struct WorkspacePresentation: Equatable {
         // including a full-width thread opened from a result.
         if sideConversation?.isFullWidth == true {
             primary = .fullWidthThread
-            supplementaryPane = Self.trailingPane(showsMessageSearch, showsInspector)
+            supplementaryPane = Self.channelPane(nil, showsMessageSearch, showsInspector)
             return
         }
         let sidePane = sideConversation.map(SupplementaryPane.sideConversation)
@@ -191,10 +173,5 @@ struct WorkspacePresentation: Equatable {
     ) -> SupplementaryPane? {
         if showsMessageSearch { return .messageSearch }
         return sidePane ?? (showsInspector ? .memberInspector : nil)
-    }
-
-    private static func trailingPane(_ showsMessageSearch: Bool, _ showsInspector: Bool) -> SupplementaryPane? {
-        if showsMessageSearch { return .messageSearch }
-        return showsInspector ? .memberInspector : nil
     }
 }
