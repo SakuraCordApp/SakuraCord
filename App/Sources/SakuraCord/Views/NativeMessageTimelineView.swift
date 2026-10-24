@@ -312,8 +312,6 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var lastPerformanceUpdateDuration = 0.0
         var lastLoggedPerformanceFallbackReason: String?
         var recentLayoutCacheHits = 0
-        /// Time spent laying out rows, never reset (motion benchmark).
-        var lifetimeLayoutDuration = 0.0
         var cachedItemLayouts:
             [CachedItemLayoutKey: CachedItemLayout] = [:]
         var cachedItemLayoutOrder:
@@ -398,17 +396,6 @@ extension NativeMessageTimelineCoordinator {
             // The timeline only scrolls vertically, wherever it is placed.
             scrollView.contentView = NativeTimelineClipView()
             scrollView.inputPerformanceProbe.install(on: scrollView)
-            if WorkspaceMotionProbes.isEnabled {
-                WorkspaceMotionProbes.shared.registerTimeline(scrollView) { [weak self, weak canvas] in
-                    WorkspaceMotionProbes.TimelineCounts(
-                        rows: self?.items.count ?? 0,
-                        draws: canvas?.drawCount ?? 0,
-                        drawSeconds: canvas?.lifetimeDrawDuration ?? 0,
-                        layoutSeconds: self?.lifetimeLayoutDuration ?? 0,
-                        contentWidth: self.map { $0.previewLayoutWidth ?? $0.layoutWidth } ?? 0
-                    )
-                }
-            }
             scrollView.onUserScrollTowardNewest = { [weak self] in
                 self?.parent.onUserScrollTowardNewest()
             }

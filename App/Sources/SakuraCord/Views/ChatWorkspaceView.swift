@@ -87,7 +87,6 @@ struct ChatWorkspaceView: View, Equatable {
                     presentsForumComposer: $presentsForumComposer
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .workspaceMotionProbe("primary")
                 // A widening thread slides over the conversation, which is
                 // gone by the time it is covered. The column host fades it
                 // as it is covered instead.
@@ -210,7 +209,6 @@ struct ChatWorkspaceView: View, Equatable {
         switch column.content {
         case .sideConversation(let conversation):
             SideConversationView(model: model, conversation: conversation)
-                .workspaceMotionProbe("pane")
                 .reportsSupplementaryPaneFrame(isEnabled: !conversation.isFullWidth)
         case .inspector(let pane):
             ChatWorkspaceSupplementaryContent(
@@ -218,7 +216,6 @@ struct ChatWorkspaceView: View, Equatable {
                 pane: pane,
                 toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
             )
-            .workspaceMotionProbe(column.id)
         }
     }
 
@@ -227,7 +224,6 @@ struct ChatWorkspaceView: View, Equatable {
         switch column.content {
         case .sideConversation(let conversation):
             SideConversationView(model: model, conversation: conversation)
-                .workspaceMotionProbe("pane")
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
                     // A leaving pane loses its content and shrinks to its divider.
                     if !conversation.isFullWidth, !motion.departing.contains(column) { paneWidth = width }
@@ -247,7 +243,6 @@ struct ChatWorkspaceView: View, Equatable {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
                 if !motion.departing.contains(column) { inspectorWidth = width }
             }
-            .workspaceMotionProbe(column.id)
             .offset(x: offset(of: column, motion: motion))
             .layoutValue(key: WorkspaceColumn.self, value: .inspector)
         }

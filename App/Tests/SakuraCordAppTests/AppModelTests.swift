@@ -8827,17 +8827,23 @@ func `resource thread permissions belong to its parent rather than the selected 
     model.dismissPinnedMessages()
 }
 
+/// A thread under `parent` whose history already holds a message.
+private func threadWithHistory(in parent: Channel, provider: MockChatProvider) async throws -> MessageThreadSummary {
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 999_101), guildID: parent.guildID, parentID: parent.id, name: "Seeded thread"
+    )
+    _ = try await provider.send(SendMessageDraft(channelID: thread.id, content: "Seeded message"))
+    return thread
+}
+
 @MainActor
 @Test func `a cached thread reopened in the pane shows its messages from the first frame`() async throws {
-    let provider = MockChatProvider(motionThreadCount: 1, motionThreadMessageCount: 30)
+    let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let parent = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 210) })
     model.selectedChannelID = parent.id
-    // The fixture's first motion thread, which has 30 messages in #general.
-    let thread = MessageThreadSummary(
-        id: ChannelID(rawValue: 7_100_001), guildID: parent.guildID, parentID: parent.id, name: "Motion thread 1"
-    )
+    let thread = try await threadWithHistory(in: parent, provider: provider)
     model.open(thread)
     #expect(await until { model.hasCompletedInitialThreadLoad && !model.threadMessages.isEmpty })
     model.closeSideConversation()
@@ -8854,15 +8860,13 @@ func `resource thread permissions belong to its parent rather than the selected 
 }
 
 @MainActor @Test func `the member list takes an open thread pane's place and gives it back`() async throws {
-    let provider = MockChatProvider(motionThreadCount: 1, motionThreadMessageCount: 30)
+    let provider = MockChatProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let parent = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 210) })
     model.selectedChannelID = parent.id
     model.showInspector = false
-    let thread = MessageThreadSummary(
-        id: ChannelID(rawValue: 7_100_001), guildID: parent.guildID, parentID: parent.id, name: "Motion thread 1"
-    )
+    let thread = try await threadWithHistory(in: parent, provider: provider)
     model.open(thread)
     #expect(await until { model.hasCompletedInitialThreadLoad && !model.threadMessages.isEmpty })
     model.threadTimelinePosition.reading = .bottom

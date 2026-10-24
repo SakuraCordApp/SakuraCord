@@ -15,9 +15,6 @@ import SwiftUI
 /// settle so the motion keeps every frame.
 @MainActor
 enum WorkspaceLayoutMotion {
-    /// Lets the motion benchmark reach each layout's static reference.
-    static var isSuppressedForBenchmark = false
-
     /// Posted on the main thread as a motion begins and once it settles.
     static let didBegin = Notification.Name("SakuraCordWorkspaceMotionDidBegin")
     static let didSettle = Notification.Name("SakuraCordWorkspaceMotionDidSettle")
@@ -38,7 +35,7 @@ enum WorkspaceLayoutMotion {
     /// tests: a motion's state is shared, and one test's motion held
     /// another's width relayout back.
     private static func springAnimation(for categories: [AppMotionCategory], in model: AppModel) -> Animation? {
-        NSApp == nil || isSuppressedForBenchmark || !model.animates(categories)
+        NSApp == nil || !model.animates(categories)
             ? nil : .spring(ChatChromeMetrics.sidebarSpring)
     }
 

@@ -780,7 +780,6 @@ extension NativeTimelineCanvasView {
                 ProcessInfo.processInfo.systemUptime - startUptime
             drawCount += 1
             totalDrawDuration += duration
-            lifetimeDrawDuration += duration
             maximumDrawDuration = max(
                 maximumDrawDuration,
                 duration
