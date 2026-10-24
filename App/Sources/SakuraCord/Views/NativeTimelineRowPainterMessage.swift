@@ -233,8 +233,7 @@ nonisolated extension NativeTimelineRowPainter {
                     frame: frame,
                     contentFrame: contentFrame,
                     bubbleConnector: input.layout.bubbleReferenceConnector,
-                    message: input.row.message,
-                    model: input.model
+                    message: input.row.message
                 )
             } else {
                 unavailableReplyContext(
@@ -303,7 +302,6 @@ nonisolated extension NativeTimelineRowPainter {
     private static func drawMessageContent(_ input: NativeTimelineMessageDrawInput) {
         let row = input.row
         let layout = input.layout
-        let model = input.model
         let message = row.message
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
@@ -330,7 +328,6 @@ nonisolated extension NativeTimelineRowPainter {
                 attributedContent,
                 framesetter: contentFramesetter,
                 in: drawingFrame,
-                model: model,
                 isOutgoingBubble: layout.bubbleRegion?.isOutgoing == true,
                 selectionRange:
                     textSelection?.itemIdentifier == .message(row.identity)
@@ -547,7 +544,6 @@ nonisolated extension NativeTimelineRowPainter {
             attributedText(
                 textRegion.text,
                 in: textRegion.frame,
-                model: input.model,
                 selectionRange: input.textSelection?.itemIdentifier == itemIdentifier
                     && input.textSelection?.region == textRegionID
                     ? input.textSelection?.range : nil,
@@ -612,7 +608,6 @@ nonisolated extension NativeTimelineRowPainter {
     ) {
         let row = input.row
         let layout = input.layout
-        let model = input.model
         let message = row.message
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
@@ -650,7 +645,6 @@ nonisolated extension NativeTimelineRowPainter {
             drawComponents(.init(
                 layout: componentLayout,
                 bubbleRegion: layout.bubbleRegion,
-                model: model,
                 messageID: message.id,
                 itemIdentifier: .message(row.identity),
                 layoutIndex: layoutIndex,
@@ -728,8 +722,6 @@ nonisolated extension NativeTimelineRowPainter {
             threadCard(
                 thread,
                 preview: NativeTimelineRowPaintContext.current?.threadPreviewMessage(for: thread.id),
-                message: message,
-                model: model,
                 in: frame,
                 bubbleRegion: layout.bubbleRegion,
                 interaction: input.threadCardInteraction
@@ -891,8 +883,7 @@ nonisolated extension NativeTimelineRowPainter {
         frame: CGRect,
         contentFrame: CGRect,
         bubbleConnector: NativeTimelineRowLayout.ReferenceConnector?,
-        message: Message,
-        model: AppModel?
+        message: Message
     ) {
         referenceConnector(bubbleConnector, frame: frame, contentFrame: contentFrame)
         // A bubble's preview is laid out at its natural width.
@@ -904,8 +895,7 @@ nonisolated extension NativeTimelineRowPainter {
             avatarFrame: NativeTimelineAvatarPresentation.replyAvatarFrame(in: contentFrame),
             trailingInset: bubbleConnector == nil ? 48 : 0,
             reservesSummary: bubbleConnector != nil,
-            message: message,
-            model: model
+            message: message
         )
     }
 
@@ -944,7 +934,6 @@ nonisolated extension NativeTimelineRowPainter {
         reservesSummary: Bool = false,
         showsReplyMention: Bool = true,
         message: Message,
-        model: AppModel?,
         foregroundColor: NSColor? = nil
     ) {
         let replySummary = NativeTimelineRowPaintContext.current?.replySummary(for: preview, in: message)
@@ -974,7 +963,6 @@ nonisolated extension NativeTimelineRowPainter {
             avatarFrame: avatarFrame,
             showsReplyMention: showsReplyMention,
             message: message,
-            model: model,
             foregroundColor: foregroundColor
         )
         let summaryX = authorFrame.maxX + NativeTimelineReplyMetrics.horizontalSpacing
@@ -1038,7 +1026,6 @@ nonisolated extension NativeTimelineRowPainter {
         avatarFrame: CGRect,
         showsReplyMention: Bool,
         message: Message,
-        model: AppModel?,
         foregroundColor: NSColor? = nil
     ) -> CGRect {
         let presentation = NativeTimelineRowPaintContext.current?.authorPresentation(forReplyIn: message)

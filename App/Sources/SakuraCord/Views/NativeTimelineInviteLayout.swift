@@ -98,7 +98,7 @@ nonisolated struct NativeTimelineInviteLayout {
 
     @MainActor
     init(reference: ServerInviteReference? = nil, index: Int, origin: CGPoint, maximumWidth: CGFloat,
-         source: (any NativeTimelineLayoutSource)?, isOwnMessage: Bool, fillsWidth: Bool = false, preview: NativeServerCardContent? = nil,
+         source: AppModel?, isOwnMessage: Bool, fillsWidth: Bool = false, preview: NativeServerCardContent? = nil,
          integratesWithBubble: Bool = false) {
         self.reference = reference
         self.integratesWithBubble = integratesWithBubble
@@ -243,7 +243,7 @@ nonisolated struct NativeTimelineInviteLayout {
         cursor += InterfaceScale.metric(20)
     }
 
-    @MainActor private static func action(for invite: ServerInvite?, entry: NativeTimelineInviteEntry?, source: (any NativeTimelineLayoutSource)?)
+    @MainActor private static func action(for invite: ServerInvite?, entry: NativeTimelineInviteEntry?, source: AppModel?)
         -> (String, Bool) {
         if let invite, source?.isLeavingInviteGuild(invite.guildID) == true { return ("Leaving…", true) }
         if let invite, source?.isJoiningInviteGuild(invite.guildID) == true { return ("Joining…", true) }

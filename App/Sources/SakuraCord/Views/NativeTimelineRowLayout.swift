@@ -201,7 +201,7 @@ nonisolated struct NativeTimelineRowLayout {
     @MainActor static func make(
         item: NativeMessageTimelineItem,
         width proposedWidth: CGFloat,
-        source: (any NativeTimelineLayoutSource)? = nil,
+        source: AppModel? = nil,
         metrics: Metrics? = nil
     ) -> Self {
         let width = max(InterfaceScale.metric(220), proposedWidth)

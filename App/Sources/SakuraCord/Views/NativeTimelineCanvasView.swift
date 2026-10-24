@@ -211,8 +211,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var transcriptGlideFinishTask: Task<Void, Never>?
     var unreadDividerFades: [NativeMessageTimelineItem.Identifier: NativeTimelineUnreadDividerFade] = [:]
     var unreadDividerGap: NativeTimelineUnreadDividerGap?
-    /// Pins the NEW divider's Reduce Motion setting; nil follows the system.
-    var unreadDividerReducesMotionOverride: Bool?
     let unreadDividerGapTicker = NativeTimelineDisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
@@ -498,7 +496,6 @@ nonisolated enum NativeTimelineRowPainter {
             attributedText(
                 box,
                 in: frame,
-                model: nil,
                 selectionRange: selectionRange
             )
             return true
@@ -568,7 +565,6 @@ nonisolated enum NativeTimelineRowPainter {
             for: item,
             in: layout.highlightFrame,
             bubbleRegion: layout.bubbleRegion,
-            model: model,
             isHovered: isHovered
         )
         switch item {
@@ -649,7 +645,6 @@ nonisolated enum NativeTimelineRowPainter {
         for item: NativeMessageTimelineItem,
         in frame: CGRect?,
         bubbleRegion: NativeTimelineBubbleRegion?,
-        model: AppModel?,
         isHovered: Bool
     ) {
         guard case let .message(row, _, isHighlighted) = item,
@@ -757,7 +752,6 @@ nonisolated enum NativeTimelineRowPainter {
             attributedText(
                 NativeTimelineBeginningText.title(beginning),
                 in: layout.titleFrame,
-                model: nil,
                 selectionRange: selectionRange
             )
         } else {
@@ -780,7 +774,6 @@ nonisolated enum NativeTimelineRowPainter {
             attributedText(
                 NativeTimelineBeginningText.description(beginning),
                 in: layout.descriptionFrame,
-                model: nil,
                 selectionRange: selectionRange
             )
         } else {

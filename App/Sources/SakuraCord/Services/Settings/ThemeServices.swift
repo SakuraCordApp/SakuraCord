@@ -819,10 +819,6 @@ final class SakuraCordThemeStore {
         }
     }
 
-    func roleNSColor(for colorHex: UInt32) -> NSColor {
-        Self.roleNSColor(for: colorHex, theme: committedTheme)
-    }
-
     nonisolated static func roleNSColor(for colorHex: UInt32, theme: SakuraCordGradientTheme) -> NSColor {
         let source = SakuraCordThemeRGB(
             red: Double((colorHex >> 16) & 0xFF) / 255,
@@ -834,10 +830,6 @@ final class SakuraCordThemeStore {
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
             return NSColor(theme.readableForeground(source, for: themeAppearance))
         }
-    }
-
-    func textSelectionNSColor() -> NSColor {
-        Self.textSelectionNSColor(theme: committedTheme)
     }
 
     nonisolated static func textSelectionNSColor(theme: SakuraCordGradientTheme) -> NSColor {

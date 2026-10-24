@@ -32,7 +32,7 @@ enum NativeTimelineBubbleLayout {
 
     static func context(
         for message: Message,
-        source: (any NativeTimelineLayoutSource)?
+        source: AppModel?
     ) -> Context {
         source?.bubbleContext(for: message)
             ?? Context(isEnabled: false, isOutgoing: false, showsAvatar: true)

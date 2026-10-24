@@ -2,45 +2,6 @@ import Foundation
 import MessageRendering
 import SakuraCordModels
 
-/// The account values row layout needs. Layout depends on no concrete model
-/// or feature stores, so the same queries can later read a frozen snapshot.
-@MainActor
-protocol NativeTimelineLayoutSource: AnyObject {
-    var messageSpacing: Double { get }
-    var interfaceSettings: InterfaceSettingsSnapshot { get }
-    var roleColorDisplay: RoleColorDisplay { get }
-    var cosmeticPolicy: ProfileCosmeticPolicy { get }
-    var currentUserID: UserID? { get }
-
-    func messageAppearance(for channelID: ChannelID) -> MessageAppearance
-    func bubbleContext(for message: Message) -> NativeTimelineBubbleLayout.Context
-    func authorPresentation(for message: Message) -> MessageAuthorPresentation
-    func authorPresentation(for replyPreview: MessageReplyPreview, in message: Message?) -> MessageAuthorPresentation
-    func systemMessageRecipient(for message: Message) -> User?
-    func messageTranslationPresentation(for message: Message) -> MessageTranslationEntry?
-
-    func mentionUser(_ userID: UserID, in message: Message?) -> User?
-    func mentionPresentation(_ mention: RenderedMention, in message: Message?) -> MentionPresentation
-    func mentionAvatarURL(_ mention: RenderedMention, in message: Message?) -> URL?
-
-    func inviteEntry(for reference: ServerInviteReference) -> NativeTimelineInviteEntry?
-    func isInviteExpanded(_ reference: ServerInviteReference) -> Bool
-    func isLeavingInviteGuild(_ guildID: GuildID) -> Bool
-    func isJoiningInviteGuild(_ guildID: GuildID) -> Bool
-    func presentationGuild(_ guildID: GuildID) -> Guild?
-    func forwardedSourceChannel(_ channelID: ChannelID) -> Channel?
-
-    var supportsComponents: Bool { get }
-    var supportsRemoteComponentChoices: Bool { get }
-    func componentError(for messageID: MessageID) -> String?
-    func componentSelection(messageID: MessageID, customID: String) -> [ComponentSelectOption]?
-    func resolvedDefaultComponentChoices(
-        _ defaults: [ComponentSelectOption], kind: ComponentSelectKind, guildID: GuildID?
-    ) -> [ComponentSelectOption]
-    func isComponentPending(messageID: MessageID, customID: String) -> Bool
-    func isComponentInteractionPending(messageID: MessageID) -> Bool
-}
-
 /// The invite entry fields consumed by geometry, without its observable store.
 nonisolated struct NativeTimelineInviteEntry: Sendable {
     let invite: ServerInvite?
@@ -50,7 +11,7 @@ nonisolated struct NativeTimelineInviteEntry: Sendable {
     let isLoading: Bool
 }
 
-extension AppModel: NativeTimelineLayoutSource {
+extension AppModel {
     var messageSpacing: Double { appearanceSettings.messageSpacing }
     var roleColorDisplay: RoleColorDisplay { accessibilitySettings.roleColorDisplay }
     var currentUserID: UserID? { currentUser?.id }

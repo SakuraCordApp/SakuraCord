@@ -34,7 +34,7 @@ nonisolated extension NativeTimelineRowPainter {
         }
         for label in card.labels {
             let color: NSColor = card.isUnavailable && label.bold && !outgoing ? .systemRed : label.secondary ? secondary : foreground
-            attributedText(label.attributedText(color: color), in: label.frame, model: nil)
+            attributedText(label.attributedText(color: color), in: label.frame)
         }
         for (index, dot) in card.countDots.enumerated() {
             (index == 0 && card.content?.onlineCount != nil ? NSColor.systemGreen : secondary).setFill()

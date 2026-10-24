@@ -147,7 +147,7 @@ nonisolated struct NativeTimelineComponentLayout {
     @MainActor static func make(
         message: Message,
         components embedComponents: [MessageComponent]? = nil,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         origin: CGPoint,
         maximumWidth: CGFloat,
         integratesWithBubble: Bool = false,
@@ -389,7 +389,7 @@ private enum NodeBuilder {
     static func node(
         for component: MessageComponent,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat,
         inBubble: Bool = false
     ) -> Node {
@@ -501,7 +501,7 @@ private enum NodeBuilder {
     static func bubbleRootNode(
         for component: MessageComponent,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat
     ) -> Node {
         guard case let .container(id, accent, spoiler, children) = component
@@ -553,7 +553,7 @@ private enum NodeBuilder {
         id: String,
         content: String,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat
     ) -> Node {
         let box = richText(
@@ -586,7 +586,7 @@ private enum NodeBuilder {
     private static func actionRowNode(
         for component: MessageComponent,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -635,7 +635,7 @@ private enum NodeBuilder {
     private static func selectNode(
         for component: MessageComponent,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -720,7 +720,7 @@ private enum NodeBuilder {
     private static func sectionNode(
         for component: MessageComponent,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -787,7 +787,7 @@ private enum NodeBuilder {
     private static func buttonNode(
         for component: MessageComponent,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat
     ) -> Node {
         switch component {
@@ -971,7 +971,7 @@ private enum NodeBuilder {
     private static func containerNode(
         for component: MessageComponent,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -1146,12 +1146,12 @@ private enum NodeBuilder {
         _ content: String,
         componentID: String,
         message: Message,
-        source: (any NativeTimelineLayoutSource)?,
+        source: AppModel?,
         emojiSize: CGFloat
     ) -> NativeTimelineAttributedTextBox {
         let prepared = RichMessageAttributedText.prepare(source: content)
         let resolver = source.map {
-            MessageMentionResolver(source: $0, message: message)
+            MessageMentionResolver(model: $0, message: message)
         }
         let mentions = prepared.tokens.reduce(
             into: [String: MentionPresentation]()

@@ -152,8 +152,6 @@ nonisolated extension NativeTimelineRowPainter {
     static func threadCard(
         _ thread: MessageThreadSummary,
         preview: Message?,
-        message: Message,
-        model: AppModel?,
         in frame: CGRect,
         bubbleRegion: NativeTimelineBubbleRegion? = nil,
         interaction: NativeTimelineThreadCard.Interaction = .idle
@@ -229,7 +227,6 @@ nonisolated extension NativeTimelineRowPainter {
             trailingInset: 0,
             showsReplyMention: false,
             message: preview,
-            model: model,
             foregroundColor: isOutgoing ? foreground : nil
         )
     }

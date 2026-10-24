@@ -2,31 +2,26 @@ import MessageRendering
 import SakuraCordModels
 import SwiftUI
 
-/// Resolves message metadata through the same source used by row layout.
+/// Resolves mention metadata for a message through the app model.
 struct MessageMentionResolver {
-    let source: any NativeTimelineLayoutSource
+    let model: AppModel
     let message: Message?
 
-    init(source: any NativeTimelineLayoutSource, message: Message? = nil) {
-        self.source = source
+    init(model: AppModel, message: Message? = nil) {
+        self.model = model
         self.message = message
     }
 
-    // Shared rich-text and interaction callers keep their existing argument label.
-    init(model: any NativeTimelineLayoutSource, message: Message? = nil) {
-        self.init(source: model, message: message)
-    }
-
     func user(_ userID: UserID) -> User? {
-        source.mentionUser(userID, in: message)
+        model.mentionUser(userID, in: message)
     }
 
     func presentation(_ mention: RenderedMention) -> MentionPresentation {
-        source.mentionPresentation(mention, in: message)
+        model.mentionPresentation(mention, in: message)
     }
 
     func avatarURL(_ mention: RenderedMention) -> URL? {
-        source.mentionAvatarURL(mention, in: message)
+        model.mentionAvatarURL(mention, in: message)
     }
 
     func label(_ mention: RenderedMention) -> String {

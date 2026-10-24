@@ -10,7 +10,7 @@ extension NativeTimelineRowLayout {
         let row: MessageRowPresentation
         let isUnreadBoundary: Bool
         let width: CGFloat
-        let source: (any NativeTimelineLayoutSource)?
+        let source: AppModel?
         let metrics: Metrics
 
         private var result = NativeTimelineRowLayout()
@@ -44,7 +44,7 @@ extension NativeTimelineRowLayout {
         private var timestampGutterWidth: CGFloat { max(avatarWidth, metrics.timestampGutterWidth) }
         private let presentedReactions: [Reaction]
 
-        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: (any NativeTimelineLayoutSource)?, metrics: Metrics) {
+        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics) {
             self.row = row
             self.isUnreadBoundary = isUnreadBoundary
             self.width = width

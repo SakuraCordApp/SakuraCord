@@ -697,18 +697,11 @@ private struct ChatRootView: View {
                 actions: AnyView(conversationTitlebarActions(presentsPanels: !isCovered))
             ))
         }
-        // As the workspace orders its columns: departing ones first.
         let fullWidth = presentation.primary == .fullWidthThread ? model.sideConversations.thread : nil
         let current = [fullWidth, presentation.paneSideConversation].compactMap(\.self)
         // The toolbar keeps a leaving side chat's items itself while its
         // column slides away (`WorkspaceTitlebarView.apply`).
-        let departing = WorkspaceColumnsHost.isEnabled ? [] : motion.departing.compactMap { column -> SideConversation? in
-            guard case .sideConversation(let conversation) = column.content,
-                  !current.contains(where: { $0.motionIdentity == conversation.motionIdentity })
-            else { return nil }
-            return conversation
-        }
-        for conversation in departing + current {
+        for conversation in current {
             var fullWidthActions: AnyView?
             if case .thread(let thread, _) = conversation {
                 // Hidden until the thread is full width; only then, past the

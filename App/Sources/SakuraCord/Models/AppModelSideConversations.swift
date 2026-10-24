@@ -8,8 +8,6 @@ struct SideConversationLabel: Equatable {
     let systemImage: String
 }
 
-/// Where the open thread's timeline is read, so moving it between the pane
-/// and full width reopens it at the same place.
 /// What takes an open side chat's place in the trailing column until it
 /// closes (`AppModel.sideConversationCover`).
 enum SideConversationCover {
@@ -17,6 +15,8 @@ enum SideConversationCover {
     case messageSearch
 }
 
+/// Where the open thread's timeline is read, so moving it between the pane
+/// and full width reopens it at the same place.
 struct ThreadTimelinePosition {
     /// The latest reading position the timeline reported.
     var reading: MessageTimelineScrollRequest.Target?
@@ -68,11 +68,15 @@ extension AppModel {
     }
 
     var workspacePresentation: WorkspacePresentation {
+        makeWorkspacePresentation(sideConversation: visibleSideConversation)
+    }
+
+    private func makeWorkspacePresentation(sideConversation: SideConversation?) -> WorkspacePresentation {
         WorkspacePresentation(
             guildPage: selectedGuildID == nil ? nil : guildWorkspacePage,
             isFriendsPresented: isFriendsPresented,
             channelKind: selectedChannel?.kind,
-            sideConversation: visibleSideConversation,
+            sideConversation: sideConversation,
             showsMessageSearch: isMessageSearchVisible,
             showsInspector: showInspector
         )
@@ -216,19 +220,12 @@ extension AppModel {
         }
     }
 
-    /// The motion categories of opening, closing or widening a side chat: the
+    /// The motion categories of opening, closing or widening a side chat. The
     /// member list or search results it takes the place of, or returns, move
-    /// too: only where this page shows one beside a conversation without the
-    /// side chat, which is what the pane covers or gives back.
+    /// too, but only where this page shows one beside a conversation without
+    /// the side chat.
     var sideChatMotionCategories: [AppMotionCategory] {
-        let withoutSideChat = WorkspacePresentation(
-            guildPage: selectedGuildID == nil ? nil : guildWorkspacePage,
-            isFriendsPresented: isFriendsPresented,
-            channelKind: selectedChannel?.kind,
-            sideConversation: nil,
-            showsMessageSearch: isMessageSearchVisible,
-            showsInspector: showInspector
-        )
+        let withoutSideChat = makeWorkspacePresentation(sideConversation: nil)
         return withoutSideChat.supplementaryPane == nil ? [.sideChats] : [.sideChats, .sidebar]
     }
 
@@ -255,10 +252,7 @@ extension AppModel {
             return
         }
         if sideConversationCover == .memberList, showInspector {
-            WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
-                showInspector = false
-                sideConversationCover = nil
-            }
+            revealCoveredSideConversation()
             return
         }
         WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) { showInspector.toggle() }

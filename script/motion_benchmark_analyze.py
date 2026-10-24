@@ -255,14 +255,6 @@ def spring_progress(t: float, omega: float) -> float:
     return 1.0 - (1.0 + x) * math.exp(-x)
 
 
-def rects_close(a: dict[str, Rect], b: dict[str, Rect], tolerance: float) -> bool:
-    if a.keys() != b.keys():
-        return False
-    return all(
-        abs(x - y) <= tolerance for key in a for x, y in zip(a[key], b[key])
-    )
-
-
 def max_rect_difference(
     a: dict[str, Rect], b: dict[str, Rect]
 ) -> tuple[float | None, list[str]]:

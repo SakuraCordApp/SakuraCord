@@ -37,7 +37,7 @@ enum WorkspaceLayoutMotion {
     /// turned off any of `categories`, and without a running app, as in unit
     /// tests: a motion's state is shared, and one test's motion held
     /// another's width relayout back.
-    static func springAnimation(for categories: [AppMotionCategory], in model: AppModel) -> Animation? {
+    private static func springAnimation(for categories: [AppMotionCategory], in model: AppModel) -> Animation? {
         NSApp == nil || isSuppressedForBenchmark || !model.animates(categories)
             ? nil : .spring(ChatChromeMetrics.sidebarSpring)
     }
@@ -72,15 +72,8 @@ enum WorkspaceLayoutMotion {
         // this change commits, so the change itself is not animated.
         withAnimation(nil, change)
         let arriving = WorkspaceTrailingColumn(model.workspacePresentation)
-        movesSideConversation = [leaving, arriving].contains { column in
-            if case .sideConversation = column?.content { true } else { false }
-        }
         slideTrailingColumns(from: leaving, to: arriving, animation)
     }
-
-    /// Whether the running motion moves a side chat: opening, closing,
-    /// swapping or widening one, rather than the member list or search.
-    private(set) static var movesSideConversation = false
 
     /// Slides the column that leaves out and the one that arrives in.
     private static func slideTrailingColumns(
@@ -122,7 +115,6 @@ enum WorkspaceLayoutMotion {
             return
         }
         beginMotion()
-        movesSideConversation = true
         let phase = WorkspaceMotionPhase.shared
         withAnimation(nil) {
             phase.widening = .init(channel: channel)

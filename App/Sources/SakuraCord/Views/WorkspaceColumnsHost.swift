@@ -25,7 +25,7 @@ struct WorkspaceColumnsHost: NSViewRepresentable {
         let isSideConversation: Bool
         let isFullWidth: Bool
         /// Leaving: its width is no longer measured.
-        let isDeparting: Bool
+        var isDeparting: Bool
         let content: AnyView
     }
 
@@ -324,13 +324,7 @@ final class WorkspaceColumnsView: NSView {
                 && WorkspaceLayoutMotion.isMoving
         }.map { island in
             var island = island
-            island.column = WorkspaceColumnsHost.Column(
-                id: island.column.id,
-                isSideConversation: island.column.isSideConversation,
-                isFullWidth: false,
-                isDeparting: true,
-                content: island.column.content
-            )
+            island.column.isDeparting = true
             return island
         }
         let heldIDs = Set(updated.map(\.column.id))
