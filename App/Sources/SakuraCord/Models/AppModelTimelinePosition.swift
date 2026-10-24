@@ -6,10 +6,28 @@ extension AppModel {
     func isConversationPresented(_ channelID: ChannelID) -> Bool {
         guard onboardingEntryGuildID == nil else { return false }
         // A thread withheld while its access is resolved again is not viewed.
-        if openThread?.id == channelID { return openThreadResolution == nil }
+        // A thread the member list or search results cover is not viewed.
+        if openThread?.id == channelID {
+            return openThreadResolution == nil
+                && (isThreadFullWidth || workspacePresentation.paneSideConversation != nil)
+        }
         guard !isThreadFullWidth, selectedChannelID == channelID else { return false }
         guard guildWorkspacePage != nil else { return true }
         return presentedSideConversation?.capabilities.presentsPrimaryConversation == true
+    }
+
+    /// The open thread's timeline has left the window while the thread
+    /// stays open, covered by the member list or search results: it is not
+    /// viewed, and it comes back where the reader left it.
+    func suspendOpenThreadPresentation() {
+        guard let threadID = openThread?.id, !isConversationPresented(threadID) else { return }
+        threadTimelinePosition.restore = threadTimelinePosition.reading
+        _ = readState.updatePresentation(
+            channelID: threadID,
+            isPresented: false,
+            initialPositionEstablished: false,
+            hasReachedReadBoundary: false
+        )
     }
 
     func suspendSelectedConversationPresentation() {

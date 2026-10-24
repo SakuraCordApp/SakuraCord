@@ -89,8 +89,8 @@ nonisolated struct NativeTimelineTextSpoilerRevealKey: Hashable {
     let rangeLocation: Int
 }
 
-@MainActor
-final class NativeTimelineSpoilerRevealStore {
+/// Changed only on the main thread.
+nonisolated final class NativeTimelineSpoilerRevealStore: @unchecked Sendable {
     var revealedMedia: Set<NativeTimelineComponentRevealKey> = []
     var revealedText: Set<NativeTimelineTextSpoilerRevealKey> = []
     var observers: [UUID: (MessageID) -> Void] = [:]
@@ -187,8 +187,7 @@ final class NativeTimelineSpoilerRevealStore {
     }
 }
 
-@MainActor
-enum NativeTimelineSpoilerConcealmentPolicy {
+nonisolated enum NativeTimelineSpoilerConcealmentPolicy {
     static func isConcealed(
         messageID: MessageID,
         contentID: String,

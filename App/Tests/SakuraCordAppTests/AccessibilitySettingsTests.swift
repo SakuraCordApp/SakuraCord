@@ -18,6 +18,10 @@ private final class VoiceOverAnnouncementTestState {
     var value = store.load()
     #expect(value == .defaults)
     value.disablesMessageSendingAnimations = true
+    value.disablesAllAnimations = true
+    value.disablesSidebarAnimations = true
+    value.disablesSideChatAnimations = true
+    value.disablesOverlayAnimations = true
     value.disablesProfileEffects = true
     value.disablesNameplates = true
     value.disablesAvatarDecorations = true
@@ -47,6 +51,21 @@ private final class VoiceOverAnnouncementTestState {
 
     preferences.reset(scope: .appWide, page: .accessibility)
     #expect(store.load() == .defaults)
+}
+
+@MainActor
+@Test func `Motion categories snap when disabled by their switch or the master`() {
+    var settings = AccessibilitySettingsSnapshot.defaults
+    #expect(AppMotionPolicy.animates([.sidebar, .sideChats, .overlays], settings: settings, reducesMotion: false))
+    #expect(!AppMotionPolicy.animates([.sidebar], settings: settings, reducesMotion: true))
+
+    settings.disablesSideChatAnimations = true
+    #expect(AppMotionPolicy.animates([.sidebar], settings: settings, reducesMotion: false))
+    #expect(!AppMotionPolicy.animates([.sidebar, .sideChats], settings: settings, reducesMotion: false))
+
+    settings = .defaults
+    settings.disablesAllAnimations = true
+    #expect(!AppMotionPolicy.animates([.overlays], settings: settings, reducesMotion: false))
 }
 
 @Test func `Cosmetic restrictions preserve own profile except disabled server tags`() throws {

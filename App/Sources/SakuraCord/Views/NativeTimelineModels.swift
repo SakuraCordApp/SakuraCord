@@ -317,7 +317,7 @@ nonisolated struct TimelineHistorySkeletonPresentation: Equatable {
     let conversationID: ChannelID?
 }
 
-enum NativeTimelineBeginning: Equatable {
+nonisolated enum NativeTimelineBeginning: Equatable {
     case channel(Channel, rulesChannelID: ChannelID?)
     case thread(
         id: ChannelID,
@@ -754,6 +754,20 @@ nonisolated enum NativeTimelineReadBoundaryPolicy {
     ) -> Bool {
         newestMessageMaximumY >= viewportMinimumY - tolerance
             && newestMessageMaximumY <= viewportMaximumY + tolerance
+    }
+
+    /// A fully loaded conversation without messages has reached its newest
+    /// edge once the end of the document is in view. Without this the first
+    /// message to arrive would be treated as unseen and plant a NEW divider,
+    /// while a viewport scrolled away from the end must not read it.
+    static func hasReachedEmptyTimelineBoundary(
+        hasMoreEarlier: Bool,
+        isLoadingEarlier: Bool,
+        isLoadingLater: Bool,
+        isAtDocumentBottom: Bool
+    ) -> Bool {
+        !hasMoreEarlier && !isLoadingEarlier && !isLoadingLater
+            && isAtDocumentBottom
     }
 
     /// AppKit reports wheel and trackpad deltas after applying the natural

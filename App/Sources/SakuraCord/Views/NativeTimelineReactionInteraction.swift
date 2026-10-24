@@ -147,7 +147,7 @@ extension NativeTimelineCanvasView {
         var counts: [ReactionCountKey: Int] = [:]
         var visibleMessageIDs: Set<MessageID> = []
         let reducesMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            !AppMotionPolicy.animatesUncategorized
 
         while items.indices.contains(index),
               displayedRowOrigin(at: index) < visibleRect.maxY

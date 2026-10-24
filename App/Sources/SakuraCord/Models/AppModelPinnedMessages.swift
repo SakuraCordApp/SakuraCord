@@ -77,7 +77,7 @@ final class PinnedMessagesState {
 @MainActor
 extension AppModel {
     var activePinsChannelID: ChannelID? {
-        if let thread = openThread { return thread.id }
+        if let thread = visibleThread { return thread.id }
         guard selectedChannelSupportsPins else { return nil }
         return selectedChannelID
     }
@@ -98,7 +98,7 @@ extension AppModel {
     }
 
     var canManageActiveConversationPins: Bool {
-        guard let channelID = activePinsChannelID else { return false }
+        guard let channelID = pinnedMessages.channelID ?? activePinsChannelID else { return false }
         return canManagePins(in: channelID)
     }
 
@@ -168,10 +168,16 @@ extension AppModel {
         }
     }
 
+    /// The open thread's pins, or the selected channel's, which stay
+    /// reachable from the conversation's toolbar beside an open thread.
+    func canPresentPins(in channelID: ChannelID) -> Bool {
+        channelID == openThread?.id || channelID == selectedChannelID && selectedChannelSupportsPins
+    }
+
     func presentPinnedMessages(channelID: ChannelID? = nil) {
         guard sessionState == .workspace,
               let target = channelID ?? activePinsChannelID,
-              target == activePinsChannelID
+              canPresentPins(in: target)
         else { return }
         pinnedMessages.channelID = target
         pinnedMessages.isPresented = true

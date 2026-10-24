@@ -1,8 +1,10 @@
 import SakuraCordModels
 import SwiftUI
 
-/// The global frame of the workspace's trailing column. The window toolbar
-/// aligns the side chat title to it and file drops split at its edge.
+/// The frame of the workspace's trailing column: global, or in its column's
+/// own space when the column host places it (`paneFrameIsColumnLocal`).
+/// The window toolbar aligns the side chat title to it and file drops
+/// split at its edge.
 struct SupplementaryPaneFramePreferenceKey: PreferenceKey {
     static let defaultValue = CGRect.zero
 
@@ -14,13 +16,34 @@ struct SupplementaryPaneFramePreferenceKey: PreferenceKey {
     }
 }
 
+extension EnvironmentValues {
+    /// Whether a pane reports its frame in its column's own coordinate
+    /// space (`WorkspaceColumnsHost.columnSpace`). Its global frame changed
+    /// on every frame its column slid, laying the column out again.
+    @Entry var paneFrameIsColumnLocal = false
+}
+
 extension View {
-    func reportsSupplementaryPaneFrame() -> some View {
-        background {
+    /// - Parameter isEnabled: Whether this view is in the trailing column.
+    ///   A full-width side chat is not, but keeps the modifier so its
+    ///   identity survives moving there.
+    func reportsSupplementaryPaneFrame(isEnabled: Bool = true) -> some View {
+        modifier(SupplementaryPaneFrameReporter(isEnabled: isEnabled))
+    }
+}
+
+private struct SupplementaryPaneFrameReporter: ViewModifier {
+    let isEnabled: Bool
+    @Environment(\.paneFrameIsColumnLocal) private var isColumnLocal
+
+    func body(content: Content) -> some View {
+        content.background {
             GeometryReader { proxy in
                 Color.clear.preference(
                     key: SupplementaryPaneFramePreferenceKey.self,
-                    value: proxy.frame(in: .global)
+                    value: isEnabled
+                        ? proxy.frame(in: isColumnLocal ? .named(WorkspaceColumnsHost.columnSpace) : .global)
+                        : .zero
                 )
             }
         }
@@ -29,22 +52,25 @@ extension View {
 
 /// The shell shared by every side chat in the trailing column: its divider,
 /// width, scroll-edge treatment and frame report. Kinds supply only content.
+/// A full-width thread keeps this shell, without the divider and width
+/// limits, so moving between the pane and full width keeps its timeline.
 struct SideConversationPane<Content: View>: View {
+    var isFullWidth = false
     @ViewBuilder let content: Content
-
     var body: some View {
         HStack(spacing: 0) {
-            Divider()
-                .ignoresSafeArea(.container, edges: .top)
+            if !isFullWidth {
+                Divider()
+                    .ignoresSafeArea(.container, edges: .top)
+            }
             content
-                .scrollEdgeEffectStyle(.soft, for: .top)
-                .frame(
-                    minWidth: InterfaceScale.metric(340),
-                    idealWidth: InterfaceScale.metric(400),
-                    maxWidth: InterfaceScale.metric(440),
-                    maxHeight: .infinity
-                )
-                .reportsSupplementaryPaneFrame()
+                .scrollEdgeEffectStyle(isFullWidth ? .automatic : .soft, for: .top)
+            .frame(
+                minWidth: isFullWidth ? nil : ChatChromeMetrics.sideConversationMinimumWidth,
+                idealWidth: isFullWidth ? nil : InterfaceScale.metric(400),
+                maxWidth: isFullWidth ? .infinity : InterfaceScale.metric(440),
+                maxHeight: .infinity
+            )
         }
     }
 }
@@ -56,9 +82,11 @@ struct SideConversationView: View {
     let conversation: SideConversation
 
     var body: some View {
-        SideConversationPane {
+        SideConversationPane(isFullWidth: conversation.isFullWidth) {
             switch conversation {
-            case .thread, .threadCreation:
+            case .thread(let thread, _):
+                ThreadConversationView(model: model, leavingThread: thread)
+            case .threadCreation:
                 ThreadConversationView(model: model)
             case .voiceChat, .channelPreview:
                 ChatDetailView(model: model)

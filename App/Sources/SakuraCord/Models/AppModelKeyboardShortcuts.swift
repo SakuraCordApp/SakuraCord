@@ -81,9 +81,9 @@ extension AppModel {
         case .markServerRead:
             if let guildID = selectedGuildID { markGuildRead(guildID) }
         case .copyChannelLink:
-            if let channelID = openThread?.id ?? selectedChannelID {
+            if let channelID = visibleThread?.id ?? selectedChannelID {
                 ChannelContextMenuValue.copy(ChannelContextMenuValue.link(
-                    guildID: openThread?.guildID ?? selectedChannel?.guildID,
+                    guildID: visibleThread?.guildID ?? selectedChannel?.guildID,
                     channelID: channelID
                 ))
             }
@@ -201,7 +201,7 @@ extension AppModel {
         case .searchCurrentConversation:
             isFriendsSearchActive || isBrowsingGuildChannels || canShowMessageSearch
         case .copyChannelLink:
-            openThread != nil || selectedChannelID != nil
+            visibleThread != nil || selectedChannelID != nil
         case .togglePins:
             activePinsChannelID != nil
         case .toggleEmojiPicker, .toggleGIFPicker, .toggleStickerPicker:

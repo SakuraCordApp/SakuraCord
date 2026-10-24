@@ -10,6 +10,13 @@ struct SideConversationLabel: Equatable {
 
 /// Where the open thread's timeline is read, so moving it between the pane
 /// and full width reopens it at the same place.
+/// What takes an open side chat's place in the trailing column until it
+/// closes (`AppModel.sideConversationCover`).
+enum SideConversationCover {
+    case memberList
+    case messageSearch
+}
+
 struct ThreadTimelinePosition {
     /// The latest reading position the timeline reported.
     var reading: MessageTimelineScrollRequest.Target?
@@ -46,12 +53,26 @@ extension AppModel {
         sideConversations.thread ?? presentedSideConversationContext
     }
 
+    /// The side chat the workspace shows: Members or search results cover
+    /// a pane, though not a full-width side chat.
+    var visibleSideConversation: SideConversation? {
+        sideConversationCover != nil && presentedSideConversation?.isFullWidth != true
+            ? nil : presentedSideConversation
+    }
+
+    /// The thread the workspace shows, in its pane or at full width; not one
+    /// that Members or search results cover.
+    var visibleThread: MessageThreadSummary? {
+        if case .thread(let thread, _)? = visibleSideConversation { return thread }
+        return nil
+    }
+
     var workspacePresentation: WorkspacePresentation {
         WorkspacePresentation(
             guildPage: selectedGuildID == nil ? nil : guildWorkspacePage,
             isFriendsPresented: isFriendsPresented,
             channelKind: selectedChannel?.kind,
-            sideConversation: presentedSideConversation,
+            sideConversation: visibleSideConversation,
             showsMessageSearch: isMessageSearchVisible,
             showsInspector: showInspector
         )
@@ -76,6 +97,10 @@ extension AppModel {
     }
 
     var isThreadFullWidth: Bool { sideConversations.thread?.isFullWidth == true }
+
+    func sideConversationsDidChange() {
+        if shortcutThreadIsFullWidth != isThreadFullWidth { shortcutThreadIsFullWidth = isThreadFullWidth }
+    }
 
     /// A thread being composed. It becomes `openThread` once Discord creates it.
     var threadCreation: ThreadCreationDraft? {
@@ -102,7 +127,7 @@ extension AppModel {
 
     /// The composer that typing and file drops reach when no pane is targeted.
     var activeComposerDestination: MessageComposerDestination {
-        presentedSideConversation?.capabilities.composerDestination ?? .channel
+        visibleSideConversation?.capabilities.composerDestination ?? .channel
     }
 
     func sideConversationLabel(_ conversation: SideConversation) -> SideConversationLabel {
@@ -145,8 +170,11 @@ extension AppModel {
     /// the open thread and keeps its context, unless it takes over the
     /// workspace at full width. Any other side chat replaces the context and
     /// the thread above it. Kind-specific entry points prepare the store.
-    func openSideConversation(_ conversation: SideConversation) {
+    /// - Parameter preparing: State the side chat needs to be presented,
+    ///   set in the same change so it moves in from its first frame.
+    func openSideConversation(_ conversation: SideConversation, preparing: () -> Void = {}) {
         func open() {
+            sideConversationCover = nil
             closeThread()
             if conversation.isThread {
                 if conversation.isFullWidth { discardSideConversationContext() }
@@ -155,40 +183,120 @@ extension AppModel {
                 discardSideConversationContext()
                 sideConversations.context = conversation
             }
+            preparing()
         }
         // A thread opened straight into full width replaces the workspace,
-        // as navigation does; a pane slides in beside its conversation.
-        if conversation.isFullWidth { open() } else { WorkspaceLayoutMotion.perform(open) }
+        // as navigation does, and one side chat replaces another in the same
+        // pane; a pane slides in beside its conversation.
+        if conversation.isFullWidth || workspacePresentation.paneSideConversation != nil {
+            open()
+        } else {
+            WorkspaceLayoutMotion.perform(in: self, open)
+        }
     }
 
     /// Moves the open pane thread into the primary column.
     func presentOpenThreadFullWidth() {
         guard let thread = openThread else { return }
         threadTimelinePosition.restore = threadTimelinePosition.reading
-        WorkspaceLayoutMotion.perform {
+        WorkspaceLayoutMotion.widen(in: self) {
             discardSideConversationContext()
             sideConversations.thread = .thread(thread, isFullWidth: true)
         }
-        suspendSelectedConversationPresentation()
+        guard WorkspaceMotionPhase.shared.widening != nil else {
+            suspendSelectedConversationPresentation()
+            return
+        }
+        // The conversation stays beneath the widening thread until it is
+        // covered. If the reader returns before then, it was never hidden.
+        Task { [weak self] in
+            await WorkspaceLayoutMotion.untilSettled()
+            guard let self, isThreadFullWidth, openThread?.id == thread.id else { return }
+            suspendSelectedConversationPresentation()
+        }
+    }
+
+    /// The motion categories of opening, closing or widening a side chat: the
+    /// member list or search results it takes the place of, or returns, move
+    /// too: only where this page shows one beside a conversation without the
+    /// side chat, which is what the pane covers or gives back.
+    var sideChatMotionCategories: [AppMotionCategory] {
+        let withoutSideChat = WorkspacePresentation(
+            guildPage: selectedGuildID == nil ? nil : guildWorkspacePage,
+            isFriendsPresented: isFriendsPresented,
+            channelKind: selectedChannel?.kind,
+            sideConversation: nil,
+            showsMessageSearch: isMessageSearchVisible,
+            showsInspector: showInspector
+        )
+        return withoutSideChat.supplementaryPane == nil ? [.sideChats] : [.sideChats, .sidebar]
+    }
+
+    /// The motion categories of showing or hiding the member list or search
+    /// results: a side chat they take the place of, or return, moves too.
+    var inspectorMotionCategories: [AppMotionCategory] {
+        workspacePresentation.paneSideConversation != nil || sideConversationCover != nil
+            ? [.sidebar, .sideChats] : [.sidebar]
     }
 
     /// Shows or hides the member list beside the conversation.
     func toggleMemberInspector() {
         prepareInspectorProfileForPresentation()
-        WorkspaceLayoutMotion.perform { showInspector.toggle() }
+        // Beside a side chat, which the toolbar keeps the toggle for, the
+        // member list takes the side chat's place until it closes again.
+        if workspacePresentation.paneSideConversation != nil {
+            threadTimelinePosition.restore = threadTimelinePosition.reading
+            WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
+                sideConversationCover = .memberList
+                showInspector = true
+                // Search results the side chat hid would take precedence.
+                messageSearch.isPresented = false
+            }
+            return
+        }
+        if sideConversationCover == .memberList, showInspector {
+            WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
+                showInspector = false
+                sideConversationCover = nil
+            }
+            return
+        }
+        WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) { showInspector.toggle() }
+    }
+
+    /// Shows the side chat Members or search results cover, as opening it
+    /// again does.
+    func revealCoveredSideConversation() {
+        switch sideConversationCover {
+        case .memberList:
+            WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
+                showInspector = false
+                sideConversationCover = nil
+            }
+        case .messageSearch:
+            dismissMessageSearch()
+        case nil:
+            break
+        }
     }
 
     /// Closes the side chat on top, as Escape and the pane's close button do.
     @discardableResult
     func closeSideConversation() -> Bool {
+        // A side chat the member list or search results cover stays until
+        // they close.
+        let presentation = workspacePresentation
+        guard presentation.paneSideConversation != nil || presentation.primary == .fullWidthThread
+            || guildWorkspacePage != nil
+        else { return false }
         if sideConversations.thread != nil {
             // Leaving a full-width thread returns to its parent, as
             // navigation does; a pane slides away beside its conversation.
-            if isThreadFullWidth { dismissOpenThread() } else { WorkspaceLayoutMotion.perform(dismissOpenThread) }
+            if isThreadFullWidth { dismissOpenThread() } else { WorkspaceLayoutMotion.perform(in: self, dismissOpenThread) }
             return true
         }
         guard presentedSideConversationContext != nil else { return false }
-        WorkspaceLayoutMotion.perform(closeSideConversations)
+        WorkspaceLayoutMotion.perform(in: self, closeSideConversations)
         return true
     }
 
@@ -236,6 +344,7 @@ extension AppModel {
     func discardSideConversationContext() {
         if case .guideResource? = sideConversations.context { guideResource = nil }
         sideConversations.context = nil
+        if sideConversations.thread == nil { sideConversationCover = nil }
     }
 
     /// Whether a selection change keeps the presented guild page without

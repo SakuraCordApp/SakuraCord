@@ -38,7 +38,7 @@ struct NativeTimelineMentionHitRegion {
     let frame: CGRect
 }
 
-enum NativeTimelineMentionAppearance {
+nonisolated enum NativeTimelineMentionAppearance {
     static func backgroundAlpha(isHovered: Bool) -> CGFloat {
         isHovered ? 0.34 : 0.18
     }

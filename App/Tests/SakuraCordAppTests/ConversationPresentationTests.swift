@@ -541,6 +541,27 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
     )
 }
 
+@Test func `fully loaded empty timeline has reached the newest boundary only at its end`() {
+    func reached(
+        hasMoreEarlier: Bool = false,
+        isLoadingEarlier: Bool = false,
+        isLoadingLater: Bool = false,
+        isAtDocumentBottom: Bool = true
+    ) -> Bool {
+        NativeTimelineReadBoundaryPolicy.hasReachedEmptyTimelineBoundary(
+            hasMoreEarlier: hasMoreEarlier,
+            isLoadingEarlier: isLoadingEarlier,
+            isLoadingLater: isLoadingLater,
+            isAtDocumentBottom: isAtDocumentBottom
+        )
+    }
+    #expect(reached())
+    #expect(!reached(hasMoreEarlier: true))
+    #expect(!reached(isLoadingEarlier: true))
+    #expect(!reached(isLoadingLater: true))
+    #expect(!reached(isAtDocumentBottom: false))
+}
+
 @Test func `newest message boundary uses exact viewport space`() {
     #expect(
         NativeTimelineReadBoundaryPolicy

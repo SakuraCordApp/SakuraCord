@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-extension NSBezierPath {
+nonisolated extension NSBezierPath {
     convenience init(
         concentricRoundedRect rect: CGRect,
         cornerRadius: CGFloat

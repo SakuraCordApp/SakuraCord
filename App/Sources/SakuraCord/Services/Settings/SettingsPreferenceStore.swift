@@ -563,6 +563,30 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
+            id: .accessibilityDisableAllAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableAllAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityDisableSidebarAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableSidebarAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityDisableSideChatAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableSideChatAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityDisableOverlayAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableOverlayAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
             id: .accessibilityDisableOwnCosmetics,
             page: .accessibility,
             storage: .appWide(key: "settings.accessibility.disableOwnCosmetics"),

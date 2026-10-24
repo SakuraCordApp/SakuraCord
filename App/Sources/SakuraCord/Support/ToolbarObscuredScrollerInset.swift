@@ -17,3 +17,12 @@ extension NSScrollView {
         return true
     }
 }
+
+extension NSWindow {
+    /// Whether a point in window coordinates is in the toolbar band, where
+    /// content shows beneath the toolbar's glass but the pointer belongs to
+    /// the toolbar.
+    func toolbarCovers(_ locationInWindow: NSPoint) -> Bool {
+        styleMask.contains(.fullSizeContentView) && locationInWindow.y > contentLayoutRect.maxY
+    }
+}

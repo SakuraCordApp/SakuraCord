@@ -32,12 +32,15 @@ nonisolated enum ThreadTimelinePresentationPolicy {
 
 struct ThreadConversationView: View {
     let model: AppModel
+    /// The thread this shows while it slides away, after it has closed.
+    var leavingThread: MessageThreadSummary?
+    @Environment(\.isLeavingWorkspace) private var isLeaving
     @State private var floatingFooterHeight: CGFloat =
         ChatDetailLayoutPolicy.defaultFloatingFooterHeight
     @State private var editRequest: MessageTimelineEditRequest?
 
     @ViewBuilder var body: some View {
-        if let thread = model.openThread {
+        if let thread = model.openThread ?? (isLeaving ? leavingThread : nil) {
             if model.withholdsOpenThreadContent {
                 if model.openThreadResolution == .failed {
                     ThreadUnavailableView(retry: model.retryOpenThreadResolution)
@@ -538,6 +541,7 @@ private struct ThreadMessageTimelineView: View {
                     conversationID: conversationID
                 )
             }
+            model.suspendOpenThreadPresentation()
         }
         .onExitCommand {
             model.handleTimelineEscape(in: .thread, conversationID: conversationID)

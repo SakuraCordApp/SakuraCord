@@ -1178,6 +1178,7 @@ extension NativeTimelineCanvasView {
         contentOriginY
             + (index >= disclosureRange.upperBound ? disclosureShiftAfter
                 : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
+            + unreadDividerGapShift(at: index)
             + NativeTimelineTransientRowGeometry.rowOrigin(
                 base: rowOrigins[index],
                 rowIndex: index,

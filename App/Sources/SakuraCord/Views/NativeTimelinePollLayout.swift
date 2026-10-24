@@ -2,7 +2,7 @@ import AppKit
 import CoreText
 import SakuraCordModels
 
-struct NativeTimelinePollLayout {
+nonisolated struct NativeTimelinePollLayout {
     struct Answer {
         let id: Int
         let frame: CGRect
@@ -95,7 +95,7 @@ struct NativeTimelinePollLayout {
     }
 }
 
-struct NativeTimelinePollPresentation {
+nonisolated struct NativeTimelinePollPresentation {
     static let voteAnimationDuration: TimeInterval = 0.48
     var selected: Set<Int> = []
     var revealsResults = false
@@ -108,13 +108,13 @@ struct NativeTimelinePollPresentation {
     }
 }
 
-struct NativeTimelinePollTarget: Equatable {
+nonisolated struct NativeTimelinePollTarget: Equatable {
     enum Control: Equatable { case answer(Int), votes, reveal, submit, original }
     let messageID: MessageID
     let control: Control
 }
 
-extension NativeTimelineRowPainter {
+nonisolated extension NativeTimelineRowPainter {
     static func pollSurface(in frame: CGRect, cornerRadius radius: CGFloat) {
         NativeTimelineSemanticColor.opacity(.controlBackgroundColor, 0.45).setFill()
         NSBezierPath(concentricRoundedRect: frame, cornerRadius: radius).fill()
@@ -154,7 +154,7 @@ extension NativeTimelineRowPainter {
         }
         drawPollFooter(poll, layout: layout, state: state,
                        isConfirmed: input.row.message.outboxState == .confirmed,
-                       canVote: input.model?.canUpdatePollVote(on: input.row.message, removing: !poll.selectedAnswerIDs.isEmpty) != false, bubbleRegion: bubble)
+                       canVote: NativeTimelineRowPaintContext.current?.canUpdatePollVote(on: input.row.message, removing: !poll.selectedAnswerIDs.isEmpty) != false, bubbleRegion: bubble)
     }
 
     private static func drawPollAnswer(_ answer: PollAnswer, region: NativeTimelinePollLayout.Answer,

@@ -114,7 +114,7 @@ func `timeline server tags own their activation and reject stale identity layout
     defer { coordinator.stopObserving() }
     coordinator.layoutWidth = 560
     coordinator.presentationRevision = timeline.presentationRevision
-    let layout = NativeTimelineRowLayout.make(item: item, width: 560, model: model)
+    let layout = NativeTimelineRowLayout.make(item: item, width: 560, source: model)
     coordinator.cacheItemLayout(item, layout: layout)
     #expect(coordinator.cachedItemLayout(for: item, width: 560, presentationRevision: timeline.presentationRevision) != nil)
 

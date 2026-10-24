@@ -37,6 +37,19 @@ private final class NativeTimelineInputShieldScrollView: NSScrollView {
     }
 }
 
+/// Keeps the timeline's horizontal scroll position at zero. A trackpad's
+/// sideways movement otherwise moved a side chat's timeline by fractions of a
+/// point, after AppKit aligned its bounds to the pixel grid at a column's
+/// fractional position, and the timeline held off redrawing until the
+/// gesture ended.
+final class NativeTimelineClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var bounds = super.constrainBoundsRect(proposedBounds)
+        bounds.origin.x = 0
+        return bounds
+    }
+}
+
 struct NativeMessageTimelineView: NSViewRepresentable {
     @Environment(\.openSettings) var openSettings
     let model: AppModel
@@ -153,6 +166,10 @@ struct NativeMessageTimelineView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        // A closed side chat keeps its rows as it slides away, from model
+        // notifications too.
+        context.coordinator.isLeavingWorkspace = context.environment.isLeavingWorkspace
+        guard !context.environment.isLeavingWorkspace else { return }
         context.coordinator.update(parent: self, scrollView: scrollView)
     }
 
@@ -275,6 +292,8 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var firstRowID: MessageID?
         var lastRowID: MessageID?
         var rowsRevision: UInt64 = 0
+        /// A closed side chat's timeline, sliding away, keeps its rows.
+        var isLeavingWorkspace = false
         var presentationRevision: UInt64 = 0
         var layoutWidth: CGFloat = 0
         var didMutateItems = false
@@ -293,6 +312,8 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var lastPerformanceUpdateDuration = 0.0
         var lastLoggedPerformanceFallbackReason: String?
         var recentLayoutCacheHits = 0
+        /// Time spent laying out rows, never reset (motion benchmark).
+        var lifetimeLayoutDuration = 0.0
         var cachedItemLayouts:
             [CachedItemLayoutKey: CachedItemLayout] = [:]
         var cachedItemLayoutOrder:
@@ -374,12 +395,27 @@ extension NativeMessageTimelineCoordinator {
             documentView.addSubview(canvas)
 
             let scrollView = NativeTimelineInputShieldScrollView()
+            // The timeline only scrolls vertically, wherever it is placed.
+            scrollView.contentView = NativeTimelineClipView()
             scrollView.inputPerformanceProbe.install(on: scrollView)
+            if WorkspaceMotionProbes.isEnabled {
+                WorkspaceMotionProbes.shared.registerTimeline(scrollView) { [weak self, weak canvas] in
+                    WorkspaceMotionProbes.TimelineCounts(
+                        rows: self?.items.count ?? 0,
+                        draws: canvas?.drawCount ?? 0,
+                        drawSeconds: canvas?.lifetimeDrawDuration ?? 0,
+                        layoutSeconds: self?.lifetimeLayoutDuration ?? 0,
+                        contentWidth: self.map { $0.previewLayoutWidth ?? $0.layoutWidth } ?? 0
+                    )
+                }
+            }
             scrollView.onUserScrollTowardNewest = { [weak self] in
                 self?.parent.onUserScrollTowardNewest()
             }
             // The reader's own scrolling always wins over a jump's glide.
-            scrollView.onScrollWheel = { [weak self] in self?.cancelGlide() }
+            scrollView.onScrollWheel = { [weak self] in
+                self?.cancelGlide()
+            }
             scrollView.onToolbarObscuredHeightChange = { [weak self] in
                 self?.updateInsetsForToolbarObscuredHeightChange()
             }
@@ -417,6 +453,7 @@ extension NativeMessageTimelineCoordinator {
         ) {
             guard let canvas else { return }
             let sendTransitionAnchor = sendTransitionTranscriptAnchor(for: parent)
+            let unreadDivider = unreadDividerChange(to: parent, canvas: canvas)
             let (preparation, measurement) = prepareTimelineUpdate(
                 parent: parent,
                 scrollView: scrollView,
@@ -503,6 +540,7 @@ extension NativeMessageTimelineCoordinator {
                 preparation: preparation,
                 transcriptAnchor: sendTransitionAnchor
             )
+            if let unreadDivider { canvas.transitionUnreadDivider(unreadDivider) }
             Self.performanceSignposter.endInterval(
                 "MessageTimelineReload",
                 measurement.signpost
@@ -968,6 +1006,7 @@ extension NativeMessageTimelineCoordinator {
                 await Task.yield()
                 guard !Task.isCancelled, let self else { return }
                 self.pendingModelRowsUpdateTask = nil
+                guard !self.isLeavingWorkspace else { return }
                 guard !self.isApplyingUpdate,
                       let scrollView = self.scrollView
                 else {
@@ -1135,7 +1174,7 @@ extension NativeMessageTimelineCoordinator {
                     if let index = reusableLayouts[item.identifier],
                        oldItems[index] == item,
                        oldLayouts[index].fontRevision == ProfileNameFontCache.revision,
-                       oldLayouts[index].matchesAuthorPrimaryGuild(for: item, model: parent.model) {
+                       oldLayouts[index].matchesAuthorPrimaryGuild(for: item, source: parent.model) {
                         // Retained live rows are not reads from a layout cache.
                         return oldLayouts[index]
                     }
@@ -1236,7 +1275,7 @@ extension NativeMessageTimelineCoordinator {
             guard let cached = cachedItemLayouts[key],
                   cached.item == item,
                   cached.layout.fontRevision == ProfileNameFontCache.revision,
-                  cached.layout.matchesAuthorPrimaryGuild(for: item, model: parent.model)
+                  cached.layout.matchesAuthorPrimaryGuild(for: item, source: parent.model)
             else { return nil }
             return cached.layout
         }

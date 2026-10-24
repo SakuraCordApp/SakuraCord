@@ -170,7 +170,7 @@ struct GuildGuideView: View {
 
     private func serverProfile(_ profile: GuildProfile) -> some View {
         let card = NativeTimelineInviteLayout(index: 0, origin: .zero, maximumWidth: 280,
-            model: nil, isOwnMessage: false, fillsWidth: true,
+            source: nil, isOwnMessage: false, fillsWidth: true,
             preview: NativeServerCardContent(profile: profile, iconURL: guild?.iconURL, adaptiveColor: previewColor))
         return NativeInvitePreview(card: card, isModalPreview: false)
             .frame(width: card.frame.width, height: card.frame.height)

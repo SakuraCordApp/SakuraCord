@@ -8,7 +8,7 @@ import QuartzCore
 import SakuraCordModels
 import SwiftUI
 
-extension NativeTimelineRowPainter {
+nonisolated extension NativeTimelineRowPainter {
     private struct SingleLineTextInput {
         let sourceLine: CTLine
         let sourceWidth: CGFloat
@@ -340,7 +340,7 @@ extension NativeTimelineRowPainter {
             value,
             framesetter: framesetter,
             hoveredLinkCharacterIndex: hoveredLinkCharacterIndex,
-            underlinesLinks: model?.accessibilitySettings.underlinesLinks == true,
+            underlinesLinks: NativeTimelineRowPaintContext.current?.underlinesLinks == true,
             revealedSpoilerLocations: revealedSpoilerLocations
         )
         let path = CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil)
@@ -987,7 +987,7 @@ extension NativeTimelineRowPainter {
     ) -> NSImage? {
         let reference = EmojiReference(rawToken: token)
         if let url =
-            reference.id.flatMap({ model?.customEmojiURLsByID[$0] })
+            reference.id.flatMap({ NativeTimelineRowPaintContext.current?.customEmojiURLsByID[$0] })
                 ?? reference.imageURL(size: 64),
            let image = mediaImage(
                for: .media(url, maximumPixelDimension: 64)

@@ -3,8 +3,8 @@ import CoreText
 import SakuraCordModels
 
 /// What a message row shows below its body for an in-memory translation.
-struct NativeTimelineTranslationPresentation {
-    enum Kind: Equatable {
+nonisolated struct NativeTimelineTranslationPresentation {
+    nonisolated enum Kind: Equatable {
         case loading
         case translated
         case failed
@@ -16,9 +16,9 @@ struct NativeTimelineTranslationPresentation {
     let actionTitle: String?
     let text: NativeTimelineTextPresentation.Value?
 
-    static func make(
+    @MainActor static func make(
         row: MessageRowPresentation,
-        model: AppModel?,
+        source model: (any NativeTimelineLayoutSource)?,
         isOutgoingBubble: Bool
     ) -> Self? {
         guard row.searchContext == nil, row.pinnedAt == nil, !row.isResource,
@@ -39,7 +39,7 @@ struct NativeTimelineTranslationPresentation {
                 attributedText: nil,
                 baseFontSize: 15
             )
-            let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, model: model)
+            let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, source: model)
             return Self(
                 requestID: entry.requestID,
                 kind: .translated,
@@ -68,7 +68,7 @@ struct NativeTimelineTranslationPresentation {
 }
 
 extension NativeTimelineRowLayout {
-    struct TranslationRegion {
+    nonisolated struct TranslationRegion {
         let messageID: MessageID
         let regionID: NativeTimelineTextRegion
         let kind: NativeTimelineTranslationPresentation.Kind
@@ -85,7 +85,7 @@ extension NativeTimelineRowLayout {
         let framesetter: CTFramesetter?
     }
 
-    static var translationCaptionFont: NSFont {
+    nonisolated static var translationCaptionFont: NSFont {
         NSFont.interfacePreferredFont(forTextStyle: .caption1)
     }
 
@@ -141,7 +141,7 @@ extension NativeTimelineRowLayout {
     }
 }
 
-extension NativeTimelineRowPainter {
+nonisolated extension NativeTimelineRowPainter {
     static func drawMessageTranslation(_ input: NativeTimelineMessageDrawInput) {
         guard let region = input.layout.translationRegion else { return }
         let font = NativeTimelineRowLayout.translationCaptionFont

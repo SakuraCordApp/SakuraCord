@@ -401,7 +401,11 @@ final class AppModel {
     /// The open side chats: the single source of truth for threads, voice
     /// chat, Guide resources and channel previews beside the primary
     /// conversation. Change it through AppModelSideConversations.swift.
-    var sideConversations = SideConversationStack()
+    var sideConversations = SideConversationStack() { didSet { sideConversationsDidChange() } }
+    /// `isThreadFullWidth` for the menu commands' enabled states, which every
+    /// side chat change re-evaluated: they read only this, which changes
+    /// only when the full-width state does.
+    var shortcutThreadIsFullWidth = false
     /// The Guide resource store; it lives exactly as long as its side chat.
     var guideResource: GuildResourceState?
     /// Re-resolution of the open private thread after a fresh READY did not
@@ -997,6 +1001,9 @@ final class AppModel {
     var attachmentCompactionPresentation: OversizedAttachmentPrompt?
     var externalAttachmentUploadPresentation: ExternalAttachmentUploadPresentation?
     var showInspector = true
+    /// What has taken the open side chat's place in the trailing column;
+    /// the side chat, with its draft and position, comes back when it closes.
+    var sideConversationCover: SideConversationCover?
     var errorMessage: String?
 
     @ObservationIgnored var provider: any ChatProvider
@@ -1258,7 +1265,8 @@ final class AppModel {
         self.attachmentSettingsStore = resolvedAttachmentStore
         attachmentSettings = resolvedAttachmentStore.load()
         self.attachmentCompactor = attachmentCompactor
-        accessibilitySettings = AccessibilitySettingsStore.shared.load()
+        AppMotionPolicy.settings = AccessibilitySettingsStore.shared.load()
+        accessibilitySettings = AppMotionPolicy.settings
         self.notificationService =
             notificationService ?? NoopNativeNotificationService()
         self.soundPlayer = soundPlayer ?? NoopAppSoundPlayer()

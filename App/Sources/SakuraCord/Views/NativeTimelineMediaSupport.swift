@@ -35,7 +35,7 @@ nonisolated enum NativeTimelineMediaMemoryPolicy {
         decodedImageCacheBytes + SharedMediaDataMemoryPolicy.retainedBytes
 }
 
-struct NativeTimelineMediaKey: Hashable {
+nonisolated struct NativeTimelineMediaKey: Hashable, Sendable {
     let url: URL
     let fallbackURL: URL?
     let maximumPixelDimension: Int

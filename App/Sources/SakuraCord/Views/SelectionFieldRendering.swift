@@ -1,7 +1,6 @@
 import AppKit
 
-@MainActor
-enum SelectionFieldLayoutMetrics {
+nonisolated enum SelectionFieldLayoutMetrics {
     static var font: NSFont { .interfaceSystemFont(ofSize: 13, weight: .medium) }
     static var minimumHeight: CGFloat { InterfaceScale.metric(44) }
     static var leadingInset: CGFloat { InterfaceScale.metric(11) }
@@ -48,8 +47,7 @@ enum SelectionFieldLayoutMetrics {
 /// AppKit rendering for collapsed message-component fields; interactive fields use SwiftUI.
 /// Geometry, type and colours mirror `SelectionField` so opening a field does
 /// not move or restyle anything.
-@MainActor
-enum SelectionFieldRenderer {
+nonisolated enum SelectionFieldRenderer {
     /// The open field's 22×28 chevron button, inside its 11-point inset.
     static func chevronRect(in frame: CGRect) -> CGRect {
         CGRect(

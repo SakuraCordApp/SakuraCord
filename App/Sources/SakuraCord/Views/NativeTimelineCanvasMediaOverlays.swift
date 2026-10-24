@@ -767,6 +767,7 @@ extension NativeTimelineCanvasView {
 
     func reconcileActivityIndicators() {
         reconcileInboxHeaders()
+        positionUnreadDividerFades()
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {

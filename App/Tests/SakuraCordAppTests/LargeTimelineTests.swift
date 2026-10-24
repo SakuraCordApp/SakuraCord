@@ -158,7 +158,7 @@ func `concealed spoiler policy gates loading animation and nested containers unt
     let nestedLayout = try #require(
         NativeTimelineComponentLayout.make(
             message: nestedMessage,
-            model: nil,
+            source: nil,
             origin: .zero,
             maximumWidth: 480
         )
@@ -2396,7 +2396,7 @@ func `timeline mention text prewarms off main without changing its resolved pres
         NativeTimelineTextPresentation.preparation(
             message: message,
             plan: plan,
-            model: nil
+            source: nil
         )
     )
 
@@ -2406,7 +2406,7 @@ func `timeline mention text prewarms off main without changing its resolved pres
     let presentation = NativeTimelineTextPresentation.make(
         message: message,
         plan: plan,
-        model: nil
+        source: nil
     )
 
     #expect(presentation.attributedContent === prewarmed.value)
@@ -2572,4 +2572,14 @@ private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
         in: CGRect(x: 0, y: 0, width: image.width, height: image.height)
     )
     return bytes
+}
+
+@MainActor @Test func `timeline clip view never scrolls sideways`() {
+    let clipView = NativeTimelineClipView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+    clipView.documentView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 2_000))
+    // A trackpad's sideways movement, as AppKit proposes it after aligning a
+    // column between pixels.
+    let bounds = clipView.constrainBoundsRect(NSRect(x: 0.28, y: 900, width: 400, height: 300))
+    #expect(bounds.origin.x == 0)
+    #expect(bounds.origin.y == 900)
 }

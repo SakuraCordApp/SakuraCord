@@ -14,7 +14,7 @@ enum NativeTimelineTextPresentation {
         let mentions: [String: MentionPresentation]
     }
 
-    struct Value {
+    nonisolated struct Value {
         let attributedContent: NSAttributedString?
         let framesetter: CTFramesetter
         let linkedImages: [LinkedImageReference]
@@ -92,13 +92,13 @@ enum NativeTimelineTextPresentation {
 
     static func make(
         row: MessageRowPresentation,
-        model: AppModel?
+        source: (any NativeTimelineLayoutSource)?
     ) -> Value {
         let message = row.message
         guard !message.flags.contains(.isComponentsV2) else {
             return empty
         }
-        let systemActorColor = model?.accessibilitySettings.roleColorDisplay == .inNames ? model?.authorPresentation(for: message)
+        let systemActorColor = source?.roleColorDisplay == .inNames ? source?.authorPresentation(for: message)
             .roleColorHex.flatMap { value -> NSColor? in
                 guard value != 0 else { return nil }
                 return NSColor(
@@ -111,21 +111,21 @@ enum NativeTimelineTextPresentation {
         let plan = if message.type.hasGeneratedContent {
             NativeTimelineTextPlan.make(
                 for: message,
-                currentUserID: model?.currentUser?.id,
-                systemRecipient: model?.systemMessageRecipient(for: message),
+                currentUserID: source?.currentUserID,
+                systemRecipient: source?.systemMessageRecipient(for: message),
                 systemActorColor: systemActorColor,
                 systemLinkColor: SakuraCordAccentColor.nsColor
             )
         } else {
             row.textPlan
         }
-        return make(message: message, plan: plan, model: model)
+        return make(message: message, plan: plan, source: source)
     }
 
     static func make(
         message: Message,
         plan: NativeTimelineTextPlan,
-        model: AppModel?
+        source: (any NativeTimelineLayoutSource)?
     ) -> Value {
         guard plan.preparedText != nil else {
             return Value(
@@ -138,7 +138,7 @@ enum NativeTimelineTextPresentation {
         }
 
         let preservesCompactSystemStyle = message.type.hasGeneratedContent
-            && model?.messageAppearance(for: message.channelID) != .bubbles
+            && source?.messageAppearance(for: message.channelID) != .bubbles
         let resolvedBaseFontSize = InterfaceScale.fontSize(
             preservesCompactSystemStyle
                 ? plan.baseFontSize
@@ -168,7 +168,7 @@ enum NativeTimelineTextPresentation {
         guard let preparation = preparation(
             message: message,
             plan: plan,
-            model: model,
+            source: source,
             baseFontSize: resolvedBaseFontSize
         ) else {
             return Value(
@@ -190,7 +190,7 @@ enum NativeTimelineTextPresentation {
     static func preparation(
         message: Message,
         plan: NativeTimelineTextPlan,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         baseFontSize: CGFloat? = nil
     ) -> Preparation? {
         let resolvedBaseFontSize = baseFontSize ?? plan.baseFontSize
@@ -200,7 +200,7 @@ enum NativeTimelineTextPresentation {
             return nil
         }
         guard let prepared = plan.preparedText else { return nil }
-        let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
+        let resolver = source.map { MessageMentionResolver(source: $0, message: message) }
         let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
             guard case let .mention(mention) = token else { return }
             values[mention.rawToken] =
@@ -253,7 +253,7 @@ enum NativeTimelineTextPresentation {
 }
 
 nonisolated final class NativeTimelineResolvedTextCache: Sendable {
-    struct Key: Hashable, Sendable {
+    nonisolated struct Key: Hashable, Sendable {
         let messageID: MessageID
         let scope: String
         let prepared: RichMessageAttributedText.Prepared
@@ -266,7 +266,7 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
 
     static let shared = NativeTimelineResolvedTextCache()
 
-    private struct State: Sendable {
+    nonisolated private struct State: Sendable {
         var entries: [Key: NativeTimelineAttributedTextBox] = [:]
         var insertionOrder: [Key] = []
         var evictionIndex = 0
@@ -566,7 +566,7 @@ nonisolated enum NativeTimelineCoreText {
 }
 
 enum NativeTimelineEmbedLayout {
-    private struct PreparedField {
+    nonisolated private struct PreparedField {
         let field: MessageEmbedField
         let name: NativeTimelineAttributedTextBox
         let value: NativeTimelineAttributedTextBox
@@ -575,7 +575,7 @@ enum NativeTimelineEmbedLayout {
     private struct Builder {
         let embed: MessageEmbed
         let message: Message
-        let model: AppModel?
+        let source: (any NativeTimelineLayoutSource)?
         let attachments: [Attachment]
         let origin: CGPoint
         let maximumWidth: CGFloat
@@ -669,7 +669,7 @@ enum NativeTimelineEmbedLayout {
                     emojiSize: 18,
                     embed: embed,
                     message: message,
-                    model: model
+                    source: source
                 )
             }
             let fields = embed.fields.enumerated().map { index, field in
@@ -688,7 +688,7 @@ enum NativeTimelineEmbedLayout {
                         emojiSize: 16,
                         embed: embed,
                         message: message,
-                        model: model
+                        source: source
                     )
                 )
             }
@@ -991,7 +991,7 @@ enum NativeTimelineEmbedLayout {
             emojiSize: CGFloat,
             embed: MessageEmbed,
             message: Message,
-            model: AppModel?
+            source: (any NativeTimelineLayoutSource)?
         ) -> NativeTimelineAttributedTextBox {
             NativeTimelineEmbedLayout.resolvedTextBox(
                 prepared: prepared,
@@ -999,7 +999,7 @@ enum NativeTimelineEmbedLayout {
                 emojiSize: emojiSize,
                 embed: embed,
                 message: message,
-                model: model
+                source: source
             )
         }
 
@@ -1098,7 +1098,7 @@ enum NativeTimelineEmbedLayout {
     static func make(
         embed: MessageEmbed,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         attachments: [Attachment],
         origin: CGPoint,
         maximumWidth: CGFloat,
@@ -1108,7 +1108,7 @@ enum NativeTimelineEmbedLayout {
         Builder(
             embed: embed,
             message: message,
-            model: model,
+            source: source,
             attachments: attachments,
             origin: origin,
             maximumWidth: maximumWidth,
@@ -1123,10 +1123,10 @@ enum NativeTimelineEmbedLayout {
         emojiSize: CGFloat,
         embed: MessageEmbed,
         message: Message,
-        model: AppModel?
+        source: (any NativeTimelineLayoutSource)?
     ) -> NativeTimelineAttributedTextBox {
-        let resolver = model.map {
-            MessageMentionResolver(model: $0, message: message)
+        let resolver = source.map {
+            MessageMentionResolver(source: $0, message: message)
         }
         let mentions = prepared.tokens.reduce(
             into: [String: MentionPresentation]()
@@ -1474,16 +1474,74 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
     }
 }
 
-enum NativeTimelineTimestamp {
+nonisolated enum NativeTimelineTimestamp {
+    /// Header texts by everything they depend on, including the day they
+    /// are read on: a row laid out again at another width, as on every
+    /// frame of a resize, reuses its timestamp's text.
+    private static let headerTexts = Mutex<[HeaderKey: String]>([:])
+    /// The day, locale and time zone texts are read in, looked up at most
+    /// once a second of wall-clock time, which a sleeping Mac also passes.
+    private static let headerContext = Mutex<HeaderContextLookup?>(nil)
+
+    private struct HeaderContextLookup {
+        let context: HeaderContext
+        /// When it was looked up, and when it is looked up again.
+        let created: Date
+        let expires: Date
+    }
+
+    private struct HeaderContext: Hashable {
+        let today: Date
+        /// The current locale with the user's overrides, such as the hour cycle.
+        let locale: Locale
+        let timeZone: TimeZone
+    }
+
+    private struct HeaderKey: Hashable {
+        let date: Date
+        let format: InterfaceTimestampFormat
+        let includesSeconds: Bool
+        let context: HeaderContext
+    }
+
+    private static var currentHeaderContext: HeaderContext {
+        let now = Date.now
+        return headerContext.withLock { cached in
+            // A clock set back leaves the window too.
+            if let cached, cached.created <= now, now < cached.expires { return cached.context }
+            let timeZone = TimeZone.current
+            var calendar = Calendar.current
+            calendar.timeZone = timeZone
+            let today = calendar.startOfDay(for: now)
+            let context = HeaderContext(today: today, locale: .current, timeZone: timeZone)
+            // Never past midnight, when today's texts become yesterday's.
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? now
+            cached = HeaderContextLookup(context: context, created: now, expires: min(now.addingTimeInterval(1), tomorrow))
+            return context
+        }
+    }
+
     static func headerText(
         for date: Date,
         settings: InterfaceSettingsSnapshot = .defaults
     ) -> String {
-        InterfaceTimestampFormatter.messageText(
+        let key = HeaderKey(
+            date: date,
+            format: settings.timestampFormat,
+            includesSeconds: settings.includesTimestampSeconds,
+            context: currentHeaderContext
+        )
+        if let text = headerTexts.withLock({ $0[key] }) { return text }
+        let text = InterfaceTimestampFormatter.messageText(
             for: date,
             format: settings.timestampFormat,
             includesSeconds: settings.includesTimestampSeconds
         )
+        headerTexts.withLock { texts in
+            if texts.count >= 4_096 { texts.removeAll(keepingCapacity: true) }
+            texts[key] = text
+        }
+        return text
     }
 
     static func text(
@@ -1577,7 +1635,7 @@ nonisolated enum NativeTimelineRunDelegate {
 }
 
 extension NativeTimelineRowLayout {
-    static func measuredTextHeight(
+    nonisolated static func measuredTextHeight(
         _ framesetter: CTFramesetter,
         value: NSAttributedString,
         length: Int,
@@ -1605,11 +1663,15 @@ extension NativeTimelineRowLayout {
 
     /// A single layout pass shares its font resolution and timestamp gutter.
     /// Recreate this snapshot for each pass so preference changes stay live.
-    struct Metrics {
+    nonisolated struct Metrics {
         let authorFont: NSFont
         let timestampFont: NSFont
         let editedFont: NSFont
         let timestampGutterWidth: CGFloat
+
+        @MainActor init(source: (any NativeTimelineLayoutSource)?) {
+            self.init(settings: source?.interfaceSettings ?? .defaults)
+        }
 
         init(settings: InterfaceSettingsSnapshot) {
             authorFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize + 1, weight: .medium)
@@ -1619,23 +1681,27 @@ extension NativeTimelineRowLayout {
         }
     }
 
-    private struct TextWidthKey: Hashable {
+    nonisolated private struct TextWidthKey: Hashable, Sendable {
         let text: String
-        let font: NSFont
+        let fontName: String
+        let pointSize: CGFloat
     }
-    private static var measuredTextWidths: [TextWidthKey: CGFloat] = [:]
+    /// Thread-safe, as the layouts that measure with it are `nonisolated`.
+    nonisolated private static let measuredTextWidths = Mutex([TextWidthKey: CGFloat]())
 
-    static func measuredTextWidth(_ text: String, font: NSFont) -> CGFloat {
-        let key = TextWidthKey(text: text, font: font)
-        if let width = measuredTextWidths[key] { return width }
+    nonisolated static func measuredTextWidth(_ text: String, font: NSFont) -> CGFloat {
+        let key = TextWidthKey(text: text, fontName: font.fontName, pointSize: font.pointSize)
+        if let width = measuredTextWidths.withLock({ $0[key] }) { return width }
         let attributed = NSAttributedString(
             string: text,
             attributes: [.font: font]
         )
         let line = CTLineCreateWithAttributedString(attributed)
         let width = ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
-        if measuredTextWidths.count >= 4_096 { measuredTextWidths.removeAll(keepingCapacity: true) }
-        measuredTextWidths[key] = width
+        measuredTextWidths.withLock { widths in
+            if widths.count >= 4_096 { widths.removeAll(keepingCapacity: true) }
+            widths[key] = width
+        }
         return width
     }
 

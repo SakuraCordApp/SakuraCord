@@ -108,7 +108,8 @@ struct RootView: View {
             ZStack {
                 MessageSearchToolbarBridge(
                     model: model,
-                    isVisible: showsMessageSearchToolbar || model.showsLocalToolbarSearch,
+                    isVisible: showsMessageSearchToolbar || model.showsLocalToolbarSearch
+                        || model.keepsMessageSearchFieldInPlace,
                     metrics: $toolbarSearchFieldMetrics
                 )
                 ToolbarSearchFieldLoadingStyler(isActive: showsSessionLoadingChrome)
@@ -216,10 +217,13 @@ private struct ChatRootView: View {
     /// Measured width the pane's toolbar actions reserve after the title,
     /// keyed by action count. It does not depend on the title's width.
     @State private var sideConversationActionReserve: [Int: CGFloat] = [:]
-    @State private var detailColumnMinX: CGFloat = 0
+    /// Advances when the detail column's leading edge moves the
+    /// customization switch in or out of the toolbar.
+    @State private var customizationPickerRevision = 0
     @State private var conversationTitleWidth: CGFloat = 0
     @State private var customizationModePickerWidth: CGFloat = 260
-    @State private var workspaceFrame = CGRect.zero
+    /// Where the workspace and the detail column start in the window.
+    @State private var columnEdges = ColumnEdges()
     @State private var sidebarWidth = ChatChromeMetrics.serverRailWidth + InterfaceScale.metric(230)
     @State private var presentsForumComposer = false
     @State private var isFileDropTargeted = false
@@ -233,6 +237,7 @@ private struct ChatRootView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
                 ServerRailContainer(model: model, sidebarWidth: sidebarWidth)
+                .environment(\.reducesSidebarMotion, !model.animates(.sidebar))
                 .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,
@@ -258,7 +263,7 @@ private struct ChatRootView: View {
                 )
             }
             .background {
-                NativeSidebarAnimation().frame(width: 0, height: 0)
+                NativeSidebarAnimation(snaps: !model.animates(.sidebar)).frame(width: 0, height: 0)
             }
             // Column content follows the interface size; the window toolbar
             // is system chrome and keeps its native item sizing.
@@ -288,13 +293,16 @@ private struct ChatRootView: View {
                         presentsForumComposer: $presentsForumComposer,
                         toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
                     )
+                    .equatable()
                 }
             }
             .interfaceScaleRoot()
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.frame(in: .global).minX
             } action: { minX in
-                detailColumnMinX = minX
+                let showedPicker = showsCustomizationModePicker
+                columnEdges.detailMinX = minX
+                if showsCustomizationModePicker != showedPicker { customizationPickerRevision &+= 1 }
             }
             .background {
                 // Measures the conversation title outside the toolbar, whose
@@ -314,6 +322,15 @@ private struct ChatRootView: View {
             .navigationTitle("")
             .toolbar {
                 detailToolbar
+            }
+            .background {
+                if usesWorkspaceTitlebar {
+                    WorkspaceTitlebar(
+                        groups: workspaceTitlebarGroups,
+                        showsSearch: model.showsWorkspaceMessageSearch || model.showsLocalToolbarSearch
+                    )
+                        .frame(width: 0, height: 0)
+                }
             }
         }
         .toolbar {
@@ -444,7 +461,7 @@ private struct ChatRootView: View {
             if showsFileDropEffect {
                 ComposerFileDropOverlay(
                     model: model,
-                    workspaceFrame: workspaceFrame,
+                    workspaceMinX: columnEdges.workspaceMinX,
                     supplementaryPaneFrame: supplementaryPaneFrame,
                     hoveredDestination: effectiveFileDropDestination,
                     isInstantUpload: effectiveInstantUpload
@@ -460,10 +477,10 @@ private struct ChatRootView: View {
     var body: some View {
         @Bindable var model = model
         workspace
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-        } action: { frame in
-            workspaceFrame = frame
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .global).minX
+        } action: { minX in
+            columnEdges.workspaceMinX = minX
         }
         .overlay { fileDropBridge }
         .onChange(of: showsFileDropEffect) { _, isShown in
@@ -569,8 +586,7 @@ private struct ChatRootView: View {
             )
         ) { _ in
             withAnimation(
-                NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                    ? nil : .spring(ChatChromeMetrics.sidebarSpring)
+                model.animates(.sidebar) ? .spring(ChatChromeMetrics.sidebarSpring) : nil
             ) {
                 columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
             }
@@ -609,6 +625,13 @@ private struct ChatRootView: View {
 
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
+        if !usesWorkspaceTitlebar {
+            nativeConversationToolbar
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var nativeConversationToolbar: some ToolbarContent {
         ToolbarItem(id: "conversation-title", placement: .navigation) {
             if model.isSwitchingAccounts {
                 SkeletonShimmerTimeline {
@@ -643,6 +666,182 @@ private struct ChatRootView: View {
         }
     }
 
+    /// A conversation and the side chats beside it own their toolbar items
+    /// (`WorkspaceTitlebar`), which move with their columns.
+    private var usesWorkspaceTitlebar: Bool {
+        guard WorkspaceColumnsHost.isEnabled, !model.isSwitchingAccounts, model.onboardingEntryGuildID == nil,
+              model.guildWorkspacePage == nil, !model.isFriendsPresented
+        else { return false }
+        return switch model.workspacePresentation.primary {
+        case .channel, .fullWidthThread: true
+        case .guildPage, .friends: false
+        }
+    }
+
+    private var workspaceTitlebarGroups: [WorkspaceTitlebar.Group] {
+        let presentation = model.workspacePresentation
+        let motion = WorkspaceMotionPhase.shared
+        var groups: [WorkspaceTitlebar.Group] = []
+        // The conversation, beneath a full-width side chat too, so its items
+        // are ready when the side chat leaves; covered, its panels open
+        // from the side chat's copies of its buttons.
+        let isCovered = presentation.primary == .fullWidthThread && motion.widening == nil
+        if let title = channelToolbarPresentation {
+            groups.append(.init(
+                id: WorkspaceTitlebar.conversationID,
+                title: AnyView(
+                    ConversationToolbarTitle(presentation: title)
+                        .frame(minHeight: 36)
+                        .glassEffect(.regular, in: Capsule())
+                ),
+                actions: AnyView(conversationTitlebarActions(presentsPanels: !isCovered))
+            ))
+        }
+        // As the workspace orders its columns: departing ones first.
+        let fullWidth = presentation.primary == .fullWidthThread ? model.sideConversations.thread : nil
+        let current = [fullWidth, presentation.paneSideConversation].compactMap(\.self)
+        // The toolbar keeps a leaving side chat's items itself while its
+        // column slides away (`WorkspaceTitlebarView.apply`).
+        let departing = WorkspaceColumnsHost.isEnabled ? [] : motion.departing.compactMap { column -> SideConversation? in
+            guard case .sideConversation(let conversation) = column.content,
+                  !current.contains(where: { $0.motionIdentity == conversation.motionIdentity })
+            else { return nil }
+            return conversation
+        }
+        for conversation in departing + current {
+            var fullWidthActions: AnyView?
+            if case .thread(let thread, _) = conversation {
+                // Hidden until the thread is full width; only then, past the
+                // widening crossfade, do its buttons open panels.
+                fullWidthActions = AnyView(fullWidthTitlebarActions(thread, presentsPanels: isCovered && conversation == fullWidth))
+            }
+            groups.append(.init(
+                id: WorkspaceTrailingColumn(.sideConversation(conversation)).id,
+                title: AnyView(
+                    SideConversationTitlebarTitle(label: model.sideConversationLabel(conversation))
+                        .workspaceMotionProbe("toolbarTitle")
+                ),
+                actions: AnyView(SideConversationToolbarActions(model: model, conversation: conversation)),
+                fullWidthActions: fullWidthActions
+            ))
+        }
+        return groups
+    }
+
+    /// The conversation's actions, which stay beside it whatever opens.
+    private func conversationTitlebarActions(presentsPanels: Bool) -> some View {
+        let pinsChannelID = model.selectedChannelSupportsPins ? model.selectedChannelID : nil
+        let offersThreads = model.canBrowseThreadsInSelectedChannel
+        // A narrow conversation keeps Members and gathers the rest into "»".
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: ChatChromeMetrics.toolbarItemEdgeInset) {
+                conversationCallActions
+                InboxToolbarButton(model: model, presentsPanel: presentsPanels)
+                if let pinsChannelID {
+                    PinnedMessagesToolbarButton(model: model, channelID: pinsChannelID, presentsPanel: presentsPanels)
+                }
+                if offersThreads {
+                    ThreadsToolbarButton(model: model, presentsPanel: presentsPanels)
+                }
+                if selectedVoiceChannel == nil {
+                    MemberInspectorToolbarButton(model: model)
+                }
+            }
+            HStack(spacing: ChatChromeMetrics.toolbarItemEdgeInset) {
+                conversationCallActions
+                ConversationOverflowToolbarMenu(
+                    model: model,
+                    pinsChannelID: pinsChannelID,
+                    offersThreads: offersThreads,
+                    presentsPanels: presentsPanels
+                )
+                if selectedVoiceChannel == nil {
+                    MemberInspectorToolbarButton(model: model)
+                }
+            }
+        }
+        .titlebarButtons()
+    }
+
+    /// A DM's or group DM's call buttons, or a voice channel's Open Chat.
+    @ViewBuilder
+    private var conversationCallActions: some View {
+        if let channel = selectedPrivateChannel {
+            privateCallButtons(channel)
+        } else if let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
+            openVoiceChatButton(channel)
+        }
+    }
+
+    @ViewBuilder
+    private func privateCallButtons(_ channel: Channel) -> some View {
+        Button {
+            Task {
+                if model.joinablePrivateCall(in: channel.id) != nil {
+                    await model.joinPrivateCall(in: channel)
+                } else {
+                    await model.startPrivateCall(in: channel)
+                }
+            }
+        } label: {
+            Label(
+                model.joinablePrivateCall(in: channel.id) == nil
+                    ? "Start Voice Call" : "Join Voice Call",
+                systemImage: "phone.fill"
+            )
+        }
+        .disabled(
+            model.activeVoiceChannel?.id == channel.id
+                || model.isPrivateCallActionInFlight(in: channel.id)
+        )
+        .help(
+            model.joinablePrivateCall(in: channel.id) == nil
+                ? "Start Voice Call" : "Join Ongoing Call"
+        )
+
+        Button {
+            Task {
+                if model.joinablePrivateCall(in: channel.id) != nil {
+                    await model.joinPrivateCall(in: channel, withVideo: true)
+                } else {
+                    await model.startPrivateCall(in: channel, withVideo: true)
+                }
+            }
+        } label: {
+            Label("Start Video Call", systemImage: "video.fill")
+        }
+        .disabled(
+            model.activeVoiceChannel?.id == channel.id
+                || model.isPrivateCallActionInFlight(in: channel.id)
+        )
+        .help(
+            model.joinablePrivateCall(in: channel.id) == nil
+                ? "Start Video Call" : "Join Ongoing Call with Video"
+        )
+    }
+
+    private func openVoiceChatButton(_ channel: Channel) -> some View {
+        Button { model.openVoiceChat(for: channel) } label: {
+            Label("Open Chat", systemImage: "bubble.left.fill")
+        }
+        .help("Open voice channel chat")
+    }
+
+    /// A full-width thread's actions, which replace its pane actions as it
+    /// widens.
+    private func fullWidthTitlebarActions(_ thread: MessageThreadSummary, presentsPanels: Bool) -> some View {
+        HStack(spacing: ChatChromeMetrics.toolbarItemEdgeInset) {
+            if ForumPostFollowToolbarButton.isOffered(model: model, thread: thread) {
+                ForumPostFollowToolbarButton(model: model, thread: thread, surface: .forumPostHeader)
+            }
+            InboxToolbarButton(model: model, presentsPanel: presentsPanels)
+            PinnedMessagesToolbarButton(model: model, channelID: thread.id, presentsPanel: presentsPanels)
+            MemberInspectorToolbarButton(model: model)
+            ThreadActionsToolbarMenu(model: model, thread: thread, surface: .fullView)
+        }
+        .titlebarButtons()
+    }
+
     private var showsThreadsToolbarItem: Bool {
         model.guildWorkspacePage == nil && model.onboardingEntryGuildID == nil
             && !model.isThreadFullWidth && model.canBrowseThreadsInSelectedChannel
@@ -674,6 +873,18 @@ private struct ChatRootView: View {
 
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
+        if usesWorkspaceTitlebar {
+            ToolbarSpacer(.flexible)
+            if model.showsWorkspaceMessageSearch || model.showsLocalToolbarSearch {
+                ToolbarSpacer(.fixed)
+            }
+        } else {
+            nativeDetailToolbar
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var nativeDetailToolbar: some ToolbarContent {
         ToolbarSpacer(.flexible)
 
         if showsCustomizationModePicker {
@@ -701,60 +912,11 @@ private struct ChatRootView: View {
 
         if !model.isSwitchingAccounts {
             if let channel = selectedPrivateChannel {
-                ToolbarItemGroup {
-                    Button {
-                        Task {
-                            if model.joinablePrivateCall(in: channel.id) != nil {
-                                await model.joinPrivateCall(in: channel)
-                            } else {
-                                await model.startPrivateCall(in: channel)
-                            }
-                        }
-                    } label: {
-                        Label(
-                            model.joinablePrivateCall(in: channel.id) == nil
-                                ? "Start Voice Call" : "Join Voice Call",
-                            systemImage: "phone.fill"
-                        )
-                    }
-                    .disabled(
-                        model.activeVoiceChannel?.id == channel.id
-                            || model.isPrivateCallActionInFlight(in: channel.id)
-                    )
-                    .help(
-                        model.joinablePrivateCall(in: channel.id) == nil
-                            ? "Start Voice Call" : "Join Ongoing Call"
-                    )
-
-                    Button {
-                        Task {
-                            if model.joinablePrivateCall(in: channel.id) != nil {
-                                await model.joinPrivateCall(in: channel, withVideo: true)
-                            } else {
-                                await model.startPrivateCall(in: channel, withVideo: true)
-                            }
-                        }
-                    } label: {
-                        Label("Start Video Call", systemImage: "video.fill")
-                    }
-                    .disabled(
-                        model.activeVoiceChannel?.id == channel.id
-                            || model.isPrivateCallActionInFlight(in: channel.id)
-                    )
-                    .help(
-                        model.joinablePrivateCall(in: channel.id) == nil
-                            ? "Start Video Call" : "Join Ongoing Call with Video"
-                    )
-                }
-                .visibilityPriority(.high)
+                ToolbarItemGroup { privateCallButtons(channel) }
+                    .visibilityPriority(.high)
             } else if model.guildWorkspacePage == nil, model.onboardingEntryGuildID == nil, let channel = selectedVoiceChannel, !model.isVoiceChatOpen {
-                ToolbarItem {
-                    Button { model.openVoiceChat(for: channel) } label: {
-                        Label("Open Chat", systemImage: "bubble.left.fill")
-                    }
-                    .help("Open voice channel chat")
-                }
-                .visibilityPriority(.high)
+                ToolbarItem { openVoiceChatButton(channel) }
+                    .visibilityPriority(.high)
             }
 
             if model.isThreadFullWidth, let thread = model.openThread {
@@ -839,7 +1001,9 @@ private struct ChatRootView: View {
                 ToolbarSpacer(.fixed)
             }
 
-            ToolbarItem {
+            // A stable identity lets the toolbar keep the item when a side
+            // chat closes instead of inserting a new one.
+            ToolbarItem(id: "member-inspector") {
                 ZStack {
                     Button {
                         model.toggleMemberInspector()
@@ -955,7 +1119,7 @@ private struct ChatRootView: View {
         // A full-width thread is the only visible composer.
         if presentation.primary == .fullWidthThread { return .thread }
         if presentation.paneSideConversation?.isThread == true, supplementaryPaneFrame != .zero {
-            let localThreadLeadingEdge = supplementaryPaneFrame.minX - workspaceFrame.minX
+            let localThreadLeadingEdge = supplementaryPaneFrame.minX - (columnEdges.workspaceMinX ?? 0)
             return horizontalPosition >= localThreadLeadingEdge ? .thread : .channel
         }
         return .channel
@@ -1082,6 +1246,12 @@ private struct ChatRootView: View {
                          systemImage: page == .guide ? "signpost.right" : "slider.horizontal.3")
         }
         if model.isFriendsPresented { return .init(title: "Friends", systemImage: "person.2.fill") }
+        return channelToolbarPresentation
+    }
+
+    /// The selected channel's title, which the conversation's toolbar shows
+    /// even while a full-width side chat covers it.
+    private var channelToolbarPresentation: ConversationToolbarPresentation? {
         guard let channel = model.selectedChannel else { return nil }
         return .init(title: channel.name, systemImage: channelToolbarSymbol(channel),
                      subtitle: isDirectMessageSelected ? directMessageToolbarSubtitle(for: channel) : nil,
@@ -1099,8 +1269,7 @@ private struct ChatRootView: View {
             && model.customizationPreviewChannel.map { !model.isChannelSelected($0) } == true
         let paneThread = conversation.isThread ? model.openThread : nil
         let showsFollow = paneThread.map { ForumPostFollowToolbarButton.isOffered(model: model, thread: $0) } ?? false
-        // The Follow toggle is a text button about two icon buttons wide.
-        let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (paneThread != nil ? 1 : 0) + (showsFollow ? 2 : 0)
+        let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (paneThread != nil ? 1 : 0) + (showsFollow ? 1 : 0)
         if showsInboxToolbarItem {
             // Keep the primary column's last action inset from the pane edge.
             ToolbarSpacer(.fixed)
@@ -1109,6 +1278,7 @@ private struct ChatRootView: View {
 
         ToolbarItem(id: "side-conversation-title") {
             SideConversationToolbarTitle(label: label, width: sideConversationTitleWidth(actionCount: actionCount))
+                .workspaceMotionProbe("toolbarTitle")
                 // Remeasure changed text without replacing the toolbar item.
                 .id(label.title)
                 .transition(.identity)
@@ -1208,7 +1378,8 @@ private struct ChatRootView: View {
         // with the toolbar's margins.
         let required = inset + conversationTitleWidth + inset * 2 + customizationModePickerWidth
             + inset * 2 + ChatChromeMetrics.toolbarIconButtonWidth + inset * 3
-        return supplementaryPaneFrame.minX - detailColumnMinX >= required
+        _ = customizationPickerRevision
+        return supplementaryPaneFrame.minX - columnEdges.detailMinX >= required
     }
 
     private var showsInboxToolbarItem: Bool {
@@ -1399,10 +1570,20 @@ private struct MessageSearchToolbarModifier: ViewModifier {
     }
 }
 
+/// Where the workspace and the detail column start in the window. Their
+/// leading edges move on every frame the sidebar shows or hides; held
+/// unobserved, those frames update no view. Views read them where they
+/// use them.
+@MainActor
+private final class ColumnEdges {
+    var workspaceMinX: CGFloat?
+    var detailMinX: CGFloat = 0
+}
+
 private struct ComposerFileDropOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: AppModel
-    let workspaceFrame: CGRect
+    let workspaceMinX: CGFloat?
     let supplementaryPaneFrame: CGRect
     let hoveredDestination: MessageComposerDestination?
     let isInstantUpload: Bool
@@ -1525,8 +1706,8 @@ private struct ComposerFileDropOverlay: View {
     }
 
     private func primaryWidth(in totalWidth: CGFloat) -> CGFloat {
-        guard workspaceFrame != .zero else { return totalWidth / 2 }
-        return max(0, min(totalWidth, supplementaryPaneFrame.minX - workspaceFrame.minX))
+        guard let workspaceMinX else { return totalWidth / 2 }
+        return max(0, min(totalWidth, supplementaryPaneFrame.minX - workspaceMinX))
     }
 }
 

@@ -93,7 +93,7 @@ extension AppModel {
     /// server's channels here repeats on observed workspace updates, including
     /// history pagination, and can block the main thread between scroll frames.
     func hasKeyboardShortcutConversationDestination(unreadOnly: Bool, mentionsOnly: Bool = false) -> Bool {
-        let selectedID = isThreadFullWidth ? openThread?.id : selectedChannelID
+        let selectedID = shortcutThreadIsFullWidth ? openThread?.id : selectedChannelID
         if !unreadOnly {
             if selectedGuildID == nil {
                 return !isFriendsPresented || visibleChannels.contains { channel in

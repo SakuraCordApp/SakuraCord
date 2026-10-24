@@ -3,7 +3,7 @@ import SakuraCordModels
 import SwiftUI
 
 extension NativeTimelineCanvasView {
-    struct ServerTagCardPresentation {
+    nonisolated struct ServerTagCardPresentation {
         let requestID: UUID
         let messageID: MessageID
         let identity: PrimaryGuildIdentity
@@ -106,8 +106,8 @@ extension NativeTimelineCanvasView {
 }
 
 extension NativeTimelineRowLayout {
-    func matchesAuthorPrimaryGuild(for item: NativeMessageTimelineItem, model: AppModel) -> Bool {
+    func matchesAuthorPrimaryGuild(for item: NativeMessageTimelineItem, source: AppModel) -> Bool {
         guard authorFrame != nil, let row = item.messageRow else { return true }
-        return authorPrimaryGuild == model.authorPresentation(for: row.message).user.primaryGuild
+        return authorPrimaryGuild == source.authorPresentation(for: row.message).user.primaryGuild
     }
 }

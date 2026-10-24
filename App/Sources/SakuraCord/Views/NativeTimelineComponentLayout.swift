@@ -2,7 +2,7 @@ import AppKit
 import CoreText
 import SakuraCordModels
 
-enum NativeTimelineComponentButtonMetrics {
+nonisolated enum NativeTimelineComponentButtonMetrics {
     static var height: CGFloat { InterfaceScale.metric(32) }
     /// Shared by measurement, painting and the animated-emoji overlay.
     static var horizontalPadding: CGFloat { InterfaceScale.metric(12) }
@@ -39,7 +39,7 @@ enum NativeTimelineComponentSelectPolicy {
     }
 }
 
-struct NativeTimelineComponentLayout {
+nonisolated struct NativeTimelineComponentLayout {
     struct ContainerRegion {
         enum Chrome: Equatable {
             case bubbleSection
@@ -144,10 +144,10 @@ struct NativeTimelineComponentLayout {
     let unsupported: [UnsupportedRegion]
     let drawsTopSeparator: Bool
 
-    static func make(
+    @MainActor static func make(
         message: Message,
         components embedComponents: [MessageComponent]? = nil,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         origin: CGPoint,
         maximumWidth: CGFloat,
         integratesWithBubble: Bool = false,
@@ -160,19 +160,19 @@ struct NativeTimelineComponentLayout {
                 NodeBuilder.bubbleRootNode(
                     for: component,
                     message: message,
-                    model: model,
+                    source: source,
                     maximumWidth: maximumWidth
                 )
             } else {
                 NodeBuilder.node(
                     for: component,
                     message: message,
-                    model: model,
+                    source: source,
                     maximumWidth: maximumWidth
                 )
             }
         }
-        if embedComponents == nil, let error = model?.componentError(for: message.id) {
+        if embedComponents == nil, let error = source?.componentError(for: message.id) {
             let errorBox = NodeBuilder.plainText(
                 "⚠ \(error)",
                 font: .interfaceSystemFont(ofSize: 13),
@@ -389,7 +389,7 @@ private enum NodeBuilder {
     static func node(
         for component: MessageComponent,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat,
         inBubble: Bool = false
     ) -> Node {
@@ -399,7 +399,7 @@ private enum NodeBuilder {
             return actionRowNode(
                 for: component,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: maximumWidth,
                 inBubble: inBubble
             )
@@ -408,7 +408,7 @@ private enum NodeBuilder {
             return buttonNode(
                 for: component,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: maximumWidth
             )
 
@@ -416,7 +416,7 @@ private enum NodeBuilder {
             return selectNode(
                 for: component,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: maximumWidth,
                 inBubble: inBubble
             )
@@ -425,7 +425,7 @@ private enum NodeBuilder {
             return sectionNode(
                 for: component,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: maximumWidth,
                 inBubble: inBubble
             )
@@ -435,7 +435,7 @@ private enum NodeBuilder {
                 id: id,
                 content: content,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: maximumWidth
             )
 
@@ -485,7 +485,7 @@ private enum NodeBuilder {
             return containerNode(
                 for: component,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: maximumWidth,
                 inBubble: inBubble
             )
@@ -501,7 +501,7 @@ private enum NodeBuilder {
     static func bubbleRootNode(
         for component: MessageComponent,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat
     ) -> Node {
         guard case let .container(id, accent, spoiler, children) = component
@@ -509,7 +509,7 @@ private enum NodeBuilder {
             return node(
                 for: component,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: maximumWidth,
                 inBubble: true
             )
@@ -519,7 +519,7 @@ private enum NodeBuilder {
                 node(
                     for: $0,
                     message: message,
-                    model: model,
+                    source: source,
                     maximumWidth: maximumWidth,
                     inBubble: true
                 )
@@ -553,14 +553,14 @@ private enum NodeBuilder {
         id: String,
         content: String,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat
     ) -> Node {
         let box = richText(
             content,
             componentID: id,
             message: message,
-            model: model,
+            source: source,
             emojiSize: 18
         )
         let width = min(maximumWidth, max(1, idealWidth(box)))
@@ -586,7 +586,7 @@ private enum NodeBuilder {
     private static func actionRowNode(
         for component: MessageComponent,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -603,7 +603,7 @@ private enum NodeBuilder {
                 let childNode = node(
                     for: child,
                     message: message,
-                    model: model,
+                    source: source,
                     maximumWidth: maximumWidth,
                     inBubble: inBubble
                 )
@@ -635,7 +635,7 @@ private enum NodeBuilder {
     private static func selectNode(
         for component: MessageComponent,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -664,12 +664,12 @@ private enum NodeBuilder {
                     maximumWidth,
                     max(InterfaceScale.metric(372), min(InterfaceScale.metric(420), labelWidth + InterfaceScale.metric(76)))
                 )
-            let selectedOptions = model?.componentSelection(
+            let selectedOptions = source?.componentSelection(
                 messageID: message.id,
                 customID: customID
             ) ?? (kind == .string
                 ? options.filter(\.isDefault)
-                : model?.resolvedDefaultComponentChoices(options, kind: kind, guildID: message.guildID) ?? options)
+                : source?.resolvedDefaultComponentChoices(options, kind: kind, guildID: message.guildID) ?? options)
             let height = ComponentChoiceOptionPresentation.fieldHeight(
                 options: selectedOptions,
                 selectKind: kind,
@@ -679,12 +679,12 @@ private enum NodeBuilder {
                 kind: kind,
                 hasStaticOptions: !options.isEmpty,
                 supportsComponents:
-                    model?.supportsCapability(.components) == true,
+                    source?.supportsComponents == true,
                 supportsRemoteChoices:
-                    model?.supportsCapability(.remoteComponentChoices) == true,
+                    source?.supportsRemoteComponentChoices == true,
                 interactionUnavailable:
                     disabled
-                    || model?.isComponentInteractionPending(messageID: message.id) == true
+                    || source?.isComponentInteractionPending(messageID: message.id) == true
             )
             return Node(
                 size: CGSize(width: width, height: height),
@@ -707,7 +707,7 @@ private enum NodeBuilder {
                         selectedOptions: selectedOptions,
                         isDisabled: isDisabled,
                         // The committed select shows the dots in place of its chevron.
-                        isLoading: model?.isComponentPending(messageID: message.id, customID: customID) == true
+                        isLoading: source?.isComponentPending(messageID: message.id, customID: customID) == true
                     )
                 ]
             )
@@ -720,7 +720,7 @@ private enum NodeBuilder {
     private static func sectionNode(
         for component: MessageComponent,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -732,7 +732,7 @@ private enum NodeBuilder {
                         node(
                             for: $0,
                             message: message,
-                            model: model,
+                            source: source,
                             maximumWidth: maximumWidth,
                             inBubble: inBubble
                         )
@@ -743,7 +743,7 @@ private enum NodeBuilder {
             let accessoryNode = node(
                 for: accessory,
                 message: message,
-                model: model,
+                source: source,
                 maximumWidth: min(InterfaceScale.metric(180), maximumWidth),
                 inBubble: inBubble
             )
@@ -756,7 +756,7 @@ private enum NodeBuilder {
                     node(
                         for: $0,
                         message: message,
-                        model: model,
+                        source: source,
                         maximumWidth: leftWidth,
                         inBubble: inBubble
                     )
@@ -787,7 +787,7 @@ private enum NodeBuilder {
     private static func buttonNode(
         for component: MessageComponent,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat
     ) -> Node {
         switch component {
@@ -825,15 +825,15 @@ private enum NodeBuilder {
             // While one action on this message is pending, its siblings are
             // disabled and the activated button shows progress.
             let isLoading = url == nil && customID.map {
-                model?.isComponentPending(messageID: message.id, customID: $0) == true
+                source?.isComponentPending(messageID: message.id, customID: $0) == true
             } == true
             let isDisabled =
                 disabled
                 || style == .premium
                 || (url == nil && (
                     customID == nil
-                        || model?.supportsCapability(.components) != true
-                        || model?.isComponentInteractionPending(messageID: message.id) == true
+                        || source?.supportsComponents != true
+                        || source?.isComponentInteractionPending(messageID: message.id) == true
                 ))
             return Node(
                 size: CGSize(
@@ -971,7 +971,7 @@ private enum NodeBuilder {
     private static func containerNode(
         for component: MessageComponent,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         maximumWidth: CGFloat,
         inBubble: Bool
     ) -> Node {
@@ -1010,7 +1010,7 @@ private enum NodeBuilder {
                     node(
                         for: $0,
                         message: message,
-                        model: model,
+                        source: source,
                         maximumWidth: maximumContentWidth,
                         inBubble: inBubble
                     )
@@ -1030,7 +1030,7 @@ private enum NodeBuilder {
                     node(
                         for: $0,
                         message: message,
-                        model: model,
+                        source: source,
                         maximumWidth: contentWidth,
                         inBubble: inBubble
                     )
@@ -1143,15 +1143,15 @@ private enum NodeBuilder {
     }
 
     private static func richText(
-        _ source: String,
+        _ content: String,
         componentID: String,
         message: Message,
-        model: AppModel?,
+        source: (any NativeTimelineLayoutSource)?,
         emojiSize: CGFloat
     ) -> NativeTimelineAttributedTextBox {
-        let prepared = RichMessageAttributedText.prepare(source: source)
-        let resolver = model.map {
-            MessageMentionResolver(model: $0, message: message)
+        let prepared = RichMessageAttributedText.prepare(source: content)
+        let resolver = source.map {
+            MessageMentionResolver(source: $0, message: message)
         }
         let mentions = prepared.tokens.reduce(
             into: [String: MentionPresentation]()

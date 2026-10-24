@@ -49,8 +49,9 @@ extension AppModel {
         } else {
             selectedChannelID
         }
-        openSideConversation(.channelPreview(channel.id, returnTo: returnChannelID))
-        selectedChannelID = channel.id
+        openSideConversation(.channelPreview(channel.id, returnTo: returnChannelID)) {
+            selectedChannelID = channel.id
+        }
     }
 
     func closeCustomizationPreview() {

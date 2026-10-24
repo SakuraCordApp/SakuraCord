@@ -78,7 +78,7 @@ extension AppModel {
             if let preparation = NativeTimelineTextPresentation.preparation(
                 message: row.message,
                 plan: row.textPlan,
-                model: self,
+                source: self,
                 baseFontSize: row.message.type.hasGeneratedContent
                     ? row.textPlan.baseFontSize
                     : InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)

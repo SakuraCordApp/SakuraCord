@@ -172,8 +172,17 @@ extension AppModel {
     var canShowMessageSearch: Bool {
         MessageSearchSurfacePolicy.showsToolbar(
             channelKind: selectedChannel?.kind,
-            hasOpenThread: hasThreadPane && !isThreadFullWidth
+            hasOpenThread: hasThreadPane && !isThreadFullWidth && sideConversationCover == nil
         )
+    }
+
+    /// The workspace's own toolbar (`WorkspaceTitlebar`) keeps the search
+    /// field in place beside a thread pane, where it fades out instead of
+    /// leaving the toolbar.
+    var keepsMessageSearchFieldInPlace: Bool {
+        WorkspaceColumnsHost.isEnabled && sessionState == .workspace && onboardingEntryGuildID == nil
+            && guildWorkspacePage == nil && !isFriendsPresented
+            && MessageSearchSurfacePolicy.showsToolbar(channelKind: selectedChannel?.kind, hasOpenThread: false)
     }
 
     var isMessageSearchVisible: Bool {
@@ -227,7 +236,10 @@ extension AppModel {
         messageSearch.requestTask = nil
         messageSearch.isSearching = false
         messageSearch.pollRefreshJournal = nil
-        WorkspaceLayoutMotion.perform { messageSearch.isPresented = false }
+        WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
+            messageSearch.isPresented = false
+            if sideConversationCover == .messageSearch { sideConversationCover = nil }
+        }
         messageSearch.isInputFocused = false
     }
 
@@ -427,9 +439,16 @@ extension AppModel {
     }
 
     private func presentMessageSearchResultsIfNeeded() {
-        guard !messageSearch.isPresented else { return }
+        guard !isMessageSearchVisible else { return }
         AppPerformanceSignposts.beginMessageSearchOpen()
-        WorkspaceLayoutMotion.perform { messageSearch.isPresented = true }
+        WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
+            // Results take a thread pane's place until they close.
+            if workspacePresentation.paneSideConversation != nil {
+                threadTimelinePosition.restore = threadTimelinePosition.reading
+                sideConversationCover = .messageSearch
+            }
+            messageSearch.isPresented = true
+        }
     }
 
     func submitMessageSearchInput() {

@@ -4,8 +4,10 @@ import SwiftUI
 /// The Threads browser for the selected text or announcement channel.
 struct ThreadBrowserPopoverView: View {
     let model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @FocusState private var isSearchFocused: Bool
+
+    private var reduceMotion: Bool { systemReduceMotion || !model.animates(.overlays) }
 
     var body: some View {
         @Bindable var browser = model.threadBrowser

@@ -12,6 +12,7 @@ struct NativeTimelineAccessibilityRowState: Equatable {
     let item: NativeMessageTimelineItem
     let translation: MessageTranslationEntry?
     let isTranslationEnabled: Bool
+    let threadPreview: Message?
 }
 
 nonisolated enum TimelineAccessibilityWorkPolicy {
@@ -174,14 +175,16 @@ extension NativeTimelineCanvasView {
                 translation: item.messageRow.flatMap {
                     model?.messageTranslationPresentation(for: $0.message)
                 },
-                isTranslationEnabled: model?.translation.settings.isEnabled == true
+                isTranslationEnabled: model?.translation.settings.isEnabled == true,
+                threadPreview: item.messageRow?.message.thread.flatMap { model?.threadPreviewMessages[$0.id] }
             )
             let frame = rowFrame(at: index)
             desired.insert(identifier)
             desiredOrder.append(identifier)
-            // Translation state lives outside the immutable message item.
-            // Refresh children and actions when it changes, even if only
-            // this row's presentation was updated.
+            // Translation state and a thread card's latest-message preview
+            // live outside the immutable message item. Refresh children and
+            // actions when they change, even if only this row's
+            // presentation was updated.
             if accessibilityProxies.item(for: identifier) != state {
                 accessibilityProxies.remove(identifier)
                 let source = accessibilityRow(at: index)
@@ -920,6 +923,7 @@ extension NativeTimelineCanvasView {
                 role: .button,
                 label: NativeTimelineAccessibilityPresentation
                     .threadLabel(thread),
+                value: threadLastMessageSummary(thread),
                 help: "Open thread",
                 frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
                 parent: parent

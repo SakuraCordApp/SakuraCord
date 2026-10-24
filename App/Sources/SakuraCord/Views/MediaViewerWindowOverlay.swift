@@ -110,7 +110,9 @@ private struct MediaViewerWindowAnimatedContent: View {
     let presentation: NativeTimelineMediaViewerPresentation
     let context: WindowModalContext
     @State private var animationState: MediaViewerWindowAnimationState
-    @Environment(\.accessibilityReduceMotion) private var reducesMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+
+    private var reducesMotion: Bool { systemReducesMotion || !AppMotionPolicy.animates(.overlays) }
 
     init(presentation: NativeTimelineMediaViewerPresentation, context: WindowModalContext) {
         self.presentation = presentation

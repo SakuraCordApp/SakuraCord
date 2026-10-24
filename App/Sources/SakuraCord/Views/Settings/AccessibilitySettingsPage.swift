@@ -38,12 +38,37 @@ struct AccessibilitySettingsPage: View {
 
     private var motionSection: some View {
         Section {
+            Toggle("Disable all animations", isOn: $value.disablesAllAnimations)
+                .tint(SakuraCordAccentColor.color)
+                .settingsControlAnchor(.accessibilityDisableAllAnimations, state: state)
+            Group {
+                Toggle("Sidebar and member list", isOn: animationBinding(\.disablesSidebarAnimations))
+                    .accessibilityLabel("Disable sidebar and member list animations")
+                    .settingsControlAnchor(.accessibilityDisableSidebarAnimations, state: state)
+                Toggle("Side chats and full width", isOn: animationBinding(\.disablesSideChatAnimations))
+                    .accessibilityLabel("Disable side chat and full width animations")
+                    .settingsControlAnchor(.accessibilityDisableSideChatAnimations, state: state)
+                Toggle("Search, popovers and overlays", isOn: animationBinding(\.disablesOverlayAnimations))
+                    .accessibilityLabel("Disable search, popover and overlay animations")
+                    .settingsControlAnchor(.accessibilityDisableOverlayAnimations, state: state)
+            }
+            .tint(SakuraCordAccentColor.color)
+            .disabled(value.disablesAllAnimations)
             Toggle("Disable message sending animations", isOn: $value.disablesMessageSendingAnimations)
                 .tint(SakuraCordAccentColor.color)
+                .disabled(value.disablesAllAnimations)
                 .settingsControlAnchor(.accessibilityDisableSendAnimations, state: state)
         } header: {
             Text("Motion", bundle: #bundle)
         }
+    }
+
+    /// A category switch, which shows on while "Disable all animations" is.
+    private func animationBinding(_ keyPath: WritableKeyPath<AccessibilitySettingsSnapshot, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { value.disablesAllAnimations || value[keyPath: keyPath] },
+            set: { value[keyPath: keyPath] = $0 }
+        )
     }
 
     private var cosmeticsSection: some View {

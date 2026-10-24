@@ -10,8 +10,10 @@ nonisolated enum NativeTimelineViewportWindowPolicy {
     static func geometry(
         viewport: CGRect,
         documentSize: CGSize,
-        currentFrame: CGRect
+        currentFrame: CGRect,
+        overscan: CGFloat = Self.overscan
     ) -> (frame: CGRect, bounds: CGRect) {
+        let minimumRetainedBuffer = min(Self.minimumRetainedBuffer, overscan)
         let documentHeight = max(1, documentSize.height)
         let viewportWidth = max(1, viewport.width)
         let canvasHeight = min(
@@ -284,14 +286,16 @@ extension NativeMessageTimelineCoordinator {
                let cached = preparation.layouts[item.identifier],
                cached.item == item,
                cached.layout.fontRevision == ProfileNameFontCache.revision,
-               cached.layout.matchesAuthorPrimaryGuild(for: item, model: parent.model) {
+               cached.layout.matchesAuthorPrimaryGuild(for: item, source: parent.model) {
                 recentLayoutCacheHits += 1
                 return cached.layout
             }
+            let start = ProcessInfo.processInfo.systemUptime
+            defer { lifetimeLayoutDuration += ProcessInfo.processInfo.systemUptime - start }
             return NativeTimelineRowLayout.make(
                 item: item,
                 width: width,
-                model: parent.model,
+                source: parent.model,
                 metrics: metrics
             )
         }
@@ -426,10 +430,16 @@ extension NativeMessageTimelineCoordinator {
                 // old-width canvas without presenting distorted text.
                 viewport.size.width = layoutWidth
             }
+            // While a workspace motion re-wraps the rows, each preview
+            // redraws the canvas; drawing only what shows halves what the
+            // render server takes in on those frames. The overscan comes
+            // back once the motion settles and the rows lay out for good.
+            let previewsInMotion = previewLayoutWidth != nil && WorkspaceLayoutMotion.isMoving
             let geometry = NativeTimelineViewportWindowPolicy.geometry(
                 viewport: viewport,
                 documentSize: documentView.frame.size,
-                currentFrame: canvas.frame
+                currentFrame: canvas.frame,
+                overscan: previewsInMotion ? 0 : NativeTimelineViewportWindowPolicy.overscan
             )
             canvas.installViewportGeometry(
                 frame: geometry.frame,
@@ -678,7 +688,7 @@ extension NativeMessageTimelineCoordinator {
             let viewportSize = scrollView.contentView.bounds.size
             let width = max(
                 220,
-                (proposedWidth ?? viewportSize.width).rounded()
+                (proposedWidth ?? motionWidth(of: scrollView) ?? viewportSize.width).rounded()
             )
             let sizeChanged =
                 abs(viewportSize.width - lastViewportSize.width) >= 0.5
@@ -789,7 +799,7 @@ extension NativeMessageTimelineCoordinator {
             previewLayoutWidth = nil
             previewedRowIdentifiers.removeAll()
             rowsPreviewedAtCurrentWidth.removeAll()
-            let metrics = NativeTimelineRowLayout.Metrics(settings: parent.model.interfaceSettings)
+            let metrics = NativeTimelineRowLayout.Metrics(source: parent.model)
             layouts = preparedLayouts ?? items.map { layout(for: $0, width: width, metrics: metrics) }
             layoutWidth = width
             rowHeights = layouts.map(\.height)
@@ -825,7 +835,7 @@ extension NativeMessageTimelineCoordinator {
 
         func previewVisibleRows(at width: CGFloat) {
             guard let range = visiblePreviewRange() else { return }
-            let metrics = NativeTimelineRowLayout.Metrics(settings: parent.model.interfaceSettings)
+            let metrics = NativeTimelineRowLayout.Metrics(source: parent.model)
             var didReflow = false
             for index in range {
                 let identifier = items[index].identifier
@@ -889,13 +899,22 @@ extension NativeMessageTimelineCoordinator {
             widthRelayoutGeneration &+= 1
             let generation = widthRelayoutGeneration
             widthRelayoutTask?.cancel()
+            // A workspace motion reschedules this on every frame, so only its
+            // final width ever runs, as soon as the motion settles; the pause
+            // is for live window resizes, which end without notice.
+            let debounces = !WorkspaceLayoutMotion.isMoving
             widthRelayoutTask = Task { @MainActor [weak self] in
-                do {
-                    try await Task.sleep(for: .milliseconds(120))
-                } catch {
-                    return
+                if debounces {
+                    do {
+                        try await Task.sleep(for: .milliseconds(120))
+                    } catch {
+                        return
+                    }
                 }
-                guard let self,
+                // A width change from a workspace motion reflows every row;
+                // wait until the motion has its frames.
+                await WorkspaceLayoutMotion.untilSettled()
+                guard !Task.isCancelled, let self,
                       self.pendingLayoutWidth == width,
                       self.widthRelayoutGeneration == generation
                 else { return }
@@ -922,7 +941,7 @@ extension NativeMessageTimelineCoordinator {
 
         func beginBatchedWidthRelayout(_ width: CGFloat) {
             let sourceItems = items
-            let metrics = NativeTimelineRowLayout.Metrics(settings: parent.model.interfaceSettings)
+            let metrics = NativeTimelineRowLayout.Metrics(source: parent.model)
             let sourceConversation = parent.conversation
             let sourceTimestampDay = timestampDay
             let sourcePresentationRevision = parent.presentationRevision
@@ -1091,8 +1110,11 @@ extension NativeMessageTimelineCoordinator {
             )
         }
 
+        /// A timeline that moves under a still pointer would otherwise redraw
+        /// its hovered row on every frame of a workspace motion.
         func beginObserving(_ scrollView: NSScrollView) {
             stopObserving()
+            WorkspaceConversationWidthPath.shared.follow(scrollView)
             let center = NotificationCenter.default
             observations = [
                 center.addObserver(forName: ServerInvitePresentationStore.changed, object: nil, queue: .main) { [weak self] notification in
@@ -1180,7 +1202,7 @@ extension NativeMessageTimelineCoordinator {
                         self?.canvas?.invalidatePresentationCaches()
                     }
                 },
-            ]
+            ] + workspaceMotionObservations(center)
             observations += [.NSCalendarDayChanged, NSApplication.didBecomeActiveNotification].map { name in
                 center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated {
@@ -1372,7 +1394,10 @@ extension NativeMessageTimelineCoordinator {
             scrollIdleTask?.cancel()
             scrollIdleTask = nil
             publishScrollActivity(false)
-            if let canvas {
+            // A workspace motion keeps hover off until it settles
+            // (`workspaceMotionObservations`): rows re-wrapping under a
+            // still pointer hit-tested their text on every frame.
+            if let canvas, !WorkspaceLayoutMotion.isMoving {
                 canvas.allowHoverPresentationAfterScroll()
             }
         }
@@ -1598,7 +1623,7 @@ extension NativeMessageTimelineCoordinator {
             else { return }
             let glides = request.isAnimated
                 && initialPositionConversation == parent.conversation
-                && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                && AppMotionPolicy.animatesUncategorized
             let didScroll = glides
                 ? glide(to: request.target, in: scrollView)
                 : scroll(to: request.target, in: scrollView)
@@ -1858,7 +1883,10 @@ extension NativeMessageTimelineCoordinator {
                     hasEstablishedInitialPosition,
                 hasReachedNewestMessageBoundary:
                     hasEstablishedInitialPosition
-                    && hasReachedNewestMessageBoundary(in: visibleRect),
+                    && hasReachedNewestMessageBoundary(
+                        in: visibleRect,
+                        isAtDocumentBottom: isAtDocumentBottom
+                    ),
                 isInProvisionalHistory:
                     parent.hasMoreMessages
                     && visibleRect.minY
@@ -1877,14 +1905,23 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func hasReachedNewestMessageBoundary(
-            in visibleRect: CGRect
+            in visibleRect: CGRect,
+            isAtDocumentBottom: Bool
         ) -> Bool {
             guard !parent.hasMoreLaterMessages else { return false }
             guard let newestIndex = items.lastIndex(where: {
                 $0.messageID != nil
-            }),
-                rowOrigins.indices.contains(newestIndex),
-                layouts.indices.contains(newestIndex)
+            }) else {
+                return NativeTimelineReadBoundaryPolicy
+                    .hasReachedEmptyTimelineBoundary(
+                        hasMoreEarlier: parent.hasMoreMessages,
+                        isLoadingEarlier: parent.isLoadingEarlier,
+                        isLoadingLater: parent.isLoadingLater,
+                        isAtDocumentBottom: isAtDocumentBottom
+                    )
+            }
+            guard rowOrigins.indices.contains(newestIndex),
+                  layouts.indices.contains(newestIndex)
             else {
                 return false
             }

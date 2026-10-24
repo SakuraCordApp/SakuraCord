@@ -4,10 +4,10 @@ import MessageRendering
 import SakuraCordModels
 
 /// Geometry shared by rendering, hit testing, selection and accessibility.
-struct NativeTimelineRowLayout {
+nonisolated struct NativeTimelineRowLayout {
     var fontRevision = ProfileNameFontCache.revision
 
-    struct EphemeralRegion {
+    nonisolated struct EphemeralRegion {
         let frame: CGRect
         let eyeFrame: CGRect
         let visibilityFrame: CGRect
@@ -15,7 +15,7 @@ struct NativeTimelineRowLayout {
         let dismissFrame: CGRect
     }
 
-    struct AttachmentRegion {
+    nonisolated struct AttachmentRegion {
         let frame: CGRect
         let attachment: Attachment
         /// The still image drawn in the region: the image itself, or a
@@ -23,7 +23,7 @@ struct NativeTimelineRowLayout {
         let previewKey: NativeTimelineMediaKey?
     }
 
-    struct ReactionRegion {
+    nonisolated struct ReactionRegion {
         struct AvatarRegion {
             let frame: CGRect
             let reactor: ReactionReactor
@@ -37,12 +37,12 @@ struct NativeTimelineRowLayout {
         let placeholderAvatarFrames: [CGRect]
     }
 
-    struct LinkedImageRegion {
+    nonisolated struct LinkedImageRegion {
         let frame: CGRect
         let reference: LinkedImageReference
     }
 
-    struct EmbedRegion {
+    nonisolated struct EmbedRegion {
         enum Kind: Equatable {
             case bareMedia
             case bubbleIntegratedCard
@@ -78,7 +78,7 @@ struct NativeTimelineRowLayout {
         let drawsTopSeparator: Bool
     }
 
-    struct SakuraCordDeepLinkRegion {
+    nonisolated struct SakuraCordDeepLinkRegion {
         let action: SakuraCordDeepLinkAction
         let componentID: String
         let frame: CGRect
@@ -90,14 +90,14 @@ struct NativeTimelineRowLayout {
         let buttonFrame: CGRect
     }
 
-    struct SearchSectionRegion {
+    nonisolated struct SearchSectionRegion {
         let frame: CGRect
         let iconFrame: CGRect
         let titleFrame: CGRect
         let subtitleFrame: CGRect?
     }
 
-    struct ForwardedSourceRegion {
+    nonisolated struct ForwardedSourceRegion {
         let frame: CGRect
         let label: String
         let iconURL: URL?
@@ -109,7 +109,7 @@ struct NativeTimelineRowLayout {
 
     /// An animated progress mark hosted as a layer-backed canvas overlay, so
     /// its animation never repaints the row.
-    struct ActivityIndicator: Equatable {
+    nonisolated struct ActivityIndicator: Equatable {
         enum Style: Equatable {
             case spinner
             case dots(InteractionLoadingDots.Tone)
@@ -119,7 +119,7 @@ struct NativeTimelineRowLayout {
         let style: Style
     }
 
-    struct CommandInvocationRegion {
+    nonisolated struct CommandInvocationRegion {
         let frame: CGRect
         let connectorFrame: CGRect
         let avatarFrame: CGRect?
@@ -146,7 +146,7 @@ struct NativeTimelineRowLayout {
     var authorFrame: CGRect?
     var authorText: NativeIdentityTextPresentation?
     var authorPrimaryGuild: PrimaryGuildIdentity?
-    struct ServerTagRegion {
+    nonisolated struct ServerTagRegion {
         let frame: CGRect
         let presentation: NativeServerTagPresentation
     }
@@ -162,7 +162,7 @@ struct NativeTimelineRowLayout {
     var replyContentFrame: CGRect?
     /// A bubble's reply or command elbow: a stem rising from the bubble's top
     /// edge that turns toward the referenced content at `cornerY`.
-    struct ReferenceConnector {
+    nonisolated struct ReferenceConnector {
         let stemX: CGFloat
         let fromY: CGFloat
         let cornerY: CGFloat
@@ -198,10 +198,10 @@ struct NativeTimelineRowLayout {
     var inviteRegions: [NativeTimelineInviteLayout] = []
     var translationRegion: TranslationRegion?
 
-    static func make(
+    @MainActor static func make(
         item: NativeMessageTimelineItem,
         width proposedWidth: CGFloat,
-        model: AppModel? = nil,
+        source: (any NativeTimelineLayoutSource)? = nil,
         metrics: Metrics? = nil
     ) -> Self {
         let width = max(InterfaceScale.metric(220), proposedWidth)
@@ -253,8 +253,8 @@ struct NativeTimelineRowLayout {
                 row: row,
                 isUnreadBoundary: isUnreadBoundary,
                 width: width,
-                model: model,
-                metrics: metrics ?? Metrics(settings: model?.interfaceSettings ?? .defaults)
+                source: source,
+                metrics: metrics ?? Metrics(source: source)
             )
             return builder.make()
         }

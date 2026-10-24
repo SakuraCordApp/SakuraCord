@@ -182,6 +182,7 @@ extension AppModel {
                     anchoredAt: target.map(MessageHistoryAnchor.around) ?? .newest,
                     limit: target == nil ? 100 : 50
                 )
+                try Task.checkCancellation()
                 guard model.isCurrentAccountSession(account),
                       model.isCurrentThreadWindow(request)
                 else { return }

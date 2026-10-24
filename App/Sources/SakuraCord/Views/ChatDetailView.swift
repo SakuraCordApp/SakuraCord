@@ -44,16 +44,18 @@ struct ChatDetailView: View {
                     editRequest: editRequest
                 )
                 .overlay(alignment: .bottom) {
-                    ChatDetailFooter(
-                        model: model,
-                        channel: channel,
-                        access: model.selectedConversationAccess,
-                        onEditMessage: { messageID in
-                            editRequest = MessageTimelineEditRequest(
-                                messageID: messageID
-                            )
-                        }
-                    )
+                    ConversationFooterHost {
+                        ChatDetailFooter(
+                            model: model,
+                            channel: channel,
+                            access: model.selectedConversationAccess,
+                            onEditMessage: { messageID in
+                                editRequest = MessageTimelineEditRequest(
+                                    messageID: messageID
+                                )
+                            }
+                        )
+                    }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.size.height
                     } action: { height in

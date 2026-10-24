@@ -416,7 +416,9 @@ struct MessageActionCapsule: View {
     let togglePin: (() -> Void)?
     let showMoreActions: () -> Void
     let delete: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+
+    private var reduceMotion: Bool { systemReduceMotion || !model.animates(.overlays) }
 
     var body: some View {
         if message.outboxState == .failed {

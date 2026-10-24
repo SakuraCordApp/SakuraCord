@@ -108,6 +108,14 @@ extension AppModel {
         )
     }
 
+    /// A message that arrives while the newest edge is on screen in the
+    /// active window is read on arrival; it must not plant a NEW divider that
+    /// survives the acknowledgement that follows.
+    func preserveUnreadDividerUnlessReadOnArrival(channelID: ChannelID) {
+        guard !readState.canAcknowledge(channelID) else { return }
+        preserveUnreadDividerIfNeeded(channelID: channelID)
+    }
+
     func preserveUnreadDividerIfNeeded(channelID: ChannelID) {
         guard unreadDividerMessageIDs[channelID] == nil,
               let summary = presentedUnreadSummary(channelID: channelID),

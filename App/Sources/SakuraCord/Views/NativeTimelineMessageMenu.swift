@@ -1,16 +1,17 @@
 import AppKit
 
-enum NativeTimelineCompactTimestampMetrics {
+nonisolated enum NativeTimelineCompactTimestampMetrics {
     static var font: NSFont {
         .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize)
     }
 
-    private static var cachedWidth: (key: String, width: CGFloat)?
+    nonisolated(unsafe) private static var cachedWidth: (key: String, width: CGFloat)?
+    private static let cachedWidthLock = NSLock()
 
     static func width(settings: InterfaceSettingsSnapshot) -> CGFloat {
         let locale = Locale.autoupdatingCurrent
         let key = "\(locale.identifier):\(locale.hourCycle):\(settings.timestampFormat):\(settings.includesTimestampSeconds):\(font.pointSize)"
-        if let cachedWidth, cachedWidth.key == key { return cachedWidth.width }
+        if let cached = cachedWidthLock.withLock({ cachedWidth }), cached.key == key { return cached.width }
         // Measure every hour once, so changing digit counts and day periods
         // never shift the message column between rows or clip hovered times.
         let width = (0 ..< 24).map { hour in
@@ -23,7 +24,7 @@ enum NativeTimelineCompactTimestampMetrics {
             )
             return (text as NSString).size(withAttributes: [.font: font]).width
         }.max() ?? 0
-        cachedWidth = (key, ceil(width))
+        cachedWidthLock.withLock { cachedWidth = (key, ceil(width)) }
         return ceil(width)
     }
 }

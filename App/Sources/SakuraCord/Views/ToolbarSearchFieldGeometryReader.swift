@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-private enum ToolbarSearchFieldLocator {
+enum ToolbarSearchFieldLocator {
     static func searchToolbarItem(in window: NSWindow) -> NSSearchToolbarItem? {
         window.toolbar?.items.first { $0 is NSSearchToolbarItem }
             as? NSSearchToolbarItem
@@ -330,7 +330,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         context.coordinator.pasteCanonicalSyntax = pasteCanonicalSyntax
         context.coordinator.changed = changed
         if let window = view.window {
-            context.coordinator.applyToolbarItemVisibility(in: window)
+            context.coordinator.scheduleToolbarItemVisibility(in: window)
         }
         Task { @MainActor in
             context.coordinator.update(window: view.window, changed: changed)
@@ -354,6 +354,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         var isSearchFocused: Binding<Bool>
         var isToolbarItemVisible: Bool
         var preferredFieldWidth: CGFloat
+        private var hasPendingVisibility = false
         var didUseBuiltInClear: @MainActor () -> Void
         var didEndEditing: @MainActor () -> Void
         var pasteCanonicalSyntax: @MainActor (String) -> MessageSearchTokenParser.Result
@@ -422,7 +423,22 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             scheduleMeasurement()
         }
 
+        /// SwiftUI adds and removes the window toolbar's other items later
+        /// than this update, so search hides or shows when the toolbar next
+        /// changes its items, in the same layout pass, or on the next
+        /// run-loop turn if no item changes.
+        func scheduleToolbarItemVisibility(in window: NSWindow) {
+            hasPendingVisibility = true
+            DispatchQueue.main.async { [weak self, weak window] in
+                MainActor.assumeIsolated {
+                    guard let self, let window, self.hasPendingVisibility else { return }
+                    self.applyToolbarItemVisibility(in: window)
+                }
+            }
+        }
+
         func applyToolbarItemVisibility(in window: NSWindow) {
+            hasPendingVisibility = false
             _ = updateSearchToolbarItemVisibility(in: window)
         }
 
@@ -460,6 +476,17 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             if let toolbar = window.toolbar {
                 observe(NSToolbar.willAddItemNotification, object: toolbar)
                 observe(NSToolbar.didRemoveItemNotification, object: toolbar)
+                for name in [NSToolbar.willAddItemNotification, NSToolbar.didRemoveItemNotification] {
+                    // Delivered synchronously, inside the toolbar's own change.
+                    observers.append(NotificationCenter.default.addObserver(
+                        forName: name, object: toolbar, queue: nil
+                    ) { [weak self, weak window] _ in
+                        MainActor.assumeIsolated {
+                            guard let self, let window, self.hasPendingVisibility else { return }
+                            self.applyToolbarItemVisibility(in: window)
+                        }
+                    })
+                }
             }
             observe(NSMenu.didBeginTrackingNotification, object: nil)
             observe(NSMenu.didEndTrackingNotification, object: nil)
@@ -623,7 +650,10 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                     context.allowsImplicitAnimation = false
                     item.isHidden = isHidden
                     spacer?.isHidden = true
-                    window.contentView?.superview?.layoutSubtreeIfNeeded()
+                    // Lay out only the titlebar. Laying out the whole window
+                    // here also laid out the workspace a second time, mid-update.
+                    (titlebarView(containing: item.searchField, in: window) ?? window.contentView?.superview)?
+                        .layoutSubtreeIfNeeded()
                 }
             }
             if hiddenSearchSpacer !== spacer {
@@ -653,7 +683,24 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             return true
         }
 
+        /// Holds the field at its width when it begins and ends editing,
+        /// where AppKit otherwise widens it for a frame or two and moves
+        /// every item beside it.
+        private var searchContainerMaximumWidth: NSLayoutConstraint?
+
+        private func holdSearchContainerWidth(for field: NSSearchField, width: CGFloat) {
+            guard let container = field.superview else { return }
+            if searchContainerMaximumWidth?.firstItem as? NSView !== container {
+                searchContainerMaximumWidth?.isActive = false
+                let constraint = container.widthAnchor.constraint(lessThanOrEqualToConstant: width)
+                constraint.isActive = true
+                searchContainerMaximumWidth = constraint
+            }
+            if searchContainerMaximumWidth?.constant != width { searchContainerMaximumWidth?.constant = width }
+        }
+
         private func updateSearchContainerWidth(for field: NSSearchField, width: CGFloat) {
+            holdSearchContainerWidth(for: field, width: width)
             // AppKit caches a maximum width on the enclosing search-item view.
             // Updating the field alone leaves that initial limit in place, even
             // after intrinsic-size invalidation. Keep its limit in sync without
@@ -678,6 +725,8 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
         }
 
         private func restoreSearchContainerWidth() {
+            searchContainerMaximumWidth?.isActive = false
+            searchContainerMaximumWidth = nil
             if let searchContainerWidthConstraint,
                let originalSearchContainerWidth,
                searchContainerWidthConstraint.constant == appliedSearchContainerWidth
@@ -687,6 +736,17 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             searchContainerWidthConstraint = nil
             originalSearchContainerWidth = nil
             appliedSearchContainerWidth = nil
+        }
+
+        /// The outermost ancestor of a toolbar view that does not also hold
+        /// the window's content.
+        private func titlebarView(containing view: NSView, in window: NSWindow) -> NSView? {
+            guard let contentView = window.contentView else { return nil }
+            var titlebar = view
+            while let parent = titlebar.superview, !contentView.isDescendant(of: parent) {
+                titlebar = parent
+            }
+            return titlebar === view ? nil : titlebar
         }
 
         private func searchSpacer(before item: NSToolbarItem, in window: NSWindow) -> NSToolbarItem? {

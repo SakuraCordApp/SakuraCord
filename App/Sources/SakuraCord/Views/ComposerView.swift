@@ -20,6 +20,8 @@ struct ComposerView: View {
     @State private var showStickerPicker = false
     @State private var showEmojiPicker = false
     @State private var isFocused = false
+    @Environment(\.columnPresentation) private var columnPresentation
+    @State private var focusedColumnPresentation = 0
     @State private var isComposing = false
     @State private var draftSelection: NSRange?
     @State private var selectionBeforeEmojiPicker: NSRange?
@@ -485,6 +487,7 @@ struct ComposerView: View {
             let isClosedVoiceChat = model.selectedChannel?.kind == .voice
                 && !model.isVoiceChatOpen
             guard conversation == .thread || !isClosedVoiceChat else { return }
+            await clearFocusOfReusedPane()
             isFocused = true
             if supportsCommands {
                 model.ensureApplicationCommandsLoaded(in: conversation)
@@ -506,7 +509,7 @@ struct ComposerView: View {
 
     private var composerPresentationID: String {
         let conversationID = activeConversationID?.rawValue.description ?? "none"
-        return "\(conversation):\(conversationID):\(model.isVoiceChatOpen)"
+        return "\(conversation):\(conversationID):\(model.isVoiceChatOpen):\(columnPresentation)"
     }
 
     private var commandPanelCornerRadius: CGFloat {
@@ -1533,7 +1536,7 @@ private extension ComposerView {
     }
 
     var animatesChromeResize: Bool {
-        !reduceMotion && !isClearingForSend
+        !reduceMotion && !model.accessibilitySettings.disablesAllAnimations && !isClearingForSend
     }
 
     /// The timeline animates a sent message out of the field, as a bubble or
@@ -1567,5 +1570,16 @@ private struct ComposerActionLabelStyle: LabelStyle {
             configuration.icon.frame(width: InterfaceScale.metric(20), alignment: .center)
             configuration.title
         }
+    }
+}
+
+private extension ComposerView {
+    /// A pane reused from the pool left the window still marked focused, so
+    /// focusing it again would change nothing.
+    func clearFocusOfReusedPane() async {
+        guard columnPresentation != focusedColumnPresentation else { return }
+        focusedColumnPresentation = columnPresentation
+        isFocused = false
+        await Task.yield()
     }
 }

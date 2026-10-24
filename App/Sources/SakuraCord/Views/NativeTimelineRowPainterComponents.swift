@@ -7,9 +7,10 @@ import Lottie
 import QuartzCore
 import SakuraCordModels
 import SwiftUI
+import Synchronization
 
-@MainActor
-enum NativeTimelineSystemSymbolCache {
+/// Thread-safe, as the painters that read it are `nonisolated`.
+nonisolated enum NativeTimelineSystemSymbolCache {
     private struct ConfiguredKey: Hashable {
         let name: String
         let pointSize: CGFloat
@@ -26,18 +27,22 @@ enum NativeTimelineSystemSymbolCache {
         let scaleQuarter: Int
     }
 
+    private struct Images {
+        var images: [String: NSImage] = [:]
+        var configured: [ConfiguredKey: NSImage] = [:]
+        var rasterized: [RasterizedKey: NSImage] = [:]
+        var rasterizedOrder: [RasterizedKey] = []
+    }
+
     private static let configuredImageLimit = 256
     private static let rasterizedImageLimit = 1_024
-    private static var images: [String: NSImage] = [:]
-    private static var configuredImages: [ConfiguredKey: NSImage] = [:]
-    private static var rasterizedImages: [RasterizedKey: NSImage] = [:]
-    private static var rasterizedImageOrder: [RasterizedKey] = []
-    private static var postFirstFramePrewarmTask: Task<Void, Never>?
-    private static var postFirstFramePrewarmGeneration: UInt64 = 0
-    private static var didPrewarmPostFirstFrameSymbols = false
+    private static let cache = Mutex(Images())
+    @MainActor private static var postFirstFramePrewarmTask: Task<Void, Never>?
+    @MainActor private static var postFirstFramePrewarmGeneration: UInt64 = 0
+    @MainActor private static var didPrewarmPostFirstFrameSymbols = false
 
     static func image(named name: String) -> NSImage? {
-        if let image = images[name] { return image }
+        if let image = cache.withLock({ $0.images[name] }) { return image }
         let interval = AppPerformanceSignposts.signposter.beginInterval(
             "TimelineSystemSymbolCacheMiss"
         )
@@ -48,7 +53,7 @@ enum NativeTimelineSystemSymbolCache {
             )
         }
         guard let image = SakuraCordSystemSymbol.image(named: name) else { return nil }
-        images[name] = image
+        cache.withLock { $0.images[name] = image }
         return image
     }
 
@@ -96,7 +101,7 @@ enum NativeTimelineSystemSymbolCache {
             configured: configuredKey,
             scaleQuarter: scaleQuarter
         )
-        if let image = rasterizedImages[rasterizedKey] { return image }
+        if let image = cache.withLock({ $0.rasterized[rasterizedKey] }) { return image }
         let interval = AppPerformanceSignposts.signposter.beginInterval(
             "TimelineSystemSymbolRasterCacheMiss"
         )
@@ -115,14 +120,15 @@ enum NativeTimelineSystemSymbolCache {
             scale: CGFloat(scaleQuarter) / 4,
             appearance: appearance
         ) else { return nil }
-        if rasterizedImages.count >= rasterizedImageLimit,
-           let oldest = rasterizedImageOrder.first
-        {
-            rasterizedImageOrder.removeFirst()
-            rasterizedImages[oldest] = nil
+        cache.withLock { images in
+            guard images.rasterized[rasterizedKey] == nil else { return }
+            if images.rasterized.count >= rasterizedImageLimit, let oldest = images.rasterizedOrder.first {
+                images.rasterizedOrder.removeFirst()
+                images.rasterized[oldest] = nil
+            }
+            images.rasterizedOrder.append(rasterizedKey)
+            images.rasterized[rasterizedKey] = rasterized
         }
-        rasterizedImageOrder.append(rasterizedKey)
-        rasterizedImages[rasterizedKey] = rasterized
         return rasterized
     }
 
@@ -160,7 +166,7 @@ enum NativeTimelineSystemSymbolCache {
         weight: NSFont.Weight,
         resolvedColor: NSColor
     ) -> NSImage? {
-        if let image = configuredImages[key] { return image }
+        if let image = cache.withLock({ $0.configured[key] }) { return image }
         let interval = AppPerformanceSignposts.signposter.beginInterval(
             "TimelineSystemSymbolConfiguredCacheMiss"
         )
@@ -179,10 +185,12 @@ enum NativeTimelineSystemSymbolCache {
         guard let image = image(named: key.name)?
             .withSymbolConfiguration(configuration)
         else { return nil }
-        if configuredImages.count >= configuredImageLimit {
-            configuredImages.remove(at: configuredImages.startIndex)
+        cache.withLock { images in
+            if images.configured.count >= configuredImageLimit {
+                images.configured.remove(at: images.configured.startIndex)
+            }
+            images.configured[key] = image
         }
-        configuredImages[key] = image
         return image
     }
 
@@ -235,7 +243,7 @@ enum NativeTimelineSystemSymbolCache {
         return rasterized
     }
 
-    static func schedulePostFirstFramePrewarm(
+    @MainActor static func schedulePostFirstFramePrewarm(
         appearance: NSAppearance
     ) {
         guard !didPrewarmPostFirstFrameSymbols else { return }
@@ -310,7 +318,7 @@ enum NativeTimelineSystemSymbolCache {
         }
     }
 
-    private static func prewarmConfiguredImage(
+    @MainActor private static func prewarmConfiguredImage(
         named name: String,
         pointSize: CGFloat,
         weight: NSFont.Weight,
@@ -355,7 +363,7 @@ enum NativeTimelineSystemSymbolCache {
     }
 }
 
-struct NativeTimelineComponentsDrawInput {
+nonisolated struct NativeTimelineComponentsDrawInput {
     let layout: NativeTimelineComponentLayout
     let bubbleRegion: NativeTimelineBubbleRegion?
     let model: AppModel?
@@ -374,7 +382,7 @@ struct NativeTimelineComponentsDrawInput {
     let componentButtonPressProgress: CGFloat
 }
 
-extension NativeTimelineRowPainter {
+nonisolated extension NativeTimelineRowPainter {
     private struct BubbleIntegratedSectionGeometry {
         let frame: CGRect
         let cornerRadius: CGFloat
@@ -389,7 +397,7 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    static func schedulePostFirstFrameSymbolPrewarm(
+    @MainActor static func schedulePostFirstFrameSymbolPrewarm(
         appearance: NSAppearance
     ) {
         NativeTimelineSystemSymbolCache.schedulePostFirstFramePrewarm(
@@ -902,95 +910,6 @@ extension NativeTimelineRowPainter {
         ).fill()
     }
 
-    /// Discord's thread card: the name and message count, then the thread's
-    /// latest message or an empty state.
-    static func threadSummary(
-        _ thread: MessageThreadSummary,
-        preview: Message?,
-        message: Message,
-        model: AppModel?,
-        in frame: CGRect,
-        bubbleRegion: NativeTimelineBubbleRegion? = nil
-    ) {
-        if let bubbleRegion {
-            bubbleIntegratedSection(frame, bubbleRegion: bubbleRegion, accentColor: nil,
-                drawsTopSeparator: frame.minY - bubbleRegion.frame.minY > 8.5, drawsNeutralRail: false)
-        } else {
-            NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
-            NSBezierPath(concentricRoundedRect: frame, cornerRadius: InterfaceScale.metric(8)).fill()
-        }
-        let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion)
-        let secondary = NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion)
-        let inset: CGFloat = bubbleRegion == nil ? InterfaceScale.metric(10) : 0
-        let nameFont = NSFont.interfaceSystemFont(ofSize: 13, weight: .semibold)
-        let nameWidth = min(
-            NativeTimelineReplyMetrics.textWidth(thread.name, font: nameFont),
-            frame.width * 0.6
-        )
-        text(
-            thread.name,
-            in: CGRect(x: frame.minX + inset, y: frame.minY + InterfaceScale.metric(7), width: nameWidth, height: InterfaceScale.metric(18)),
-            font: nameFont,
-            color: foreground
-        )
-        text(
-            NativeTimelineThreadCard.countText(thread),
-            in: CGRect(
-                x: frame.minX + inset + nameWidth + InterfaceScale.metric(8),
-                y: frame.minY + InterfaceScale.metric(7),
-                width: max(1, frame.width - nameWidth - inset * 2 - InterfaceScale.metric(8)),
-                height: InterfaceScale.metric(18)
-            ),
-            font: .interfaceSystemFont(ofSize: 13, weight: .semibold),
-            color: bubbleRegion?.isOutgoing == true ? .white : .sakuraCordAccentColor
-        )
-
-        let rowFrame = CGRect(
-            x: frame.minX + inset,
-            y: frame.minY + InterfaceScale.metric(28),
-            width: frame.width - inset * 2,
-            height: InterfaceScale.metric(20)
-        )
-        let activity = NativeTimelineThreadCard.activityText(
-            thread.lastMessageID?.createdAt ?? thread.createdAt ?? thread.id.createdAt
-        )
-        let activityFont = NSFont.interfaceSystemFont(ofSize: 11)
-        let activityWidth = NativeTimelineReplyMetrics.textWidth(activity, font: activityFont)
-        text(
-            activity,
-            in: CGRect(x: rowFrame.maxX - activityWidth, y: rowFrame.minY + 1, width: activityWidth, height: InterfaceScale.metric(18)),
-            font: activityFont,
-            color: bubbleRegion?.isOutgoing == true ? secondary : .tertiaryLabelColor
-        )
-        let bodyFrame = CGRect(
-            x: rowFrame.minX,
-            y: rowFrame.minY,
-            width: max(0, rowFrame.width - activityWidth - InterfaceScale.metric(8)),
-            height: rowFrame.height
-        )
-        guard !thread.isArchived, thread.messageCount > 0, let preview else {
-            text(
-                thread.isArchived || thread.messageCount > 0
-                    ? "There are no recent messages in this thread."
-                    : "There are no messages in this thread yet.",
-                in: bodyFrame,
-                font: NativeTimelineReplyMetrics.summaryFont,
-                color: secondary
-            )
-            return
-        }
-        replyPreviewLine(
-            MessageReplyPreview.presenting(preview),
-            frame: bodyFrame,
-            avatarFrame: NativeTimelineAvatarPresentation.replyAvatarFrame(in: bodyFrame),
-            trailingInset: 0,
-            showsReplyMention: false,
-            message: message,
-            model: model,
-            foregroundColor: bubbleRegion?.isOutgoing == true ? foreground : nil
-        )
-    }
-
     static func reaction(
         _ region: NativeTimelineRowLayout.ReactionRegion,
         model: AppModel?,
@@ -1041,7 +960,7 @@ extension NativeTimelineRowPainter {
     ) {
         let reference = region.reaction.emojiReference
         if let id = reference.id {
-            if let url = model?.customEmojiURLsByID[id]
+            if let url = NativeTimelineRowPaintContext.current?.customEmojiURLsByID[id]
                     ?? reference.imageURL(size: 64),
                let image = mediaImage(
                    for: .media(url, maximumPixelDimension: 64)
@@ -1400,8 +1319,19 @@ extension NativeTimelineRowPainter {
         case .none, .systemImage, .text: nil
         }
         guard let url else { return nil }
-        if url.isFileURL { return NSImage(contentsOf: url) }
+        if url.isFileURL { return fileImage(at: url) }
         return mediaImage(for: .media(url, maximumPixelDimension: 64))
+    }
+
+    /// Loaded once per file: rows draw their selects on every redraw, and
+    /// reading the file each time held up the motions that redraw them.
+    nonisolated(unsafe) private static let fileImages = NSCache<NSURL, NSImage>()
+
+    private static func fileImage(at url: URL) -> NSImage? {
+        if let image = fileImages.object(forKey: url as NSURL) { return image }
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        fileImages.setObject(image, forKey: url as NSURL)
+        return image
     }
 
     static func componentFile(
@@ -1540,11 +1470,14 @@ extension NativeTimelineRowPainter {
             .fill()
     }
 
+    /// From the media store; rows paint on the main thread.
     static func mediaImage(
         for key: NativeTimelineMediaKey
     ) -> NSImage? {
-        NativeTimelineMediaStore.shared.firstAnimatedFrame(for: key)
-            ?? NativeTimelineMediaStore.shared.image(for: key)
+        MainActor.assumeIsolated {
+            NativeTimelineMediaStore.shared.firstAnimatedFrame(for: key)
+                ?? NativeTimelineMediaStore.shared.image(for: key)
+        }
     }
 
     static func drawImage(

@@ -8826,3 +8826,60 @@ func `resource thread permissions belong to its parent rather than the selected 
     #expect(model.pinnedMessages.hasReadPermission == parentAllows)
     model.dismissPinnedMessages()
 }
+
+@MainActor
+@Test func `a cached thread reopened in the pane shows its messages from the first frame`() async throws {
+    let provider = MockChatProvider(motionThreadCount: 1, motionThreadMessageCount: 30)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let parent = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 210) })
+    model.selectedChannelID = parent.id
+    // The fixture's first motion thread, which has 30 messages in #general.
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 7_100_001), guildID: parent.guildID, parentID: parent.id, name: "Motion thread 1"
+    )
+    model.open(thread)
+    #expect(await until { model.hasCompletedInitialThreadLoad && !model.threadMessages.isEmpty })
+    model.closeSideConversation()
+
+    // Reopening slides the pane in; its cached messages are there at once,
+    // so the pane shows them rather than the loading placeholder.
+    model.open(thread)
+
+    #expect(!model.threadMessages.isEmpty)
+    #expect(!MessageTimelineLoadingPolicy.showsInitialPlaceholder(
+        isLoading: model.isLoadingThread,
+        messageCount: model.threadMessages.count
+    ))
+}
+
+@MainActor @Test func `the member list takes an open thread pane's place and gives it back`() async throws {
+    let provider = MockChatProvider(motionThreadCount: 1, motionThreadMessageCount: 30)
+    let model = AppModel(launchMode: .offlineTesting, provider: provider)
+    await model.start()
+    let parent = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 210) })
+    model.selectedChannelID = parent.id
+    model.showInspector = false
+    let thread = MessageThreadSummary(
+        id: ChannelID(rawValue: 7_100_001), guildID: parent.guildID, parentID: parent.id, name: "Motion thread 1"
+    )
+    model.open(thread)
+    #expect(await until { model.hasCompletedInitialThreadLoad && !model.threadMessages.isEmpty })
+    model.threadTimelinePosition.reading = .bottom
+
+    // Members beside the pane shows the member list in its place; the
+    // thread stays open, though not viewed, and Escape leaves it alone.
+    model.toggleMemberInspector()
+    #expect(model.workspacePresentation.supplementaryPane == .memberInspector)
+    #expect(model.openThread?.id == thread.id)
+    #expect(!model.isConversationPresented(thread.id))
+    #expect(!model.closeSideConversation())
+    #expect(model.openThread?.id == thread.id)
+
+    // Members again brings the pane back where the reader left it.
+    model.toggleMemberInspector()
+    #expect(model.workspacePresentation.paneSideConversation?.isThread == true)
+    #expect(model.isConversationPresented(thread.id))
+    #expect(model.threadTimelinePosition.restore == .bottom)
+    #expect(!model.showInspector)
+}

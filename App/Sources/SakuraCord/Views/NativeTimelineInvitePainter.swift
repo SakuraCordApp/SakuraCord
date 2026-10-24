@@ -1,7 +1,7 @@
 import AppKit
 import SakuraCordModels
 
-extension NativeTimelineRowPainter {
+nonisolated extension NativeTimelineRowPainter {
     private static let unavailableInviteSymbol = NSImage(systemSymbolName: "envelope.fill", accessibilityDescription: nil)?
         .withSymbolConfiguration(.init(paletteColors: [.systemRed]))
 
