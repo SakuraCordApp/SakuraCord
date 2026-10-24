@@ -28,7 +28,7 @@ extension AppModel {
         } else if tags.count < 5 {
             tags.insert(tagID)
         }
-        Task { await updateForumPost(post, mutation: .tags(Array(tags))) }
+        Task { await updateForumPostTags(post, tagIDs: Array(tags)) }
     }
 
     func resetForumLoadAndPresentationState() {
@@ -538,34 +538,15 @@ extension AppModel {
         }
     }
 
-    func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async {
-        let policy = threadActionPolicy(post.thread)
-        switch mutation {
-        case .tags(let tagIDs):
-            guard validateForumTagMutation(tagIDs, for: post) else { return }
-        case .archived:
-            guard policy.canChangeArchive else {
-                forumActionError = "You do not have permission to close or reopen this post."
-                return
-            }
-        case .name:
-            guard policy.canRename else {
-                forumActionError = "You do not have permission to rename this post."
-                return
-            }
-        case .locked, .pinned:
-            guard policy.canManage else {
-                forumActionError = "Only moderators can change this post."
-                return
-            }
-        }
+    func updateForumPostTags(_ post: ForumPost, tagIDs: [ForumTagID]) async {
+        guard validateForumTagMutation(tagIDs, for: post) else { return }
 
         forumActionError = nil
         let session = accountSession()
         do {
             let updated = try await session.provider.updateForumPost(
                 post,
-                mutation: mutation
+                mutation: .tags(tagIDs)
             )
             guard isCurrentAccountSession(session) else { return }
             mergeForumCatalogue([updated])
@@ -615,27 +596,6 @@ extension AppModel {
             }
         }
         return true
-    }
-
-    func deleteForumPost(_ post: ForumPost) async {
-        guard threadActionPolicy(post.thread).canDelete else {
-            forumActionError = "You do not have permission to delete this post."
-            return
-        }
-        forumActionError = nil
-        let session = accountSession()
-        do {
-            try await session.provider.deleteForumPost(post)
-            guard isCurrentAccountSession(session) else { return }
-            removeForumPost(post.id)
-            if openThread?.id == post.id {
-                closeThread()
-            }
-            forumActionError = nil
-        } catch {
-            guard isCurrentAccountSession(session) else { return }
-            forumActionError = error.localizedDescription
-        }
     }
 
     func dismissForumActionError() {

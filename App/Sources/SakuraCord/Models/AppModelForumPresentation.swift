@@ -73,7 +73,7 @@ extension AppModel {
             hero: hero,
             galleryAuthor: galleryAuthor,
             reaction: reaction,
-            messageCount: ForumPostMessageCountPresentation.count(threadMessageCount: post.thread.messageCount),
+            messageCount: max(0, post.thread.messageCount),
             unreadCount: forumUnreadMessageCount(post),
             createdAt: post.createdAt,
             lastActivityAt: post.lastActivityAt,

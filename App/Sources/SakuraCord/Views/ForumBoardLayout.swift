@@ -157,9 +157,7 @@ struct ForumBoardLayout {
         let titleLines: Int
     }
 
-    let mode: ForumLayout
     let width: CGFloat
-    let metrics: ForumBoardMetrics
     let entries: [Entry]
     let contentHeight: CGFloat
     let indexByID: [ForumBoardItem.Identifier: Int]
@@ -306,9 +304,7 @@ struct ForumBoardLayout {
             indexByID[entry.item.id] = index
         }
         return Self(
-            mode: mode == .gallery ? .gallery : .list,
             width: width,
-            metrics: metrics,
             entries: entries,
             contentHeight: cursorY + metrics.contentInset,
             indexByID: indexByID,

@@ -38,7 +38,8 @@ final class ForumPostMenuBuilder: NSObject {
         requiresTag: Bool,
         canManage: Bool
     ) -> NSMenuItem {
-        let tagsItem = menuItem("Tags", systemImage: "tag.fill", action: nil)
+        let tagsItem = NSMenuItem(title: "Tags", action: nil, keyEquivalent: "")
+        ContextMenuItemSupport.configure(tagsItem, title: "Tags", systemImage: "tag.fill")
         let tagsMenu = NSMenu(title: "Tags")
         tagsMenu.autoenablesItems = false
         for tag in tags {
@@ -56,7 +57,7 @@ final class ForumPostMenuBuilder: NSObject {
             item.state = isApplied ? .on : .off
             item.representedObject = NSNumber(value: tag.id.rawValue)
             item.image = menuImage(for: tag)
-            forceVisibleImage(for: item)
+            item.preferredImageVisibility = .visible
             tagsMenu.addItem(item)
         }
         tagsItem.submenu = tagsMenu
@@ -94,27 +95,6 @@ final class ForumPostMenuBuilder: NSObject {
         return symbolImage("tag", accessibilityDescription: tag.name)
     }
 
-    private func menuItem(
-        _ title: String,
-        systemImage: String? = nil,
-        action: Selector?,
-        isDestructive: Bool = false,
-        isEnabled: Bool = true
-    ) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = action == nil ? nil : self
-        item.isEnabled = isEnabled
-        if let systemImage {
-            ContextMenuItemSupport.configure(
-                item,
-                title: title,
-                systemImage: systemImage,
-                isDestructive: isDestructive
-            )
-        }
-        return item
-    }
-
     private func symbolImage(
         _ name: String,
         accessibilityDescription: String
@@ -145,10 +125,6 @@ final class ForumPostMenuBuilder: NSObject {
         image.unlockFocus()
         image.isTemplate = false
         return image
-    }
-
-    private func forceVisibleImage(for item: NSMenuItem) {
-        item.preferredImageVisibility = .visible
     }
 
     @objc private func toggleTagFromMenu(_ sender: NSMenuItem) {

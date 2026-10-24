@@ -169,8 +169,8 @@ final class ForumCardCanvas {
     /// Draws AppKit content into a cached bitmap covering `clip`, aligned to
     /// device pixels. `key` must identify everything the drawing depends on
     /// besides its size, pixel phase, scale and appearance, including any
-    /// position relative to `clip`; nil skips the cache.
-    func prerendered(key: AnyHashable?, clip: CGRect, draw: () -> Void) {
+    /// position relative to `clip`.
+    func prerendered(key: AnyHashable, clip: CGRect, draw: () -> Void) {
         guard clip.width > 0, clip.height > 0 else { return }
         let pixelMinX = floor(clip.minX * scale)
         let pixelMinY = floor(clip.minY * scale)
@@ -182,18 +182,16 @@ final class ForumCardCanvas {
             width: CGFloat(pixelWidth) / scale,
             height: CGFloat(pixelHeight) / scale
         )
-        let cacheKey = key.map {
-            ForumCardRasterCache.PrerenderKey(
-                content: $0,
-                phaseX: clip.minX * scale - floor(clip.minX * scale),
-                phaseY: clip.minY * scale - floor(clip.minY * scale),
-                width: clip.width,
-                height: clip.height,
-                scale: scale,
-                appearance: appearance
-            )
-        }
-        if let cacheKey, let image = cache.prerendered[cacheKey] {
+        let cacheKey = ForumCardRasterCache.PrerenderKey(
+            content: key,
+            phaseX: clip.minX * scale - floor(clip.minX * scale),
+            phaseY: clip.minY * scale - floor(clip.minY * scale),
+            width: clip.width,
+            height: clip.height,
+            scale: scale,
+            appearance: appearance
+        )
+        if let image = cache.prerendered[cacheKey] {
             operations.append(.bitmap(image, frame: frame))
             return
         }
@@ -207,7 +205,7 @@ final class ForumCardCanvas {
         draw()
         NSGraphicsContext.restoreGraphicsState()
         guard let image = context.makeImage() else { return }
-        if let cacheKey { cache.storePrerendered(image, for: cacheKey) }
+        cache.storePrerendered(image, for: cacheKey)
         operations.append(.bitmap(image, frame: frame))
     }
 }

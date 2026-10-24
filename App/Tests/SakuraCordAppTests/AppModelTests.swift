@@ -2187,11 +2187,10 @@ func `authoritative thread deletion removes open cached and resource conversatio
     model.open(post)
     #expect(model.openThread?.id == post.id)
 
-    await model.deleteForumPost(post)
+    model.deleteSidebarThread(post.thread)
 
-    #expect(!model.forumPosts.contains { $0.id == post.id })
-    #expect(model.openThread == nil)
-    #expect(model.forumActionError == nil)
+    #expect(await until { !model.forumPosts.contains { $0.id == post.id } && model.openThread == nil })
+    #expect(model.errorMessage == nil)
 }
 
 @Test func `rich message selection copies custom emoji as its discord token`() {

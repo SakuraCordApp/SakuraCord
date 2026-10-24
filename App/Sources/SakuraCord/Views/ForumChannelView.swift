@@ -784,12 +784,6 @@ nonisolated enum ForumTimestampPresentation {
     }
 }
 
-nonisolated enum ForumPostMessageCountPresentation {
-    static func count(threadMessageCount: Int) -> Int {
-        max(0, threadMessageCount)
-    }
-}
-
 nonisolated enum ForumPostReactionPresentation {
     static func displayedReaction(
         reactions: [Reaction],

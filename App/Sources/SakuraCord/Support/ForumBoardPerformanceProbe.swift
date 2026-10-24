@@ -1,5 +1,4 @@
 import SakuraCordModels
-import SwiftUI
 
 #if DEBUG
 import AppKit
@@ -7,8 +6,8 @@ import OSLog
 
 /// Counts post cards that change size after they were first measured while the
 /// board width stayed the same: the layout jumps a reader sees when content
-/// such as late previews resizes cards under the viewport. Any forum board
-/// implementation reports its measured card sizes here.
+/// such as late previews resizes cards under the viewport. The native forum
+/// board reports its measured card sizes here.
 @MainActor
 final class ForumLayoutStabilityProbe {
     static let shared = ForumLayoutStabilityProbe()
@@ -22,8 +21,6 @@ final class ForumLayoutStabilityProbe {
 
     /// Recording is off outside the forum performance scenes.
     var isEnabled = false
-    /// The width of the board the cards are laid out in.
-    var containerWidth: CGFloat = 0
 
     private struct Measurement {
         var size: CGSize
@@ -125,8 +122,7 @@ private final class ForumBenchmarkCompletion {
 
 /// Offline forum benchmark: after the first page loads, scrolls the board at a
 /// steady speed on the display link, then writes frame timing and layout
-/// stability. A board that is not SwiftUI registers its scroll view with
-/// `register(scrollView:)`; otherwise the benchmark finds the SwiftUI one.
+/// stability. The board registers its scroll view with `register(scrollView:)`.
 @MainActor
 enum ForumBoardBenchmark {
     private static let logger = Logger(subsystem: "dev.sakuracord.SakuraCord", category: "ForumBenchmark")

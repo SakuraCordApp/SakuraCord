@@ -374,8 +374,6 @@ final class AppModel {
     var forumCataloguePosts: [ForumPost] = []
     var forumCatalogueIndexByID: [ChannelID: Int] = [:]
     var forumRecentPostCount = 0
-    var forumRecentPosts: ArraySlice<ForumPost> { forumPosts.prefix(forumRecentPostCount) }
-    var forumOlderPosts: ArraySlice<ForumPost> { forumPosts.dropFirst(forumRecentPostCount) }
     var isLoadingForumPosts = false
     var isSearchingForumPosts = false
     var hasLoadedForumPosts = false
