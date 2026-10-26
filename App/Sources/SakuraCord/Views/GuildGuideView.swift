@@ -56,7 +56,7 @@ struct GuildGuideView: View {
         .task(id: "\(guildID)-\(model.currentUser?.id.description ?? "")-\(scenePhase)") {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
-                if model.mainWindowIsActive, entry.resource == nil { model.refreshGuildGuide(in: guildID) }
+                if model.mainWindowIsActive, model.presentedGuideResource == nil { model.refreshGuildGuide(in: guildID) }
                 do { try await Task.sleep(for: .seconds(30)) } catch { return }
             }
         }
@@ -143,7 +143,7 @@ struct GuildGuideView: View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
             Text("Get Started").font(.interface(.title3).weight(.bold)).padding(.bottom, InterfaceScale.metric(4))
             ForEach(guide.newMemberActions) { task in
-                GuideActionRow(item: task, channelName: model.snapshot?.channels.first { $0.id == task.channelID }?.name,
+                GuideActionRow(item: task, channelName: model.messagePresentationChannelsByID[task.channelID]?.name,
                                completed: entry.progress?.isCompleted(task.channelID) == true) {
                     model.visitGuideTask(task, guildID: guildID)
                 }
@@ -170,7 +170,7 @@ struct GuildGuideView: View {
 
     private func serverProfile(_ profile: GuildProfile) -> some View {
         let card = NativeTimelineInviteLayout(index: 0, origin: .zero, maximumWidth: 280,
-            model: nil, isOwnMessage: false, fillsWidth: true,
+            source: nil, isOwnMessage: false, fillsWidth: true,
             preview: NativeServerCardContent(profile: profile, iconURL: guild?.iconURL, adaptiveColor: previewColor))
         return NativeInvitePreview(card: card, isModalPreview: false)
             .frame(width: card.frame.width, height: card.frame.height)

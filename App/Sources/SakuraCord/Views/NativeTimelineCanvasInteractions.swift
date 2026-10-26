@@ -394,60 +394,60 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    /// Presents the reaction picker beside the message's visible bubble, on
-    /// the side facing the open timeline. Otherwise, such as for a non-bubble
-    /// row or a bubble scrolled away above its visible reactions, it opens
-    /// from the top-right of the row's visible part. The row is looked up
-    /// when the picker opens because the timeline may have changed while a
-    /// context menu was open.
-    func showReactionPicker(forMessageRow message: Message) {
-        guard let index = items.firstIndex(where: {
-            $0.messageID == message.id
-        }) else { return }
-        let visibleBounds = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        let anchor: CGRect
-        let presentation: ReactionActionMenuPresentation
-        let preferredEdge: NSRectEdge?
-        if layouts.indices.contains(index),
-           let bubble = layouts[index].bubbleRegion,
-           case let visibleBubble = bubble.frame.offsetBy(
-               dx: 0,
-               dy: displayedRowOrigin(at: index)
-           ).intersection(visibleBounds),
-           !visibleBubble.isNull
-        {
-            anchor = visibleBubble
-            presentation = .inline
-            preferredEdge = bubble.isOutgoing ? .minX : .maxX
-        } else {
-            let rowFrame = rowFrame(at: index)
-            let visibleRow = rowFrame.intersection(visibleBounds)
-            let diameter = HoverActionPillMetrics.controlDiameter
-            anchor = CGRect(
-                x: rowFrame.maxX - diameter - InterfaceScale.metric(4),
-                y: visibleRow.isNull ? rowFrame.minY : visibleRow.minY,
-                width: diameter,
-                height: diameter
-            )
-            presentation = .toolbar
-            preferredEdge = nil
-        }
-        showReactionPicker(
-            for: message,
-            anchor: anchor,
-            presentation: presentation,
-            preferredEdge: preferredEdge
-        )
+    /// Both native reaction popovers use the visible message row as their anchor.
+    /// The presenters freeze this rectangle while the popover remains open.
+    func messageReactionPopoverAnchor(for message: Message) -> CGRect? {
+        guard let index = items.firstIndex(where: { $0.messageID == message.id }),
+              layouts.indices.contains(index) else { return nil }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        let visibleRow = rowFrame(at: index).intersection(viewport)
+        let anchor = visibleRow.isNull || visibleRow.isEmpty ? viewport : visibleRow
+        return anchor.isNull || anchor.isEmpty ? nil : anchor
     }
 
-    func showReactionPicker(
-        for message: Message,
-        anchor: CGRect,
-        presentation: ReactionActionMenuPresentation,
-        preferredEdge: NSRectEdge? = nil
-    ) {
-        guard let model else { return }
+    func beginReactionPopoverLayout() {
+        // Layout may restore the viewport or rebase history coordinates. Keep
+        // open popovers steady through that correction, independently of scroll.
+        reactionPopoverLayoutAnchors = [reactionPickerSource.installedSnapshotAnchor, reactionDetailsPopoverAnchor]
+            .compactMap { anchor in
+                guard let anchor, anchor.window != nil, anchor.superview != nil else { return nil }
+                return (anchor, anchor.convert(anchor.bounds, to: nil))
+            }
+    }
+
+    func endReactionPopoverLayout() {
+        for (anchor, frameInWindow) in reactionPopoverLayoutAnchors {
+            guard let parent = anchor.superview, anchor.window === window else { continue }
+            anchor.frame = parent.convert(frameInWindow, from: nil)
+        }
+        reactionPopoverLayoutAnchors.removeAll(keepingCapacity: true)
+        dismissOffscreenReactionPopovers()
+    }
+
+    func dismissOffscreenReactionPopovers() {
+        guard reactionPickerCoordinator.isShown || reactionDetailsPopover?.isShown == true else { return }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        func isVisible(_ messageID: MessageID?) -> Bool {
+            guard let messageID, let index = items.firstIndex(where: { $0.messageID == messageID }) else { return false }
+            let intersection = rowFrame(at: index).intersection(viewport)
+            return !intersection.isNull && !intersection.isEmpty
+        }
+        if reactionPickerCoordinator.isShown, !isVisible(reactionPickerMessageID) {
+            reactionPickerMessageID = nil
+            reactionPickerCoordinator.close(notifyBinding: true)
+        }
+        if reactionDetailsPopover?.isShown == true, !isVisible(reactionDetailsMessageID) {
+            reactionDetailsMessageID = nil
+            reactionDetailsPopover?.close()
+        }
+    }
+
+    func showReactionPicker(forMessageRow message: Message) {
+        guard let model, model.canCreateReactions(on: message),
+              let anchor = messageReactionPopoverAnchor(for: message) else { return }
+        reactionPickerMessageID = message.id
         reactionPickerSource.frame = anchor
+        reactionPickerSource.followsScrolling = true
         let content = EmojiPickerView(
             model: model,
             useCase: .reaction(
@@ -477,8 +477,8 @@ extension NativeTimelineCanvasView {
         reactionPickerCoordinator.update(
             sourceView: reactionPickerSource,
             isPresented: true,
-            preferredEdge: preferredEdge ?? presentation.popoverEdge,
-            accessibilityIdentifier: presentation.pickerAccessibilityIdentifier,
+            preferredEdge: .maxX,
+            accessibilityIdentifier: ReactionActionMenuPresentation.inline.pickerAccessibilityIdentifier,
             content: content,
             setPresented: { [weak self] isPresented in
                 if !isPresented {
@@ -1193,9 +1193,10 @@ extension NativeTimelineCanvasView {
         guard MessageOutboxPresentation.interactionMode(for: row.message).allowsMessageContextMenu else { return nil }
         // Discord does not allow editing voice messages.
         let canEdit =
-            row.message.author.id == model?.snapshot?.currentUser.id
+            row.message.author.id == model?.currentUser?.id
                 && !row.message.hasPoll
                 && !row.message.flags.contains(.voiceMessage)
+                && model?.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
                 && MessageReplyPresentationPolicy.allowsReplyAction(
                     for: row.message
                 )
@@ -1210,13 +1211,18 @@ extension NativeTimelineCanvasView {
         for entry in NativeTimelineMessageMenuPolicy.entries(
             canEdit: canEdit,
             canDelete: canDelete,
-            canRetry: row.message.outboxState == .failed,
+            canRetry: row.message.canRetrySending,
+            isFailed: row.message.outboxState == .failed,
             canReply: actions.reply != nil
+                && model?.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
                 && MessageReplyPresentationPolicy.allowsReplyAction(
                     for: row.message
                 ),
-            canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.snapshot?.currentUser.id && row.message.poll?.isClosed() == false,
+            canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.currentUser?.id && row.message.poll?.isClosed() == false,
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
+            threadAction: row.message.thread != nil
+                ? .viewThread
+                : (model?.canCreateThread(from: row.message) == true ? .createThread : nil),
             canPin: model?.canManagePins(for: row.message) == true,
             isPinned: row.message.isPinned,
             translationTitle: row.isResource ? nil : model?.messageTranslationMenuTitle(for: row.message),
@@ -1244,6 +1250,7 @@ extension NativeTimelineCanvasView {
                 }
                 continue
             }
+            if case .addReaction = action, model?.canCreateReactions(on: row.message) != true { continue }
             let handler = messageMenuHandler(
                 action: action,
                 row: row,
@@ -1346,14 +1353,34 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    private func threadMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        actions: NativeTimelineRowActions
+    ) -> (() -> Void)? {
+        switch action {
+        case .createThread:
+            { [weak model] in model?.beginThreadCreation(from: row.message) }
+        case .viewThread:
+            {
+                guard let thread = row.message.thread else { return }
+                actions.openThread(thread)
+            }
+        default:
+            nil
+        }
+    }
+
     private func nonPinMessageMenuHandler(
         action: NativeTimelineMessageMenuAction,
         row: MessageRowPresentation,
         index: Int,
         actions: NativeTimelineRowActions
     ) -> () -> Void {
-        if let copyHandler = copyMessageMenuHandler(action: action, row: row) {
-            return copyHandler
+        if let handler = copyMessageMenuHandler(action: action, row: row)
+            ?? threadMessageMenuHandler(action: action, row: row, actions: actions)
+        {
+            return handler
         }
         return switch action {
         case .jumpToMessage:
@@ -1362,6 +1389,8 @@ extension NativeTimelineCanvasView {
             { actions.retry(row.message) }
         case .addReaction:
             { [weak self] in self?.showReactionPicker(forMessageRow: row.message) }
+        case .viewReactions:
+            { [weak self] in self?.showMessageReactions(row.message) }
         case .reply:
             {
                 guard let reply = actions.reply else { return }

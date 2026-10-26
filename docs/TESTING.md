@@ -14,7 +14,7 @@ lists package/full-validation commands and retained hang diagnostics.
 | Authentication/bootstrap | [AuthenticationInstallationContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AuthenticationInstallationContractTests.swift); [ProviderBootstrapContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderBootstrapContractTests.swift) |
 | Gateway ordering, decoding, lifecycle | [GatewaySessionTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GatewaySessionTests.swift); [GatewayBacklogTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GatewayBacklogTests.swift) |
 | Inbox/Undo and read boundaries | [InboxContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/InboxContractTests.swift); [AccountReadStateModelTests.swift](../App/Tests/SakuraCordAppTests/AccountReadStateModelTests.swift); [InboxTests.swift](../App/Tests/SakuraCordAppTests/InboxTests.swift) |
-| Friends, relationships or CAPTCHA replay | [RelationshipContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/RelationshipContractTests.swift); [FriendsListPolicyTests.swift](../App/Tests/SakuraCordAppTests/FriendsListPolicyTests.swift); [HumanCaptchaTests.swift](../App/Tests/SakuraCordAppTests/HumanCaptchaTests.swift) |
+| Friends, relationships or CAPTCHA replay | [CaptchaReplayContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/CaptchaReplayContractTests.swift); [RelationshipContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/RelationshipContractTests.swift); [FriendsListPolicyTests.swift](../App/Tests/SakuraCordAppTests/FriendsListPolicyTests.swift); [HumanCaptchaTests.swift](../App/Tests/SakuraCordAppTests/HumanCaptchaTests.swift) |
 | Onboarding or Guide | [OnboardingContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/OnboardingContractTests.swift); [GuildCustomizationTests.swift](../App/Tests/SakuraCordAppTests/GuildCustomizationTests.swift) |
 | Profile/settings edits | [ProfileEditingContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProfileEditingContractTests.swift); [ProfileEditorStateTests.swift](../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift); [SettingsTransferTests.swift](../App/Tests/SakuraCordAppTests/SettingsTransferTests.swift) |
 | Storage or account separation | [DatabaseTests.swift](../Packages/SakuraCordPersistence/Tests/SakuraCordPersistenceTests/DatabaseTests.swift) |
@@ -50,17 +50,26 @@ Do not run build/test jobs concurrently in the same checkout.
 
 ## When to commit tests
 
-Add or materially expand tests only for critical behaviour (credentials,
-mutations, protocol, persistence, encryption, concurrency/lifecycle), major new
-functionality, or a significant recurring regression with a focused deterministic
-case. Search for equivalent coverage first; prefer extending or parameterizing
-an existing test. Every case must protect a distinct production failure mode.
+Most changes need no new test. Touching protocol, persistence, or concurrency
+code is not a reason on its own. Add a test only when it guards a failure that
+would be costly to ship, or easy to miss and harmful to users or their account.
+Examples include lost or corrupted data, leaked credentials or private content,
+wrong requests or account mutations sent to Discord, and protocol breakage.
+Critical crashes, hangs, deadlocks, and lifecycle leaks qualify whether or not
+they have shipped. Major new functionality and a significant regression that
+already shipped also qualify.
+
+Before adding a test, name the production failure it catches and state it in
+the pull request. If existing coverage already catches that failure, or you
+cannot name one, do not add the test. Prefer extending or parameterizing an
+existing test, and keep to the fewest cases that cover distinct failure modes.
 
 Do not commit tests for visual styling, spacing, animation, copy or icons; trivial
-mappings/constants; private implementation choreography; mocks rather than real
-behaviour; or an invariant already protected elsewhere. A small fix does not
-require a new test by default. Temporary UI tests must be removed from the working
-tree and index before committing.
+mappings/constants; behaviour the type system already guarantees; assertions
+that restate the implementation; private implementation choreography; mocks
+rather than real behaviour; or an invariant already protected elsewhere.
+Temporary UI tests must be removed from the working tree and index before
+committing.
 
 ## Test design and evidence
 

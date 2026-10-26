@@ -100,6 +100,7 @@ extension DiscordRESTProvider {
                     .first { $0.id == message.channelID }?.guildID
             }
             attachKnownThread(to: &message)
+            attachKnownStarterPreview(to: &message)
             cacheMessageSearchUsers(dto.searchIndexUsers)
             cacheForwardSearchMessageAliases([message])
             cachedMessages[message.id] = message
@@ -206,7 +207,8 @@ extension DiscordRESTProvider {
             ?? cachedJoinedThreads[channelID]?.guildID
             ?? cachedForumPosts.values.lazy.compactMap { $0[channelID]?.thread.guildID }.first
             ?? cachedChannels.values.lazy.flatMap(\.self).first { $0.id == channelID }?.guildID
-        guard let update = dto.domain(guildID: guildID) else { return }
+        guard var update = dto.domain(guildID: guildID) else { return }
+        attachKnownStartedThread(to: &update)
         if var message = cachedMessages[messageID] {
             update.apply(to: &message)
             cachedMessages[messageID] = message
@@ -228,7 +230,12 @@ extension DiscordRESTProvider {
         for (parentID, posts) in cachedForumPosts {
             guard var post = posts[channelID] else { continue }
             var changed = false
-            if post.firstMessage?.id == messageID { post.firstMessage = nil; changed = true }
+            // A forum starter shares its post's ID.
+            if messageID.rawValue == channelID.rawValue || post.firstMessage?.id == messageID {
+                post.firstMessage = nil
+                post.isFirstMessageLoaded = true
+                changed = true
+            }
             if post.mostRecentMessage?.id == messageID { post.mostRecentMessage = nil; changed = true }
             guard changed else { continue }
             cachedForumPosts[parentID]?[channelID] = post

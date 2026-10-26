@@ -24,6 +24,7 @@ extension NativeTimelineCanvasView {
         {
             return
         }
+        reconcileHistorySkeletonShimmer()
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             reconcileSendTransitions()
         }
@@ -765,12 +766,6 @@ extension NativeTimelineCanvasView {
     static let maximumActivityIndicatorCount = 32
 
     func reconcileActivityIndicators() {
-        // `installViewportGeometry` already reconciles inbox headers once per
-        // geometry change. Repeating it here walked the visible rows a second
-        // time on every viewport re-anchor. The guard must also run when inbox
-        // views from a previous surface remain, because this is what removes
-        // them: switching from Unread to a reused non-empty tab would otherwise
-        // leave stale header, forum-post, and event views over the content.
         if case .inboxGroup = items.first {
             // `installViewportGeometry` already reconciled inbox headers for
             // this surface; doing it again would walk the visible rows twice
@@ -783,6 +778,7 @@ extension NativeTimelineCanvasView {
             // leave stale header, forum-post, and event views over the content.
             reconcileInboxHeaders()
         }
+        positionUnreadDividerFades()
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {

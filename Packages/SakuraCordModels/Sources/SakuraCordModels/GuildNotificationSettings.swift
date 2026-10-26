@@ -10,6 +10,7 @@ public enum GuildNotificationToggle: Int, CaseIterable, Codable, Hashable, Senda
     case suppressHighlights
     case muteScheduledEvents
     case mobilePush
+    case hideMutedChannels
 }
 
 public struct GuildNotificationSettings: Codable, Hashable, Sendable {
@@ -61,6 +62,7 @@ public struct GuildNotificationSettings: Codable, Hashable, Sendable {
         case .suppressHighlights: notifyHighlights == .disabled
         case .muteScheduledEvents: muteScheduledEvents
         case .mobilePush: mobilePush
+        case .hideMutedChannels: hideMutedChannels
         }
     }
 
@@ -76,6 +78,8 @@ public struct GuildNotificationSettings: Codable, Hashable, Sendable {
             muteScheduledEvents = isEnabled
         case .mobilePush:
             mobilePush = isEnabled
+        case .hideMutedChannels:
+            hideMutedChannels = isEnabled
         }
     }
 

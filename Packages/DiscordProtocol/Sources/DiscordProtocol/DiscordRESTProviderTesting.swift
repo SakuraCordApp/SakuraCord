@@ -159,36 +159,12 @@ import SakuraCordModels
             cachedGuilds[guildID]
         }
 
-        func currentUserForTesting() -> User? {
-            currentUser
-        }
-
-        func cachedGuildsForTesting() -> [Guild] {
-            guildsInCurrentRailOrder()
-        }
-
         func cachedGuildRailItemsForTesting() -> [GuildRailItem] {
             cachedGuildRailItems
         }
 
-        func cachedGuildRolesForTesting(guildID: GuildID) -> [GuildRole] {
-            (cachedGuildRoles[guildID] ?? []).compactMap(\.domain)
-        }
-
         func cachedMembersForTesting(guildID: GuildID) -> [Member] {
             cachedMembers[guildID] ?? []
-        }
-
-        func gatewayOpcodeIsRateLimitedForTesting(_ opcode: Int) -> Bool {
-            gatewayOpcodeRateLimitDates[opcode].map { $0 > Date() } ?? false
-        }
-
-        func seedPrivateCallSubscriptionForTesting(channelID: ChannelID) {
-            subscribedPrivateCallChannelIDs.insert(channelID)
-        }
-
-        func hasPrivateCallSubscriptionForTesting(channelID: ChannelID) -> Bool {
-            subscribedPrivateCallChannelIDs.contains(channelID)
         }
     }
 #endif

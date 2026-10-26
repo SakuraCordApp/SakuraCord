@@ -199,7 +199,7 @@ struct VoiceControlBar<SettingsControl: View>: View {
     private var connectionSubtitle: String {
         let channel = model.activeVoiceChannel?.name ?? "Voice"
         guard let guildID = model.activeVoiceChannel?.guildID,
-              let guild = model.snapshot?.guilds.first(where: { $0.id == guildID })
+              let guild = model.serverRailGuildsByID[guildID]
         else {
             return channel
         }
@@ -374,7 +374,7 @@ struct VoiceSidebarControlPanel: View {
     private var connectionSubtitle: String {
         let channel = model.activeVoiceChannel?.name ?? "Voice"
         guard let guildID = model.activeVoiceChannel?.guildID,
-              let guild = model.snapshot?.guilds.first(where: { $0.id == guildID })
+              let guild = model.serverRailGuildsByID[guildID]
         else {
             return channel
         }

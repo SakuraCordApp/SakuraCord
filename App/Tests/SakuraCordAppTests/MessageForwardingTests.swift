@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import DiscordProtocol
+import Observation
 import SakuraCordModels
 import Testing
 @testable import SakuraCord
@@ -114,7 +115,7 @@ func `forward destination index warms before the menu is presented`() async thro
 }
 
 @MainActor @Test
-func `open forward search observes live user and guild nickname store updates`() {
+func `open forward search observes live user and guild nickname store updates`() async {
     let currentUser = User(
         id: UserID(rawValue: 1),
         username: "current",
@@ -137,7 +138,15 @@ func `open forward search observes live user and guild nickname store updates`()
     )
 
     let initialRevision = model.forwardSearchSourceRevision
+    let snapshotChanges = AsyncStream<Void>.makeStream()
+    withObservationTracking {
+        _ = model.snapshot
+    } onChange: { snapshotChanges.continuation.yield() }
     model.consumeImmediately(.knownUsersChanged([currentUser, observedUser]))
+    snapshotChanges.continuation.finish()
+    var snapshotInvalidations = 0
+    for await _ in snapshotChanges.stream { snapshotInvalidations += 1 }
+    #expect(snapshotInvalidations == 0)
     #expect(model.forwardSearchSourceRevision == initialRevision + 1)
     #expect(model.snapshot?.knownUsers.contains(observedUser) == true)
 
@@ -148,6 +157,17 @@ func `open forward search observes live user and guild nickname store updates`()
     #expect(model.snapshot?.userSearchAliasesByUserID[observedUser.id] == [
         "Guild nickname",
     ])
+
+    let searchChanges = AsyncStream<Void>.makeStream()
+    withObservationTracking {
+        _ = model.messageSearchUsers
+    } onChange: { searchChanges.continuation.yield() }
+    model.consumeImmediately(.messageSearchUsersChanged([observedUser]))
+    searchChanges.continuation.finish()
+    var searchInvalidations = 0
+    for await _ in searchChanges.stream { searchInvalidations += 1 }
+    #expect(searchInvalidations == 1)
+    #expect(model.messageSearchUsers.contains(observedUser))
 }
 
 @Test func `empty forward search follows pinned history then frecency and omits origin`() {

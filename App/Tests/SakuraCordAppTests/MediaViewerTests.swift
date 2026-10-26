@@ -6,6 +6,96 @@ import Testing
 
 @MainActor
 struct MediaViewerTests {
+    @Test func `YouTube playback identifies the app and preserves the video start time`() throws {
+        let source = try #require(URL(string: "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=90&autoplay=0&origin=https://discord.com"))
+        let playback = try #require(YouTubeEmbedPlayback(url: source))
+        let request = playback.playerRequest(appIdentifier: "dev.sakuracord.SakuraCord")
+        let requestURL = try #require(request.url)
+        let query = try #require(URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(requestURL.host() == "www.youtube.com")
+        #expect(requestURL.path == "/embed/dQw4w9WgXcQ")
+        #expect(request.value(forHTTPHeaderField: "Referer") == "https://dev.sakuracord.sakuracord")
+        #expect(query.contains(URLQueryItem(name: "origin", value: "https://dev.sakuracord.sakuracord")))
+        #expect(query.contains(URLQueryItem(name: "autoplay", value: "1")))
+        #expect(query.contains(URLQueryItem(name: "enablejsapi", value: "1")))
+        #expect(query.contains(URLQueryItem(name: "start", value: "90")))
+        #expect(playback.watchURL.absoluteString == "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=90")
+    }
+
+    @Test func `YouTube resume points override link timestamps only within the current session`() throws {
+        let source = try #require(URL(string: "https://www.youtube.com/embed/dQw4w9WgXcQ?start=90"))
+        let sameSource = try #require(URL(string: "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"))
+        let otherSource = try #require(URL(string: "https://www.youtube.com/embed/zY_xW-vU987"))
+        let playback = try #require(YouTubeEmbedPlayback(url: source))
+        let sameVideo = try #require(YouTubeEmbedPlayback(url: sameSource))
+        let otherVideo = try #require(YouTubeEmbedPlayback(url: otherSource))
+        let session = YouTubePlaybackSession()
+        #expect(session.position(for: playback) == 90)
+        session.record(123.75, duration: 600, ended: false, for: playback)
+        #expect(session.position(for: sameVideo) == 123.75)
+        #expect(session.position(for: otherVideo) == 0)
+        #expect(YouTubePlaybackSession().position(for: playback) == 90)
+
+        let request = sameVideo.playerRequest(appIdentifier: "dev.sakuracord.SakuraCord", resumeAt: session.position(for: sameVideo))
+        let requestURL = try #require(request.url)
+        let query = try #require(URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(query.contains(URLQueryItem(name: "start", value: "123")))
+    }
+
+    @Test func `invalid YouTube progress cannot overwrite a resume point and finishing clears it`() throws {
+        let source = try #require(URL(string: "https://www.youtube.com/embed/dQw4w9WgXcQ"))
+        let playback = try #require(YouTubeEmbedPlayback(url: source))
+        let session = YouTubePlaybackSession()
+        session.record(45, duration: 600, ended: false, for: playback)
+        for (seconds, duration) in [(Double.nan, 600.0), (-1, 600), (0, 0), (601, 600), (45, .infinity)] {
+            session.record(seconds, duration: duration, ended: true, for: playback)
+        }
+        #expect(session.position(for: playback) == 45)
+        session.record(600, duration: 600, ended: true, for: playback)
+        #expect(session.position(for: playback) == 0)
+    }
+
+    @Test(arguments: [
+        "http://www.youtube.com/embed/dQw4w9WgXcQ",
+        "https://www.youtube.com.evil.example/embed/dQw4w9WgXcQ",
+        "https://user@www.youtube.com/embed/dQw4w9WgXcQ",
+        "https://www.youtube.com:8443/embed/dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.youtube.com/embed/invalid"
+    ])
+    func `YouTube playback rejects untrusted or nonplayer destinations`(source: String) throws {
+        let url = try #require(URL(string: source))
+        #expect(YouTubeEmbedPlayback(url: url) == nil)
+    }
+
+    @Test func `video embeds keep the poster separate from playback and hosted videos cannot be downloaded`() throws {
+        let playerURL = try #require(URL(string: "https://www.youtube.com/embed/dQw4w9WgXcQ"))
+        let imageURL = try #require(URL(string: "https://cdn.example/poster.jpg"))
+        let proxyURL = try #require(URL(string: "https://images-ext-1.discordapp.net/poster.jpg"))
+        var embed = MessageEmbed(
+            id: "video", title: "Video", type: "video",
+            image: MessageEmbedMedia(url: imageURL, width: 640, height: 360),
+            thumbnail: MessageEmbedMedia(url: imageURL, proxyURL: proxyURL, width: 640, height: 360),
+            video: MessageEmbedMedia(url: playerURL)
+        )
+        let hosted = try #require(RichMediaItem(embed: embed, attachments: []))
+        let playback = try #require(YouTubeEmbedPlayback(url: playerURL))
+        #expect(hosted.kind == .youtube(playback))
+        #expect(hosted.url == playback.watchURL)
+        #expect(hosted.videoPosterURL(maximumPixelDimension: 160) == proxyURL)
+        #expect(hosted.width == 640 && hosted.height == 360)
+        #expect(!hosted.canSave)
+        #expect(!hosted.autoplaysInline)
+
+        let directURL = try #require(URL(string: "https://cdn.example/video.mp4"))
+        embed.video?.url = directURL
+        let direct = try #require(RichMediaItem(embed: embed, attachments: []))
+        #expect(direct.kind == .video)
+        #expect(direct.url == directURL)
+        #expect(direct.videoPosterURL(maximumPixelDimension: 160) == proxyURL)
+        #expect(direct.canSave)
+    }
+
     @Test func `composer images open in the shared media viewer`() throws {
         let firstID = UUID()
         let secondID = UUID()

@@ -215,6 +215,40 @@ struct ProviderRequestContractTests {
         ])
     }
 
+    @Test func `history boundaries count every returned message including undecodable ones`() async throws {
+        RateLimitURLProtocol.reset()
+        // Discord returned a full page of two messages; the second has no
+        // author and cannot be presented. History before it still exists.
+        RateLimitURLProtocol.messageHistoryJSON = #"""
+        [{
+          "id":"351","channel_id":"200",
+          "author":{"id":"4","username":"history-author","global_name":null,"avatar":null},
+          "content":"decodable","timestamp":"2026-07-11T19:01:00.000Z","edited_timestamp":null,
+          "attachments":[],"reactions":[],"mentions":[]
+        }, {"id":"350","channel_id":"200","content":"undecodable"}]
+        """#
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RateLimitURLProtocol.self]
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(),
+            handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration),
+            installationID: "server-issued-installation"
+        )
+        let channelID = ChannelID(rawValue: 200)
+
+        let newest = try await provider.messages(in: channelID, anchoredAt: .newest, limit: 2)
+        let earlier = try await provider.messages(in: channelID, anchoredAt: .before(MessageID(rawValue: 400)), limit: 2)
+        let later = try await provider.messages(in: channelID, anchoredAt: .after(MessageID(rawValue: 300)), limit: 2)
+        let shortPage = try await provider.messages(in: channelID, anchoredAt: .newest, limit: 3)
+
+        #expect(newest.messages.map(\.id) == [MessageID(rawValue: 351)])
+        #expect(newest.hasMoreBefore)
+        #expect(earlier.hasMoreBefore)
+        #expect(later.hasMoreAfter)
+        #expect(!shortPage.hasMoreBefore)
+    }
+
     @Test(arguments: [false, true])
     func `history reports incomplete member hydration when Gateway lookup is unavailable`(isThread: Bool) async throws {
         RateLimitURLProtocol.reset()
@@ -499,11 +533,10 @@ struct ProviderRequestContractTests {
         #expect(RateLimitURLProtocol.ackRequestCount == 3)
         #expect(RateLimitURLProtocol.ackMethod == "POST")
         #expect(RateLimitURLProtocol.ackPath == "/api/v9/channels/200/messages/332/ack")
-        #expect(RateLimitURLProtocol.ackBody?["token"] as? String == "next-token")
+        // Mark Unread's body is exactly Discord's: no token or metadata.
+        #expect(RateLimitURLProtocol.ackBody?.count == 2)
         #expect(RateLimitURLProtocol.ackBody?["manual"] as? Bool == true)
         #expect((RateLimitURLProtocol.ackBody?["mention_count"] as? NSNumber)?.intValue == 4)
-        #expect((RateLimitURLProtocol.ackBody?["flags"] as? NSNumber)?.uint64Value == 3)
-        #expect((RateLimitURLProtocol.ackBody?["last_viewed"] as? NSNumber)?.intValue == 4_222)
 
         RateLimitURLProtocol.ackStatus = 429
         await #expect(throws: ChatProviderError.self) {
@@ -763,6 +796,38 @@ struct ProviderRequestContractTests {
         try await ReactionGatewayScenario().run
     }
 
+    @Test(arguments: [false, true])
+    func `reaction rate limits expose cooldown without replaying the mutation`(reacted: Bool) async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ReactionRateLimitURLProtocol.self]
+        let diagnostics = DiscordAPIDiagnosticStore()
+        let provider = DiscordRESTProvider(
+            credentials: TestCredentialStore(), handle: CredentialHandle(accountID: "1"),
+            session: URLSession(configuration: configuration), installationID: "fixture",
+            apiDiagnostics: diagnostics
+        )
+        let message = Message(
+            id: MessageID(rawValue: 350), channelID: ChannelID(rawValue: 200),
+            author: User(id: UserID(rawValue: 1), username: "tester", displayName: "Tester"),
+            content: "Reaction retry fixture",
+            reactions: reacted ? [] : [Reaction(emoji: "🔥", count: 1, didCurrentUserReact: true)]
+        )
+        await provider.seedMessageForTesting(message)
+        await #expect(throws: ChatProviderError.rateLimited(retryAfter: 0.55, requestID: "fixture")) {
+            try await provider.setReaction(
+                "🔥", reacted: reacted, messageID: message.id, channelID: message.channelID
+            )
+        }
+        let entries = try diagnostics.exportData().split(separator: 0x0A).map {
+            try JSONSerialization.jsonObject(with: Data($0)) as? [String: Any] ?? [:]
+        }
+        let requests = entries.filter { $0["direction"] as? String == "request" }
+        #expect(requests.count == 1)
+        #expect(requests.first?["method"] as? String == (reacted ? "PUT" : "DELETE"))
+        #expect(await provider.cachedMessageForTesting(messageID: message.id) == message)
+        await provider.disconnect()
+    }
+
     @Test func `external forum reaction deltas publish once and change the count once`() async
         throws
     {
@@ -863,4 +928,24 @@ private extension DiscordRESTProvider {
     func setEmojiResponseGate(_ callback: (@Sendable () async -> Void)?) {
         emojiResponseReceivedForTesting = callback
     }
+}
+
+private final class ReactionRateLimitURLProtocol: URLProtocol, @unchecked Sendable {
+    override static func canInit(with request: URLRequest) -> Bool { true }
+
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                  url: url, statusCode: 429, httpVersion: "HTTP/1.1",
+                  headerFields: ["Content-Type": "application/json", "Retry-After": "1", "x-request-id": "fixture"]
+              )
+        else { return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"retry_after":0.3,"global":false}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

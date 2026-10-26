@@ -17,12 +17,6 @@ struct TranslationSettingsSection: View {
                 .settingsControlAnchor(.translationDraftLanguage, state: state)
         } header: {
             Text("Translation", bundle: #bundle)
-        } footer: {
-            Text("""
-            Apple Translation processes text on this Mac. Translating may ask permission to download language models.
-            Apple may collect framework usage and performance metrics, excluding the original and translated text.
-            Nothing is translated merely by enabling this setting.
-            """)
         }
         .task { await languages.refresh() }
     }

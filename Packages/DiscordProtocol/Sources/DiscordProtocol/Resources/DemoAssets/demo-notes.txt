@@ -1,0 +1,6 @@
+SakuraCord offline message showcase
+
+This is a synthetic text attachment bundled with the app.
+It can be previewed or saved without contacting a media host.
+
+Unicode: Hello · こんにちは · مرحبا · 🌸

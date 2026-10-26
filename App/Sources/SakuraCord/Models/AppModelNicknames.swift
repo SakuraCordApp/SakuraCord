@@ -12,11 +12,11 @@ struct NicknameMenuAction {
 extension AppModel {
     /// The private nickname the current account gave this friend.
     func friendNickname(for userID: UserID) -> String? {
-        snapshot?.relationshipNicknamesByUserID[userID]
+        relationshipNicknamesByUserID[userID]
     }
 
     func isFriend(_ userID: UserID) -> Bool {
-        snapshot?.friendUserIDs.contains(userID) == true
+        friendUserIDs.contains(userID)
     }
 
     /// Discord's Change Nickname eligibility for another member: Manage

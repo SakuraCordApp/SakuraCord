@@ -55,6 +55,7 @@ final class VoiceMessageComposerState {
     @ObservationIgnored private var meterTask: Task<Void, Never>?
     @ObservationIgnored private var stopRequestedWhileStarting = false
     @ObservationIgnored private var startGeneration = 0
+    @ObservationIgnored private var timeoutPreservedChannelID: ChannelID?
 
     init(destination: MessageComposerDestination) {
         self.destination = destination
@@ -142,6 +143,30 @@ final class VoiceMessageComposerState {
         reset()
     }
 
+    /// A timeout hides the composer without abandoning its conversation.
+    /// Finish captured audio and retain it until that same composer returns.
+    func preserveForGuildTimeout(in channelID: ChannelID, playback: VoiceMessagePlaybackStore) {
+        guard phase.isActive else { return }
+        if phase == .starting {
+            // No audio exists yet; do not start capture after permission returns.
+            discard(playback: playback)
+            return
+        }
+        if let recording = phase.recording,
+           playback.phase(of: playbackID) == .playing || playback.phase(of: playbackID) == .loading {
+            playback.toggle(playbackID, source: .local(recording.fileURL), duration: recording.duration)
+        }
+        timeoutPreservedChannelID = channelID
+        stop()
+    }
+
+    /// Consume the one-time exception to the composer's appearance cleanup.
+    func restoreAfterGuildTimeout(in channelID: ChannelID?) -> Bool {
+        guard let channelID, timeoutPreservedChannelID == channelID else { return false }
+        timeoutPreservedChannelID = nil
+        return true
+    }
+
     /// Hands the recording to the sender; the file now belongs to the outbox.
     func takeRecording(playback: VoiceMessagePlaybackStore?) -> VoiceMessageRecording? {
         guard let recording = phase.recording else { return nil }
@@ -156,6 +181,7 @@ final class VoiceMessageComposerState {
         meterTask?.cancel()
         meterTask = nil
         startGeneration += 1
+        timeoutPreservedChannelID = nil
         phase = .idle
         canPreview = true
         liveBars = []

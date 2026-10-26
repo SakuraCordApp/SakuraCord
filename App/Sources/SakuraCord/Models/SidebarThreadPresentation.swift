@@ -13,13 +13,17 @@ nonisolated struct SidebarThreadRow: Identifiable, Equatable, Sendable {
 /// Discord's channel list shows a parent's active joined threads only while
 /// they are relevant. The contract lives in docs/protocol/MESSAGING.md.
 nonisolated enum SidebarThreadPolicy {
+    static func listsThreads(under kind: ChannelKindValue) -> Bool {
+        [.text, .announcement, .forum].contains(kind)
+    }
+
     struct Candidate: Sendable {
         let thread: MessageThreadSummary
         let latestMessageID: MessageID?
-        /// Discord's raw `hasUnread`, independent of notification settings.
+        /// Discord's `hasUnread` for a joined thread. Like Discord's thread
+        /// row, it ignores the parent's mute and unread setting; only the
+        /// thread's own mute dims the row.
         let hasUnread: Bool
-        /// The read-state unread presentation used for the row's emphasis.
-        let showsUnread: Bool
         let mentionCount: Int
     }
 
@@ -85,7 +89,7 @@ nonisolated enum SidebarThreadPolicy {
         return visible.map {
             SidebarThreadRow(
                 thread: $0.thread,
-                isUnread: $0.showsUnread,
+                isUnread: $0.hasUnread,
                 mentionCount: $0.mentionCount,
                 isMuted: isMuted($0.thread, now: now)
             )
@@ -100,7 +104,18 @@ extension AppModel {
         now: Date
     ) -> SidebarThreadPolicy.Layout {
         guard let guildID else { return .init() }
-        let joined = (snapshot?.activeJoinedThreads ?? []).filter {
+        let settings = readState.notificationSettings(guildID: guildID)
+        var layout = SidebarThreadPolicy.Layout()
+        if settings?.hideMutedChannels == true {
+            // A timed channel mute can expire without another Gateway event.
+            // Reuse the sidebar's existing explicit refresh schedule.
+            layout.relevanceDeadlines = settings?.channelOverrides.compactMap {
+                guard $0.isMuted, let endTime = $0.muteConfiguration?.endTime,
+                      endTime > now else { return nil }
+                return endTime
+            }.sorted() ?? []
+        }
+        let joined = activeJoinedThreads.filter {
             $0.guildID == guildID && !$0.isArchived
         }
         let open = (isThreadFullWidth ? openThread : nil).flatMap { thread -> MessageThreadSummary? in
@@ -110,21 +125,20 @@ extension AppModel {
                 })
             return guildMatches ? thread : nil
         }
-        guard !joined.isEmpty || open != nil else { return .init() }
+        guard !joined.isEmpty || open != nil else { return layout }
 
         let candidatesByParentID = Dictionary(
-            grouping: joined.map(sidebarThreadCandidate),
-            by: { $0.thread.parentID }
+            grouping: joined,
+            by: \.parentID
         )
-        var layout = SidebarThreadPolicy.Layout()
         for group in channelGroups {
             let isCollapsed = group.categoryID.map {
                 isCategoryCollapsed(guildID: guildID, categoryID: $0)
             } ?? false
             for channel in group.channels {
-                guard [.text, .announcement, .forum].contains(channel.kind),
+                guard SidebarThreadPolicy.listsThreads(under: channel.kind),
                       !hiddenChannelIDs.contains(channel.id) else { continue }
-                let candidates = candidatesByParentID[channel.id] ?? []
+                let candidates = (candidatesByParentID[channel.id] ?? []).map(sidebarThreadCandidate)
                 let openCandidate = open?.parentID == channel.id
                     ? candidates.first { $0.thread.id == open?.id }
                         ?? open.map(sidebarThreadCandidate)
@@ -156,22 +170,21 @@ extension AppModel {
     private func sidebarThreadCandidate(
         _ thread: MessageThreadSummary
     ) -> SidebarThreadPolicy.Candidate {
-        let entry = readState.entries[thread.id]
+        let entry = readState[thread.id]
         let latestMessageID = [entry?.latestKnownMessageID, thread.lastMessageID]
             .compactMap(\.self).max()
         return SidebarThreadPolicy.Candidate(
             thread: thread,
             latestMessageID: latestMessageID,
-            hasUnread: entry?.isUnread ?? false,
-            showsUnread: readState.unread(channelID: thread.id),
+            hasUnread: entry.map { $0.isUnread && readState.countsMentions($0) } ?? false,
             mentionCount: readState.mentions(channelID: thread.id)
         )
     }
 
     func sidebarThread(_ id: ChannelID) -> MessageThreadSummary? {
         if let openThread, openThread.id == id { return openThread }
-        return snapshot?.activeJoinedThreads.first { $0.id == id }
-            ?? snapshot?.threads.first { $0.id == id }
+        return activeJoinedThreads.first { $0.id == id }
+            ?? threads.first { $0.id == id }
     }
 
     func threadNavigationChannel(_ thread: MessageThreadSummary) -> Channel {
@@ -183,22 +196,30 @@ extension AppModel {
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
         onboarding.presentedGuildID = nil
-        startConversationNavigation(to: historyDestination) { model, account in
+        let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
+        if historyDestination == nil, isNavigating(to: target) { return }
+        startConversationNavigation(target: target, to: historyDestination) { model, account in
             let guildID = thread.guildID ?? model.selectedGuildID
             if model.selectedGuildID != guildID {
                 await model.activateGuild(guildID, account: account)
             }
-            guard !Task.isCancelled, model.isCurrentAccountSession(account),
-                  let parentID = thread.parentID,
-                  let parent = model.snapshot?.channels.first(where: { $0.id == parentID }),
-                  model.conversationAccess(for: parent).isReadable else { return }
+            guard !Task.isCancelled, model.isCurrentAccountSession(account) else { return }
+            guard let parentID = thread.parentID,
+                  let parent = model.knownRootChannel(parentID)
+            else {
+                model.errorMessage = "That thread's parent channel has not been discovered yet."
+                return
+            }
+            guard model.conversationAccess(for: parent) != .hidden else {
+                model.errorMessage = "You do not have permission to view that thread."
+                return
+            }
             model.onboarding.presentedGuildID = nil
             if model.selectedChannelID != parentID { model.selectedChannelID = parentID }
             // Establish presentation before loading history so the hidden parent
             // cannot acknowledge messages while the thread occupies the workspace.
             if model.openThread?.id == thread.id {
-                model.isThreadFullWidth = true
-                model.suspendSelectedConversationPresentation()
+                model.presentOpenThreadFullWidth()
             } else {
                 model.openThreadConversation(
                     thread, starter: nil, startedAt: thread.createdAt,

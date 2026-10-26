@@ -117,7 +117,7 @@ extension NativeMessageTimelineCoordinator {
                         for: item, width: width,
                         presentationRevision: preparation.presentationRevision
                     ) ?? NativeTimelineRowLayout.make(
-                        item: item, width: width, model: preparation.parent.model
+                        item: item, width: width, source: preparation.parent.model
                     )
                 }
                 preparation.layouts[item.identifier] = CachedItemLayout(

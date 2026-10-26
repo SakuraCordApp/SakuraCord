@@ -283,7 +283,7 @@ struct SoundboardPickerView: View {
         let ordered = SoundboardPickerContentPolicy.guilds(
             railItems: model.serverRailItems,
             guildsByID: model.serverRailGuildsByID,
-            fallbackGuilds: model.snapshot?.guilds ?? [],
+            fallbackGuilds: model.guildIDs.compactMap { model.serverRailGuildsByID[$0] },
             currentGuildID: model.selectedGuildID
         )
         return PickerSectionGuildOrdering.retainingNonemptyCatalogs(

@@ -15,7 +15,7 @@ dated observations establish why a wire shape was chosen.
 | [Read state and Inbox](protocol/READ_STATE.md) | Acknowledgements, Undo, mentions, events, notifications. |
 | [Guilds and membership](protocol/GUILDS.md) | Invites, onboarding, channel customization, Guide, member discovery. |
 | [Friends and relationships](protocol/RELATIONSHIPS.md) | Relationship records, friend presence, requests, blocking, CAPTCHA replay. |
-| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, widgets, status, protobuf updates, folders and favourites. |
+| [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, closing a 1:1 DM, widgets, status, protobuf updates, folders and favourites. |
 | [Voice and streams](protocol/VOICE.md) | Calls, screen sharing, voice recovery, soundboard. |
 
 Architecture owns [component and persistence boundaries](ARCHITECTURE.md).
@@ -54,6 +54,7 @@ and each topic's contract tests before changing them.
 | --- | --- |
 | Ordinary authenticated read, including read-only DM-search POST | At most two created requests: retry after server `429` cooldown or once on a replacement pool after a confirmed REST stall. |
 | Ordinary authenticated mutation | One attempt; no automatic replay after `429`, timeout or ambiguous result. |
+| Reaction add/remove | One model-owned retry after a definite `429` cooldown, rechecking the latest coalesced intent. No replay after timeout or ambiguous result. See [reactions](protocol/MESSAGING.md#reactions-pins-and-forwarding). |
 | Message creation (ordinary, sticker and poll sends) | Original plus at most four replays after a non-slowmode `429` cooldown, retaining the nonce. Slowmode `429`, timeouts and ambiguous results are not replayed. See [sends](protocol/MESSAGING.md#sends-and-history). |
 | User-initiated status/custom-status save | One additional `429` attempt when the server delay is at most 30 seconds. Automatic pending-status saves do not retry. See [status](protocol/SETTINGS.md#status-and-custom-status). |
 | Command-index readiness | At most three created GETs for the tested `202`/`429` flow. |
@@ -63,13 +64,44 @@ and each topic's contract tests before changing them.
 | Password/MFA | Original plus at most two bounded retries for the documented transient status set above. |
 | Report-service OAuth2 authorization | One ordinary read of the consent details, then one authorizing POST that is never replayed. See [report-service sign-in](protocol/SESSION.md#report-service-sign-in). |
 | Remote-auth ticket exchange | Original plus at most three bounded transient-status retries. |
-| User-completed login, server-join or relationship CAPTCHA | At most one challenged-request replay after human completion; a second challenge terminates the attempt. |
+| User-completed CAPTCHA on an authenticated route | At most one single-attempt replay of the challenged request after human completion; a second challenge terminates the attempt. See [Human CAPTCHA](#human-captcha). |
+| User-completed CAPTCHA at password or QR login | The solved request keeps that flow's budget above: password/MFA at most one further transient-status retry, the remote-auth ticket exchange at most two; a second challenge terminates the attempt. |
 | Full relationship read | At most once per Gateway connection, on the ordinary read budget. |
 | Selected member-list refresh | One deferred attempt after a known opcode-37 cooldown per invalidation; no background retry loop. See [member lists](protocol/GUILDS.md#guild-and-member-lifecycle). |
 
 A later explicit user action is distinct from automatic retry. Message retry
 retains its nonce; operation-specific exceptions must be documented beside their
 contract and linked from this table.
+
+### Human CAPTCHA
+
+Discord can answer any authenticated route with a 400 carrying `captcha_key` and
+a supported `captcha_service`: hCaptcha, reCAPTCHA, reCAPTCHA Enterprise with
+`user_flow` as its action, or Turnstile. Like the official client's global HTTP
+interceptor, the [central transport](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordCaptchaChallenge.swift)
+hands it to the app's one [presentation](../App/Sources/SakuraCord/Models/HumanCaptchaStore.swift);
+concurrent challenges wait their turn instead of stacking. After completion the
+identical request (method, path, query, body and headers, including context) is
+replayed once, with one attempt, adding `X-Captcha-Key` plus the challenge's
+`captcha_rqtoken` and `captcha_session_id` as `X-Captcha-Rqtoken` and
+`X-Captcha-Session-Id`.
+
+A dismissed or failed widget, an empty solution, a second challenge or no open
+window returns the challenged response to the route's own failure handling. A
+route without its own copy reads “Couldn’t complete the security check.”, never
+the raw HTTP status. A change of the request's account, or of the Gateway
+session named by its body's `session_id`, cancels the request rather than
+replaying it. A provider being torn down or replaced presents nothing and
+withdraws any open challenge, so its teardown flushes fail instead. Unknown services fail the route without replay.
+hCaptcha uses its SDK; other services render their vendor's explicit widget in
+an ephemeral discord.com-origin web view that never receives credentials. Password and QR login run before a provider exists, so they share
+the challenge parsing and replay headers but keep the sign-in window's own
+step-based presentation.
+
+[CaptchaReplayContractTests.swift](../Packages/DiscordProtocol/Tests/DiscordProtocolTests/CaptchaReplayContractTests.swift)
+covers an arbitrary route; relationship and join tests cover every service and
+the stale-session cases. No live challenge has been exercised, so live widget
+compatibility for each service remains unverified.
 
 ## Capability gates
 

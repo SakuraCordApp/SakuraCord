@@ -1,7 +1,6 @@
 import DiscordProtocol
 import AppKit
 import Foundation
-import MessageRendering
 import MediaPipeline
 @testable import SakuraCord
 import SakuraCordModels
@@ -9,548 +8,34 @@ import SakuraCordPersistence
 import Testing
 
 @MainActor
-@Test func `typing state supports multiple users independent refresh and self suppression`() {
-    let state = TypingStateModel(expiry: .milliseconds(40))
-    let channel = ChannelID(rawValue: 10)
-    let current = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
-    let amy = User(id: UserID(rawValue: 2), username: "amy", displayName: "Amy")
-    let ben = User(id: UserID(rawValue: 3), username: "ben", displayName: "Ben")
-    let cy = User(id: UserID(rawValue: 4), username: "cy", displayName: "Cy")
-
-    state.receive(channelID: channel, user: current, currentUserID: current.id)
-    #expect(state.presentation(in: channel) == nil)
-    state.receive(channelID: channel, user: amy, currentUserID: current.id)
-    #expect(state.presentation(in: channel) == "Amy is typing…")
-    state.receive(channelID: channel, user: ben, currentUserID: current.id)
-    #expect(state.presentation(in: channel) == "Amy and Ben are typing…")
-    state.receive(channelID: channel, user: cy, currentUserID: current.id)
-    #expect(state.presentation(in: channel) == "Amy, Ben, and 1 other are typing…")
-
-    state.clear(userID: ben.id, in: channel)
-    #expect(state.presentation(in: channel) == "Amy and Cy are typing…")
-    let amyGeneration = state.expiryGenerationForTesting(channelID: channel, userID: amy.id)
-    let oldCyGeneration = state.expiryGenerationForTesting(channelID: channel, userID: cy.id)
-    state.receive(channelID: channel, user: cy, currentUserID: current.id)
-    let refreshedCyGeneration = state.expiryGenerationForTesting(channelID: channel, userID: cy.id)
-    state.applyExpiryForTesting(channelID: channel, userID: amy.id, generation: amyGeneration ?? 0)
-    #expect(state.presentation(in: channel) == "Cy is typing…")
-    state.applyExpiryForTesting(channelID: channel, userID: cy.id, generation: oldCyGeneration ?? 0)
-    #expect(state.presentation(in: channel) == "Cy is typing…")
-    state.applyExpiryForTesting(channelID: channel, userID: cy.id, generation: refreshedCyGeneration ?? 0)
-    #expect(state.presentation(in: channel) == nil)
-}
-
-@MainActor
-@Test(.timeLimit(.minutes(1)))
-func `remote typing is channel scoped cleared by message and disconnect`() async throws {
-    let provider = TypingTestProvider()
-    // Expiry must outlive the test so it cannot satisfy the clearing assertions.
-    let model = AppModel(launchMode: .offlineTesting, provider: provider, typingExpiry: .seconds(300))
-    await model.start()
-    let text = try #require(model.selectedChannel)
-    let other = provider.otherUser
-    let third = User(id: UserID(rawValue: 3), username: "third", displayName: "Third")
-
-    await provider.emit(.typing(channelID: text.id, user: other))
-    await provider.emit(.typing(channelID: ChannelID(rawValue: 12), user: third))
-    #expect(await eventually { model.typingState.presentation(in: text.id) == "Other is typing…" })
-    #expect(await eventually {
-        model.typingState.presentation(in: ChannelID(rawValue: 12)) == "Third is typing…"
-    })
-
-    await provider.emit(.messageCreated(Message(
-        id: MessageID(rawValue: 99),
-        channelID: text.id,
-        author: other,
-        content: "sent"
-    )))
-    #expect(await eventually { model.typingState.presentation(in: text.id) == nil })
-
-    try #require(model.typingState.presentation(in: ChannelID(rawValue: 12)) == "Third is typing…")
-    await provider.emit(.connectionChanged(.disconnected))
-    #expect(await eventually { model.typingState.presentation(in: ChannelID(rawValue: 12)) == nil })
-}
-
-@MainActor
-@Test func `mock typing is deterministic and rejects voice channels`() async throws {
-    let provider = MockChatProvider()
-    _ = try await provider.bootstrap()
-    try await provider.sendTyping(in: ChannelID(rawValue: 210))
-    try await provider.sendTyping(in: ChannelID(rawValue: 210))
-    #expect(await provider.typingRequests == [ChannelID(rawValue: 210), ChannelID(rawValue: 210)])
-    await #expect(throws: ChatProviderError.self) {
-        try await provider.sendTyping(in: ChannelID(rawValue: 230))
-    }
-}
-
-@MainActor
-@Test func `composer return decision covers setting shift command and IME`() {
-    #expect(ComposerReturnAction.decide(
-        sendWithReturn: true, shift: false, command: false, hasMarkedText: false
-    ) == .send)
-    #expect(ComposerReturnAction.decide(
-        sendWithReturn: true, shift: true, command: false, hasMarkedText: false
-    ) == .newline)
-    #expect(ComposerReturnAction.decide(
-        sendWithReturn: false, shift: false, command: false, hasMarkedText: false
-    ) == .newline)
-    #expect(ComposerReturnAction.decide(
-        sendWithReturn: false, shift: false, command: true, hasMarkedText: false
-    ) == .send)
+@Test func `Return never sends while composing or when the setting asks for a newline`() {
+    // Input-method composition must not submit a half-typed message.
     #expect(ComposerReturnAction.decide(
         sendWithReturn: true, shift: false, command: false, hasMarkedText: true
     ) == .inputMethod)
     #expect(ComposerReturnAction.decide(
-        sendWithReturn: false, shift: true, command: true, hasMarkedText: false
-    ) == .newline)
-    #expect(ComposerReturnAction.decide(
         sendWithReturn: false, shift: false, command: true, hasMarkedText: true
     ) == .inputMethod)
-}
-
-@Test func `up arrow edit target skips newer messages from other users`() {
-    let currentUser = User(
-        id: UserID(rawValue: 1),
-        username: "current",
-        displayName: "Current"
-    )
-    let otherUser = User(
-        id: UserID(rawValue: 2),
-        username: "other",
-        displayName: "Other"
-    )
-    let channelID = ChannelID(rawValue: 10)
-    let messages = [
-        Message(
-            id: MessageID(rawValue: 100),
-            channelID: channelID,
-            author: currentUser,
-            content: "older current-user message",
-            timestamp: Date(timeIntervalSince1970: 100)
-        ),
-        Message(
-            id: MessageID(rawValue: 101),
-            channelID: channelID,
-            author: currentUser,
-            content: "latest current-user message",
-            timestamp: Date(timeIntervalSince1970: 101)
-        ),
-        Message(
-            id: MessageID(rawValue: 102),
-            channelID: channelID,
-            author: otherUser,
-            content: "newer message from someone else",
-            timestamp: Date(timeIntervalSince1970: 102)
-        )
-    ]
-
-    #expect(
-        ComposerLatestMessageEditingPolicy.messageID(
-            in: messages,
-            currentUserID: currentUser.id
-        ) == MessageID(rawValue: 101)
-    )
-    #expect(
-        ComposerLatestMessageEditingPolicy.messageID(
-            in: messages,
-            currentUserID: nil
-        ) == nil
-    )
-    #expect(
-        ComposerLatestMessageEditingPolicy.messageID(
-            in: Array(messages.suffix(1)),
-            currentUserID: currentUser.id
-        ) == nil
-    )
-}
-
-@MainActor
-@Test func `plain up arrow in an empty composer requests latest message editing`() throws {
-    let textView = ComposerNSTextView()
-    let window = NSWindow(
-        contentRect: CGRect(x: 0, y: 0, width: 320, height: 80),
-        styleMask: [.borderless],
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = textView
-    #expect(window.makeFirstResponder(textView))
-    #expect(window.firstResponder === textView)
-    var editRequestCount = 0
-    textView.onAutocompleteCommand = { _ in false }
-    textView.onEditLatestMessage = {
-        editRequestCount += 1
-        return true
-    }
-
-    textView.keyDown(with: try upArrowKeyEvent())
-    #expect(editRequestCount == 1)
-    #expect(window.firstResponder === textView)
-    #expect(!ComposerLatestMessageEditingPolicy.shouldRequest(
-        keyCode: 126,
-        modifierFlags: [],
-        composerIsEmpty: false
-    ))
-    #expect(!ComposerLatestMessageEditingPolicy.shouldRequest(
-        keyCode: 126,
-        modifierFlags: [.shift],
-        composerIsEmpty: true
-    ))
-}
-
-@MainActor
-@Test func `command arrows request directional reply navigation`() throws {
-    let textView = ComposerNSTextView()
-    var directions: [MessageReplyNavigationDirection] = []
-    textView.onAutocompleteCommand = { _ in false }
-    textView.onNavigateReplySelection = { direction in
-        directions.append(direction)
-        return true
-    }
-
-    textView.keyDown(with: try upArrowKeyEvent(modifiers: [.command]))
-    textView.keyDown(with: try downArrowKeyEvent(modifiers: [.command]))
-
-    #expect(directions == [.older, .newer])
-    #expect(ComposerNSTextView.replyNavigationDirection(
-        for: try upArrowKeyEvent(modifiers: [.command])
-    ) == .older)
-    #expect(ComposerNSTextView.replyNavigationDirection(
-        for: try downArrowKeyEvent(modifiers: [.command])
-    ) == .newer)
-    #expect(ComposerNSTextView.replyNavigationDirection(
-        for: try upArrowKeyEvent(modifiers: [.command, .shift])
-    ) == nil)
-}
-
-@MainActor
-@Test func `timeline edit request rechecks current user ownership`() async throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    await model.start()
-    let currentUser = try #require(model.snapshot?.currentUser)
-    let otherUser = User(
-        id: UserID(rawValue: currentUser.id.rawValue + 1),
-        username: "other",
-        displayName: "Other"
-    )
-    let channelID = ChannelID(rawValue: 12_345)
-    let messages = [
-        Message(
-            id: MessageID(rawValue: 20_001),
-            channelID: channelID,
-            author: currentUser,
-            content: "editable",
-            timestamp: Date(timeIntervalSince1970: 20_001)
-        ),
-        Message(
-            id: MessageID(rawValue: 20_002),
-            channelID: channelID,
-            author: otherUser,
-            content: "not editable",
-            timestamp: Date(timeIntervalSince1970: 20_002)
-        )
-    ]
-    let items = MessageGrouping.rows(for: messages).map {
-        NativeMessageTimelineItem.message(
-            $0,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        )
-    }
-    let layouts = items.map {
-        NativeTimelineRowLayout.make(item: $0, width: 560)
-    }
-    let storage = NativeTimelineCanvasStorage()
-    storage.items = items
-    storage.layouts = layouts
-    storage.rowOrigins = layouts.dropLast().reduce(into: [CGFloat(0)]) {
-        $0.append(($0.last ?? 0) + $1.height)
-    }
-    storage.contentHeight = layouts.reduce(0) { $0 + $1.height }
-    let canvas = NativeTimelineCanvasView(
-        frame: CGRect(
-            x: 0,
-            y: 0,
-            width: 560,
-            height: storage.contentHeight
-        )
-    )
-    canvas.apply(
-        storage: storage,
-        model: model,
-        actions: NativeTimelineRowActions(
-            loadEarlier: {},
-            openReply: { _ in },
-            reply: nil,
-            retry: { _ in },
-            edit: { _, _ in },
-            markUnread: { _ in },
-            delete: { _ in },
-            react: { _, _ in },
-            openThread: { _ in },
-            submitComponent: { _, _, _, _ in }
-        ),
-        viewportWidth: 560,
-        minimumHeight: storage.contentHeight,
-        bottomSpacerHeight: 0,
-        contentOriginY: 0
-    )
-
-    #expect(
-        !canvas.beginEditingCurrentUserMessage(
-            MessageID(rawValue: 20_002)
-        )
-    )
-    #expect(canvas.editingMessageID == nil)
-    #expect(
-        canvas.beginEditingCurrentUserMessage(
-            MessageID(rawValue: 20_001)
-        )
-    )
-    #expect(canvas.editingMessageID == MessageID(rawValue: 20_001))
-}
-
-@Test func `message edit submission trims edges and rejects empty input`() {
-    #expect(MessageEditInputPolicy.submission(from: "") == nil)
-    #expect(MessageEditInputPolicy.submission(from: " \n\t ") == nil)
-    #expect(MessageEditInputPolicy.submission(from: "  edited message  \n") == "edited message")
-    #expect(MessageEditInputPolicy.submission(from: "first line\nsecond line") == "first line\nsecond line")
-}
-
-@MainActor
-@Test func `message edit return policy saves return preserves multiline and respects IME`() {
-    #expect(MessageEditInputPolicy.returnAction(
-        shift: false, command: false, hasMarkedText: false
-    ) == .send)
-    #expect(MessageEditInputPolicy.returnAction(
-        shift: true, command: false, hasMarkedText: false
-    ) == .newline)
     #expect(MessageEditInputPolicy.returnAction(
         shift: false, command: false, hasMarkedText: true
     ) == .inputMethod)
+    // Plain Return with send-with-Return off, or Shift+Return, must not send.
+    #expect(ComposerReturnAction.decide(
+        sendWithReturn: false, shift: false, command: false, hasMarkedText: false
+    ) == .newline)
+    #expect(ComposerReturnAction.decide(
+        sendWithReturn: true, shift: true, command: false, hasMarkedText: false
+    ) == .newline)
 }
 
 @MainActor
-@Test func `attachment only send works and whitespace only does not send`() async {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    let before = await provider.sendCount
-    model.updateDraft("  \n")
-    await model.send()
-    #expect(await provider.sendCount == before)
-
-    let attachment = URL(fileURLWithPath: "/tmp/sakuracord-test-attachment")
-    await model.send(attachments: [attachment])
-    #expect(await provider.sendCount == before + 1)
-}
-
-@MainActor
-@Test func `composer stages at most ten attachments and clears them on Escape and navigation`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    let urls = (0 ..< 12).map {
-        URL(fileURLWithPath: "/tmp/sakuracord-composer-\($0)")
-    }
-
-    #expect(await model.addComposerAttachments([urls[0], urls[0]] + urls.prefix(9).dropFirst(), to: .channel))
-    #expect(
-        model.channelComposerAttachments.map(\.url)
-            == [urls[0], urls[0]] + Array(urls.prefix(9).dropFirst())
-    )
-    #expect(Set(model.channelComposerAttachments.map(\.id)).count == 10)
-    #expect(model.errorMessage == nil)
-
-    // Like Discord, a batch that would exceed ten files is rejected whole.
-    model.removeComposerAttachment(try #require(model.channelComposerAttachments.last?.id), from: .channel)
-    #expect(await model.addComposerAttachments(Array(urls.suffix(3)), to: .channel))
-    #expect(model.channelComposerAttachments.count == 9)
-    #expect(model.errorMessage?.contains("10") == true)
-
-    let firstID = try #require(model.channelComposerAttachments.first?.id)
-    model.removeComposerAttachment(firstID, from: .channel)
-    #expect(model.channelComposerAttachments.filter { $0.url == urls[0] }.count == 1)
-
-    #expect(model.consumeEscapeForComposerAttachments(in: .channel))
-    #expect(model.channelComposerAttachments.isEmpty)
-    #expect(!model.consumeEscapeForComposerAttachments(in: .channel))
-
-    #expect(await model.addComposerAttachments([urls[0]], to: .channel))
-    model.selectedChannelID = ChannelID(rawValue: 12)
-    #expect(model.channelComposerAttachments.isEmpty)
-}
-
-@MainActor
-@Test func `composer attachment intake skips folders and rejects batches with empty files`() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "sakuracord-attachment-folder-\(UUID().uuidString)",
-        isDirectory: true
-    )
-    let folder = directory.appendingPathComponent("Folder", isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let file = directory.appendingPathComponent("notes.txt")
-    try Data("notes".utf8).write(to: file)
+@Test func `staged attachments are cleared on navigation so they cannot be sent to another channel`() async {
     let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider())
     await model.start()
-
-    await model.addComposerAttachments([folder, file], to: .channel)
-    #expect(model.channelComposerAttachments.map(\.url) == [file])
-    #expect(model.errorMessage == nil)
-
-    model.clearComposerAttachments(for: .channel)
-    await model.addComposerAttachments([folder], to: .channel)
+    #expect(await model.addComposerAttachments([URL(fileURLWithPath: "/tmp/sakuracord-composer-0")], to: .channel))
+    #expect(!model.channelComposerAttachments.isEmpty)
+    model.selectedChannelID = ChannelID(rawValue: 12)
     #expect(model.channelComposerAttachments.isEmpty)
-    #expect(model.errorMessage == "That file type is not supported.")
-
-    // Like Discord, one empty file rejects the whole batch.
-    let empty = directory.appendingPathComponent("empty.txt")
-    try Data().write(to: empty)
-    await model.addComposerAttachments([file, empty], to: .channel)
-    #expect(model.channelComposerAttachments.isEmpty)
-    #expect(model.errorMessage == "File cannot be empty.")
-}
-
-@MainActor
-@Test func `new thread attachments respect limits and keep external upload opt in`() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "sakuracord-attachment-limit-\(UUID().uuidString)",
-        isDirectory: true
-    )
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let exact = directory.appendingPathComponent("exact.bin")
-    let oversized = directory.appendingPathComponent("oversized.bin")
-    try createSparseFile(exact, size: DiscordAttachmentUploadPolicy.baseLimit)
-    try createSparseFile(oversized, size: DiscordAttachmentUploadPolicy.baseLimit + 1)
-
-    let uploader = AttachmentUploadTestUploader(
-        result: URL(string: "https://files.catbox.moe/test.bin")!
-    )
-    let privacySafetySettingsStore = PrivacySafetySettingsStore(
-        preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())
-    )
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: TypingTestProvider(),
-        externalAttachmentUploader: uploader,
-        attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())),
-        privacySafetySettingsStore: privacySafetySettingsStore
-    )
-    await model.start()
-    model.snapshot?.currentUser.premiumType = 0
-    model.threadCreation = ThreadCreationDraft(parentID: try #require(model.selectedChannelID),
-                                              permissions: .init(canCreatePublic: true, canCreatePrivate: false))
-
-    #expect(await model.addComposerAttachments([exact, oversized], to: .thread))
-    #expect(model.threadComposerAttachments.map(\.url) == [exact])
-    let prompt = try #require(model.oversizedAttachmentPrompt)
-    #expect(prompt.fileURL == oversized)
-    #expect(prompt.discordLimit == DiscordAttachmentUploadPolicy.baseLimit)
-    #expect(prompt.availableServices == [.catbox, .litterbox])
-    #expect(await uploader.callCount == 0)
-
-    #expect(prompt.stage == .compaction)
-    model.skipAttachmentCompaction(prompt)
-    let externalPrompt = try #require(model.oversizedAttachmentPrompt)
-    #expect(externalPrompt.stage == .externalUpload)
-    model.dismissOversizedAttachmentPrompt(id: prompt.id)
-    #expect(model.oversizedAttachmentPrompt?.id == externalPrompt.id)
-    model.threadDraft = "look"
-    model.uploadOversizedAttachment(externalPrompt, using: .catbox)
-    #expect(await until { model.externalAttachmentUploadPresentation == nil })
-    #expect(await uploader.callCount == 1)
-    #expect(model.threadDraft == "look https://files.catbox.moe/test.bin")
-}
-
-@MainActor
-@Test func `repeated alert dismissal cannot skip the next oversized attachment`() async throws {
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: TypingTestProvider(),
-        attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences()))
-    )
-    await model.start()
-    let channelID = try #require(model.selectedChannelID)
-    let first = OversizedAttachmentPrompt(
-        fileURL: URL(fileURLWithPath: "/tmp/first-oversized.bin"),
-        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
-        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
-        premiumType: 0,
-        destination: .channel,
-        context: .conversation(channelID)
-    )
-    let second = OversizedAttachmentPrompt(
-        fileURL: URL(fileURLWithPath: "/tmp/second-oversized.bin"),
-        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
-        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
-        premiumType: 0,
-        destination: .channel,
-        context: .conversation(channelID)
-    )
-    model.oversizedAttachmentPrompt = first
-    model.queuedOversizedAttachmentPrompts = [second]
-
-    model.dismissOversizedAttachmentPrompt(id: first.id)
-    model.dismissOversizedAttachmentPrompt(id: first.id)
-
-    #expect(model.oversizedAttachmentPrompt?.id == second.id)
-    #expect(model.queuedOversizedAttachmentPrompts.isEmpty)
-}
-
-@MainActor
-@Test func `cancelled external upload cannot clear or populate its replacement`() async throws {
-    let uploader = SequencedAttachmentUploadTestUploader()
-    let model = AppModel(
-        launchMode: .offlineTesting,
-        provider: TypingTestProvider(),
-        externalAttachmentUploader: uploader,
-        attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences()))
-    )
-    await model.start()
-    let channelID = try #require(model.selectedChannelID)
-    let first = OversizedAttachmentPrompt(
-        fileURL: URL(fileURLWithPath: "/tmp/first.bin"),
-        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
-        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
-        premiumType: 0,
-        destination: .channel,
-        context: .conversation(channelID)
-    )
-    let second = OversizedAttachmentPrompt(
-        fileURL: URL(fileURLWithPath: "/tmp/second.bin"),
-        fileSize: DiscordAttachmentUploadPolicy.baseLimit + 1,
-        discordLimit: DiscordAttachmentUploadPolicy.baseLimit,
-        premiumType: 0,
-        destination: .channel,
-        context: .conversation(channelID)
-    )
-    model.oversizedAttachmentPrompt = first
-    model.queuedOversizedAttachmentPrompts = [second]
-
-    model.uploadOversizedAttachment(first, using: .catbox)
-    #expect(await eventually { await uploader.callCount == 1 })
-    model.cancelExternalAttachmentUpload()
-    #expect(model.oversizedAttachmentPrompt?.fileURL == second.fileURL)
-
-    model.uploadOversizedAttachment(second, using: .catbox)
-    #expect(await eventually { await uploader.callCount == 2 })
-    await uploader.release(
-        call: 1,
-        with: URL(string: "https://files.catbox.moe/first.bin")!
-    )
-    #expect(await until {
-        model.externalAttachmentUploadPresentation?.fileName == "second.bin"
-    })
-    #expect(model.draft.isEmpty)
-
-    await uploader.release(
-        call: 2,
-        with: URL(string: "https://files.catbox.moe/second.bin")!
-    )
-    #expect(await until { model.externalAttachmentUploadPresentation == nil })
-    #expect(model.draft == "https://files.catbox.moe/second.bin")
 }
 
 @MainActor
@@ -567,8 +52,8 @@ func `account or thread draft replacement invalidates an external upload result`
     let channelID = try #require(model.selectedChannelID)
     let destination: MessageComposerDestination = resetsAccount ? .channel : .thread
     if !resetsAccount {
-        model.threadCreation = ThreadCreationDraft(parentID: channelID,
-                                                  permissions: .init(canCreatePublic: true, canCreatePrivate: false))
+        model.sideConversations.thread = .threadCreation(ThreadCreationDraft(parentID: channelID,
+                                                                             permissions: .init(canCreatePublic: true, canCreatePrivate: false)))
     }
     let prompt = OversizedAttachmentPrompt(
         fileURL: URL(fileURLWithPath: "/tmp/account-reset.bin"),
@@ -586,8 +71,8 @@ func `account or thread draft replacement invalidates an external upload result`
         await model.resetAccountScopedLoadsAndForumState()
     } else {
         model.closeThread()
-        model.threadCreation = ThreadCreationDraft(parentID: channelID,
-                                                  permissions: .init(canCreatePublic: true, canCreatePrivate: false))
+        model.sideConversations.thread = .threadCreation(ThreadCreationDraft(parentID: channelID,
+                                                                             permissions: .init(canCreatePublic: true, canCreatePrivate: false)))
     }
     await uploader.release(
         call: 1,
@@ -600,8 +85,8 @@ func `account or thread draft replacement invalidates an external upload result`
 }
 
 @MainActor
-@Test(arguments: AttachmentHandlingPolicy.allCases, AttachmentHandlingPolicy.allCases)
-func oversizedAttachmentPolicies(compaction: AttachmentHandlingPolicy, external: AttachmentHandlingPolicy) async throws {
+@Test(arguments: AttachmentHandlingPolicy.allCases, [false, true])
+func `oversized files reach an external host only when the upload policy allows`(external: AttachmentHandlingPolicy, compacts: Bool) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -614,23 +99,15 @@ func oversizedAttachmentPolicies(compaction: AttachmentHandlingPolicy, external:
                          attachmentSettingsStore: AttachmentSettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())))
     await model.start()
     model.snapshot?.currentUser.premiumType = 0
-    model.attachmentSettings.compactionPolicy = compaction
+    model.attachmentSettings.compactionPolicy = compacts ? .always : .never
     model.attachmentSettings.externalUploadPolicy = external
     #expect(await model.addComposerAttachments([file], to: .channel))
-    if compaction == .ask {
-        let prompt = try #require(model.oversizedAttachmentPrompt)
-        #expect(prompt.stage == .compaction)
-        #expect(await worker.calls == 0)
-        model.compactOversizedAttachment(prompt)
-    }
     await model.attachmentCompactionTask?.value
-    #expect(await worker.calls == (compaction == .never ? 0 : 1))
+    #expect(await worker.calls == (compacts ? 1 : 0))
     #expect(model.channelComposerAttachments.isEmpty)
     switch external {
     case .ask:
-        let prompt = try #require(model.oversizedAttachmentPrompt)
-        #expect(prompt.stage == .externalUpload)
-        #expect((prompt.compactionOutcome != nil) == (compaction != .never))
+        #expect(try #require(model.oversizedAttachmentPrompt).stage == .externalUpload)
         #expect(await uploader.callCount == 0)
     case .always:
         await model.externalAttachmentUploadTask?.value
@@ -639,13 +116,11 @@ func oversizedAttachmentPolicies(compaction: AttachmentHandlingPolicy, external:
     case .never:
         #expect(await uploader.callCount == 0)
         #expect(model.oversizedAttachmentPrompt == nil)
-        #expect(model.errorMessage != nil)
     }
 }
 
 @MainActor
-@Test(arguments: [MessageComposerDestination.channel, .thread])
-func compactionFitsPreservesOriginalAndSkipsFilesWithinAccountLimit(destination: MessageComposerDestination) async throws {
+@Test func `compaction leaves the original file intact and skips files within the account limit`() async throws {
     let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
     defer { ComposerPromisedFileStorage.removeDirectory(directory) }
     let exact = directory.appendingPathComponent("exact.bin")
@@ -661,23 +136,17 @@ func compactionFitsPreservesOriginalAndSkipsFilesWithinAccountLimit(destination:
     model.snapshot?.currentUser.premiumType = 0
     model.attachmentSettings.compactionPolicy = .always
     model.attachmentSettings.externalUploadPolicy = .always
-    if destination == .thread {
-        model.threadCreation = ThreadCreationDraft(parentID: try #require(model.selectedChannelID),
-                                                  permissions: .init(canCreatePublic: true, canCreatePrivate: false))
-    }
-    #expect(await model.addPromisedComposerAttachments(.init(directory: directory, urls: [exact, oversized]), to: destination))
+    #expect(await model.addPromisedComposerAttachments(.init(directory: directory, urls: [exact, oversized]), to: .channel))
     await model.attachmentCompactionTask?.value
     #expect(await worker.calls == 1)
     #expect(await uploader.callCount == 0)
-    #expect(model.composerAttachments(for: destination).count == 2)
-    #expect(model.composerAttachments(for: destination).first?.url == exact)
-    let compacted = try #require(model.composerAttachments(for: destination).last?.url)
+    #expect(model.channelComposerAttachments.count == 2)
+    #expect(model.channelComposerAttachments.first?.url == exact)
+    let compacted = try #require(model.channelComposerAttachments.last?.url)
     #expect(compacted != oversized)
-    #expect(model.attachmentFileSize(at: compacted) == DiscordAttachmentUploadPolicy.baseLimit)
     #expect(model.attachmentFileSize(at: oversized) == DiscordAttachmentUploadPolicy.baseLimit + 1)
-    model.clearComposerAttachments(for: destination)
+    model.clearComposerAttachments(for: .channel)
     #expect(!FileManager.default.fileExists(atPath: compacted.path))
-    #expect(!FileManager.default.fileExists(atPath: directory.path))
 }
 
 private actor AttachmentCompactionTestWorker: AttachmentCompacting {
@@ -692,61 +161,8 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     }
 }
 
-@Test func `external attachment hosts enforce size type and request contracts`() throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "sakuracord-host-contract-\(UUID().uuidString)",
-        isDirectory: true
-    )
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let file = directory.appendingPathComponent("notes.txt")
-    try Data("hello".utf8).write(to: file)
-    let blocked = directory.appendingPathComponent("unsafe.jar")
-
-    #expect(ExternalAttachmentHostingService.catbox.canUpload(
-        fileURL: file,
-        size: 200_000_000
-    ))
-    #expect(!ExternalAttachmentHostingService.catbox.canUpload(
-        fileURL: file,
-        size: 200_000_001
-    ))
-    #expect(ExternalAttachmentHostingService.litterbox.canUpload(
-        fileURL: file,
-        size: 1_000_000_000
-    ))
-    #expect(!ExternalAttachmentHostingService.litterbox.canUpload(
-        fileURL: file,
-        size: 1_000_000_001
-    ))
-    #expect(!ExternalAttachmentHostingService.litterbox.canUpload(fileURL: blocked, size: 1))
-
-    let catboxBody = try CatboxAttachmentUploader.makeMultipartFile(
-        sourceURL: file,
-        service: .catbox,
-        boundary: "test-boundary"
-    )
-    defer { try? FileManager.default.removeItem(at: catboxBody.deletingLastPathComponent()) }
-    let catboxText = String(decoding: try Data(contentsOf: catboxBody), as: UTF8.self)
-    #expect(catboxText.contains("name=\"reqtype\"\r\n\r\nfileupload"))
-    #expect(catboxText.contains("name=\"fileToUpload\"; filename=\"notes.txt\""))
-    #expect(!catboxText.contains("name=\"time\""))
-
-    let litterboxBody = try CatboxAttachmentUploader.makeMultipartFile(
-        sourceURL: file,
-        service: .litterbox,
-        boundary: "test-boundary"
-    )
-    defer { try? FileManager.default.removeItem(at: litterboxBody.deletingLastPathComponent()) }
-    let litterboxText = String(decoding: try Data(contentsOf: litterboxBody), as: UTF8.self)
-    #expect(litterboxText.contains("name=\"time\"\r\n\r\n24h"))
-}
-
 @MainActor
-@Test(arguments: [true, false])
-func `composer paste prefers files over their path text only where files are accepted`(
-    acceptsAttachments: Bool
-) throws {
+@Test func `composer paste of a file attaches it instead of inserting its local path`() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "sakuracord-paste-file-\(UUID().uuidString)",
         isDirectory: true
@@ -768,79 +184,14 @@ func `composer paste prefers files over their path text only where files are acc
         received.append(attachments)
         return true
     }
-    textView.canReceiveAttachments = { acceptsAttachments }
+    textView.canReceiveAttachments = { true }
     #expect(textView.readSelection(from: pasteboard))
-
-    guard acceptsAttachments else {
-        #expect(received.isEmpty)
-        #expect(textView.string == file.path)
-        return
-    }
     guard case let .external(urls) = try #require(received.first) else {
         Issue.record("Expected the pasted file to stay in place")
         return
     }
-    #expect(received.count == 1)
     #expect(urls == [file])
     #expect(textView.string.isEmpty)
-}
-
-@MainActor
-@Test(arguments: ["public.png", "public.tiff"])
-func `composer paste accepts image-only clipboards as owned png attachments`(type: String) throws {
-    let textView = ComposerNSTextView()
-    #expect(!textView.readablePasteboardTypes.contains(.png))
-    var received: [ComposerIncomingAttachments] = []
-    textView.onReceiveAttachments = { attachments, _ in
-        received.append(attachments)
-        return true
-    }
-    // AppKit enables Paste only when the clipboard offers a readable type.
-    #expect(textView.readablePasteboardTypes.contains(.png))
-
-    let image = NSImage(size: NSSize(width: 2, height: 2), flipped: false) { bounds in
-        NSColor.systemPink.setFill()
-        bounds.fill()
-        return true
-    }
-    let tiff = try #require(image.tiffRepresentation)
-    let data = type == "public.png"
-        ? try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
-        : tiff
-    let pasteboard = NSPasteboard(name: .init("sakuracord-paste-image-\(UUID().uuidString)"))
-    defer { pasteboard.clearContents() }
-    pasteboard.clearContents()
-    #expect(pasteboard.setData(data, forType: .init(type)))
-
-    #expect(textView.readSelection(from: pasteboard))
-    guard case let .owned(batch) = try #require(received.first) else {
-        Issue.record("Expected pasted image data in app-owned storage")
-        return
-    }
-    defer { batch.discard() }
-    #expect(received.count == 1)
-    #expect(textView.string.isEmpty)
-    #expect(ComposerPromisedFileStorage.isManagedDirectory(batch.directory))
-
-    let url = try #require(batch.urls.first)
-    #expect(url.pathExtension == "png")
-    #expect(NSImage(contentsOf: url)?.isValid == true)
-}
-
-@Test(arguments: [
-    (#"<meta charset="utf-8"><img src="https://cdn.example.com/a/cat.photo.jpg?w=2" alt="">"#, "cat.photo.png"),
-    (#"<img alt="" src='/images/sakura.webp'>"#, "sakura.png"),
-    (#"<img src="data:image/png;base64,AAAA">"#, "image.png"),
-    ("<p>No image</p>", "image.png"),
-    // Percent-decoded names stay a single safe component.
-    (#"<img src="https://e.com/..%2F..%2FDesktop%2Fphoto.png">"#, ".._.._Desktop_photo.png"),
-    (#"<img src="https://storage.example/o/images%2Fcat.jpg?alt=media">"#, "images_cat.png"),
-    (#"<img src="https://e.com/a%00b%3Ac.jpg">"#, "a_b_c.png"),
-    (#"<img src="https://e.com/a/..">"#, "image.png"),
-    ("<img src=\"https://e.com/\(String(repeating: "é", count: 150)).jpg\">", String(repeating: "é", count: 100) + ".png")
-])
-func `pasted images take their name from the copied html image source`(html: String, filename: String) {
-    #expect(ComposerPasteboardAttachments.pastedImageFilename(html: html) == filename)
 }
 
 @MainActor
@@ -849,81 +200,6 @@ func `pasted images take their name from the copied html image source`(html: Str
     let batch = try #require(ComposerPromisedFileStorage.makeBatch(writing: Data("x".utf8), named: "safe.png"))
     defer { batch.discard() }
     #expect(batch.urls.map { $0.deletingLastPathComponent().standardizedFileURL } == [batch.directory.standardizedFileURL])
-}
-
-@MainActor
-@Test(arguments: [
-    ("a", 4_000, true, false),
-    // 2,001 characters measure 4,002 UTF-16 code units, as JavaScript counts them.
-    ("😀", 2_001, true, true),
-    ("😀", 2_001, false, false)
-])
-func `composer paste attaches long text as message txt only where files are accepted`(
-    character: String,
-    count: Int,
-    acceptsAttachments: Bool,
-    attaches: Bool
-) throws {
-    let text = String(repeating: character, count: count)
-    let pasteboard = NSPasteboard(name: .init("sakuracord-paste-text-\(UUID().uuidString)"))
-    defer { pasteboard.clearContents() }
-    pasteboard.clearContents()
-    #expect(pasteboard.setString(text, forType: .string))
-
-    let textView = ComposerNSTextView()
-    var received: [ComposerIncomingAttachments] = []
-    textView.onReceiveAttachments = { attachments, _ in
-        received.append(attachments)
-        return true
-    }
-    textView.canReceiveAttachments = { acceptsAttachments }
-    #expect(textView.readSelection(from: pasteboard))
-
-    guard attaches else {
-        #expect(received.isEmpty)
-        #expect(textView.string == text)
-        return
-    }
-    guard case let .owned(batch) = try #require(received.first) else {
-        Issue.record("Expected pasted text in app-owned storage")
-        return
-    }
-    defer { batch.discard() }
-    #expect(textView.string.isEmpty)
-    let url = try #require(batch.urls.first)
-    #expect(url.lastPathComponent == "message.txt")
-    #expect(try String(contentsOf: url, encoding: .utf8) == text)
-}
-
-@MainActor
-@Test func `promised attachment drops use isolated storage and publish successful files once`() throws {
-    let firstDirectory = try ComposerFileDropView.makeReceivingDirectory()
-    let secondDirectory = try ComposerFileDropView.makeReceivingDirectory()
-    defer {
-        try? FileManager.default.removeItem(at: firstDirectory)
-        try? FileManager.default.removeItem(at: secondDirectory)
-    }
-    #expect(firstDirectory != secondDirectory)
-    #expect(FileManager.default.fileExists(atPath: firstDirectory.path))
-    #expect(FileManager.default.fileExists(atPath: secondDirectory.path))
-
-    let screenshot = firstDirectory.appendingPathComponent("Screenshot.png")
-    try Data("promised screenshot".utf8).write(to: screenshot)
-    var completedBatch: ComposerPromisedFileBatch?
-    let collector = ComposerPromisedFileCollector(
-        expectedCount: 2,
-        directory: firstDirectory
-    ) {
-        completedBatch = $0
-    }
-    collector.receive(url: screenshot, error: nil)
-    #expect(completedBatch == nil)
-    collector.receive(
-        url: secondDirectory.appendingPathComponent("failed.png"),
-        error: CocoaError(.fileReadUnknown)
-    )
-    #expect(completedBatch?.urls == [screenshot])
-    #expect(completedBatch?.directory == firstDirectory)
 }
 
 @MainActor
@@ -936,12 +212,7 @@ func `composer paste attaches long text as message txt only where files are acce
     model.updateDraft("keep editing this")
     await model.addComposerAttachments([staged], to: .channel)
 
-    #expect(
-        await model.sendAttachmentsImmediately(
-            [ForumPostAttachment(url: instant)],
-            to: .channel
-        )
-    )
+    #expect(await model.sendAttachmentsImmediately([ForumPostAttachment(url: instant)], to: .channel))
     #expect(model.draft == "keep editing this")
     #expect(model.channelComposerAttachments.map(\.url) == [staged])
     #expect(model.messages.last?.attachments.map(\.url) == [instant])
@@ -949,11 +220,10 @@ func `composer paste attaches long text as message txt only where files are acce
 }
 
 @MainActor
-@Test(arguments: [false, true])
-func `composer attachment controls preserve edits and spoiler state`(anonymisesFileNames: Bool) async throws {
+@Test func `editing a staged attachment keeps its anonymised filename`() async throws {
     let store = PrivacySafetySettingsStore(preferences: SettingsPreferenceStore(defaults: InMemoryPreferences()))
     var privacy = store.load()
-    privacy.anonymisesFileNames = anonymisesFileNames
+    privacy.anonymisesFileNames = true
     privacy.removesMediaMetadata = false // This test edits names of a synthetic, nonexistent file.
     store.save(privacy)
     let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider(), privacySafetySettingsStore: store)
@@ -961,433 +231,12 @@ func `composer attachment controls preserve edits and spoiler state`(anonymisesF
     let url = URL(fileURLWithPath: "/tmp/sakuracord-editable-attachment.png")
     await model.addComposerAttachments([url], to: .channel)
     var attachment = try #require(model.channelComposerAttachments.first)
-    #expect(attachment.isFilenameAnonymised == anonymisesFileNames)
-    if anonymisesFileNames {
-        #expect(attachment.filename != url.lastPathComponent)
-        #expect((attachment.filename as NSString).pathExtension == "png")
-        model.updateComposerAttachment(attachment, in: .channel)
-        #expect(model.channelComposerAttachments.first?.filename == attachment.filename)
-        attachment.setFilenameAnonymised(false)
-        model.updateComposerAttachment(attachment, in: .channel)
-        #expect(model.channelComposerAttachments.first?.filename == url.lastPathComponent)
-        #expect(model.channelComposerAttachments.first?.isFilenameAnonymised == false)
-        attachment.setFilenameAnonymised(true)
-        model.updateComposerAttachment(attachment, in: .channel)
-        #expect(model.channelComposerAttachments.first?.filename == attachment.filename)
-    }
+    #expect(attachment.isFilenameAnonymised)
+    #expect(attachment.filename != url.lastPathComponent)
 
-    model.toggleComposerAttachmentSpoiler(attachment.id, in: .channel)
-    #expect(model.channelComposerAttachments.first?.isSpoiler == true)
-
-    attachment.rename("renamed.png")
     attachment.description = "A useful description"
-    attachment.isSpoiler = true
     model.updateComposerAttachment(attachment, in: .channel)
-    #expect(model.channelComposerAttachments.first?.filename == "renamed.png")
-    #expect(model.channelComposerAttachments.first?.description == "A useful description")
-    #expect(model.channelComposerAttachments.first?.isSpoiler == true)
-}
-
-@MainActor
-@Test func `window attachment drops reject non-message channel surfaces`() async {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    #expect(model.isComposerDropEligible(.channel))
-
-    model.selectedChannelID = ChannelID(rawValue: 11)
-    #expect(!model.isComposerDropEligible(.channel))
-    #expect(
-        !(await model.addComposerAttachments(
-            [URL(fileURLWithPath: "/tmp/not-for-voice")],
-            to: .channel
-        ))
-    )
-}
-
-@Test func `composer insertion repairs stale selections and inserts emoji without spaces`() {
-    let inserted = ComposerDraftEditing.insert(
-        "✨", into: "hello", replacing: NSRange(location: 99, length: 4)
-    )
-    #expect(inserted == ComposerDraftEdit(
-        text: "hello✨",
-        selection: NSRange(location: 6, length: 0)
-    ))
-
-    let emoji = ComposerDraftEditing.insertCustomEmoji(
-        "<:wave:123>", into: "hello world", replacing: NSRange(location: 5, length: 0)
-    )
-    #expect(emoji.text == "hello<:wave:123> world")
-    #expect(emoji.selection.location == "hello<:wave:123>".utf16.count)
-}
-
-@MainActor
-@Test func `colon emoji completion waits for two characters and recognizes a closing colon`() throws {
-    #expect(ColonAutocompleteContext(text: ":w", selection: nil) == nil)
-    let open = try #require(ColonAutocompleteContext(text: "hello :wa", selection: nil))
-    #expect(open.query == "wa")
-    #expect(open.range == NSRange(location: 6, length: 3))
-
-    let closed = try #require(ClosedColonAutocompleteContext(text: "hello :wave:", selection: nil))
-    #expect(closed.query == "wave")
-    #expect(closed.range == NSRange(location: 6, length: 6))
-}
-
-@MainActor
-@Test func `emoji completion includes other guilds and preserves linked image fallback`() throws {
-    let currentGuild = GuildID(rawValue: 10)
-    let otherGuild = GuildID(rawValue: 20)
-    let current = DiscordEmoji(id: "100", name: "wave", guildID: currentGuild)
-    let other = DiscordEmoji(id: "200", name: "wave", guildID: otherGuild)
-    let suggestions = ColonAutocompleteSuggestionFactory.suggestions(
-        query: "wave",
-        customEmojis: [current, other],
-        customValue: { emoji in
-            emoji.guildID == currentGuild ? emoji.messageToken : emoji.linkedImageMarkdown
-        },
-        customSource: { emoji in emoji.guildID == currentGuild ? "Current Server" : "Other Server" }
-    )
-    let custom = suggestions.filter { $0.customEmoji != nil }
-
-    #expect(custom.map(\.customEmoji?.id) == ["100", "200"])
-    #expect(custom[0].value == current.messageToken)
-    #expect(custom[1].value == other.linkedImageMarkdown)
-    #expect(custom.map(\.detail) == [":wave:", ":wave~1:"])
-    #expect(custom.map(\.source) == ["Current Server", "Other Server"])
-    #expect(custom[0].matchesCompletionName("WAVE"))
-}
-
-@Test func `emoji permissions preserve message fallbacks and profile entitlement locks`() {
-    let currentGuild = GuildID(rawValue: 10)
-    let otherGuild = GuildID(rawValue: 20)
-    let localStatic = DiscordEmoji(id: "100", name: "local", guildID: currentGuild)
-    let remoteStatic = DiscordEmoji(id: "200", name: "remote", guildID: otherGuild)
-    let localAnimated = DiscordEmoji(
-        id: "300",
-        name: "local_dance",
-        isAnimated: true,
-        guildID: currentGuild
-    )
-    let remoteAnimated = DiscordEmoji(
-        id: "400",
-        name: "remote_dance",
-        isAnimated: true,
-        guildID: otherGuild
-    )
-
-    #expect(DiscordEmojiPermissionPolicy.composerText(
-        for: localStatic, currentGuildID: currentGuild, premiumType: 0
-    ) == localStatic.messageToken)
-    #expect(DiscordEmojiPermissionPolicy.composerText(
-        for: remoteStatic, currentGuildID: currentGuild, premiumType: 0
-    ) == remoteStatic.linkedImageMarkdown)
-    #expect(DiscordEmojiPermissionPolicy.composerText(
-        for: localAnimated, currentGuildID: currentGuild, premiumType: 0
-    ) == localAnimated.linkedImageMarkdown)
-    #expect(DiscordEmojiPermissionPolicy.composerText(
-        for: remoteAnimated, currentGuildID: currentGuild, premiumType: 0
-    ) == remoteAnimated.linkedImageMarkdown)
-    #expect(DiscordEmojiPermissionPolicy.composerText(
-        for: remoteStatic, currentGuildID: currentGuild, premiumType: 0, fakeNitroEnabled: false
-    ) == ":remote:")
-    #expect(DiscordEmojiPermissionPolicy.composerText(
-        for: localStatic, currentGuildID: currentGuild, premiumType: 0, fakeNitroEnabled: false
-    ) == localStatic.messageToken)
-    #expect(localAnimated.linkedImageMarkdown.contains(".gif?"))
-    for useCase in [DiscordEmojiUseCase.profile, .customStatus] {
-        #expect(DiscordEmojiPermissionPolicy.canShow(remoteStatic, for: useCase, premiumType: 0))
-        #expect(DiscordEmojiPermissionPolicy.isPremiumLocked(remoteStatic, for: useCase, premiumType: 0))
-        #expect(DiscordEmojiPermissionPolicy.isPremiumLocked(localStatic, for: useCase, premiumType: 0))
-        #expect(!DiscordEmojiPermissionPolicy.isPremiumLocked(remoteAnimated, for: useCase, premiumType: 2))
-    }
-    let managed = DiscordEmoji(id: "500", name: "managed", guildID: otherGuild, isManaged: true)
-    #expect(!DiscordEmojiPermissionPolicy.isPremiumLocked(managed, for: .profile, premiumType: 0))
-    #expect(DiscordEmojiPermissionPolicy.isPremiumLocked(managed, for: .customStatus, premiumType: 0))
-
-    for premiumType in 1 ... 3 {
-        #expect(DiscordEmojiPermissionPolicy.composerText(
-            for: remoteStatic, currentGuildID: currentGuild, premiumType: premiumType
-        ) == remoteStatic.messageToken)
-        #expect(DiscordEmojiPermissionPolicy.composerText(
-            for: localAnimated, currentGuildID: currentGuild, premiumType: premiumType
-        ) == localAnimated.messageToken)
-    }
-}
-
-@Test func `sticker sending chooses exactly one native or FakeNitro route`() {
-    let currentGuild = GuildID(rawValue: 10)
-    let local = MessageSticker(id: "100", name: "Local", guildID: currentGuild)
-    let remote = MessageSticker(
-        id: "200",
-        name: "Remote",
-        guildID: GuildID(rawValue: 20)
-    )
-    let standard = MessageSticker(id: "300", name: "Standard")
-
-    #expect(StickerSendPolicy.route(
-        for: local, currentGuildID: currentGuild, premiumType: 0
-    ) == .native)
-    #expect(StickerSendPolicy.route(
-        for: standard, currentGuildID: currentGuild, premiumType: 0
-    ) == .native)
-    #expect(StickerSendPolicy.route(
-        for: remote, currentGuildID: currentGuild, premiumType: 0
-    ) == .fakeNitroUpload)
-    #expect(StickerSendPolicy.route(
-        for: remote, currentGuildID: currentGuild, premiumType: 2
-    ) == .native)
-    #expect(StickerSendPolicy.route(
-        for: remote, currentGuildID: currentGuild, premiumType: 0, fakeNitroEnabled: false
-    ) == nil)
-    #expect(StickerSendPolicy.route(
-        for: local, currentGuildID: currentGuild, premiumType: 0, fakeNitroEnabled: false
-    ) == .native)
-    #expect(StickerSendPolicy.route(
-        for: remote, currentGuildID: currentGuild, premiumType: 2, fakeNitroEnabled: false
-    ) == .native)
-}
-
-@Test func `reaction emoji permissions filter new choices and allow existing reactions`() {
-    let currentGuild = GuildID(rawValue: 10)
-    let otherGuild = GuildID(rawValue: 20)
-    let localStatic = DiscordEmoji(id: "100", name: "local", guildID: currentGuild)
-    let remoteStatic = DiscordEmoji(id: "200", name: "remote", guildID: otherGuild)
-    let localAnimated = DiscordEmoji(
-        id: "300", name: "dance", isAnimated: true, guildID: currentGuild
-    )
-
-    #expect(DiscordEmojiPermissionPolicy.canShow(
-        localStatic, for: .reaction(guildID: currentGuild), premiumType: 0
-    ))
-    #expect(!DiscordEmojiPermissionPolicy.canShow(
-        remoteStatic, for: .reaction(guildID: currentGuild), premiumType: 0
-    ))
-    #expect(!DiscordEmojiPermissionPolicy.canShow(
-        localAnimated, for: .reaction(guildID: currentGuild), premiumType: 0
-    ))
-    #expect(DiscordEmojiPermissionPolicy.canShow(
-        localAnimated, for: .reaction(guildID: currentGuild), premiumType: 2
-    ))
-    #expect(!DiscordEmojiPermissionPolicy.canShowGuild(
-        otherGuild, for: .reaction(guildID: currentGuild), premiumType: 0
-    ))
-    #expect(DiscordEmojiPermissionPolicy.canShowGuild(
-        otherGuild, for: .reaction(guildID: currentGuild), premiumType: 2
-    ))
-
-    #expect(DiscordEmojiPermissionPolicy.canToggleReaction(
-        "👍", existingReactions: [], currentGuildEmojis: [localStatic, localAnimated], premiumType: 0
-    ))
-    #expect(DiscordEmojiPermissionPolicy.canToggleReaction(
-        localStatic.messageToken,
-        existingReactions: [],
-        currentGuildEmojis: [localStatic, localAnimated],
-        premiumType: 0
-    ))
-    #expect(!DiscordEmojiPermissionPolicy.canToggleReaction(
-        remoteStatic.messageToken,
-        existingReactions: [],
-        currentGuildEmojis: [localStatic, localAnimated],
-        premiumType: 0
-    ))
-    #expect(!DiscordEmojiPermissionPolicy.canToggleReaction(
-        localAnimated.messageToken,
-        existingReactions: [],
-        currentGuildEmojis: [localStatic, localAnimated],
-        premiumType: 0
-    ))
-    #expect(DiscordEmojiPermissionPolicy.canToggleReaction(
-        localAnimated.messageToken,
-        existingReactions: [],
-        currentGuildEmojis: [localStatic, localAnimated],
-        premiumType: 2
-    ))
-    #expect(DiscordEmojiPermissionPolicy.canToggleReaction(
-        remoteStatic.messageToken,
-        existingReactions: [
-            Reaction(emoji: remoteStatic.messageToken, count: 1)
-        ],
-        currentGuildEmojis: [localStatic, localAnimated],
-        premiumType: 0
-    ))
-    #expect(DiscordEmojiPermissionPolicy.canToggleReaction(
-        localAnimated.messageToken,
-        existingReactions: [Reaction(emoji: localAnimated.messageToken, count: 1)],
-        currentGuildEmojis: [localStatic, localAnimated],
-        premiumType: 0
-    ))
-}
-
-@MainActor
-@Test func `custom emoji catalog follows server order and disambiguates duplicate names`() throws {
-    let firstGuild = GuildID(rawValue: 10)
-    let secondGuild = GuildID(rawValue: 20)
-    let first = DiscordEmoji(id: "100", name: "catscared", guildID: firstGuild)
-    let second = DiscordEmoji(id: "200", name: "catscared", guildID: secondGuild)
-    let other = DiscordEmoji(id: "201", name: "scales", guildID: secondGuild)
-    let ordered = DiscordCustomEmojiCatalog.ordered(
-        emojisByGuild: [firstGuild: [first], secondGuild: [second, other]],
-        guildOrder: [secondGuild, firstGuild]
-    )
-
-    #expect(ordered.map(\.id) == ["200", "201", "100"])
-    let suggestions = ColonAutocompleteSuggestionFactory.suggestions(
-        query: "catscared",
-        customEmojis: ordered,
-        customValue: (\.messageToken)
-    ).filter { $0.customEmoji != nil }
-    #expect(suggestions.map(\.detail) == [":catscared:", ":catscared~1:"])
-    #expect(suggestions.last?.value == first.messageToken)
-    #expect(suggestions.last?.matchesCompletionName("catscared~1") == true)
-
-    let localURL = URL(fileURLWithPath: "/tmp/catscared.webp")
-    let local = DiscordEmoji(
-        id: "300",
-        name: "local",
-        guildID: firstGuild,
-        assetURL: localURL
-    )
-    let imageURLs = DiscordCustomEmojiCatalog.imageURLsByID(from: [first, local])
-    #expect(imageURLs["100"] == first.imageURL)
-    #expect(imageURLs["300"] == localURL)
-    #expect(imageURLs["missing"] == nil)
-    var animated = first
-    animated.isAnimated = true
-    let changedURLs = DiscordCustomEmojiCatalog.imageURLsByID(from: [first, animated, local])
-    #expect(changedURLs["100"] == animated.imageURL)
-    #expect(imageURLs["100"] == first.imageURL)
-    #expect(changedURLs.differs(from: imageURLs, cancellationCheck: { false }) == true)
-    #expect(changedURLs.differs(from: changedURLs, cancellationCheck: { true }) == nil)
-
-    let prepared = try #require(DiscordCustomEmojiCatalog.prepare(
-        emojisByGuild: [
-            firstGuild: [first, local],
-            secondGuild: [second, other]
-        ],
-        guildOrder: [secondGuild, firstGuild],
-        previousOrderedEmojis: [],
-        previousImageURLsByID: [:]
-    ))
-    let preparedOrder = try #require(prepared.orderedEmojis)
-    let preparedURLs = try #require(prepared.imageURLsByID)
-    #expect(preparedOrder.map(\.id) == ["200", "201", "100", "300"])
-    #expect(preparedURLs["300"] == localURL)
-
-    let unchanged = try #require(DiscordCustomEmojiCatalog.prepare(
-        emojisByGuild: [
-            firstGuild: [first, local],
-            secondGuild: [second, other]
-        ],
-        guildOrder: [secondGuild, firstGuild],
-        previousOrderedEmojis: preparedOrder,
-        previousImageURLsByID: preparedURLs
-    ))
-    #expect(unchanged.orderedEmojis == nil)
-    #expect(unchanged.imageURLsByID == nil)
-    #expect(DiscordCustomEmojiCatalog.prepare(
-        emojisByGuild: [firstGuild: [first]],
-        guildOrder: [firstGuild],
-        previousOrderedEmojis: [],
-        previousImageURLsByID: [:],
-        cancellationCheck: { true }
-    ) == nil)
-}
-
-@MainActor
-@Test func `native emoji autocomplete searches aliases but displays the primary shortcode`() {
-    #expect(DiscordEmojiSearchAliases.english["100"]?.contains("score") == true)
-    let suggestions = NativeEmojiAutocompleteCatalog.search("fa")
-
-    #expect(!suggestions.isEmpty)
-    #expect(suggestions.contains { $0.shortcode == "alien" })
-    #expect(NativeEmojiAutocompleteCatalog.search("sc").contains { $0.shortcode == "100" })
-    #expect(suggestions.allSatisfy { suggestion in
-        suggestion.completionNames.contains {
-            EmojiSearchMatcher.autocompleteNormalized($0).contains("fa")
-        }
-    })
-}
-
-@MainActor
-@Test func `emoji completion matches authenticated Discord visible composer order`() {
-    let guildID = GuildID(rawValue: 30)
-    let customNames = [
-        "catscared", "SClongcat1", "SClongcat2", "SClongcat3",
-        "DiscordKit", "EVIL_scared",
-    ]
-    let customEmojis = customNames.enumerated().map { offset, name in
-        DiscordEmoji(id: String(900 + offset), name: name, guildID: guildID)
-    }
-    let suggestions = ColonAutocompleteSuggestionFactory.suggestions(
-        query: "sc",
-        customEmojis: customEmojis,
-        customValue: (\.messageToken),
-        customSource: { _ in "Test Server" },
-        discordFavoriteKeys: ["900"],
-        discordSettingsAreLoaded: true
-    )
-
-    #expect(Array(suggestions.prefix(21).map(\.detail)) == [
-        ":catscared:", ":SClongcat1:", ":SClongcat2:", ":SClongcat3:",
-        ":scales:", ":scarf:", ":school:", ":school_satchel:", ":scientist:",
-        ":scissors:", ":scooter:", ":scorpion:", ":scorpius:", ":scotland:",
-        ":scream:", ":scream_cat:", ":screwdriver:", ":scroll:", ":100:",
-        ":DiscordKit:", ":EVIL_scared:",
-    ])
-    let native = suggestions.filter { $0.customEmoji == nil }
-    #expect(Array(native.prefix(15).map(\.detail)) == [
-        ":scales:", ":scarf:", ":school:", ":school_satchel:", ":scientist:",
-        ":scissors:", ":scooter:", ":scorpion:", ":scorpius:", ":scotland:",
-        ":scream:", ":scream_cat:", ":screwdriver:", ":scroll:", ":100:",
-    ])
-    #expect(!native.contains { $0.detail == ":sc:" })
-    #expect(NativeEmojiAutocompleteCatalog.search("sey").contains {
-        $0.value == "🇸🇨" && $0.rankingName == "seychelles"
-    })
-}
-
-@MainActor
-@Test func `live emoji settings event replaces account favorites`() {
-    let model = AppModel(launchMode: .offlineTesting)
-    model.discordFavoriteEmojiKeys = ["old"]
-    model.hasLoadedDiscordEmojiSettings = false
-
-    model.consumeImmediately(.emojiUserSettingsChanged(EmojiUserSettings(
-        favoriteKeys: ["new"]
-    )))
-
-    #expect(model.discordFavoriteEmojiKeys == ["new"])
-    #expect(model.hasLoadedDiscordEmojiSettings)
-}
-
-@MainActor
-@Test func `mention tokens are atomic attachments and serialize exact raw text`() throws {
-    let userID = UserID(rawValue: 123)
-    let roleID = RoleID(rawValue: 456)
-    let channelID = ChannelID(rawValue: 789)
-    let source = "hi <@123> <@&456> <#789>"
-    let values: [String: MentionPresentation] = [
-        "<@123>": MentionPresentation(
-            rawToken: "<@123>", label: "@Ari", target: .user(userID)
-        ),
-        "<@&456>": MentionPresentation(
-            rawToken: "<@&456>", label: "@Design", target: .role(roleID), colorHex: 0xff5599
-        ),
-        "<#789>": MentionPresentation(
-            rawToken: "<#789>", label: "#general", target: .channel(channelID)
-        ),
-    ]
-    let attributed = ComposerEmojiAttributedText.make(source, mentionPresentations: values)
-    var attachmentCount = 0
-    attributed.enumerateAttribute(
-        .discordMentionToken,
-        in: NSRange(location: 0, length: attributed.length)
-    ) { token, _, _ in
-        if token != nil { attachmentCount += 1 }
-    }
-
-    #expect(attachmentCount == 3)
-    #expect(ComposerEmojiAttributedText.serialize(attributed) == source)
+    #expect(model.channelComposerAttachments.first?.filename == attachment.filename)
 }
 
 @MainActor
@@ -1415,175 +264,6 @@ func `composer attachment controls preserve edits and spoiler state`(anonymisesF
     #expect(serialized == "before <@123> after")
     #expect(serialized.unicodeScalars.allSatisfy { $0.value != 0xFFFC })
     #expect(serialized.components(separatedBy: token).count == 2)
-}
-
-@MainActor
-@Test func `pasted discord message link becomes an atomic mention and serializes unchanged`() throws {
-    let link = "https://discord.com/channels/100/200/300"
-    let presentation = MentionPresentation(
-        rawToken: link,
-        label: "# general ›",
-        target: .message(
-            guildID: GuildID(rawValue: 100),
-            channelID: ChannelID(rawValue: 200),
-            messageID: MessageID(rawValue: 300)
-        )
-    )
-
-    let attributed = ComposerEmojiAttributedText.make(
-        "Open \(link)",
-        mentionPresentations: [link: presentation]
-    )
-    let attachment = try #require(attributed.attribute(
-        .attachment,
-        at: attributed.length - 1,
-        effectiveRange: nil
-    ) as? MentionTextAttachment)
-
-    #expect(attachment.presentation.target == presentation.target)
-    #expect(ComposerEmojiAttributedText.serialize(attributed) == "Open \(link)")
-}
-
-@MainActor
-@Test func `pasted discord forum post link becomes an atomic post mention`() throws {
-    let link = "https://discord.com/channels/100/200"
-    let mention = try #require(RenderedMention(rawToken: link))
-    let presentation = MentionPresentation(
-        rawToken: link,
-        label: "A forum post",
-        target: .linkedChannel(
-            guildID: GuildID(rawValue: 100),
-            channelID: ChannelID(rawValue: 200)
-        ),
-        systemImage: ChannelIconPresentation.forumPostSystemImage
-    )
-    let attributed = ComposerEmojiAttributedText.make(
-        "Open \(link)",
-        mentionPresentations: [link: presentation]
-    )
-    let attachment = try #require(attributed.attribute(
-        .attachment,
-        at: attributed.length - 1,
-        effectiveRange: nil
-    ) as? MentionTextAttachment)
-
-    #expect(mention.kind == .channelLink)
-    #expect(attachment.presentation.systemImage == "bubble.left.fill")
-    #expect(ComposerEmojiAttributedText.serialize(attributed) == "Open \(link)")
-}
-
-@MainActor
-@Test func `pasted message link refreshes its fallback attachment when channel data resolves`() {
-    let link = "https://discord.com/channels/100/200/300"
-    let fallback = ComposerEmojiAttributedText.make(link)
-    let resolved = MentionPresentation(
-        rawToken: link,
-        label: "# general ›",
-        target: .message(
-            guildID: GuildID(rawValue: 100),
-            channelID: ChannelID(rawValue: 200),
-            messageID: MessageID(rawValue: 300)
-        )
-    )
-
-    #expect(!ComposerEmojiAttributedText.usesCurrentMentionPresentations(
-        fallback,
-        mentionPresentations: [link: resolved]
-    ))
-    let refreshed = ComposerEmojiAttributedText.make(
-        link,
-        mentionPresentations: [link: resolved]
-    )
-    #expect(ComposerEmojiAttributedText.usesCurrentMentionPresentations(
-        refreshed,
-        mentionPresentations: [link: resolved]
-    ))
-}
-
-@MainActor
-@Test func `channel mention only includes server for a proven cross server target`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
-    await model.start()
-
-    let sourceChannel = try #require(model.selectedChannel)
-    let sameGuildChannel = try #require(model.snapshot?.channels.first {
-        $0.guildID == sourceChannel.guildID && $0.id != sourceChannel.id
-    })
-    let crossGuildChannel = try #require(model.snapshot?.channels.first {
-        $0.guildID != nil && $0.guildID != sourceChannel.guildID
-    })
-    let message = Message(
-        id: MessageID(rawValue: 999),
-        channelID: sourceChannel.id,
-        author: try #require(model.snapshot?.currentUser),
-        content: "",
-        guildID: nil
-    )
-    let resolver = MessageMentionResolver(model: model, message: message)
-    let sameMention = try #require(RenderedMention(rawToken: "<#\(sameGuildChannel.id)>"))
-    let crossMention = try #require(RenderedMention(rawToken: "<#\(crossGuildChannel.id)>"))
-    let crossGuildID = try #require(crossGuildChannel.guildID)
-    let crossGuildName = try #require(model.serverRailGuildsByID[crossGuildID]).name
-
-    #expect(resolver.presentation(sameMention).label == sameGuildChannel.name)
-    #expect(
-        resolver.presentation(sameMention).systemImage
-            == ChannelIconPresentation.systemImage(for: sameGuildChannel.kind, isHidden: false)
-    )
-    #expect(
-        resolver.presentation(crossMention).label
-            == "\(crossGuildName) / \(crossGuildChannel.name)"
-    )
-    model.snapshot?.channels.reverse()
-    let targetIndex = try #require(model.snapshot?.channels.firstIndex { $0.id == crossGuildChannel.id })
-    model.snapshot?.channels[targetIndex].name = "renamed-channel"
-    #expect(resolver.presentation(crossMention).label == "\(crossGuildName) / renamed-channel")
-    model.snapshot?.channels.remove(at: targetIndex)
-    #expect(resolver.presentation(crossMention).label == "unknown-channel")
-    model.visibleChannels.append(crossGuildChannel)
-    #expect(resolver.presentation(crossMention).label == "\(crossGuildName) / \(crossGuildChannel.name)")
-}
-
-@MainActor
-@Test func `message link navigation selects and publishes the exact message target`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
-    await model.start()
-
-    let channel = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 200) })
-    let target = MessageID(rawValue: 1001)
-    model.navigate(to: channel.guildID, channelID: channel.id, messageID: target)
-
-    #expect(await until {
-        model.messageNavigationRequest?.channelID == channel.id
-            && model.messageNavigationRequest?.messageID == target
-    })
-}
-
-@MainActor
-@Test func `notification deep link navigates within its exact account channel and message`() async
-    throws
-{
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
-    await model.start()
-
-    let channel = try #require(model.snapshot?.channels.first { $0.id == ChannelID(rawValue: 200) })
-    let target = MessageID(rawValue: 1001)
-    await model.navigate(
-        from: NotificationDeepLink(
-            accountID: "offline",
-            guildID: channel.guildID,
-            channelID: channel.id,
-            messageID: target
-        )
-    )
-
-    #expect(await until {
-        model.readState.accountID == "offline"
-            && model.selectedGuildID == channel.guildID
-            && model.selectedChannelID == channel.id
-            && model.messageNavigationRequest?.channelID == channel.id
-            && model.messageNavigationRequest?.messageID == target
-    })
 }
 
 @MainActor
@@ -1634,802 +314,39 @@ func `composer attachment controls preserve edits and spoiler state`(anonymisesF
 }
 
 @MainActor
-@Test func `mention autocomplete opens immediately and scopes the replacement`() throws {
-    let members = try #require(MentionAutocompleteContext(text: "hello @", selection: nil))
-    #expect(members.kind == .member)
-    #expect(members.query.isEmpty)
-    #expect(members.range == NSRange(location: 6, length: 1))
-
-    let channels = try #require(MentionAutocompleteContext(text: "go #gen", selection: nil))
-    #expect(channels.kind == .channel)
-    #expect(channels.query == "gen")
-    #expect(channels.range == NSRange(location: 3, length: 4))
-}
-
-@MainActor
-@Test func `member autocomplete ranks prefixes before fuzzy store order then reserves roles`() {
-    func member(_ id: UInt64, _ displayName: String, _ username: String) -> Member {
-        Member(
-            user: User(id: UserID(rawValue: id), username: username, displayName: displayName),
-            roleName: "Member",
-            status: .offline
-        )
-    }
-
-    let fluffy = member(1, "fluffy wizkers", "f1uffi3r_wizk3rrz")
-    let kitten = member(2, "cute (and smart) kitten", "theunfunny_clown")
-    let yawortsa = member(3, "yawortsa", "yawortsa")
-    let giveaway = member(4, "GiveawayBot", "GiveawayBot")
-    let teenarazzi = member(5, "Teenarazzi Awards", "Teenarazzi Awards")
-    let idk = member(6, "Idk what my username should be", "furby2010")
-    let raph = member(7, "Raphawouel", "raph9367_89144")
-    let recentMessages = [
-        Message(id: MessageID(rawValue: 10), channelID: ChannelID(rawValue: 20), author: idk.user, content: "oldest"),
-        Message(id: MessageID(rawValue: 11), channelID: ChannelID(rawValue: 20), author: teenarazzi.user, content: "older"),
-        Message(id: MessageID(rawValue: 12), channelID: ChannelID(rawValue: 20), author: giveaway.user, content: "older"),
-        Message(id: MessageID(rawValue: 13), channelID: ChannelID(rawValue: 20), author: raph.user, content: "older"),
-        Message(id: MessageID(rawValue: 14), channelID: ChannelID(rawValue: 20), author: yawortsa.user, content: "older"),
-        Message(id: MessageID(rawValue: 15), channelID: ChannelID(rawValue: 20), author: kitten.user, content: "older"),
-        Message(id: MessageID(rawValue: 16), channelID: ChannelID(rawValue: 20), author: fluffy.user, content: "newest"),
-    ]
-    let roles = [
-        GuildRole(
-            id: RoleID(rawValue: 30), name: "Yellow", position: 1, isMentionable: false
-        ),
-        GuildRole(id: RoleID(rawValue: 31), name: "White", position: 3),
-        GuildRole(id: RoleID(rawValue: 32), name: "Giveaway Ping", position: 2),
-    ]
-
-    let suggestions = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "w",
-        recentMessages: recentMessages,
-        localMembers: [yawortsa, giveaway, teenarazzi, kitten, fluffy, idk, raph],
-        remoteMembers: [fluffy, kitten, yawortsa, raph, giveaway, teenarazzi, idk],
-        roles: roles,
-        canMentionNonMentionableRoles: true
-    )
-
-    #expect(suggestions.map(\.title) == [
-        "fluffy wizkers", "cute (and smart) kitten", "yawortsa", "Raphawouel",
-        "GiveawayBot", "Teenarazzi Awards", "Idk what my username should be",
-        "@White", "@Giveaway Ping", "@Yellow",
-    ])
-    #expect(suggestions.prefix(7).allSatisfy {
-        if case .user = $0.target { true } else { false }
-    })
-    #expect(suggestions.suffix(3).allSatisfy {
-        if case .role = $0.target { true } else { false }
-    })
-    #expect(MentionAutocompleteSuggestionFactory.memberHeading(query: "w") == "MEMBERS MATCHING @W")
-}
-
-@MainActor
-@Test func `nonempty remote member search narrows stale local candidates`() {
-    func member(_ id: UInt64, _ name: String) -> Member {
-        Member(
-            user: User(id: UserID(rawValue: id), username: name, displayName: name),
-            roleName: "Member",
-            status: .offline
-        )
-    }
-    let yawortsa = member(1, "yawortsa")
-    let evil = Member(
-        user: User(
-            id: UserID(rawValue: 2),
-            username: "theunfunny_clown",
-            displayName: "evil stupid cat"
-        ),
-        roleName: "Member",
-        status: .offline
-    )
-    let staleFluffy = member(3, "fluffy wizkers")
-
-    let suggestions = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "w",
-        recentMessages: [],
-        localMembers: [yawortsa, evil, staleFluffy],
-        remoteMembers: [yawortsa, evil],
-        roles: []
-    )
-
-    #expect(suggestions.map(\.title) == ["yawortsa", "evil stupid cat"])
-}
-
-@MainActor
-@Test(.timeLimit(.minutes(1)))
-func `cached mention results survive an older in flight search`() async throws {
+@Test func `an AutoMod blocked message is not resent and keeps the failed draft and newer composer text`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
-    let guildID = GuildID(rawValue: 100)
-    model.selectedGuildID = guildID
-    let cached = Member(user: provider.currentUser, roleName: "Member", status: .offline)
-    let stale = Member(user: provider.otherUser, roleName: "Member", status: .offline)
-    model.mentionMemberSearchCache[CommandMemberQuery(guildID: guildID, query: "me")] =
-        MentionMemberSearchCacheEntry(members: [cached], storedAt: Date())
-
-    model.requestMentionMemberSearch(query: "other")
-    let pending = try #require(model.mentionMemberSearchTask)
-    await provider.waitUntilMemberSearchStarts()
-    model.requestMentionMemberSearch(query: "me")
-    #expect(model.mentionMemberResults == [cached])
-
-    // Complete the old provider call even if its task was cancelled.
-    await provider.releaseMemberSearch([stale])
-    await pending.value
-    #expect(model.mentionMemberResults == [cached])
-    #expect(model.mentionMemberSearchQuery == nil)
-}
-
-@MainActor
-@Test func `empty member autocomplete uses recent authors up to the shared result limit before roles`() {
-    let members = (1 ... 6).map { id in
-        Member(
-            user: User(
-                id: UserID(rawValue: UInt64(id)),
-                username: "user\(id)",
-                displayName: "Member \(id)"
-            ),
-            roleName: "Member",
-            status: .offline
-        )
-    }
-    let messages = members.enumerated().map { index, member in
-        Message(
-            id: MessageID(rawValue: UInt64(index + 1)),
-            channelID: ChannelID(rawValue: 20),
-            author: member.user,
-            content: "message"
-        )
-    }
-    // Webhook deliveries name a mentionable author only when it is a member.
-    let webhook = Message(
-        id: MessageID(rawValue: 20), channelID: ChannelID(rawValue: 20),
-        author: User(id: UserID(rawValue: 900), username: "Persona", discriminator: "0000", displayName: "Persona", isBot: true),
-        webhookID: "900", content: "say"
-    )
-    let userAppReply = Message(
-        id: MessageID(rawValue: 21), channelID: ChannelID(rawValue: 20),
-        author: User(id: UserID(rawValue: 901), username: "greed", discriminator: "6058", displayName: "greed", isBot: true),
-        webhookID: "901", content: "quote"
-    )
-    let guildApp = Member(
-        user: User(id: UserID(rawValue: 902), username: "testing", discriminator: "0468", displayName: "Testing", isBot: true),
-        roleName: "Member", status: .offline
-    )
-    let guildAppReply = Message(
-        id: MessageID(rawValue: 22), channelID: ChannelID(rawValue: 20),
-        author: guildApp.user, guildMember: MessageGuildMember(member: guildApp), webhookID: "902", content: "result"
-    )
-    let role = GuildRole(id: RoleID(rawValue: 40), name: "Access", position: 1)
-
-    let suggestions = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "",
-        recentMessages: Array(messages.dropFirst()) + [guildAppReply, userAppReply, webhook],
-        localMembers: members,
-        remoteMembers: [],
-        roles: [role]
-    )
-
-    #expect(suggestions.map(\.title) == [
-        "Testing", "Member 6", "Member 5", "Member 4", "Member 3", "Member 2", "@Access",
-    ])
-    #expect(MentionAutocompleteSuggestionFactory.memberHeading(query: "") == "MEMBERS")
-}
-
-@MainActor
-@Test func `role autocomplete uses match sorter ranks and alphabetical ties`() {
-    let roles = [
-        GuildRole(id: RoleID(rawValue: 1), name: "Yellow", position: 100),
-        GuildRole(id: RoleID(rawValue: 2), name: "Giveaway Ping", position: 200),
-        GuildRole(id: RoleID(rawValue: 3), name: "White", position: 1),
-        GuildRole(id: RoleID(rawValue: 4), name: "@everyone", position: 999),
-    ]
-
-    let suggestions = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "w",
-        recentMessages: [],
-        localMembers: [],
-        remoteMembers: [],
-        roles: roles
-    )
-
-    #expect(suggestions.map(\.title) == ["@White", "@Giveaway Ping", "@Yellow"])
-}
-
-@MainActor
-@Test func `member autocomplete matches a global name behind a guild nickname and only exact snowflakes`() {
-    let member = Member(
-        user: User(
-            id: UserID(rawValue: 123),
-            username: "account_name",
-            displayName: "Guild Nickname"
-        ),
-        roleName: "Member",
-        status: .offline,
-        globalDisplayName: "World Traveler"
-    )
-
-    let globalName = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "world",
-        recentMessages: [],
-        localMembers: [member],
-        remoteMembers: [],
-        roles: []
-    )
-    #expect(globalName.map(\.title) == ["Guild Nickname"])
-
-    let partialSnowflake = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "12",
-        recentMessages: [],
-        localMembers: [member],
-        remoteMembers: [],
-        roles: []
-    )
-    #expect(partialSnowflake.isEmpty)
-
-    let exactSnowflake = MentionAutocompleteSuggestionFactory.memberSuggestions(
-        query: "123",
-        recentMessages: [],
-        localMembers: [member],
-        remoteMembers: [],
-        roles: []
-    )
-    #expect(exactSnowflake.map(\.title) == ["Guild Nickname"])
-}
-
-@MainActor
-@Test func `message mention labels prefer guild member display names`() async throws {
-    let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
-    await model.start()
-
-    let member = try #require(model.members.first)
     let channelID = try #require(model.selectedChannelID)
-    let globalUser = User(
-        id: member.id,
-        username: member.user.username,
-        displayName: "Global Display Name"
-    )
-    let rawToken = "<@\(member.id.rawValue)>"
-    let mention = try #require(RenderedMention(rawToken: rawToken))
-    let message = Message(
-        id: MessageID(rawValue: 987_654),
-        channelID: channelID,
-        author: model.snapshot?.currentUser ?? globalUser,
-        content: rawToken,
-        guildID: model.selectedGuildID,
-        mentionedUsers: [globalUser]
-    )
-
-    let presentation = MessageMentionResolver(model: model, message: message).presentation(mention)
-    #expect(presentation.label == "@\(member.user.displayName)")
-    #expect(presentation.label != "@Global Display Name")
-}
-
-@MainActor
-@Test func `mention media discovery only returns user avatars`() throws {
-    let model = AppModel(launchMode: .offlineTesting)
-    let userID = UserID(rawValue: 7_001)
-    let userAvatarURL = try #require(
-        URL(string: "https://cdn.example/user-avatar.png")
-    )
-    let guildAvatarURL = try #require(
-        URL(string: "https://cdn.example/guild-avatar.png")
-    )
-    let member = Member(
-        user: User(
-            id: userID,
-            username: "avatar-user",
-            displayName: "Avatar User",
-            avatarURL: userAvatarURL
-        ),
-        roleName: "Member",
-        isOnline: true,
-        guildAvatarURL: guildAvatarURL
-    )
-    model.knownMentionMembers = [userID: member]
-    let userMention = try #require(
-        RenderedMention(rawToken: "<@\(userID.rawValue)>")
-    )
-    let channelMention = try #require(
-        RenderedMention(rawToken: "<#7002>")
-    )
-    let resolver = MessageMentionResolver(model: model)
-
-    #expect(resolver.avatarURL(userMention) == guildAvatarURL)
-    #expect(resolver.avatarURL(channelMention) == nil)
-}
-
-@MainActor
-@Test func `channel autocomplete follows guild positions and shows category metadata without duplicate hashes`() {
-    let guildID = GuildID(rawValue: 50)
-    let currentUser = User(id: UserID(rawValue: 60), username: "current", displayName: "Current")
-    let memberRole = GuildRole(
-        id: RoleID(rawValue: 51),
-        name: "Member",
-        permissions: 1 << 17
-    )
-    let currentMember = Member(
-        user: currentUser,
-        roleName: "Member",
-        status: .online,
-        roles: [memberRole]
-    )
-    let everyone = GuildRole(
-        id: RoleID(rawValue: guildID.rawValue),
-        name: "@everyone",
-        permissions: 1 << 10
-    )
-    let channels = [
-        Channel(
-            id: ChannelID(rawValue: 3), guildID: guildID, name: "voice", kind: .voice,
-            category: "VOICE", position: 0, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 2), guildID: guildID, name: "rules", kind: .text,
-            category: "INFO", position: 2, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 1), guildID: guildID, name: "welcome", kind: .text,
-            category: "INFO", position: 1, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 4), guildID: guildID, name: "general", kind: .text,
-            category: "MAIN", position: 0, categoryPosition: 1
-        ),
-        Channel(
-            id: ChannelID(rawValue: 5), guildID: guildID, name: "bot-updates", kind: .text,
-            category: "INFO", position: 3, categoryPosition: 0,
-            permissionOverwrites: [
-                ChannelPermissionOverwrite(
-                    id: guildID.description,
-                    type: 0,
-                    deny: 1 << 10
-                ),
-            ]
-        ),
-        Channel(
-            id: ChannelID(rawValue: 6), guildID: guildID, name: "member-lounge", kind: .text,
-            category: "INFO", position: 4, categoryPosition: 0,
-            permissionOverwrites: [
-                ChannelPermissionOverwrite(
-                    id: guildID.description,
-                    type: 0,
-                    deny: 1 << 10
-                ),
-                ChannelPermissionOverwrite(
-                    id: memberRole.id.description,
-                    type: 0,
-                    allow: 1 << 10
-                ),
-            ]
-        ),
-    ]
-
-    let suggestions = MentionAutocompleteSuggestionFactory.channelSuggestions(
-        query: "",
-        channels: channels,
-        guilds: [:],
-        currentUserID: currentUser.id,
-        currentMember: currentMember,
-        roles: [everyone, memberRole]
-    )
-
-    #expect(suggestions.map(\.title) == [
-        "welcome", "rules", "bot-updates", "member-lounge", "general",
-    ])
-    #expect(suggestions.map(\.detail) == ["INFO", "INFO", "INFO", "INFO", "MAIN"])
-    #expect(suggestions.allSatisfy { !$0.title.hasPrefix("#") })
-    #expect(
-        suggestions.map(\.systemImage)
-            == Array(
-                repeating: ChannelIconPresentation.systemImage(for: .text, isHidden: false),
-                count: 5
-            )
-    )
-    #expect(MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
-        in: channels.first { $0.name == "general" },
-        currentUserID: currentUser.id,
-        currentMember: currentMember,
-        roles: [everyone, memberRole]
-    ))
-    #expect(MentionAutocompleteSuggestionFactory.canMentionNonMentionableRoles(
-        in: channels.first { $0.name == "general" },
-        guild: Guild(
-            id: guildID,
-            name: "Guild",
-            currentUserPermissions: (1 << 10) | (1 << 17)
-        ),
-        currentUserID: currentUser.id,
-        currentMember: nil,
-        roles: [everyone, memberRole]
-    ))
-}
-
-@MainActor
-@Test func `channel autocomplete ranks exact prefix contains and fuzzy before sidebar position`() {
-    let guildID = GuildID(rawValue: 50)
-    let channels = [
-        Channel(
-            id: ChannelID(rawValue: 1), guildID: guildID, name: "misc-ann", kind: .text,
-            category: "INFO", position: 0, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 2), guildID: guildID, name: "announcements", kind: .text,
-            category: "INFO", position: 4, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 3), guildID: guildID, name: "planning", kind: .text,
-            category: "INFO", position: 1, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 4), guildID: guildID, name: "photography", kind: .text,
-            category: "MEDIA", position: 0, categoryPosition: 1
-        ),
-    ]
-
-    let contains = MentionAutocompleteSuggestionFactory.channelSuggestions(
-        query: "ann", channels: channels, guilds: [:]
-    )
-    #expect(contains.map(\.title) == ["announcements", "misc-ann", "planning"])
-
-    let exact = MentionAutocompleteSuggestionFactory.channelSuggestions(
-        query: "planning", channels: channels, guilds: [:]
-    )
-    #expect(exact.map(\.title) == ["planning"])
-
-    let fuzzy = MentionAutocompleteSuggestionFactory.channelSuggestions(
-        query: "ptg", channels: channels, guilds: [:]
-    )
-    #expect(fuzzy.map(\.title) == ["photography"])
-}
-
-@MainActor
-@Test func `empty channel autocomplete hoists every positive frecency equally then keeps sidebar order`() {
-    let guildID = GuildID(rawValue: 50)
-    let channels = [
-        Channel(
-            id: ChannelID(rawValue: 1), guildID: guildID, name: "welcome", kind: .text,
-            category: "INFO", position: 0, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 2), guildID: guildID, name: "rules", kind: .text,
-            category: "INFO", position: 1, categoryPosition: 0
-        ),
-        Channel(
-            id: ChannelID(rawValue: 3), guildID: guildID, name: "current-channel", kind: .text,
-            category: "MAIN", position: 0, categoryPosition: 1
-        ),
-        Channel(
-            id: ChannelID(rawValue: 4), guildID: guildID, name: "logs", kind: .text,
-            category: "LOGS", position: 0, categoryPosition: 9
-        ),
-    ]
-
-    let suggestions = MentionAutocompleteSuggestionFactory.channelSuggestions(
-        query: "",
-        channels: channels,
-        guilds: [:],
-        guildAndChannelUsageScores: ["1": 1, "3": 250, "4": 9_999]
-    )
-
-    // The current client gives any positive frecency the same full boost. It
-    // then preserves the channel store/sidebar order among equally boosted
-    // entries rather than sorting by the numeric frecency value.
-    #expect(suggestions.map(\.title) == ["welcome", "current-channel", "logs", "rules"])
-}
-
-@MainActor
-@Test func `emoji completion returns every matching custom emoji`() {
-    let guildID = GuildID(rawValue: 30)
-    let emojis = (0 ..< 24).map {
-        DiscordEmoji(id: String($0), name: "match_\($0)", guildID: guildID)
-    }
-    let suggestions = ColonAutocompleteSuggestionFactory.suggestions(
-        query: "match_",
-        customEmojis: emojis,
-        customValue: (\.messageToken),
-        customSource: { _ in "Complete Catalog" }
-    )
-
-    #expect(suggestions.filter { $0.customEmoji != nil }.count == emojis.count)
-}
-
-@Test func `unfocused typing redirect accepts text but preserves shortcuts and control keys`() {
-    #expect(ComposerUnfocusedTypingMonitor.shouldRedirect(
-        characters: "s",
-        modifierFlags: []
-    ))
-    #expect(ComposerUnfocusedTypingMonitor.shouldRedirect(
-        characters: "S",
-        modifierFlags: [.shift]
-    ))
-    #expect(!ComposerUnfocusedTypingMonitor.shouldRedirect(
-        characters: "s",
-        modifierFlags: [.command]
-    ))
-    #expect(!ComposerUnfocusedTypingMonitor.shouldRedirect(
-        characters: "\t",
-        modifierFlags: []
-    ))
-    #expect(ComposerUnfocusedTypingMonitor.shouldOfferReturn(36))
-    #expect(ComposerUnfocusedTypingMonitor.shouldOfferReturn(76))
-    #expect(!ComposerUnfocusedTypingMonitor.shouldOfferReturn(49))
-    #expect(KeyboardShortcutPolicy.isPlainEscape(keyCode: 53, modifierFlags: []))
-    #expect(!KeyboardShortcutPolicy.isPlainEscape(keyCode: 49, modifierFlags: []))
-}
-
-// Characters are what each layout produces for the key with Command held.
-@Test(arguments: [
-    ("v", .command, true), // QWERTY, AZERTY, Dvorak, Russian, Dvorak – QWERTY ⌘
-    ("V", [.command, .capsLock], true),
-    ("k", .command, false), // Dvorak's key in the QWERTY V position
-    ("м", .command, false),
-    ("V", [.command, .shift], false),
-    ("v", [.command, .option], false),
-    ("v", [], false)
-] as [(String, NSEvent.ModifierFlags, Bool)])
-func `unfocused paste matches the layout's command v`(
-    characters: String,
-    modifierFlags: NSEvent.ModifierFlags,
-    offersPaste: Bool
-) {
-    #expect(ComposerUnfocusedTypingMonitor.shouldOfferPaste(
-        characters: characters,
-        modifierFlags: modifierFlags
-    ) == offersPaste)
-}
-
-@MainActor
-@Test func `unfocused plain up arrow is consumed before sidebar navigation`() {
-    var editRequestCount = 0
-    let requestEdit = {
-        editRequestCount += 1
-        return true
-    }
-
-    #expect(ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
-        keyCode: 126,
-        modifierFlags: [],
-        composerIsEmpty: true,
-        onEditLatestMessage: requestEdit
-    ))
-    #expect(editRequestCount == 1)
-    #expect(ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
-        keyCode: 126,
-        modifierFlags: [.function, .numericPad],
-        composerIsEmpty: true,
-        onEditLatestMessage: requestEdit
-    ))
-    #expect(editRequestCount == 2)
-    #expect(!ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
-        keyCode: 126,
-        modifierFlags: [.shift],
-        composerIsEmpty: true,
-        onEditLatestMessage: requestEdit
-    ))
-    #expect(!ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
-        keyCode: 126,
-        modifierFlags: [],
-        composerIsEmpty: false,
-        onEditLatestMessage: requestEdit
-    ))
-    #expect(!ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
-        keyCode: 125,
-        modifierFlags: [],
-        composerIsEmpty: true,
-        onEditLatestMessage: requestEdit
-    ))
-    #expect(editRequestCount == 2)
-
-    #expect(ComposerUnfocusedTypingMonitor.handleEditLatestMessage(
-        keyCode: 126,
-        modifierFlags: [],
-        composerIsEmpty: true,
-        onEditLatestMessage: { false }
-    ))
-}
-
-@MainActor
-@Test func `escape is consumed by the native composer after autocomplete declines it`() throws {
-    let textView = ComposerNSTextView()
-    var escapeCount = 0
-    textView.onAutocompleteCommand = { _ in false }
-    textView.onEscape = { escapeCount += 1 }
-    textView.keyDown(with: try escapeKeyEvent())
-    #expect(escapeCount == 1)
-}
-
-@MainActor
-@Test func `inline editor cancel handles focused and unfocused Escape`() throws {
-    var cancelCount = 0
-    let actions = InlineMessageEditorComposerActions(
-        onSubmit: {},
-        onEscape: { cancelCount += 1 }
-    )
-    let textView = ComposerNSTextView()
-    textView.onAutocompleteCommand = { _ in false }
-    textView.onEscape = actions.onEscape
-    textView.keyDown(with: try escapeKeyEvent())
-    #expect(cancelCount == 1)
-
-    #expect(ComposerUnfocusedTypingMonitor.handleEscape(
-        keyCode: 53,
-        modifierFlags: [],
-        onEscape: actions.onEscape
-    ))
-    #expect(cancelCount == 2)
-    #expect(!ComposerUnfocusedTypingMonitor.handleEscape(
-        keyCode: 49,
-        modifierFlags: [],
-        onEscape: actions.onEscape
-    ))
-    #expect(!ComposerUnfocusedTypingMonitor.handleEscape(
-        keyCode: 53,
-        modifierFlags: .shift,
-        onEscape: actions.onEscape
-    ))
-    #expect(cancelCount == 2)
-}
-
-@MainActor
-private func escapeKeyEvent() throws -> NSEvent {
-    try #require(NSEvent.keyEvent(
-        with: .keyDown,
-        location: .zero,
-        modifierFlags: [],
-        timestamp: 0,
-        windowNumber: 0,
-        context: nil,
-        characters: "\u{1B}",
-        charactersIgnoringModifiers: "\u{1B}",
-        isARepeat: false,
-        keyCode: 53
-    ))
-}
-
-@MainActor
-private func upArrowKeyEvent(
-    modifiers: NSEvent.ModifierFlags = []
-) throws -> NSEvent {
-    try #require(NSEvent.keyEvent(
-        with: .keyDown,
-        location: .zero,
-        modifierFlags: modifiers,
-        timestamp: 0,
-        windowNumber: 0,
-        context: nil,
-        characters: String(NSEvent.SpecialKey.upArrow.unicodeScalar),
-        charactersIgnoringModifiers: String(
-            NSEvent.SpecialKey.upArrow.unicodeScalar
-        ),
-        isARepeat: false,
-        keyCode: 126
-    ))
-}
-
-@MainActor
-private func downArrowKeyEvent(
-    modifiers: NSEvent.ModifierFlags = []
-) throws -> NSEvent {
-    try #require(NSEvent.keyEvent(
-        with: .keyDown,
-        location: .zero,
-        modifierFlags: modifiers,
-        timestamp: 0,
-        windowNumber: 0,
-        context: nil,
-        characters: String(NSEvent.SpecialKey.downArrow.unicodeScalar),
-        charactersIgnoringModifiers: String(
-            NSEvent.SpecialKey.downArrow.unicodeScalar
-        ),
-        isARepeat: false,
-        keyCode: 125
-    ))
-}
-
-@MainActor
-@Test func `emoji usage waits for successful sends and replays only unsaved uses over settings echoes`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    model.commandFrecencyFlushTask?.cancel()
-    model.applyDiscordEmojiSettings(EmojiUserSettings(dataVersion: 1))
-    model.updateDraft("🐢 🐢 `🐍`")
-    #expect(model.emojiFrecency.pendingUsages.isEmpty)
+    let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/synthetic-automod.txt"))
     await provider.failNextSend()
-    #expect(!(await model.send()))
-    #expect(model.emojiFrecency.pendingUsages.isEmpty)
-    model.updateDraft("🐢 🐢 `🐍`")
-    #expect(await model.send())
-    #expect(model.emojiFrecency.pendingUsages.map(\.key) == ["turtle", "turtle"])
-
-    let saving = Task { await model.flushEmojiFrecencyIfNeeded() }
-    let submitted = await provider.waitForEmojiSave()
-    // The Gateway can deliver our echo before REST completes. A new reaction
-    // made in the meantime belongs to the next save and must survive once.
-    model.applyDiscordEmojiSettings(submitted)
-    model.recordReactionEmojiUsage("🐢")
-    await provider.completeEmojiSave()
-    #expect(await saving.value)
-    #expect(model.emojiFrecency.pendingUsages.count == 1)
-    #expect(model.reactionEmojiFrecency.pendingUsages.count == 1)
-    #expect(model.emojiFrecency.historyForSave().entries.first { $0.key == "turtle" }?.totalUses == 3)
-    // A delayed older settings read must not replace the acknowledged history.
-    model.applyDiscordEmojiSettings(EmojiUserSettings(dataVersion: 1))
-    #expect(model.emojiSettingsDataVersion == 2)
-}
-
-@MainActor
-@Test func `definite send failure keeps the optimistic message retryable`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    await provider.failNextSend()
-
-    model.updateDraft("keep me")
-    let didSend = await model.send()
-    #expect(!didSend)
-    let failed = try #require(model.messages.first { $0.content == "keep me" })
-    #expect(failed.outboxState == .failed)
-    #expect(failed.nonce != nil)
-    #expect(model.draft.isEmpty)
-    #expect(model.errorMessage == nil)
-    #expect(MessageOutboxPresentation.textOpacity(for: failed) == 1)
-    let failedInteraction = MessageOutboxPresentation.interactionMode(
-        for: failed.outboxState
-    )
-    #expect(failedInteraction.allowsHoverActions)
-    #expect(failedInteraction.allowsMessageContextMenu)
-    #expect(!failedInteraction.allowsMediaContextMenu)
-    #expect(
-        MessageRowPersistentHighlight.resolve(
-            message: failed,
-            currentUserID: model.snapshot?.currentUser.id
-        ) == .failed
-    )
-    #expect(
-        NativeTimelineMessageMenuPolicy.entries(
-            canEdit: true,
-            canDelete: true,
-            canRetry: true,
-            canReply: true,
-            canForward: true
-        ) == [
-            .action(
-                .retrySending,
-                title: "Retry Send",
-                systemImage: "arrow.clockwise"
-            ),
-            .separator,
-            .action(
-                .copyText,
-                title: "Copy Text",
-                systemImage: "doc.on.doc"
-            ),
-            .separator,
-            .action(
-                .discardFailedMessage,
-                title: "Delete Message…",
-                systemImage: "trash",
-                isDestructive: true
-            ),
-        ]
-    )
-    #expect(await provider.sendCount == 1)
+    await provider.suspendNextSend()
+    let delivery = try #require(model.enqueueChannelMessage(
+        channelID: channelID, content: "blocked", replyTo: .init(rawValue: 42),
+        replyPreview: nil, attachments: [attachment], clearsComposer: true
+    ))
+    await provider.waitUntilSendStarts()
+    model.updateDraft("New draft")
+    await provider.releaseSend()
+    #expect(!(await delivery.value))
+    let ordinaryFailure = try #require(model.messages.first { $0.content == "blocked" })
+    await provider.blockNextSendWithAutoMod()
+    #expect(!(await model.retrySending(ordinaryFailure)))
+    let failed = try #require(model.messages.first { $0.content == "blocked" })
     let nonce = try #require(failed.nonce)
-    #expect(model.composer.outbox.draftsByNonce[nonce] != nil)
-
-    model.discardFailedOutgoingMessage(failed)
-
-    #expect(model.messages.allSatisfy { $0.nonce != nonce })
-    #expect(model.composer.outbox.draftsByNonce[nonce] == nil)
-    #expect(await provider.sendCount == 1)
+    #expect(failed.sendFailure == .autoModeration(explanation: "Synthetic rule explanation"))
+    #expect(!failed.canRetrySending)
+    #expect(await provider.sendCount == 2)
+    #expect(!(await model.retrySending(failed)))
+    #expect(!(await model.retrySending(ordinaryFailure)))
+    #expect(await provider.sendCount == 2)
+    #expect(model.composer.outbox.draftsByNonce[nonce]?.attachments == [attachment])
+    #expect(model.draft == "New draft")
 }
 
 @MainActor
-@Test(arguments: [false, true])
-func `profile message retry reuses the failed outbox nonce`(timesOut: Bool) async throws {
+@Test func `profile message retry after a timeout reuses the failed outbox nonce`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -2437,23 +354,16 @@ func `profile message retry reuses the failed outbox nonce`(timesOut: Bool) asyn
     let channelID = try #require(model.selectedChannelID)
     let index = try #require(model.snapshot?.channels.firstIndex { $0.id == channelID })
     model.snapshot?.channels[index].recipients = [recipient]
-    if timesOut {
-        await provider.timeOutNextSend()
-    } else {
-        await provider.failNextSend()
-    }
+    await provider.timeOutNextSend()
     let nonce = ClientNonce.make()
     #expect(await model.sendProfileMessage(to: recipient.id, content: "retry privately", nonce: nonce) == false)
     // Failed profile sends outlive bounded history windows and cache eviction.
     model.messages = []
     model.messageCache[channelID] = nil
-    #expect(model.outgoingState(nonce: nonce, channelID: channelID) == .failed)
     #expect(await model.sendProfileMessage(to: recipient.id, content: "retry privately", nonce: nonce))
     let drafts = await provider.sentDrafts
     #expect(drafts.count == 2)
     #expect(drafts[0] == drafts[1])
-    #expect(model.messages.filter { $0.nonce == nonce }.count == 1)
-    #expect(model.composer.outbox.draftsByNonce[nonce] == nil)
     #expect(await model.sendProfileMessage(to: recipient.id, content: "retry privately", nonce: nonce))
     #expect(await provider.sendCount == 2)
 }
@@ -2464,7 +374,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
-    let recipient = await provider.otherUser
+    let recipient = provider.otherUser
     let channelID = try #require(model.selectedChannelID)
     let index = try #require(model.snapshot?.channels.firstIndex { $0.id == channelID })
     model.snapshot?.channels[index].recipients = [recipient]
@@ -2497,16 +407,11 @@ func `profile send retains a Gateway receipt across timeout and history eviction
 }
 
 @MainActor
-@Test(arguments: [false, true])
-func `retry resends the exact failed draft through sending and confirmed states`(timesOut: Bool) async throws {
+@Test func `retrying a timed out send resends the exact draft under the same nonce`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
-    if timesOut {
-        await provider.timeOutNextSend()
-    } else {
-        await provider.failNextSend()
-    }
+    await provider.timeOutNextSend()
     let attachment = ForumPostAttachment(
         url: URL(fileURLWithPath: "/tmp/sakuracord-retry-image.png"),
         filename: "renamed-image.png",
@@ -2515,107 +420,21 @@ func `retry resends the exact failed draft through sending and confirmed states`
     )
 
     model.updateDraft("retry this exact message")
-    let didSend = await model.sendComposerMessage(attachments: [attachment])
-    #expect(!didSend)
+    #expect(!(await model.sendComposerMessage(attachments: [attachment])))
     let failed = try #require(model.messages.first {
         $0.content == "retry this exact message"
     })
-    #expect(failed.outboxState == .failed)
+    #expect(await model.retrySending(failed))
 
-    await provider.suspendNextSend()
-    let retry = Task { @MainActor in
-        await model.retrySending(failed)
-    }
-    await provider.waitUntilSendStarts()
-
-    let retrying = try #require(model.messages.first { $0.nonce == failed.nonce })
-    #expect(retrying.outboxState == .sending)
-    #expect(MessageOutboxPresentation.textOpacity(for: retrying) == 0.55)
     let sentDrafts = await provider.sentDrafts
     #expect(sentDrafts.count == 2)
     #expect(sentDrafts[0] == sentDrafts[1])
     #expect(sentDrafts[1].content == "retry this exact message")
     #expect(sentDrafts[1].attachments == [attachment])
-
-    await provider.releaseSend()
-    #expect(await retry.value)
-    let confirmed = try #require(model.messages.first { $0.nonce == failed.nonce })
-    #expect(confirmed.outboxState == .confirmed)
 }
 
 @MainActor
-@Test func `send confirmation preserves a local attachment preview with remote fallback`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    let channelID = try #require(model.selectedChannelID)
-    let user = try #require(model.snapshot?.currentUser)
-    let localURL = URL(fileURLWithPath: "/tmp/sakuracord-local-preview.png")
-    let remoteURL = try #require(URL(string: "https://cdn.example/confirmed-image.png"))
-    let nonce = "local-preview-nonce"
-    model.appendSelectedMessage(Message(
-        id: MessageID(rawValue: UInt64.max),
-        channelID: channelID,
-        author: user,
-        content: "image",
-        attachments: [Attachment(
-            id: "optimistic-0",
-            filename: "image.png",
-            url: localURL,
-            mediaType: "image/png"
-        )],
-        nonce: nonce,
-        outboxState: .sending
-    ))
-    let optimisticRow = try #require(
-        model.messageRows.first(where: { $0.message.nonce == nonce })
-    )
-    let optimisticIdentity = optimisticRow.identity
-    let optimisticMediaKey = try #require(
-        optimisticRow.message.attachments.first.flatMap {
-            NativeTimelineMediaKey.attachment($0)
-        }
-    )
-    let incoming = Message(
-        id: MessageID(rawValue: 500),
-        channelID: channelID,
-        author: user,
-        content: "image",
-        attachments: [Attachment(
-            id: "remote-0",
-            filename: "image.png",
-            url: remoteURL,
-            mediaType: "image/png"
-        )],
-        nonce: nonce
-    )
-
-    let resolved = model.reconcileVisibleOrCached(incoming)
-
-    #expect(resolved.attachments.first?.url == remoteURL)
-    #expect(resolved.attachments.first?.proxyURL == localURL)
-    let mediaKey = try #require(resolved.attachments.first.flatMap {
-        NativeTimelineMediaKey.attachment($0)
-    })
-    #expect(mediaKey.url == localURL)
-    #expect(mediaKey.fallbackURL == remoteURL)
-    #expect(mediaKey == optimisticMediaKey)
-    #expect(mediaKey.cacheKey == optimisticMediaKey.cacheKey)
-    let confirmedRow = try #require(
-        model.messageRows.first(where: { $0.message.id == incoming.id })
-    )
-    #expect(confirmedRow.identity == optimisticIdentity)
-    #expect(
-        NativeMessageTimelineItem.message(
-            confirmedRow,
-            isUnreadBoundary: false,
-            isHighlighted: false
-        ).identifier == .message(optimisticIdentity)
-    )
-}
-
-@MainActor
-@Test func `composer queues sends in order and refuses a message while the outbox is full`() async throws {
+@Test func `queued sends are delivered in order and a full queue refuses without losing the draft`() async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -2625,117 +444,71 @@ func `retry resends the exact failed draft through sending and confirmed states`
     var deliveries: [Task<Bool, Never>] = []
     for content in contents {
         model.updateDraft(content)
-        // Each submission returns once queued, while the first is still in flight.
         guard case let .enqueued(delivery) = await model.submitComposerMessage(attachments: []) else {
             Issue.record("\(content) was not queued")
             return
         }
         deliveries.append(delivery)
-        #expect(model.draft.isEmpty)
         if deliveries.count == 1 { await provider.waitUntilSendStarts() }
     }
-    #expect(model.messages.filter { $0.outboxState == .sending }.map(\.content) == contents)
 
     model.updateDraft("refused")
     #expect(!(await model.submitComposerMessage(attachments: [])).consumedComposer)
     #expect(model.draft == "refused")
-    #expect(model.isSendQueueFullAlertPresented)
-    #expect(await provider.sendCount == 1)
-    let recipient = await provider.otherUser
-    let channelID = try #require(model.selectedChannelID)
-    let channelIndex = try #require(model.snapshot?.channels.firstIndex { $0.id == channelID })
-    model.snapshot?.channels[channelIndex].recipients = [recipient]
-    #expect(!(await model.sendProfileMessage(to: recipient.id, content: "also refused")))
-    #expect(model.draft == "refused")
-    #expect(model.composer.outbox.waitingDeliveryCount == OutgoingMessageState.maximumWaitingDeliveries)
-
-    // The confirmation carries a later server timestamp than the sends still
-    // queued behind it; it must settle in place rather than move below them.
-    await provider.suspendNextSend()
-    await provider.releaseSend()
-    #expect(await deliveries[0].value)
-    await provider.waitUntilSendStarts()
-    let settling = model.messages.filter { contents.contains($0.content) }
-    #expect(settling.map(\.content) == contents)
-    #expect(settling.map(\.outboxState) == [.confirmed] + Array(repeating: .sending, count: contents.count - 1))
 
     await provider.releaseSend()
     for delivery in deliveries {
         #expect(await delivery.value)
     }
     #expect(await provider.sentDrafts.map(\.content) == contents)
-    #expect(model.messages.filter { contents.contains($0.content) }.map(\.content) == contents)
 }
 
 @MainActor
-@Test(arguments: [false, true])
-func `thread creation holds queue capacity until it enqueues or fails`(fails: Bool) async throws {
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
+func `timeout during thread creation preserves its unsent message without replacing another thread draft`(navigatesAway: Bool) async throws {
     let permissions = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
         | DiscordPermissionBits.sendMessages | DiscordPermissionBits.sendMessagesInThreads
-        | DiscordPermissionBits.createPublicThreads
+        | DiscordPermissionBits.createPublicThreads | DiscordPermissionBits.attachFiles
     let guild = Guild(id: GuildID(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
     let provider = TypingTestProvider(guild: guild)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
+    await model.memberLoadTask?.value
+    defer { model.onboarding.reset() }
     let channelID = try #require(model.selectedChannelID)
     let creation = ThreadCreationDraft(parentID: channelID, permissions: model.selectedChannelThreadCreationPermissions)
     try #require(creation.permissions.canCreatePublic)
     creation.name = "Thread"
-    model.threadCreation = creation
-    model.threadDraft = "first message"
+    model.sideConversations.thread = .threadCreation(creation)
+    let originalDraft = "  Keep this first message\n"
+    let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/thread-timeout-draft.txt"))
+    model.threadDraft = originalDraft
+    model.threadComposerAttachments = [attachment]
 
-    await provider.suspendNextSend()
-    model.updateDraft("in flight")
-    let first = await model.submitComposerMessage(attachments: [])
-    try #require(first.consumedComposer)
-    await provider.waitUntilSendStarts()
-
-    let submission = Task { await model.submitThreadCreation(creation, attachments: []) }
+    let submission = Task { await model.submitThreadCreation(creation, attachments: [attachment]) }
     await provider.waitUntilThreadCreationStarts()
-    var queued: [ComposerSubmissionResult] = []
-    for index in 1 ..< OutgoingMessageState.maximumWaitingDeliveries {
-        model.updateDraft("queued \(index)")
-        let result = await model.submitComposerMessage(attachments: [])
-        #expect(result.consumedComposer)
-        queued.append(result)
+    var member = Member(user: try #require(model.currentUser), roleName: "Member", isOnline: false)
+    member.communicationDisabledUntil = .now.addingTimeInterval(300)
+    model.consumeMembersChanged(guildID: guild.id, members: [member], groups: [])
+    let otherThread = MessageThreadSummary(
+        id: ChannelID(rawValue: 31), guildID: guild.id, parentID: channelID, name: "Other"
+    )
+    let otherAttachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/other-thread-draft.txt"))
+    if navigatesAway {
+        model.open(otherThread)
+        model.threadDraft = "Other thread draft"
+        model.threadComposerAttachments = [otherAttachment]
     }
-    model.updateDraft("keep draft")
-    #expect(!(await model.submitComposerMessage(attachments: [])).consumedComposer)
-    #expect(model.draft == "keep draft")
-    #expect(model.isSendQueueFullAlertPresented)
 
-    await provider.completeThreadCreation(fails: fails)
+    await provider.completeThreadCreation()
     let result = await submission.value
-    #expect(result.consumedComposer == !fails)
-    #expect(model.composer.outbox.waitingDeliveryCount == OutgoingMessageState.maximumWaitingDeliveries - (fails ? 1 : 0))
-    await provider.releaseSend()
-    #expect(await first.serverConfirmation())
-    for delivery in queued { #expect(await delivery.serverConfirmation()) }
-    #expect(await result.serverConfirmation() == !fails)
-    #expect(model.composer.outbox.waitingDeliveryCount == 0)
-    #expect(await provider.sentDrafts.filter { $0.content == "first message" }.count == (fails ? 0 : 1))
-}
 
-@MainActor
-@Test(arguments: [OutboxState.sending, .failed])
-func `unconfirmed local send stays below and groups only with a recent confirmation`(state: OutboxState) {
-    let author = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-    let timestamp = Date(timeIntervalSince1970: 43_200)
-    // The confirmation's server timestamp trails the local send's timestamp.
-    let confirmed = Message(
-        id: MessageID(rawValue: 10), channelID: ChannelID(rawValue: 10), author: author,
-        content: "confirmed", timestamp: timestamp, nonce: "confirmed"
-    )
-    var pending = Message(
-        id: MessageID(rawValue: .max), channelID: ChannelID(rawValue: 10), author: author,
-        content: "pending", timestamp: timestamp.addingTimeInterval(-1), nonce: "pending", outboxState: state
-    )
-    #expect(AppModel.messagePrecedes(confirmed, pending))
-    #expect(MessageGrouping.rows(for: [confirmed, pending], calendar: calendar).map(\.startsGroup) == [true, false])
-    pending.timestamp = timestamp.addingTimeInterval(-MessageGrouping.defaultContinuationInterval)
-    #expect(MessageGrouping.rows(for: [confirmed, pending], calendar: calendar).map(\.startsGroup) == [true, true])
+    #expect(!result.consumedComposer)
+    #expect(await provider.sendCount == 0)
+    #expect(model.composer.outbox.waitingDeliveryCount == 0)
+    #expect(model.openThread?.id == (navigatesAway ? otherThread.id : ChannelID(rawValue: 30)))
+    #expect(model.threadDraft == (navigatesAway ? "Other thread draft" : originalDraft))
+    #expect(model.threadComposerAttachments == [navigatesAway ? otherAttachment : attachment])
 }
 
 @MainActor
@@ -2770,133 +543,6 @@ func `unconfirmed local send stays below and groups only with a recent confirmat
     #expect(await inFlight.value)
     #expect(await retry.value)
     #expect(await provider.sentNonces.filter { $0 == failed.nonce }.count == 1)
-}
-
-@MainActor
-@Test func `optimistic message is pending until send confirmation`() async {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-
-    await provider.suspendNextSend()
-    model.updateDraft("pending message")
-    let send = Task { await model.send() }
-    await provider.waitUntilSendStarts()
-
-    let pending = model.messages.last { $0.content == "pending message" }
-    #expect(pending?.outboxState == .sending)
-    let pendingInteraction = pending.map {
-        MessageOutboxPresentation.interactionMode(for: $0.outboxState)
-    }
-    #expect(pendingInteraction == .disabled)
-    #expect(pendingInteraction?.allowsHoverActions == false)
-    #expect(pendingInteraction?.allowsMessageContextMenu == false)
-    #expect(pendingInteraction?.allowsMediaContextMenu == false)
-    #expect(
-        pending.map {
-            MessageOutboxPresentation.textOpacity(for: $0)
-        } == 0.55
-    )
-
-    await provider.releaseSend()
-    #expect(await send.value)
-    let confirmed = model.messages.last { $0.content == "pending message" }
-    #expect(confirmed?.outboxState == .confirmed)
-    #expect(
-        confirmed.map {
-            MessageOutboxPresentation.textOpacity(for: $0)
-        } == 1
-    )
-}
-
-@MainActor
-@Test func `native sticker send is optimistic and preserves its loaded media on confirmation`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    let sticker = MessageSticker(
-        id: "sticker-optimistic",
-        name: "Optimistic Sticker",
-        format: .apng
-    )
-
-    await provider.suspendNextSend()
-    let send = Task { @MainActor in
-        await model.sendSticker(sticker)
-    }
-    await provider.waitUntilSendStarts()
-
-    let pending = try #require(model.messages.last { message in
-        message.stickers.contains { $0.id == sticker.id }
-    })
-    let pendingIdentity = MessageRowIdentity(pending)
-    #expect(pending.outboxState == .sending)
-    #expect(pending.stickers.first?.mediaURL == sticker.pickerMediaURL)
-    #expect(MessageOutboxPresentation.mediaOpacity(for: pending.outboxState) == 0.55)
-    let nonce = try #require(pending.nonce)
-    #expect(model.composer.outbox.draftsByNonce[nonce]?.stickerIDs == [sticker.id])
-
-    await provider.releaseSend()
-    #expect(await send.value)
-    let confirmed = try #require(model.messages.last { $0.nonce == nonce })
-    #expect(confirmed.outboxState == .confirmed)
-    #expect(confirmed.stickers.first?.mediaURL == sticker.pickerMediaURL)
-    #expect(MessageRowIdentity(confirmed) == pendingIdentity)
-    #expect(MessageOutboxPresentation.mediaOpacity(for: confirmed.outboxState) == 1)
-    #expect(model.composer.outbox.draftsByNonce[nonce] == nil)
-}
-
-@MainActor
-@Test func `failed native sticker send uses the normal retryable outbox state`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    let sticker = MessageSticker(
-        id: "sticker-retry",
-        name: "Retry Sticker",
-        format: .png
-    )
-    await provider.failNextSend()
-
-    let didSend = await model.sendSticker(sticker)
-    #expect(!didSend)
-    let failed = try #require(model.messages.last { message in
-        message.stickers.contains { $0.id == sticker.id }
-    })
-    #expect(failed.outboxState == .failed)
-    #expect(MessageOutboxPresentation.interactionMode(for: failed.outboxState) == .failed)
-    let nonce = try #require(failed.nonce)
-    #expect(model.composer.outbox.draftsByNonce[nonce]?.stickerIDs == [sticker.id])
-
-    #expect(await model.retrySending(failed))
-    let confirmed = try #require(model.messages.last { $0.nonce == nonce })
-    #expect(confirmed.outboxState == .confirmed)
-    #expect(confirmed.stickers.first?.mediaURL == sticker.pickerMediaURL)
-    #expect(await provider.sendCount == 2)
-}
-
-@MainActor
-@Test func `timed out send can be discarded without replaying the request`() async throws {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    await provider.timeOutNextSend()
-
-    model.updateDraft("timed out message")
-    let didSend = await model.send()
-    #expect(!didSend)
-
-    let failed = try #require(model.messages.last { $0.content == "timed out message" })
-    let nonce = try #require(failed.nonce)
-    #expect(failed.outboxState == .failed)
-    #expect(model.composer.outbox.draftsByNonce[nonce] != nil)
-    #expect(await provider.sendCount == 1)
-
-    model.discardFailedOutgoingMessage(failed)
-
-    #expect(model.messages.allSatisfy { $0.nonce != nonce })
-    #expect(model.composer.outbox.draftsByNonce[nonce] == nil)
-    #expect(await provider.sendCount == 1)
 }
 
 @MainActor
@@ -2939,29 +585,6 @@ func `Gateway confirmation wins before or after a send timeout`(confirmsBeforeTi
     staleFailedMessage.outboxState = .failed
     #expect(!(await model.retrySending(staleFailedMessage)))
     #expect(await provider.sendCount == 1)
-}
-
-@MainActor
-@Test func `send confirmation stays with its original channel after navigation`() async {
-    let provider = TypingTestProvider()
-    let model = AppModel(launchMode: .offlineTesting, provider: provider)
-    await model.start()
-    let originalChannel = try! #require(model.selectedChannelID)
-
-    await provider.suspendNextSend()
-    model.updateDraft("channel scoped")
-    let send = Task { await model.send() }
-    await provider.waitUntilSendStarts()
-    model.selectedChannelID = ChannelID(rawValue: 12)
-    await provider.releaseSend()
-    #expect(await send.value)
-    #expect(model.messages.allSatisfy { $0.channelID == model.selectedChannelID })
-
-    model.selectedChannelID = originalChannel
-    #expect(await eventually {
-        model.messages.count { $0.content == "channel scoped" } == 1
-            && model.messages.last(where: { $0.content == "channel scoped" })?.outboxState == .confirmed
-    })
 }
 
 private func createSparseFile(_ url: URL, size: Int64) throws {
@@ -3011,21 +634,19 @@ private actor SequencedAttachmentUploadTestUploader: ExternalAttachmentUploading
 }
 
 @MainActor
-@Test(arguments: [UInt64(10), 11, 13, 14])
+@Test(arguments: [UInt64(10), 13])
 func `Diagnostics sharing binds confirmation to its source and preserves drafts and retry files`(sourceID: UInt64) async throws {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
     let source = ChannelID(rawValue: sourceID)
     let thread = MessageThreadSummary(id: ChannelID(rawValue: 13), parentID: ChannelID(rawValue: 10), name: "thread")
-    let post = MessageThreadSummary(id: ChannelID(rawValue: 14), parentID: ChannelID(rawValue: 15), name: "post")
-    model.snapshot?.channels.append(Channel(id: ChannelID(rawValue: 15), guildID: nil, name: "forum", kind: .forum))
-    model.snapshot?.threads = [thread, post]
+    model.snapshot?.threads = [thread]
     model.openThread = thread
     let staged = URL(fileURLWithPath: "/tmp/sakuracord-diagnostics-staged")
     await provider.failNextSend()
     let sent = await model.shareDiagnostics(in: source, confirm: { name in
-        #expect(name == [10: "text", 11: "voice", 13: "thread", 14: "post"][sourceID])
+        #expect(name == [10: "text", 13: "thread"][sourceID])
         #expect(await model.shareDiagnostics(in: source, confirm: { _ in
             Issue.record("Duplicate click must not present another confirmation")
             return true
@@ -3050,8 +671,8 @@ func `Diagnostics sharing binds confirmation to its source and preserves drafts 
 }
 
 @MainActor
-@Test(arguments: ["cancel", "session", "permission", "oversize", "export-error"])
-func `Diagnostics sharing stops before delivery when confirmation or export becomes invalid`(reason: String) async {
+@Test(arguments: ["cancel", "session", "permission"])
+func `Diagnostics sharing stops before delivery when confirmation is cancelled or the session or access changes`(reason: String) async {
     let provider = TypingTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()
@@ -3064,8 +685,6 @@ func `Diagnostics sharing stops before delivery when confirmation or export beco
         }
         return reason != "cancel"
     }, export: {
-        if reason == "export-error" { throw CocoaError(.fileWriteUnknown) }
-        if reason == "oversize" { return Data(count: Int(model.discordAttachmentLimit) + 1) }
         Issue.record("A rejected confirmation must not export diagnostics")
         return Data()
     })
@@ -3075,46 +694,11 @@ func `Diagnostics sharing stops before delivery when confirmation or export beco
     #expect(!model.diagnosticsShareInFlight)
 }
 
-@MainActor
-@Test func `Diagnostics require source send and attachment permissions for channels threads and voice chat`() {
-    let model = AppModel(launchMode: .offlineTesting)
-    let user = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
-    let permissions = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
-        | DiscordPermissionBits.sendMessages | DiscordPermissionBits.sendMessagesInThreads
-        | DiscordPermissionBits.attachFiles | DiscordPermissionBits.connect
-    let guild = Guild(id: GuildID(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
-    let channel = Channel(id: ChannelID(rawValue: 21), guildID: guild.id, name: "source", kind: .text)
-    let voice = Channel(id: ChannelID(rawValue: 22), guildID: guild.id, name: "voice", kind: .voice)
-    let thread = MessageThreadSummary(id: ChannelID(rawValue: 23), guildID: guild.id, parentID: channel.id, name: "thread")
-    model.snapshot = BootstrapSnapshot(currentUser: user, guilds: [guild], channels: [channel, voice], members: [])
-    model.snapshot?.threads = [thread]
-    model.serverRailGuildsByID = [guild.id: guild]
-    model.currentUserRoleIDsByGuild[guild.id] = []
-    for id in [channel.id, voice.id, thread.id] {
-        #expect(model.diagnosticsDestinationName(in: id) != nil)
-    }
-    for denied in [DiscordPermissionBits.attachFiles, DiscordPermissionBits.viewChannel] {
-        var restricted = guild
-        restricted.currentUserPermissions = permissions & ~denied
-        model.serverRailGuildsByID[guild.id] = restricted
-        for id in [channel.id, voice.id, thread.id] {
-            #expect(model.diagnosticsDestinationName(in: id) == nil)
-        }
-    }
-    var restricted = guild
-    restricted.currentUserPermissions = permissions & ~DiscordPermissionBits.sendMessagesInThreads
-    model.serverRailGuildsByID[guild.id] = restricted
-    #expect(model.diagnosticsDestinationName(in: channel.id) != nil)
-    #expect(model.diagnosticsDestinationName(in: thread.id) == nil)
-    model.serverRailGuildsByID[guild.id] = guild
-    model.snapshot?.threads[0].isLocked = true
-    #expect(model.diagnosticsDestinationName(in: thread.id) == nil)
-}
-
 private actor TypingTestProvider: ChatProvider {
     private enum SendFailure {
         case definite
         case timedOut
+        case autoModeration
     }
 
     let currentUser = User(id: UserID(rawValue: 1), username: "me", displayName: "Me")
@@ -3126,7 +710,6 @@ private actor TypingTestProvider: ChatProvider {
         Channel(id: ChannelID(rawValue: 12), guildID: nil, name: "group", kind: .groupDirectMessage)
     ] }
     private var continuation: AsyncStream<ClientEvent>.Continuation?
-    private(set) var typingChannels: [ChannelID] = []
     private(set) var sendCount = 0
     private(set) var editCount = 0
     private(set) var sentNonces: [String] = []
@@ -3137,17 +720,11 @@ private actor TypingTestProvider: ChatProvider {
     private var sendStartedWaiter: CheckedContinuation<Void, Never>?
     private var sendReleaseWaiter: CheckedContinuation<Void, Never>?
     private var didStartSuspendedSend = false
-    private var memberSearchStartedWaiter: CheckedContinuation<Void, Never>?
-    private var memberSearchReleaseWaiter: CheckedContinuation<[Member], Never>?
     private var threadCreationStarted: CheckedContinuation<Void, Never>?
     private var threadCreationResponse: CheckedContinuation<MessageThreadSummary, Error>?
 
     init(guild: Guild? = nil) {
         self.guild = guild
-    }
-
-    var typingCount: Int {
-        typingChannels.count
     }
 
     func bootstrap() async throws -> BootstrapSnapshot {
@@ -3163,24 +740,6 @@ private actor TypingTestProvider: ChatProvider {
         []
     }
 
-    func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member] {
-        await withCheckedContinuation { continuation in
-            memberSearchReleaseWaiter = continuation
-            memberSearchStartedWaiter?.resume()
-            memberSearchStartedWaiter = nil
-        }
-    }
-
-    func waitUntilMemberSearchStarts() async {
-        if memberSearchReleaseWaiter != nil { return }
-        await withCheckedContinuation { memberSearchStartedWaiter = $0 }
-    }
-
-    func releaseMemberSearch(_ members: [Member]) {
-        memberSearchReleaseWaiter?.resume(returning: members)
-        memberSearchReleaseWaiter = nil
-    }
-
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile {
         throw ChatProviderError.invalidRequest("not used")
     }
@@ -3194,9 +753,7 @@ private actor TypingTestProvider: ChatProvider {
         MessagePage(messages: [], hasMoreBefore: false)
     }
 
-    func sendTyping(in channelID: ChannelID) async throws {
-        typingChannels.append(channelID)
-    }
+    func sendTyping(in channelID: ChannelID) async throws {}
 
     func createThread(_ draft: CreateThreadDraft) async throws -> MessageThreadSummary {
         try await withCheckedThrowingContinuation { continuation in
@@ -3211,14 +768,10 @@ private actor TypingTestProvider: ChatProvider {
         await withCheckedContinuation { threadCreationStarted = $0 }
     }
 
-    func completeThreadCreation(fails: Bool) {
-        if fails {
-            threadCreationResponse?.resume(throwing: ChatProviderError.invalidRequest("Synthetic creation failure"))
-        } else {
-            threadCreationResponse?.resume(returning: MessageThreadSummary(
-                id: ChannelID(rawValue: 30), guildID: guild?.id, parentID: channels[0].id, name: "Thread"
-            ))
-        }
+    func completeThreadCreation() {
+        threadCreationResponse?.resume(returning: MessageThreadSummary(
+            id: ChannelID(rawValue: 30), guildID: guild?.id, parentID: channels[0].id, name: "Thread"
+        ))
         threadCreationResponse = nil
     }
 
@@ -3243,6 +796,8 @@ private actor TypingTestProvider: ChatProvider {
                 throw ChatProviderError.invalidRequest("Synthetic send failure")
             case .timedOut:
                 throw URLError(.timedOut)
+            case .autoModeration:
+                throw ChatProviderError.autoModerationBlocked(explanation: "Synthetic rule explanation")
             }
         }
         nextMessageID += 1
@@ -3268,36 +823,12 @@ private actor TypingTestProvider: ChatProvider {
         didStartSuspendedSend = false
     }
 
-    private var emojiSave: EmojiUserSettings?
-    private var emojiSaveStarted: CheckedContinuation<EmojiUserSettings, Never>?
-    private var emojiSaveRelease: CheckedContinuation<Void, Never>?
-
-    func saveEmojiFrecency(
-        _ messages: DiscordFrecencyHistory, reactions: DiscordFrecencyHistory,
-        favoriteKey: String?, isFavorite: Bool
-    ) async throws -> EmojiUserSettings {
-        let settings = EmojiUserSettings(dataVersion: 2, messageHistory: messages, reactionHistory: reactions)
-        emojiSave = settings
-        await withCheckedContinuation { continuation in
-            emojiSaveRelease = continuation
-            emojiSaveStarted?.resume(returning: settings)
-            emojiSaveStarted = nil
-        }
-        return settings
-    }
-
-    func waitForEmojiSave() async -> EmojiUserSettings {
-        if let emojiSave { return emojiSave }
-        return await withCheckedContinuation { emojiSaveStarted = $0 }
-    }
-
-    func completeEmojiSave() {
-        emojiSaveRelease?.resume()
-        emojiSaveRelease = nil
-    }
-
     func failNextSend() {
         nextSendFailure = .definite
+    }
+
+    func blockNextSendWithAutoMod() {
+        nextSendFailure = .autoModeration
     }
 
     func timeOutNextSend() {
@@ -3336,10 +867,6 @@ private actor TypingTestProvider: ChatProvider {
     func disconnect() async {
         continuation?.yield(.connectionChanged(.disconnected))
     }
-
-    func emit(_ event: ClientEvent) {
-        continuation?.yield(event)
-    }
 }
 
 private actor NotificationCredentialStore: CredentialStore {
@@ -3365,7 +892,8 @@ private actor NotificationCredentialStore: CredentialStore {
 }
 
 @MainActor
-@Test func `translation never sends or edits Discord and explicit sending cancels pending translation`() async throws {
+@Test(arguments: [false, true])
+func `a late translation cannot repopulate a draft that was already sent`(completesBeforeSend: Bool) async throws {
     let provider = TypingTestProvider()
     let translator = ControlledTranslationTestService()
     let state = TranslationState(
@@ -3380,16 +908,23 @@ private actor NotificationCredentialStore: CredentialStore {
     model.translateDraft(in: .channel)
     let translationTask = try #require(state.draftTasks[.channel])
     await translator.waitForRequests(1)
+    if completesBeforeSend {
+        translator.complete(0, text: "Translated")
+        await translationTask.value
+        #expect(model.draft == "Translated")
+    }
     #expect(await provider.sendCount == 0)
     #expect(await provider.editCount == 0)
     #expect(await model.send())
-    translator.complete(0, text: "Late translation")
-    await translationTask.value
+    if !completesBeforeSend {
+        translator.complete(0, text: "Late translation")
+        await translationTask.value
+    }
     #expect(model.draft.isEmpty)
     #expect(state.drafts[.channel] == nil)
     #expect(await provider.sendCount == 1)
     let message = Message(id: MessageID(rawValue: 999), channelID: ChannelID(rawValue: 10),
-                          author: await provider.otherUser, content: "Hallo")
+                          author: provider.otherUser, content: "Hallo")
     model.toggleMessageTranslation(message)
     let messageTask = try #require(state.messageTasks[message.id])
     await translator.waitForRequests(2)

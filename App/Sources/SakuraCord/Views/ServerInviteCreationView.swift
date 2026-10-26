@@ -82,7 +82,7 @@ struct ServerInviteCreationView: View {
     }
 
     private func channel(_ id: ChannelID) -> Channel? {
-        model.snapshot?.channels.first { $0.id == id }
+        model.messagePresentationChannelsByID[id]
     }
 }
 

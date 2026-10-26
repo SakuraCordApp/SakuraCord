@@ -17,8 +17,7 @@ struct KeyboardShortcutNavigationTests {
         model.snapshot?.activeJoinedThreads = [thread]
         model.selectedChannelID = parentID
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: false) == thread.id)
-        model.openThread = thread
-        model.isThreadFullWidth = true
+        model.sideConversations.thread = .thread(thread, isFullWidth: true)
         #expect(model.isConversationPresented(thread.id))
         #expect(!model.isConversationPresented(parentID))
         #expect(model.keyboardShortcutConversationDestination(direction: -1, unreadOnly: false) == parentID)
@@ -38,6 +37,18 @@ struct KeyboardShortcutNavigationTests {
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: false) == ChannelID(rawValue: 12))
         model.checkingChannelIDs = [ChannelID(rawValue: 12)]
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: false) == nil)
+
+        model.hiddenChannelIDs = []
+        model.checkingChannelIDs = []
+        model.applyNotificationSettings(.init(guildID: GuildID(rawValue: 1), hideMutedChannels: true,
+            channelOverrides: [.init(channelID: ChannelID(rawValue: 11), isMuted: true)]))
+        #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: false) == ChannelID(rawValue: 12))
+        #expect(model.hasKeyboardShortcutConversationDestination(unreadOnly: false))
+        model.updateLocalChannelNotificationOverride(guildID: GuildID(rawValue: 1), channelID: ChannelID(rawValue: 12)) {
+            $0.isMuted = true
+        }
+        #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: false) == nil)
+        #expect(!model.hasKeyboardShortcutConversationDestination(unreadOnly: false))
     }
 
     @Test func `unread shortcuts keep their position across read channels and wrap across servers`() {
@@ -90,7 +101,8 @@ struct KeyboardShortcutNavigationTests {
         model.readState.applyRemote(ChannelReadState(
             channelID: ChannelID(rawValue: 20),
             lastAcknowledgedMessageID: MessageID(rawValue: 50),
-            mentionCount: 2
+            mentionCount: 2,
+            isManual: true
         ))
         model.selectedChannelID = ChannelID(rawValue: 10)
         #expect(model.keyboardShortcutConversationDestination(direction: 1, unreadOnly: true, mentionsOnly: true) == ChannelID(rawValue: 20))
@@ -102,7 +114,8 @@ struct KeyboardShortcutNavigationTests {
     @Test func `menu availability matches ordered navigation without constructing destinations`() {
         let model = makeModel()
         model.readState.applyRemote(ChannelReadState(channelID: ChannelID(rawValue: 20),
-                                                    lastAcknowledgedMessageID: MessageID(rawValue: 50), mentionCount: 2))
+                                                    lastAcknowledgedMessageID: MessageID(rawValue: 50), mentionCount: 2,
+                                                    isManual: true))
         for selected in [10, 11, 12, 20, 30, 999] {
             model.selectedChannelID = ChannelID(rawValue: UInt64(selected))
             for hidden in [Set<ChannelID>(), [ChannelID(rawValue: 10), ChannelID(rawValue: 20)]] {

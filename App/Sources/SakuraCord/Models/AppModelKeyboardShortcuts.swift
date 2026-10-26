@@ -37,13 +37,7 @@ extension AppModel {
             if let channel = selectedChannel, channel.kind == .voice {
                 if isVoiceChatOpen { closeVoiceChat() } else { openVoiceChat(for: channel) }
             } else {
-                prepareInspectorProfileForPresentation()
-                withAnimation(
-                    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                        ? nil : .smooth(duration: 0.24)
-                ) {
-                    showInspector.toggle()
-                }
+                toggleMemberInspector()
             }
         default:
             performConversationNavigationShortcut(action)
@@ -87,9 +81,9 @@ extension AppModel {
         case .markServerRead:
             if let guildID = selectedGuildID { markGuildRead(guildID) }
         case .copyChannelLink:
-            if let channelID = openThread?.id ?? selectedChannelID {
+            if let channelID = visibleThread?.id ?? selectedChannelID {
                 ChannelContextMenuValue.copy(ChannelContextMenuValue.link(
-                    guildID: openThread?.guildID ?? selectedChannel?.guildID,
+                    guildID: visibleThread?.guildID ?? selectedChannel?.guildID,
                     channelID: channelID
                 ))
             }
@@ -207,7 +201,7 @@ extension AppModel {
         case .searchCurrentConversation:
             isFriendsSearchActive || isBrowsingGuildChannels || canShowMessageSearch
         case .copyChannelLink:
-            openThread != nil || selectedChannelID != nil
+            visibleThread != nil || selectedChannelID != nil
         case .togglePins:
             activePinsChannelID != nil
         case .toggleEmojiPicker, .toggleGIFPicker, .toggleStickerPicker:
@@ -243,10 +237,6 @@ extension AppModel {
                 && (voiceSessionState == .connected || localApplicationStreamKey != nil)
         default: false
         }
-    }
-
-    private var activeComposerDestination: MessageComposerDestination {
-        hasThreadPane ? .thread : .channel
     }
 
 }

@@ -100,7 +100,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 )
             )
             menu.addItem(.separator())
-            menu.addItem(menuItem("Invite to Server", systemImage: "person.badge.plus",
+            menu.addItem(menuItem("Invite to Server", systemImage: "person.badge.plus.fill",
                                   action: #selector(inviteFromMenu), isEnabled: canInvite()))
             menu.addItem(.separator())
 
@@ -139,12 +139,6 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 menu.addItem(item)
             }
 
-            if let all = showsAllChannels() {
-                let item = menuItem("Show All Channels", systemImage: "list.bullet", action: #selector(toggleAllChannels))
-                item.state = all ? .on : .off
-                menu.addItem(item)
-            }
-
             let notificationItem = menuItem(
                 "Notification Settings",
                 systemImage: "bell.badge.fill",
@@ -154,6 +148,21 @@ struct ServerContextMenuBridge: NSViewRepresentable {
             notificationItem.subtitle = notificationSettings.messageNotifications.menuTitle
             notificationItem.submenu = notificationMenu()
             menu.addItem(notificationItem)
+
+            let hideMutedItem = menuItem(
+                "Hide Muted Channels",
+                systemImage: "eye.slash.fill",
+                action: #selector(toggleHideMutedChannels),
+                isEnabled: !isMutationPending
+            )
+            hideMutedItem.state = notificationSettings.hideMutedChannels ? .on : .off
+            menu.addItem(hideMutedItem)
+
+            if let all = showsAllChannels() {
+                let item = menuItem("Show All Channels", systemImage: "list.bullet", action: #selector(toggleAllChannels))
+                item.state = all ? .on : .off
+                menu.addItem(item)
+            }
 
             menu.addItem(.separator())
             menu.addItem(
@@ -174,6 +183,10 @@ struct ServerContextMenuBridge: NSViewRepresentable {
         @objc private func toggleAllChannels() {
             guard let all = showsAllChannels() else { return }
             setShowsAllChannels(!all)
+        }
+
+        @objc private func toggleHideMutedChannels() {
+            setNotificationToggle(.hideMutedChannels, !notificationSettings.hideMutedChannels)
         }
 
         @objc private func leaveServerFromMenu() { leaveServer?() }
@@ -202,7 +215,7 @@ struct ServerContextMenuBridge: NSViewRepresentable {
                 menu.addItem(item)
             }
             menu.addItem(.separator())
-            for toggle in GuildNotificationToggle.allCases {
+            for toggle in GuildNotificationToggle.allCases where toggle != .hideMutedChannels {
                 if toggle == .mobilePush {
                     menu.addItem(.separator())
                 }
@@ -282,6 +295,7 @@ private extension GuildNotificationToggle {
         case .suppressHighlights: "Suppress Highlights"
         case .muteScheduledEvents: "Mute New Events"
         case .mobilePush: "Mobile Push Notifications"
+        case .hideMutedChannels: "Hide Muted Channels"
         }
     }
 }
@@ -290,9 +304,12 @@ final class ServerContextMenuHitView: NSView {
     var menuProvider: (() -> NSMenu?)?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
-        let eventType = window?.currentEvent?.type ?? NSApp.currentEvent?.type
-        return eventType == .rightMouseDown ? self : nil
+        guard super.hitTest(point) != nil,
+              let event = window?.currentEvent ?? NSApp.currentEvent
+        else { return nil }
+        let isContextClick = event.type == .rightMouseDown
+            || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        return isContextClick ? self : nil
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

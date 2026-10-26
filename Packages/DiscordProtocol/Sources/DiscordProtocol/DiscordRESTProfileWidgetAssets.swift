@@ -155,7 +155,7 @@ public extension DiscordRESTProvider {
                     return games
                 }
                 guard attempt < 5, response.statusCode == 429 || response.statusCode >= 500 && response.statusCode != 503 else {
-                    throw apiDiagnostics.coalescing(ChatProviderError.transport(status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")), with: response)
+                    throw unexplainedFailure(data, response)
                 }
                 backoff = min(backoff + 2 * backoff * Double.random(in: 0 ..< 1), 5)
                 let retryAfter = DiscordProfileWidgetGameSearch.retryAfter(data: data, response: response)

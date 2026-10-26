@@ -205,7 +205,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         case user, roleName, roleID, rolePosition, isRoleCategory, status, roleIDs, roles,
              guildAvatarURL,
              globalDisplayName, guildNickname, guildProfileCosmetics, activityText, customStatus, isListeningToMusic,
-             isMobileOnly, memberListIndex, joinedAt
+             isMobileOnly, memberListIndex, joinedAt, communicationDisabledUntil
     }
 
     public init(from decoder: Decoder) throws {
@@ -228,6 +228,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         isMobileOnly = try container.decodeIfPresent(Bool.self, forKey: .isMobileOnly) ?? false
         memberListIndex = try container.decodeIfPresent(Int.self, forKey: .memberListIndex)
         joinedAt = try container.decodeIfPresent(Date.self, forKey: .joinedAt)
+        communicationDisabledUntil = try container.decodeIfPresent(Date.self, forKey: .communicationDisabledUntil)
     }
 
     public mutating func applyGlobalProfileUser(_ value: User) {

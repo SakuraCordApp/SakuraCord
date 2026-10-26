@@ -231,7 +231,8 @@ import Testing
     #expect(message.mentionedUsers.first?.displayName == "Server Nick")
 }
 
-@Test func `image embeds promote a thumbnail-only signed GIF to their image`() throws {
+@Test(arguments: ["image", "article"])
+func `image and article embeds promote wire thumbnails while link embeds keep them`(type: String) throws {
     let source = "https://cdn.discordapp.com/attachments/1/2/cat.gif"
     let signed = "https://cdn.discordapp.com/attachments/1/2/cat.gif?ex=1&is=2&hm=3&"
     let signedProxy = "https://media.discordapp.net/attachments/1/2/cat.gif?ex=1&is=2&hm=3&"
@@ -246,10 +247,10 @@ import Testing
           "author":{"id":"1","username":"fixture"},
           "content":"\#(source)","timestamp":"2026-09-28T10:00:00.000Z","attachments":[],
           "embeds":[
-            {"type":"image","url":"\#(source)","thumbnail":\#(media)},
-            {"type":"image","url":"\#(source)","image":{"url":"https://cdn.example/explicit.png"},
+            {"type":"\#(type)","url":"\#(source)","thumbnail":\#(media)},
+            {"type":"\#(type)","url":"\#(source)","image":{"url":"https://cdn.example/explicit.png"},
              "thumbnail":\#(media)},
-            {"type":"article","url":"https://example.com","thumbnail":\#(media)}
+            {"type":"link","url":"https://example.com","thumbnail":\#(media)}
           ]
         }
         """#.utf8
@@ -269,7 +270,7 @@ import Testing
     #expect(promoted.flags == 32)
 
     #expect(embeds[1].image?.url?.absoluteString == "https://cdn.example/explicit.png")
-    #expect(embeds[1].thumbnail?.url?.absoluteString == signed)
+    #expect(embeds[1].thumbnail == nil)
 
     #expect(embeds[2].image == nil)
     #expect(embeds[2].thumbnail?.url?.absoluteString == signed)

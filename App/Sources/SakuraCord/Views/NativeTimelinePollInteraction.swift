@@ -33,6 +33,7 @@ extension NativeTimelineCanvasView {
         } else if !poll.isClosed(), layout.revealFrame.contains(local), poll.selectedAnswerIDs.isEmpty {
             control = .reveal; frame = layout.revealFrame
         } else if !poll.isClosed(), layout.submitFrame.contains(local),
+                  model?.canUpdatePollVote(on: row.message, removing: !poll.selectedAnswerIDs.isEmpty) == true,
                   !poll.selectedAnswerIDs.isEmpty || (!state.showsResults(for: poll) && !state.selected.isEmpty) {
             control = .submit; frame = layout.submitFrame
         } else { return nil }
@@ -68,7 +69,7 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcilePollPresentations() {
-        let accountID = model?.snapshot?.currentUser.id
+        let accountID = model?.currentUser?.id
         if pollAccountID != accountID {
             pollStates.removeAll(); pollSnapshots.removeAll(); pollAnimations.removeAll()
             pollPopover?.close(); pollPopover = nil
@@ -82,7 +83,7 @@ extension NativeTimelineCanvasView {
             pollRowIndexes[row.id] = index
             let state = pollStates[row.id] ?? .init()
             if rowFrame(at: index).intersects(visibleRect), let previous = pollSnapshots[row.id], previous.results != poll.results,
-               state.showsResults(for: poll), !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+               state.showsResults(for: poll), AppMotionPolicy.animatesUncategorized {
                 // Bars grow from zero when a vote first reveals the results.
                 let wasShowingResults = state.showsResults(for: previous)
                 let current = pollPresentation(for: row.id)
@@ -151,7 +152,7 @@ extension NativeTimelineCanvasView {
             state.revealsResults.toggle()
             pollStates[id] = state
             if state.revealsResults, poll.results == nil { Task { await model.loadUnknownPollResults(hit.message) } }
-            if state.revealsResults, poll.results != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if state.revealsResults, poll.results != nil, AppMotionPolicy.animatesUncategorized {
                 pollAnimations[id] = (Dictionary(uniqueKeysWithValues: poll.answers.map { ($0.id, 0) }), CACurrentMediaTime())
                 startPollAnimationTicker()
             }
@@ -164,7 +165,7 @@ extension NativeTimelineCanvasView {
 
     private func submitPollVote(_ message: Message, poll: MessagePoll, state: NativeTimelinePollPresentation, model: AppModel) {
         let removing = !poll.selectedAnswerIDs.isEmpty
-        guard !poll.isClosed(), poll.layoutType == 1,
+        guard model.canUpdatePollVote(on: message, removing: !poll.selectedAnswerIDs.isEmpty), !poll.isClosed(), poll.layoutType == 1,
               removing || (!state.showsResults(for: poll) && !state.selected.isEmpty) else { return }
         // The model applies the vote before the request; unknown tallies show
         // results while they load.
@@ -180,19 +181,8 @@ extension NativeTimelineCanvasView {
     private func showPollVoters(_ hit: PollPointerHit, answerID: Int) {
         guard let model else { return }
         pollPopover?.close()
-        let popover = NSPopover()
-        popover.behavior = .transient
-        let controller = StablePopoverHostingController(rootView:
-            PollVotersView(model: model, message: hit.message, initialAnswerID: answerID), dismiss: { [weak popover] in popover?.close() })
-        popover.contentViewController = controller
-        popover.contentSize = PollVotersView.size
-        pollPopover = popover
-        popover.show(relativeTo: hit.frame, of: self, preferredEdge: .maxX)
-        controller.monitorEscapeKey(in: controller.view.window, presentingWindow: window)
-        Task { @MainActor [weak self, weak popover, weak controller] in
-            await Task.yield()
-            guard popover?.isShown == true, let controller else { return }
-            controller.monitorEscapeKey(in: controller.view.window, presentingWindow: self?.window)
+        pollPopover = presentMessagePeoplePopover(relativeTo: hit.frame) { popover in
+            PollVotersView(model: model, message: hit.message, initialAnswerID: answerID, dismiss: { [weak popover] in popover?.close() })
         }
     }
 }
@@ -208,7 +198,8 @@ extension NativeTimelineCanvasView {
         if !poll.isClosed() {
             if poll.selectedAnswerIDs.isEmpty { frames.append(layout.revealFrame) }
             let state = pollPresentation(for: row.id)
-            if !poll.selectedAnswerIDs.isEmpty || (!state.showsResults(for: poll) && !state.selected.isEmpty) {
+            if model?.canUpdatePollVote(on: row.message, removing: !poll.selectedAnswerIDs.isEmpty) == true,
+               !poll.selectedAnswerIDs.isEmpty || (!state.showsResults(for: poll) && !state.selected.isEmpty) {
                 frames.append(layout.submitFrame)
             }
         }
@@ -217,7 +208,7 @@ extension NativeTimelineCanvasView {
 
     func requestEndPoll(_ message: Message) {
         guard let model, let window, message.outboxState == .confirmed,
-              message.author.id == model.snapshot?.currentUser.id, message.poll?.isClosed() == false else { return }
+              message.author.id == model.currentUser?.id, message.poll?.isClosed() == false else { return }
         let alert = NSAlert()
         alert.messageText = "End this poll now?"
         alert.informativeText = "This will close the poll immediately and reveal the results."
@@ -269,7 +260,8 @@ extension NativeTimelineCanvasView {
             }
             if !results || !poll.selectedAnswerIDs.isEmpty {
                 append(.submit, label: poll.selectedAnswerIDs.isEmpty ? "Vote" : "Remove Vote", frame: layout.submitFrame,
-                       enabled: !state.selected.isEmpty || !poll.selectedAnswerIDs.isEmpty)
+                       enabled: model?.canUpdatePollVote(on: message, removing: !poll.selectedAnswerIDs.isEmpty) == true
+                           && (!state.selected.isEmpty || !poll.selectedAnswerIDs.isEmpty))
             }
         }
     }

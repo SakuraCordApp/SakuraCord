@@ -1,0 +1,17 @@
+name: Pull request metadata
+
+on:
+  pull_request_target:
+    types: [opened, reopened, edited, synchronize, closed]
+
+# A scoped Actions event policy permits this default-branch signal to run for
+# forks and conflicted PRs. It has no token permissions, checkout, or artifacts.
+# Trusted workflow_run consumers re-read current PR state through the API.
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo 'Pull request metadata changed.'

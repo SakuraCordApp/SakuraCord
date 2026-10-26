@@ -176,6 +176,15 @@ extension AppModel {
         )
     }
 
+    /// The workspace's own toolbar (`WorkspaceTitlebar`) keeps the search
+    /// field in place beside a thread pane, where it fades out instead of
+    /// leaving the toolbar.
+    var keepsMessageSearchFieldInPlace: Bool {
+        sessionState == .workspace && onboardingEntryGuildID == nil
+            && guildWorkspacePage == nil && !isFriendsPresented
+            && MessageSearchSurfacePolicy.showsToolbar(channelKind: selectedChannel?.kind, hasOpenThread: false)
+    }
+
     var isMessageSearchVisible: Bool {
         messageSearch.isPresented && canShowMessageSearch
             && !isFriendsPresented && onboardingEntryGuildID == nil && guildWorkspacePage == nil
@@ -227,7 +236,9 @@ extension AppModel {
         messageSearch.requestTask = nil
         messageSearch.isSearching = false
         messageSearch.pollRefreshJournal = nil
-        messageSearch.isPresented = false
+        WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
+            messageSearch.isPresented = false
+        }
         messageSearch.isInputFocused = false
     }
 
@@ -427,9 +438,13 @@ extension AppModel {
     }
 
     private func presentMessageSearchResultsIfNeeded() {
-        guard !messageSearch.isPresented else { return }
+        guard !isMessageSearchVisible else { return }
         AppPerformanceSignposts.beginMessageSearchOpen()
-        messageSearch.isPresented = true
+        WorkspaceLayoutMotion.perform(in: self, categories: inspectorMotionCategories) {
+            // Results take a side chat pane's place: it closes for good.
+            closePaneSideConversation()
+            messageSearch.isPresented = true
+        }
     }
 
     func submitMessageSearchInput() {
@@ -502,7 +517,7 @@ extension AppModel {
         // Discord's queryAllUsers path reads UserStore insertion order. This
         // projection contains every live Gateway user DTO, including broad
         // READY_SUPPLEMENTAL hydration, without app-specific disk-only users.
-        var users = (snapshot?.messageSearchUsers ?? []).filter {
+        var users = messageSearchSourceUsers.filter {
             seen.insert($0.id).inserted
         }
         if let selectedGuildID {
@@ -521,7 +536,7 @@ extension AppModel {
                 uniquingKeysWith: { existing, _ in existing }
             )
             let orderedUserIDs =
-                (snapshot?.quickSwitcherGuildMemberUserIDs[selectedGuildID] ?? [])
+                (quickSwitcherGuildMemberUserIDs[selectedGuildID] ?? [])
                 + localGuildUsers.map(\.id)
             for userID in orderedUserIDs where seen.insert(userID).inserted {
                 if let user = localGuildUsersByID[userID] {
@@ -529,7 +544,7 @@ extension AppModel {
                 }
             }
         }
-        if let currentUser = snapshot?.currentUser,
+        if let currentUser,
            seen.insert(currentUser.id).inserted
         {
             users.insert(currentUser, at: 0)
@@ -538,7 +553,7 @@ extension AppModel {
     }
 
     var messageSearchChannels: [Channel] {
-        let allChannels = snapshot?.channels ?? visibleChannels
+        let allChannels = currentUser == nil ? visibleChannels : messagePresentationChannels
         let eligible = allChannels.filter { channel in
             if let selectedGuildID {
                 return channel.guildID == selectedGuildID
@@ -566,31 +581,6 @@ extension AppModel {
             return recipient.username
         }
         return channel.name
-    }
-
-    func messageSearchGuildAliases(guildID: GuildID) -> [UserID: [String]] {
-        var aliases: [UserID: [String]] = [:]
-        func append(_ value: String?, for userID: UserID) {
-            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty,
-                  aliases[userID, default: []].contains(where: {
-                      $0.localizedCaseInsensitiveCompare(value) == .orderedSame
-                  }) == false
-            else { return }
-            aliases[userID, default: []].append(value)
-        }
-        for (userID, nickname) in snapshot?.quickSwitcherGuildMemberAliases[guildID] ?? [:] {
-            append(nickname, for: userID)
-        }
-        for member in membersByGuildID[guildID]?.values ?? [UserID: Member]().values {
-            append(member.globalDisplayName, for: member.id)
-            append(member.user.displayName, for: member.id)
-        }
-        for member in memberListsByGuildID[guildID] ?? [] {
-            append(member.globalDisplayName, for: member.id)
-            append(member.user.displayName, for: member.id)
-        }
-        return aliases
     }
 
     func parsePastedMessageSearchSyntax(_ value: String) {
@@ -722,6 +712,13 @@ extension AppModel {
     }
 
     func navigateToInboxResult(_ message: Message, messageID: MessageID? = nil) {
+        if message.guildID != nil, knownRootChannel(message.channelID) == nil,
+           inbox.threads[message.channelID] == nil,
+           readState.entries[message.channelID]?.parentID == nil
+        {
+            resolveInboxThreadThenNavigate(message, messageID: messageID)
+            return
+        }
         if let guildID = message.guildID, inboxRequiresAgeAgreement(channelID: message.channelID, guildID: guildID) {
             requestInboxAgeAgreement(guildID: guildID) { [weak self] in self?.navigateToInboxResult(message, messageID: messageID) }
             return
@@ -730,6 +727,37 @@ extension AppModel {
             || snapshot?.activeJoinedThreads.contains { $0.id == message.channelID } == true
         dismissInbox()
         navigateToMessageResult(source: message, messageID: messageID ?? message.id, initialMessages: isThread ? [message] : nil, isKnownThread: isThread)
+    }
+
+    /// The age gate and thread presentation need the thread's parent. Resolve
+    /// it through the provider now rather than waiting for the background
+    /// inbox metadata lookup, and report a failed lookup.
+    private func resolveInboxThreadThenNavigate(_ message: Message, messageID: MessageID?) {
+        let channelID = message.channelID
+        // The same destination the resolved navigation uses, so a repeated
+        // selection joins the pending lookup instead of restarting it.
+        let target = ConversationNavigationTarget.message(
+            channelID, messageID ?? message.id, fullWidthThread: false
+        )
+        if isNavigating(to: target) { return }
+        startConversationNavigation(target: target) { model, session in
+            let post: ForumPost
+            do {
+                post = try await session.provider.forumPost(threadID: channelID)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
+                DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+                model.errorMessage = Self.threadResolutionErrorMessage(error)
+                return
+            }
+            guard !Task.isCancelled, model.isCurrentAccountSession(session) else { return }
+            model.inbox.threads[channelID] = post.thread
+            // Hand off to the resolved navigation, which shares this target.
+            model.conversationNavigationTarget = nil
+            model.navigateToInboxResult(message, messageID: messageID)
+        }
     }
 
     func openInboxGroup(_ channelID: ChannelID) {

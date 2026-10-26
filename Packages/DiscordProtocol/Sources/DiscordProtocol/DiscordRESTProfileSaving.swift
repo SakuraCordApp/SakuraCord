@@ -35,6 +35,7 @@ extension DiscordRESTProvider {
         // Gateway may have already applied this change, or a newer one. Only
         // reconcile if this member has not changed in the target guild.
         if memberPresentationRevisions[memberKey, default: 0] == revision {
+            preserveCachedTimeout(in: &body, userID: user.id, guildID: guildID)
             body["guild_id"] = .string(guildID.description)
             await handleGuildMemberAddDispatch(name: "GUILD_MEMBER_UPDATE", body: .object(body))
         }
@@ -68,6 +69,7 @@ extension DiscordRESTProvider {
         }
         // READY resets revisions, so the generation also guards a reconnect.
         if profileEditingGeneration == generation, memberPresentationRevisions[memberKey, default: 0] == revision {
+            preserveCachedTimeout(in: &body, userID: userID, guildID: guildID)
             body["guild_id"] = .string(guildID.description)
             await handleGuildMemberAddDispatch(name: "GUILD_MEMBER_UPDATE", body: .object(body))
         }
@@ -190,9 +192,7 @@ extension DiscordRESTProvider {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             }
-            throw apiDiagnostics.coalescing(ChatProviderError.transport(
-                status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")
-            ), with: response)
+            throw unexplainedFailure(data, response)
         }
         return data
     }
@@ -256,10 +256,18 @@ extension DiscordRESTProvider {
             saved.profile.guildMember = try decoder.decode(ProfileGuildMemberDTO.self, from: data)
             saved.serverIdentity = try decoder.decode(ProfileEditingIdentityDTO.self, from: data)
             if let guildID = scope.guildID {
-                let dto = try decoder.decode(GuildMemberDTO.self, from: data)
+                var dto = try decoder.decode(GuildMemberDTO.self, from: data)
+                if UserID(dto.user.id).flatMap({ cachedMemberIndex(guildID: guildID)[$0] }) != nil {
+                    // Identity saves do not change timeout state. A delayed
+                    // response must not replay it over confirmed membership.
+                    dto.includesCommunicationDisabledUntil = false
+                }
                 let member = try dto.domain(
                     currentUserID: currentUser?.id, currentStatus: presenceStatus,
-                    guildRoles: cachedGuildRoles[guildID] ?? [], guildID: guildID
+                    guildRoles: cachedGuildRoles[guildID] ?? [], guildID: guildID,
+                    previousCommunicationDisabledUntil: UserID(dto.user.id).flatMap {
+                        cachedMemberIndex(guildID: guildID)[$0]?.communicationDisabledUntil
+                    }
                 )
                 guard member.id == currentUser?.id else {
                     throw ChatProviderError.invalidRequest("Discord returned a different server member.")
@@ -282,6 +290,13 @@ extension DiscordRESTProvider {
                 saved.serverMetadata = fields
             }
         }
+    }
+
+    private func preserveCachedTimeout(in body: inout [String: JSONValue], userID: UserID, guildID: GuildID) {
+        guard cachedMemberIndex(guildID: guildID)[userID] != nil else { return }
+        // Let sparse member reconciliation retain the canonical timeout,
+        // including an explicit removal learned while this request waited.
+        body["communication_disabled_until"] = nil
     }
 
     private func validateProfileSaveResponse(_ data: Data, request: ProfileEditingRequest) throws {

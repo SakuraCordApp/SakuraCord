@@ -23,7 +23,8 @@ extension AppModel {
                       channel: channel,
                       resolvedBasePermissions: basis.resolvedBasePermissions,
                       overwritePrincipals: basis.overwritePrincipals,
-                      hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity
+                      hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
+            communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
                   ),
                   !basis.currentUserIsPending,
                   permissions & DiscordPermissionBits.attachFiles != 0

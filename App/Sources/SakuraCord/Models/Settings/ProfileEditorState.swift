@@ -39,7 +39,7 @@ final class ProfileEditorState {
     init(model: AppModel, now: @escaping () -> ContinuousClock.Instant = { .now }) {
         self.model = model
         self.now = now
-        if let prepared = model.preparedProfileEditingSnapshot, prepared.presentation.id == model.snapshot?.currentUser.id {
+        if let prepared = model.preparedProfileEditingSnapshot, prepared.presentation.id == model.currentUser?.id {
             session = model.accountSession()
             snapshot = prepared
             widgetResources = prepared.presentation.widgetResources
@@ -126,7 +126,7 @@ final class ProfileEditorState {
     /// It is never used as the baseline for a save.
     var displayProfile: UserProfile? {
         if let session, model.isCurrentAccountSession(session), let preview { return preview }
-        guard let user = model.snapshot?.currentUser else { return nil }
+        guard let user = model.currentUser else { return nil }
         return model.profileCache[ProfileCacheKey(userID: user.id, guildID: nil)]
             ?? model.profileCache.first(where: { $0.key.userID == user.id })?.value
             ?? UserProfile(user: user)

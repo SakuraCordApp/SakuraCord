@@ -206,6 +206,7 @@ extension DiscordRESTProvider {
     }
 
     func performForward(_ draft: ForwardMessageDraft) async throws -> Message {
+        try requireGuildCommunication(in: draft.destinationChannelID)
         let isKnownChannel = cachedChannels.values.lazy.flatMap(\.self).contains(where: {
             $0.id == draft.destinationChannelID
         })
@@ -494,6 +495,7 @@ extension DiscordRESTProvider {
     public func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
         -> Message
     {
+        try requireGuildCommunication(in: channelID)
         let dto: MessageDTO = try await request(
             "/channels/\(channelID)/messages/\(messageID)", method: "PATCH",
             body: ["content": .string(content)]
@@ -541,6 +543,7 @@ extension DiscordRESTProvider {
         messageID: MessageID,
         channelID: ChannelID
     ) async throws {
+        try requireGuildCommunication(in: channelID)
         let message = try await messageForReaction(messageID, channelID: channelID)
         let apiEmoji = Self.reactionAPIValue(emoji)
         let currentReaction = message.reactions.first {
@@ -550,9 +553,18 @@ extension DiscordRESTProvider {
         let encoded =
             apiEmoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? apiEmoji
         let method = reacted ? "PUT" : "DELETE"
-        try await requestEmpty(
-            "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)/@me", method: method
+        let (data, response) = try await perform(
+            "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)/@me",
+            method: method, query: [], body: nil
         )
+        if response.statusCode == 429 {
+            throw apiDiagnostics.coalescing(ChatProviderError.rateLimited(
+                retryAfter: Self.retryAfter(from: data, response: response),
+                requestID: response.value(forHTTPHeaderField: "x-request-id")
+            ), with: response)
+        }
+        try validateEmptyResponse(data, response)
+        invalidateReactionReactors(channelID: channelID, messageID: messageID, reactionID: Reaction(emoji: emoji, count: 0).id)
         guard let currentUserID = currentUser?.id,
               var updated = cachedMessages[messageID]
         else { return }
@@ -597,8 +609,11 @@ extension DiscordRESTProvider {
         if let cached = cachedReactionReactors[key] {
             return cached
         }
-        if let task = reactionReactorTasks[key] {
-            return try await task.value
+        if let task = reactionReactorTasks[key], let loadID = reactionReactorTaskIDs[key] {
+            let reactors = try await task.value
+            if let cached = cachedReactionReactors[key] { return cached }
+            guard reactionReactorTaskIDs[key] == loadID else { throw CancellationError() }
+            return reactors
         }
         guard reactionReactorTasks.count < Self.maximumConcurrentReactionReactorReads else {
             throw ChatProviderError.invalidRequest(
@@ -608,8 +623,11 @@ extension DiscordRESTProvider {
 
         let encoded =
             apiEmoji.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? apiEmoji
+        let loadID = UUID()
+        reactionReactorTaskIDs[key] = loadID
         let task = Task { [self] in
-            let users: [UserDTO] = try await request(
+            do {
+                let users: [UserDTO] = try await request(
                 "/channels/\(channelID)/messages/\(messageID)/reactions/\(encoded)",
                 query: [
                     URLQueryItem(name: "type", value: "0"),
@@ -619,18 +637,48 @@ extension DiscordRESTProvider {
                     ),
                 ]
             )
-            return try users.map { ReactionReactor(user: try $0.domain()) }
+                #if DEBUG
+                    await reactorResponseReceivedForTesting?()
+                #endif
+                try Task.checkCancellation()
+                guard reactionReactorTaskIDs[key] == loadID else { throw CancellationError() }
+                return try users.map { ReactionReactor(user: try $0.domain()) }
+            } catch {
+                // URLSession may report cancellation as URLError.cancelled.
+                // Invalidated reads must not become a preview failure cooldown.
+                try Task.checkCancellation()
+                throw error
+            }
         }
         reactionReactorTasks[key] = task
         do {
             let reactors = try await task.value
+            guard reactionReactorTaskIDs[key] == loadID else { throw CancellationError() }
             reactionReactorTasks[key] = nil
+            reactionReactorTaskIDs[key] = nil
             cacheReactionReactors(reactors, for: key)
             return reactors
         } catch {
-            reactionReactorTasks[key] = nil
+            if reactionReactorTaskIDs[key] == loadID {
+                reactionReactorTasks[key] = nil
+                reactionReactorTaskIDs[key] = nil
+            }
             throw error
         }
+    }
+
+    func invalidateReactionReactors(channelID: ChannelID, messageID: MessageID, reactionID: String? = nil) {
+        func matches(_ key: ReactionReactorCacheKey) -> Bool {
+            key.channelID == channelID && key.messageID == messageID
+                && (reactionID == nil || key.emojiIdentity == reactionID)
+        }
+        for key in reactionReactorTasks.keys
+        where matches(key) {
+            reactionReactorTasks.removeValue(forKey: key)?.cancel()
+            reactionReactorTaskIDs[key] = nil
+        }
+        cachedReactionReactors = cachedReactionReactors.filter { !matches($0.key) }
+        reactionReactorCacheOrder.removeAll { matches($0) }
     }
 
     func cacheReactionReactors(

@@ -73,7 +73,7 @@ struct ProfilesSettingsPage: View {
         .background { ProfileEditorFocusDismissal() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                ProfileScopePicker(scope: editor.scope, guilds: model.snapshot?.guilds ?? [], nicknames: nicknames) { scope in
+                ProfileScopePicker(scope: editor.scope, guilds: model.guildIDs.compactMap { model.serverRailGuildsByID[$0] }, nicknames: nicknames) { scope in
                     Task { await editor.load(scope) }
                 }
                 .disabled(editor.isSaving)
@@ -104,8 +104,8 @@ struct ProfilesSettingsPage: View {
     }
 
     private func refreshNicknames() {
-        guard let user = model.snapshot?.currentUser else { return }
-        for guild in model.snapshot?.guilds ?? [] {
+        guard let user = model.currentUser else { return }
+        for guild in model.guildIDs.compactMap({ model.serverRailGuildsByID[$0] }) {
             nicknames[guild.id] = model.membersByGuildID[guild.id]?[user.id]?.guildNickname
         }
         if let snapshot = editor.snapshot, let guildID = snapshot.scope.guildID { nicknames[guildID] = snapshot.identity.name.value }

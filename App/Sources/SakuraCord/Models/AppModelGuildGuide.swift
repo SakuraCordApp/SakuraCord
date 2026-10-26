@@ -16,9 +16,10 @@ struct GuildGuideEntry {
     var isLoading = false
     var error: String?
     var completing: Set<ChannelID> = []
-    var resource: GuildResourceState?
 }
 
+/// The open Guide resource side chat's messages, read forward from the
+/// channel's first message. It lives only while that side chat is open.
 struct GuildResourceState {
     let channelID: ChannelID
     var messages: [Message] = []
@@ -33,6 +34,16 @@ struct GuildResourceState {
     var refreshJournal: ConversationRefreshJournal?
     // Live events and deletions must not move the REST pagination boundary.
     var nextAfter: MessageID?
+    /// A reconnect found a read in flight; read forward again once it ends.
+    var revalidationPending = false
+
+    /// Publishes rows with the journal record the native timeline applies.
+    mutating func publishRows(_ newRows: [MessageRowPresentation]) {
+        let oldRows = rows
+        rows = newRows
+        revision &+= 1
+        journal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: rows, revision: revision))
+    }
 }
 
 extension AppModel {
@@ -88,12 +99,12 @@ extension AppModel {
     }
 
     func hasGuildGuide(in guildID: GuildID) -> Bool {
-        guard let guild = snapshot?.guilds.first(where: { $0.id == guildID }),
+        guard let guild = serverRailGuildsByID[guildID],
               guild.features.isSuperset(of: ["COMMUNITY", "GUILD_ONBOARDING", "GUILD_SERVER_GUIDE"]) else { return false }
         // Official navigation uses membership age/action flags and resource
         // channel flags, not GUILD_SERVER_GUIDE alone (READY carries both).
         return hasPendingGuildGuideActions(in: guildID)
-            || snapshot?.channels.contains { $0.guildID == guildID && $0.flags & (1 << 7) != 0 } == true
+            || guildIDsWithResourceChannels.contains(guildID)
     }
 
     func hasPendingGuildGuideActions(in guildID: GuildID) -> Bool {
@@ -107,12 +118,9 @@ extension AppModel {
             onboarding.presentedGuildID = nil
             return
         }
-        closeCustomizationPreview()
-        closeThread()
-        closeVoiceChat()
+        closeSideConversations()
         onboarding.page = .guide
         onboarding.presentedGuildID = guildID
-        onboarding.guides[guildID]?.resource = nil
         suspendSelectedConversationPresentation()
         refreshGuildGuide(in: guildID)
     }
@@ -142,9 +150,9 @@ extension AppModel {
                     refreshed.channelActions.merge(current.progress?.channelActions.filter { $0.value.completed } ?? [:]) { _, new in new }
                 }
                 model.onboarding.guides[guildID]?.progress = refreshed
-                if let resource = model.onboarding.guides[guildID]?.resource,
-                   !guide.resourceChannels.contains(where: { $0.channelID == resource.channelID }) {
-                    model.onboarding.guides[guildID]?.resource = nil
+                if case .guideResource(guildID, let channelID)? = model.sideConversations.context,
+                   !guide.resourceChannels.contains(where: { $0.channelID == channelID }) {
+                    model.closeSideConversations()
                 }
             } catch {
                 guard model.isCurrentAccountSession(account), model.onboarding.guides[guildID]?.identity == identity else { return }
@@ -216,15 +224,8 @@ extension AppModel {
         }
     }
 
-    var presentedGuideResource: GuildResourceState? {
-        guard guildWorkspacePage == .guide, let guildID = selectedGuildID else { return nil }
-        return onboarding.guides[guildID]?.resource
-    }
-
     func receiveGuideResourceEvent(_ event: ClientEvent) {
-        guard guildWorkspacePage == .guide, let guildID = selectedGuildID,
-              var resource = onboarding.guides[guildID]?.resource else { return }
-        let oldRows = resource.rows
+        guard var resource = presentedGuideResource else { return }
         switch event {
         case .messageCreated(let message) where message.channelID == resource.channelID:
             guard !resource.hasMore, !resource.messages.contains(where: { $0.id == message.id }) else { return }
@@ -240,27 +241,35 @@ extension AppModel {
             resource.changedMessageIDs.insert(messageID)
         default: return
         }
-        let retainedRows = Dictionary(uniqueKeysWithValues: oldRows.map { ($0.id, $0) })
-        resource.rows = resource.messages.map { message in
-            if let row = retainedRows[message.id], row.message == message { return row }
-            return MessageRowPresentation(message: message, startsGroup: false, startsDay: false,
-                                          replyPreview: nil, isReplyAvailable: false, isResource: true)
-        }
-        resource.revision &+= 1
-        resource.journal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: resource.rows, revision: resource.revision))
-        onboarding.guides[guildID]?.resource = resource
+        resource.publishRows(MessageGrouping.resourceRows(for: resource.messages, reusing: resource.rows))
+        guideResource = resource
         NotificationCenter.default.post(name: .sakuracordMessageRowsDidChange, object: self)
     }
 
     func openGuideResource(_ channelID: ChannelID, guildID: GuildID) {
         guard onboarding.guides[guildID]?.configuration?.resourceChannels.contains(where: { $0.channelID == channelID }) == true else { return }
-        closeThread()
-        onboarding.guides[guildID]?.resource = GuildResourceState(channelID: channelID)
-        loadGuideResource(guildID: guildID)
+        openSideConversation(.guideResource(guildID, channelID)) {
+            guideResource = GuildResourceState(channelID: channelID)
+        }
+        loadGuideResource()
     }
 
-    func loadGuideResource(guildID: GuildID) {
-        guard var resource = onboarding.guides[guildID]?.resource, !resource.loading else { return }
+    /// Live messages stop at a Gateway gap. A resource that had reached its
+    /// newest message reads forward from its REST boundary again; live
+    /// arrivals wait until that read reaches the newest message.
+    func revalidateGuideResourceAfterReconnect() {
+        guard let resource = guideResource else { return }
+        guard !resource.loading else {
+            guideResource?.revalidationPending = true
+            return
+        }
+        guard !resource.hasMore else { return }
+        guideResource?.hasMore = true
+        loadGuideResource()
+    }
+
+    func loadGuideResource() {
+        guard var resource = guideResource, !resource.loading else { return }
         resource.loading = true
         resource.error = nil
         resource.requestID = UUID()
@@ -270,23 +279,23 @@ extension AppModel {
         let channelID = resource.channelID
         let existingIDs = Set(resource.messages.map(\.id))
         let anchor = resource.nextAfter ?? resource.messages.last?.id ?? MessageID(rawValue: channelID.rawValue)
-        onboarding.guides[guildID]?.resource = resource
+        let requestEpoch = historyEpoch
+        guideResource = resource
         startAccountChildTask(account: accountSession()) { model, account in
             do {
                 let page = try await account.provider.messages(in: channelID, anchoredAt: .after(anchor), limit: 50)
                 let preparedRows = await Task.detached(priority: .userInitiated) {
-                    page.messages.filter { !existingIDs.contains($0.id) }.sorted { $0.id < $1.id }.map {
-                        MessageRowPresentation(message: $0, startsGroup: false, startsDay: false,
-                                               replyPreview: nil, isReplyAvailable: false, isResource: true)
-                    }
+                    page.messages.filter { !existingIDs.contains($0.id) }.sorted { $0.id < $1.id }
+                        .map(MessageGrouping.resourceRow(for:))
                 }.value
                 guard model.isCurrentAccountSession(account), !Task.isCancelled,
-                      var current = model.onboarding.guides[guildID]?.resource,
+                      var current = model.guideResource,
                       current.requestID == requestID else { return }
-                let oldRows = current.rows
                 let retainedIDs = Set(current.messages.map(\.id)).union(current.changedMessageIDs)
                 let cursor = page.messages.map(\.id).max() ?? anchor
-                let hasMore = page.hasMoreAfter && cursor > anchor
+                // A read from before a Gateway gap cannot reach the live tail.
+                let isStale = requestEpoch != model.historyEpoch
+                let hasMore = (page.hasMoreAfter && cursor > anchor) || isStale
                 let mutations = ConversationRefreshMutations(
                     messages: current.refreshJournal?.mutationsByMessageID ?? [:],
                     updatedUsers: current.refreshJournal?.updatedUsers ?? [:]
@@ -299,24 +308,25 @@ extension AppModel {
                 }.sorted { $0.id < $1.id }.map { incoming in
                     let message = model.pollVotePresentationPreserving(model.reactionPresentationPreserving(incoming))
                     if let row = preparedByID[message.id], row.message == message { return row }
-                    return MessageRowPresentation(message: message, startsGroup: false, startsDay: false,
-                                                  replyPreview: nil, isReplyAvailable: false, isResource: true)
+                    return MessageGrouping.resourceRow(for: message)
                 }
                 current.messages += additions.map(\.message)
-                current.rows += additions
-                current.revision &+= 1
-                current.journal.append(MessageRowsUpdateRecordBuilder.make(oldRows: oldRows, newRows: current.rows, revision: current.revision))
+                current.publishRows(current.rows + additions)
                 current.hasMore = hasMore
                 current.nextAfter = cursor
                 current.refreshJournal = nil
                 current.loading = false
-                model.onboarding.guides[guildID]?.resource = current
+                let readsAgain = current.revalidationPending || isStale
+                current.revalidationPending = false
+                model.guideResource = current
                 NotificationCenter.default.post(name: .sakuracordMessageRowsDidChange, object: model)
+                if readsAgain { model.loadGuideResource() }
             } catch {
-                guard model.isCurrentAccountSession(account), model.onboarding.guides[guildID]?.resource?.requestID == requestID else { return }
-                model.onboarding.guides[guildID]?.resource?.loading = false
-                model.onboarding.guides[guildID]?.resource?.refreshJournal = nil
-                model.onboarding.guides[guildID]?.resource?.error = error.localizedDescription
+                guard model.isCurrentAccountSession(account), model.guideResource?.requestID == requestID else { return }
+                model.guideResource?.loading = false
+                model.guideResource?.refreshJournal = nil
+                model.guideResource?.revalidationPending = false
+                model.guideResource?.error = error.localizedDescription
             }
         }
     }

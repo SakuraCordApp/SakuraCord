@@ -10,7 +10,7 @@ enum StatusBootstrapReadStage: CaseIterable, Sendable { case snapshot, currentSt
 @MainActor
 @Test(.timeLimit(.minutes(1)), arguments: StatusBootstrapReadStage.allCases)
 func `a newer account status event survives an earlier gated bootstrap snapshot`(stage: StatusBootstrapReadStage) async throws {
-    let provider = GatedStatusBootstrapProvider(stage: stage)
+    let provider = GatedBootstrapRaceProvider(stage: stage)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     let start = Task { await model.start() }
     await provider.waitForStaleRead()
@@ -39,11 +39,17 @@ func `a newer account status event survives an earlier gated bootstrap snapshot`
     await provider.disconnect()
 }
 
-private actor GatedStatusBootstrapProvider: ChatProvider {
+actor GatedBootstrapRaceProvider: ChatProvider {
     private let base = MockChatProvider()
     private let stage: StatusBootstrapReadStage
 
-    init(stage: StatusBootstrapReadStage) { self.stage = stage }
+    private let timeoutRemoval: Bool?
+    private let until = Date.now.addingTimeInterval(300)
+
+    init(stage: StatusBootstrapReadStage = .snapshot, timeoutRemoval: Bool? = nil) {
+        self.stage = stage
+        self.timeoutRemoval = timeoutRemoval
+    }
     private let captured = AsyncStream<Void>.makeStream()
     private let release = AsyncStream<Void>.makeStream()
     private let events = AsyncStream<ClientEvent>.makeStream()
@@ -53,7 +59,16 @@ private actor GatedStatusBootstrapProvider: ChatProvider {
     func bootstrap() async throws -> BootstrapSnapshot {
         var value = try await base.bootstrap()
         value.members.removeAll { $0.id == value.currentUser.id }
-        if stage == .snapshot {
+        if let timeoutRemoval {
+            let guildID = try #require(value.guilds.first?.id)
+            value.guilds[0].isOwnedByCurrentUser = false
+            value.guilds[0].currentUserPermissions = (1 << 10) | (1 << 11) | (1 << 16)
+            value.guilds[0].features = []
+            var member = Member(user: value.currentUser, roleName: "Member", isOnline: false)
+            member.communicationDisabledUntil = timeoutRemoval ? until : nil
+            value.currentMembersByGuildID = [guildID: member]
+            value.members = []
+        } else if stage == .snapshot {
             value.members.append(Member(user: value.currentUser, roleName: "Member", status: .online))
         }
         snapshot = value
@@ -68,6 +83,14 @@ private actor GatedStatusBootstrapProvider: ChatProvider {
         for await _ in release.stream { break }
     }
     func releaseBootstrap() { release.continuation.yield(()); release.continuation.finish() }
+    func publishTimeoutChange() throws {
+        let value = try #require(snapshot)
+        let guildID = try #require(value.guilds.first?.id)
+        var member = try #require(value.currentMembersByGuildID[guildID])
+        member.communicationDisabledUntil = timeoutRemoval == true ? nil : until
+        events.continuation.yield(.membersChanged(guildID: guildID, members: [member], groups: []))
+        publishStatus(.dnd)
+    }
     func publishStatus(_ value: PresenceStatus) { status = value; events.continuation.yield(.currentUserStatusChanged(value)) }
     func currentStatus() async -> PresenceStatus {
         let value = status

@@ -50,6 +50,9 @@ struct MessageTimelineScrollRequest: Equatable {
         case top
         case bottom
         case message(MessageID, anchor: UnitPoint)
+        /// A reading position: the message at the top of the viewport and
+        /// its offset from the viewport's top edge.
+        case readingPosition(MessageID, offsetFromViewportTop: CGFloat)
     }
 
     let id = UUID()
@@ -214,8 +217,8 @@ enum NativeTimelineConversation: Hashable {
             model.pinnedMessages.rows
         case .inbox:
             model.inbox.rows
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.rows ?? []
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.rows ?? []
         }
     }
 
@@ -232,8 +235,8 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsRevision
         case .pins:
             model.pinnedMessages.rowsRevision
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.revision ?? 0
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.revision ?? 0
         }
     }
 
@@ -262,8 +265,8 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsUpdateJournal
         case .pins:
             model.pinnedMessages.rowsUpdateJournal
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.journal ?? MessageRowsUpdateJournal()
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.journal ?? MessageRowsUpdateJournal()
         }
     }
 
@@ -751,6 +754,20 @@ nonisolated enum NativeTimelineReadBoundaryPolicy {
     ) -> Bool {
         newestMessageMaximumY >= viewportMinimumY - tolerance
             && newestMessageMaximumY <= viewportMaximumY + tolerance
+    }
+
+    /// A fully loaded conversation without messages has reached its newest
+    /// edge once the end of the document is in view. Without this the first
+    /// message to arrive would be treated as unseen and plant a NEW divider,
+    /// while a viewport scrolled away from the end must not read it.
+    static func hasReachedEmptyTimelineBoundary(
+        hasMoreEarlier: Bool,
+        isLoadingEarlier: Bool,
+        isLoadingLater: Bool,
+        isAtDocumentBottom: Bool
+    ) -> Bool {
+        !hasMoreEarlier && !isLoadingEarlier && !isLoadingLater
+            && isAtDocumentBottom
     }
 
     /// AppKit reports wheel and trackpad deltas after applying the natural

@@ -533,7 +533,7 @@ struct EmojiPickerView: View {
         if useCase == .message, !model.canComposeEmoji(emoji) {
             return String(localized: "Enable FakeNitro emojis in Features to send this emoji as an image link.", bundle: #bundle)
         }
-        guard DiscordEmojiPermissionPolicy.isPremiumLocked(emoji, for: useCase, premiumType: model.snapshot?.currentUser.premiumType ?? 0) else { return nil }
+        guard DiscordEmojiPermissionPolicy.isPremiumLocked(emoji, for: useCase, premiumType: model.currentUser?.premiumType ?? 0) else { return nil }
         return String(localized: "Using this emoji in your profile requires Nitro.", bundle: #bundle)
     }
 
@@ -979,7 +979,7 @@ final class EmojiPickerDocumentStore {
     private init(empty: Void) {}
 
     func synchronize(with model: AppModel, useCase: DiscordEmojiUseCase) {
-        let premiumType = model.snapshot?.currentUser.premiumType ?? 0
+        let premiumType = model.currentUser?.premiumType ?? 0
         let eligibleGuilds = PickerSectionGuildOrdering.orderedGuilds(
             railItems: model.serverRailItems,
             guildsByID: model.serverRailGuildsByID,

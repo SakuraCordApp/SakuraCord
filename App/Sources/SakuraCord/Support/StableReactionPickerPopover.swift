@@ -57,6 +57,8 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
         private var showIsScheduled = false
         private var shouldPresent = false
 
+        var isShown: Bool { popover?.isShown == true }
+
         func update(
             sourceView: StableReactionPickerSourceView,
             isPresented: Bool,
@@ -120,7 +122,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             hostingController.view.setAccessibilityIdentifier(accessibilityIdentifier)
             let popover = NSPopover()
             popover.behavior = behavior
-            popover.animates = true
+            popover.animates = AppMotionPolicy.animates(.overlays)
             popover.delegate = self
             popover.contentViewController = hostingController
 
@@ -195,6 +197,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             }
             restoreReturnResponder()
             popover.delegate = nil
+            popover.animates = popover.animates && AppMotionPolicy.animates(.overlays)
             popover.performClose(nil)
             restoreReturnResponder()
             finishClosing(notifyBinding: notifyBinding)
@@ -245,12 +248,22 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
 }
 
 final class StableReactionPickerSourceView: NSView, WindowModalInputParticipant {
+    var followsScrolling = false
     var modalInputChanged: (() -> Void)?
     func modalInputDidChange() { modalInputChanged?() }
 
     private let snapshotAnchor = StableReactionPickerSnapshotView()
 
+    var installedSnapshotAnchor: NSView? { snapshotAnchor.superview == nil ? nil : snapshotAnchor }
+
     func installSnapshotAnchor(in window: NSWindow) -> NSView {
+        if followsScrolling, let documentView = enclosingScrollView?.documentView {
+            let frozenFrame = documentView.convert(bounds, from: self)
+            snapshotAnchor.removeFromSuperview()
+            documentView.addSubview(snapshotAnchor)
+            snapshotAnchor.frame = frozenFrame
+            return snapshotAnchor
+        }
         let rectInWindow = convert(bounds, to: nil)
         if let contentView = window.contentView,
            let container = contentView.superview

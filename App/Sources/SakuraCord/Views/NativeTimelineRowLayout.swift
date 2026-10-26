@@ -34,7 +34,7 @@ struct NativeTimelineRowLayout {
         let emojiFrame: CGRect
         let countFrame: CGRect?
         let avatarRegions: [AvatarRegion]
-        let overflowFrame: CGRect?
+        let placeholderAvatarFrames: [CGRect]
     }
 
     struct LinkedImageRegion {
@@ -70,8 +70,10 @@ struct NativeTimelineRowLayout {
         let imageRegions: [ImageRegion]
         let mediaFrame: CGRect?
         let mediaURL: URL?
+        let mediaPreviewURL: URL?
         let mediaIsVideo: Bool
         let mediaAutoplaysInline: Bool
+        let mediaPosterFillsFrame: Bool
         let accentColor: UInt32?
         let drawsTopSeparator: Bool
     }
@@ -138,6 +140,8 @@ struct NativeTimelineRowLayout {
     var bubbleRegion: NativeTimelineBubbleRegion?
     var highlightFrame: CGRect?
     var daySeparatorFrame: CGRect?
+    /// The rule closing a forum post's original message off from its replies.
+    var postStarterDividerFrame: CGRect?
     var unreadSeparatorFrame: CGRect?
     var avatarFrame: CGRect?
     var compactTimestampFrame: CGRect?
@@ -152,6 +156,7 @@ struct NativeTimelineRowLayout {
     var timestampText: NativeIdentityTextPresentation?
     var editedText: NativeIdentityTextPresentation?
     var botBadgeFrame: CGRect?
+    var botBadgeText: NativeIdentityTextPresentation?
     var timestampFrame: CGRect?
     var editedFrame: CGRect?
     var activityIndicators: [ActivityIndicator] = []
@@ -198,7 +203,7 @@ struct NativeTimelineRowLayout {
     static func make(
         item: NativeMessageTimelineItem,
         width proposedWidth: CGFloat,
-        model: AppModel? = nil,
+        source: AppModel? = nil,
         metrics: Metrics? = nil
     ) -> Self {
         let width = max(InterfaceScale.metric(220), proposedWidth)
@@ -250,8 +255,8 @@ struct NativeTimelineRowLayout {
                 row: row,
                 isUnreadBoundary: isUnreadBoundary,
                 width: width,
-                model: model,
-                metrics: metrics ?? Metrics(settings: model?.interfaceSettings ?? .defaults)
+                source: source,
+                metrics: metrics ?? Metrics(source: source)
             )
             return builder.make()
         }

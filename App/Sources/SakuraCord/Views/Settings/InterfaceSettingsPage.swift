@@ -12,8 +12,6 @@ struct InterfaceSettingsPage: View {
             InterfaceSizeSection(value: $appearanceValue.interfaceSize, state: state)
             InterfaceMessagesSection(
                 value: $appearanceValue,
-                interface: value,
-                accessibility: model.accessibilitySettings,
                 reset: resetMessageAppearance,
                 state: state
             )
@@ -125,12 +123,8 @@ private struct InterfaceSizeSection: View {
 
 private struct InterfaceMessagesSection: View {
     @Binding var value: AppearanceSettingsSnapshot
-    let interface: InterfaceSettingsSnapshot
-    let accessibility: AccessibilitySettingsSnapshot
     let reset: () -> Void
     let state: SettingsViewState
-
-    @State private var previewKind = ChannelKindValue.directMessage
 
     private var isUsingDefaults: Bool {
         value.serverMessageAppearance == .defaultStyle
@@ -142,15 +136,16 @@ private struct InterfaceMessagesSection: View {
 
     var body: some View {
         Section {
-            appearancePicker(LocalizedStringResource("Direct messages", bundle: #bundle), selection: $value.directMessageAppearance)
+            appearancePicker(
+                LocalizedStringResource("Direct messages", bundle: #bundle),
+                selection: $value.directMessageAppearance,
+                showsIncomingIdentity: false
+            )
                 .settingsControlAnchor(.directMessageAppearance, state: state)
-                .onChange(of: value.directMessageAppearance) { previewKind = .directMessage }
             appearancePicker(LocalizedStringResource("Group chats", bundle: #bundle), selection: $value.groupMessageAppearance)
                 .settingsControlAnchor(.groupMessageAppearance, state: state)
-                .onChange(of: value.groupMessageAppearance) { previewKind = .groupDirectMessage }
             appearancePicker(LocalizedStringResource("Server channels", bundle: #bundle), selection: $value.serverMessageAppearance)
                 .settingsControlAnchor(.messageAppearance, state: state)
-                .onChange(of: value.serverMessageAppearance) { previewKind = .text }
 
             LabeledContent("Density") {
                 HStack {
@@ -171,18 +166,6 @@ private struct InterfaceMessagesSection: View {
             )
             .settingsControlAnchor(.messageDensity, state: state)
 
-            Picker("Preview", selection: $previewKind) {
-                Text("Direct messages", bundle: #bundle).tag(ChannelKindValue.directMessage)
-                Text("Group chats", bundle: #bundle).tag(ChannelKindValue.groupDirectMessage)
-                Text("Server channels", bundle: #bundle).tag(ChannelKindValue.text)
-            }
-
-            MessageAppearancePreview(
-                channelKind: previewKind,
-                appearance: value, interface: interface,
-                accessibility: accessibility
-            )
-
             Button("Reset to Defaults", action: reset)
                 .disabled(isUsingDefaults)
                 .settingsControlAnchor(.resetMessageAppearance, state: state)
@@ -193,20 +176,13 @@ private struct InterfaceMessagesSection: View {
 
     private func appearancePicker(
         _ title: LocalizedStringResource,
-        selection: Binding<MessageAppearance>
+        selection: Binding<MessageAppearance>,
+        showsIncomingIdentity: Bool = true
     ) -> some View {
         LabeledContent {
-            Picker(selection: selection) {
-                ForEach(MessageAppearance.allCases) { appearance in
-                    Text(appearance.title).tag(appearance)
-                }
-            } label: {
-                Text(title)
-            }
-            .labelsHidden()
-            .pickerStyle(.radioGroup)
-            .horizontalRadioGroupLayout()
-            .tint(SakuraCordAccentColor.color)
+            MessageAppearancePicker(selection: selection, showsIncomingIdentity: showsIncomingIdentity)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(Text(title))
         } label: {
             Text(title)
         }

@@ -57,6 +57,7 @@ extension DiscordRESTProvider {
             memberListID: update.id,
             restrictingTo: changedUserIDs
         )
+        let previousMembers = cachedMemberIndex(guildID: guildID)
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
@@ -69,6 +70,8 @@ extension DiscordRESTProvider {
                 members: orderedMemberListMembers(guildID: guildID) ?? members,
                 groups: cachedMemberListGroups[guildID]?[update.id] ?? []
             )
+        } else {
+            publishCurrentMemberTimeoutChange(previousMembers: previousMembers, guildID: guildID)
         }
         await resubscribeInvalidatedMemberListRanges(update, guildID: guildID)
     }
@@ -123,13 +126,15 @@ extension DiscordRESTProvider {
         else { return }
         let guildRoles = cachedGuildRoles[guildID] ?? []
         let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
+        let previousMembers = cachedMemberIndex(guildID: guildID)
         let decodedMembers = chunk.members.compactMap {
             try? $0.domain(
                 currentUserID: currentUser?.id,
                 currentStatus: presenceStatus,
                 guildRoles: guildRoles,
                 guildRoleCatalog: guildRoleCatalog,
-                guildID: guildID
+                guildID: guildID,
+                previousCommunicationDisabledUntil: UserID($0.user.id).flatMap { previousMembers[$0]?.communicationDisabledUntil }
             )
         }
         let responseUserIDs = Set(decodedMembers.map(\.id)).union(
@@ -192,7 +197,6 @@ extension DiscordRESTProvider {
             _ = removeMemberSearchRequest(requestID: requestID)
             search.timeoutTask.cancel()
             let responseMembers = Array(search.members.prefix(search.maximumResults))
-            mergeResolvedMembers(responseMembers, guildID: guildID)
             let members = DiscordMemberStoreOrdering.searchResults(
                 in: cachedMembers[guildID] ?? [],
                 matching: responseMembers,
@@ -212,19 +216,17 @@ extension DiscordRESTProvider {
             let update = try? JSONValueDecoder().decode(
                 GatewayGuildMemberEventDTO.self, from: body
             ), let guildID = GuildID(update.guildID),
-            var member = try? update.member.domain(
+            let member = try? update.member.domain(
                 currentUserID: currentUser?.id,
                 currentStatus: presenceStatus,
                 guildRoles: cachedGuildRoles[guildID] ?? [],
-                guildID: guildID
+                guildID: guildID,
+                previousCommunicationDisabledUntil: UserID(update.member.user.id).flatMap {
+                    cachedMemberIndex(guildID: guildID)[$0]?.communicationDisabledUntil
+                }
             )
         else { return }
         let previousMember = cachedMembers[guildID]?.first { $0.id == member.id }
-        // An omitted timeout leaves the prior value intact; explicit null ends it.
-        if name == "GUILD_MEMBER_UPDATE", case let .object(fields) = body,
-           fields["communication_disabled_until"] == nil {
-            member.communicationDisabledUntil = previousMember?.communicationDisabledUntil
-        }
         let membershipAdded = quickSwitcherGuildMemberUserIDsByGuildID[guildID, default: []].insert(member.id).inserted
         let wasJoined = quickSwitcherJoinedMemberIDsByGuildID[guildID]?.contains(member.id) == true
         if update.member.joinedAt != nil, member.isPending != true {

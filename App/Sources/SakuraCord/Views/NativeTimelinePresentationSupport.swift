@@ -152,8 +152,11 @@ nonisolated enum NativeTimelineAccessibilityPresentation {
 
     static func threadLabel(_ thread: MessageThreadSummary) -> String {
         let replyCount = thread.messageCount
-        return "\(thread.name), \(replyCount) "
+        var label = "\(thread.name), \(replyCount) "
             + (replyCount == 1 ? "reply" : "replies")
+        if thread.isArchived { label += ", archived" }
+        if thread.isLocked { label += ", locked" }
+        return label
     }
 
     static func nonblank(_ value: String?) -> String? {
@@ -300,6 +303,7 @@ final class NativeTimelineActionCapsuleState: ObservableObject {
     let controlCount: Int
     let shiftActionCount: Int
     let allowsQuickReactions: Bool
+    let isGuildTimedOut: Bool
     @Published var showsQuickReactions = false
     @Published private var fitsShiftActions = false
     @Published var isShiftHeld = false
@@ -307,11 +311,12 @@ final class NativeTimelineActionCapsuleState: ObservableObject {
     /// variant change grows and shrinks the pill away from the clamped side.
     @Published var pinsLeadingEdge = false
 
-    init(message: Message, controlCount: Int, shiftActionCount: Int, allowsQuickReactions: Bool) {
+    init(message: Message, controlCount: Int, shiftActionCount: Int, allowsQuickReactions: Bool, isGuildTimedOut: Bool) {
         self.message = message
         self.controlCount = controlCount
         self.shiftActionCount = shiftActionCount
         self.allowsQuickReactions = allowsQuickReactions
+        self.isGuildTimedOut = isGuildTimedOut
     }
 
     var showsShiftActions: Bool {
@@ -421,6 +426,7 @@ struct NativeTimelineActionCapsuleOverlay: View {
                     message: state.message,
                     canEdit: canEdit,
                     canDelete: canDelete,
+                    canReact: state.allowsQuickReactions,
                     showsQuickReactions: state.showsQuickReactions,
                     showsShiftActions: state.showsShiftActions,
                     isReactionPickerPresented: $state.isReactionPickerPresented,

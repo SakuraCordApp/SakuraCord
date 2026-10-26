@@ -11,6 +11,13 @@ struct FeaturesSettingsPage: View {
         )
         SettingsPageForm(page: .features, state: state) {
             Section {
+                Toggle("Read All button", isOn: value.readAllButton)
+                    .tint(SakuraCordAccentColor.color)
+                    .settingsControlAnchor(.readAllButton, state: state)
+            } header: {
+                Text("Notifications", bundle: #bundle)
+            }
+            Section {
                 Toggle("Channel customization", isOn: value.channelManagement)
                     .tint(SakuraCordAccentColor.color)
                     .settingsControlAnchor(.channelManagement, state: state)

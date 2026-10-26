@@ -10,7 +10,7 @@ extension NativeTimelineRowLayout {
         let row: MessageRowPresentation
         let isUnreadBoundary: Bool
         let width: CGFloat
-        let model: AppModel?
+        let source: AppModel?
         let metrics: Metrics
 
         private var result = NativeTimelineRowLayout()
@@ -38,25 +38,25 @@ extension NativeTimelineRowLayout {
         private var isGenerated: Bool { message.type.hasGeneratedContent }
         private let bubbleContext: NativeTimelineBubbleLayout.Context
         private var messageSpacing: CGFloat {
-            CGFloat(model?.appearanceSettings.messageSpacing ?? AppearanceSettingsSnapshot.defaultMessageSpacing)
+            CGFloat(source?.messageSpacing ?? AppearanceSettingsSnapshot.defaultMessageSpacing)
         }
         private var avatarWidth: CGFloat { MessageRowLayoutMetrics.avatarDiameter }
         private var timestampGutterWidth: CGFloat { max(avatarWidth, metrics.timestampGutterWidth) }
         private let presentedReactions: [Reaction]
 
-        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, model: AppModel?, metrics: Metrics) {
+        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics) {
             self.row = row
             self.isUnreadBoundary = isUnreadBoundary
             self.width = width
-            self.model = model
+            self.source = source
             self.metrics = metrics
-            bubbleContext = NativeTimelineBubbleLayout.context(for: row.message, model: model)
+            bubbleContext = NativeTimelineBubbleLayout.context(for: row.message, source: source)
             presentedReactions = MessageReactionPresentation.items(from: row.message.reactions)
-            contentPresentation = NativeTimelineTextPresentation.make(row: row, model: model)
+            contentPresentation = NativeTimelineTextPresentation.make(row: row, source: source)
             highlightInsets = MessageRowLayoutMetrics.highlightInsets(
                 hasReplyPreview: row.replyMessageID != nil,
                 isEditing: false,
-                messageSpacing: CGFloat(model?.appearanceSettings.messageSpacing ?? AppearanceSettingsSnapshot.defaultMessageSpacing)
+                messageSpacing: CGFloat(source?.messageSpacing ?? AppearanceSettingsSnapshot.defaultMessageSpacing)
             )
         }
 
@@ -134,12 +134,12 @@ extension NativeTimelineRowLayout {
             if message.flags.contains(.localInteractionFailure) {
                 contentPresentation = NativeTimelineTextPresentation.interactionFailure(contentPresentation)
             }
-            let authorName = (model?.authorPresentation(for: message).user ?? message.author).displayName
+            let authorName = (source?.authorPresentation(for: message).user ?? message.author).displayName
             if let status = MessageOutboxPresentation.interactionLoadingStatus(for: message, authorName: authorName) {
                 contentPresentation = NativeTimelineTextPresentation.interactionLoading(status)
             }
             translationPresentation = NativeTimelineTranslationPresentation.make(
-                row: row, model: model, isOutgoingBubble: isOutgoingBubble
+                row: row, source: source, isOutgoingBubble: isOutgoingBubble
             )
             let preferredBubbleContentWidth = fittedBubbleContentWidth ??
                 NativeTimelineBubbleLayout.preferredContentWidth(
@@ -211,16 +211,16 @@ extension NativeTimelineRowLayout {
                     x: horizontalInset,
                     y: verticalOffset,
                     width: width - horizontalInset * 2,
-                    height: InterfaceScale.metric(20)
+                    height: NativeTimelineReplyMetrics.lineHeight
                 )
                 result.replyFrame = frame
                 result.replyContentFrame = CGRect(
                     x: contentX,
-                    y: frame.minY,
+                    y: frame.minY - InterfaceScale.metric(1),
                     width: max(0, frame.maxX - contentX),
                     height: frame.height
                 )
-                verticalOffset += InterfaceScale.metric(20)
+                verticalOffset += NativeTimelineReplyMetrics.lineHeight
             }
 
             if !usesBubbleReference, message.type == .chatInputCommand {
@@ -228,7 +228,7 @@ extension NativeTimelineRowLayout {
                     message,
                     origin: CGPoint(x: horizontalInset, y: verticalOffset),
                     maximumWidth: width - horizontalInset * 2,
-                    cosmeticPolicy: model?.cosmeticPolicy ?? .init()
+                    cosmeticPolicy: source?.cosmeticPolicy ?? .init()
                 )
                 verticalOffset += MessageRowLayoutMetrics.commandInvocationHeight
             }
@@ -295,7 +295,7 @@ extension NativeTimelineRowLayout {
         private mutating func appendBubbleReference() {
             guard usesBubbleReference else { return }
             let isReply = row.replyMessageID != nil && message.type != .pollResult
-            let height = InterfaceScale.metric(20)
+            let height = isReply ? NativeTimelineReplyMetrics.lineHeight : InterfaceScale.metric(20)
             let padding = NativeTimelineBubbleLayout.horizontalPadding
             // The stem lands where the bubble's top corner has flattened out.
             let stemInset = InterfaceScale.metric(14)
@@ -309,7 +309,7 @@ extension NativeTimelineRowLayout {
                 : referenceX - NativeTimelineReplyMetrics.horizontalSpacing
             if isReply {
                 let naturalWidth = NativeTimelineReplyMetrics.previewWidth(
-                    row.replyPreview, in: message, model: model
+                    row.replyPreview, in: message, source: source
                 )
                 // Outgoing previews grow leftward, up to the incoming avatar
                 // column, and neither side outgrows the bubble column.
@@ -326,7 +326,7 @@ extension NativeTimelineRowLayout {
                     width: previewWidth,
                     height: height
                 )
-                result.replyContentFrame = previewFrame
+                result.replyContentFrame = previewFrame.offsetBy(dx: 0, dy: -InterfaceScale.metric(1))
                 result.replyFrame = previewFrame.union(CGRect(
                     x: min(stemX, connectorEndX),
                     y: verticalOffset,
@@ -340,7 +340,7 @@ extension NativeTimelineRowLayout {
                     message,
                     origin: origin,
                     maximumWidth: width - horizontalInset - origin.x,
-                    cosmeticPolicy: model?.cosmeticPolicy ?? .init()
+                    cosmeticPolicy: source?.cosmeticPolicy ?? .init()
                 )
             }
             // A short gap keeps the stem legible between reference and bubble.
@@ -355,22 +355,25 @@ extension NativeTimelineRowLayout {
         }
 
         private mutating func appendAuthorHeader() {
-            let presentation = model?.authorPresentation(for: message)
+            let presentation = source?.authorPresentation(for: message)
             let author = presentation?.user ?? message.author
             result.authorPrimaryGuild = author.primaryGuild
             let authorFont = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: metrics.authorFont)
-            let showsRoleIndicator = model?.accessibilitySettings.roleColorDisplay == .nextToNames
+            let showsRoleIndicator = source?.roleColorDisplay == .nextToNames
                 && presentation?.roleColorHex != nil
-            let indicatorWidth: CGFloat = showsRoleIndicator ? InterfaceScale.metric(14) : 0
+            let indicatorWidth: CGFloat = showsRoleIndicator ? InterfaceScale.metric(15) : 0
             let availableWidth = max(0, ordinaryContentWidth - indicatorWidth)
             let timestamp = NativeTimelineTimestamp.headerText(
-                for: message.timestamp, settings: model?.interfaceSettings ?? .defaults
+                for: message.timestamp, settings: source?.interfaceSettings ?? .defaults
             )
             let timestampWidth = NativeTimelineRowLayout.measuredTextWidth(timestamp, font: metrics.timestampFont)
             // Keep the adjacent controls visible while long decorative names
             // truncate. At narrow widths the tag is omitted before the name.
             let timestampReserve = min(timestampWidth, availableWidth / 3) + 7
-            let naturalBotWidth = author.isBot ? NativeAppBadgePresentation.width : 0
+            let botText = author.isBot ? NativeIdentityTextPresentation(
+                "APP", font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
+            ) : nil
+            let naturalBotWidth = botText.map { $0.width + ServerTagAppearance.horizontalPadding * 2 } ?? 0
             let botWidth = availableWidth >= naturalBotWidth + 7 + 12 ? naturalBotWidth : 0
             let botReserve = botWidth > 0 ? botWidth + 7 : 0
             let tag = author.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) }?
@@ -380,8 +383,13 @@ extension NativeTimelineRowLayout {
                 author.displayName, font: authorFont,
                 maximumWidth: max(0, availableWidth - botReserve - tagReserve - timestampReserve)
             )
-            let headerHeight = tag == nil && botWidth == 0
-                ? MessageRowLayoutMetrics.authorLineHeight : ServerTagAppearance.height
+            let badgeHeight = ServerTagAppearance.height + InterfaceScale.metric(1)
+            let botBaseline = botText?.baselineOffset(inHeight: badgeHeight) ?? 0
+            let headerHeight = ceil(max(
+                authorFont.ascender - authorFont.descender,
+                tag == nil && botWidth == 0 ? MessageRowLayoutMetrics.authorLineHeight : badgeHeight
+            ))
+            let baselineY = verticalOffset + authorText.baselineOffset(inHeight: headerHeight)
             result.authorText = authorText
             result.authorFrame = CGRect(
                 x: contentX + indicatorWidth, y: verticalOffset,
@@ -390,16 +398,20 @@ extension NativeTimelineRowLayout {
             var headerX = contentX + indicatorWidth + authorText.width
             if botWidth > 0 {
                 headerX += InterfaceScale.metric(7)
+                result.botBadgeText = botText
                 result.botBadgeFrame = CGRect(
-                    x: headerX, y: verticalOffset,
-                    width: botWidth, height: ServerTagAppearance.height
+                    x: headerX, y: baselineY - botBaseline,
+                    width: botWidth, height: badgeHeight
                 )
                 headerX += botWidth
             }
             if let tag {
                 headerX += InterfaceScale.metric(7)
                 result.serverTagRegion = .init(
-                    frame: CGRect(x: headerX, y: verticalOffset, width: tag.width, height: headerHeight),
+                    frame: CGRect(
+                        x: headerX, y: baselineY - tag.textBaselineOffset - InterfaceScale.metric(1),
+                        width: tag.width, height: ServerTagAppearance.height
+                    ),
                     presentation: tag
                 )
                 headerX += tag.width
@@ -411,7 +423,8 @@ extension NativeTimelineRowLayout {
             )
             result.timestampText = timestampText
             result.timestampFrame = CGRect(
-                x: headerX, y: verticalOffset, width: timestampText.width, height: headerHeight
+                x: headerX, y: baselineY - timestampText.baselineOffset(inHeight: headerHeight),
+                width: timestampText.width, height: headerHeight
             )
             headerX += timestampText.width
             if message.editedTimestamp != nil {
@@ -422,7 +435,8 @@ extension NativeTimelineRowLayout {
                 )
                 result.editedText = editedText
                 result.editedFrame = CGRect(
-                    x: headerX, y: verticalOffset, width: editedText.width, height: headerHeight
+                    x: headerX, y: baselineY - editedText.baselineOffset(inHeight: headerHeight),
+                    width: editedText.width, height: headerHeight
                 )
             }
         }
@@ -496,7 +510,7 @@ extension NativeTimelineRowLayout {
             }
             if let poll = message.poll {
                 if hasRichContent { verticalOffset += InterfaceScale.metric(6) }
-                let layout = NativeTimelinePollLayout(poll: poll, x: contentX, y: verticalOffset, width: contentWidth)
+                let layout = NativeTimelinePollLayout(poll: poll, x: contentX, y: verticalOffset, width: contentWidth, integratesWithBubble: usesBubbles)
                 result.pollLayout = layout
                 verticalOffset = layout.frame.maxY
                 hasRichContent = true
@@ -598,8 +612,9 @@ extension NativeTimelineRowLayout {
                 for (index, reference) in row.serverInvites.enumerated() {
                     let region = NativeTimelineInviteLayout(reference: reference, index: index,
                         origin: CGPoint(x: contentX, y: verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)),
-                        maximumWidth: inlineMediaMaximumWidth, model: model,
-                        isOwnMessage: message.author.id == model?.snapshot?.currentUser.id)
+                        maximumWidth: inlineMediaMaximumWidth, source: source,
+                        isOwnMessage: message.author.id == source?.currentUserID,
+                        integratesWithBubble: usesBubbles)
                     result.inviteRegions.append(region)
                     verticalOffset = region.frame.maxY
                     hasRichContent = true
@@ -612,7 +627,7 @@ extension NativeTimelineRowLayout {
                         deepLink,
                         componentIndex: index,
                         origin: CGPoint(x: contentX, y: deepLinkY),
-                        maximumWidth: inlineMediaMaximumWidth
+                        maximumWidth: inlineMediaMaximumWidth, integratesWithBubble: usesBubbles
                     )
                     result.sakuraCordDeepLinkRegions.append(region)
                     verticalOffset = region.frame.maxY
@@ -631,7 +646,7 @@ extension NativeTimelineRowLayout {
                         if let region = NativeTimelineComponentLayout.make(
                             message: message,
                             components: embed.components ?? [],
-                            model: model,
+                            source: source,
                             origin: CGPoint(x: contentX, y: embedY),
                             maximumWidth: inlineMediaMaximumWidth,
                             integratesWithBubble: usesBubbles,
@@ -646,7 +661,7 @@ extension NativeTimelineRowLayout {
                     guard let region = NativeTimelineEmbedLayout.make(
                         embed: embed,
                         message: message,
-                        model: model,
+                        source: source,
                         attachments: message.attachments,
                         origin: CGPoint(x: contentX, y: embedY),
                         maximumWidth: inlineMediaMaximumWidth,
@@ -663,7 +678,7 @@ extension NativeTimelineRowLayout {
             let componentY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
             if let componentLayout = NativeTimelineComponentLayout.make(
                 message: message,
-                model: model,
+                source: source,
                 origin: CGPoint(x: contentX, y: componentY),
                 maximumWidth: inlineMediaMaximumWidth,
                 integratesWithBubble: usesBubbles,
@@ -731,13 +746,11 @@ extension NativeTimelineRowLayout {
             if let snapshot = message.forwardedSnapshot,
                let reference = message.messageReference,
                let sourceChannelID = reference.channelID,
-               let sourceChannel = model?.snapshot?.channels.first(where: {
-                   $0.id == sourceChannelID
-               })
+               let sourceChannel = source?.forwardedSourceChannel(sourceChannelID)
             {
                 if hasRichContent { verticalOffset += InterfaceScale.metric(7) }
                 let sourceGuild = reference.guildID.flatMap { sourceGuildID in
-                    model?.snapshot?.guilds.first(where: { $0.id == sourceGuildID })
+                    source?.presentationGuild(sourceGuildID)
                 }
                 let sameGuild = message.guildID == reference.guildID
                 let sourceLabel = sameGuild
@@ -795,7 +808,7 @@ extension NativeTimelineRowLayout {
                 result.threadFrame = CGRect(
                     x: contentX,
                     y: verticalOffset,
-                    width: min(contentWidth, InterfaceScale.metric(440)),
+                    width: usesBubbles ? contentWidth : min(contentWidth, InterfaceScale.metric(440)),
                     height: NativeTimelineThreadCard.height
                 )
                 verticalOffset += NativeTimelineThreadCard.height
@@ -810,8 +823,7 @@ extension NativeTimelineRowLayout {
                     minY: bubbleStartY,
                     maxY: verticalOffset,
                     isOutgoing: isOutgoingBubble,
-                    showsTail: row.endsGroup,
-                    isBare: showsBareContent
+                    showsTail: row.endsGroup
                 )
                 result.bubbleRegion = region
                 result.avatarFrame = NativeTimelineBubbleLayout.bottomAlignedAvatarFrame(result.avatarFrame, to: region)
@@ -819,29 +831,12 @@ extension NativeTimelineRowLayout {
 
         }
 
-        /// Emoji-only text and stickers read as standalone content, as in
-        /// Messages, so their bubble draws no fill.
-        private var showsBareContent: Bool {
-            let isEmojiOnlyText = result.attributedContent == nil
-                || row.textPlan.preparedText?.isEmojiOnly == true
-            return isEmojiOnlyText
-                && (result.contentFrame != nil || !result.stickerFrames.isEmpty)
-                && result.linkedImageRegions.isEmpty && result.attachmentRegions.isEmpty
-                && result.voiceMessageRegion == nil
-                && result.embedRegions.isEmpty && result.componentLayouts.isEmpty
-                && result.inviteRegions.isEmpty && result.sakuraCordDeepLinkRegions.isEmpty
-                && result.translationRegion == nil && result.pollLayout == nil
-                && result.pollResultFrame == nil && result.threadFrame == nil
-                && result.forwardedHeaderFrame == nil && translationPresentation == nil
-                && !message.flags.contains(.loading)
-        }
-
         private mutating func appendReactions() {
             if !presentedReactions.isEmpty {
                 if hasRichContent {
                     verticalOffset += InterfaceScale.metric(4)
                 }
-                let sizes = presentedReactions.map(reactionSize)
+                let sizes = presentedReactions.map { reactionSize($0) }
                     + [CGSize(
                         width: ReactionActionMenuPresentation.inline.width,
                         height: MessageReactionMetrics.pillHeight
@@ -903,13 +898,30 @@ extension NativeTimelineRowLayout {
                 {
                     verticalOffset += InterfaceScale.metric(4)
                 }
-                result.failedFrame = CGRect(
-                    x: contentX,
-                    y: verticalOffset,
-                    width: contentWidth,
-                    height: InterfaceScale.metric(14)
+                // The notice is below the bubble, so short message content
+                // must not squeeze a moderation explanation into that bubble.
+                let failureWidth = usesBubbles && message.sendFailure != nil
+                    ? max(contentWidth, min(
+                        NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
+                        isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
+                    ))
+                    : contentWidth
+                let failureX = isOutgoingBubble ? contentX + contentWidth - failureWidth : contentX
+                let failureText = NSAttributedString(
+                    string: MessageOutboxPresentation.failureText(for: message),
+                    attributes: [.font: NSFont.interfacePreferredFont(forTextStyle: .caption2)]
                 )
-                verticalOffset += InterfaceScale.metric(14)
+                let failureHeight = max(InterfaceScale.metric(14), ceil(failureText.boundingRect(
+                    with: CGSize(width: max(1, failureWidth - InterfaceScale.metric(16)), height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading]
+                ).height))
+                result.failedFrame = CGRect(
+                    x: failureX,
+                    y: verticalOffset,
+                    width: failureWidth,
+                    height: failureHeight
+                )
+                verticalOffset += failureHeight
             }
 
             if row.pinnedAt != nil {
@@ -965,6 +977,21 @@ extension NativeTimelineRowLayout {
             )
 
             result.height = rowHeight
+            appendPostStarterDivider()
+        }
+
+        /// A forum post's original message ends with a rule, so its replies
+        /// read as a separate conversation, as in Discord.
+        private mutating func appendPostStarterDivider() {
+            guard message.isPostStarter, row.isConversationRow else { return }
+            let height = NativeTimelinePostStarterDividerMetrics.rowHeight
+            result.postStarterDividerFrame = CGRect(
+                x: horizontalInset,
+                y: result.height,
+                width: width - horizontalInset * 2,
+                height: height
+            )
+            result.height += height
         }
     }
 }

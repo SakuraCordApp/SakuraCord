@@ -1,6 +1,7 @@
 import Foundation
 
 extension Notification.Name {
+    static let sakuracordMessageReactionDidChange = Notification.Name("dev.sakuracord.message-reaction-did-change")
     static let sakuracordComposerPicker = Notification.Name("dev.sakuracord.composer-picker")
     static let sakuracordToggleSoundboard = Notification.Name("dev.sakuracord.toggle-soundboard")
     static let sakuracordToggleChannelSidebar = Notification.Name(

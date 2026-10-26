@@ -20,6 +20,13 @@ struct ComposerView: View {
     @State private var showStickerPicker = false
     @State private var showEmojiPicker = false
     @State private var isFocused = false
+    @Environment(\.columnPresentation) private var columnPresentation
+    @Environment(\.isLeavingWorkspace) private var isLeaving
+    /// The send button's mode before the composer's pane began to leave.
+    /// Closing a thread clears its draft and recording and allows no voice
+    /// messages, and the button changed as the pane slid away.
+    @State private var showedSendSlotMode = ComposerSendSlot.Mode.send
+    @State private var focusedColumnPresentation = 0
     @State private var isComposing = false
     @State private var draftSelection: NSRange?
     @State private var selectionBeforeEmojiPicker: NSRange?
@@ -336,6 +343,7 @@ struct ComposerView: View {
             chrome
                 .animation(.smooth(duration: 0.42, extraBounce: 0.08), value: voiceMessagePhaseKey)
                 .animation(.smooth(duration: 0.3), value: showsVoiceMessageButton)
+                .onChange(of: isLeaving ? nil : liveSendSlotMode, initial: true, holdSendSlotMode)
                 .animation(animatesChromeResize ? ComposerResizeMotion.animation : nil, value: chromeKey)
                 // Another conversation's composer appears in place, as the
                 // timeline does.
@@ -464,20 +472,16 @@ struct ComposerView: View {
             model.refreshApplicationCommandAutocomplete(in: conversation)
             updateCommandMemberSearch(current)
         }
-        .onDisappear {
-            voiceMessage.discard(playback: model.voiceMessagePlayback)
-            composerDropInteraction?.clear(destination: conversation)
-            if let channelID = sendTransitionAnchor.channelID {
-                model.timelineSendTransitionStore.discard(channelID)
-            }
-        }
+        .onDisappear(perform: composerDidDisappear)
         .onChange(of: voiceMessage.errorMessage) { _, message in
             guard let message else { return }
             model.errorMessage = message
             voiceMessage.clearError()
         }
         .task(id: composerPresentationID) {
-            voiceMessage.discard(playback: model.voiceMessagePlayback)
+            if !voiceMessage.restoreAfterGuildTimeout(in: activeConversationID) {
+                voiceMessage.discard(playback: model.voiceMessagePlayback)
+            }
             sendTransitionAnchor.channelID = activeConversationID
             model.timelineSendTransitionStore.registerComposer(sendTransitionAnchor)
             draftSelection = nil
@@ -489,6 +493,7 @@ struct ComposerView: View {
             let isClosedVoiceChat = model.selectedChannel?.kind == .voice
                 && !model.isVoiceChatOpen
             guard conversation == .thread || !isClosedVoiceChat else { return }
+            await clearFocusOfReusedPane()
             isFocused = true
             if supportsCommands {
                 model.ensureApplicationCommandsLoaded(in: conversation)
@@ -510,7 +515,7 @@ struct ComposerView: View {
 
     private var composerPresentationID: String {
         let conversationID = activeConversationID?.rawValue.description ?? "none"
-        return "\(conversation):\(conversationID):\(model.isVoiceChatOpen)"
+        return "\(conversation):\(conversationID):\(model.isVoiceChatOpen):\(columnPresentation)"
     }
 
     private var commandPanelCornerRadius: CGFloat {
@@ -1216,7 +1221,7 @@ struct ComposerView: View {
     }
 
     private var capturesUnfocusedTyping: Bool {
-        conversation == (model.hasThreadPane ? .thread : .channel)
+        conversation == model.activeComposerDestination
             && model.threadCreation?.isSubmitting != true
             && !showEmojiPicker && !showGIFPicker && !showStickerPicker
             && !isVoiceMessageActive
@@ -1299,6 +1304,20 @@ struct ComposerView: View {
 }
 
 extension ComposerView {
+    private func composerDidDisappear() {
+        if let channelID = sendTransitionAnchor.channelID,
+           channelID == activeConversationID,
+           model.guildTimeoutUntil(in: channelID) != nil {
+            voiceMessage.preserveForGuildTimeout(in: channelID, playback: model.voiceMessagePlayback)
+        } else {
+            voiceMessage.discard(playback: model.voiceMessagePlayback)
+        }
+        composerDropInteraction?.clear(destination: conversation)
+        if let channelID = sendTransitionAnchor.channelID {
+            model.timelineSendTransitionStore.discard(channelID)
+        }
+    }
+
     /// One button morphs between attaching, discarding a recording, and
     /// previewing it.
     func composerLeadingButton(appearance: ComposerBarAppearance) -> some View {
@@ -1385,6 +1404,13 @@ extension ComposerView {
         }
     }
 
+    /// Keeps the mode current while the pane is in place, including when it
+    /// returns before leaving finished. A leaving composer also gives up the
+    /// keyboard: typing would land in the closed thread's draft.
+    private func holdSendSlotMode(_: ComposerSendSlot.Mode?, _ mode: ComposerSendSlot.Mode?) {
+        if let mode { showedSendSlotMode = mode } else { isFocused = false }
+    }
+
     /// With nothing to send, the send button records a voice message instead.
     private var showsVoiceMessageButton: Bool {
         draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1393,6 +1419,10 @@ extension ComposerView {
     }
 
     private var sendSlotMode: ComposerSendSlot.Mode {
+        isLeaving ? showedSendSlotMode : liveSendSlotMode
+    }
+
+    private var liveSendSlotMode: ComposerSendSlot.Mode {
         switch voiceMessage.phase {
         case .idle: showsVoiceMessageButton ? .voice : .send
         case .starting, .recording, .finishing: .stop
@@ -1523,7 +1553,7 @@ private extension ComposerView {
     }
 
     var animatesChromeResize: Bool {
-        !reduceMotion && !isClearingForSend
+        !reduceMotion && !model.accessibilitySettings.disablesAllAnimations && !isClearingForSend
     }
 
     /// The timeline animates a sent message out of the field, as a bubble or
@@ -1535,7 +1565,7 @@ private extension ComposerView {
         // A send from older history first loads the newest messages, so
         // the field stays editable and nothing arrives to take it over yet.
         guard model.animatesMessageSending,
-              conversation == .thread || !model.hasMoreLaterMessages,
+              conversation == .thread ? !model.isThreadWindowAwayFromNewest : !model.hasMoreLaterMessages,
               let source = sendTransitionAnchor.source(
                   channelID: channelID,
                   content: draft.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1557,5 +1587,16 @@ private struct ComposerActionLabelStyle: LabelStyle {
             configuration.icon.frame(width: InterfaceScale.metric(20), alignment: .center)
             configuration.title
         }
+    }
+}
+
+private extension ComposerView {
+    /// A pane reused from the pool left the window still marked focused, so
+    /// focusing it again would change nothing.
+    func clearFocusOfReusedPane() async {
+        guard columnPresentation != focusedColumnPresentation else { return }
+        focusedColumnPresentation = columnPresentation
+        isFocused = false
+        await Task.yield()
     }
 }

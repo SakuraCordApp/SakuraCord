@@ -98,26 +98,28 @@ struct MediaViewerTopControls: View {
                 .help("Share")
                 .accessibilityLabel("Share")
 
-                Button {
-                    MediaSaveMenuBuilder.popUp(actions: saveActions)
-                } label: {
-                    HoverActionControlLabel(
-                        diameter: MediaViewerTopChromeMetrics.actionDiameter
-                    ) {
-                        if isSaving {
-                            ProgressView()
-                                .controlSize(.mini)
-                        } else {
-                            Image(systemName: "arrow.down.to.line")
-                                .symbolVariant(.none)
-                                .font(.interface(.callout).weight(.medium))
+                if item.canSave {
+                    Button {
+                        MediaSaveMenuBuilder.popUp(actions: saveActions)
+                    } label: {
+                        HoverActionControlLabel(
+                            diameter: MediaViewerTopChromeMetrics.actionDiameter
+                        ) {
+                            if isSaving {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            } else {
+                                Image(systemName: "arrow.down.to.line")
+                                    .symbolVariant(.none)
+                                    .font(.interface(.callout).weight(.medium))
+                            }
                         }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(isSaving)
+                    .help("Save Media")
+                    .accessibilityLabel("Save Media")
                 }
-                .buttonStyle(.plain)
-                .disabled(isSaving)
-                .help("Save Media")
-                .accessibilityLabel("Save Media")
 
                 HoverActionButton(
                     systemImage: "arrow.up.forward.app",
@@ -277,7 +279,7 @@ private struct MediaViewerThumbnail: View {
                         maximumPixelDimension: 160,
                         contentMode: .fill
                     )
-                case .video:
+                case .video, .youtube:
                     if let posterURL = item.videoPosterURL(maximumPixelDimension: 160) {
                         AnimatedRemoteImage(
                             url: posterURL,

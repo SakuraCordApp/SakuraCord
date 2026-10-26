@@ -19,9 +19,7 @@ extension AppModel {
             guard settings?.muteScheduledEvents != true,
                   !(settings?.isMuted == true && (settings?.muteConfiguration?.isActive() ?? true)),
                   let state = inbox.scheduledEvents.readStates[guild.id], let newest = state.latestID else { return nil }
-            let boundary = state.lastAcknowledgedID ?? guild.joinedAt.map {
-                ScheduledEventID(rawValue: UInt64(max(0, $0.timeIntervalSince1970 * 1_000 - 1_420_070_400_000)) << 22)
-            }
+            let boundary = state.lastAcknowledgedID ?? guild.joinedAt.map(ScheduledEventID.init(timestamp:))
             guard let boundary, boundary < newest else { return nil }
             let group = InboxUnreadGroup(
                 channelID: ChannelID(rawValue: guild.id.rawValue), guildID: guild.id,

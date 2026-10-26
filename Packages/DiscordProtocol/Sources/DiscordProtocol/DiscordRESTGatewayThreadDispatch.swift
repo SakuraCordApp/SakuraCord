@@ -37,6 +37,7 @@ extension DiscordRESTProvider {
             fallbackGuildID: dto.guildID.flatMap(GuildID.init),
             advancesParentLatestThreadID: true
         )
+        if let threadID = ChannelID(dto.id) { attachStartedThreadToCachedStarter(threadID) }
     }
 
     func handleThreadUpdateDispatch(
@@ -63,6 +64,7 @@ extension DiscordRESTProvider {
         cachedForumThreadOrder.removeAll { $0 == threadID }
         cachedJoinedThreads[threadID] = nil
         cachedJoinedThreadOrder.removeAll { $0 == threadID }
+        advanceThreadRecordRevision(threadID, includesMembership: true)
         cachedMessages.removeAll { $0.channelID == threadID }
         for var message in cachedMessages.values where message.thread?.id == threadID {
             message.thread = nil
@@ -83,16 +85,17 @@ extension DiscordRESTProvider {
             let rawThreadID = member.id,
             let threadID = ChannelID(rawThreadID)
         else { return }
-        for (parentID, posts) in cachedForumPosts where posts[threadID] != nil {
-            cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings =
-                member.domain
-            if let thread = cachedForumPosts[parentID]?[threadID]?.thread {
-                reconcileJoinedThread(thread)
-            }
+        advanceThreadMembershipRevision(threadID)
+        var changedParentIDs = Set<ChannelID>()
+        guard applyCurrentUserThreadMembership(
+            member.domain,
+            threadID: threadID,
+            changedParentIDs: &changedParentIDs
+        ) else { return }
+        for parentID in changedParentIDs {
             publishForumPosts(parentID: parentID)
-            publishActiveJoinedThreads()
-            break
         }
+        publishActiveJoinedThreads()
     }
 
     func handleThreadMembersUpdateDispatch(
@@ -114,30 +117,72 @@ extension DiscordRESTProvider {
             cachedThreadMemberIDs[threadID] = ids.filter { !removed.contains($0) }
             publishThreadMembers(guildID: guildID)
         }
-        for parentID in cachedForumPosts.keys.sorted(by: {
-            $0.rawValue < $1.rawValue
-        }) where cachedForumPosts[parentID]?[threadID] != nil {
-            cachedForumPosts[parentID]?[threadID]?.thread.memberCount =
-                update.memberCount
-            if let ownMember = update.addedMembers?.first(where: {
-                $0.userID.flatMap(UserID.init) == currentUser?.id
-            }) {
-                cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings =
-                    ownMember.domain
-                if let thread = cachedForumPosts[parentID]?[threadID]?.thread {
-                    reconcileJoinedThread(thread)
-                }
-            } else if update.removedMemberIDs?.contains(
-                currentUser?.id.description ?? ""
-            ) == true {
-                cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings = nil
-                cachedJoinedThreads[threadID] = nil
-                cachedJoinedThreadOrder.removeAll { $0 == threadID }
-            }
-            publishForumPosts(parentID: parentID)
-            publishActiveJoinedThreads()
-            break
+        var changedParentIDs = Set<ChannelID>()
+        if let parentID = cachedForumPostParentID(threadID: threadID) {
+            cachedForumPosts[parentID]?[threadID]?.thread.memberCount = update.memberCount
+            changedParentIDs.insert(parentID)
         }
+        let isJoinedThread = cachedJoinedThreads[threadID] != nil
+        cachedJoinedThreads[threadID]?.memberCount = update.memberCount
+        var membershipChanged = false
+        if let currentUserID = currentUser?.id {
+            if let ownMember = update.addedMembers?.first(where: {
+                $0.userID.flatMap(UserID.init) == currentUserID
+            }) {
+                advanceThreadMembershipRevision(threadID)
+                membershipChanged = applyCurrentUserThreadMembership(
+                    ownMember.domain,
+                    threadID: threadID,
+                    changedParentIDs: &changedParentIDs
+                )
+            } else if update.removedMemberIDs?.contains(currentUserID.description) == true {
+                advanceThreadMembershipRevision(threadID)
+                membershipChanged = applyCurrentUserThreadMembership(
+                    nil,
+                    threadID: threadID,
+                    changedParentIDs: &changedParentIDs
+                )
+            }
+        }
+        for parentID in changedParentIDs {
+            publishForumPosts(parentID: parentID)
+        }
+        if membershipChanged || isJoinedThread || !changedParentIDs.isEmpty {
+            publishActiveJoinedThreads()
+        }
+    }
+
+    func cachedForumPostParentID(threadID: ChannelID) -> ChannelID? {
+        cachedForumPosts.first { $0.value[threadID] != nil }?.key
+    }
+
+    /// Applies the current user's membership to a thread known through the
+    /// post cache or only through the joined-thread catalogue, so an open or
+    /// sidebar thread follows Gateway joins and leaves. Returns false when
+    /// neither cache knows the thread; Discord then follows a join with a
+    /// THREAD_CREATE carrying the member.
+    func applyCurrentUserThreadMembership(
+        _ settings: ThreadNotificationSettings?,
+        threadID: ChannelID,
+        changedParentIDs: inout Set<ChannelID>
+    ) -> Bool {
+        var thread: MessageThreadSummary?
+        if let parentID = cachedForumPostParentID(threadID: threadID) {
+            cachedForumPosts[parentID]?[threadID]?.thread.notificationSettings = settings
+            thread = cachedForumPosts[parentID]?[threadID]?.thread
+            changedParentIDs.insert(parentID)
+        } else if var joined = cachedJoinedThreads[threadID] {
+            joined.notificationSettings = settings
+            thread = joined
+        }
+        guard let thread else { return false }
+        if settings == nil {
+            cachedJoinedThreads[threadID] = nil
+            cachedJoinedThreadOrder.removeAll { $0 == threadID }
+        } else {
+            reconcileJoinedThread(thread)
+        }
+        return true
     }
 
     func handleThreadListSyncDispatch(
@@ -147,7 +192,6 @@ extension DiscordRESTProvider {
         guard let sync = try? JSONValueDecoder().decode(GatewayThreadListSyncDTO.self, from: body),
               let guildID = GuildID(sync.guildID)
         else { return }
-        let parents = Set(sync.channelIDs.compactMap(ChannelID.init))
         let membersByThreadID = Dictionary(
             sync.members.compactMap { member in
                 member.id.map { ($0, member) }
@@ -168,9 +212,11 @@ extension DiscordRESTProvider {
             }
             return thread
         }
+        // Add-or-update only. The desktop op-37 sync covers every active thread
+        // the user can view, joined or not, without `channel_ids` or members;
+        // absence is not deletion, archive or leaving.
         ingestForumThreads(
             hydratedThreads, fallbackGuildID: guildID,
-            replacingParents: parents.isEmpty ? nil : parents,
             advancesParentLatestThreadID: true
         )
     }

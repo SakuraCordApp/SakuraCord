@@ -81,6 +81,7 @@ extension AppModel {
                 errorMessage = "That saved Discord account is no longer available."
                 return false
             }
+            SettingsConversationRestorationStore.shared.prepareAccountSwitch(to: accountID)
             return await connectAuthenticatedAccount(
                 handle,
                 preservesInteractivePresentation: preservesWorkspace
@@ -113,6 +114,7 @@ extension AppModel {
             authenticatedProviderFactory(handle, installationID)
         }
         await nextProvider.updateClientAppState(isFocused: applicationIsActive)
+        await nextProvider.setCaptchaHandler { [weak self] in await self?.solveCaptcha($0) }
         do {
             // Enumerating Keychain item attributes reveals the account handle
             // without necessarily authorizing access to its secret. Preparing
@@ -284,12 +286,13 @@ extension AppModel {
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
         privateCallsByChannel = [:]
-        dndSuppressedIncomingCallChannelIDs = []
+        reconcilePrivateCallSounds()
         visibleChannels = []
         unreadCategoryIDsByGuild = [:]
         selectedChannel = nil
         selectedGuildID = nil
         selectedChannelID = nil
+        discardSideConversationContext()
         resetMessageSearches()
         conversationNavigationHistory = ConversationNavigationHistory()
         replaceSelectedMessages(with: [])
@@ -299,12 +302,15 @@ extension AppModel {
         hasMoreLaterMessages = false
         messageCache = [:]
         pinnedMessages.clear(notifying: self)
+        threadBrowser.clear()
         inbox.clear(notifying: self)
         messageCacheOrder = []
         messageRowCache = [:]
         messageRowCacheOrder = []
         hasMoreCache = [:]
         staleCachedTailChannelIDs = []
+        contiguousHistoryBoundaries = [:]
+        threadWindow.cachedCursors = [:]
         threadPreviewMessages = [:]
         threadPreviewParentIDs = [:]
         membersByGuildID = [:]
@@ -467,6 +473,7 @@ extension AppModel {
         replyingTo = nil
         threadReplyingTo = nil
         conversationRefreshJournals.removeAll(keepingCapacity: false)
+        scopedRefreshJournals.removeAll(keepingCapacity: false)
         memberLoadTask?.cancel()
         memberLoadTask = nil
         memberLoadGeneration &+= 1
@@ -542,8 +549,7 @@ extension AppModel {
         stickerUserSettings = StickerUserSettings()
         isLoadingStickerPicker = false
         stickerPickerErrorMessage = nil
-        loadingReactionReactors = []
-        failedReactionReactorLoads = [:]
+        resetReactionReactorLoads()
         resetForumLoadAndPresentationState()
         for outgoing in composer.outbox.draftsByNonce.values { discardVoiceMessageFile(for: outgoing) }
         await composer.reset()

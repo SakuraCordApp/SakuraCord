@@ -152,15 +152,6 @@ public struct PollDraft: Equatable, Sendable {
     }
 }
 
-public struct PollVoterPage: Sendable {
-    public var users: [User]
-    public var hasMore: Bool
-    public init(users: [User], hasMore: Bool) {
-        self.users = users
-        self.hasMore = hasMore
-    }
-}
-
 public struct PollResultSummary: Equatable, Sendable {
     public var question: String
     public var winner: String?

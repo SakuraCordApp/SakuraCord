@@ -245,6 +245,7 @@ public extension DiscordRESTProvider {
         _ sound: SoundboardSound,
         in channelID: ChannelID
     ) async throws {
+        try requireGuildCommunication(in: channelID)
         var body: [String: JSONValue] = [
             "sound_id": .string(sound.id),
             "emoji_id": sound.emojiID.map(JSONValue.string) ?? .null,

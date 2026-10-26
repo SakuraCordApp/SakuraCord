@@ -207,13 +207,13 @@ private struct DirectMessageCallRegion: View {
     }
 
     private var isIncoming: Bool {
-        guard let currentUserID = model.snapshot?.currentUser.id else { return false }
+        guard let currentUserID = model.currentUser?.id else { return false }
         return call?.isRinging(currentUserID) == true
     }
 
     private var animatedRingingUserIDs: Set<UserID> {
         guard let call else { return [] }
-        if isIncoming, let currentUserID = model.snapshot?.currentUser.id {
+        if isIncoming, let currentUserID = model.currentUser?.id {
             return Set(
                 call.ongoingRings
                     .filter { $0.recipientID == currentUserID }
@@ -317,9 +317,7 @@ struct IncomingPrivateCallOverlay: View {
             WindowModalBackdrop(opacity: 0.18)
 
             if let call = model.incomingPrivateCalls.first,
-               let channel = model.snapshot?.channels.first(where: {
-                   $0.id == call.channelID
-               })
+               let channel = model.messagePresentationChannelsByID[call.channelID]
             {
                 IncomingPrivateCallCard(
                     channel: channel,

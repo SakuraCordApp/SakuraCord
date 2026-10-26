@@ -22,6 +22,11 @@ public extension MockChatProvider {
         anchoredAt anchor: MessageHistoryAnchor,
         limit: Int
     ) async throws -> MessagePage {
+#if SAKURACORD_MOTION_BENCHMARK
+        if motionThreadHistoryDelay > .zero, motionThreadIDs.contains(channelID) {
+            try await Task.sleep(for: motionThreadHistoryDelay)
+        }
+#endif
         guard
             snapshot.channels.contains(where: { $0.id == channelID })
             || messagesByChannel[channelID] != nil
@@ -222,7 +227,6 @@ public extension MockChatProvider {
         guard channel.kind != .voice, channel.kind != .forum, channel.kind != .unknown else {
             throw ChatProviderError.invalidRequest("Typing is unavailable in this demo channel.")
         }
-        typingRequests.append(channelID)
     }
 
     func send(_ draft: SendMessageDraft) async throws -> Message {
@@ -523,9 +527,9 @@ public extension MockChatProvider {
         continuation?.yield(.messageUpdated(message))
     }
 
-    func pollVoters(messageID: MessageID, channelID: ChannelID, answerID: Int, after: UserID?, limit: Int) async throws -> PollVoterPage {
+    func pollVoters(messageID: MessageID, channelID: ChannelID, answerID: Int, after: UserID?, limit: Int) async throws -> MessagePeoplePage {
         let poll = messagesByChannel[channelID]?.first(where: { $0.id == messageID })?.poll
-        return PollVoterPage(users: after == nil && poll?.selectedAnswerIDs.contains(answerID) == true ? [currentUser] : [], hasMore: false)
+        return MessagePeoplePage(users: after == nil && poll?.selectedAnswerIDs.contains(answerID) == true ? [currentUser] : [], hasMore: false)
     }
 
     func endPoll(messageID: MessageID, channelID: ChannelID) async throws -> Message {

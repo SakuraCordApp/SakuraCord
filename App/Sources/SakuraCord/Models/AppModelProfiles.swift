@@ -89,7 +89,7 @@ extension AppModel {
     }
 
     func memberWithCurrentStatus(_ member: Member) -> Member {
-        guard member.id == snapshot?.currentUser.id, member.status != currentStatus else { return member }
+        guard member.id == currentUser?.id, member.status != currentStatus else { return member }
         var member = member
         member.status = currentStatus
         return member
@@ -229,8 +229,8 @@ extension AppModel {
         }
         let thread = (openThread?.id == message.channelID ? openThread : nil)
             ?? inbox.threads[message.channelID]
-            ?? snapshot?.threads.first { $0.id == message.channelID }
-            ?? snapshot?.activeJoinedThreads.first { $0.id == message.channelID }
+            ?? threads.first { $0.id == message.channelID }
+            ?? activeJoinedThreads.first { $0.id == message.channelID }
         return thread?.guildID ?? thread?.parentID.flatMap { messagePresentationChannel($0)?.guildID }
     }
 
@@ -406,7 +406,7 @@ extension AppModel {
         guard var presentation = profilePresentation(for: destination) else { return nil }
         guard !presentation.isLocalIdentity else { return presentation }
         presentation.member = profileMember(presentation.member.id, in: presentation.guildID) ?? presentation.member
-        if presentation.member.id == snapshot?.currentUser.id {
+        if presentation.member.id == currentUser?.id {
             // Member stores do not track our own presence; the account does.
             presentation.member.status = currentStatus
         }

@@ -107,18 +107,21 @@ extension DiscordRESTProvider {
     func ingestThreadMembers(_ entries: [ThreadMemberDTO], guildID: GuildID) {
         let roles = cachedGuildRoles[guildID] ?? []
         let catalog = GuildMemberRoleCatalog(roles)
+        let previousMembers = cachedMemberIndex(guildID: guildID)
         let members = entries.compactMap { entry -> Member? in
             guard let member = entry.member else { return nil }
             cacheGatewayUser(member.user, messageSearchEligible: false)
             return try? member.domain(
                 currentUserID: currentUser?.id, currentStatus: presenceStatus,
                 presence: entry.presence, guildRoles: roles,
-                guildRoleCatalog: catalog, guildID: guildID
+                guildRoleCatalog: catalog, guildID: guildID,
+                previousCommunicationDisabledUntil: UserID(member.user.id).flatMap { previousMembers[$0]?.communicationDisabledUntil }
             )
         }
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
+        publishCurrentMemberTimeoutChange(previousMembers: previousMembers, guildID: guildID)
     }
 
     func resolvedThreadMembers(threadID: ChannelID, guildID: GuildID) -> [Member]? {

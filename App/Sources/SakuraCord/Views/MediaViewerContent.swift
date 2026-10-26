@@ -43,6 +43,22 @@ struct MediaViewerStage: View {
                 .padding(.horizontal, horizontalInset)
                 .padding(.top, topInset)
                 .padding(.bottom, bottomInset)
+            case let .youtube(playback):
+                GeometryReader { proxy in
+                    let fittedSize = MediaViewerLayoutPolicy.fittedSize(
+                        mediaWidth: item.width ?? 16, mediaHeight: item.height ?? 9,
+                        availableSize: proxy.size
+                    )
+                    if isVisible {
+                        YouTubePlayerView(playback: playback, openInBrowser: MediaViewerActionService.openInBrowser)
+                            .id(playback)
+                            .frame(width: fittedSize.width, height: fittedSize.height)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .padding(.horizontal, horizontalInset)
+                .padding(.top, topInset)
+                .padding(.bottom, bottomInset)
             case .audio:
                 MediaViewerAudio(title: item.title, url: item.url)
                     .padding(.horizontal, horizontalInset)

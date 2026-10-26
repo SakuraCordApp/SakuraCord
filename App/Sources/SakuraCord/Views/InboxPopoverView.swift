@@ -34,12 +34,12 @@ struct InboxPopoverView: View {
             get: { model.inbox.ageRestrictedGuildID != nil },
             set: { if !$0 { model.cancelInboxAgeAgreement() } }
         )) {
-            if model.snapshot?.currentUser.allowsAdultContent == true {
+            if model.currentUser?.allowsAdultContent == true {
                 Button("Continue", action: model.acceptInboxAgeAgreement)
             }
             Button("Cancel", role: .cancel, action: model.cancelInboxAgeAgreement)
         } message: {
-            Text(model.snapshot?.currentUser.allowsAdultContent == true
+            Text(model.currentUser?.allowsAdultContent == true
                  ? "This channel contains age-restricted content. Do you wish to proceed?"
                  : "Confirm your age in Discord before opening this channel.")
         }

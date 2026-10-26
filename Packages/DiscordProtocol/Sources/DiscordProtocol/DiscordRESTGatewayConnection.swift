@@ -8,6 +8,7 @@ extension DiscordRESTProvider {
         selfMute: Bool,
         selfDeaf: Bool
     ) async throws -> VoiceConnectionInfo {
+        try requireGuildCommunication(in: channelID, guildID: guildID)
         guard gatewayReady, let userID = currentUser?.id else {
             throw ChatProviderError.invalidRequest(
                 "Discord Gateway is not ready for a voice connection.")
@@ -146,6 +147,9 @@ extension DiscordRESTProvider {
         selfDeaf: Bool,
         selfVideo: Bool
     ) async throws {
+        if let channelID {
+            try requireGuildCommunication(in: channelID, guildID: guildID)
+        }
         try await sendGateway(
             DiscordGatewayPayloadFactory.voiceStateUpdate(
                 guildID: guildID,
@@ -189,6 +193,11 @@ extension DiscordRESTProvider {
     }
 
     public func disconnect() async {
+        // Teardown flushes below, and saves already awaiting a sheet, must
+        // fail rather than wait on a human.
+        captchaHandler = nil
+        for presentation in captchaPresentations.values { presentation.cancel() }
+        captchaPresentations = [:]
         resetMemberListSubscriptionWork()
         await finishGuildFoldersEdits()
         currentAccountDetails = nil
@@ -511,24 +520,15 @@ extension DiscordRESTProvider {
             )
         }
         let batches = userIDs.chunked(into: 100)
-        let resolvedBatches = try await withThrowingTaskGroup(
-            of: (Int, [Member]).self,
-            returning: [[Member]].self
-        ) { group in
-            for (index, batch) in batches.enumerated() {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for batch in batches {
                 group.addTask { [self] in
-                    let members = try await requestMemberBatch(batch, guildID: guildID)
-                    return (index, members)
+                    _ = try await requestMemberBatch(batch, guildID: guildID)
                 }
             }
-            var results = [[Member]?](repeating: nil, count: batches.count)
-            for try await (index, members) in group {
-                results[index] = members
-            }
-            return results.compactMap(\.self)
-        }
-        for members in resolvedBatches {
-            mergeResolvedMembers(members, guildID: guildID)
+            // Each chunk is merged by dispatch before its request completes.
+            // Replaying completed batches would overwrite newer live updates.
+            try await group.waitForAll()
         }
     }
 
@@ -576,9 +576,11 @@ extension DiscordRESTProvider {
         _ members: [Member], guildID: GuildID,
         joinedUserIDs: Set<UserID>? = nil
     ) {
+        let previousMembers = cachedMemberIndex(guildID: guildID)
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: members
         )
+        publishCurrentMemberTimeoutChange(previousMembers: previousMembers, guildID: guildID)
         publishThreadMembers(guildID: guildID)
         if let joinedUserIDs {
             quickSwitcherJoinedMemberIDsByGuildID[guildID, default: []]

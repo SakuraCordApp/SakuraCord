@@ -3,6 +3,7 @@ import SakuraCordModels
 
 public extension DiscordRESTProvider {
     func setPollAnswers(_ answerIDs: [Int], messageID: MessageID, channelID: ChannelID) async throws {
+        if !answerIDs.isEmpty { try requireGuildCommunication(in: channelID) }
         guard answerIDs.count <= 10, Set(answerIDs).count == answerIDs.count, answerIDs.allSatisfy({ $0 > 0 }) else {
             throw ChatProviderError.invalidRequest("Choose valid poll answers.")
         }
@@ -16,7 +17,7 @@ public extension DiscordRESTProvider {
                                body: ["answer_ids": .array(answerIDs.map { .string(String($0)) })])
     }
 
-    func pollVoters(messageID: MessageID, channelID: ChannelID, answerID: Int, after: UserID?, limit: Int) async throws -> PollVoterPage {
+    func pollVoters(messageID: MessageID, channelID: ChannelID, answerID: Int, after: UserID?, limit: Int) async throws -> MessagePeoplePage {
         guard answerID > 0 else { throw ChatProviderError.invalidRequest("Choose a valid poll answer.") }
         let limit = min(100, max(1, limit))
         var query = [URLQueryItem(name: "limit", value: String(limit))]
@@ -24,7 +25,7 @@ public extension DiscordRESTProvider {
         query.append(URLQueryItem(name: "type", value: "2"))
         struct Response: Decodable { var users: [UserDTO] }
         let response: Response = try await request("/channels/\(channelID)/polls/\(messageID)/answers/\(answerID)", query: query)
-        return PollVoterPage(users: try response.users.map { try $0.domain() }, hasMore: response.users.count == limit)
+        return MessagePeoplePage(users: try response.users.map { try $0.domain() }, hasMore: response.users.count == limit)
     }
 
     func endPoll(messageID: MessageID, channelID: ChannelID) async throws -> Message {

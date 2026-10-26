@@ -109,18 +109,7 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
             {
                 return nil
             }
-            let unreadCount = projected[index].kind == .forum
-                ? unread.newForumPostsByChannelID[projected[index].id, default: 0]
-                : (unread.unreadByChannelID[projected[index].id] == true ? 1 : 0)
-            let mentionCount = unread.mentionsByChannelID[
-                projected[index].id,
-                default: 0
-            ]
-            if projected[index].unreadCount != unreadCount
-                || projected[index].mentionCount != mentionCount
-            {
-                projected[index].unreadCount = unreadCount
-                projected[index].mentionCount = mentionCount
+            if projected[index].applyUnread(unread) {
                 changed = true
             }
             let channel = projected[index]
@@ -152,18 +141,7 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
             {
                 return nil
             }
-            let unreadCount = unread.unreadByGuildID[projected[index].id] == true
-                ? 1
-                : 0
-            let mentionCount = unread.mentionsByGuildID[
-                projected[index].id,
-                default: 0
-            ]
-            if projected[index].unreadCount != unreadCount
-                || projected[index].mentionCount != mentionCount
-            {
-                projected[index].unreadCount = unreadCount
-                projected[index].mentionCount = mentionCount
+            if projected[index].applyUnread(unread) {
                 changed = true
             }
         }
@@ -171,6 +149,40 @@ private nonisolated struct UnreadPresentationPreparationSource: Sendable {
             guilds: projected,
             changed: changed
         )
+    }
+}
+
+private extension Channel {
+    /// Returns whether the row's counts changed.
+    nonisolated mutating func applyUnread(
+        _ unread: AccountReadStateModel.UnreadPresentationProjection
+    ) -> Bool {
+        let unreadCount = kind == .forum
+            ? unread.newForumPostsByChannelID[id, default: 0]
+            : (unread.unreadByChannelID[id] == true ? 1 : 0)
+        let mentionCount = unread.mentionsByChannelID[id, default: 0]
+        guard self.unreadCount != unreadCount
+            || self.mentionCount != mentionCount
+        else { return false }
+        self.unreadCount = unreadCount
+        self.mentionCount = mentionCount
+        return true
+    }
+}
+
+private extension Guild {
+    /// Returns whether the server's counts changed.
+    nonisolated mutating func applyUnread(
+        _ unread: AccountReadStateModel.UnreadPresentationProjection
+    ) -> Bool {
+        let unreadCount = unread.unreadByGuildID[id] == true ? 1 : 0
+        let mentionCount = unread.mentionsByGuildID[id, default: 0]
+        guard self.unreadCount != unreadCount
+            || self.mentionCount != mentionCount
+        else { return false }
+        self.unreadCount = unreadCount
+        self.mentionCount = mentionCount
+        return true
     }
 }
 
@@ -199,13 +211,19 @@ extension AppModel {
         }
     }
 
+    /// - Parameter readChangedChannelID: A conversation whose read state the
+    ///   user's reading just changed, including an acknowledgement that was
+    ///   dropped or rejected. While scrolling defers the full projection, its
+    ///   indicators are published at once.
     func refreshUnreadPresentation(
+        readChangedChannelID: ChannelID? = nil,
         appliesAccessImmediately: Bool = false,
         accessAffectedGuildIDs: Set<GuildID>? = nil,
         accessAffectedChannelIDs: Set<ChannelID> = [],
         accessReplacingChannelIDs: Set<ChannelID>? = nil,
         accessAffectedChannels: [Channel]? = nil
     ) {
+        reconcileInboxReadState()
         let interval = AppPerformanceSignposts.signposter.beginInterval(
             "UnreadPresentationRefreshRequest"
         )
@@ -246,7 +264,13 @@ extension AppModel {
               !isAppScrollDeferringUnread
         else {
             hasDeferredUnreadPresentationRefresh = true
+            // A preparation already in flight predates this change and must
+            // not land after scrolling ends and revert the published values.
+            unreadPresentationPreparationGeneration &+= 1
             requestCoalescedUnreadPresentationRefresh()
+            if let readChangedChannelID {
+                publishReadChangedUnreadPresentation(channelID: readChangedChannelID)
+            }
             return
         }
         hasDeferredUnreadPresentationRefresh = false
@@ -362,16 +386,59 @@ extension AppModel {
                 self.beginUnreadPresentationPreparationIfNeeded()
                 return
             }
-            self.applyPreparedUnreadPresentation(
-                prepared,
-                snapshotValue: value
-            )
+            self.applyPreparedUnreadPresentation(prepared)
+        }
+    }
+
+    /// A read change touches only its conversation's row, its forum's
+    /// new-post count, its server's rail entry and category dots, and the
+    /// Dock badge. Projecting that one server with the shared rules gives
+    /// the values the deferred full projection will reconcile to. The
+    /// snapshot itself waits for that projection: replacing it mid-gesture
+    /// refreshes every snapshot-derived presentation.
+    private func publishReadChangedUnreadPresentation(channelID: ChannelID) {
+        guard let entry = readState[channelID] else { return }
+        let guildID = entry.guildID
+        let unread = AppPerformanceSignposts.measureSync(
+            "UnreadAcknowledgedScopeProjection"
+        ) {
+            readState.unreadPresentationSource().projection(scope: guildID)
+        }
+        guard let unread else { return }
+        let rowIDs = Set([channelID, entry.parentID].compactMap(\.self))
+        var rows = visibleChannels
+        var rowsChanged = false
+        for index in rows.indices where rowIDs.contains(rows[index].id) {
+            rowsChanged = rows[index].applyUnread(unread) || rowsChanged
+        }
+        if rowsChanged {
+            visibleChannels = rows
+        }
+        if var channel = selectedChannel,
+           rowIDs.contains(channel.id),
+           channel.applyUnread(unread)
+        {
+            selectedChannel = channel
+        }
+        if let guildID {
+            if var guild = serverRailGuildsByID[guildID], guild.applyUnread(unread) {
+                updateServerRailGuild(guild)
+            }
+            if unreadCategoryIDsByGuild[guildID] != unread.unreadCategoryIDsByGuild[guildID] {
+                unreadCategoryIDsByGuild[guildID] = unread.unreadCategoryIDsByGuild[guildID]
+            }
+        } else {
+            refreshServerRailDirectMessages()
+        }
+        // Counting unread conversations walks the whole account, so that
+        // badge style catches up when the deferred projection lands.
+        if notificationPreferences.dockBadgeStyle != .unreadConversations {
+            refreshDockBadge()
         }
     }
 
     private func applyPreparedUnreadPresentation(
-        _ prepared: PreparedUnreadPresentation,
-        snapshotValue: BootstrapSnapshot
+        _ prepared: PreparedUnreadPresentation
     ) {
         let refresh = AppPerformanceSignposts.signposter.beginInterval(
             "UnreadPresentationRefresh"
@@ -388,7 +455,6 @@ extension AppModel {
             unreadCategoryIDsByGuild = prepared.unread.unreadCategoryIDsByGuild
         }
         publishUnreadPresentation(
-            snapshotValue: snapshotValue,
             channelProjection: prepared.channels,
             guildProjection: prepared.guilds,
             projectedGuildsByID: prepared.serverRailGuildsByID
@@ -397,16 +463,16 @@ extension AppModel {
     }
 
     private func publishUnreadPresentation(
-        snapshotValue: BootstrapSnapshot,
         channelProjection: UnreadChannelPresentationProjection,
         guildProjection: UnreadGuildPresentationProjection,
         projectedGuildsByID: [GuildID: Guild]
     ) {
-        var value = snapshotValue
         AppPerformanceSignposts.measureSync(
             "UnreadPresentationPublication"
         ) {
-            if channelProjection.changed || guildProjection.changed {
+            if channelProjection.changed || guildProjection.changed,
+               var value = snapshot
+            {
                 value.channels = channelProjection.channels
                 value.guilds = guildProjection.guilds
                 snapshot = value
@@ -424,9 +490,7 @@ extension AppModel {
         if selectedGuildChannels != visibleChannels {
             visibleChannels = selectedGuildChannels
         }
-        if let selectedChannelID,
-           !selectedGuildChannels.contains(where: { $0.id == selectedChannelID })
-        {
+        if selectedChannelIsGone(fromScopeChannels: selectedGuildChannels) {
             self.selectedChannelID = Self.preferredInitialChannelID(
                 in: selectedGuildChannels.filter {
                     conversationAccess(for: $0) != .hidden
@@ -441,5 +505,20 @@ extension AppModel {
         if projectedSelectedChannel != selectedChannel {
             selectedChannel = projectedSelectedChannel
         }
+    }
+
+    /// Reselection replaces the conversation, closing any open thread, so it
+    /// requires the selected channel to be authoritatively gone from the
+    /// selected scope. A guild whose channels have not arrived, or a channel of
+    /// another guild while activation or navigation moves between guilds, is a
+    /// projection gap.
+    func selectedChannelIsGone(fromScopeChannels channels: [Channel]) -> Bool {
+        guard let selectedChannelID,
+              !channels.contains(where: { $0.id == selectedChannelID }),
+              !channels.isEmpty || selectedGuildID == nil
+        else { return false }
+        return snapshot?.channels.contains {
+            $0.id == selectedChannelID && $0.guildID != selectedGuildID
+        } != true
     }
 }

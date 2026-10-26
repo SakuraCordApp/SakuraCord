@@ -2,11 +2,8 @@ name: Publish PR build
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Pull request metadata]
     types: [completed]
-  pull_request_target:
-    # Refresh discovery from default-branch code; never check out the PR.
-    types: [closed, reopened]
   workflow_dispatch:
     inputs:
       run_id:
@@ -33,6 +30,7 @@ jobs:
   inspect:
     if: >-
       (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.name == 'CI' &&
        github.event.workflow_run.event == 'pull_request' &&
        github.event.workflow_run.conclusion == 'success') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.run_id != '')
@@ -97,7 +95,10 @@ jobs:
       always() && !cancelled() &&
       ((needs.inspect.outputs.ready == 'true' && needs.verify-signatures.result == 'success') ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.run_id == '') ||
-       github.event_name == 'pull_request_target')
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.name == 'Pull request metadata' &&
+        github.event.workflow_run.event == 'pull_request_target' &&
+        github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -116,7 +117,7 @@ jobs:
         id: distribution-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.SAKURACORD_BOT_APP_ID }}
+          client-id: ${{ vars.SAKURACORD_BOT_CLIENT_ID }}
           private-key: ${{ secrets.SAKURACORD_BOT_PRIVATE_KEY }}
           owner: SakuraCordApp
           repositories: Builds

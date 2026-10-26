@@ -11,7 +11,9 @@ struct ServerFolderRailView: View {
     @State private var isAnimatingFolder = false
     @State private var animationGeneration = 0
     @State private var pointerLocation: CGPoint?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @Environment(ServerRailDragController.self) private var drag
     @Environment(\.displayScale) private var displayScale
     @Environment(\.windowModalInputAllowed) private var inputAllowed
@@ -165,6 +167,7 @@ struct ServerFolderRailView: View {
                 .modifier(ServerFolderIndicatorMotion(
                     centerY: isExpanded ? rowBounds.midY : InterfaceScale.metric(ServerFolderRailMetrics.collapsedRowHeight) / 2
                 ))
+                .transition(.opacity)
                 .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: isExpanded)
             }
         }
@@ -248,6 +251,7 @@ struct ServerFolderRailView: View {
                     .frame(width: bounds.width, height: bounds.height)
                     .position(x: bounds.midX, y: bounds.midY)
                     .opacity(drag.flight?.id == .guild(guild.id) ? 0 : drag.draggedID == .guild(guild.id) ? 0.3 : 1)
+                    .transition(ServerRailAnimations.membershipTransition)
                 }
             }
 
@@ -300,7 +304,9 @@ struct ServerFolderRailHeader: View {
     var isPointerOverHeader: Bool?
     let toggle: () -> Void
     var loadsImageWhenOffscreen = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var isHovering = false
     @State private var iconIsVisible = false
     @Environment(ServerRailDragController.self) private var drag
@@ -308,15 +314,15 @@ struct ServerFolderRailHeader: View {
 
     var body: some View {
         let hidesIndicator = isDragPreview || drag.draggedID == entry.id || drag.flight?.id == entry.id
-        HStack(spacing: InterfaceScale.metric(4)) {
-            ServerRailSelectionIndicator(
-                isSelected: !isExpanded && entry.containsSelectedGuild,
-                isHovering: isHovering && !isExpanded,
-                hasNotification: showsUnreadIndicators && entry.hasUnreadGuild
-            )
-            .opacity(hidesIndicator || (morphsInFolder && !reduceMotion) ? 0 : 1)
-            .animation(.easeOut(duration: 0.12), value: hidesIndicator)
-            Button(action: toggle) {
+        Button(action: toggle) {
+            HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailSelectionIndicator(
+                    isSelected: !isExpanded && entry.containsSelectedGuild,
+                    isHovering: isHovering && !isExpanded,
+                    hasNotification: showsUnreadIndicators && entry.hasUnreadGuild
+                )
+                .opacity(hidesIndicator || (morphsInFolder && !reduceMotion) ? 0 : 1)
+                .animation(.easeOut(duration: 0.12), value: hidesIndicator)
                 ServerRailBadgedIcon(
                     mentionCount: showsUnreadIndicators ? entry.mentionCount : 0,
                     badgeOffset: isExpanded ? 4 : 1
@@ -359,34 +365,34 @@ struct ServerFolderRailHeader: View {
                     )
                 }
                 .contentShape(Rectangle())
+                .frame(width: InterfaceScale.metric(ServerFolderRailMetrics.containerSize))
+                .offset(x: InterfaceScale.metric(-3))
             }
-            .buttonStyle(ServerRailButtonStyle())
-            .frame(width: InterfaceScale.metric(ServerFolderRailMetrics.containerSize))
-            .offset(x: InterfaceScale.metric(-3))
-            .overlay {
-                ServerFolderContextMenuBridge(
-                    isUnread: entry.hasUnreadGuild || entry.mentionCount > 0,
-                    markRead: { contextMenuActions.markFolderRead(entry.guildEntries.map(\.id)) },
-                    openSettings: { contextMenuActions.openFolderSettings(entry.folder) }
-                )
-            }
-            .accessibilityLabel(displayName)
-            .accessibilityValue(
-                "\(isExpanded ? "Expanded" : "Collapsed")"
-                    + (showsUnreadIndicators && entry.mentionCount > 0
-                        ? ", \(entry.mentionCount) unread mentions" : "")
-                    + (showsUnreadIndicators && entry.mentionCount == 0
-                        && entry.hasUnreadGuild ? ", Unread" : "")
+            .frame(
+                width: ChatChromeMetrics.serverRailWidth,
+                height: InterfaceScale.metric(isExpanded ? ServerFolderRailMetrics.guildRowHeight : ServerFolderRailMetrics.collapsedRowHeight),
+                alignment: .leading
             )
-            .accessibilityHint("Toggles the server folder")
-            .help(displayName)
+            .contentShape(Rectangle())
         }
-        .frame(
-            width: ChatChromeMetrics.serverRailWidth,
-            height: InterfaceScale.metric(isExpanded ? ServerFolderRailMetrics.guildRowHeight : ServerFolderRailMetrics.collapsedRowHeight),
-            alignment: .leading
+        .buttonStyle(ServerRailButtonStyle())
+        .overlay {
+            ServerFolderContextMenuBridge(
+                isUnread: entry.hasUnreadGuild || entry.mentionCount > 0,
+                markRead: { contextMenuActions.markFolderRead(entry.guildEntries.map(\.id)) },
+                openSettings: { contextMenuActions.openFolderSettings(entry.folder) }
+            )
+        }
+        .accessibilityLabel(displayName)
+        .accessibilityValue(
+            "\(isExpanded ? "Expanded" : "Collapsed")"
+                + (showsUnreadIndicators && entry.mentionCount > 0
+                    ? ", \(entry.mentionCount) unread mentions" : "")
+                + (showsUnreadIndicators && entry.mentionCount == 0
+                    && entry.hasUnreadGuild ? ", Unread" : "")
         )
-        .contentShape(Rectangle())
+        .accessibilityHint("Toggles the server folder")
+        .help(displayName)
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             (isPointerOverHeader ?? isHovering) ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
@@ -452,6 +458,9 @@ private struct ExpandedFolderGuilds: View {
     let morphsInFolder: Bool
     let previewIDs: Set<GuildID>
     let isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var extraRowsHeight: CGFloat = 0
 
     var body: some View {
@@ -470,7 +479,11 @@ private struct ExpandedFolderGuilds: View {
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { extraRowsHeight = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                withAnimation(reduceMotion ? nil : ServerRailAnimations.reorder) {
+                    extraRowsHeight = height
+                }
+            }
             .frame(height: isExpanded ? extraRowsHeight : 0, alignment: .bottom)
             .opacity(isExpanded ? 1 : 0)
             .mask {
@@ -502,6 +515,8 @@ private struct ExpandedFolderGuilds: View {
             morphsInFolder: previewIDs.contains(entry.id) && morphsInFolder
         )
         .modifier(ServerRailDraggableRow(id: .guild(entry.id), folderID: folderID))
+        .geometryGroup()
+        .transition(ServerRailAnimations.membershipTransition)
     }
 }
 
@@ -521,16 +536,20 @@ private struct ServerFolderMorphingIcon: View {
     @State private var isVisible = false
 
     var body: some View {
+        // Keep glyph layout stable and scale the letters with the icon’s background.
+        let referenceSize = InterfaceScale.metric(44)
         GuildIconView(
             name: guild.name,
             iconURL: guild.iconURL,
-            size: size,
-            cornerRadius: cornerRadius,
+            size: referenceSize,
+            cornerRadius: cornerRadius * referenceSize / max(size, 1),
             animates: animates && isVisible,
             isSelected: isSelected,
             loadsImage: isVisible,
             maximumPixelDimension: Int((InterfaceScale.metric(46) * 2).rounded(.up))
         )
+        .scaleEffect(size / referenceSize)
+        .frame(width: size, height: size)
         .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }
 }

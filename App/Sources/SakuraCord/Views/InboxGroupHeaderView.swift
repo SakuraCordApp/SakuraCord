@@ -16,13 +16,13 @@ nonisolated struct InboxGroupHeaderPresentation: Equatable {
 
     @MainActor
     init(_ group: InboxUnreadGroup, model: AppModel) {
-        let channel = model.snapshot?.channels.first { $0.id == group.channelID }
+        let channel = model.messagePresentationChannelsByID[group.channelID]
         let thread = model.inbox.threads[group.channelID]
-            ?? model.snapshot?.activeJoinedThreads.first { $0.id == group.channelID }
+            ?? model.activeJoinedThreads.first { $0.id == group.channelID }
         let parent = thread.flatMap { thread in
-            model.snapshot?.channels.first { $0.id == thread.parentID }
+            thread.parentID.flatMap { model.messagePresentationChannelsByID[$0] }
         }
-        let guild = model.snapshot?.guilds.first { $0.id == group.guildID }
+        let guild = group.guildID.flatMap { model.serverRailGuildsByID[$0] }
         guildName = guild?.name ?? group.subtitle
         guildIconURL = guild?.iconURL
         systemImage = group.isEvents ? "calendar" : parent?.kind == .forum ? "bubble.left.and.bubble.right"
@@ -117,7 +117,7 @@ struct InboxGroupHeaderView: View {
             if let group = model.inbox.groups.first(where: { $0.id == header.channelID }), let guildID = group.guildID {
                 Button("Mark Server as Read") { model.markInboxGuildRead(guildID) }
             }
-            if let channel = model.snapshot?.channels.first(where: { $0.id == header.channelID }) {
+            if let channel = model.messagePresentationChannelsByID[header.channelID] {
                 Menu("Notifications") {
                     ForEach([MessageNotificationLevel.inherit, .allMessages, .onlyMentions, .nothing], id: \.self) { level in
                         Button(level.menuTitle) { model.setChannelNotificationLevel(level, for: channel) }

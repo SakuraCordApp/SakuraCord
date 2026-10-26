@@ -4,9 +4,9 @@ import SakuraCordModels
 import Testing
 
 @MainActor
-@Test(arguments: [false, true])
+@Test(arguments: [false, true], [false, true])
 func `timeline replaces cached avatar placeholders without hover`(
-    detachesConversation: Bool
+    detachesConversation: Bool, finishesBeforeEnqueue: Bool
 ) async throws {
     let url = URL(fileURLWithPath: "/tmp/avatar-cache-\(UUID()).png")
     let key = NativeTimelineMediaKey.avatar(url)
@@ -56,31 +56,50 @@ func `timeline replaces cached avatar placeholders without hover`(
         preparedMediaKeys: [key]
     )
     #expect(canvas.cachedBitmap(for: item, width: 560) != nil)
-    canvas.enqueueVisibleMediaRequests(identifier: item.identifier, keys: [key])
+    func finishSharedLoad() {
+        store.retainVisibleImages(for: [key], owner: canvas.visibleMediaPinOwner)
+        store.cacheImageForTesting(NSImage(size: NSSize(width: 32, height: 32)), for: key)
+    }
+    if finishesBeforeEnqueue { finishSharedLoad() }
+    if !finishesBeforeEnqueue {
+        canvas.enqueueVisibleMediaRequests(identifier: item.identifier, keys: [key])
+    }
     if detachesConversation {
         canvas.invalidateConversationTransientCaches()
     }
-
-    // Finish another row's shared load before the deferred request subscribes.
-    store.retainVisibleImages(for: [key], owner: canvas.visibleMediaPinOwner)
-    store.cacheImageForTesting(NSImage(size: NSSize(width: 32, height: 32)), for: key)
-    if !detachesConversation {
+    if !finishesBeforeEnqueue { finishSharedLoad() }
+    if !detachesConversation, !finishesBeforeEnqueue {
         let request = try #require(canvas.visibleMediaRequestTask)
         await request.value
-        await canvas.mediaInvalidationTask?.value
+        let invalidation = try #require(canvas.mediaInvalidationTask)
+        await invalidation.value
         #expect(canvas.bitmapCache[item.identifier] == nil)
     }
-    #expect(canvas.cachedBitmap(for: item, width: 560) == nil)
-    _ = canvas.bitmap(
-        for: item, at: 0, layout: layout, width: 560,
-        preparedMediaKeys: [key]
-    )
+
+    // Exercise the real draw ordering: enqueue requests, validate the cached
+    // pixels, then raster. A cache hit here needs no later invalidation.
+    let representation = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 560,
+        pixelsHigh: Int(ceil(layout.height)), bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+    ))
+    let context = try #require(NSGraphicsContext(bitmapImageRep: representation))
+    NSGraphicsContext.saveGraphicsState()
+    defer { NSGraphicsContext.restoreGraphicsState() }
+    NSGraphicsContext.current = context
+    canvas.draw(canvas.bounds)
     #expect(canvas.rowRasterCount == 2)
     #expect(canvas.bitmapCache[item.identifier]?.missingMediaKeys.isEmpty == true)
     #expect(canvas.cachedBitmap(for: item, width: 560) != nil)
+    #expect(canvas.mediaInvalidationTask == nil)
+    #expect(canvas.pendingMediaInvalidations.isEmpty)
 
-    // A complete row must stay warm instead of entering a redraw loop.
-    canvas.enqueueVisibleMediaRequests(identifier: item.identifier, keys: [key])
+    // Repeated draws must keep the repaired row warm without new work.
+    canvas.draw(canvas.bounds)
+    #expect(canvas.rowRasterCount == 2)
     #expect(canvas.visibleMediaRequestTask == nil)
     #expect(canvas.pendingVisibleMediaRequests.isEmpty)
+    #expect(canvas.mediaInvalidationTask == nil)
+    #expect(canvas.pendingMediaInvalidations.isEmpty)
 }

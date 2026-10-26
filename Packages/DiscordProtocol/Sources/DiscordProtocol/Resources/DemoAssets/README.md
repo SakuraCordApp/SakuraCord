@@ -10,3 +10,6 @@ synthesized, speech-like tone bursts encoded by SakuraCord's own voice-message
 recorder pipeline. All are intentionally small and
 bundled by the `DiscordProtocol` Swift package so offline performance runs do
 not contact remote media hosts.
+
+`demo-sticker.apng` is an eight-frame synthetic pulse for the message showcase's
+animated-PNG sticker. `demo-notes.txt` is its local file-attachment sample.

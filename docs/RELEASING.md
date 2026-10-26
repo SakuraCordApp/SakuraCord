@@ -10,8 +10,14 @@ Development pull requests target `nightly`. The
 `retarget-pull-requests.yml` workflow redirects open PRs targeting `main` when
 they are opened, reopened, edited, or updated with new commits. Only PRs from
 this repository's own `nightly` branch may target `main` for release promotion.
-The workflow changes PR metadata only and never executes contributor code.
-It must be present on the repository's default branch (`main`) to take effect.
+A permission-free `Pull request metadata` workflow signals changes through
+`pull_request_target`, so forks and merge conflicts do not depend on PR CI
+approval or a mergeable PR ref. A scoped Actions event policy permits only this
+signal workflow to use that trigger; see [distribution setup](#distribution-setup).
+Its completed run triggers the retargeter on the default branch, which re-reads
+open PRs targeting `main` and changes metadata only. Neither workflow checks out
+or executes contributor code. The signal and consumers must be present on the
+repository's default branch (`main`) to take effect.
 Retargeting with `GITHUB_TOKEN` does not start a new CI run; push a new commit
 to the PR branch to validate against the updated base before merging. This
 automation does not block direct pushes or merges made before it runs.
@@ -392,8 +398,12 @@ then continues following the PR track. Retry and catalog recovery rebuild the
 track feeds from already signed artifacts, without a signing key.
 Only builds from currently open PRs appear in the catalog. Closing or merging
 a PR refreshes the catalog to hide its builds; reopening it restores its retained
-build history. These events use trusted default-branch code and never execute
-contributor code. Immutable downloads and installed PR update feeds remain
+build history. The permission-free `Pull request metadata` signal triggers a
+default-branch `workflow_run` catalog refresh. The publisher re-reads current
+PR state and never consumes code or artifacts from that signal. Metadata
+reconciliation remains independent of fork CI approval and merge conflicts;
+the next publication or manual catalog recovery also reconciles PR state.
+Immutable downloads and installed PR update feeds remain
 available after closure. Every publication and manual catalog recovery also
 refreshes PR state; a failed GitHub lookup leaves the existing catalog untouched.
 The catalog is discovery metadata, while Sparkle authenticates the
@@ -423,10 +433,22 @@ switching protocol cannot be published into the catalog.
    because fork PR workflows cannot read repository variables. Set source-repository **variable**
    `SPARKLE_ED_PUBLIC_KEY` to the same value for the trusted publisher's independent
    archive verification. Keep `SPARKLE_ED_PRIVATE_KEY` secret.
-   Existing `SAKURACORD_BOT_APP_ID` and `SAKURACORD_BOT_PRIVATE_KEY` supply the
-   publisher's GitHub App credentials.
-3. Land the trusted publication workflow on `main` before relying on its
-   `workflow_run` trigger. PR CI must contain the packaging changes and the
+   Set repository variable `SAKURACORD_BOT_CLIENT_ID` to the existing SakuraCord
+   bot app's **Client ID**, not its numeric App ID. This variable and the existing
+   `SAKURACORD_BOT_PRIVATE_KEY` secret supply both the publisher and fix agent's
+   GitHub App credentials.
+3. Configure an active repository Actions event policy named
+   `Allow trusted PR metadata signal` for only
+   `.github/workflows/pull-request-metadata.yml`, explicitly allowing
+   `pull_request_target`. This is the permission-free notification workflow:
+   it must not check out code, download artifacts, interpolate contributor
+   content into commands, or access secrets. The trusted consumers retain their
+   own narrowly scoped permissions and never execute contributor code. Do not
+   expand the policy to other workflows merely to suppress a warning. See
+   [GitHub's event policy guidance](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target)
+   and [Actions policy API](https://docs.github.com/en/rest/actions/policies#create-a-repository-actions-policy).
+4. Land the signal and trusted consumer workflows on `main` before relying on
+   their triggers. PR CI must contain the packaging changes and the
    current app/Sparkle switching protocol. Workflow and catalog deployment is
    independent of app releases. The native installation warning reaches users
    with an app update; a catalog refresh cannot add it to older app versions.

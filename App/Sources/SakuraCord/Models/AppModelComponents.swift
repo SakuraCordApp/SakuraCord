@@ -238,7 +238,7 @@ extension AppModel {
         in guildID: GuildID?,
         channelTypes: [Int]
     ) -> [Channel] {
-        let source = snapshot?.channels ?? visibleChannels
+        let source = currentUser == nil ? visibleChannels : messagePresentationChannels
         return source.filter { channel in
             (guildID == nil || channel.guildID == guildID)
                 && (channelTypes.isEmpty

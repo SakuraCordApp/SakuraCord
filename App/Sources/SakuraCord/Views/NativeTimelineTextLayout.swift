@@ -92,13 +92,13 @@ enum NativeTimelineTextPresentation {
 
     static func make(
         row: MessageRowPresentation,
-        model: AppModel?
+        source: AppModel?
     ) -> Value {
         let message = row.message
         guard !message.flags.contains(.isComponentsV2) else {
             return empty
         }
-        let systemActorColor = model?.accessibilitySettings.roleColorDisplay == .inNames ? model?.authorPresentation(for: message)
+        let systemActorColor = source?.roleColorDisplay == .inNames ? source?.authorPresentation(for: message)
             .roleColorHex.flatMap { value -> NSColor? in
                 guard value != 0 else { return nil }
                 return NSColor(
@@ -111,21 +111,21 @@ enum NativeTimelineTextPresentation {
         let plan = if message.type.hasGeneratedContent {
             NativeTimelineTextPlan.make(
                 for: message,
-                currentUserID: model?.snapshot?.currentUser.id,
-                systemRecipient: model?.systemMessageRecipient(for: message),
+                currentUserID: source?.currentUserID,
+                systemRecipient: source?.systemMessageRecipient(for: message),
                 systemActorColor: systemActorColor,
                 systemLinkColor: SakuraCordAccentColor.nsColor
             )
         } else {
             row.textPlan
         }
-        return make(message: message, plan: plan, model: model)
+        return make(message: message, plan: plan, source: source)
     }
 
     static func make(
         message: Message,
         plan: NativeTimelineTextPlan,
-        model: AppModel?
+        source: AppModel?
     ) -> Value {
         guard plan.preparedText != nil else {
             return Value(
@@ -138,7 +138,7 @@ enum NativeTimelineTextPresentation {
         }
 
         let preservesCompactSystemStyle = message.type.hasGeneratedContent
-            && model?.messageAppearance(for: message.channelID) != .bubbles
+            && source?.messageAppearance(for: message.channelID) != .bubbles
         let resolvedBaseFontSize = InterfaceScale.fontSize(
             preservesCompactSystemStyle
                 ? plan.baseFontSize
@@ -168,7 +168,7 @@ enum NativeTimelineTextPresentation {
         guard let preparation = preparation(
             message: message,
             plan: plan,
-            model: model,
+            source: source,
             baseFontSize: resolvedBaseFontSize
         ) else {
             return Value(
@@ -190,7 +190,7 @@ enum NativeTimelineTextPresentation {
     static func preparation(
         message: Message,
         plan: NativeTimelineTextPlan,
-        model: AppModel?,
+        source: AppModel?,
         baseFontSize: CGFloat? = nil
     ) -> Preparation? {
         let resolvedBaseFontSize = baseFontSize ?? plan.baseFontSize
@@ -200,7 +200,7 @@ enum NativeTimelineTextPresentation {
             return nil
         }
         guard let prepared = plan.preparedText else { return nil }
-        let resolver = model.map { MessageMentionResolver(model: $0, message: message) }
+        let resolver = source.map { MessageMentionResolver(model: $0, message: message) }
         let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
             guard case let .mention(mention) = token else { return }
             values[mention.rawToken] =
@@ -575,19 +575,48 @@ enum NativeTimelineEmbedLayout {
     private struct Builder {
         let embed: MessageEmbed
         let message: Message
-        let model: AppModel?
+        let source: AppModel?
         let attachments: [Attachment]
         let origin: CGPoint
         let maximumWidth: CGFloat
         let integratesWithBubble: Bool
         let drawsTopSeparator: Bool
 
+        private var mainMedia: MessageEmbedMedia? {
+            guard var media = embed.video ?? embed.image else { return nil }
+            if embed.video != nil {
+                media.width = media.width ?? embed.thumbnail?.width ?? embed.image?.width
+                media.height = media.height ?? embed.thumbnail?.height ?? embed.image?.height
+            }
+            return media
+        }
+
+        /// The frame follows the video's shape only when its size is known.
+        /// A differently shaped poster (YouTube Shorts ship a padded 16:9
+        /// thumbnail) is then cropped; a fallback 16:9 frame fits it instead.
+        private var mediaPosterFillsFrame: Bool {
+            guard embed.video != nil, let media = mainMedia else { return false }
+            return NativeTimelineEmbedLayout.knownSize(of: media) != nil
+        }
+
+        private var mediaPreviewURL: URL? {
+            guard embed.video != nil else { return nil }
+            if let preview = embed.thumbnail ?? embed.image,
+               let url = resolvedURL(preview, attachments: attachments) { return url }
+            return DiscordVideoPosterURL.url(
+                proxyURL: embed.video?.proxyURL, width: mainMedia?.width, height: mainMedia?.height,
+                maximumPixelDimension: 1_024
+            )
+        }
+
         var region: NativeTimelineRowLayout.EmbedRegion? {
+        let isYouTube = embed.video?.url.flatMap(YouTubeEmbedPlayback.init(url:)) != nil
+        let maximumWidth = min(self.maximumWidth, isYouTube ? InterfaceScale.metric(432) : self.maximumWidth)
         switch MessageEmbedPresentation.kind(for: embed) {
         case .hidden:
             return nil
         case .bareMedia:
-            guard let media = embed.image ?? embed.video,
+            guard let media = mainMedia,
                   let url = resolvedURL(media, attachments: attachments)
             else { return nil }
             let size = mediaSize(
@@ -604,8 +633,10 @@ enum NativeTimelineEmbedLayout {
                 imageRegions: [],
                 mediaFrame: frame,
                 mediaURL: url,
+                mediaPreviewURL: mediaPreviewURL,
                 mediaIsVideo: embed.video != nil,
                 mediaAutoplaysInline: embed.type?.lowercased() == "gifv",
+                mediaPosterFillsFrame: mediaPosterFillsFrame,
                 accentColor: nil,
                 drawsTopSeparator: false
             )
@@ -631,14 +662,14 @@ enum NativeTimelineEmbedLayout {
                     link: embed.url
                 )
             }
-            let description = embed.description.map {
+            let description = (["image", "video", "gifv"].contains(embed.type?.lowercased() ?? "") ? nil : embed.description).map {
                 resolvedTextBox(
                     prepared: RichMessageAttributedText.prepare(source: $0),
                     scope: "description",
                     emojiSize: 18,
                     embed: embed,
                     message: message,
-                    model: model
+                    source: source
                 )
             }
             let fields = embed.fields.enumerated().map { index, field in
@@ -657,7 +688,7 @@ enum NativeTimelineEmbedLayout {
                         emojiSize: 16,
                         embed: embed,
                         message: message,
-                        model: model
+                        source: source
                     )
                 )
             }
@@ -665,7 +696,8 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 11),
-                    color: .secondaryLabelColor
+                    color: .secondaryLabelColor,
+                    link: embed.provider?.url
                 )
             }
             let footerText = footerText(
@@ -680,9 +712,10 @@ enum NativeTimelineEmbedLayout {
                 )
             }
 
-            let thumbnailURL = embed.thumbnail.flatMap {
+            let showsSideThumbnail = embed.video == nil && (embed.image == nil || embed.type?.lowercased() == "rich")
+            let thumbnailURL = showsSideThumbnail ? embed.thumbnail.flatMap {
                 resolvedURL($0, attachments: attachments)
-            }
+            } : nil
             let thumbnailSize: CGFloat = thumbnailURL == nil ? 0 : InterfaceScale.metric(80)
             // The legacy HStack contains text, a zero-minimum Spacer, and the
             // thumbnail. SwiftUI applies its 12-point spacing on both sides
@@ -702,7 +735,7 @@ enum NativeTimelineEmbedLayout {
                 provider: provider
             )
             let naturalTopWidth = naturalTextWidth + thumbnailAllowance
-            let mainMedia = embed.image ?? embed.video
+            let mainMedia = self.mainMedia
             let naturalMediaSize = mainMedia.map {
                 mediaSize(
                     $0,
@@ -763,6 +796,7 @@ enum NativeTimelineEmbedLayout {
                 hasTextSection = true
             }
 
+            appendText(provider)
             if let author {
                 if let iconURL = embed.author?.proxyIconURL
                     ?? embed.author?.iconURL
@@ -826,7 +860,6 @@ enum NativeTimelineEmbedLayout {
                 )
                 hasTextSection = true
             }
-            appendText(provider)
 
             let textHeight = hasTextSection
                 ? textY - (origin.y + cardPadding)
@@ -941,8 +974,10 @@ enum NativeTimelineEmbedLayout {
                 imageRegions: imageRegions,
                 mediaFrame: mediaFrame,
                 mediaURL: mediaURL,
+                mediaPreviewURL: mediaPreviewURL,
                 mediaIsVideo: embed.video != nil,
                 mediaAutoplaysInline: false,
+                mediaPosterFillsFrame: mediaPosterFillsFrame,
                 accentColor: embed.color,
                 drawsTopSeparator:
                     integratesWithBubble && drawsTopSeparator
@@ -956,7 +991,7 @@ enum NativeTimelineEmbedLayout {
             emojiSize: CGFloat,
             embed: MessageEmbed,
             message: Message,
-            model: AppModel?
+            source: AppModel?
         ) -> NativeTimelineAttributedTextBox {
             NativeTimelineEmbedLayout.resolvedTextBox(
                 prepared: prepared,
@@ -964,7 +999,7 @@ enum NativeTimelineEmbedLayout {
                 emojiSize: emojiSize,
                 embed: embed,
                 message: message,
-                model: model
+                source: source
             )
         }
 
@@ -1063,7 +1098,7 @@ enum NativeTimelineEmbedLayout {
     static func make(
         embed: MessageEmbed,
         message: Message,
-        model: AppModel?,
+        source: AppModel?,
         attachments: [Attachment],
         origin: CGPoint,
         maximumWidth: CGFloat,
@@ -1073,7 +1108,7 @@ enum NativeTimelineEmbedLayout {
         Builder(
             embed: embed,
             message: message,
-            model: model,
+            source: source,
             attachments: attachments,
             origin: origin,
             maximumWidth: maximumWidth,
@@ -1088,9 +1123,9 @@ enum NativeTimelineEmbedLayout {
         emojiSize: CGFloat,
         embed: MessageEmbed,
         message: Message,
-        model: AppModel?
+        source: AppModel?
     ) -> NativeTimelineAttributedTextBox {
-        let resolver = model.map {
+        let resolver = source.map {
             MessageMentionResolver(model: $0, message: message)
         }
         let mentions = prepared.tokens.reduce(
@@ -1339,21 +1374,22 @@ enum NativeTimelineEmbedLayout {
         )
     }
 
+    /// The media's reported size, when both dimensions are positive. Without
+    /// it, embed media is laid out in a fallback 16:9 frame.
+    private static func knownSize(of media: MessageEmbedMedia) -> CGSize? {
+        guard let width = media.width, let height = media.height,
+              width > 0, height > 0
+        else { return nil }
+        return CGSize(width: CGFloat(width), height: CGFloat(height))
+    }
+
     private static func mediaSize(
         _ media: MessageEmbedMedia,
         maximumWidth: CGFloat,
         maximumHeight: CGFloat
     ) -> CGSize {
         let width = min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), maximumWidth))
-        if let rawWidth = media.width,
-           let rawHeight = media.height,
-           rawWidth > 0,
-           rawHeight > 0
-        {
-            let source = CGSize(
-                width: CGFloat(rawWidth),
-                height: CGFloat(rawHeight)
-            )
+        if let source = knownSize(of: media) {
             let scale = min(
                 1,
                 width / source.width,
@@ -1439,15 +1475,69 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
 }
 
 enum NativeTimelineTimestamp {
+    /// Header texts by everything they depend on, including the day they
+    /// are read on: a row laid out again at another width, as on every
+    /// frame of a resize, reuses its timestamp's text.
+    private static var headerTexts: [HeaderKey: String] = [:]
+    /// The day, locale and time zone texts are read in, looked up at most
+    /// once a second of wall-clock time, which a sleeping Mac also passes.
+    private static var headerContext: HeaderContextLookup?
+
+    private struct HeaderContextLookup {
+        let context: HeaderContext
+        /// When it was looked up, and when it is looked up again.
+        let created: Date
+        let expires: Date
+    }
+
+    private struct HeaderContext: Hashable {
+        let today: Date
+        /// The current locale with the user's overrides, such as the hour cycle.
+        let locale: Locale
+        let timeZone: TimeZone
+    }
+
+    private struct HeaderKey: Hashable {
+        let date: Date
+        let format: InterfaceTimestampFormat
+        let includesSeconds: Bool
+        let context: HeaderContext
+    }
+
+    private static var currentHeaderContext: HeaderContext {
+        let now = Date.now
+        // A clock set back leaves the window too.
+        if let cached = headerContext, cached.created <= now, now < cached.expires { return cached.context }
+        let timeZone = TimeZone.current
+        var calendar = Calendar.current
+        calendar.timeZone = timeZone
+        let today = calendar.startOfDay(for: now)
+        let context = HeaderContext(today: today, locale: .current, timeZone: timeZone)
+        // Never past midnight, when today's texts become yesterday's.
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? now
+        headerContext = HeaderContextLookup(context: context, created: now, expires: min(now.addingTimeInterval(1), tomorrow))
+        return context
+    }
+
     static func headerText(
         for date: Date,
         settings: InterfaceSettingsSnapshot = .defaults
     ) -> String {
-        InterfaceTimestampFormatter.messageText(
+        let key = HeaderKey(
+            date: date,
+            format: settings.timestampFormat,
+            includesSeconds: settings.includesTimestampSeconds,
+            context: currentHeaderContext
+        )
+        if let text = headerTexts[key] { return text }
+        let text = InterfaceTimestampFormatter.messageText(
             for: date,
             format: settings.timestampFormat,
             includesSeconds: settings.includesTimestampSeconds
         )
+        if headerTexts.count >= 4_096 { headerTexts.removeAll(keepingCapacity: true) }
+        headerTexts[key] = text
+        return text
     }
 
     static func text(
@@ -1575,10 +1665,14 @@ extension NativeTimelineRowLayout {
         let editedFont: NSFont
         let timestampGutterWidth: CGFloat
 
+        init(source: AppModel?) {
+            self.init(settings: source?.interfaceSettings ?? .defaults)
+        }
+
         init(settings: InterfaceSettingsSnapshot) {
-            authorFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize, weight: .semibold)
-            timestampFont = .interfacePreferredFont(forTextStyle: .caption1)
-            editedFont = .interfacePreferredFont(forTextStyle: .caption2)
+            authorFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize + 1, weight: .medium)
+            timestampFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 1)
+            editedFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize + 1)
             timestampGutterWidth = NativeTimelineCompactTimestampMetrics.width(settings: settings)
         }
     }

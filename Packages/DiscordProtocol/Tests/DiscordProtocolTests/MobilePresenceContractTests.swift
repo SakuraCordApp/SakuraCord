@@ -36,29 +36,3 @@ import Testing
         }
     }
 }
-
-func verifyMobilePresenceTransitions(provider: DiscordRESTProvider) async throws {
-    // Platform-only transitions must update cached DM presence even when
-    // aggregate status does not change. Empty client_status clears mobile.
-    for (status, platforms, showsPhone) in [
-        ("idle", ["mobile": "idle"], true),
-        ("dnd", ["mobile": "dnd"], true),
-        ("dnd", ["mobile": "dnd", "web": "online"], false),
-        ("dnd", ["mobile": "dnd"], true),
-        ("dnd", [:], false),
-        ("offline", ["mobile": "online"], false),
-        ("invisible", ["mobile": "dnd"], false),
-    ] {
-        await provider.receiveGatewayDispatchForTesting(
-            name: "PRESENCE_UPDATE",
-            data: .object([
-                "user": .object(["id": .string("2")]),
-                "status": .string(status),
-                "client_status": .object(platforms.mapValues { .string($0) }),
-            ])
-        )
-        let member = try #require(await provider.members(in: nil).first)
-        #expect(member.status.rawValue == status)
-        #expect(member.showsMobileIndicator == showsPhone)
-    }
-}

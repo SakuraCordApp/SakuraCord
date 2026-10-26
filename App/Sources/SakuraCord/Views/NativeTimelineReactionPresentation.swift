@@ -36,11 +36,14 @@ nonisolated enum NativeTimelineReactionCountBaseline {
 
 nonisolated enum NativeTimelineReactionAddControlGeometry {
     static func iconFrame(in frame: CGRect) -> CGRect {
-        CGRect(
-            x: frame.midX - InterfaceScale.metric(8),
-            y: frame.midY - InterfaceScale.metric(8),
-            width: InterfaceScale.metric(16),
-            height: InterfaceScale.metric(16)
+        let size = InterfaceScale.metric(18)
+        // Center the visible smile rather than the private symbol's font box.
+        let opticalOffset = InterfaceScale.metric(1)
+        return CGRect(
+            x: frame.midX - size / 2,
+            y: frame.midY - size / 2 - opticalOffset,
+            width: size,
+            height: size
         )
     }
 }

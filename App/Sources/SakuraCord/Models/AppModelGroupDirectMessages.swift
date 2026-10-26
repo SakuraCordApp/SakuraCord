@@ -76,12 +76,20 @@ extension AppModel {
         store.confirmation = GroupDirectMessageLeaveStore.Confirmation(channel: channel)
     }
 
-    /// Leaves a confirmed group once. The provider removes it from the DM
-    /// list, which moves a selection on it to the next conversation; failures
-    /// use the workspace error alert and keep the group.
+    /// Leaves a confirmed group once.
     func leaveGroupDirectMessage(_ confirmation: GroupDirectMessageLeaveStore.Confirmation, silently: Bool) {
+        exitDirectMessage(confirmation.channel, verb: "leave") {
+            try await $0.leaveGroupDirectMessage(confirmation.channel.id, silently: silently)
+        }
+    }
+
+    /// Runs a Leave Group or Close DM request once per conversation. The
+    /// provider removes it from the DM list, which moves a selection on it to
+    /// the next conversation; failures use the workspace error alert and keep it.
+    func exitDirectMessage(
+        _ channel: Channel, verb: String, request: @escaping @MainActor (any ChatProvider) async throws -> Void
+    ) {
         let store = groupDirectMessageLeave
-        let channel = confirmation.channel
         guard !accountTransitionIsActive, store.leaving.insert(channel.id).inserted else { return }
         startAccountChildTask(account: accountSession(allowsTransition: true)) { model, session in
             defer {
@@ -89,13 +97,13 @@ extension AppModel {
             }
             guard !model.accountTransitionIsActive else { return }
             do {
-                try await session.provider.leaveGroupDirectMessage(channel.id, silently: silently)
+                try await request(session.provider)
             } catch is CancellationError {
                 return
             } catch {
                 guard model.isCurrentAccountSession(session), !model.accountTransitionIsActive else { return }
                 DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
-                model.errorMessage = "SakuraCord couldn’t leave \(channel.name). \(error.localizedDescription)"
+                model.errorMessage = "SakuraCord couldn’t \(verb) \(channel.name). \(error.localizedDescription)"
             }
         }
     }

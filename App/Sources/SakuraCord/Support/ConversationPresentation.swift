@@ -17,33 +17,6 @@ nonisolated enum ConversationAccess: Equatable, Sendable {
     }
 }
 
-nonisolated enum DiscordPermissionBits {
-    static let createInstantInvite: UInt64 = 1 << 0
-    static let administrator: UInt64 = 1 << 3
-    static let addReactions: UInt64 = 1 << 6
-    static let viewChannel: UInt64 = 1 << 10
-    static let sendMessages: UInt64 = 1 << 11
-    static let manageMessages: UInt64 = 1 << 13
-    static let embedLinks: UInt64 = 1 << 14
-    static let attachFiles: UInt64 = 1 << 15
-    static let readMessageHistory: UInt64 = 1 << 16
-    static let useExternalEmojis: UInt64 = 1 << 18
-    static let connect: UInt64 = 1 << 20
-    static let speak: UInt64 = 1 << 21
-    static let changeNickname: UInt64 = 1 << 26
-    static let manageNicknames: UInt64 = 1 << 27
-    static let manageThreads: UInt64 = 1 << 34
-    static let createPublicThreads: UInt64 = 1 << 35
-    static let createPrivateThreads: UInt64 = 1 << 36
-    static let useExternalStickers: UInt64 = 1 << 37
-    static let sendMessagesInThreads: UInt64 = 1 << 38
-    static let useSoundboard: UInt64 = 1 << 42
-    static let sendVoiceMessages: UInt64 = 1 << 46
-    static let useExternalSounds: UInt64 = 1 << 45
-    static let pinMessages: UInt64 = 1 << 51
-    static let bypassSlowmode: UInt64 = 1 << 52
-}
-
 nonisolated enum ForwardDestinationPermissionPolicy {
     static func canSearchChannel(
         _ channel: Channel,
@@ -181,6 +154,10 @@ nonisolated enum ChannelIconPresentation {
     }
 
     static let forumPostSystemImage = "bubble.left.fill"
+
+    static func systemImage(forThreadInForum isForumPost: Bool) -> String {
+        isForumPost ? forumPostSystemImage : SakuraCordSystemSymbol.thread
+    }
 }
 
 nonisolated struct HiddenChannelAccessPrincipal: Identifiable, Equatable {
@@ -269,7 +246,8 @@ nonisolated enum ConversationPermissionResolver {
                 currentUserID: currentUserID,
                 roleIDs: roleIDs
             ),
-            hasCurrentRoleIdentity: hasCurrentRoleIdentity
+            hasCurrentRoleIdentity: hasCurrentRoleIdentity,
+            communicationDisabledUntil: currentMember?.communicationDisabledUntil
         )
     }
 
@@ -299,21 +277,26 @@ nonisolated enum ConversationPermissionResolver {
         channel: Channel,
         resolvedBasePermissions: UInt64?,
         overwritePrincipals: PermissionOverwritePrincipals,
-        hasCurrentRoleIdentity: Bool
+        hasCurrentRoleIdentity: Bool,
+        communicationDisabledUntil: Date? = nil,
+        now: Date = .now
     ) -> UInt64? {
         if guild.isOwnedByCurrentUser == true { return .max }
         guard let permissions = resolvedBasePermissions else { return nil }
         if permissions & DiscordPermissionBits.administrator != 0 { return .max }
 
-        guard let overwrites = channel.permissionOverwrites, !overwrites.isEmpty else {
-            return permissions
+        var result = permissions
+        if let overwrites = channel.permissionOverwrites, !overwrites.isEmpty {
+            let mask = OverwriteMask(overwrites, principals: overwritePrincipals)
+            if !hasCurrentRoleIdentity, mask.hasRoleOverwrite { return nil }
+            result = mask.applied(to: result)
         }
-        let mask = OverwriteMask(
-            overwrites,
-            principals: overwritePrincipals
-        )
-        if !hasCurrentRoleIdentity, mask.hasRoleOverwrite { return nil }
-        return mask.applied(to: permissions)
+        // Timeout is applied after channel overwrites, which cannot restore
+        // communication permissions. Owners and administrators are exempt.
+        if communicationDisabledUntil.map({ $0 > now }) == true {
+            result &= DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
+        }
+        return result
     }
 
     /// Buckets permission overwrites in one pass without intermediate arrays or

@@ -4,10 +4,10 @@ import SakuraCordModels
 import Testing
 
 extension ProviderRequestContractTests {
-    @Test func `bulk read acknowledgement preserves the first party body and request budget`() async throws {
+    @Test func `bulk read acknowledgement preserves the first party body pacing and request budget`() async throws {
         RateLimitURLProtocol.reset()
         let provider = makeProvider()
-        let readStates = (0 ..< 101).map { offset in
+        let readStates = (0 ..< 201).map { offset in
             BulkReadStateAcknowledgement(
                 channelID: ChannelID(rawValue: UInt64(200 + offset)),
                 messageID: MessageID(rawValue: UInt64(500 + offset))
@@ -16,20 +16,25 @@ extension ProviderRequestContractTests {
 
         try await provider.acknowledgeBulk(readStates)
 
-        #expect(RateLimitURLProtocol.bulkAckRequestCount == 2)
-        #expect(RateLimitURLProtocol.bulkAckMethods == ["POST", "POST"])
+        #expect(RateLimitURLProtocol.bulkAckRequestCount == 3)
+        let requests = RateLimitURLProtocol.bulkAckRequests.withLock { $0 }
+        #expect(requests.map(\.method) == ["POST", "POST", "POST"])
+        for (previous, next) in zip(requests, requests.dropFirst()) {
+            #expect(previous.startedAt.duration(to: next.startedAt) >= .seconds(1))
+        }
         let batches = RateLimitURLProtocol.bulkAckBodies.compactMap {
             $0["read_states"] as? [[String: Any]]
         }
-        #expect(batches.map(\.count) == [100, 1])
+        #expect(batches.map(\.count) == [100, 100, 1])
         #expect(batches.first?.first?["channel_id"] as? String == "200")
         #expect(batches.first?.first?["message_id"] as? String == "500")
         #expect((batches.first?.first?["read_state_type"] as? NSNumber)?.intValue == 0)
     }
 
-    @Test func `bulk read acknowledgement reports completed batches on later failure`() async throws {
+    @Test(arguments: [400, 429])
+    func `bulk read acknowledgement stops at a rejected batch without replay`(status: Int) async throws {
         RateLimitURLProtocol.reset()
-        RateLimitURLProtocol.bulkAckStatuses = [204, 400]
+        RateLimitURLProtocol.bulkAckStatuses = [204, status]
         let provider = makeProvider()
         let readStates = (0 ..< 101).map { offset in
             BulkReadStateAcknowledgement(
@@ -38,13 +43,8 @@ extension ProviderRequestContractTests {
             )
         }
 
-        do {
+        await #expect(throws: ChatProviderError.self) {
             try await provider.acknowledgeBulk(readStates)
-            Issue.record("A rejected second batch was reported as fully accepted.")
-        } catch let error as PartialBulkReadAcknowledgementError {
-            #expect(error.acceptedReadStates == Array(readStates.prefix(100)))
-        } catch {
-            Issue.record("The completed first batch was not preserved: \(error)")
         }
         #expect(RateLimitURLProtocol.bulkAckRequestCount == 2)
     }
@@ -96,6 +96,8 @@ extension ProviderRequestContractTests {
             .init(.suppressHighlights, false, key: "notify_highlights", value: 0),
             .init(.muteScheduledEvents, true, key: "mute_scheduled_events", value: 1),
             .init(.mobilePush, false, key: "mobile_push", value: 0),
+            .init(.hideMutedChannels, true, key: "hide_muted_channels", value: 1),
+            .init(.hideMutedChannels, false, key: "hide_muted_channels", value: 0),
         ]
         for (index, expectation) in toggleExpectations.enumerated() {
             try await provider.updateGuildNotificationToggle(
@@ -117,7 +119,7 @@ extension ProviderRequestContractTests {
                 level: .nothing
             )
         }
-        #expect(RateLimitURLProtocol.guildNotificationRequestCount == 10)
+        #expect(RateLimitURLProtocol.guildNotificationRequestCount == 12)
     }
 
     private func makeProvider() -> DiscordRESTProvider {

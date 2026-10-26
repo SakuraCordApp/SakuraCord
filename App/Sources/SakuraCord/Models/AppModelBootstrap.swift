@@ -260,7 +260,7 @@ extension AppModel {
             snapshot = value
             friends.replaceRelationships(value.relationships)
             ignoredUsers.replaceRelationships(value.relationships)
-            onboarding.members = value.currentMembersByGuildID
+            installBootstrapMembership(value)
             configureForwardDestinationHistoryScope(
                 credentialHandle?.accountID
                     ?? (launchMode == .offlineTesting ? "offline" : "signed-out")

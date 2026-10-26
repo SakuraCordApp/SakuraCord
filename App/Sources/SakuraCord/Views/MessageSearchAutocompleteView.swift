@@ -415,7 +415,7 @@ enum MessageSearchAutocompletePolicy {
         if query.isEmpty {
             if let guildID = model.selectedGuildID {
                 var joinedUserIDs = Set(
-                    model.snapshot?.quickSwitcherJoinedGuildMemberUserIDs[guildID] ?? []
+                    model.quickSwitcherJoinedGuildMemberUserIDs[guildID] ?? []
                 )
                 let recentMessages = model.messages.suffix(30)
                 joinedUserIDs.formUnion(recentMessages.lazy.compactMap { message in
@@ -444,9 +444,8 @@ enum MessageSearchAutocompletePolicy {
             }
         }
         if let guildID = model.selectedGuildID {
-            let snapshot = model.snapshot
             var joinedUserIDs = Set(
-                snapshot?.quickSwitcherJoinedGuildMemberUserIDs[guildID] ?? []
+                model.quickSwitcherJoinedGuildMemberUserIDs[guildID] ?? []
             )
             joinedUserIDs.formUnion(model.messages.lazy.compactMap { message in
                 message.guildID == guildID && message.guildMember != nil
@@ -471,7 +470,7 @@ enum MessageSearchAutocompletePolicy {
                 in: CharacterSet(charactersIn: "@")
             ).lowercased()
             if "me".hasPrefix(normalizedQuery), !normalizedQuery.isEmpty,
-               let currentUser = snapshot?.currentUser,
+               let currentUser = model.currentUser,
                joinedUserIDs.contains(currentUser.id)
             {
                 suggestions.removeAll {
@@ -499,7 +498,7 @@ enum MessageSearchAutocompletePolicy {
         let normalizedQuery = query.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
             .lowercased()
         if "me".hasPrefix(normalizedQuery), !normalizedQuery.isEmpty,
-           let currentUser = model.snapshot?.currentUser
+           let currentUser = model.currentUser
         {
             suggestions.removeAll {
                 if case .user(_, let user) = $0 { return user.id == currentUser.id }
@@ -514,7 +513,7 @@ enum MessageSearchAutocompletePolicy {
     }
 
     private static func isBlockedOrIgnored(_ userID: UserID, model: AppModel) -> Bool {
-        model.snapshot?.blockedOrIgnoredUserIDs.contains(userID) == true
+        model.blockedOrIgnoredUserIDs.contains(userID)
     }
 
     private static func userSuggestion(
@@ -524,8 +523,7 @@ enum MessageSearchAutocompletePolicy {
     ) -> MessageSearchAutocompleteSuggestion {
         var presentedUser = user
         if model.selectedGuildID == nil,
-           let relationshipNickname = model.snapshot?
-            .relationshipNicknamesByUserID[user.id]
+           let relationshipNickname = model.relationshipNicknamesByUserID[user.id]
         {
             presentedUser.displayName = relationshipNickname
         }
@@ -609,14 +607,10 @@ enum MessageSearchAutocompletePolicy {
         model: AppModel,
         users: [User]? = nil
     ) -> ForwardDestinationSearchPolicy.Index {
-        let snapshot = model.snapshot
-        let guilds = Dictionary(
-            (snapshot?.guilds ?? []).map { ($0.id, $0) },
-            uniquingKeysWith: { _, newer in newer }
-        )
+        let guilds = model.serverRailGuildsByID
         let channels = model.messageSearchChannels
         let channelIDs = Set(channels.map(\.id))
-        let threadSource = (snapshot?.threads ?? []) + (snapshot?.activeJoinedThreads ?? [])
+        let threadSource = model.threads + model.activeJoinedThreads
         let latestThreadsByID = Dictionary(
             threadSource.map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
@@ -638,18 +632,18 @@ enum MessageSearchAutocompletePolicy {
             includesUnjoinedThreads: true,
             channelStoreOrder: channels.map(\.id),
             users: users ?? model.messageSearchUsers,
-            userBoosterChannels: (snapshot?.channels ?? channels).filter { channel in
-                snapshot?.messageSearchUserBoosterChannelIDs.contains(channel.id) ?? true
+            userBoosterChannels: model.messagePresentationChannels.filter { channel in
+                model.messageSearchUserBoosterChannelIDs.contains(channel.id)
             },
             includesChannelRecipientsAsUsers: users == nil,
-            friendUserIDs: snapshot?.friendUserIDs ?? [],
-            relationshipNicknamesByUserID: snapshot?.relationshipNicknamesByUserID ?? [:],
+            friendUserIDs: model.friendUserIDs,
+            relationshipNicknamesByUserID: model.relationshipNicknamesByUserID,
             // queryAllUsers/queryDMChannels operate on UserStore records, not
             // GuildMemberStore nicknames. Guild aliases belong exclusively to
             // queryGuildUsers and otherwise create false DM matches.
             userSearchAliasesByUserID: model.selectedGuildID == nil
                 ? [:]
-                : snapshot?.userSearchAliasesByUserID ?? [:],
+                : model.userSearchAliasesByUserID,
             // UserStore contains the current account. The autocomplete layer
             // suppresses it only for Discord's special `me` query handling.
             currentUserID: nil,
@@ -665,17 +659,16 @@ enum MessageSearchAutocompletePolicy {
         model: AppModel,
         index: ForwardDestinationSearchPolicy.Index
     ) -> ForwardDestinationSearchPolicy.Index {
-        guard let snapshot = model.snapshot,
-              let selectedGuildID = model.selectedGuildID
+        guard let selectedGuildID = model.selectedGuildID
         else { return index }
-        var aliases = snapshot.userSearchAliasesByUserID
+        var aliases = model.userSearchAliasesByUserID
         let selected = [selectedGuildID]
-        let guildIDs = selected + snapshot.quickSwitcherGuildMemberAliases.keys.sorted().filter {
+        let guildIDs = selected + model.quickSwitcherGuildMemberAliases.keys.sorted().filter {
             !selected.contains($0)
         }
         for guildID in guildIDs {
-            for userID in (snapshot.quickSwitcherGuildMemberAliases[guildID] ?? [:]).keys.sorted() {
-                guard let alias = snapshot.quickSwitcherGuildMemberAliases[guildID]?[userID],
+            for userID in (model.quickSwitcherGuildMemberAliases[guildID] ?? [:]).keys.sorted() {
+                guard let alias = model.quickSwitcherGuildMemberAliases[guildID]?[userID],
                       aliases[userID, default: []].contains(where: {
                           $0.localizedCaseInsensitiveCompare(alias) == .orderedSame
                       }) == false

@@ -101,6 +101,25 @@ private struct BrowseChannelRow: View {
         .background(hovered ? Color.primary.opacity(0.045) : .clear)
         .onModalHover { hovered = $0 }
         .help(followsCategory ? "Unfollow the category to choose individual channels." : "")
+        .overlay {
+            ChannelContextMenuBridge(
+                isSelected: false,
+                isUnread: model.canMarkConversationRead(channelID: channel.id),
+                isMutationPending: model.isChannelNotificationMutationPending(channel.id),
+                allowsMutations: !model.checkingChannelIDs.contains(channel.id),
+                directOverride: model.channelNotificationOverride(for: channel),
+                inheritedLevel: model.inheritedChannelNotificationLevel(for: channel),
+                inheritanceSource: channel.categoryID == nil ? .server : .category,
+                markRead: { model.markConversationRead(channelID: channel.id) },
+                mute: { model.setChannelMute(true, until: $0.endDate(), for: channel) },
+                unmute: { model.setChannelMute(false, until: nil, for: channel) },
+                setNotificationLevel: { model.setChannelNotificationLevel($0, for: channel) },
+                copyChannelID: { ChannelContextMenuValue.copy(channel.id.description) },
+                copyLink: {
+                    ChannelContextMenuValue.copy(ChannelContextMenuValue.link(guildID: channel.guildID, channelID: channel.id))
+                }
+            )
+        }
     }
 
     private func toggle() {

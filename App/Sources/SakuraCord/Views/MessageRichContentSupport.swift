@@ -1,6 +1,7 @@
 import AppKit
 import MessageRendering
 import SakuraCordModels
+import Synchronization
 
 enum DiscordRichMessageMetrics {
     static var maximumWidth: CGFloat { InterfaceScale.metric(520) }
@@ -22,14 +23,11 @@ nonisolated enum MessageEmbedPresentation {
     static func visibleEmbeds(
         for message: Message
     ) -> [MessageEmbed] {
-        guard !message.flags.contains(.suppressEmbeds), message.type != .pollResult else { return [] }
-        let linkedEmojiURLs =
-            LinkedImagePresentation(content: message.content)
-                .matchedEmojiURLs
-        let sakuraCordDeepLinkActions = Set(
-            SakuraCordDeepLinkPresentation.all(in: message.content)
-                .map(\.action)
-        )
+        // The content scans below only filter embeds: a row re-laid out for
+        // every frame of a resize paid for them with none to filter.
+        guard !message.embeds.isEmpty, !message.flags.contains(.suppressEmbeds), message.type != .pollResult
+        else { return [] }
+        let (linkedEmojiURLs, sakuraCordDeepLinkActions) = contentLinks(in: message.content)
         return message.embeds.filter { embed in
             if let url = embed.url,
                let action = SakuraCordDeepLinkPresentation.action(for: url),
@@ -40,6 +38,28 @@ nonisolated enum MessageEmbedPresentation {
             return !(kind(for: embed) == .bareMedia
                 && embed.url.map(linkedEmojiURLs.contains) == true)
         }
+    }
+
+    /// What the content links to, by content: a row laid out again at
+    /// another width, as on every frame of a resize, scanned it each time.
+    /// Keyed by the content's exact bytes: equal strings can differ in
+    /// Unicode scalars, which the link parsers tell apart.
+    private static let contentLinkCache = Mutex<[Data: ContentLinks]>([:])
+
+    private typealias ContentLinks = (emojiURLs: Set<URL>, deepLinkActions: Set<SakuraCordDeepLinkAction>)
+
+    private static func contentLinks(in content: String) -> ContentLinks {
+        let key = Data(content.utf8)
+        if let links = contentLinkCache.withLock({ $0[key] }) { return links }
+        let links: ContentLinks = (
+            LinkedImagePresentation(content: content).matchedEmojiURLs,
+            Set(SakuraCordDeepLinkPresentation.all(in: content).map(\.action))
+        )
+        contentLinkCache.withLock { cache in
+            if cache.count >= 2_048 { cache.removeAll(keepingCapacity: true) }
+            cache[key] = links
+        }
+        return links
     }
 
     static func visibleMessageContent(
@@ -122,6 +142,16 @@ nonisolated enum SystemMessagePresentation {
         static func link(_ text: String, action: Action) -> Self {
             Self(text: text, isEmphasized: false, action: action, isLink: true)
         }
+    }
+
+    /// What a system message says after its author's name, for one-line
+    /// previews such as a thread card's latest message.
+    static func previewText(for message: Message) -> String {
+        if message.type == .channelPinnedMessage { return "pinned a message to this channel." }
+        var runs = textRuns(for: message)
+        if runs.first?.action == .profile(message.author.id) { runs.removeFirst() }
+        return runs.filter { !$0.isLink }.map(\.text).joined()
+            .trimmingCharacters(in: .whitespaces)
     }
 
     static func label(
@@ -255,6 +285,13 @@ nonisolated enum SystemMessagePresentation {
                 .secondary(" removed "),
                 .emphasized(recipient, action: recipientUser.map { .profile($0.id) }),
                 .secondary(" from the group."),
+            ]
+        case .channelNameChange where message.guildID != nil:
+            // A renamed thread or forum post, worded as the first-party client does.
+            return [
+                actorRun(message),
+                .secondary(" changed the channel name: "),
+                .emphasized(message.content),
             ]
         case .channelNameChange:
             let editGroup = TextRun.link("Edit Group", action: .editGroup(message.channelID))
@@ -479,6 +516,7 @@ struct RichMediaItem: Identifiable, Hashable {
     enum Kind: Hashable {
         case image(animated: Bool)
         case video, audio, file
+        case youtube(YouTubeEmbedPlayback)
     }
 
     var id: String
@@ -492,8 +530,15 @@ struct RichMediaItem: Identifiable, Hashable {
     var kind: Kind
     var isSpoiler: Bool
     var autoplaysInline: Bool
+    var videoPreviewURL: URL?
+
+    var canSave: Bool {
+        if case .youtube = kind { return false }
+        return true
+    }
 
     func videoPosterURL(maximumPixelDimension: Int) -> URL? {
+        if let videoPreviewURL { return videoPreviewURL }
         guard kind == .video else { return nil }
         return DiscordVideoPosterURL.url(
             proxyURL: previewURL,
@@ -549,7 +594,7 @@ struct RichMediaItem: Identifiable, Hashable {
     }
 
     init?(embed: MessageEmbed, attachments: [Attachment]) {
-        guard var media = embed.image ?? embed.video else { return nil }
+        guard var media = embed.video ?? embed.image else { return nil }
         if let raw = media.url?.absoluteString,
            raw.hasPrefix("attachment://"),
            let attachment = attachments.first(where: {
@@ -575,6 +620,14 @@ struct RichMediaItem: Identifiable, Hashable {
             fallbackTitle: embed.title ?? "Embed media",
             autoplaysInline: embed.type?.lowercased() == "gifv"
         )
+        if embed.video != nil {
+            let preview = embed.thumbnail ?? embed.image
+            videoPreviewURL = preview?.proxyURL ?? preview?.url
+            if let playback = media.url.flatMap(YouTubeEmbedPlayback.init(url:)) {
+                kind = .youtube(playback)
+                url = playback.watchURL
+            }
+        }
     }
 
     init(id: String, media: ComponentMedia, fallbackTitle: String) {
@@ -759,5 +812,18 @@ nonisolated enum DiscordComponentContainerLayoutPlan {
             available: available,
             maximum: maximum
         )
+    }
+}
+
+extension MessageReplyPreview {
+    /// A one-line preview of `message`. A system message is summarized,
+    /// since its content is empty or only a parameter such as a new name.
+    nonisolated static func presenting(_ message: Message) -> Self {
+        var preview = Self(message: message)
+        if message.type.hasGeneratedContent {
+            preview.content = SystemMessagePresentation.previewText(for: message)
+            preview.mediaKind = nil
+        }
+        return preview
     }
 }

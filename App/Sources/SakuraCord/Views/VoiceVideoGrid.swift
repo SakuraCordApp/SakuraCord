@@ -55,7 +55,7 @@ struct VoiceVideoGrid: View {
 
     private var participants: [VoiceTileParticipant] {
         guard let activeChannel = channel ?? model.activeVoiceChannel else { return [] }
-        let currentUser = model.snapshot?.currentUser
+        let currentUser = model.currentUser
         let currentUserID = currentUser.map { String($0.id.rawValue) }
         let usesLocalVoiceSession = Self.usesLocalVoiceSession(
             displayedChannelID: activeChannel.id,

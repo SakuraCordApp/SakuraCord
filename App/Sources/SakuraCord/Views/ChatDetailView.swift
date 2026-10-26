@@ -44,16 +44,18 @@ struct ChatDetailView: View {
                     editRequest: editRequest
                 )
                 .overlay(alignment: .bottom) {
-                    ChatDetailFooter(
-                        model: model,
-                        channel: channel,
-                        access: model.selectedConversationAccess,
-                        onEditMessage: { messageID in
-                            editRequest = MessageTimelineEditRequest(
-                                messageID: messageID
-                            )
-                        }
-                    )
+                    ConversationFooterHost {
+                        ChatDetailFooter(
+                            model: model,
+                            channel: channel,
+                            access: model.selectedConversationAccess,
+                            onEditMessage: { messageID in
+                                editRequest = MessageTimelineEditRequest(
+                                    messageID: messageID
+                                )
+                            }
+                        )
+                    }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.size.height
                     } action: { height in
@@ -75,13 +77,17 @@ private struct ChatDetailFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            switch access {
-            case .checking:
-                DisabledComposerView(
-                    message: "Checking channel permissions…",
-                    appearance: model.appearanceSettings.composerBarAppearance
-                )
-            case .readable(canSend: true):
+            ConversationComposerSlot(
+                access: access,
+                timeoutUntil: model.guildTimeoutUntil(in: channel.id),
+                appearance: model.appearanceSettings.composerBarAppearance,
+                checkingMessage: "Checking channel permissions…",
+                readOnlyMessage: channel.isOfficialSystemDirectMessage
+                    ? "This chat is reserved for official Discord notifications."
+                    : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
+                       ? "Complete this server’s member screening in Discord to send messages."
+                       : "You do not have permission to send messages in this channel.")
+            ) {
                 if model.messageAppearance(for: channel.id) == .bubbles {
                     TypingBubbleIndicatorView(model: model, channel: channel)
                 } else {
@@ -92,15 +98,39 @@ private struct ChatDetailFooter: View {
                     channelName: channel.name,
                     onEditMessage: onEditMessage
                 )
+            }
+        }
+    }
+}
+
+/// The composer slot shared by every conversation footer. A timeout,
+/// permission check or read-only notice takes the composer's place.
+struct ConversationComposerSlot<Composer: View>: View {
+    let access: ConversationAccess
+    let timeoutUntil: Date?
+    let appearance: ComposerBarAppearance
+    let checkingMessage: String
+    /// Shown when the conversation is readable but not writable.
+    let readOnlyMessage: String?
+    @ViewBuilder let composer: Composer
+
+    var body: some View {
+        if let timeoutUntil {
+            DisabledComposerView(
+                message: "You are timed out.",
+                appearance: appearance,
+                timeoutUntil: timeoutUntil
+            )
+        } else {
+            switch access {
+            case .checking:
+                DisabledComposerView(message: checkingMessage, appearance: appearance)
+            case .readable(canSend: true):
+                composer
             case .readable(canSend: false):
-                DisabledComposerView(
-                    message: channel.isOfficialSystemDirectMessage
-                        ? "This chat is reserved for official Discord notifications."
-                        : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
-                           ? "Complete this server’s member screening in Discord to send messages."
-                           : "You do not have permission to send messages in this channel."),
-                    appearance: model.appearanceSettings.composerBarAppearance
-                )
+                if let readOnlyMessage {
+                    DisabledComposerView(message: readOnlyMessage, appearance: appearance)
+                }
             case .hidden:
                 EmptyView()
             }
@@ -111,6 +141,7 @@ private struct ChatDetailFooter: View {
 struct DisabledComposerView: View {
     let message: String
     let appearance: ComposerBarAppearance
+    var timeoutUntil: Date?
 
     var body: some View {
         let usesDefaultStyle = appearance == .defaultStyle
@@ -129,12 +160,24 @@ struct DisabledComposerView: View {
             ))
 
         HStack(spacing: 0) {
+            if timeoutUntil != nil {
+                Image(systemName: "clock")
+                    .foregroundStyle(.red)
+                    .padding(.trailing, InterfaceScale.metric(8))
+                    .accessibilityHidden(true)
+            }
             Text(message)
-                .font(.interfaceSystem(size: 15))
                 .lineLimit(1)
             Spacer(minLength: 0)
+            if let until = timeoutUntil {
+                Text(timerInterval: min(Date.now, until) ... until, countsDown: true, showsHours: true)
+                    .monospacedDigit()
+                    .fixedSize()
+                    .help("Timeout ends \(until.formatted(date: .abbreviated, time: .standard))")
+            }
         }
-        .foregroundStyle(.tertiary)
+        .font(.interfaceSystem(size: 15))
+        .foregroundStyle(timeoutUntil == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.white))
         .padding(.horizontal, usesDefaultStyle ? InterfaceScale.metric(11) : InterfaceScale.metric(24))
         .frame(
             height: usesDefaultStyle

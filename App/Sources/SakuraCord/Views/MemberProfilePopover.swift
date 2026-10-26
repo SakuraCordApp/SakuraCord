@@ -10,7 +10,7 @@ enum ProfilePresentationLayout {
 
 struct ProfilePresentationContent<Footer: View>: View {
     @Environment(\.serverTagCardModel) private var model
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     let presentation: ProfilePresentationState
     var layout: ProfilePresentationLayout = .popover
     var maximumPopoverHeight: CGFloat = InterfaceScale.metric(560)
@@ -90,7 +90,7 @@ struct ProfilePresentationContent<Footer: View>: View {
             .id(presentation.member.id)
             .transition(.opacity)
             .animation(
-                layout == .popover && !reduceMotion ? .easeOut(duration: 0.12) : nil,
+                layout == .popover && !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .easeOut(duration: 0.12) : nil,
                 value: presentation.member.id
             )
         }

@@ -219,14 +219,16 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
         _ deepLink: SakuraCordDeepLink,
         componentIndex: Int,
         origin: CGPoint,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        integratesWithBubble: Bool = false
     ) -> NativeTimelineRowLayout.SakuraCordDeepLinkRegion {
         let hasPalette = deepLink.action.themePreview != nil
+        let inset = integratesWithBubble ? 0 : horizontalInset
         let width = max(1, min(Self.maximumWidth, maximumWidth))
-        let titleXOffset = horizontalInset + symbolSize + itemSpacing
+        let titleXOffset = inset + symbolSize + itemSpacing
         let regularHorizontalSpace = max(
             1,
-            width - titleXOffset - itemSpacing - horizontalInset
+            width - titleXOffset - itemSpacing - inset
         )
         let titleWidth = measuredWidth(
             deepLink.action.title,
@@ -239,12 +241,12 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
             < titleWidth + minimumButtonWidth
         let compactHeaderHeight: CGFloat = hasPalette ? 38 : symbolSize
         let cardHeight: CGFloat = usesCompactLayout
-            ? horizontalInset
+            ? inset
                 + compactHeaderHeight
                 + compactRowSpacing
                 + NativeTimelineComponentButtonMetrics.height
-                + horizontalInset
-            : hasPalette ? 74 : 56
+                + inset
+            : integratesWithBubble ? (hasPalette ? 52 : 40) : hasPalette ? 74 : 56
         let frame = CGRect(
             origin: origin,
             size: CGSize(
@@ -253,8 +255,8 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
             )
         )
         let cardFrame = frame
-        let leading = cardFrame.minX + horizontalInset
-        let headerTop = cardFrame.minY + horizontalInset
+        let leading = cardFrame.minX + inset
+        let headerTop = cardFrame.minY + inset
         let symbolBackgroundFrame = CGRect(
             x: leading,
             y: usesCompactLayout
@@ -275,9 +277,9 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
             cardFrame: cardFrame,
             headerTop: headerTop,
             compactHeaderHeight: compactHeaderHeight,
-            regularHorizontalSpace: regularHorizontalSpace,
             minimumButtonWidth: minimumButtonWidth,
-            titleWidth: titleWidth
+            titleWidth: titleWidth,
+            inset: inset
         )
         let titleFrame = CGRect(
             x: titleX,
@@ -286,7 +288,7 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
                 : cardFrame.midY - (hasPalette ? InterfaceScale.metric(18) : InterfaceScale.metric(10)),
             width: max(
                 1,
-                (usesCompactLayout ? cardFrame.maxX - horizontalInset : buttonFrame.minX - itemSpacing)
+                (usesCompactLayout ? cardFrame.maxX - inset : buttonFrame.minX - itemSpacing)
                     - titleX
             ),
             height: InterfaceScale.metric(20)
@@ -340,15 +342,16 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
         cardFrame: CGRect,
         headerTop: CGFloat,
         compactHeaderHeight: CGFloat,
-        regularHorizontalSpace: CGFloat,
         minimumButtonWidth: CGFloat,
-        titleWidth: CGFloat
+        titleWidth: CGFloat,
+        inset: CGFloat
     ) -> CGRect {
+        let regularHorizontalSpace = max(1, cardFrame.width - inset * 2 - symbolSize - itemSpacing * 2)
         if usesCompactLayout {
             return CGRect(
-                x: cardFrame.minX + horizontalInset,
+                x: cardFrame.minX + inset,
                 y: headerTop + compactHeaderHeight + compactRowSpacing,
-                width: max(1, cardFrame.width - horizontalInset * 2),
+                width: max(1, cardFrame.width - inset * 2),
                 height: NativeTimelineComponentButtonMetrics.height
             )
         }
@@ -357,7 +360,7 @@ enum NativeTimelineSakuraCordDeepLinkLayout {
             max(minimumButtonWidth, regularHorizontalSpace - titleWidth)
         )
         return CGRect(
-            x: cardFrame.maxX - horizontalInset - width,
+            x: cardFrame.maxX - inset - width,
             y: cardFrame.midY
                 - NativeTimelineComponentButtonMetrics.height / 2,
             width: width,

@@ -157,6 +157,8 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
     var userMenu: () -> NSMenu? = { nil }
     /// Edit Group and Leave Group for a group DM.
     var groupActions: GroupDirectMessageMenuActions?
+    /// Close DM for a 1:1 DM.
+    var closeDirectMessage: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(from: self)
@@ -204,6 +206,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         private var pinAction: ChannelPinMenuAction
         private var userMenu: () -> NSMenu?
         private var groupActions: GroupDirectMessageMenuActions?
+        private var closeDirectMessage: (() -> Void)?
 
         init(from bridge: ChannelContextMenuBridge) {
             subject = bridge.subject
@@ -222,6 +225,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             pinAction = bridge.pinAction
             userMenu = bridge.userMenu
             groupActions = bridge.groupActions
+            closeDirectMessage = bridge.closeDirectMessage
         }
 
         func update(from bridge: ChannelContextMenuBridge) {
@@ -241,6 +245,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             pinAction = bridge.pinAction
             userMenu = bridge.userMenu
             groupActions = bridge.groupActions
+            closeDirectMessage = bridge.closeDirectMessage
         }
 
         func makeMenu() -> NSMenu {
@@ -335,17 +340,33 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             menu.addItem(.separator())
             personItems.filter { $0.identifier?.rawValue == copyIdentifier }.forEach(menu.addItem)
             appendChannelCopyItems(to: menu)
-            var destructiveItems = personItems.filter { $0.identifier?.rawValue == destructiveIdentifier }
+            let destructiveItems = personItems.filter { $0.identifier?.rawValue == destructiveIdentifier }
+            UserContextMenu.append(conversationLeavingItems(around: destructiveItems), to: menu)
+            return menu
+        }
+
+        /// Close DM leads a 1:1 DM's last group, above the person's destructive
+        /// actions; Leave Group follows them for a group DM.
+        private func conversationLeavingItems(around destructiveItems: [NSMenuItem]) -> [NSMenuItem] {
+            var items = destructiveItems
+            if closeDirectMessage != nil {
+                items.insert(
+                    menuItem(
+                        "Close DM", systemImage: "xmark",
+                        action: #selector(closeDirectMessageFromMenu), isEnabled: allowsMutations
+                    ),
+                    at: 0
+                )
+            }
             if groupActions != nil {
-                destructiveItems.append(
+                items.append(
                     menuItem(
                         "Leave Group", systemImage: "rectangle.portrait.and.arrow.right",
                         action: #selector(leaveGroupFromMenu), isEnabled: allowsMutations, isDestructive: true
                     )
                 )
             }
-            UserContextMenu.append(destructiveItems, to: menu)
-            return menu
+            return items
         }
 
         private func appendChannelCopyItems(to menu: NSMenu) {
@@ -458,6 +479,10 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             groupActions?.leave()
         }
 
+        @objc private func closeDirectMessageFromMenu() {
+            closeDirectMessage?()
+        }
+
         @objc private func muteFromMenu(_ sender: NSMenuItem) {
             guard let index = (sender.representedObject as? NSNumber)?.intValue,
                   ChannelMuteDuration.allCases.indices.contains(index)
@@ -543,7 +568,18 @@ final class ChannelContextMenuHitView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
+        // Browse Channels uses ordinary SwiftUI rows rather than table rows.
+        // Handle their secondary clicks here; table rows keep their native host.
+        guard nativeRowView == nil, bounds.contains(point),
+              let event = window?.currentEvent,
+              event.type == .rightMouseDown
+                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        else { return nil }
+        return self
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?()
     }
 
     func uninstallFromNativeRow() {

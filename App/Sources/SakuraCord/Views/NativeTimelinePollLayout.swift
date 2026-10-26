@@ -24,14 +24,15 @@ struct NativeTimelinePollLayout {
     static var cornerRadius: CGFloat { inset + NativeTimelineComponentButtonMetrics.height / 2 }
     static var answerCornerRadius: CGFloat { cornerRadius - inset }
 
-    init(poll: MessagePoll, x originX: CGFloat, y originY: CGFloat, width availableWidth: CGFloat) {
-        let width = min(InterfaceScale.metric(456), availableWidth)
-        let inner = max(1, width - Self.inset * 2)
-        var cursor = originY + Self.inset
+    init(poll: MessagePoll, x originX: CGFloat, y originY: CGFloat, width availableWidth: CGFloat, integratesWithBubble: Bool = false) {
+        let width = integratesWithBubble ? availableWidth : min(InterfaceScale.metric(456), availableWidth)
+        let inset = integratesWithBubble ? 0 : Self.inset
+        let inner = max(1, width - inset * 2)
+        var cursor = originY + inset
         let questionHeight = Self.height(poll.question, width: inner, font: .interfaceSystemFont(ofSize: 15, weight: .semibold))
-        questionFrame = CGRect(x: originX + InterfaceScale.metric(16), y: cursor, width: inner, height: questionHeight)
+        questionFrame = CGRect(x: originX + inset, y: cursor, width: inner, height: questionHeight)
         cursor += questionHeight + InterfaceScale.metric(5)
-        instructionFrame = CGRect(x: originX + InterfaceScale.metric(16), y: cursor, width: inner, height: poll.isClosed() ? 0 : InterfaceScale.metric(17))
+        instructionFrame = CGRect(x: originX + inset, y: cursor, width: inner, height: poll.isClosed() ? 0 : InterfaceScale.metric(17))
         cursor += InterfaceScale.metric(poll.isClosed() ? 7 : 29)
         answers = poll.answers.map { answer in
             let emojiWidth: CGFloat = answer.emoji == nil ? 0 : InterfaceScale.metric(30)
@@ -42,7 +43,7 @@ struct NativeTimelinePollLayout {
                 Self.height(answer.text, width: textWidth, font: .interfaceSystemFont(ofSize: 13))
                     + InterfaceScale.metric(24)
             )
-            let rect = CGRect(x: originX + InterfaceScale.metric(16), y: cursor, width: inner, height: height)
+            let rect = CGRect(x: originX + inset, y: cursor, width: inner, height: height)
             defer { cursor += height + InterfaceScale.metric(8) }
             return Answer(id: answer.id, frame: rect,
                           textFrame: CGRect(
@@ -60,16 +61,16 @@ struct NativeTimelinePollLayout {
         }
         cursor += InterfaceScale.metric(4)
         let stacksFooter = inner < InterfaceScale.metric(384) && !poll.isClosed()
-        votesFrame = CGRect(x: originX + InterfaceScale.metric(16), y: cursor, width: min(InterfaceScale.metric(80), inner), height: NativeTimelineComponentButtonMetrics.height)
-        expiryFrame = CGRect(x: originX + InterfaceScale.metric(104), y: cursor,
+        votesFrame = CGRect(x: originX + inset, y: cursor, width: min(InterfaceScale.metric(80), inner), height: NativeTimelineComponentButtonMetrics.height)
+        expiryFrame = CGRect(x: originX + inset + InterfaceScale.metric(88), y: cursor,
                              width: max(0, inner - (stacksFooter || poll.isClosed() ? InterfaceScale.metric(88) : InterfaceScale.metric(294))), height: NativeTimelineComponentButtonMetrics.height)
         if stacksFooter { cursor += InterfaceScale.metric(38) }
         let submitWidth = min(InterfaceScale.metric(94), inner * 0.45)
-        submitFrame = CGRect(x: originX + width - InterfaceScale.metric(16) - submitWidth, y: cursor, width: submitWidth, height: NativeTimelineComponentButtonMetrics.height)
+        submitFrame = CGRect(x: originX + width - inset - submitWidth, y: cursor, width: submitWidth, height: NativeTimelineComponentButtonMetrics.height)
         let revealWidth = min(InterfaceScale.metric(120), max(0, inner - submitWidth - InterfaceScale.metric(6)))
         revealFrame = CGRect(x: submitFrame.minX - InterfaceScale.metric(6) - revealWidth, y: cursor, width: revealWidth, height: NativeTimelineComponentButtonMetrics.height)
         frame = CGRect(x: originX, y: originY, width: width,
-                       height: cursor + NativeTimelineComponentButtonMetrics.height + Self.inset - originY)
+                       height: cursor + NativeTimelineComponentButtonMetrics.height + inset - originY)
     }
 
     static func resultButtonFrame(in frame: CGRect) -> CGRect {
@@ -124,68 +125,81 @@ extension NativeTimelineRowPainter {
     }
 
     static func pollButton(_ title: String, in frame: CGRect, control: NativeTimelinePollTarget.Control,
-                           state: NativeTimelinePollPresentation, isEnabled: Bool = true, isProminent: Bool = false) {
+                           state: NativeTimelinePollPresentation, isEnabled: Bool = true, isProminent: Bool = false,
+                           bubbleRegion: NativeTimelineBubbleRegion? = nil) {
+        let outgoing = bubbleRegion?.isOutgoing == true
         sakuraCordButton(title: title, frame: frame, isHovered: isEnabled && state.hoveredControl == control,
                         pressProgress: state.pressedControl == control ? 1 : 0,
-                        colors: [isProminent ? .sakuraCordAccentColor : .controlColor],
-                        foreground: isProminent ? .white : .labelColor, isEnabled: isEnabled)
+                        colors: [outgoing ? .white.withAlphaComponent(isProminent ? 1 : 0.16) : isProminent ? .sakuraCordAccentColor : .controlColor],
+                        foreground: outgoing ? (isProminent ? .sakuraCordAccentColor : .white) : isProminent ? .white : .labelColor, isEnabled: isEnabled)
     }
 
     static func drawPoll(_ input: NativeTimelineMessageDrawInput) {
         guard let poll = input.row.message.poll, let layout = input.layout.pollLayout else { return }
         let state = input.pollPresentation
-        pollSurface(in: layout.frame, cornerRadius: NativeTimelinePollLayout.cornerRadius)
-        text(poll.question, in: layout.questionFrame, font: .interfaceSystemFont(ofSize: 15, weight: .semibold), color: .labelColor, lineBreakMode: .byWordWrapping)
+        let bubble = input.layout.bubbleRegion
+        if let bubble {
+            bubbleIntegratedSection(layout.frame, bubbleRegion: bubble, accentColor: nil,
+                drawsTopSeparator: layout.frame.minY - bubble.frame.minY > 8.5, drawsNeutralRail: false)
+        } else {
+            pollSurface(in: layout.frame, cornerRadius: NativeTimelinePollLayout.cornerRadius)
+        }
+        text(poll.question, in: layout.questionFrame, font: .interfaceSystemFont(ofSize: 15, weight: .semibold),
+             color: NativeTimelineBubbleDrawing.foregroundColor(for: bubble), lineBreakMode: .byWordWrapping)
         text(poll.isClosed() ? "" : poll.allowsMultipleAnswers ? "Select one or more answers" : "Select one answer",
-             in: layout.instructionFrame, font: .interfaceSystemFont(ofSize: 12), color: .secondaryLabelColor)
+             in: layout.instructionFrame, font: .interfaceSystemFont(ofSize: 12), color: NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubble))
         for region in layout.answers {
             guard let answer = poll.answers.first(where: { $0.id == region.id }) else { continue }
-            drawPollAnswer(answer, region: region, poll: poll, state: state)
+            drawPollAnswer(answer, region: region, poll: poll, state: state, bubbleRegion: bubble)
         }
-        drawPollFooter(poll, layout: layout, state: state, isConfirmed: input.row.message.outboxState == .confirmed)
+        drawPollFooter(poll, layout: layout, state: state,
+                       isConfirmed: input.row.message.outboxState == .confirmed,
+                       canVote: input.model?.canUpdatePollVote(on: input.row.message, removing: !poll.selectedAnswerIDs.isEmpty) != false, bubbleRegion: bubble)
     }
 
     private static func drawPollAnswer(_ answer: PollAnswer, region: NativeTimelinePollLayout.Answer,
-                                       poll: MessagePoll, state: NativeTimelinePollPresentation) {
+                                       poll: MessagePoll, state: NativeTimelinePollPresentation, bubbleRegion: NativeTimelineBubbleRegion?) {
         let results = state.showsResults(for: poll)
         let selected = results ? poll.selectedAnswerIDs.contains(answer.id) : state.selected.contains(answer.id)
         let highestCount = poll.results?.answerCounts.map(\.count).max() ?? 0
         let winner = poll.isClosed() && highestCount > 0 && poll.count(for: answer.id) == highestCount
         let hovered = state.hoveredControl == .answer(answer.id)
-        let accent = NSColor.sakuraCordAccentColor
+        let outgoing = bubbleRegion?.isOutgoing == true
+        let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion)
+        let accent = outgoing ? NSColor.white : .sakuraCordAccentColor
         let path = NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: NativeTimelinePollLayout.answerCornerRadius)
-        NSColor.labelColor.withAlphaComponent(hovered ? 0.08 : 0.045).setFill()
+        foreground.withAlphaComponent(outgoing ? (hovered ? 0.18 : 0.10) : (hovered ? 0.08 : 0.045)).setFill()
         path.fill()
         if results {
             let fraction = state.fractions[answer.id] ?? (poll.totalVotes > 0 ? CGFloat(poll.count(for: answer.id)) / CGFloat(poll.totalVotes) : 0)
             NSGraphicsContext.saveGraphicsState()
             path.addClip()
-            ((selected || winner) ? accent.withAlphaComponent(0.25) : NSColor.labelColor.withAlphaComponent(0.12)).setFill()
+            ((selected || winner) ? accent.withAlphaComponent(0.25) : foreground.withAlphaComponent(0.12)).setFill()
             CGRect(x: region.frame.minX, y: region.frame.minY, width: region.frame.width * min(1, max(0, fraction)), height: region.frame.height).fill()
             NSGraphicsContext.restoreGraphicsState()
         }
         if selected || winner || (!results && hovered) {
-            ((selected || winner) ? accent : NSColor.labelColor.withAlphaComponent(0.24)).setStroke()
+            ((selected || winner) ? accent : foreground.withAlphaComponent(0.24)).setStroke()
             path.lineWidth = 1
             path.stroke()
         }
         drawPollEmoji(answer.emoji, frame: region.emojiFrame)
         text(answer.text, in: region.textFrame, font: .interfaceSystemFont(ofSize: 13, weight: .medium),
-             color: .labelColor, lineBreakMode: .byWordWrapping)
+             color: foreground, lineBreakMode: .byWordWrapping)
         if results {
-            drawPollAnswerResult(answer, region: region, poll: poll, selected: selected)
+            drawPollAnswerResult(answer, region: region, poll: poll, selected: selected, bubbleRegion: bubbleRegion)
         } else {
             let box = CGRect(x: region.frame.maxX - InterfaceScale.metric(32), y: region.frame.midY - InterfaceScale.metric(10), width: InterfaceScale.metric(20), height: InterfaceScale.metric(20))
             let radius = InterfaceScale.metric(poll.allowsMultipleAnswers ? 5 : 10)
             let indicator = NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
-            (selected ? accent : NSColor.secondaryLabelColor).setStroke()
+            (selected ? accent : NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion)).setStroke()
             indicator.lineWidth = 1.5
             indicator.stroke()
             if selected {
                 accent.setFill()
                 if poll.allowsMultipleAnswers {
                     indicator.fill()
-                    text("✓", in: box, font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: .white, alignment: .center)
+                    text("✓", in: box, font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: outgoing ? .sakuraCordAccentColor : .white, alignment: .center)
                 } else {
                     NSBezierPath(ovalIn: box.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4))).fill()
                 }
@@ -203,7 +217,7 @@ extension NativeTimelineRowPainter {
     }
 
     private static func drawPollAnswerResult(_ answer: PollAnswer, region: NativeTimelinePollLayout.Answer,
-                                             poll: MessagePoll, selected: Bool) {
+                                             poll: MessagePoll, selected: Bool, bubbleRegion: NativeTimelineBubbleRegion?) {
         let trailing = InterfaceScale.metric(selected ? 40 : 12)
         let percentageFrame = CGRect(
             x: region.frame.maxX - trailing - InterfaceScale.metric(40),
@@ -214,7 +228,7 @@ extension NativeTimelineRowPainter {
         let count = poll.count(for: answer.id)
         let percentage = poll.totalVotes > 0 ? Int((Double(count) / Double(poll.totalVotes) * 100).rounded()) : 0
         text(poll.results == nil ? "—" : "\(percentage)%", in: percentageFrame,
-             font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: .labelColor, alignment: .right)
+             font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion), alignment: .right)
         let countFrame = CGRect(
             x: percentageFrame.minX - InterfaceScale.metric(68),
             y: region.frame.midY - InterfaceScale.metric(10),
@@ -222,32 +236,35 @@ extension NativeTimelineRowPainter {
             height: InterfaceScale.metric(20)
         )
         text(poll.results == nil ? "—" : "\(count) \(count == 1 ? "vote" : "votes")", in: countFrame,
-             font: .interfaceSystemFont(ofSize: 11, weight: .medium), color: .secondaryLabelColor, alignment: .right)
+             font: .interfaceSystemFont(ofSize: 11, weight: .medium), color: NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion), alignment: .right)
         if selected {
             let box = CGRect(x: region.frame.maxX - InterfaceScale.metric(32), y: region.frame.midY - InterfaceScale.metric(10), width: InterfaceScale.metric(20), height: InterfaceScale.metric(20))
-            NSColor.sakuraCordAccentColor.setFill()
+            (bubbleRegion?.isOutgoing == true ? NSColor.white : .sakuraCordAccentColor).setFill()
             NSBezierPath(ovalIn: box).fill()
-            text("✓", in: box, font: .interfaceSystemFont(ofSize: 14, weight: .semibold), color: .white, alignment: .center)
+            text("✓", in: box, font: .interfaceSystemFont(ofSize: 14, weight: .semibold),
+                 color: bubbleRegion?.isOutgoing == true ? .sakuraCordAccentColor : .white, alignment: .center)
         }
     }
 
     private static func drawPollFooter(_ poll: MessagePoll, layout: NativeTimelinePollLayout,
-                                       state: NativeTimelinePollPresentation, isConfirmed: Bool) {
+                                       state: NativeTimelinePollPresentation, isConfirmed: Bool, canVote: Bool,
+                                       bubbleRegion: NativeTimelineBubbleRegion?) {
         let results = state.showsResults(for: poll)
         pollButton(poll.results == nil ? "— votes" : "\(poll.totalVotes) \(poll.totalVotes == 1 ? "vote" : "votes")",
-                   in: layout.votesFrame, control: .votes, state: state)
+                   in: layout.votesFrame, control: .votes, state: state, bubbleRegion: bubbleRegion)
         let remaining = max(0, Int((poll.expiry?.timeIntervalSinceNow ?? 0) / 60))
         let time = poll.isClosed() ? "Final results" : remaining >= 1440 ? "\(remaining / 1440)d left" : remaining >= 60 ? "\(remaining / 60)h left" : "\(max(1, remaining))m left"
-        text(time, in: layout.expiryFrame, font: .interfaceSystemFont(ofSize: 11), color: .tertiaryLabelColor)
+        text(time, in: layout.expiryFrame, font: .interfaceSystemFont(ofSize: 11),
+             color: bubbleRegion?.isOutgoing == true ? NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion) : .tertiaryLabelColor)
         guard !poll.isClosed(), isConfirmed else { return }
         if poll.selectedAnswerIDs.isEmpty {
-            pollButton(results ? "Back to vote" : "Show results", in: layout.revealFrame, control: .reveal, state: state)
+            pollButton(results ? "Back to vote" : "Show results", in: layout.revealFrame, control: .reveal, state: state, bubbleRegion: bubbleRegion)
         }
         if !results || !poll.selectedAnswerIDs.isEmpty {
             let removing = !poll.selectedAnswerIDs.isEmpty
-            let enabled = removing || !state.selected.isEmpty
+            let enabled = canVote && (removing || !state.selected.isEmpty)
             pollButton(removing ? "Remove Vote" : "Vote",
-                       in: layout.submitFrame, control: .submit, state: state, isEnabled: enabled, isProminent: !removing)
+                       in: layout.submitFrame, control: .submit, state: state, isEnabled: enabled, isProminent: !removing, bubbleRegion: bubbleRegion)
         }
     }
 }

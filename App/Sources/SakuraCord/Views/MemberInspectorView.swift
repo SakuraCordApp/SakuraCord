@@ -490,8 +490,8 @@ struct MemberRow: View {
                 }
             }
             .frame(height: InterfaceScale.metric(44))
-            .padding(.vertical, 1)
             .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous))
+            .padding(.vertical, 1)
             .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous))
         }
         .buttonStyle(.plain)

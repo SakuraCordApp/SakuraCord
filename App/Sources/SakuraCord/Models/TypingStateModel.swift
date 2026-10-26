@@ -17,14 +17,14 @@ final class TypingStateModel {
         var arrival: UInt64
     }
 
-    private(set) var revision: UInt64 = 0
     @ObservationIgnored private var entries: [Key: Entry] = [:]
     @ObservationIgnored private var expiryTasks: [Key: Task<Void, Never>] = [:]
     @ObservationIgnored private var nextArrival: UInt64 = 0
-    @ObservationIgnored private let expiry: Duration
+    @ObservationIgnored private let expiry: Duration = .seconds(10)
 
-    init(expiry: Duration = .seconds(10)) {
-        self.expiry = expiry
+    private subscript(channelID: ChannelID) -> [Entry] {
+        access(keyPath: \.[channelID])
+        return entries.filter { $0.key.channelID == channelID }.map(\.value)
     }
 
     func receive(channelID: ChannelID, user: User, currentUserID: UserID?) {
@@ -35,48 +35,46 @@ final class TypingStateModel {
             nextArrival &+= 1
             return nextArrival
         }()
-        entries[key] = Entry(user: user, generation: generation, arrival: arrival)
+        withMutation(keyPath: \.[channelID]) {
+            entries[key] = Entry(user: user, generation: generation, arrival: arrival)
+        }
         expiryTasks[key]?.cancel()
         let expiry = expiry
         expiryTasks[key] = Task { [weak self] in
             do { try await Task.sleep(for: expiry) } catch { return }
             self?.expire(key, generation: generation)
         }
-        revision &+= 1
     }
 
     func clear(userID: UserID, in channelID: ChannelID) {
         let key = Key(channelID: channelID, userID: userID)
-        guard entries.removeValue(forKey: key) != nil else { return }
+        guard entries[key] != nil else { return }
+        withMutation(keyPath: \.[channelID]) {
+            entries[key] = nil
+        }
         expiryTasks.removeValue(forKey: key)?.cancel()
-        revision &+= 1
     }
 
     func clear(channelID: ChannelID) {
         let keys = entries.keys.filter { $0.channelID == channelID }
         guard !keys.isEmpty else { return }
-        for key in keys {
-            entries[key] = nil
-            expiryTasks.removeValue(forKey: key)?.cancel()
+        withMutation(keyPath: \.[channelID]) {
+            for key in keys {
+                entries[key] = nil
+                expiryTasks.removeValue(forKey: key)?.cancel()
+            }
         }
-        revision &+= 1
     }
 
     func clearAll() {
-        guard !entries.isEmpty || !expiryTasks.isEmpty else { return }
-        for task in expiryTasks.values {
-            task.cancel()
+        for channelID in Set(entries.keys.map(\.channelID)) {
+            clear(channelID: channelID)
         }
-        expiryTasks.removeAll()
-        entries.removeAll()
-        revision &+= 1
     }
 
     func users(in channelID: ChannelID) -> [User] {
-        _ = revision
-        return entries
-            .filter { $0.key.channelID == channelID }
-            .map(\.value.user)
+        self[channelID]
+            .map(\.user)
             .sorted {
                 let comparison = $0.displayName.localizedCaseInsensitiveCompare($1.displayName)
                 return comparison == .orderedSame ? $0.id < $1.id : comparison == .orderedAscending
@@ -85,10 +83,7 @@ final class TypingStateModel {
 
     /// The channel's typists, most recent to start first.
     func usersNewestFirst(in channelID: ChannelID) -> [User] {
-        _ = revision
-        return entries
-            .filter { $0.key.channelID == channelID }
-            .map(\.value)
+        self[channelID]
             .sorted { $0.arrival > $1.arrival }
             .map(\.user)
     }
@@ -104,20 +99,8 @@ final class TypingStateModel {
         }
     }
 
-    #if DEBUG
-        func expiryGenerationForTesting(channelID: ChannelID, userID: UserID) -> UInt64? {
-            entries[Key(channelID: channelID, userID: userID)]?.generation
-        }
-
-        func applyExpiryForTesting(channelID: ChannelID, userID: UserID, generation: UInt64) {
-            expire(Key(channelID: channelID, userID: userID), generation: generation)
-        }
-    #endif
-
     private func expire(_ key: Key, generation: UInt64) {
         guard entries[key]?.generation == generation else { return }
-        entries[key] = nil
-        expiryTasks[key] = nil
-        revision &+= 1
+        clear(userID: key.userID, in: key.channelID)
     }
 }

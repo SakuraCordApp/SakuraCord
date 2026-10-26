@@ -902,89 +902,6 @@ extension NativeTimelineRowPainter {
         ).fill()
     }
 
-    /// Discord's thread card: the name and message count, then the thread's
-    /// latest message or an empty state.
-    static func threadSummary(
-        _ thread: MessageThreadSummary,
-        preview: Message?,
-        message: Message,
-        model: AppModel?,
-        in frame: CGRect
-    ) {
-        NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
-        NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: InterfaceScale.metric(8)
-        ).fill()
-        let inset: CGFloat = InterfaceScale.metric(10)
-        let nameFont = NSFont.interfaceSystemFont(ofSize: 13, weight: .semibold)
-        let nameWidth = min(
-            NativeTimelineReplyMetrics.textWidth(thread.name, font: nameFont),
-            frame.width * 0.6
-        )
-        text(
-            thread.name,
-            in: CGRect(x: frame.minX + inset, y: frame.minY + InterfaceScale.metric(7), width: nameWidth, height: InterfaceScale.metric(18)),
-            font: nameFont,
-            color: .labelColor
-        )
-        text(
-            NativeTimelineThreadCard.countText(thread),
-            in: CGRect(
-                x: frame.minX + inset + nameWidth + InterfaceScale.metric(8),
-                y: frame.minY + InterfaceScale.metric(7),
-                width: max(1, frame.width - nameWidth - inset * 2 - InterfaceScale.metric(8)),
-                height: InterfaceScale.metric(18)
-            ),
-            font: .interfaceSystemFont(ofSize: 13, weight: .semibold),
-            color: .sakuraCordAccentColor
-        )
-
-        let rowFrame = CGRect(
-            x: frame.minX + inset,
-            y: frame.minY + InterfaceScale.metric(28),
-            width: frame.width - inset * 2,
-            height: InterfaceScale.metric(20)
-        )
-        let activity = NativeTimelineThreadCard.activityText(
-            thread.lastMessageID?.createdAt ?? thread.createdAt ?? thread.id.createdAt
-        )
-        let activityFont = NSFont.interfaceSystemFont(ofSize: 11)
-        let activityWidth = NativeTimelineReplyMetrics.textWidth(activity, font: activityFont)
-        text(
-            activity,
-            in: CGRect(x: rowFrame.maxX - activityWidth, y: rowFrame.minY + 1, width: activityWidth, height: InterfaceScale.metric(18)),
-            font: activityFont,
-            color: .tertiaryLabelColor
-        )
-        let bodyFrame = CGRect(
-            x: rowFrame.minX,
-            y: rowFrame.minY,
-            width: max(0, rowFrame.width - activityWidth - InterfaceScale.metric(8)),
-            height: rowFrame.height
-        )
-        guard !thread.isArchived, thread.messageCount > 0, let preview else {
-            text(
-                thread.isArchived || thread.messageCount > 0
-                    ? "There are no recent messages in this thread."
-                    : "There are no messages in this thread yet.",
-                in: bodyFrame,
-                font: NativeTimelineReplyMetrics.summaryFont,
-                color: .secondaryLabelColor
-            )
-            return
-        }
-        replyPreviewLine(
-            MessageReplyPreview(message: preview),
-            frame: bodyFrame,
-            avatarFrame: CGRect(x: bodyFrame.minX, y: bodyFrame.minY + InterfaceScale.metric(3), width: InterfaceScale.metric(14), height: InterfaceScale.metric(14)),
-            trailingInset: 0,
-            showsReplyMention: false,
-            message: message,
-            model: model
-        )
-    }
-
     static func reaction(
         _ region: NativeTimelineRowLayout.ReactionRegion,
         model: AppModel?,
@@ -1020,7 +937,7 @@ extension NativeTimelineRowPainter {
         shape.fill()
         if selected {
             NSColor.sakuraCordAccentColor.withAlphaComponent(0.95).setStroke()
-            shape.lineWidth = 1.5
+            shape.lineWidth = 1
             shape.stroke()
         } else if isHovered {
             NSColor.labelColor.withAlphaComponent(0.28).setStroke()
@@ -1065,15 +982,9 @@ extension NativeTimelineRowPainter {
             let image = ComponentUnicodeEmojiRenderer.image(
                 for: reference.name
             )
-            let optical = region.emojiFrame.insetBy(
-                dx: region.emojiFrame.width
-                    * (1 - MessageReactionMetrics.nativeEmojiVisualScale) / 2,
-                dy: region.emojiFrame.height
-                    * (1 - MessageReactionMetrics.nativeEmojiVisualScale) / 2
-            )
             drawImage(
                 image,
-                in: optical,
+                in: region.emojiFrame,
                 cornerRadius: 0,
                 fillsFrame: false
             )
@@ -1092,31 +1003,26 @@ extension NativeTimelineRowPainter {
                 color: selected ? .sakuraCordAccentColor : .labelColor
             )
         }
-        for avatarRegion in region.avatarRegions {
-            avatar(
-                name: avatarRegion.reactor.displayName,
-                url: avatarRegion.reactor.avatarURL,
-                in: avatarRegion.frame
-            )
+        let avatars = region.avatarRegions.map {
+            (frame: $0.frame, name: $0.reactor.displayName, url: $0.reactor.avatarURL, isPlaceholder: false)
+        } + region.placeholderAvatarFrames.map {
+            (frame: $0, name: "", url: nil as URL?, isPlaceholder: true)
+        }
+        for avatar in avatars {
+            let isLoadingImage = avatar.url.map { mediaImage(for: .avatar($0)) == nil } ?? false
+            if avatar.isPlaceholder || isLoadingImage {
+                NSColor.quaternaryLabelColor.setFill()
+                NSBezierPath(ovalIn: avatar.frame).fill()
+            } else {
+                self.avatar(name: avatar.name, url: avatar.url, in: avatar.frame)
+            }
             NSColor.labelColor.withAlphaComponent(0.24).setStroke()
-            let border = NSBezierPath(ovalIn: avatarRegion.frame.insetBy(
+            let border = NSBezierPath(ovalIn: avatar.frame.insetBy(
                 dx: 0.5,
                 dy: 0.5
             ))
             border.lineWidth = 1
             border.stroke()
-        }
-        if let overflowFrame = region.overflowFrame {
-            let overflow = MessageReactionPresentation.previewPlan(
-                for: region.reaction
-            ).overflowCount
-            text(
-                "+\(overflow)",
-                in: overflowFrame,
-                font: NativeTimelineReactionFonts.overflow,
-                color: .secondaryLabelColor,
-                alignment: .center
-            )
         }
     }
 
@@ -1140,7 +1046,7 @@ extension NativeTimelineRowPainter {
         systemSymbol(
             SakuraCordSystemSymbol.emojiFaceGrinning,
             in: NativeTimelineReactionAddControlGeometry.iconFrame(in: frame),
-            color: .labelColor,
+            color: NSColor.labelColor.withAlphaComponent(0.8),
             inset: 0,
             weight: .medium
         )
@@ -1405,8 +1311,19 @@ extension NativeTimelineRowPainter {
         case .none, .systemImage, .text: nil
         }
         guard let url else { return nil }
-        if url.isFileURL { return NSImage(contentsOf: url) }
+        if url.isFileURL { return fileImage(at: url) }
         return mediaImage(for: .media(url, maximumPixelDimension: 64))
+    }
+
+    /// Loaded once per file: rows draw their selects on every redraw, and
+    /// reading the file each time held up the motions that redraw them.
+    private static let fileImages = NSCache<NSURL, NSImage>()
+
+    private static func fileImage(at url: URL) -> NSImage? {
+        if let image = fileImages.object(forKey: url as NSURL) { return image }
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        fileImages.setObject(image, forKey: url as NSURL)
+        return image
     }
 
     static func componentFile(

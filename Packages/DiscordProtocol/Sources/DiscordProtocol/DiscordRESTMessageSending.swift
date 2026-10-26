@@ -1,3 +1,4 @@
+import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
@@ -8,6 +9,7 @@ extension DiscordRESTProvider {
         _ draft: SendMessageDraft,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async throws -> Message {
+        try requireGuildCommunication(in: draft.channelID)
         if let poll = draft.poll {
             if let error = poll.validationError { throw ChatProviderError.invalidRequest(error) }
             guard draft.content.isEmpty, draft.attachments.isEmpty, draft.stickerIDs.isEmpty, draft.replyTo == nil else {
@@ -69,6 +71,7 @@ extension DiscordRESTProvider {
                 )
             )
         }
+        try requireGuildCommunication(in: draft.channelID)
         progress(.submitting)
         let path = "/channels/\(draft.channelID)/messages"
         // Like the first-party message queue, a rate-limited send waits out the
@@ -83,7 +86,15 @@ extension DiscordRESTProvider {
             headers: ["X-Context-Properties": draft.poll == nil ? DiscordClientMetadata.messageContextHeader : "eyJsb2NhdGlvbiI6InBvbGxfY3JlYXRpb24ifQ=="],
             maximumAttempts: Self.maximumMessageSendAttempts
         )
-        let dto: MessageDTO = try decodedResponse(data, response, method: "POST", path: path)
+        let dto: MessageDTO = try decodedResponse(data, response, method: "POST", path: path) { status, code in
+            // A definite content rejection, not authentication failure or proof
+            // of a timeout. Membership updates own timeout restrictions.
+            guard status == 400, code == 200000 else { return nil }
+            let rejection = try? JSONDecoder().decode(AutoModerationRejectionDTO.self, from: data)
+            return apiDiagnostics.coalescing(
+                ChatProviderError.autoModerationBlocked(explanation: rejection?.message), with: response
+            )
+        }
         var message = try dto.domain()
         message.nonce = draft.nonce
         if draft.poll != nil, let current = cachedMessages[message.id]?.poll, current.results != nil {
@@ -128,4 +139,8 @@ extension DiscordRESTProvider {
         payload["waveform"] = .string(metadata.waveform)
         return .object(payload)
     }
+}
+
+private struct AutoModerationRejectionDTO: Decodable {
+    let message: String?
 }

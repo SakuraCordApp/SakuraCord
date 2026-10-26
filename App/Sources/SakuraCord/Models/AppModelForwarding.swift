@@ -18,7 +18,11 @@ extension AppModel {
         case .quickSwitcherUserIDsChanged(let userIDs):
             updateForwardSnapshot { $0.quickSwitcherUserIDs = userIDs }
         case .messageSearchUsersChanged(let users):
-            updateForwardSnapshot { $0.messageSearchUsers = users }
+            // Only message search reads this cache, so the forwarding and quick
+            // switcher index revision stays put.
+            guard snapshotStorage != nil else { break }
+            snapshotStorage?.messageSearchUsers = users
+            refreshSearchSnapshotPresentation()
         case .userSearchAliasesChanged(let aliases):
             updateForwardSnapshot { $0.userSearchAliasesByUserID = aliases }
         case .quickSwitcherGuildMemberUserIDsChanged(let userIDsByGuildID):
@@ -37,12 +41,14 @@ extension AppModel {
         return true
     }
 
+    // Search caches invalidate search consumers without rebuilding workspace chrome.
     private func updateForwardSnapshot(
         _ update: (inout BootstrapSnapshot) -> Void
     ) {
-        guard var value = snapshot else { return }
+        guard var value = snapshotStorage else { return }
         update(&value)
-        snapshot = value
+        snapshotStorage = value
+        refreshSearchSnapshotPresentation()
         forwardSearchSourceRevision &+= 1
     }
 

@@ -105,13 +105,15 @@ struct MediaViewerMoreMenuButton: NSViewRepresentable {
             detailsItem.submenu = detailsMenu()
             menu.addItem(detailsItem)
             menu.addItem(.separator())
-            menu.addItem(
-                MediaSaveMenuBuilder.submenuItem(
-                    "Save Media",
-                    systemImage: "arrow.down.to.line",
-                    actions: configuration.saveActions
+            if configuration.item.canSave {
+                menu.addItem(
+                    MediaSaveMenuBuilder.submenuItem(
+                        "Save Media",
+                        systemImage: "arrow.down.to.line",
+                        actions: configuration.saveActions
+                    )
                 )
-            )
+            }
             menu.addItem(
                 menuItem(
                     "Open in Browser",

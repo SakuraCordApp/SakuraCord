@@ -26,6 +26,8 @@ struct MockMessageFixtureBuilder {
 
     var messages: [ChannelID: [Message]] {
         [
+            ChannelID(rawValue: 216): messageShowcase(),
+            ChannelID(rawValue: 902): showcaseThreadMessages(),
             ChannelID(rawValue: 200): [
                 message(
                     1001, 200, rowan,
@@ -595,6 +597,14 @@ struct MockMessageFixtureBuilder {
                     content: "This local fixture demonstrates the failed-send state.",
                     timestamp: base.addingTimeInterval(1_220),
                     outboxState: .failed,
+                    guildID: nativeLabID
+                ),
+                Message(
+                    id: MessageID(rawValue: 3199), channelID: ChannelID(rawValue: 301), author: nova,
+                    content: "Hello",
+                    timestamp: base.addingTimeInterval(1_240),
+                    outboxState: .failed,
+                    sendFailure: .autoModeration(explanation: "From server moderators: Please revise this message."),
                     guildID: nativeLabID
                 ),
                 Message(

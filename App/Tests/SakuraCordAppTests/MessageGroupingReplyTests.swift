@@ -27,6 +27,94 @@ import Testing
 }
 
 @MainActor
+@Test(arguments: [false, true])
+func `cancelled history preparation does not return a partial page`(throughModel: Bool) async {
+    let fixture = replyGroupingFixture()
+    let messages = [fixture.target, fixture.reply, fixture.followUp]
+    let model = AppModel(launchMode: .offlineTesting)
+    let work = Task { @MainActor in
+        if throughModel {
+            return await model.prepareTimelineRows(for: messages, priority: .userInitiated)
+        }
+        return await MessageGrouping.rowsCooperatively(for: messages, batchSize: 1)
+    }
+    // This actor has not suspended, so cancellation precedes any preparation.
+    work.cancel()
+    let rows = await work.value
+    #expect(rows.isEmpty)
+    #expect(model.messages.isEmpty)
+    #expect(model.messageRows.isEmpty)
+}
+
+@MainActor
+@Test(arguments: [false, true])
+func `running history preparation cancels its active detached worker`(grouping: Bool) async {
+    let fixture = replyGroupingFixture()
+    // Mentions keep every row on the resolved-text prewarming path, so the
+    // worker still has real work remaining when the first item is gated.
+    let messages = [fixture.target, fixture.reply, fixture.followUp].map { message in
+        var value = message
+        value.content += " <@\(fixture.target.author.id.rawValue)>"
+        return value
+    }
+    let model = AppModel(launchMode: .offlineTesting)
+    model.replaceSelectedMessages(with: [fixture.target])
+    let originalRows = model.messageRows
+    let probe = HistoryPreparationCancellationProbe()
+    let checkpoint: @Sendable (Int) async -> Void = { await probe.checkpoint($0) }
+    let work = Task { @MainActor in
+        await model.prepareTimelineRows(
+            for: messages, priority: .userInitiated,
+            groupingCheckpoint: grouping ? checkpoint : nil,
+            prewarmingCheckpoint: grouping ? nil : checkpoint
+        )
+    }
+
+    // The checkpoint runs inside the real detached worker, after its first
+    // processed item. Its continuation deliberately ignores cancellation.
+    await probe.waitUntilStarted()
+    work.cancel()
+    await probe.release()
+    let rows = await work.value
+    let observation = await probe.observation
+    #expect(observation.cancelled)
+    #expect(observation.processed == 1)
+    #expect(rows.isEmpty)
+    #expect(model.messages == [fixture.target])
+    #expect(model.messageRows == originalRows)
+}
+
+private actor HistoryPreparationCancellationProbe {
+    private var processed = 0
+    private var cancelled = false
+    private var startedWaiter: CheckedContinuation<Void, Never>?
+    private var workerWaiter: CheckedContinuation<Void, Never>?
+
+    var observation: (processed: Int, cancelled: Bool) { (processed, cancelled) }
+
+    func checkpoint(_ completed: Int) async {
+        processed = completed
+        guard completed == 1 else { return }
+        await withCheckedContinuation { continuation in
+            workerWaiter = continuation
+            startedWaiter?.resume()
+            startedWaiter = nil
+        }
+        cancelled = Task.isCancelled
+    }
+
+    func waitUntilStarted() async {
+        guard workerWaiter == nil else { return }
+        await withCheckedContinuation { startedWaiter = $0 }
+    }
+
+    func release() {
+        workerWaiter?.resume()
+        workerWaiter = nil
+    }
+}
+
+@MainActor
 @Test func `appending after a reply matches full message regrouping`() {
     let fixture = replyGroupingFixture()
     let oldMessages = [fixture.target, fixture.reply]

@@ -23,9 +23,13 @@ final class GuildOnboardingStore {
 
     var entries: [GuildID: Entry] = [:]
     var members: [GuildID: Member] = [:]
+    // Member events can precede initial bootstrap publication, when the app
+    // does not yet know which user is self. Retain only each member's latest
+    // value until that identity is available.
+    @ObservationIgnored var bootstrapMembers: [GuildID: [UserID: Member]] = [:]
+    @ObservationIgnored var timeoutExpiryTasks: [GuildID: Task<Void, Never>] = [:]
+    @ObservationIgnored var timeoutRevisions: [GuildID: UInt64] = [:]
     var presentedGuildID: GuildID?
-    var previewChannelID: ChannelID?
-    var previewReturnChannelID: ChannelID?
     var profiles: [GuildID: UserProfile] = [:]
     var browsingChannels = false
     var channelSearch = ""
@@ -38,10 +42,12 @@ final class GuildOnboardingStore {
     func reset() {
         entries = [:]
         members = [:]
+        bootstrapMembers = [:]
+        for task in timeoutExpiryTasks.values { task.cancel() }
+        timeoutExpiryTasks = [:]
+        timeoutRevisions = [:]
         guides = [:]
         presentedGuildID = nil
-        previewChannelID = nil
-        previewReturnChannelID = nil
         profiles = [:]
         browsingChannels = false
         channelSearch = ""
@@ -64,7 +70,8 @@ extension AppModel {
             channel: channel,
             resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
             overwritePrincipals: permissionBasis.overwritePrincipals,
-            hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity
+            hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity,
+            communicationDisabledUntil: permissionBasis.currentUserCommunicationDisabledUntil
         )
         if permissionBasis.currentUserIsPending || permissionBasis.currentUserRequiresOnboarding {
             let access = ConversationPermissionResolver.channelAccess(effectivePermissions: permissions)
@@ -79,7 +86,9 @@ extension AppModel {
     }
 
     func onboardingMember(in guildID: GuildID) -> Member? {
-        onboarding.members[guildID] ?? currentUser.flatMap { membersByGuildID[guildID]?[$0.id] }
+        onboarding.members[guildID] ?? currentUser.flatMap {
+            membersByGuildID[guildID]?[$0.id] ?? (guildID == selectedGuildID ? membersByID[$0.id] : nil)
+        }
     }
 
     func requiresOnboarding(in guildID: GuildID) -> Bool {
@@ -88,16 +97,13 @@ extension AppModel {
     }
 
     func openChannelsAndRoles(in guildID: GuildID) {
-        closeCustomizationPreview()
-        closeThread()
-        closeVoiceChat()
+        closeSideConversations()
         onboarding.browsingChannels = false
         onboarding.channelSearch = ""
         onboarding.isChannelSearchFocused = false
         onboarding.page = .channelsAndRoles
         if onboarding.entries[guildID] == nil { onboarding.entries[guildID] = .init() }
         onboarding.presentedGuildID = guildID
-        onboarding.previewChannelID = nil
         suspendSelectedConversationPresentation()
         if hasCustomizationQuestions(in: guildID) || requiresOnboarding(in: guildID) { refreshOnboarding(in: guildID) }
     }
@@ -126,6 +132,7 @@ extension AppModel {
         store.entries[guildID] = entry
         startAccountChildTask(account: accountSession()) { model, account in
             do {
+                let timeoutRevision = store.timeoutRevisions[guildID, default: 0]
                 async let configuration = account.provider.guildOnboarding(in: guildID)
                 async let member = account.provider.refreshCurrentMember(in: guildID)
                 let (value, confirmedMember) = try await (configuration, member)
@@ -136,7 +143,7 @@ extension AppModel {
                    current.editRevision != entry.editRevision || current.isSaving {
                     store.entries[guildID]?.isLoading = false
                     store.entries[guildID]?.refreshedAt = .now
-                    model.receiveOnboardingMember(confirmedMember, guildID: guildID)
+                    model.receiveOnboardingMember(confirmedMember, guildID: guildID, timeoutRevision: timeoutRevision)
                     return
                 }
                 var next = GuildOnboardingStore.Entry()
@@ -155,7 +162,7 @@ extension AppModel {
                 if next.promptID != nil, !questions.contains(where: { $0.id == next.promptID }) {
                     next.promptID = questions.first?.id
                 }
-                model.receiveOnboardingMember(confirmedMember, guildID: guildID)
+                model.receiveOnboardingMember(confirmedMember, guildID: guildID, timeoutRevision: timeoutRevision)
                 store.entries[guildID] = next
             } catch {
                 guard model.isCurrentAccountSession(account), store.entries[guildID]?.revision == revision else { return }
@@ -166,18 +173,34 @@ extension AppModel {
         }
     }
 
-    func receiveOnboardingMember(_ member: Member, guildID: GuildID) {
-        guard member.id == currentUser?.id else { return }
+    func receiveOnboardingMember(_ member: Member, guildID: GuildID, timeoutRevision: UInt64? = nil) {
+        guard let currentUserID = currentUser?.id else {
+            onboarding.bootstrapMembers[guildID, default: [:]][member.id] = member
+            return
+        }
+        guard member.id == currentUserID else { return }
         let old = onboarding.members[guildID]
         var member = member
+        if let timeoutRevision, onboarding.timeoutRevisions[guildID, default: 0] != timeoutRevision {
+            // A member read can wait behind unrelated onboarding configuration
+            // work while a live timeout update or local expiry overtakes it.
+            member.communicationDisabledUntil = old?.communicationDisabledUntil
+        }
         member.flags = member.flags ?? old?.flags
         member.isPending = member.isPending ?? old?.isPending
         member.joinedAt = member.joinedAt ?? old?.joinedAt
         onboarding.members[guildID] = member
+        onboarding.timeoutRevisions[guildID, default: 0] &+= 1
+        if old?.communicationDisabledUntil != member.communicationDisabledUntil {
+            scheduleGuildTimeoutExpiry(in: guildID)
+            timelinePresentationRevision &+= 1
+            forwardSearchSourceRevision &+= 1
+        }
         // Flags can arrive without a role change. Rebuild the same projection
         // that owns sidebar locks and resumes an initial history load waiting
         // for access; publishing the member alone leaves both stale.
-        if old?.flags != member.flags || old?.isPending != member.isPending {
+        if old?.flags != member.flags || old?.isPending != member.isPending
+            || old?.communicationDisabledUntil != member.communicationDisabledUntil {
             refreshUnreadPresentation(appliesAccessImmediately: true, accessAffectedGuildIDs: [guildID])
         }
         if let old, old.roles != member.roles, onboarding.presentedGuildID == guildID {
@@ -242,12 +265,13 @@ extension AppModel {
                 if entry.initial {
                     // Reconcile the provider's confirmed membership into the app
                     // even if its member event has not reached the UI yet.
+                    let timeoutRevision = store.timeoutRevisions[guildID, default: 0]
                     let member = try await account.provider.refreshCurrentMember(in: guildID)
                     guard model.isCurrentAccountSession(account), store.entries[guildID]?.revision == entry.revision else { return }
                     guard member.flags.map({ $0 & 2 != 0 }) == true else {
                         throw ChatProviderError.invalidRequest("Discord has not confirmed onboarding completion. Refresh to continue.")
                     }
-                    model.receiveOnboardingMember(member, guildID: guildID)
+                    model.receiveOnboardingMember(member, guildID: guildID, timeoutRevision: timeoutRevision)
                 }
                 store.entries[guildID]?.configuration = saved
                 store.entries[guildID]?.responses = Set(saved.responses)
@@ -291,7 +315,35 @@ extension AppModel {
         if let next = channels.first(where: { conversationAccess(for: $0).isReadable }) { navigate(to: next.id) } else { selectedChannelID = nil }
     }
 
-    func selectedChannelGroups(_ groups: [ChannelGroup], guildID: GuildID?) -> [ChannelGroup] {
+    func selectedChannelGroups(
+        _ groups: [ChannelGroup],
+        guildID: GuildID?,
+        threadsByParentID: [ChannelID: [SidebarThreadRow]]? = nil
+    ) -> [ChannelGroup] {
+        let groups = channelSelectionGroups(groups, guildID: guildID)
+        guard let guildID, presentedGuildChannelSettings(in: guildID).hideMutedChannels else { return groups }
+        let threads = threadsByParentID
+            ?? sidebarThreadLayout(guildID: guildID, channelGroups: groups, now: .now).threadsByParentID
+        let activeChannelID = guildWorkspacePage == nil ? selectedChannelID : nil
+        return groups.compactMap { group -> ChannelGroup? in
+            var group = group
+            group.channels.removeAll { channel in
+                let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
+                    || (isThreadFullWidth && openThread?.parentID == channel.id)
+                // Discord keeps focused channels, mentions and visible joined
+                // threads discoverable. A server/category mute is not a direct
+                // channel mute and must not hide all of its children here.
+                return readState.isChannelMuted(channel) && !isFocused && channel.mentionCount == 0
+                    && threads[channel.id, default: []].isEmpty
+            }
+            return group.channels.isEmpty ? nil : group
+        }
+    }
+
+    func channelSelectionGroups(
+        _ groups: [ChannelGroup],
+        guildID: GuildID?
+    ) -> [ChannelGroup] {
         guard let guildID else { return groups }
         let guide = onboarding.guides[guildID]?.configuration
         let resources = guide?.enabled == true ? Set(guide?.resourceChannels.map(\.channelID) ?? []) : []
@@ -319,11 +371,10 @@ extension AppModel {
                 guard filtersSelection else { return false }
                 if hasGuide, resources.contains(channel.id) || channel.flags & (1 << 7) != 0,
                    channel.id != activeChannelID { return true }
-                guard !selectedChannelIDs.contains(channel.id),
-                      !categoryIsSelected,
-                      channel.id != activeVoiceChannel?.id, channel.id != activeChannelID,
-                      channel.mentionCount == 0 else { return false }
-                return true
+                let isFocused = channel.id == activeChannelID || channel.id == activeVoiceChannel?.id
+                    || (isThreadFullWidth && openThread?.parentID == channel.id)
+                return !selectedChannelIDs.contains(channel.id) && !categoryIsSelected
+                    && !isFocused && channel.mentionCount == 0
             }
             return group.channels.isEmpty ? nil : group
         }

@@ -1,19 +1,23 @@
 name: Retarget Pull Requests to Nightly
 
 on:
-  pull_request_target:
-    branches: [main]
-    types: [opened, reopened, edited, synchronize]
+  workflow_run:
+    workflows: [Pull request metadata]
+    types: [completed]
 
 permissions:
   pull-requests: write
 
 concurrency:
-  group: retarget-pull-request-${{ github.event.pull_request.number }}
+  group: retarget-pull-requests
   cancel-in-progress: false
+  queue: max
 
 jobs:
   retarget:
+    if: >-
+      github.event.workflow_run.event == 'pull_request_target' &&
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -22,18 +26,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
-          # Re-read the current state in case this event waited in the queue.
-          if ! jq -e --arg repo "$GH_REPO" '
-            .state == "open" and .base.ref == "main" and
-            (.head.ref != "nightly" or .head.repo.full_name != $repo)
-          ' <<< "$pr" > /dev/null; then
-            echo "No retargeting needed."
-            exit 0
-          fi
+          # Fork workflow runs can omit PR associations. Query canonical state
+          # instead of trusting the signal's code, artifacts, or PR metadata.
+          numbers="$(gh api --paginate "repos/$GH_REPO/pulls?state=open&base=main&per_page=100" \
+            --jq '.[].number')"
+          failed=()
+          for number in $numbers; do
+            if ! pr="$(gh api "repos/$GH_REPO/pulls/$number")"; then
+              echo "::error::Could not read PR #$number."
+              failed+=("$number")
+              continue
+            fi
+            # Re-read the current state in case this event waited in the queue.
+            if ! jq -e --arg repo "$GH_REPO" '
+              .state == "open" and .base.ref == "main" and
+              (.head.ref != "nightly" or .head.repo.full_name != $repo)
+            ' <<< "$pr" > /dev/null; then
+              continue
+            fi
 
-          gh api --method PATCH "repos/$GH_REPO/pulls/$PR_NUMBER" \
-            -f base=nightly > /dev/null
-          echo "Retargeted PR #$PR_NUMBER to nightly." >> "$GITHUB_STEP_SUMMARY"
+            if ! gh api --method PATCH "repos/$GH_REPO/pulls/$number" \
+              -f base=nightly > /dev/null; then
+              echo "::error::Could not retarget PR #$number."
+              failed+=("$number")
+              continue
+            fi
+            echo "Retargeted PR #$number to nightly." >> "$GITHUB_STEP_SUMMARY"
+          done
+          if (( ${#failed[@]} > 0 )); then
+            printf 'Failed to process PR #%s.\n' "${failed[@]}" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

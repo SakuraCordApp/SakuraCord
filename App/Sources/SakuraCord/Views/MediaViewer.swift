@@ -310,7 +310,7 @@ struct MediaViewer: View {
         _ item: RichMediaItem,
         to destination: MediaSaveDestination
     ) {
-        guard !interaction.isSaving else { return }
+        guard item.canSave, !interaction.isSaving else { return }
         interaction.isSaving = true
         Task {
             defer { interaction.isSaving = false }

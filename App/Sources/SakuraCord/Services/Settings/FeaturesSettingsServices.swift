@@ -3,6 +3,7 @@ import Foundation
 nonisolated struct FeaturesSettingsSnapshot: Equatable, Sendable {
     static let defaults = Self()
 
+    var readAllButton = false
     var showHiddenChannels = true
     var channelManagement = true
     var fakeNitroEmojis = true
@@ -23,6 +24,7 @@ final class FeaturesSettingsStore {
 
     func load() -> FeaturesSettingsSnapshot {
         var value = FeaturesSettingsSnapshot.defaults
+        if case let .bool(saved) = preferences.value(for: .readAllButton) { value.readAllButton = saved }
         if case let .bool(saved) = preferences.value(for: .channelManagement) { value.channelManagement = saved }
         if case let .bool(saved) = preferences.value(for: .showHiddenChannels) { value.showHiddenChannels = saved }
         if case let .bool(saved) = preferences.value(for: .fakeNitroEmojis) { value.fakeNitroEmojis = saved }
@@ -34,6 +36,7 @@ final class FeaturesSettingsStore {
     }
 
     func save(_ value: FeaturesSettingsSnapshot) {
+        preferences.set(.bool(value.readAllButton), for: .readAllButton)
         preferences.set(.bool(value.channelManagement), for: .channelManagement)
         preferences.set(.bool(value.showHiddenChannels), for: .showHiddenChannels)
         preferences.set(.bool(value.fakeNitroEmojis), for: .fakeNitroEmojis)

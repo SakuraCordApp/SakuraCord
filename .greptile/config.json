@@ -1,0 +1,46 @@
+{
+  "instructions": "Besides bugs, review for code that works but should not exist or is larger than the behavior needs. The repository rules are in the context files.",
+  "rules": [
+    {
+      "id": "lean-changes",
+      "rule": "Flag violations of the \"Keep changes lean\" section of AGENTS.md, and name the existing symbol to reuse or show the smaller equivalent.",
+      "scope": [
+        "App/**",
+        "Packages/**/*.swift",
+        "script/**",
+        ".github/**",
+        ".githooks/**"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "platform-posture",
+      "rule": "Flag violations of the \"Platform posture\" section of AGENTS.md, such as OS version checks or compatibility branches for older Apple platforms, unless the pull request says they were explicitly requested. @available(*, unavailable) on initializers is fine.",
+      "scope": [
+        "App/**/*.swift",
+        "Packages/**/*.swift"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "test-justification",
+      "rule": "Flag new test cases that violate \"When to commit tests\" in docs/TESTING.md, such as tests that duplicate existing coverage or name no production failure. A test that guards a distinct failure is not a violation just because it could have extended an existing test. If the pull request does not state which failure a new test catches, ask for it.",
+      "scope": [
+        "**/Tests/**",
+        "**/test_*.py",
+        "**/*.test.mjs"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "test-design",
+      "rule": "Flag test synchronization that violates \"Test design and evidence\" in docs/TESTING.md, such as fixed sleeps or mutable global test state.",
+      "scope": [
+        "**/Tests/**",
+        "**/test_*.py",
+        "**/*.test.mjs"
+      ],
+      "severity": "high"
+    }
+  ]
+}

@@ -298,6 +298,17 @@ extension AppModel {
             soundboardErrorMessage = "This sound can’t be played in the current voice channel."
             return
         }
+        let account = accountSession()
+        let voiceGeneration = voiceMigrationGeneration
+        func requireCurrentPlayback() throws {
+            guard isCurrentVoiceOperation(account, generation: voiceGeneration, voiceSession: session),
+                  activeVoiceChannel?.id == channel.id,
+                  voiceSessionState == .connected,
+                  soundboardPlaybackRoute(for: sound) == route
+            else {
+                throw ChatProviderError.invalidRequest("This sound can’t be played in the current voice channel.")
+            }
+        }
         let state = Self.soundboardSignposter.beginInterval("Trigger")
         defer { Self.soundboardSignposter.endInterval("Trigger", state) }
         do {
@@ -312,6 +323,7 @@ extension AppModel {
                         self.soundboardState.confirmedNativeEchoes[echoID] = nil
                     }
                     let clip = try await SoundboardAudioLibrary.shared.clip(for: sound)
+                    try requireCurrentPlayback()
                     try await self.playSoundboardClipLocally(
                         sound,
                         clip: clip,
@@ -324,7 +336,8 @@ extension AppModel {
                 // wait for Discord to acknowledge the native soundboard request.
                 await Task.yield()
                 do {
-                    try await provider.sendSoundboardSound(sound, in: channel.id)
+                    try requireCurrentPlayback()
+                    try await account.provider.sendSoundboardSound(sound, in: channel.id)
                 } catch {
                     cancelPendingNativeEcho(echoID)
                     _ = await localPlayback.result
@@ -334,6 +347,7 @@ extension AppModel {
                 Self.soundboardLogger.info("Native soundboard send rendered locally")
             case .outgoingMixer:
                 let clip = try await SoundboardAudioLibrary.shared.clip(for: sound)
+                try requireCurrentPlayback()
                 if let currentUserID = snapshot?.currentUser.id {
                     registerCardAnimation(
                         emoji: sound.emojiReference,
@@ -579,8 +593,7 @@ extension AppModel {
                 guild: guild,
                 channel: channel,
                 currentUserID: currentUserID,
-                currentMember: membersByGuildID[guildID]?[currentUserID]
-                    ?? membersByID[currentUserID],
+                currentMember: onboardingMember(in: guildID),
                 roles: guildRolesByGuildID[guildID] ?? guildRoles,
                 currentRoleIDs: currentUserRoleIDsByGuild[guildID]
             )

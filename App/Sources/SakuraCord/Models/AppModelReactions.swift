@@ -3,8 +3,17 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    struct ReactionMutationTiming: Sendable {
+        var debounce: Duration = .milliseconds(160)
+        var sleepForRateLimit: @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        }
+    }
+
     func edit(_ message: Message, content: String) async {
-        guard !message.hasPoll, !message.flags.contains(.voiceMessage) else { return }
+        guard !message.hasPoll, !message.flags.contains(.voiceMessage),
+              guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
+        else { return }
         let session = accountSession()
         do {
             let updated = try await session.provider.edit(
@@ -12,7 +21,7 @@ extension AppModel {
             )
             guard isCurrentAccountSession(session) else { return }
             invalidateMessageTranslation(updated.id, content: updated.content)
-            let reconciled = reconcileVisibleOrCached(updated)
+            let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
             recordAuthoritativeMessageUpsert(reconciled)
         } catch {
             guard isCurrentAccountSession(session) else { return }
@@ -50,6 +59,7 @@ extension AppModel {
     }
 
     func toggleReaction(_ emoji: String, on message: Message) async {
+        guard canUpdateReactions(on: message) else { return }
         let guildID = message.guildID ?? selectedGuildID
         let currentGuildEmojis = guildID.flatMap { emojisByGuild[$0] } ?? []
         guard
@@ -131,6 +141,11 @@ extension AppModel {
             return
         }
 
+        guard guildTimeoutUntil(in: key.channelID) == nil else {
+            applyCurrentUserReactionState(state.confirmedReacted, for: key, emoji: state.emoji)
+            reactionMutations[key] = nil
+            return
+        }
         let sentState = state.desiredReacted
         state.isSending = true
         reactionMutations[key] = state
@@ -143,7 +158,32 @@ extension AppModel {
             )
         } catch {
             guard isCurrentAccountSession(session) else { return }
-            guard let latest = reactionMutations[key] else { return }
+            guard var latest = reactionMutations[key] else { return }
+            if case let ChatProviderError.rateLimited(retryAfter, _) = error,
+               !latest.hasRetriedRateLimit
+            {
+                latest.hasRetriedRateLimit = true
+                reactionMutations[key] = latest
+                let sleep = reactionMutationTiming.sleepForRateLimit
+                // Keep this key in flight while waiting so clicks update only
+                // the desired state, without restarting or bypassing cooldown.
+                reactionMutationTasks[key] = Task { @MainActor [weak self] in
+                    do {
+                        try await sleep(.seconds(retryAfter))
+                    } catch {
+                        return
+                    }
+                    guard !Task.isCancelled,
+                          let self,
+                          self.isCurrentAccountSession(session),
+                          var pending = self.reactionMutations[key]
+                    else { return }
+                    pending.isSending = false
+                    self.reactionMutations[key] = pending
+                    await self.sendReactionMutation(for: key, generation: pending.generation)
+                }
+                return
+            }
             applyCurrentUserReactionState(
                 latest.confirmedReacted,
                 for: key,
@@ -159,6 +199,7 @@ extension AppModel {
         guard var latest = reactionMutations[key] else { return }
         latest.confirmedReacted = sentState
         latest.isSending = false
+        latest.hasRetriedRateLimit = false
         applyCurrentUserReactionState(
             latest.desiredReacted,
             for: key,
@@ -193,7 +234,7 @@ extension AppModel {
                 avatarURL: member.guildAvatarURL ?? member.user.avatarURL
             )
         }
-        guard snapshot?.currentUser.id == userID, let user = snapshot?.currentUser else {
+        guard currentUser?.id == userID, let user = currentUser else {
             return nil
         }
         return ReactionReactor(user: user)
@@ -224,52 +265,110 @@ extension AppModel {
         applyReactionUpdate(update, persistsResult: false)
     }
 
-    func loadReactionReactors(_ reaction: Reaction, on message: Message) async {
-        guard reaction.count > 0, reaction.reactors.isEmpty else { return }
-        guard await waitForTimelineScrollingToEnd() else { return }
+    func loadReactionReactors(_ requestedReaction: Reaction, on message: Message) async {
+        guard requestedReaction.count > 0, await waitForTimelineScrollingToEnd() else { return }
+        let reaction: Reaction
+        if let current = retainedMessage(channelID: message.channelID, messageID: message.id) {
+            guard let latest = current.reactions.first(where: { $0.id == requestedReaction.id }) else { return }
+            reaction = latest
+        } else {
+            reaction = requestedReaction
+        }
+        guard reaction.count > 0,
+              Set(reaction.reactors.map(\.id)).count < min(reaction.count, 5)
+        else { return }
         let session = accountSession()
         let key = ReactionReactorLoadKey(
             channelID: message.channelID,
             messageID: message.id,
             reactionID: reaction.id
         )
+        if let task = reactionReactorLoadTasks[key] {
+            await task.value
+            guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
+            await loadReactionReactors(reaction, on: message)
+            return
+        }
+        // History replacements can discard the identities while preserving
+        // the count. Restore the saved preview instead of fetching it again.
+        if let cached = loadedReactionReactorPreviews[key], cached.count == reaction.count {
+            applyReactionReactors(cached.reactors, for: key)
+            return
+        }
         if let failedAt = failedReactionReactorLoads[key],
            Date.now.timeIntervalSince(failedAt) < 30
         {
             return
         }
-        guard loadingReactionReactors.insert(key).inserted else { return }
-        defer {
-            if isCurrentAccountSession(session) {
-                loadingReactionReactors.remove(key)
+        let loadID = UUID()
+        reactionReactorLoadIDs[key] = loadID
+        let task = Task { @MainActor [self] in
+            defer {
+                if isCurrentAccountSession(session), reactionReactorLoadIDs[key] == loadID {
+                    reactionReactorLoadTasks[key] = nil
+                    reactionReactorLoadIDs[key] = nil
+                }
+            }
+            do {
+                let reactors = try await reactionReactorLoadLimiter.withPermit {
+                    try await session.provider.reactionReactors(
+                        for: reaction.emoji,
+                        messageID: message.id,
+                        channelID: message.channelID,
+                        reactionCount: reaction.count
+                    )
+                }
+                guard await waitForTimelineScrollingToEnd(),
+                      !Task.isCancelled,
+                      isCurrentAccountSession(session),
+                      reactionReactorLoadIDs[key] == loadID
+                else { return }
+                if let current = retainedMessage(channelID: message.channelID, messageID: message.id),
+                   current.reactions.first(where: { $0.id == reaction.id })?.count != reaction.count {
+                    return
+                }
+                failedReactionReactorLoads[key] = nil
+                storeReactionReactorPreview(reactors, count: reaction.count, for: key)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, isCurrentAccountSession(session),
+                      reactionReactorLoadIDs[key] == loadID
+                else { return }
+                if failedReactionReactorLoads.count >= 256,
+                   let oldest = failedReactionReactorLoads.min(by: { $0.value < $1.value })?.key
+                {
+                    failedReactionReactorLoads[oldest] = nil
+                }
+                failedReactionReactorLoads[key] = .now
             }
         }
+        reactionReactorLoadTasks[key] = task
+        await task.value
+    }
 
-        do {
-            let reactors = try await reactionReactorLoadLimiter.withPermit {
-                try await session.provider.reactionReactors(
-                    for: reaction.emoji,
-                    messageID: message.id,
-                    channelID: message.channelID,
-                    reactionCount: reaction.count
-                )
-            }
-            guard await waitForTimelineScrollingToEnd(),
-                  isCurrentAccountSession(session)
-            else { return }
-            failedReactionReactorLoads[key] = nil
-            applyReactionReactors(reactors, for: key)
-        } catch is CancellationError {
-            return
-        } catch {
-            guard isCurrentAccountSession(session) else { return }
-            if failedReactionReactorLoads.count >= 256,
-               let oldest = failedReactionReactorLoads.min(by: { $0.value < $1.value })?.key
-            {
-                failedReactionReactorLoads[oldest] = nil
-            }
-            failedReactionReactorLoads[key] = .now
+    private func storeReactionReactorPreview(_ reactors: [ReactionReactor], count: Int, for key: ReactionReactorLoadKey) {
+        if loadedReactionReactorPreviews[key] == nil, loadedReactionReactorPreviews.count >= 256,
+           let evictedKey = loadedReactionReactorPreviews.keys.first {
+            loadedReactionReactorPreviews[evictedKey] = nil
         }
+        var seen: Set<UserID> = []
+        let previews = Array(reactors.filter { seen.insert($0.id).inserted }.prefix(5))
+        loadedReactionReactorPreviews[key] = (count, previews)
+        applyReactionReactors(previews, for: key)
+    }
+
+    /// Returns only identities already held locally; never starts a load.
+    func retainedReactionReactors(for reaction: Reaction, on message: Message) -> [ReactionReactor] {
+        let key = ReactionReactorLoadKey(
+            channelID: message.channelID, messageID: message.id, reactionID: reaction.id
+        )
+        let cached = loadedReactionReactorPreviews[key]
+        let saved = cached?.count == reaction.count ? cached?.reactors ?? [] : []
+        var seen: Set<UserID> = []
+        return Array((reaction.reactors + saved)
+            .filter { seen.insert($0.id).inserted }
+            .prefix(min(5, max(0, reaction.count))))
     }
 
     func applyReactionReactors(
@@ -307,7 +406,8 @@ extension AppModel {
         }
 
         if key.channelID == selectedChannelID {
-            replaceSelectedMessages(with: updating(messages))
+            let updated = updating(messages)
+            if updated != messages { replaceSelectedMessages(with: updated) }
         } else if var cached = messageCache[key.channelID] {
             cached = updating(cached)
             messageCache[key.channelID] = cached
@@ -322,31 +422,34 @@ extension AppModel {
         if let message = inbox.retainedMessages.first(where: { $0.id == key.messageID }) {
             reconcileInboxMessage(updating(message))
         }
+    }
 
-        guard let forumIndex = forumCatalogueIndexByID[key.channelID] else { return }
-        var forumPost = forumCataloguePosts[forumIndex]
-        if let firstMessage = forumPost.firstMessage {
-            forumPost.firstMessage = updating(firstMessage)
-        }
-        if let mostRecentMessage = forumPost.mostRecentMessage {
-            forumPost.mostRecentMessage = updating(mostRecentMessage)
-        }
-        guard forumPost != forumCataloguePosts[forumIndex] else { return }
-        forumCataloguePosts[forumIndex] = forumPost
-        updateForumPresentation(with: forumPost)
+    func resetReactionReactorLoads() {
+        for task in reactionReactorLoadTasks.values { task.cancel() }
+        reactionReactorLoadTasks = [:]
+        reactionReactorLoadIDs = [:]
+        loadedReactionReactorPreviews = [:]
+        failedReactionReactorLoads = [:]
     }
 
     func clearReactionReactorLoadState(
         channelID: ChannelID,
         messageID: MessageID
     ) {
-        loadingReactionReactors = Set(
-            loadingReactionReactors.filter {
-                $0.channelID != channelID || $0.messageID != messageID
-            })
-        failedReactionReactorLoads = failedReactionReactorLoads.filter {
-            $0.key.channelID != channelID || $0.key.messageID != messageID
+        invalidateReactionReactorPreviews(channelID: channelID, messageID: messageID)
+    }
+
+    private func invalidateReactionReactorPreviews(channelID: ChannelID, messageID: MessageID, reactionID: String? = nil) {
+        func matches(_ key: ReactionReactorLoadKey) -> Bool {
+            key.channelID == channelID && key.messageID == messageID
+                && (reactionID == nil || key.reactionID == reactionID)
         }
+        for key in reactionReactorLoadTasks.keys
+        where matches(key) {
+            reactionReactorLoadTasks[key]?.cancel()
+        }
+        loadedReactionReactorPreviews = loadedReactionReactorPreviews.filter { !matches($0.key) }
+        failedReactionReactorLoads = failedReactionReactorLoads.filter { !matches($0.key) }
     }
 
     func clearReactionMutationState(
@@ -378,6 +481,11 @@ extension AppModel {
         _ update: MessageReactionUpdate,
         persistsResult: Bool = true
     ) {
+        // A count can return to an earlier value after removals and additions.
+        // Its previous short response no longer describes the current users.
+        invalidateReactionReactorPreviews(
+            channelID: update.channelID, messageID: update.messageID, reactionID: update.reactionID
+        )
         let currentUserID = snapshot?.currentUser.id
         let reactor: ReactionReactor? =
             switch update {
@@ -479,6 +587,7 @@ extension AppModel {
         if persistsResult, let messageToPersist {
             recordAuthoritativeMessageUpsert(messageToPersist)
         }
+        NotificationCenter.default.post(name: .sakuracordMessageReactionDidChange, object: self, userInfo: ["update": update])
     }
 
 }

@@ -9,8 +9,6 @@ struct FriendsActionPresentation: ViewModifier {
         let joinsVoice = model.ignoredUsers.voiceConfirmation != nil
         let warningChannel = model.ignoredUsers.voiceWarning
         content
-        .modifier(HumanCaptchaPresentation(store: friends.captcha))
-        .onDisappear { friends.captcha.cancel() }
         .onChange(of: model.selectedChannel, initial: true) { model.reconcileIgnoredGroupWarning() }
         .onChange(of: model.ignoredUsers.ignoredUserIDs) { model.reconcileIgnoredGroupWarning() }
         .alert("An ignored account is in this group", isPresented: Binding(
@@ -58,6 +56,14 @@ struct FriendsActionPresentation: ViewModifier {
             }
         } message: {
             Text(joinsVoice ? "You may hear or see them if you join." : "You may hear or see them while you’re in this call.")
+        }
+        .alert(
+            "Friend request failed",
+            isPresented: Binding(get: { friends.requestFailure != nil }, set: { if !$0 { friends.requestFailure = nil } })
+        ) {
+            Button("OK", role: .cancel) { friends.requestFailure = nil }
+        } message: {
+            Text(friends.requestFailure ?? "")
         }
         .alert(
             "Something went wrong",

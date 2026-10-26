@@ -9,6 +9,7 @@ struct ServerRailContainer: View {
     let model: AppModel
     let sidebarWidth: CGFloat
     @State private var folderSettings: GuildFolder?
+    @State private var readAllConfirmationSession: AppModelAccountSession?
 
     var body: some View {
         @Bindable var invites = model.serverInvites
@@ -21,6 +22,10 @@ struct ServerRailContainer: View {
             selectDirectMessage: { model.navigate(to: $0) },
             selectGuild: model.selectGuild,
             joinServer: { invites.showsJoinDialog = true },
+            showsReadAllButton: model.featuresSettings.readAllButton,
+            isReadingAll: model.isMarkingAllServersRead,
+            hasUnreadServers: { model.hasUnreadServers },
+            readAll: { readAllConfirmationSession = model.accountSession() },
             moveItems: model.moveServerRailItems,
             combineGuilds: model.combineServerRailGuild,
             contextMenuActions: ServerRailContextMenuActions(
@@ -65,11 +70,22 @@ struct ServerRailContainer: View {
             }
         }
         .windowModal(isPresented: $invites.showsJoinDialog, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular,
-                     isConcealed: { model.serverInvites.captcha.challenge != nil }, content: { JoinServerView(model: model) })
+                     isConcealed: { model.captcha.challenge != nil }, content: { JoinServerView(model: model) })
         .windowModal(item: Bindable(invites.creation).presentation, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             ServerInviteCreationView(model: model, presentation: $0)
         }
-        .modifier(HumanCaptchaPresentation(store: invites.captcha))
+        .alert("Mark All Servers as Read?",
+               isPresented: Binding(get: { readAllConfirmationSession != nil },
+                                    set: { if !$0 { readAllConfirmationSession = nil } }),
+               presenting: readAllConfirmationSession) { session in
+            Button("Mark All as Read") {
+                guard model.isCurrentAccountSession(session) else { return }
+                model.markAllServersRead()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This will mark unread channels and joined threads in all servers as read, including muted channels.")
+        }
         .alert("Leave \(invites.leaveConfirmation?.name ?? "Server")?",
                isPresented: Binding(get: { invites.leaveConfirmation != nil },
                                     set: { if !$0 { invites.leaveConfirmation = nil } }),
@@ -101,9 +117,16 @@ struct ServerRailView: View {
     let selectDirectMessage: (ChannelID) -> Void
     let selectGuild: (GuildID?) -> Void
     var joinServer: () -> Void = {}
+    var showsReadAllButton = false
+    var isReadingAll = false
+    var hasUnreadServers: () -> Bool = { false }
+    var readAll: () -> Void = {}
     var moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void = { _, _ in }
     var combineGuilds: (GuildID, GuildID) -> Void = { _, _ in }
     let contextMenuActions: ServerRailContextMenuActions
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var folderLayoutRevision = 0
     @State private var drag = ServerRailDragController()
 
@@ -122,40 +145,29 @@ struct ServerRailView: View {
                     DirectMessageRailButton(entry: entry) {
                         selectDirectMessage(entry.id)
                     }
-                }
-
-                Divider().padding(.horizontal, InterfaceScale.metric(12))
-
-                ForEach(items) { item in
-                    ServerRailItemView(
-                        item: item,
-                        selectGuild: selectDraggableGuild,
-                        contextMenuActions: contextMenuActions,
-                        folderExpansionChanged: {
-                            folderLayoutRevision &+= 1
-                        }
-                    )
-                    // Keep native images and their clipping shapes together as
-                    // a preceding folder changes the row's position.
                     .geometryGroup()
+                    .transition(ServerRailAnimations.membershipTransition)
                 }
-                Button(action: joinServer) {
-                    Image(systemName: "plus").font(.interfaceSystem(size: 22, weight: .medium))
-                        .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
-                        .foregroundStyle(.green)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: InterfaceScale.metric(13)))
-                        .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+
+                VStack(spacing: InterfaceScale.metric(showsReadAllButton ? ReadAllServersButton.verticalPadding : 10)) {
+                    Divider().padding(.horizontal, InterfaceScale.metric(12))
+                    if showsReadAllButton {
+                        ReadAllServersButton(isReadingAll: isReadingAll, hasUnreadServers: hasUnreadServers, action: readAll)
+                    }
+                    if !items.isEmpty { serverItems }
                 }
-                .buttonStyle(ServerRailButtonStyle())
-                .help("Add a Server")
-                .accessibilityLabel("Add a Server")
-                .accessibilityIdentifier("add-server")
+                AddServerRailButton(action: joinServer)
             }
             .padding(.bottom, InterfaceScale.metric(12))
-            .animation(ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
+            .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: directMessages.map(\.id))
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
         }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
+        // Scrolled icons must not draw beneath the window's traffic lights.
+        .scrollEdgeEffectStyle(.hard, for: .top)
         .background {
             ScrollInputPerformanceProbeAttachment(surface: .serverList)
                 .allowsHitTesting(false)
@@ -204,6 +216,12 @@ struct ServerRailView: View {
         }
         .zIndex(200)
         .environment(drag)
+        .transaction { transaction in
+            if reduceMotion {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
         .onAppear {
             drag.perform = { id, target in
                 switch target {
@@ -215,6 +233,32 @@ struct ServerRailView: View {
                     if case .guild(let source) = id { combineGuilds(source, target) }
                 }
             }
+        }
+    }
+
+    private var serverItems: some View {
+        VStack(spacing: InterfaceScale.metric(10)) {
+            ForEach(items) { item in
+                ServerRailItemView(
+                    item: item,
+                    selectGuild: selectDraggableGuild,
+                    contextMenuActions: contextMenuActions,
+                    folderExpansionChanged: {
+                        folderLayoutRevision &+= 1
+                    }
+                )
+                // Keep native images and their clipping shapes together as
+                // a preceding folder changes the row's position.
+                .geometryGroup()
+                .transition(ServerRailAnimations.membershipTransition)
+            }
+        }
+    }
+
+    // Observe folder membership, without observing per-guild unread or selection updates.
+    private var folderGuildIDs: [[GuildID]] {
+        items.compactMap { item in
+            if case .folder(let entry) = item { entry.guildEntries.map(\.id) } else { nil }
         }
     }
 
@@ -260,6 +304,38 @@ struct ServerRailView: View {
     }
 }
 
+private struct ReadAllServersButton: View {
+    static let verticalPadding: CGFloat = 3
+
+    let isReadingAll: Bool
+    // Observe unread state here so incoming read updates do not rebuild the whole rail.
+    let hasUnreadServers: () -> Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        let isEnabled = !isReadingAll && hasUnreadServers()
+        let showsHover = isEnabled && isHovering
+        Button(action: action) {
+            Text("Read All")
+                .font(.interfaceSystem(size: 12, weight: .medium))
+                .foregroundStyle(isEnabled ? Color.primary.opacity(showsHover ? 1 : 0.8) : Color.secondary.opacity(0.5))
+                .padding(.vertical, InterfaceScale.metric(Self.verticalPadding))
+                .frame(width: ChatChromeMetrics.serverRailWidth)
+                .overlay(alignment: .leading) {
+                    ServerRailSelectionIndicator(isSelected: false, isHovering: showsHover, hasNotification: false)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .onModalHover { isHovering = $0 }
+        .accessibilityIdentifier("read-all-servers")
+    }
+}
+
 private struct DirectMessageRailButton: View {
     let entry: ServerRailDirectMessageEntry
     let action: () -> Void
@@ -269,13 +345,13 @@ private struct DirectMessageRailButton: View {
         let channel = entry.channel
         let displayName = channel.name.isEmpty ? "Group Direct Message" : channel.name
 
-        HStack(spacing: InterfaceScale.metric(4)) {
-            ServerRailSelectionIndicator(
-                isSelected: entry.isSelected,
-                isHovering: isHovering,
-                hasNotification: true
-            )
-            Button(action: action) {
+        Button(action: action) {
+            HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailSelectionIndicator(
+                    isSelected: entry.isSelected,
+                    isHovering: isHovering,
+                    hasNotification: true
+                )
                 ServerRailBadgedIcon(mentionCount: channel.mentionCount) {
                     DirectMessageAvatar(
                         channel: channel,
@@ -287,17 +363,17 @@ private struct DirectMessageRailButton: View {
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
                 }
             }
-            .buttonStyle(ServerRailButtonStyle())
-            .accessibilityLabel(displayName)
-            .accessibilityValue(
-                channel.mentionCount > 0
-                    ? "\(channel.mentionCount) unread mentions"
-                    : "Unread"
-            )
-            .help(displayName)
+            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
+            .contentShape(Rectangle())
         }
-        .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-        .contentShape(Rectangle())
+        .buttonStyle(ServerRailButtonStyle())
+        .accessibilityLabel(displayName)
+        .accessibilityValue(
+            channel.mentionCount > 0
+                ? "\(channel.mentionCount) unread mentions"
+                : "Unread"
+        )
+        .help(displayName)
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
@@ -424,6 +500,7 @@ struct ServerRailGuildItemView: View {
 enum ServerRailAnimations {
     static let folderExpansion = Animation.spring(duration: 0.38, bounce: 0)
     static let reorder = Animation.snappy(duration: 0.28)
+    static let membershipTransition = AnyTransition.scale(scale: 0.7).combined(with: .opacity)
 }
 
 struct GuildRailButton: View {
@@ -433,7 +510,9 @@ struct GuildRailButton: View {
     var loadsImageWhenOffscreen = false
     var morphsInFolder = false
     let action: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @Environment(ServerRailDragController.self) private var drag
     @Environment(\.serverRailIsDragPreview) private var isDragPreview
     @Environment(\.serverRailFolderIndicatorsInOverlay) private var folderIndicatorsInOverlay
@@ -445,15 +524,15 @@ struct GuildRailButton: View {
         let displayName = guild.name.isEmpty ? "Unnamed Server" : guild.name
         let hidesIndicator = isDragPreview || drag.draggedID == .guild(guild.id) || drag.flight?.id == .guild(guild.id)
 
-        HStack(spacing: InterfaceScale.metric(4)) {
-            ServerRailSelectionIndicator(
-                isSelected: isSelected,
-                isHovering: isHovering,
-                hasNotification: guild.unreadCount > 0
-            )
-            .opacity(hidesIndicator || folderIndicatorsInOverlay ? 0 : 1)
-            .animation(.easeOut(duration: 0.12), value: hidesIndicator)
-            Button(action: action) {
+        Button(action: action) {
+            HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailSelectionIndicator(
+                    isSelected: isSelected,
+                    isHovering: isHovering,
+                    hasNotification: guild.unreadCount > 0
+                )
+                .opacity(hidesIndicator || folderIndicatorsInOverlay ? 0 : 1)
+                .animation(.easeOut(duration: 0.12), value: hidesIndicator)
                 ServerRailBadgedIcon(mentionCount: guild.mentionCount) {
                     GuildIconView(
                         name: displayName,
@@ -475,47 +554,47 @@ struct GuildRailButton: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(ServerRailButtonStyle())
-            .overlay {
-                ServerContextMenuBridge(
-                    isUnread: guild.unreadCount > 0,
-                    isMutationPending:
-                        presentation.isNotificationMutationPending,
-                    notificationSettings: presentation.notificationSettings,
-                    markRead: { contextMenuActions.markRead(guild.id) },
-                    canInvite: { contextMenuActions.canInvite(guild) },
-                    invite: { contextMenuActions.invite(guild) },
-                    mute: { contextMenuActions.mute(guild, $0) },
-                    unmute: { contextMenuActions.unmute(guild) },
-                    setNotificationLevel: {
-                        contextMenuActions.setNotificationLevel(guild, $0)
-                    },
-                    setNotificationToggle: { toggle, isEnabled in
-                        contextMenuActions.setNotificationToggle(
-                            guild,
-                            toggle,
-                            isEnabled
-                        )
-                    },
-                    copyServerID: {
-                        ChannelContextMenuValue.copy(guild.id.description)
-                    },
-                    leaveServer: guild.isOwnedByCurrentUser == false && !guild.isUnavailable
-                        ? { contextMenuActions.leaveServer(guild) } : nil,
-                    showsAllChannels: { contextMenuActions.showsAllChannels(guild) },
-                    setShowsAllChannels: { contextMenuActions.setShowsAllChannels(guild, $0) }
-                )
-            }
-            .accessibilityLabel(displayName)
-            .accessibilityValue(
-                guild.mentionCount > 0
-                    ? "\(guild.mentionCount) unread mentions"
-                    : (guild.unreadCount > 0 ? "Unread" : "")
-            )
-            .help(displayName)
+            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
+            .contentShape(Rectangle())
         }
-        .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
-        .contentShape(Rectangle())
+        .buttonStyle(ServerRailButtonStyle())
+        .overlay {
+            ServerContextMenuBridge(
+                isUnread: guild.unreadCount > 0,
+                isMutationPending:
+                    presentation.isNotificationMutationPending,
+                notificationSettings: presentation.notificationSettings,
+                markRead: { contextMenuActions.markRead(guild.id) },
+                canInvite: { contextMenuActions.canInvite(guild) },
+                invite: { contextMenuActions.invite(guild) },
+                mute: { contextMenuActions.mute(guild, $0) },
+                unmute: { contextMenuActions.unmute(guild) },
+                setNotificationLevel: {
+                    contextMenuActions.setNotificationLevel(guild, $0)
+                },
+                setNotificationToggle: { toggle, isEnabled in
+                    contextMenuActions.setNotificationToggle(
+                        guild,
+                        toggle,
+                        isEnabled
+                    )
+                },
+                copyServerID: {
+                    ChannelContextMenuValue.copy(guild.id.description)
+                },
+                leaveServer: guild.isOwnedByCurrentUser == false && !guild.isUnavailable
+                    ? { contextMenuActions.leaveServer(guild) } : nil,
+                showsAllChannels: { contextMenuActions.showsAllChannels(guild) },
+                setShowsAllChannels: { contextMenuActions.setShowsAllChannels(guild, $0) }
+            )
+        }
+        .accessibilityLabel(displayName)
+        .accessibilityValue(
+            guild.mentionCount > 0
+                ? "\(guild.mentionCount) unread mentions"
+                : (guild.unreadCount > 0 ? "Unread" : "")
+        )
+        .help(displayName)
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
@@ -564,13 +643,13 @@ private struct HomeRailButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: InterfaceScale.metric(4)) {
-            ServerRailSelectionIndicator(
-                isSelected: home.isSelected,
-                isHovering: isHovering,
-                hasNotification: false
-            )
-            Button(action: action) {
+        Button(action: action) {
+            HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailSelectionIndicator(
+                    isSelected: home.isSelected,
+                    isHovering: isHovering,
+                    hasNotification: false
+                )
                 Image(systemName: "message.fill")
                     .font(.interface(.title2))
                     .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
@@ -582,11 +661,11 @@ private struct HomeRailButton: View {
                     )
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
-            .buttonStyle(ServerRailButtonStyle())
-            .accessibilityLabel("Direct Messages")
+            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
-        .contentShape(Rectangle())
+        .buttonStyle(ServerRailButtonStyle())
+        .accessibilityLabel("Direct Messages")
         .onModalHover { isHovering = $0 }
         .help("Direct Messages")
     }
@@ -599,7 +678,9 @@ struct ServerRailSelectionIndicator: View {
     var isVisible = true
     var animatesStateChanges = true
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
 
     var body: some View {
         ServerRailIndicatorShape(

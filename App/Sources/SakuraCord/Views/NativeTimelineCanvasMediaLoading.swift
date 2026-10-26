@@ -116,7 +116,8 @@ extension NativeTimelineCanvasView {
                 {
                     let key = ReactionPreviewLoadKey(
                         messageID: row.message.id,
-                        reactionID: reaction.id
+                        reactionID: reaction.id,
+                        count: reaction.count
                     )
                     desired[key] = (reaction, row.message)
                 }
@@ -454,8 +455,10 @@ extension NativeTimelineCanvasView {
                     keys.append(.avatar(url))
                 }
             }
-            if !region.mediaIsVideo,
-               let url = region.mediaURL
+            if TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
+                mediaIsVideo: region.mediaIsVideo,
+                autoplaysInline: region.mediaAutoplaysInline
+            ), let url = region.mediaPreviewURL ?? (region.mediaIsVideo ? nil : region.mediaURL)
             {
                 keys.append(.media(url))
             }

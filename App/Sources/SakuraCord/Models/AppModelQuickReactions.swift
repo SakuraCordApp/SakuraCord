@@ -2,6 +2,12 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    /// Timeout disables both adding and removing existing reactions, even
+    /// though joining an existing reaction normally needs no ADD_REACTIONS.
+    func canUpdateReactions(on message: Message) -> Bool {
+        guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
+    }
+
     /// Whether new reactions can be created on this message.
     func canCreateReactions(on message: Message) -> Bool {
         reactionCreationContext(for: message) != nil
@@ -20,7 +26,7 @@ extension AppModel {
             existingReactions: message.reactions,
             context: QuickReactionPolicy.Context(
                 guildID: context.channel.guildID,
-                premiumType: snapshot?.currentUser.premiumType ?? 0,
+                premiumType: currentUser?.premiumType ?? 0,
                 canUseExternalEmojis: context.permissions & DiscordPermissionBits.useExternalEmojis != 0,
                 roleIDsByGuild: currentUserRoleIDsByGuild,
                 skinTone: .preferred

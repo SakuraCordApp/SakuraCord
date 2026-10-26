@@ -566,21 +566,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-## Appearance preview images
-
-The bundled message preview includes photographs used under the
-[Unsplash License](https://unsplash.com/license):
-
-- Alpine lake: [Maximilian Brand](https://unsplash.com/photos/alpine-lake-nestled-among-rocky-mountains-and-lush-green-slopes-ErDfDKwcAnw).
-- Los Angeles skyline: [Jesus Curiel](https://unsplash.com/photos/city-skyline-during-night-time-9EwAsDDVnog).
-
-The avatar photographs are cropped for circular display and also use the
-Unsplash License:
-
-- Maya's cat: [Ama Journey](https://unsplash.com/photos/a-close-up-portrait-of-a-cats-face-iybhVG5rmXE).
-- Theo's dog: [Victor G](https://unsplash.com/photos/golden-retriever-x5oPmHmY3kQ).
-- Your cat: [Francesca Fabian](https://unsplash.com/photos/a-close-up-of-a-fluffy-white-cats-face-YFPzoHvWjBk).
-
 ## quantize.js
 
 The profile avatar palette ports the modified median cut algorithm from

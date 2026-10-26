@@ -2,7 +2,7 @@ import MediaPipeline
 
 extension AppModel {
     var allowsEnhancedStreamQuality: Bool {
-        let premiumType = snapshot?.currentUser.premiumType ?? 0
+        let premiumType = currentUser?.premiumType ?? 0
         return featuresSettings.fakeNitroStreamQuality || premiumType == 1 || premiumType == 2
     }
 

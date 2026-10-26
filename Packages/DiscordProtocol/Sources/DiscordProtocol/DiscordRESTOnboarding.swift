@@ -14,7 +14,10 @@ public extension DiscordRESTProvider {
         // Bypass the normal member cache. Completion requires a fresh server flag,
         // including when a Gateway event raced the HTTP response or was missed.
         let members = try await requestMemberBatch([userID], guildID: guildID)
-        guard let member = members.first(where: { $0.id == userID }) else {
+        // Chunk dispatch has already merged the response. A newer membership
+        // event can run before this continuation resumes, so publish that store.
+        guard members.contains(where: { $0.id == userID }),
+              let member = cachedMemberIndex(guildID: guildID)[userID] else {
             throw ChatProviderError.invalidRequest("Discord has not confirmed your server membership. Reconnect and try again.")
         }
         if cachedGuilds[guildID]?.features.contains("GUILD_ONBOARDING") == true, member.flags == nil {

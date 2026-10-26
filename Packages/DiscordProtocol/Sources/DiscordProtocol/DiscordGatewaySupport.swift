@@ -1228,6 +1228,7 @@ struct ReadyMergedMemberDTO: Decodable {
     var avatarDecorationData: UserDTO.AvatarDecorationDTO?
     var collectibles: UserCollectiblesDTO?
     var displayNameStyles: UserDTO.DisplayNameStyleDTO?
+    var includesCommunicationDisabledUntil = true
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
@@ -1254,8 +1255,30 @@ struct ReadyMergedMemberDTO: Decodable {
             joinedAt: joinedAt,
             avatarDecorationData: avatarDecorationData,
             collectibles: collectibles,
-            displayNameStyles: displayNameStyles
+            displayNameStyles: displayNameStyles,
+            includesCommunicationDisabledUntil: includesCommunicationDisabledUntil
         )
+    }
+}
+
+extension ReadyMergedMemberDTO {
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        userID = try values.decode(String.self, forKey: .userID)
+        nick = try values.decodeIfPresent(String.self, forKey: .nick)
+        roles = try values.decodeIfPresent([String].self, forKey: .roles)
+        presence = try values.decodeIfPresent(GuildPresenceDTO.self, forKey: .presence)
+        avatar = try values.decodeIfPresent(String.self, forKey: .avatar)
+        banner = try values.decodeIfPresent(String.self, forKey: .banner)
+        bio = try values.decodeIfPresent(String.self, forKey: .bio)
+        pending = try values.decodeIfPresent(Bool.self, forKey: .pending)
+        flags = try values.decodeIfPresent(UInt64.self, forKey: .flags)
+        communicationDisabledUntil = try values.decodeIfPresent(String.self, forKey: .communicationDisabledUntil)
+        joinedAt = try values.decodeIfPresent(String.self, forKey: .joinedAt)
+        avatarDecorationData = try values.decodeIfPresent(UserDTO.AvatarDecorationDTO.self, forKey: .avatarDecorationData)
+        collectibles = try values.decodeIfPresent(UserCollectiblesDTO.self, forKey: .collectibles)
+        displayNameStyles = try values.decodeIfPresent(UserDTO.DisplayNameStyleDTO.self, forKey: .displayNameStyles)
+        includesCommunicationDisabledUntil = values.contains(.communicationDisabledUntil)
     }
 }
 
@@ -1333,7 +1356,6 @@ struct GatewayMessageAckDTO: Decodable {
 
 struct GatewayThreadListSyncDTO: Decodable {
     var guildID: String
-    var channelIDs: [String]
     var threads: [ChannelDTO]
     var members: [ThreadMemberDTO]
     /// Each synced thread's latest message, shown in its timeline card.
@@ -1341,7 +1363,6 @@ struct GatewayThreadListSyncDTO: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
-        case channelIDs = "channel_ids"
         case threads, members
         case mostRecentMessages = "most_recent_messages"
     }
@@ -1349,7 +1370,6 @@ struct GatewayThreadListSyncDTO: Decodable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         guildID = try values.decode(String.self, forKey: .guildID)
-        channelIDs = try values.decodeIfPresent([String].self, forKey: .channelIDs) ?? []
         threads =
             try values.decodeIfPresent(
                 LossyList<ChannelDTO>.self, forKey: .threads

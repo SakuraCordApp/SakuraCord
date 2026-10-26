@@ -1273,7 +1273,7 @@ extension NativeMessageTimelineCoordinator {
     ) -> (Int, NativeTimelineSendTransitionStore.Pending)? {
         guard parent.model.animatesMessageSending else { return nil }
         let store = parent.model.timelineSendTransitionStore
-        let currentUserID = parent.model.snapshot?.currentUser.id
+        let currentUserID = parent.model.currentUser?.id
         for index in items.indices.reversed().prefix(3) {
             // A fast confirmation can replace the optimistic row before this
             // update, so recognise this client's send by its nonce.

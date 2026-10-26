@@ -624,6 +624,9 @@ extension NativeMemberListCanvasView {
                     .map(Self.color(hex:)) ?? labelColor
                 : labelColor
             let alpha = presentation.opacity(for: member)
+            let activityColor = presentation.activityTextPrimaryOpacity.map {
+                labelColor.withAlphaComponent(alpha * $0)
+            } ?? Self.memberActivityColor.withAlphaComponent(alpha)
             let name = Self.line(
                 member.user.displayName,
                 font: nameFont,
@@ -634,7 +637,7 @@ extension NativeMemberListCanvasView {
                 return NativeMemberActivityPresentation.line(
                     text,
                     font: activityFont,
-                    color: Self.memberActivityColor.withAlphaComponent(alpha),
+                    color: activityColor,
                     showsMusicIcon: member.isListeningToMusic,
                     showsMusicSeparator: member.memberListShowsMusicSeparator
                 )
@@ -643,7 +646,7 @@ extension NativeMemberListCanvasView {
                 Self.line(
                     "…",
                     font: activityFont,
-                    color: Self.memberActivityColor.withAlphaComponent(alpha)
+                    color: activityColor
                 )
             }
             preparedText[item.id] = PreparedText(

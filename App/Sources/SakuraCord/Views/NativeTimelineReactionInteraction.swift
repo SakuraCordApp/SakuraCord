@@ -35,7 +35,8 @@ extension NativeTimelineCanvasView {
                 frame: region.frame.offsetBy(dx: 0, dy: rowOrigin)
             )
         case .add:
-            guard let frame = layout.addReactionFrame else { return nil }
+            guard model?.canCreateReactions(on: row.message) == true,
+                  let frame = layout.addReactionFrame else { return nil }
             return ReactionPointerHit(
                 target: .add(messageID: row.id),
                 rowIndex: index,
@@ -70,7 +71,8 @@ extension NativeTimelineCanvasView {
                 frame: region.frame.offsetBy(dx: 0, dy: rowOrigin)
             )
         case .add:
-            guard let frame = layouts[index].addReactionFrame else {
+            guard model?.canCreateReactions(on: row.message) == true,
+                  let frame = layouts[index].addReactionFrame else {
                 return nil
             }
             return ReactionPointerHit(
@@ -145,7 +147,7 @@ extension NativeTimelineCanvasView {
         var counts: [ReactionCountKey: Int] = [:]
         var visibleMessageIDs: Set<MessageID> = []
         let reducesMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            !AppMotionPolicy.animatesUncategorized
 
         while items.indices.contains(index),
               displayedRowOrigin(at: index) < visibleRect.maxY
@@ -225,7 +227,13 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         reaction: Reaction
     ) {
-        guard layouts.indices.contains(rowIndex),
+        // Remove the previous host even when the replacement needs no animation.
+        reactionCountAnimationTasks.removeValue(forKey: key)?.cancel()
+        reactionCountAnimationHosts.removeValue(forKey: key)?.removeFromSuperview()
+
+        // A newly added reaction shows its first count immediately.
+        guard !(from == 0 && to == 1),
+              layouts.indices.contains(rowIndex),
               let region = layouts[rowIndex].reactionRegions.first(where: {
                   $0.reaction.id == reaction.id
               }),
@@ -234,10 +242,6 @@ extension NativeTimelineCanvasView {
             activeReactionCountAnimations[key] = nil
             return
         }
-
-        reactionCountAnimationTasks[key]?.cancel()
-        reactionCountAnimationTasks[key] = nil
-        reactionCountAnimationHosts[key]?.removeFromSuperview()
 
         let color: NSColor = reaction.didCurrentUserReact
             ? .sakuraCordAccentColor

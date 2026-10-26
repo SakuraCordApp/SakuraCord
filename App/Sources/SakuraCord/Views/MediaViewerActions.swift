@@ -29,6 +29,7 @@ enum MediaViewerActionService {
         _ item: RichMediaItem,
         to saveDestination: MediaSaveDestination
     ) async throws -> URL? {
+        guard item.canSave else { return nil }
         let settings = StorageDownloadsSettingsStore.shared.load()
         var accessedFolder: URL?
         defer { accessedFolder?.stopAccessingSecurityScopedResource() }
@@ -209,7 +210,7 @@ nonisolated enum MediaViewerDetails {
         switch item.kind {
         case let .image(animated):
             animated ? "Animated image" : "Image"
-        case .video:
+        case .video, .youtube:
             "Video"
         case .audio:
             "Audio"

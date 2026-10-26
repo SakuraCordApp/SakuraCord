@@ -9,8 +9,8 @@ enum MessageRowLayoutMetrics {
     nonisolated static var avatarColumnGap: CGFloat { InterfaceScale.metric(12) }
     nonisolated static var compactContentHeight: CGFloat { InterfaceScale.metric(18) }
     nonisolated static var authorLineHeight: CGFloat { InterfaceScale.metric(16) }
-    nonisolated static var authorContentSpacing: CGFloat { InterfaceScale.metric(4) }
-    nonisolated static var commandAuthorContentSpacing: CGFloat { InterfaceScale.metric(2) }
+    nonisolated static var authorContentSpacing: CGFloat { InterfaceScale.metric(2) }
+    nonisolated static var commandAuthorContentSpacing: CGFloat { InterfaceScale.metric(0) }
     nonisolated static var messageGroupSeparation: CGFloat { InterfaceScale.metric(12) }
     // Message density is set in points and is independent of interface size.
     nonisolated static let visibleHighlightInset: CGFloat = 3
@@ -229,6 +229,22 @@ nonisolated enum MessageOutboxPresentation {
         }
     }
 
+    static func failureText(for message: Message) -> String {
+        guard message.outboxState == .failed,
+              case let .autoModeration(explanation) = message.sendFailure
+        else { return "Failed" }
+        let detail = explanation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return detail.isEmpty ? "This message was blocked by AutoMod." : detail
+    }
+
+    static func accessibilityStatus(for message: Message) -> String {
+        guard message.outboxState == .failed,
+              case let .autoModeration(explanation) = message.sendFailure
+        else { return accessibilityStatus(for: message.outboxState) }
+        let detail = explanation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return detail.isEmpty ? "Blocked by AutoMod" : "Blocked by AutoMod. \(detail)"
+    }
+
     static func accessibilityStatus(for state: OutboxState) -> String {
         switch state {
         case .queued, .uploading, .sending:
@@ -274,7 +290,9 @@ struct NativeTimelineEditingMessageContent: View {
             InlineMessageEditor(
                 model: model,
                 text: $editText,
+                canEdit: model.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil,
                 save: {
+                    guard model.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil else { return }
                     guard let value = MessageEditInputPolicy.submission(
                         from: editText
                     ) else {
@@ -299,17 +317,20 @@ struct NativeTimelineEditingMessageContent: View {
                         )
                     },
                     addReactionControl: {
-                    ReactionActionMenu(
-                        model: model,
-                        guildID: message.guildID,
-                        isPickerPresented:
-                            $isReactionPickerPresented,
-                        presentation: .inline,
-                        react: react
-                    )
-                    .id("reaction-picker-\(message.id)-inline")
+                        if model.canCreateReactions(on: message) {
+                            ReactionActionMenu(
+                                model: model,
+                                guildID: message.guildID,
+                                isPickerPresented:
+                                    $isReactionPickerPresented,
+                                presentation: .inline,
+                                react: react
+                            )
+                            .id("reaction-picker-\(message.id)-inline")
+                        }
                     }
                 )
+                .disabled(!model.canUpdateReactions(on: message))
             }
             if message.flags.contains(.ephemeral) {
                 HStack(spacing: InterfaceScale.metric(4)) {
@@ -332,16 +353,17 @@ struct NativeTimelineEditingMessageContent: View {
             }
             if message.outboxState == .failed {
                 Label(
-                    "Failed",
+                    MessageOutboxPresentation.failureText(for: message),
                     systemImage: "exclamationmark.circle"
                 )
+                .accessibilityLabel(MessageOutboxPresentation.accessibilityStatus(for: message))
                 .font(.interface(.caption2))
                 .foregroundStyle(.red)
             }
         }
         .accessibilityValue(
             MessageOutboxPresentation.accessibilityStatus(
-                for: message.outboxState
+                for: message
             )
         )
     }
@@ -378,6 +400,7 @@ struct MessageActionCapsule: View {
     let message: Message
     let canEdit: Bool
     let canDelete: Bool
+    let canReact: Bool
     let showsQuickReactions: Bool
     let showsShiftActions: Bool
     @Binding var isReactionPickerPresented: Bool
@@ -393,12 +416,14 @@ struct MessageActionCapsule: View {
     let togglePin: (() -> Void)?
     let showMoreActions: () -> Void
     let delete: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+
+    private var reduceMotion: Bool { systemReduceMotion || !model.animates(.overlays) }
 
     var body: some View {
         if message.outboxState == .failed {
             HoverActionPill {
-                if let retry {
+                if message.canRetrySending, let retry {
                     HoverActionButton(
                         systemImage: "arrow.clockwise",
                         help: "Retry send",
@@ -417,13 +442,15 @@ struct MessageActionCapsule: View {
             HoverActionPill(spacing: 0) {
                 leadingActions
                 HStack(spacing: HoverActionPillMetrics.spacing) {
-                    ReactionActionMenu(
-                        model: model,
-                        guildID: message.guildID,
-                        isPickerPresented: $isReactionPickerPresented,
-                        react: react
-                    )
-                    .id("reaction-picker-\(message.id)-toolbar")
+                    if canReact {
+                        ReactionActionMenu(
+                            model: model,
+                            guildID: message.guildID,
+                            isPickerPresented: $isReactionPickerPresented,
+                            react: react
+                        )
+                        .id("reaction-picker-\(message.id)-toolbar")
+                    }
                     if let reply {
                         HoverActionButton(systemImage: "arrowshape.turn.up.left", help: "Reply", action: reply)
                     }
@@ -527,7 +554,7 @@ private struct QuickReactionButton: View {
                 MessageReactionEmoji(
                     reaction: token,
                     url: MessageReactionPresentation.emojiURL(for: token, customEmojiURLsByID: customEmojiURLsByID),
-                    size: InterfaceScale.metric(20)
+                    size: InterfaceScale.metric(18)
                 )
             }
         }
@@ -567,8 +594,14 @@ private struct ReactionActionMenu: View {
             } label: {
                 SakuraCordSystemSymbol.emojiFaceGrinningImage
                     .symbolVariant(.none)
-                    .font(.interface(.callout).weight(.medium))
+                    .font(.system(
+                        size: InterfaceScale.fontSize(
+                            NSFont.preferredFont(forTextStyle: .callout).pointSize + 2
+                        ),
+                        weight: .medium
+                    ))
                     .foregroundStyle(.primary)
+                    .opacity(presentation == .inline ? 0.8 : 1)
                     .frame(width: width, height: height)
                     .contentShape(
                         ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -840,6 +873,7 @@ struct InlineMessageEditorComposerActions {
 private struct InlineMessageEditor: View {
     let model: AppModel
     @Binding var text: String
+    let canEdit: Bool
     let save: () -> Void
     let cancel: () -> Void
     @State private var selection: NSRange?
@@ -877,6 +911,7 @@ private struct InlineMessageEditor: View {
                 selection: $selection,
                 isFocused: $isFocused
             )
+                .disabled(!canEdit)
                 .padding(InterfaceScale.metric(9))
                 .background(
                     Color.primary.opacity(0.065),
@@ -891,7 +926,7 @@ private struct InlineMessageEditor: View {
                 .accessibilityHint("Press Return to save, Shift-Return for a new line, or Escape to cancel.")
                 .onExitCommand(perform: cancel)
             InlineMessageEditFooter(
-                canSave: MessageEditInputPolicy.submission(from: text) != nil,
+                canSave: canEdit && MessageEditInputPolicy.submission(from: text) != nil,
                 save: save,
                 cancel: cancel
             )
@@ -907,7 +942,7 @@ private struct InlineMessageEditor: View {
     }
 
     private var context: ColonAutocompleteContext? {
-        isAutocompleteDismissed ? nil : ColonAutocompleteContext(text: text, selection: selection)
+        !canEdit || isAutocompleteDismissed ? nil : ColonAutocompleteContext(text: text, selection: selection)
     }
 
     private var suggestions: [ColonAutocompleteSuggestion] {

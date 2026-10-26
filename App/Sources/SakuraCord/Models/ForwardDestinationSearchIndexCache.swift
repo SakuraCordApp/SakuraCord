@@ -61,6 +61,7 @@ final class ForwardDestinationSearchIndexCache {
         let selectedGuildID: GuildID?
         let membersByID: [UserID: Member]
         let membersByGuildID: [GuildID: [UserID: Member]]
+        let currentMembersByGuildID: [GuildID: Member]
         let guildRoles: [GuildRole]
         let guildRolesByGuildID: [GuildID: [GuildRole]]
         let currentUserRoleIDsByGuild: [GuildID: Set<RoleID>]
@@ -99,15 +100,7 @@ final class ForwardDestinationSearchIndexCache {
                     unresolvedGuildIDs.insert(guildID)
                     permissionBasis = nil
                 }
-                permissionsByChannelID[channel.id] = permissionBasis.map {
-                    ConversationPermissionResolver.effectivePermissions(
-                        guild: $0.guild,
-                        channel: channel,
-                        resolvedBasePermissions: $0.resolvedBasePermissions,
-                        overwritePrincipals: $0.overwritePrincipals,
-                        hasCurrentRoleIdentity: $0.hasCurrentRoleIdentity
-                    )
-                } ?? nil
+                permissionsByChannelID[channel.id] = permissionBasis.flatMap { permissions(for: channel, basis: $0) }
             }
             let searchableChannelIDs = Set(
                 channels.lazy.filter { channel in
@@ -170,6 +163,14 @@ final class ForwardDestinationSearchIndexCache {
             )
         }
 
+        private func permissions(for channel: Channel, basis: ConversationPermissionBasis) -> UInt64? {
+            ConversationPermissionResolver.effectivePermissions(
+                guild: basis.guild, channel: channel, resolvedBasePermissions: basis.resolvedBasePermissions,
+                overwritePrincipals: basis.overwritePrincipals, hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
+                communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
+            )
+        }
+
         private func makePermissionBasis(
             for guildID: GuildID,
             currentUserID: UserID?
@@ -177,7 +178,7 @@ final class ForwardDestinationSearchIndexCache {
             guard let guild = serverRailGuildsByID[guildID],
                   let currentUserID
             else { return nil }
-            let member = membersByGuildID[guildID]?[currentUserID]
+            let member = currentMembersByGuildID[guildID] ?? membersByGuildID[guildID]?[currentUserID]
                 ?? (guildID == selectedGuildID ? membersByID[currentUserID] : nil)
             let roles = guildRolesByGuildID[guildID]
                 ?? (guildID == selectedGuildID ? guildRoles : [])
@@ -198,6 +199,7 @@ final class ForwardDestinationSearchIndexCache {
                 ),
                 hasCurrentRoleIdentity: storedRoleIDs != nil || member != nil,
                 currentUserIsPending: member?.isPending == true,
+                currentUserCommunicationDisabledUntil: member?.communicationDisabledUntil,
                 currentUserRequiresOnboarding: guild.features.contains("GUILD_ONBOARDING") && member?.requiresOnboarding == true,
                 currentUserOnboardingIsKnown: !guild.features.contains("GUILD_ONBOARDING") || member?.flags != nil
             )
@@ -408,6 +410,7 @@ final class ForwardDestinationSearchIndexCache {
             selectedGuildID: model.selectedGuildID,
             membersByID: model.membersByID,
             membersByGuildID: model.membersByGuildID,
+            currentMembersByGuildID: model.onboarding.members,
             guildRoles: model.guildRoles,
             guildRolesByGuildID: model.guildRolesByGuildID,
             currentUserRoleIDsByGuild: model.currentUserRoleIDsByGuild,

@@ -133,7 +133,7 @@ extension AppModel {
 
     func canComposeEmoji(_ emoji: DiscordEmoji) -> Bool {
         featuresSettings.fakeNitroEmojis
-            || DiscordEmojiPermissionPolicy.hasNitro(premiumType: snapshot?.currentUser.premiumType ?? 0)
+            || DiscordEmojiPermissionPolicy.hasNitro(premiumType: currentUser?.premiumType ?? 0)
             || (!emoji.isAnimated && emoji.guildID == selectedGuildID)
     }
 

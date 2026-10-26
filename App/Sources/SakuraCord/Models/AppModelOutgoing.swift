@@ -216,7 +216,8 @@ extension AppModel {
 
     @discardableResult
     func retrySending(_ message: Message) async -> Bool {
-        guard message.outboxState == .failed,
+        guard message.canRetrySending,
+              retainedMessage(channelID: message.channelID, messageID: message.id)?.canRetrySending == true,
               let nonce = message.nonce,
               outgoingState(nonce: nonce, channelID: message.channelID) == .failed,
               let outgoing = composer.outbox.draftsByNonce[nonce]
@@ -248,6 +249,10 @@ extension AppModel {
         completesReading: Bool = false,
         prepare: (@MainActor () async -> Bool)? = nil
     ) -> Task<Bool, Never> {
+        // The local row is already in the timeline; show it now rather than
+        // when Discord confirms it. Retries keep the user's position.
+        let advancedLocally = completesReading && !isRetry
+            && advanceTimelineForLocalSend(channelID: outgoing.channelID)
         guard allowOnboardingSubmission(in: outgoing.channelID), allowSlowmodeSubmission(in: outgoing.channelID) else {
             updateOutgoingState(.failed, nonce: outgoing.nonce, channelID: outgoing.channelID)
             return Task { false }
@@ -279,7 +284,7 @@ extension AppModel {
             if let prepare, !(await prepare()) { return false }
             let didSend = await deliverOutgoingSend(outgoing, isRetry: isRetry, session: session)
             if didSend, completesReading {
-                completeConversationReadingAndAdvance(channelID: outgoing.channelID)
+                completeConfirmedSend(channelID: outgoing.channelID, advancedLocally: advancedLocally)
             }
             return didSend
         }
@@ -292,6 +297,10 @@ extension AppModel {
         isRetry: Bool,
         session: AppModelAccountSession
     ) async -> Bool {
+        guard guildTimeoutUntil(in: outgoing.channelID) == nil else {
+            updateOutgoingState(.failed, nonce: outgoing.nonce, channelID: outgoing.channelID)
+            return false
+        }
         let uploadsAttachments = !outgoing.attachmentURLs.isEmpty
         if uploadsAttachments { activeAttachmentUploadCount += 1 }
         defer { if uploadsAttachments { activeAttachmentUploadCount -= 1 } }
@@ -345,7 +354,12 @@ extension AppModel {
             // Keep the draft and nonce for explicit retry or discard; a late
             // Gateway confirmation can still reconcile the failed message.
             let state = OutboxState.failed
-            updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID)
+            let failure: MessageSendFailure? = if case let ChatProviderError.autoModerationBlocked(explanation) = error {
+                .autoModeration(explanation: explanation)
+            } else {
+                nil
+            }
+            updateOutgoingState(state, nonce: outgoing.nonce, channelID: outgoing.channelID, failure: failure)
             let nsError = error as NSError
             Self.messageSendLogger.error(
                 """
@@ -408,6 +422,10 @@ extension AppModel {
             timelineSendTransitionStore.noteLocalSend(nonce: nonce)
         }
         if message.channelID == openThread?.id {
+            // A send is a later intent than a window request in flight.
+            supersedeThreadWindowRequests()
+            // Pending sends keep a row in any window so Retry and Discard
+            // stay available; they sort after the loaded messages.
             var updated = threadMessages
             Self.insert(message, intoSorted: &updated)
             threadMessages = updated

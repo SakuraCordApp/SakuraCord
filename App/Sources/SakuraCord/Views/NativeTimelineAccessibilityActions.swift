@@ -65,7 +65,8 @@ extension NativeTimelineCanvasView {
         let message = row.message
         guard MessageOutboxPresentation.interactionMode(for: message).allowsMessageContextMenu else { return [] }
         let canEdit = !message.hasPoll && !message.flags.contains(.voiceMessage)
-            && message.author.id == model?.snapshot?.currentUser.id
+            && message.author.id == model?.currentUser?.id
+            && model?.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
             && MessageReplyPresentationPolicy.allowsReplyAction(for: message)
         let canDelete = model?.canDeleteMessage(message) == true
         if messageInteractionContext != .conversation {
@@ -73,12 +74,12 @@ extension NativeTimelineCanvasView {
         }
         var result: [NSAccessibilityCustomAction] = []
         if message.outboxState == .failed {
-            result.append(NSAccessibilityCustomAction(
-                name: "Retry Send"
-            ) { [weak self] in
-                self?.actions?.retry(message)
-                return self != nil
-            })
+            if message.canRetrySending {
+                result.append(NSAccessibilityCustomAction(name: "Retry Send") { [weak self] in
+                    self?.actions?.retry(message)
+                    return self != nil
+                })
+            }
             result.append(NSAccessibilityCustomAction(
                 name: "Copy Text"
             ) {
@@ -87,8 +88,12 @@ extension NativeTimelineCanvasView {
             })
             return result
         }
-        result.append(accessibilityReactionAction(for: message))
-        if MessageReplyPresentationPolicy.allowsReplyAction(for: message),
+        if model?.canCreateReactions(on: message) == true { result.append(accessibilityReactionAction(for: message)) }
+        result.append(NSAccessibilityCustomAction(name: "View Reactions") { [weak self] in
+            self?.showMessageReactions(message) ?? false
+        })
+        if model?.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil,
+           MessageReplyPresentationPolicy.allowsReplyAction(for: message),
            let reply = actions?.reply
         {
             result.append(NSAccessibilityCustomAction(name: "Reply") {
@@ -108,7 +113,7 @@ extension NativeTimelineCanvasView {
             self?.actions?.markUnread(message)
             return self != nil
         })
-        if message.outboxState == .confirmed, message.author.id == model?.snapshot?.currentUser.id, message.poll?.isClosed() == false {
+        if message.outboxState == .confirmed, message.author.id == model?.currentUser?.id, message.poll?.isClosed() == false {
             result.append(NSAccessibilityCustomAction(name: "End Poll Now") { [weak self] in
                 self?.requestEndPoll(message)
                 return self != nil
@@ -238,7 +243,7 @@ extension NativeTimelineCanvasView {
         if message.type.hasGeneratedContent {
             return SystemMessagePresentation.label(
                 for: message,
-                currentUserID: model?.snapshot?.currentUser.id,
+                currentUserID: model?.currentUser?.id,
                 recipient: model?.systemMessageRecipient(for: message)
             )
         }

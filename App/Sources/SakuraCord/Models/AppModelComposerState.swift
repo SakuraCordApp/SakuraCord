@@ -21,11 +21,11 @@ extension AppModel {
     }
     var replyMentionsAuthor: Bool {
         composer.replyMentionsAuthorChoice
-            && (replyingTo == nil || replyingTo?.author.id != snapshot?.currentUser.id)
+            && (replyingTo == nil || replyingTo?.author.id != currentUser?.id)
     }
     var threadReplyMentionsAuthor: Bool {
         composer.replyMentionsAuthorChoice
-            && (threadReplyingTo == nil || threadReplyingTo?.author.id != snapshot?.currentUser.id)
+            && (threadReplyingTo == nil || threadReplyingTo?.author.id != currentUser?.id)
     }
     var draft: String {
         get { composer.draft }
@@ -49,6 +49,7 @@ extension AppModel {
     }
 
     func reply(to message: Message) {
+        guard guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil else { return }
         let destination: MessageComposerDestination
         if message.channelID == selectedChannelID {
             replyingTo = message
@@ -140,7 +141,7 @@ extension AppModel {
         case .channel: replyingTo
         case .thread: threadReplyingTo
         }
-        guard let reply, reply.author.id != snapshot?.currentUser.id else { return }
+        guard let reply, reply.author.id != currentUser?.id else { return }
         composer.rememberReplyMentionsAuthor(mentionsAuthor)
     }
 
@@ -227,7 +228,8 @@ extension AppModel {
               generation == localTypingGeneration,
               localTypingChannelID == channelID,
               isActiveChannelDraft || isActiveThreadDraft,
-              connectionState == .ready
+              connectionState == .ready,
+              guildTimeoutUntil(in: channelID) == nil
         else { return }
         localTypingTask = nil
         localTypingChannelID = nil

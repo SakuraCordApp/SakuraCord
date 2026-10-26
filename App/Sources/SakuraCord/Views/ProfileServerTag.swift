@@ -8,9 +8,8 @@ nonisolated enum ServerTagAppearance {
     static var spacing: CGFloat { InterfaceScale.metric(4) }
     static var horizontalPadding: CGFloat { InterfaceScale.metric(5) }
     static var cornerRadius: CGFloat { InterfaceScale.metric(5) }
-    static let backgroundOpacity = 0.025
-    static let highlightedBackgroundOpacity = 0.09
-    static let outlineOpacity = 0.1
+    static let backgroundOpacity = 0.1
+    static let highlightedBackgroundOpacity = 0.15
 }
 
 struct AppIdentityBadge: View {
@@ -59,14 +58,13 @@ struct ProfileServerTag: View {
                 Image(systemName: "chevron.down").font(.interface(.caption2))
             }
         }
-        .font(.interfaceSystem(size: ServerTagAppearance.fontSize)).lineLimit(1)
+        .font(.interfaceSystem(size: ServerTagAppearance.fontSize, weight: .medium)).lineLimit(1)
         .padding(.horizontal, ServerTagAppearance.horizontalPadding)
         .frame(height: ServerTagAppearance.height)
         .background(
             .primary.opacity(isHighlighted ? ServerTagAppearance.highlightedBackgroundOpacity : ServerTagAppearance.backgroundOpacity),
             in: .rect(cornerRadius: ServerTagAppearance.cornerRadius)
         )
-        .overlay { RoundedRectangle(cornerRadius: ServerTagAppearance.cornerRadius).strokeBorder(.primary.opacity(ServerTagAppearance.outlineOpacity)) }
         .contentShape(.rect(cornerRadius: ServerTagAppearance.cornerRadius))
     }
 }

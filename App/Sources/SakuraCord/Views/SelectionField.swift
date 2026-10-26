@@ -175,8 +175,10 @@ struct SelectionField<ID: Hashable & Sendable>: View {
     @State private var highlightedID: ID?
     @State private var resultHeight: CGFloat = 260
     @State private var searchIsFocused = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.isEnabled) private var isEnabled
+
+    private var reduceMotion: Bool { systemReduceMotion || !AppMotionPolicy.animates(.overlays) }
 
     private let source: SelectionFieldSource<ID>
     private let mode: SelectionFieldSelectionMode

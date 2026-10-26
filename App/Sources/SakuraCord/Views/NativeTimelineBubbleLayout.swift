@@ -6,9 +6,6 @@ struct NativeTimelineBubbleRegion {
     let frame: CGRect
     let isOutgoing: Bool
     let showsTail: Bool
-    /// Emoji and stickers stand on their own without a fill or tail, but keep
-    /// the bubble's geometry for highlights and alignment.
-    var isBare = false
 }
 
 @MainActor
@@ -35,26 +32,10 @@ enum NativeTimelineBubbleLayout {
 
     static func context(
         for message: Message,
-        model: AppModel?
+        source: AppModel?
     ) -> Context {
-        let isEnabled =
-            model?.messageAppearance(for: message.channelID) == .bubbles
-                && !message.type.hasGeneratedContent
-        // Standard message layout never consumes bubble identity. Avoid an
-        // account-wide channel search for every newly paginated message.
-        guard isEnabled else {
-            return Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
-        }
-        let selectedChannel = model?.selectedChannel
-        let channel = selectedChannel?.id == message.channelID
-            ? selectedChannel
-            : model?.snapshot?.channels.first { $0.id == message.channelID }
-        return Context(
-            isEnabled: isEnabled,
-            isOutgoing: isEnabled
-                && message.author.id == model?.snapshot?.currentUser.id,
-            showsAvatar: showsAvatar(in: channel)
-        )
+        source?.bubbleContext(for: message)
+            ?? Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
     }
 
     /// One-to-one conversations leave incoming bubbles without avatars.
@@ -217,8 +198,7 @@ enum NativeTimelineBubbleLayout {
         minY: CGFloat,
         maxY: CGFloat,
         isOutgoing: Bool,
-        showsTail: Bool,
-        isBare: Bool
+        showsTail: Bool
     ) -> NativeTimelineBubbleRegion {
         NativeTimelineBubbleRegion(
             frame: CGRect(
@@ -228,8 +208,7 @@ enum NativeTimelineBubbleLayout {
                 height: max(1, maxY - minY)
             ),
             isOutgoing: isOutgoing,
-            showsTail: showsTail && !isBare,
-            isBare: isBare
+            showsTail: showsTail
         )
     }
 
@@ -279,6 +258,14 @@ enum NativeTimelineBubbleLayout {
 enum NativeTimelineBubbleDrawing {
     static var cornerRadius: CGFloat { InterfaceScale.metric(18) }
 
+    static func foregroundColor(for region: NativeTimelineBubbleRegion?) -> NSColor {
+        region?.isOutgoing == true ? .white : .labelColor
+    }
+
+    static func secondaryForegroundColor(for region: NativeTimelineBubbleRegion?) -> NSColor {
+        region?.isOutgoing == true ? .white.withAlphaComponent(0.72) : .secondaryLabelColor
+    }
+
     static let incomingFillColor = NSColor(name: nil) { appearance in
         switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
         case .darkAqua:
@@ -289,12 +276,10 @@ enum NativeTimelineBubbleDrawing {
     }
 
     static func fillColor(for region: NativeTimelineBubbleRegion) -> NSColor {
-        if region.isBare { return .clear }
         return region.isOutgoing ? .sakuraCordAccentColor : incomingFillColor
     }
 
     static func fill(_ region: NativeTimelineBubbleRegion) {
-        guard !region.isBare else { return }
         fillColor(for: region).setFill()
         path(for: region).fill()
     }

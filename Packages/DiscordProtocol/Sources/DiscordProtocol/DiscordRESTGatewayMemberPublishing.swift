@@ -1,6 +1,18 @@
 import SakuraCordModels
 
 extension DiscordRESTProvider {
+    func publishCurrentMemberTimeoutChange(previousMembers: [UserID: Member], guildID: GuildID) {
+        guard let userID = currentUser?.id,
+              previousMembers[userID]?.communicationDisabledUntil
+                != cachedMemberIndex(guildID: guildID)[userID]?.communicationDisabledUntil
+        else { return }
+        publishMembers(
+            guildID: guildID,
+            members: cachedMembers[guildID] ?? [],
+            groups: selectedMemberListGroups(guildID: guildID)
+        )
+    }
+
     func publishMemberChange(_ member: Member, guildID: GuildID) {
         memberPresentationRevisions[ProfileCacheKey(userID: member.id, guildID: guildID), default: 0] &+= 1
         let previous = cachedMembers[guildID]?.first { $0.id == member.id }

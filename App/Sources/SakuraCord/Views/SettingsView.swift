@@ -22,7 +22,7 @@ struct SettingsView: View {
     }
 
     private var currentAccount: SavedAccount? {
-        if let user = model.snapshot?.currentUser {
+        if let user = model.currentUser {
             return SavedAccount(user: user)
         }
         return model.savedAccounts.first { $0.accountID == model.activeAccountID }

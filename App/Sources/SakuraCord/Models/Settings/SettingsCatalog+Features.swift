@@ -12,6 +12,11 @@ nonisolated extension SettingsCatalog {
 
     static let featuresControls: [SettingsControlMetadata] = [
         control(
+            .readAllButton, page: .features, section: .featuresNotifications,
+            label: "Read All button", help: "Show a button above the server list to mark all server channels as read after confirmation.",
+            keywords: ["unread", "notifications", "mark read", "servers"], scope: .appWideLocal
+        ),
+        control(
             .translationEnabled, page: .features, section: .featuresTranslation,
             label: "Enable on-device translation", help: "Translate messages and drafts with Apple Translation after an explicit action.",
             keywords: ["translation", "language", "Apple", "offline"], scope: .appWideLocal

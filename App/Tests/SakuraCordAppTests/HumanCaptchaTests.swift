@@ -7,43 +7,48 @@ import Testing
 
 @MainActor
 struct HumanCaptchaTests {
-    @Test func `CAPTCHA completion ignores stale callbacks and consumes its continuation once`() async throws {
-        let store = HumanCaptchaStore.serverInvites()
-        let challenge = makeChallenge()
-        let task = Task { try await store.solution(for: challenge) }
+    @Test func `concurrent challenges share one presentation and each consumes its continuation once`() async throws {
+        let store = presentableStore()
+        let challenge = makeChallenge(), queued = makeChallenge()
+        let task = Task { await store.solution(for: challenge) }
         #expect(await presented(store, id: challenge.id))
+        let next = Task { await store.solution(for: queued) }
+        await Task.yield()
         store.complete(id: UUID(), token: "stale-solution")
         #expect(store.challenge?.id == challenge.id)
-        await #expect(throws: ServerInviteError.self) { try await store.solution(for: makeChallenge()) }
         store.complete(id: challenge.id, token: "human-solution")
         store.complete(id: challenge.id, token: "duplicate-solution")
-        #expect(try await task.value == "human-solution")
+        #expect(await task.value == "human-solution")
+        #expect(await presented(store, id: queued.id))
+        store.complete(id: queued.id, token: "second-solution")
+        #expect(await next.value == "second-solution")
         #expect(store.challenge == nil)
     }
 
     @Test(arguments: ["close", "account-reset", "task-cancel", "failure"])
-    func `dismissing or invalidating a challenge always releases the waiting join`(action: String) async {
-        let invites = ServerInvitePresentationStore()
-        let store = invites.captcha
+    func `dismissing or invalidating a challenge always releases the waiting request`(action: String) async {
+        let model = AppModel(launchMode: .offlineTesting)
+        let store = model.captcha
+        store.isPresentable = true
         let challenge = makeChallenge()
-        let task = Task { try await store.solution(for: challenge) }
+        let task = Task { await store.solution(for: challenge) }
         #expect(await presented(store, id: challenge.id))
         switch action {
         case "close": store.cancel()
-        case "account-reset": invites.reset()
+        case "account-reset": model.invalidateAccountSession()
         case "task-cancel": task.cancel()
         default: store.complete(id: challenge.id, token: nil)
         }
-        await #expect(throws: (any Error).self) { try await task.value }
+        #expect(await task.value == nil)
         #expect(store.challenge == nil)
         let replacement = makeChallenge()
-        let next = Task { try await store.solution(for: replacement) }
+        let next = Task { await store.solution(for: replacement) }
         #expect(await presented(store, id: replacement.id))
         store.complete(id: challenge.id, token: "late-old-account-token")
         store.cancel(id: challenge.id)
         #expect(store.challenge?.id == replacement.id)
         store.cancel()
-        await #expect(throws: CancellationError.self) { try await next.value }
+        #expect(await next.value == nil)
     }
 
     @Test(arguments: [true, false])
@@ -68,6 +73,12 @@ struct HumanCaptchaTests {
         #expect(joinCount == 1)
         await provider.finish()
         #expect(await !first.value)
+    }
+
+    private func presentableStore() -> HumanCaptchaStore {
+        let store = HumanCaptchaStore()
+        store.isPresentable = true
+        return store
     }
 
     private func makeChallenge() -> DiscordCaptchaChallenge {
@@ -105,11 +116,11 @@ private actor SharedJoinProbeProvider: ChatProvider {
         throw ServerInviteError.failed("Probe stopped before remote membership")
     }
     func finish() { completion?.resume(); completion = nil }
-    func acceptServerInvite(_ reference: ServerInviteReference, messageID: MessageID?, captchaHandler: DiscordCaptchaHandler?) async throws -> ServerInviteAcceptance {
+    func acceptServerInvite(_ reference: ServerInviteReference, messageID: MessageID?) async throws -> ServerInviteAcceptance {
         try await join()
         throw CancellationError()
     }
-    func joinDiscoverableGuild(_ guildID: GuildID, captchaHandler: DiscordCaptchaHandler?) async throws -> Bool {
+    func joinDiscoverableGuild(_ guildID: GuildID) async throws -> Bool {
         try await join()
         return false
     }

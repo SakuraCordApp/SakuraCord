@@ -26,6 +26,9 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     var id: String { rawToken }
     var isInteractive: Bool { target != .unresolved }
 
+    /// A link to a channel, thread or forum post the account does not know.
+    static let unknownChannelLinkLabel = "unknown-channel"
+
     static func fallback(for mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
         case .guildNavigation:
@@ -68,18 +71,18 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
             guard let id = ChannelID(mention.id) else {
                 return unresolved(
                     mention,
-                    label: "unknown-post",
-                    systemImage: ChannelIconPresentation.forumPostSystemImage
+                    label: unknownChannelLinkLabel,
+                    systemImage: ChannelIconPresentation.systemImage(for: .unknown, isHidden: false)
                 )
             }
             return MentionPresentation(
                 rawToken: mention.rawToken,
-                label: "unknown-post",
+                label: unknownChannelLinkLabel,
                 target: .linkedChannel(
                     guildID: mention.messageGuildID.flatMap(GuildID.init),
                     channelID: id
                 ),
-                systemImage: ChannelIconPresentation.forumPostSystemImage
+                systemImage: ChannelIconPresentation.systemImage(for: .unknown, isHidden: false)
             )
         case .message:
             guard let channelID = mention.messageChannelID.flatMap(ChannelID.init),

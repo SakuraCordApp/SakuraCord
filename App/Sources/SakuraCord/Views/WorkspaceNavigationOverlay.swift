@@ -180,7 +180,7 @@ private struct QuickSwitcherView: View {
             }
             .onChange(of: animationState.isVisible) { _, isVisible in
                 if isVisible {
-                    let currentUserID = model.snapshot?.currentUser.id
+                    let currentUserID = model.currentUser?.id
                     let sourceRevision = model.forwardSearchSourceRevision
                     if let exact = ForwardDestinationSearchIndexCache.shared.value(
                         for: model,
@@ -232,7 +232,7 @@ private struct QuickSwitcherView: View {
                         await model.loadDiscordEmojiSettings()
                     }
                 }
-                let userID = model.snapshot?.currentUser.id
+                let userID = model.currentUser?.id
                 let revision = activeIndexRequest.revision
                 let exact = ForwardDestinationSearchIndexCache.shared.value(
                     for: model,

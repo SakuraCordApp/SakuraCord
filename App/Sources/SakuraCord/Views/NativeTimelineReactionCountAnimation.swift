@@ -36,9 +36,8 @@ struct NativeTimelineReactionCountAnimationView: View {
     }
 
     var body: some View {
-        Text(state.count, format: .number)
-            .font(.interface(.caption).weight(.semibold))
-            .monospacedDigit()
+        Text(String(state.count))
+            .font(Font(NativeTimelineReactionFonts.count))
             .foregroundStyle(color)
             .contentTransition(.numericText(countsDown: countsDown))
             .animation(.smooth(duration: 0.24), value: state.count)

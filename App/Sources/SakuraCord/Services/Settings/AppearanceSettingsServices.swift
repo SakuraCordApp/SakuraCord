@@ -258,7 +258,7 @@ extension AppModel {
         // Most rows belong to the selected channel; avoid searching the workspace for each one.
         let channel = selectedChannel?.id == channelID
             ? selectedChannel
-            : snapshot?.channels.first { $0.id == channelID }
+            : messagePresentationChannelsByID[channelID]
         return appearanceSettings.messageAppearance(for: channel?.kind)
     }
 

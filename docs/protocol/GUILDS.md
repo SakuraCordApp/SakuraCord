@@ -22,13 +22,12 @@ membership. Already-member cards navigate without posting another acceptance.
 Leaving is `DELETE /users/@me/guilds/{guild}` with `lurking:false`; guild owners
 cannot use it. `GUILD_DELETE unavailable:true` is an outage, not a leave.
 
-Supported invite and discoverable-server join hCaptcha retains the original
-body/context and permits one replay after human completion on the same provider and Gateway session. Empty
-solutions, cancellation, account replacement, another challenge or ambiguous
-failure terminate that attempt. Unsupported/malformed challenges and account
-restrictions report a join error without stopping unrelated account traffic.
-Widget test-token verification does not establish successful handling of a live
-join CAPTCHA.
+Invite and discoverable-server joins follow the shared
+[Human CAPTCHA](../PROTOCOL_BASELINE.md#human-captcha) contract. The replay keeps
+the body, including its Gateway `session_id`, and context, and is cancelled if
+that session is no longer current. Ambiguous failure is never
+replayed. Unsupported/malformed challenges and account restrictions report a
+join error without stopping unrelated account traffic.
 
 Onboarding invites can enter the native membership flow. Member screening and
 special guest/target flows remain delegated to Discord. Unknown catalogue or
@@ -101,6 +100,54 @@ changes server-side filtering without erasing individual selections. Community
 guilds with prompts expose Channels & Roles; those without use Browse Channels
 when local channel customization is enabled. Voice/Stage channels use the same
 selection policy, not an independent expansion state.
+
+### Hide muted channels
+
+The server context menu's Hide Muted Channels is the account's synchronized
+per-guild `hide_muted_channels` setting, independent of Show All Channels and the
+local channel-customization preference. Each user action sends one
+`PATCH /users/@me/guilds/settings` with
+`{"guilds":{"<guild_id>":{"hide_muted_channels":true}}}` (or `false`). It changes
+no notification levels, mute state, channel selections or flags. The ordinary
+single-attempt mutation budget applies; errors retain the previous setting.
+READY and `USER_GUILD_SETTINGS_UPDATE` supply the same field to every session;
+the Gateway update can precede the HTTP 200 response. Merge sparse settings
+updates without discarding unrelated overrides.
+The app's successful-request fallback must not overwrite authoritative settings
+received while that request was pending, including a newer change from another
+client or a replacement READY. Unrelated local override edits retain the fallback.
+
+When enabled, hide directly muted channels except the selected conversation,
+connected voice channel, selected thread's parent, channels with mentions, or
+parents with visible joined threads. Apply the existing thread relevance and
+muted-thread rules before deciding whether to keep a parent. Guild and category
+mutes do not count as direct channel mutes for this filter; category collapse
+continues to control its rows separately. Expired timed mutes stop hiding a
+channel even without another Gateway event. Empty filtered groups disappear.
+Ordinary next/previous channel shortcuts traverse the same filtered rows.
+Browse Channels continues to list muted channels and preserves their channel
+selection independently of mute state. Its ordinary channel context menu offers
+Unmute Channel even while the sidebar hides the row. Previewing a muted channel
+there does not reveal it in the sidebar; opening it as the main conversation
+does. Quick Switcher and temporarily disabling Hide Muted Channels provide other
+ways to reach a hidden channel without changing its saved channel selection.
+
+Official Fresh host `0.0.411`, web build `641004`
+(`web.4d4b2f75fdea5470.js`), observed on 17 October 2026, confirmed the partial
+toggle PATCH, HTTP 200 settings response, Gateway echo, and hide/reveal of a
+directly muted channel with Show All Channels enabled. Live changes in either
+Discord or SakuraCord updated the other session without a reload; temporary
+settings were restored. The selected muted channel remained visible until
+navigating away. The same build's channel list and guild-settings store establish
+the remaining focus, mention, joined-thread and direct-mute exceptions. Those
+exceptions are source evidence rather than a claim that every branch was
+exercised live.
+
+Pinned Paicord `5c76f3674e2cace7a6a4369497fcf482f3d9ebe3` hydrates its
+[guild-settings store](https://github.com/llsc12/Paicord/blob/5c76f3674e2cace7a6a4369497fcf482f3d9ebe3/Paicord/Stores/UserGuildSettingsStore.swift)
+from READY without consuming later guild-settings events there. Swiftcord v1
+`14465d927ebe1ba34b3befa00f9365fad7b56eb9` has no equivalent filter in its
+[channel list](https://github.com/SwiftcordApp/Swiftcord/blob/14465d927ebe1ba34b3befa00f9365fad7b56eb9/Swiftcord/Views/Server/ChannelList.swift).
 
 ## Server Guide
 
@@ -187,6 +234,81 @@ opcode-37 `RATE_LIMITED` was observed in that verification. Its static member
 store clears invalidated rows; retaining accessible rows and explicitly renewing
 them is SakuraCord's deliberate presentation and recovery policy, covered by
 Gateway-backed regression tests rather than a claimed live rejection capture.
+
+### Server timeouts
+
+`communication_disabled_until` belongs to guild membership, including READY's
+self-member records, member-list/chunk payloads and `GUILD_MEMBER_UPDATE`. A future
+ISO8601 timestamp restricts communication; null or a past timestamp does not.
+Preserve an omitted field in sparse member updates, chunks, member lists and
+thread hydration; explicit null removes the timeout. A full replacement READY is
+authoritative. Account/guild teardown cancels local expiry work, and a replaced
+timeout cannot be cleared by its older timer. Delayed member-load completions
+must not replay an older timeout over a newer Gateway update. Member events
+received before initial bootstrap publication must survive that publication.
+
+Apply the timeout mask after channel overwrites: only existing `VIEW_CHANNEL`
+and `READ_MESSAGE_HISTORY` survive. The mask does not grant access to hidden
+channels. Owners and administrators are exempt. This follows Discord's
+[permissions contract](https://docs.discord.com/developers/topics/permissions)
+and [guild member field](https://docs.discord.com/developers/resources/guild#guild-member-object).
+SakuraCord preserves drafts while showing the timeout countdown in its shared
+disabled channel/thread input bar. Active voice-message capture stops and its
+recording is retained for the same conversation. It blocks new and existing
+reaction toggles, replies, sends, message edits, new poll votes,
+thread/forum creation, application commands and joining voice. Read-only history
+and reaction-detail inspection remain available. If thread creation succeeds
+before a timeout blocks its first message, retain the unsent text and attachments
+in the created thread. Delivery checks include work
+queued before a timeout and message-send retries after rate-limit suspension.
+No new polling or mutation retry budget is introduced.
+
+Official Fresh host `0.0.411`, web build `641004`
+(`web.4d4b2f75fdea5470.js`), observed on 17 October 2026, sent one
+`PATCH /guilds/{guild}/members/{user}` with the expiry timestamp, or null for
+removal. Each returned HTTP 200, with a `GUILD_MEMBER_UPDATE` preceding the HTTP
+response. The timed-out account showed a persistent countdown in place of its
+composer, disabled existing reactions and a locked voice channel. The composer
+returned at natural expiry without navigation/reload or another captured member
+update. This observed absence is not a guarantee that Discord never emits one.
+The same build's modules `316031`, `488926` and `592713` establish timestamp
+comparison, the post-overwrite mask and local expiry invalidation. SakuraCord
+schedules the actual expiry instead of Discord's ten-second cleanup interval.
+
+Additional checks on the same build confirmed that timeout follows the member
+across server channels and survives a client reload with a fresh READY, while DM
+composers remain usable. The own-message menu still offered Edit and Delete, but
+opening Edit produced a disabled input. SakuraCord keeps an already-open edit's
+draft while disabling its input and Save. Poll answers could be selected locally,
+but Vote remained disabled until removal; the same selection then submitted
+successfully. Removing an existing vote remained enabled during timeout and
+returned HTTP 204 with `answer_ids: []` on the same poll PUT route. Result/voter
+inspection is a read and remains available.
+Existing reactions were disabled too, contrary to the existing-reaction exception
+in Discord's [Timeout FAQ](https://support.discord.com/hc/en-us/articles/4413305239191-Time-Out-FAQ).
+Follow the current client and permission contract rather than that FAQ sentence.
+The built-in `/timeout` command replaced a running 60-second deadline with five
+minutes using one member PATCH; the live countdown changed immediately and stayed
+restricted past the original deadline. An unrelated profile/nickname response is
+not authoritative timeout evidence for an already-cached member.
+
+A two-account live pass against SakuraCord verified immediate application and
+manual removal with channel and thread composers open, plus natural expiry
+without navigation or reload. Both drafts survived each transition. Existing
+reaction controls were disabled during the timeout; sending and reacting worked
+after removal. SakuraCord's sanitized API log recorded the member updates,
+message HTTP 200 and reaction HTTP 204, compared with the official client's
+Gateway capture. Temporary timeout state, drafts and verification content were
+restored or removed after the pass. A later native poll pass verified that an
+existing vote could be removed during timeout (HTTP 204), a locally selected
+replacement could not be submitted, and live removal enabled Vote with that
+selection intact. The disposable poll was deleted and timeout removal confirmed.
+
+Pinned Paicord `5c76f3674e2cace7a6a4369497fcf482f3d9ebe3` decodes the field but
+its [member merge](https://github.com/llsc12/Paicord/blob/5c76f3674e2cace7a6a4369497fcf482f3d9ebe3/Paicord/Utilities/PaicordLib%2B%2B/Merging.swift)
+uses nil-coalescing, which does not establish correct removal via explicit null.
+Swiftcord v1 `14465d927ebe1ba34b3befa00f9365fad7b56eb9` has no equivalent
+timeout consumer. Neither supplies a competing timeout presentation contract.
 
 ### Thread member inspector
 

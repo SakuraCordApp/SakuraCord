@@ -59,9 +59,10 @@ extension AppModel {
         for channelID in conversationRefreshJournals.keys {
             conversationRefreshJournals[channelID]?.recordIdentityUpdate(user)
         }
-        for guildID in onboarding.guides.keys where onboarding.guides[guildID]?.resource?.refreshJournal != nil {
-            onboarding.guides[guildID]?.resource?.refreshJournal?.recordIdentityUpdate(user)
+        for revision in scopedRefreshJournals.keys {
+            scopedRefreshJournals[revision]?.journal.recordIdentityUpdate(user)
         }
+        guideResource?.refreshJournal?.recordIdentityUpdate(user)
         var seen = Set<MessageID>()
         for message in retainedMessages where seen.insert(message.id).inserted {
             guard message.author.id == user.id || message.mentionedUsers.contains(where: { $0.id == user.id }) else { continue }

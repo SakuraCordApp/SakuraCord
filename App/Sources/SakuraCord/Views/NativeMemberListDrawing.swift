@@ -89,14 +89,8 @@ extension NativeMemberListCanvasView {
     private func skeletonGradient(opacity: CGFloat) -> CGGradient? {
         CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
-            colors: [
-                NSColor.labelColor.withAlphaComponent(0).cgColor,
-                NSColor.labelColor.withAlphaComponent(0.18 * opacity).cgColor,
-                NSColor.labelColor.withAlphaComponent(0.92 * opacity).cgColor,
-                NSColor.labelColor.withAlphaComponent(0.18 * opacity).cgColor,
-                NSColor.labelColor.withAlphaComponent(0).cgColor,
-            ] as CFArray,
-            locations: [0, 0.25, 0.5, 0.75, 1]
+            colors: SkeletonShimmerStyle.highlightColors(scale: opacity) as CFArray,
+            locations: SkeletonShimmerStyle.highlightLocations
         )
     }
 
@@ -201,7 +195,7 @@ extension NativeMemberListCanvasView {
         context.saveGState()
         context.addPath(path)
         context.setFillColor(
-            NSColor.white.withAlphaComponent(0.09 * opacity).cgColor
+            SkeletonShimmerStyle.baseColor(scale: opacity).cgColor
         )
         context.fillPath()
         guard let phase = style.phase,

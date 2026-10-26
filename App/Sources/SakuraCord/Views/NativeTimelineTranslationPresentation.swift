@@ -18,10 +18,10 @@ struct NativeTimelineTranslationPresentation {
 
     static func make(
         row: MessageRowPresentation,
-        model: AppModel?,
+        source model: AppModel?,
         isOutgoingBubble: Bool
     ) -> Self? {
-        guard row.searchContext == nil, row.pinnedAt == nil, !row.isResource,
+        guard row.isConversationRow,
               let entry = model?.messageTranslationPresentation(for: row.message)
         else { return nil }
         switch entry.status {
@@ -39,7 +39,7 @@ struct NativeTimelineTranslationPresentation {
                 attributedText: nil,
                 baseFontSize: 15
             )
-            let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, model: model)
+            let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, source: model)
             return Self(
                 requestID: entry.requestID,
                 kind: .translated,

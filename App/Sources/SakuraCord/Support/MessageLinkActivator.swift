@@ -128,9 +128,9 @@ extension AppModel {
 
     func systemMessageRecipient(for message: Message) -> User? {
         guard message.type == .friendRequestAccepted,
-              let channel = snapshot?.channels.first(where: { $0.id == message.channelID }),
+              let channel = messagePresentationChannelsByID[message.channelID],
               channel.kind == .directMessage else { return nil }
-        return channel.recipients.first { $0.id != snapshot?.currentUser.id }
+        return channel.recipients.first { $0.id != currentUser?.id }
     }
 
     func systemMessageUser(

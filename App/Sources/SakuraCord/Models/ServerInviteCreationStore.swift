@@ -90,7 +90,8 @@ extension AppModel {
                 guild: basis.guild, channel: channel,
                 resolvedBasePermissions: basis.resolvedBasePermissions,
                 overwritePrincipals: basis.overwritePrincipals,
-                hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity
+                hasCurrentRoleIdentity: basis.hasCurrentRoleIdentity,
+            communicationDisabledUntil: basis.currentUserCommunicationDisabledUntil
             ) else { return false }
             return permissions & required == required
         }
@@ -98,7 +99,7 @@ extension AppModel {
            channel.kind != .unknown, allowsInvite(channel) {
             return channel
         }
-        return (snapshot?.channels ?? [])
+        return messagePresentationChannels
             .filter { $0.guildID == guildID && [.text, .announcement, .forum, .voice].contains($0.kind) }
             .sorted {
                 ($0.categoryPosition, $0.position, $0.id) < ($1.categoryPosition, $1.position, $1.id)

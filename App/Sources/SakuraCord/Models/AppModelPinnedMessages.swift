@@ -77,7 +77,7 @@ final class PinnedMessagesState {
 @MainActor
 extension AppModel {
     var activePinsChannelID: ChannelID? {
-        if let thread = openThread { return thread.id }
+        if let thread = visibleThread { return thread.id }
         guard selectedChannelSupportsPins else { return nil }
         return selectedChannelID
     }
@@ -98,7 +98,7 @@ extension AppModel {
     }
 
     var canManageActiveConversationPins: Bool {
-        guard let channelID = activePinsChannelID else { return false }
+        guard let channelID = pinnedMessages.channelID ?? activePinsChannelID else { return false }
         return canManagePins(in: channelID)
     }
 
@@ -109,7 +109,7 @@ extension AppModel {
     func canDeleteMessage(_ message: Message) -> Bool {
         guard message.outboxState == .confirmed, !message.flags.contains(.ephemeral) else { return false }
         if !message.type.hasGeneratedContent,
-           message.author.id == snapshot?.currentUser.id
+           message.author.id == currentUser?.id
         {
             return true
         }
@@ -147,15 +147,15 @@ extension AppModel {
         if openThread?.id == channelID, let parent = openThreadParentChannel {
             return (parent, true)
         }
-        let parentID = snapshot?.threads.first(where: { $0.id == channelID })?.parentID
-            ?? snapshot?.activeJoinedThreads.first(where: { $0.id == channelID })?.parentID
+        let parentID = threads.first(where: { $0.id == channelID })?.parentID
+            ?? activeJoinedThreads.first(where: { $0.id == channelID })?.parentID
             ?? messageSearch.page?.channels.first(where: { $0.id == channelID })?.categoryID
         guard let parentID, let parent = rootMessageChannel(parentID) else { return nil }
         return (parent, true)
     }
 
     private func rootMessageChannel(_ channelID: ChannelID) -> Channel? {
-        snapshot?.channels.first(where: { $0.id == channelID })
+        messagePresentationChannelsByID[channelID]
             ?? visibleChannels.first(where: { $0.id == channelID })
     }
 
@@ -168,10 +168,16 @@ extension AppModel {
         }
     }
 
+    /// The open thread's pins, or the selected channel's, which stay
+    /// reachable from the conversation's toolbar beside an open thread.
+    func canPresentPins(in channelID: ChannelID) -> Bool {
+        channelID == openThread?.id || channelID == selectedChannelID && selectedChannelSupportsPins
+    }
+
     func presentPinnedMessages(channelID: ChannelID? = nil) {
         guard sessionState == .workspace,
               let target = channelID ?? activePinsChannelID,
-              target == activePinsChannelID
+              canPresentPins(in: target)
         else { return }
         pinnedMessages.channelID = target
         pinnedMessages.isPresented = true
@@ -188,10 +194,11 @@ extension AppModel {
         if rootMessageChannel(channelID) != nil {
             navigate(to: channelID)
         } else {
-            let guildID = snapshot?.threads.first(where: { $0.id == channelID })?.guildID
-                ?? snapshot?.activeJoinedThreads.first(where: { $0.id == channelID })?.guildID
+            // Thread resolution derives the guild from the thread's parent.
+            let guildID = threads.first(where: { $0.id == channelID })?.guildID
+                ?? activeJoinedThreads.first(where: { $0.id == channelID })?.guildID
                 ?? messageSearch.page?.channels.first(where: { $0.id == channelID })?.guildID
-            guard guildID != nil else { return }
+                ?? selectedGuildID
             navigate(to: guildID, linkedChannelID: channelID)
         }
         let navigationTask = guildActivationTask
