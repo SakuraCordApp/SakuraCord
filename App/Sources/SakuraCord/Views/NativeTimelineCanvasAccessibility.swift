@@ -813,7 +813,9 @@ extension NativeTimelineCanvasView {
                     label: label,
                     help: isHiddenSpoiler
                         ? "Reveals this media without opening it"
-                        : attachment.mediaKind == .file ? "Download \(contentLabel)" : "Open \(contentLabel)",
+                        : attachment.mediaKind == .file
+                            ? fileCardActionDescription(attachment, name: contentLabel)
+                            : "Open \(contentLabel)",
                     frame: accessibilityChildFrame(
                         region.frame,
                         rowIndex: rowIndex

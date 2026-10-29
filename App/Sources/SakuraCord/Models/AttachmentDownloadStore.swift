@@ -113,11 +113,18 @@ final class AttachmentDownloadStore {
         // Moving onto another volume copies the whole file.
         let destination = try await Task.detached(priority: .utility) {
             defer { try? FileManager.default.removeItem(at: file) }
-            guard let destination = MediaViewerActionService.availableDestination(for: proposed) else {
-                throw MediaViewerActionError.couldNotChooseUniqueFilename
+            while true {
+                guard let destination = MediaViewerActionService.availableDestination(for: proposed) else {
+                    throw MediaViewerActionError.couldNotChooseUniqueFilename
+                }
+                do {
+                    try FileManager.default.moveItem(at: file, to: destination)
+                    return destination
+                } catch CocoaError.fileWriteFileExists {
+                    // Another download of the same name took it first.
+                    continue
+                }
             }
-            try FileManager.default.moveItem(at: file, to: destination)
-            return destination
         }.value
         return .finished(destination, folder: folder.scoped)
     }

@@ -22,18 +22,18 @@ extension NativeTimelineCanvasView {
         )
         let isHiddenSpoiler =
             isSpoiler && !spoilerRevealStore.isMediaRevealed(key)
+        let fileAction = file.map { fileCardActionDescription($0, name: label) }
         let accessibilityLabel =
-            if file != nil {
-                isHiddenSpoiler ? "Reveal spoiler file" : "Download \(label)"
+            if let fileAction {
+                isHiddenSpoiler ? "Reveal spoiler file" : fileAction
             } else {
                 isHiddenSpoiler ? "Reveal spoiler media" : label
             }
         children.append(accessibilityElement(
             role: .button,
             label: accessibilityLabel,
-            help: file != nil
-                ? (isHiddenSpoiler ? "Reveal spoiler" : "Download \(label)")
-                : (
+            help: fileAction.map { isHiddenSpoiler ? "Reveal spoiler" : $0 }
+                ?? (
                     isHiddenSpoiler
                         ? "Reveals this media without opening it"
                         : "Open \(label)"

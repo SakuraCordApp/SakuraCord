@@ -71,5 +71,16 @@ extension NativeTimelineCanvasView {
         // a progress tick does not.
         if case let .downloading(fraction)? = downloads.states[attachmentID], fraction > 0 { return }
         window?.invalidateCursorRects(for: self)
+        identifiers.forEach(rebuildAccessibilityProxy)
+    }
+
+    /// What activating a file card does in its current download state.
+    func fileCardActionDescription(_ attachment: Attachment, name: String) -> String {
+        switch model?.attachmentDownloads.states[attachment.id] {
+        case .downloading: "Cancel downloading \(name)"
+        case .finished: "Show \(name) in Finder"
+        case .failed: "Retry downloading \(name)"
+        case nil: "Download \(name)"
+        }
     }
 }
