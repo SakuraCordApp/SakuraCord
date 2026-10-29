@@ -71,7 +71,21 @@ extension NativeTimelineRowPainter {
                 container.chrome == .bubbleSection ? container.chromeFrame : nil
             }
         }
-        bubbleIntegratedSectionsTint(integratedSectionFrames, bubbleRegion: bubbleRegion)
+        bubbleIntegratedSectionsTint(
+            integratedSectionFrames + [fileSectionFrame(input.layout)].compactMap { $0 },
+            bubbleRegion: bubbleRegion
+        )
+    }
+
+    /// Files and text previews below other bubble content share one
+    /// integrated section, as thread cards and invites do; a bubble holding
+    /// only files is their card.
+    private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
+        let files = layout.attachmentRegions.filter { !$0.attachment.mediaKind.isVisual }.map(\.frame)
+        guard let bubble = layout.bubbleRegion, let first = files.first,
+              first.minY - bubble.frame.minY > 8.5
+        else { return nil }
+        return files.dropFirst().reduce(first) { $0.union($1) }
     }
 
     private static func drawMessageSearchContext(_ input: NativeTimelineMessageDrawInput) {
@@ -437,6 +451,11 @@ extension NativeTimelineRowPainter {
             MediaGalleryImagePresentation.fillsFrame(
                 itemCount: layout.mediaGalleryItemCount
             )
+        if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
+            bubbleIntegratedSection(
+                section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
+            )
+        }
         for region in layout.attachmentRegions {
             let attachment = region.attachment
             let isConcealed =
@@ -483,13 +502,17 @@ extension NativeTimelineRowPainter {
                     textPreview(preview, input: input)
                     continue
                 }
-                let isAudio = attachment.mediaKind == .audio
+                let target = NativeTimelineComponentButtonTarget.fileCard(messageID: message.id, attachmentID: attachment.id)
                 fileCard(
-                    .init(frame: region.frame, attachment: attachment, isAudio: isAudio),
+                    .init(
+                        frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil,
+                        isAudio: attachment.mediaKind == .audio
+                    ),
                     messageID: message.id,
+                    bubbleRegion: layout.bubbleRegion,
                     state: input.model?.attachmentDownloads.states[attachment.id],
                     hovered: input.hoveredComponentButton,
-                    pressed: input.pressedComponentButton
+                    pressProgress: input.pressedComponentButton == target ? input.componentButtonPressProgress : 0
                 )
                 if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
                     NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)

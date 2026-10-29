@@ -25,14 +25,12 @@ struct NativeTimelineVoiceMessageRegion {
     let duration: TimeInterval
     let bars: [Float]
     let style: Style
+    /// What an audio file's player draws on: its capsule, or a bubble.
+    var surface: Style = .plain
 
     var playbackID: VoiceMessagePlaybackID {
         style == .audioFile ? .attachment(messageID, attachmentID: attachment.id) : .message(messageID)
     }
-
-    /// The bar behind an audio file's controls; its frame reaches above it
-    /// for the scrubbing time bubble.
-    var controlsFrame: CGRect { playFrame.union(speedFrame) }
 
     var source: VoiceMessagePlaybackStore.Source {
         attachment.url.isFileURL ? .local(attachment.url) : .remote(attachment.url)
@@ -102,24 +100,24 @@ struct NativeTimelineVoiceMessageRegion {
         )
     }
 
-    /// An audio file card's player: play, time, seek bar, and mute, with the
-    /// seek bar in `waveformFrame` and mute in `speedFrame`.
-    static func audioFile(in card: NativeTimelineFileCard, messageID: MessageID) -> Self {
-        let controls = card.playerFrame
-        let button = InterfaceScale.metric(32)
-        let playFrame = CGRect(x: controls.minX, y: controls.minY, width: button, height: button)
-        let muteFrame = CGRect(x: controls.maxX - button, y: controls.minY, width: button, height: button)
-        let duration = card.attachment.durationSeconds ?? 0
-        let timeFrame = CGRect(
-            x: playFrame.maxX + InterfaceScale.metric(12), y: controls.minY, width: audioFileTimeWidth(duration), height: button
+    /// An audio file card's player: its badge plays, and the seek row under
+    /// its name holds the time, seek bar, and mute, with the seek bar in
+    /// `waveformFrame` and mute in `speedFrame`.
+    static func audioFile(in card: NativeTimelineFileCard, messageID: MessageID, surface: Style) -> Self {
+        let row = card.playerRowFrame
+        let mute = InterfaceScale.metric(24)
+        let muteFrame = CGRect(
+            x: card.downloadFrame.midX - mute / 2, y: row.midY - mute / 2, width: mute, height: mute
         )
-        let barMinX = timeFrame.maxX + InterfaceScale.metric(11)
+        let duration = card.attachment.durationSeconds ?? 0
+        let timeFrame = CGRect(x: row.minX, y: row.minY, width: audioFileTimeWidth(duration), height: row.height)
+        let barMinX = timeFrame.maxX + InterfaceScale.metric(10)
         let barFrame = CGRect(
-            x: barMinX, y: controls.minY, width: max(1, muteFrame.minX - InterfaceScale.metric(7) - barMinX), height: button
+            x: barMinX, y: row.minY, width: max(1, muteFrame.minX - InterfaceScale.metric(8) - barMinX), height: row.height
         )
         return Self(
-            frame: controls.union(controls.offsetBy(dx: 0, dy: -InterfaceScale.metric(32))),
-            playFrame: playFrame,
+            frame: card.badgeFrame.union(row),
+            playFrame: card.badgeFrame,
             waveformFrame: barFrame,
             timeFrame: timeFrame,
             speedFrame: muteFrame,
@@ -127,7 +125,8 @@ struct NativeTimelineVoiceMessageRegion {
             attachment: card.attachment,
             duration: duration,
             bars: [],
-            style: .audioFile
+            style: .audioFile,
+            surface: surface
         )
     }
 
@@ -135,7 +134,7 @@ struct NativeTimelineVoiceMessageRegion {
     /// lengths' digit counts occur, so drawing frames measure from a cache.
     private static func audioFileTimeWidth(_ duration: TimeInterval) -> CGFloat {
         let length = VoiceMessageDurationFormat.string(duration)
-        let font = NativeTimelineVoiceMessagePainter.audioFileTimeFont
+        let font = NativeTimelineVoiceMessagePainter.timeFont
         let key = "\(font.pointSize)|\(length)"
         if let width = audioFileTimeWidths[key] { return width }
         let width = ceil((length + "\u{2009}/\u{2009}" + length as NSString).size(withAttributes: [.font: font]).width)
@@ -148,7 +147,7 @@ struct NativeTimelineVoiceMessageRegion {
     /// An audio file's seek bar. Like Discord's flexible bar, it starts
     /// after the time label, which a length learned after layout can widen.
     func seekBarFrame(for duration: TimeInterval?) -> CGRect {
-        let minX = max(waveformFrame.minX, timeFrame.minX + Self.audioFileTimeWidth(duration ?? 0) + InterfaceScale.metric(11))
+        let minX = max(waveformFrame.minX, timeFrame.minX + Self.audioFileTimeWidth(duration ?? 0) + InterfaceScale.metric(10))
         return CGRect(x: minX, y: waveformFrame.minY, width: max(1, waveformFrame.maxX - minX), height: waveformFrame.height)
     }
 
@@ -211,6 +210,9 @@ struct NativeTimelineVoiceMessageDrawState {
     /// Where the pointer rests on an audio file's seek bar.
     var hoverFraction: CGFloat?
     var isMuted = false
+    /// The row already draws this resting audio file, so its hover overlay
+    /// adds only what the pointer changes.
+    var isResting = false
 }
 
 enum NativeTimelineVoiceMessagePainter {
@@ -218,7 +220,6 @@ enum NativeTimelineVoiceMessagePainter {
         let factor: CGFloat
         let time: NSFont
         let speed: NSFont
-        let audioFileTime: NSFont
         let bubble: NSFont
     }
 
@@ -231,7 +232,6 @@ enum NativeTimelineVoiceMessagePainter {
             factor: InterfaceScale.factor,
             time: .interfaceMonospacedDigitSystemFont(ofSize: 12, weight: .medium),
             speed: .interfaceSystemFont(ofSize: 11, weight: .semibold),
-            audioFileTime: .monospacedSystemFont(ofSize: InterfaceScale.fontSize(12), weight: .medium),
             bubble: .interfaceSystemFont(ofSize: 12, weight: .semibold)
         )
         fonts = created
@@ -240,7 +240,6 @@ enum NativeTimelineVoiceMessagePainter {
 
     static var timeFont: NSFont { scaledFonts.time }
     static var speedFont: NSFont { scaledFonts.speed }
-    static var audioFileTimeFont: NSFont { scaledFonts.audioFileTime }
     static var audioFileBubbleFont: NSFont { scaledFonts.bubble }
 
     /// The capsule behind a plain-style player. Bubble styles draw on the bubble.
@@ -257,7 +256,7 @@ enum NativeTimelineVoiceMessagePainter {
     static func drawContent(_ region: NativeTimelineVoiceMessageRegion, state: NativeTimelineVoiceMessageDrawState) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         if region.style == .audioFile {
-            drawAudioFilePlayer(region, state: state, context: context)
+            drawAudioFilePlayer(region, state: state, palette: Palette(style: region.surface), context: context)
             return
         }
         let palette = Palette(style: region.style)
@@ -271,7 +270,7 @@ enum NativeTimelineVoiceMessagePainter {
         Palette(style: style).glyph
     }
 
-    private struct Palette {
+    struct Palette {
         let buttonFill: NSColor
         let glyph: NSColor
         let played: NSColor
@@ -306,7 +305,7 @@ enum NativeTimelineVoiceMessagePainter {
         }
     }
 
-    private static func drawPlayButton(
+    static func drawPlayButton(
         _ region: NativeTimelineVoiceMessageRegion,
         state: NativeTimelineVoiceMessageDrawState,
         palette: Palette,
@@ -875,6 +874,7 @@ extension NativeTimelineCanvasView {
         if region.style == .audioFile {
             state.duration = knownDuration
             state.isMuted = playback.isAudioFileMuted
+            state.isResting = !playback.isActive(id)
             let bar = region.seekBarFrame(for: state.duration)
             state.hoverFraction = hovered?.pointerX.map { min(max(($0 - bar.minX) / max(bar.width, 1), 0), 1) }
         }

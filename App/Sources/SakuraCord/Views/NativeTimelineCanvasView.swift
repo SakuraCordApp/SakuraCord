@@ -134,8 +134,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
-            /// A file card's part, or its body, which only shows hover.
-            case fileCard(NativeTimelineFileCard, part: NativeTimelineFileCard.Part?)
+            case fileCard(NativeTimelineFileCard)
             /// A text preview's footer part, or its body, which acts on nothing.
             case textPreview(NativeTimelineTextPreview, part: NativeTimelineTextPreview.Part?)
 
@@ -147,8 +146,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                     false
                 case let .invite(card, expands):
                     !expands && card.isDisabled
-                case let .fileCard(_, part):
-                    part == nil
+                case .fileCard:
+                    false
                 case let .textPreview(_, part):
                     part == nil
                 }

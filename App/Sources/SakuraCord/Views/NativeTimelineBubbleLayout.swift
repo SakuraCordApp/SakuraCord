@@ -84,12 +84,22 @@ enum NativeTimelineBubbleLayout {
                 min(maximumWidth, linkedImageWidth)
             )
         }
-        if !message.attachments.isEmpty {
-            let attachmentWidth = message.attachments.compactMap(\.width)
+        let media = message.attachments.filter(\.mediaKind.isVisual)
+        if !media.isEmpty {
+            let attachmentWidth = media.compactMap(\.width)
                 .map(CGFloat.init).max() ?? 360
             preferredWidth = max(
                 preferredWidth,
                 min(maximumWidth, max(InterfaceScale.metric(180), attachmentWidth))
+            )
+        }
+        for file in message.attachments where !file.mediaKind.isVisual {
+            // A text preview needs a code block's width.
+            preferredWidth = max(
+                preferredWidth,
+                file.textPreviewLanguage != nil
+                    ? min(InterfaceScale.metric(420), maximumWidth)
+                    : NativeTimelineFileCard.fittedWidth(for: file, isInBubble: true, maximumWidth: maximumWidth)
             )
         }
         if !message.embeds.isEmpty || !message.components.isEmpty

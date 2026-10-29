@@ -623,6 +623,8 @@ extension NativeTimelineRowLayout {
         }
 
         /// Lays out a file's text preview, or its card with any audio player.
+        /// In a bubble, which grows to fit them, both span the column so
+        /// hover highlights line up with the bubble.
         private mutating func appendFile(_ attachment: Attachment) -> CGRect {
             let origin = CGPoint(x: contentX, y: verticalOffset)
             if attachment.textPreviewLanguage != nil, let previews = source?.attachmentTextPreviews {
@@ -630,7 +632,8 @@ extension NativeTimelineRowLayout {
                 if presentation.state != .failed {
                     let preview = NativeTimelineTextPreview.make(
                         attachment: attachment, message: message, presentation: presentation,
-                        origin: origin, width: min(contentWidth, NativeTimelineTextPreview.maximumWidth)
+                        origin: origin, width: min(contentWidth, NativeTimelineTextPreview.maximumWidth),
+                        isInBubble: usesBubbles
                     )
                     result.textPreviews.append(preview)
                     return preview.frame
@@ -641,14 +644,24 @@ extension NativeTimelineRowLayout {
                 frame: CGRect(
                     origin: origin,
                     size: CGSize(
-                        width: min(NativeTimelineFileCard.maximumWidth, inlineMediaMaximumWidth),
-                        height: isAudio ? NativeTimelineFileCard.audioHeight : NativeTimelineFileCard.height
+                        width: usesBubbles
+                            ? contentWidth
+                            : NativeTimelineFileCard.fittedWidth(
+                                for: attachment, isInBubble: false, maximumWidth: inlineMediaMaximumWidth
+                            ),
+                        height: NativeTimelineFileCard.height(isInBubble: usesBubbles, isAudio: isAudio)
                     )
                 ),
                 attachment: attachment,
+                isInBubble: usesBubbles,
                 isAudio: isAudio
             )
-            if isAudio { result.audioFilePlayers.append(.audioFile(in: card, messageID: message.id)) }
+            if isAudio {
+                result.audioFilePlayers.append(.audioFile(
+                    in: card, messageID: message.id,
+                    surface: usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
+                ))
+            }
             return card.frame
         }
 

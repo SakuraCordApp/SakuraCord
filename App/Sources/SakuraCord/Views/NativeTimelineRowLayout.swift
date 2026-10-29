@@ -205,7 +205,10 @@ struct NativeTimelineRowLayout {
             guard !attachment.mediaKind.isVisual,
                   !textPreviews.contains(where: { $0.attachment.id == attachment.id })
             else { return nil }
-            return NativeTimelineFileCard(frame: region.frame, attachment: attachment, isAudio: attachment.mediaKind == .audio)
+            return NativeTimelineFileCard(
+                frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil,
+                isAudio: attachment.mediaKind == .audio
+            )
         }
     }
 

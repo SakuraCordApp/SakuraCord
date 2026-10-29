@@ -644,7 +644,7 @@ extension NativeTimelineCanvasView {
                     _ = activateSakuraCordDeepLink(action, message: hit.message)
                 case let .invite(card, expands):
                     activateInvite(card, message: hit.message, expands: expands)
-                case let .fileCard(card, _):
+                case let .fileCard(card):
                     model?.attachmentDownloads.activate(card.attachment)
                 case let .textPreview(preview, part?):
                     activateTextPreview(preview, part: part, message: hit.message, rowIndex: hit.rowIndex)
@@ -850,7 +850,7 @@ extension NativeTimelineCanvasView {
             {
                 reveal(revealKey, rowIndex: rowIndex)
             } else if !attachment.mediaKind.isVisual {
-                // Like Discord, only a card's or preview's controls act.
+                // A revealed card or preview acts through its own controls.
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,

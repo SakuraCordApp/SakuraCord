@@ -3,19 +3,27 @@ import CoreText
 import SakuraCordModels
 
 extension NativeTimelineRowPainter {
-    /// Discord's secondary button, which the expand button is.
-    private static let secondaryButtonColor = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
-
     /// Draws a text preview: its box of text, scrolled when expanded past
     /// the box, and its footer in rest, hover, and pressed states.
     static func textPreview(_ preview: NativeTimelineTextPreview, input: NativeTimelineMessageDrawInput) {
         func target(_ part: NativeTimelineTextPreview.Part) -> NativeTimelineComponentButtonTarget {
             .textPreview(messageID: preview.messageID, attachmentID: preview.attachment.id, part: part)
         }
-        let radius = NativeTimelineFileCard.cornerRadius
+        let bubble = preview.isInBubble ? input.layout.bubbleRegion : nil
+        let downloadState = input.model?.attachmentDownloads.states[preview.attachment.id]
+        let palette = FileCardPalette(bubble: bubble, isFailed: false)
+        let surfaceRadius = NativeTimelineBubbleDrawing.cornerRadius
+        if bubble == nil {
+            // A file card's surface, with the bubble's corner radius.
+            NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.10).setFill()
+            NSBezierPath(concentricRoundedRect: preview.frame, cornerRadius: surfaceRadius).fill()
+        }
         let box = preview.boxFrame
-        let boxShape = NSBezierPath(roundedRect: box, topRadius: radius)
-        (preview.isMarkdown ? NativeTimelineFileCard.audioBackgroundColor : discordCodeBackgroundColor).setFill()
+        let boxRadius = bubbleConcentricCornerRadius(
+            for: box, in: bubble, fallback: surfaceRadius - (box.minX - preview.frame.minX)
+        )
+        let boxShape = NSBezierPath(concentricRoundedRect: box, cornerRadius: boxRadius)
+        (preview.isMarkdown ? NativeTimelineSemanticColor.opacity(.labelColor, 0.06) : discordCodeBackgroundColor).setFill()
         boxShape.fill()
         if let text = preview.text, let context = NSGraphicsContext.current?.cgContext {
             let stored = input.model?.attachmentTextPreviews.scrollOffsets[preview.attachment.id] ?? .zero
@@ -23,7 +31,7 @@ extension NativeTimelineRowPainter {
             let scroll = CGPoint(x: min(stored.x, maximum.x), y: min(stored.y, maximum.y))
             let frame = preview.textFrame.offsetBy(dx: -scroll.x, dy: -scroll.y)
             context.saveGState()
-            context.clip(to: box.insetBy(dx: 1, dy: 1))
+            boxShape.addClip()
             if preview.isMarkdown {
                 // Markdown needs the message painter's list, quote, and code decorations.
                 attributedText(text.value, framesetter: text.framesetter, in: frame, model: input.model)
@@ -38,49 +46,44 @@ extension NativeTimelineRowPainter {
                 textPreviewScrollbar(preview, scroll: scroll.y)
             }
         }
-        (preview.isMarkdown ? NativeTimelineSemanticColor.opacity(.labelColor, 0.10) : discordCodeBorderColor).setStroke()
-        let boxBorder = NSBezierPath(roundedRect: box.insetBy(dx: 0.5, dy: 0.5), topRadius: radius - 0.5)
-        boxBorder.lineWidth = 1
-        boxBorder.stroke()
+        if !preview.isMarkdown {
+            // A message code block's border.
+            discordCodeBorderColor.setStroke()
+            let border = NSBezierPath(concentricRoundedRect: box.insetBy(dx: 0.5, dy: 0.5), cornerRadius: boxRadius - 0.5)
+            border.lineWidth = 1
+            border.stroke()
+        }
 
-        let footer = preview.footerFrame
-        NSColor.controlBackgroundColor.setFill()
-        NSBezierPath(roundedRect: footer, bottomRadius: radius).fill()
-        NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
-        // The box's border closes the footer's top.
-        let footerBorder = NSBezierPath(openRoundedRect: footer.insetBy(dx: 0.5, dy: 0.5), bottomRadius: radius - 0.5)
-        footerBorder.lineWidth = 1
-        footerBorder.stroke()
-
-        if let frame = preview.expandFrame {
-            let isPressed = input.pressedComponentButton == target(.expand)
-            let isHovered = input.hoveredComponentButton == target(.expand)
-            let button = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
-            secondaryButtonColor.withAlphaComponent(isPressed ? 0.24 : isHovered ? 0.20 : 0.12).setFill()
-            button.fill()
-            secondaryButtonColor.withAlphaComponent(0.16).setStroke()
-            let outline = NSBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), xRadius: radius - 0.5, yRadius: radius - 0.5)
-            outline.lineWidth = 1
-            outline.stroke()
+        func chip(_ part: NativeTimelineTextPreview.Part, symbol: String, in frame: CGRect, accent: Bool = false) {
+            let pressProgress = input.pressedComponentButton == target(part) ? input.componentButtonPressProgress : 0
+            let isHovered = input.hoveredComponentButton == target(part)
+            // The expand button is the footer's lead, like a file card's badge.
+            (accent ? palette.badge : isHovered ? palette.chipHover : palette.chip).setFill()
+            let scale = accent && isHovered ? 1.06 - 0.12 * pressProgress : 1
+            let shape = frame.insetBy(dx: frame.width * (1 - scale) / 2, dy: frame.height * (1 - scale) / 2)
+            NSBezierPath(ovalIn: shape).fill()
+            if !accent, pressProgress > 0 {
+                palette.highlight.withAlphaComponent(0.06 * pressProgress).setFill()
+                NSBezierPath(ovalIn: shape).fill()
+            }
             systemSymbol(
-                preview.isExpanded ? "chevron.up" : "chevron.down",
-                in: frame.insetBy(dx: InterfaceScale.metric(12), dy: InterfaceScale.metric(12)),
-                color: .labelColor, inset: 0, weight: .semibold
+                symbol, in: shape, color: accent ? palette.glyph : palette.name,
+                inset: shape.width * (accent ? 0.3 : 0.28), weight: .semibold
             )
         }
-        text(preview.attachment.filename, in: preview.nameFrame, font: NativeTimelineTextPreview.nameFont, color: .labelColor)
-        // A download from the More menu reports here, in place of the size.
-        switch input.model?.attachmentDownloads.states[preview.attachment.id] {
-        case let .downloading(fraction):
-            downloadProgressBar(in: preview.sizeFrame, fraction: fraction)
-        case .failed:
-            text("Download failed", in: preview.sizeFrame, font: NativeTimelineTextPreview.sizeFont, color: .systemRed)
-        case .finished, nil:
-            text(
-                NativeTimelineTextPreview.sizeText(preview.attachment.size),
-                in: preview.sizeFrame, font: NativeTimelineTextPreview.sizeFont, color: .secondaryLabelColor
-            )
+        if let frame = preview.expandFrame {
+            chip(.expand, symbol: preview.isExpanded ? "chevron.up" : "chevron.down", in: frame, accent: true)
         }
+        text(
+            preview.attachment.filename, in: preview.nameFrame, font: NativeTimelineFileCard.nameFont,
+            color: palette.name, lineBreakMode: .byTruncatingMiddle
+        )
+        // A download from the More menu reports here, as on a file card.
+        let detail = NativeTimelineFileCard.detail(for: downloadState, size: preview.attachment.size)
+        text(
+            detail.text + (detail.link ?? ""), in: preview.sizeFrame, font: NativeTimelineFileCard.detailFont,
+            color: downloadState == .failed ? palette.failure : palette.detail
+        )
         let icons: [(NativeTimelineTextPreview.Part, String)] = [
             (.language, "chevron.left.forwardslash.chevron.right"),
             (.viewWholeFile, "arrow.up.left.and.arrow.down.right"),
@@ -88,7 +91,7 @@ extension NativeTimelineRowPainter {
         ]
         for (part, symbol) in icons {
             guard let frame = preview.frame(of: part) else { continue }
-            systemSymbol(symbol, in: frame, color: .labelColor, inset: 0, weight: .semibold)
+            chip(part, symbol: symbol, in: frame)
         }
     }
 
@@ -105,36 +108,5 @@ extension NativeTimelineRowPainter {
         )
         NSColor.white.withAlphaComponent(0.24).setFill()
         NSBezierPath(roundedRect: thumb, xRadius: width / 2, yRadius: width / 2).fill()
-    }
-}
-
-private extension NSBezierPath {
-    /// A rectangle rounded only at its top corners, in a flipped context.
-    convenience init(roundedRect rect: CGRect, topRadius radius: CGFloat) {
-        self.init()
-        move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        line(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-        appendArc(withCenter: CGPoint(x: rect.minX + radius, y: rect.minY + radius), radius: radius, startAngle: 180, endAngle: 270)
-        line(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-        appendArc(withCenter: CGPoint(x: rect.maxX - radius, y: rect.minY + radius), radius: radius, startAngle: 270, endAngle: 360)
-        line(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        close()
-    }
-
-    /// A rectangle rounded only at its bottom corners, in a flipped context.
-    convenience init(roundedRect rect: CGRect, bottomRadius radius: CGFloat) {
-        self.init(openRoundedRect: rect, bottomRadius: radius)
-        close()
-    }
-
-    /// The sides and rounded bottom of a rectangle, leaving its top open.
-    convenience init(openRoundedRect rect: CGRect, bottomRadius radius: CGFloat) {
-        self.init()
-        move(to: CGPoint(x: rect.minX, y: rect.minY))
-        line(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
-        appendArc(withCenter: CGPoint(x: rect.minX + radius, y: rect.maxY - radius), radius: radius, startAngle: 180, endAngle: 90, clockwise: true)
-        line(to: CGPoint(x: rect.maxX - radius, y: rect.maxY))
-        appendArc(withCenter: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius), radius: radius, startAngle: 90, endAngle: 0, clockwise: true)
-        line(to: CGPoint(x: rect.maxX, y: rect.minY))
     }
 }
