@@ -67,6 +67,9 @@ struct NativeTimelineFileCard {
         )
     }
 
+    /// Where the card draws, including its hover highlight in a bubble.
+    var highlightFrame: CGRect { frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4)) }
+
     var nameFrame: CGRect {
         let minX = badgeFrame.maxX + Self.textGap
         let maxX = isAudio ? downloadFrame.minX - Self.textGap : frame.maxX - Self.trailingPadding(isInBubble: isInBubble)
