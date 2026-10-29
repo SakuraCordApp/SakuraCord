@@ -222,7 +222,7 @@ struct NativeTimelineComponentLayout {
                     source: source,
                     maximumWidth: maximumWidth,
                     inBubble: false,
-                    minimumWidth: rootWidth
+                    width: rootWidth
                 )
             case .section where rootWidth < maximumWidth, .separator where rootWidth < maximumWidth:
                 nodes[index] = NodeBuilder.node(
@@ -779,13 +779,14 @@ private enum NodeBuilder {
                 maximumWidth: min(InterfaceScale.metric(180), maximumWidth),
                 inBubble: inBubble
             )
-            let left = text(width: max(1, maximumWidth - accessoryNode.size.width - InterfaceScale.metric(12)))
+            let accessoryGap = InterfaceScale.metric(12)
+            let left = text(width: max(1, maximumWidth - accessoryNode.size.width - accessoryGap))
             let height = max(left.size.height, accessoryNode.size.height)
             // The accessory sits at the trailing edge of the space offered,
             // while the section reports only the width it needs, so a stack
             // that fits its content and then offers that width lines up.
             var result = Node(size: CGSize(
-                width: min(maximumWidth, left.size.width + InterfaceScale.metric(12) + accessoryNode.size.width),
+                width: min(maximumWidth, left.size.width + accessoryGap + accessoryNode.size.width),
                 height: height
             ))
             // Discord centres the text beside a button, and tops it beside a
@@ -995,7 +996,7 @@ private enum NodeBuilder {
         source: AppModel?,
         maximumWidth: CGFloat,
         inBubble: Bool,
-        minimumWidth: CGFloat = 0
+        width fixedWidth: CGFloat? = nil
     ) -> Node {
         switch component {
         case let .separator(_, divider, spacing):
@@ -1039,13 +1040,12 @@ private enum NodeBuilder {
                     spacing: componentSpacing
                 )
             }
-            let firstPass = content(width: max(1, maximumWidth - padding * 2))
-            let width = max(minimumWidth, DiscordComponentContainerLayoutPlan.width(
-                idealContent: firstPass.size.width,
+            let width = fixedWidth ?? DiscordComponentContainerLayoutPlan.width(
+                idealContent: content(width: max(1, maximumWidth - padding * 2)).size.width,
                 available: maximumWidth,
                 maximum: DiscordRichMessageMetrics.componentsMaximumWidth,
                 padding: padding
-            ))
+            )
             let content = content(width: max(1, width - padding * 2))
             let frame = CGRect(x: 0, y: 0, width: width, height: content.size.height + padding * 2)
             var result = Node(

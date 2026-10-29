@@ -1088,9 +1088,9 @@ extension NativeTimelineRowPainter {
     ) {
         // Discord darkens a button on hover and further while pressed, and
         // dims a disabled one to half opacity without either.
-        let isEnabled = region.opacity == 1
-        let pressProgress = isEnabled ? min(max(pressProgress, 0), 1) : 0
-        let hover: CGFloat = isEnabled && isHovered ? 1 : 0
+        let isDimmed = region.opacity < 1
+        let pressProgress = isDimmed ? 0 : min(max(pressProgress, 0), 1)
+        let hover: CGFloat = !isDimmed && isHovered ? 1 : 0
         let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let fill: NSColor
         let border: NSColor
@@ -1105,12 +1105,15 @@ extension NativeTimelineRowPainter {
             let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
             fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
             border = discordGrey.withAlphaComponent(isDark ? 0.04 : 0.2)
-            foreground = isDark ? .white : NSColor(srgbRed: 40 / 255, green: 40 / 255, blue: 45 / 255, alpha: 1)
+            foreground = isDark ? .white : discordLightText
         }
 
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current?.cgContext.setAlpha(region.opacity)
-        NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
+        let context = NSGraphicsContext.current?.cgContext
+        if isDimmed {
+            context?.setAlpha(region.opacity)
+            context?.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
         fill.setFill()
         NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: cornerRadius).fill()
         border.setStroke()
@@ -1121,12 +1124,13 @@ extension NativeTimelineRowPainter {
         outline.lineWidth = 1
         outline.stroke()
         drawComponentButtonContent(region, color: foreground, drawsEmoji: !hasAnimatedEmojiOverlay)
-        NSGraphicsContext.current?.cgContext.endTransparencyLayer()
+        if isDimmed { context?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
 
     /// The grey behind Discord's secondary buttons and its muted borders.
     private static let discordGrey = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
+    private static let discordLightText = NSColor(srgbRed: 40 / 255, green: 40 / 255, blue: 45 / 255, alpha: 1)
 
     private static func drawComponentButtonContent(
         _ region: NativeTimelineComponentLayout.ButtonRegion,
