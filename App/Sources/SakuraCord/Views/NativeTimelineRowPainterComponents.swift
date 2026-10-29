@@ -372,6 +372,7 @@ struct NativeTimelineComponentsDrawInput {
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
+    let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
 }
 
 extension NativeTimelineRowPainter {
@@ -649,6 +650,9 @@ extension NativeTimelineRowPainter {
                 isHovered: input.hoveredComponentButton == target,
                 pressProgress: input.pressedComponentButton == target
                     ? input.componentButtonPressProgress : 0,
+                hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(
+                    .componentButton(input.layoutIndex, region.componentID)
+                ),
                 cornerRadius: bubbleConcentricCornerRadius(
                     for: region.frame,
                     in: input.bubbleRegion,
@@ -1079,6 +1083,7 @@ extension NativeTimelineRowPainter {
         _ region: NativeTimelineComponentLayout.ButtonRegion,
         isHovered: Bool,
         pressProgress: CGFloat,
+        hasAnimatedEmojiOverlay: Bool,
         cornerRadius: CGFloat = NativeTimelineComponentButtonMetrics.cornerRadius
     ) {
         // Discord darkens a button on hover and further while pressed, and
@@ -1115,7 +1120,7 @@ extension NativeTimelineRowPainter {
         )
         outline.lineWidth = 1
         outline.stroke()
-        drawComponentButtonContent(region, color: foreground)
+        drawComponentButtonContent(region, color: foreground, drawsEmoji: !hasAnimatedEmojiOverlay)
         NSGraphicsContext.current?.cgContext.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -1125,7 +1130,8 @@ extension NativeTimelineRowPainter {
 
     private static func drawComponentButtonContent(
         _ region: NativeTimelineComponentLayout.ButtonRegion,
-        color: NSColor
+        color: NSColor,
+        drawsEmoji: Bool
     ) {
         // The row's loading-dots overlay replaces the label.
         guard !region.isLoading else { return }
@@ -1135,7 +1141,9 @@ extension NativeTimelineRowPainter {
             x: horizontalPosition, y: region.frame.midY - glyphSize / 2, width: glyphSize, height: glyphSize
         )
         if let emoji = region.emoji {
-            componentEmoji(emoji, in: glyphFrame)
+            // An animated emoji plays in its own overlay, at the button's
+            // opacity, so the painter leaves its slot empty.
+            if drawsEmoji { componentEmoji(emoji, in: glyphFrame) }
             horizontalPosition += NativeTimelineComponentButtonMetrics.leadingGlyphAdvance
         } else if region.style == .premium {
             systemSymbol("sparkles", in: glyphFrame, color: color, inset: 1)

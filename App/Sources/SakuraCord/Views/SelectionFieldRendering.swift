@@ -15,8 +15,9 @@ enum SelectionFieldLayoutMetrics {
     static var tokenHeight: CGFloat { InterfaceScale.metric(28) }
     static var tokenSpacing: CGFloat { InterfaceScale.metric(6) }
     static var tokenVerticalPadding: CGFloat { InterfaceScale.metric(6) }
-    /// Width reserved beside the tokens for the chevron and insets.
-    static var tokenTrailingReserve: CGFloat { InterfaceScale.metric(50) }
+    /// Width reserved beside the tokens for both insets, the open field's
+    /// 6-point gap and its 22-point chevron button.
+    static var tokenTrailingReserve: CGFloat { leadingInset * 2 + InterfaceScale.metric(28) }
 
     static func tokenAvailableWidth(in width: CGFloat) -> CGFloat {
         max(InterfaceScale.metric(40), width - tokenTrailingReserve)
@@ -86,7 +87,7 @@ enum SelectionFieldRenderer {
             in: CGRect(
                 x: frame.minX + SelectionFieldLayoutMetrics.leadingInset,
                 y: (frame.midY - lineHeight / 2).rounded(),
-                width: max(1, frame.width - InterfaceScale.metric(50)),
+                width: max(1, frame.width - SelectionFieldLayoutMetrics.tokenTrailingReserve),
                 height: lineHeight
             ),
             withAttributes: [
