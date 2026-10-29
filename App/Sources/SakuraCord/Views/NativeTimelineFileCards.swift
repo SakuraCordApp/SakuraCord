@@ -41,11 +41,13 @@ extension NativeTimelineCanvasView {
     /// a press animation redraws them alone rather than their row. Cards of
     /// one file share a target, so all of them are included.
     func fileCardDisplayFrame(_ target: NativeTimelineComponentButtonTarget, at index: Int) -> CGRect? {
-        fileCards(at: index, messageID: target.messageID)
-            .filter { .fileCard(messageID: target.messageID, attachmentID: $0.attachment.id) == target }
-            .map { $0.frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4)) }
-            .reduce(nil as CGRect?) { $0?.union($1) ?? $1 }?
-            .offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
+        guard target.componentID.hasPrefix("file:") else { return nil }
+        var frame: CGRect?
+        for card in fileCards(at: index, messageID: target.messageID)
+        where .fileCard(messageID: target.messageID, attachmentID: card.attachment.id) == target {
+            frame = frame?.union(card.highlightFrame) ?? card.highlightFrame
+        }
+        return frame?.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
     }
 
     func installFileCardCursors(at index: Int, rowOrigin: CGFloat) {
@@ -75,15 +77,11 @@ extension NativeTimelineCanvasView {
             return
         }
         // A progress tick changes only the badge's ring and the detail line.
-        guard var index = rowIndex(at: max(0, visibleRect.minY)) else { return }
-        while items.indices.contains(index), displayedRowOrigin(at: index) < visibleRect.maxY {
-            if let messageID = items[index].messageID, showsFile(items[index]) {
-                let origin = displayedRowOrigin(at: index)
-                for card in fileCards(at: index, messageID: messageID) where card.attachment.id == attachmentID {
-                    setNeedsDisplay(card.frame.offsetBy(dx: 0, dy: origin))
-                }
-            }
-            index += 1
+        forEachDisplayedRow(in: visibleRect) { index in
+            guard let messageID = items[index].messageID, showsFile(items[index]),
+                  let frame = fileCardDisplayFrame(.fileCard(messageID: messageID, attachmentID: attachmentID), at: index)
+            else { return }
+            setNeedsDisplay(frame)
         }
     }
 
