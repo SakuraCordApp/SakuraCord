@@ -14,6 +14,7 @@ struct MockChatFixture {
         let lottieURL: URL?
         let includesAnimatedMedia: Bool
         let includesVoiceMessages: Bool
+        let includesFiles: Bool
     }
 
     let currentUser: User
@@ -28,14 +29,16 @@ struct MockChatFixture {
         includesLongServerList: Bool = false,
         timelineMessageCount: Int? = nil,
         timelineIncludesAnimatedMedia: Bool = false,
-        timelineIncludesVoiceMessages: Bool = false
+        timelineIncludesVoiceMessages: Bool = false,
+        timelineIncludesFiles: Bool = false
     ) -> Self {
         MockFixtureAssembly(
             now: now,
             includesLongServerList: includesLongServerList,
             timelineMessageCount: timelineMessageCount,
             timelineIncludesAnimatedMedia: timelineIncludesAnimatedMedia,
-            timelineIncludesVoiceMessages: timelineIncludesVoiceMessages
+            timelineIncludesVoiceMessages: timelineIncludesVoiceMessages,
+            timelineIncludesFiles: timelineIncludesFiles
         ).fixture
     }
 
@@ -139,6 +142,9 @@ struct MockChatFixture {
         {
             return voice
         }
+        if input.includesFiles, !index.isMultiple(of: 4) {
+            return timelineFileMessage(input, index: index, id: id, author: author, start: start)
+        }
         let components = timelineComponents(index: index)
         return Message(
             id: id,
@@ -173,6 +179,47 @@ struct MockChatFixture {
                 lottieURL: input.lottieURL
             ),
             mentionedUsers: index % 8 == 4 ? [input.users[1]] : []
+        )
+    }
+
+    /// Three messages in four upload files, cycling through documents,
+    /// archives, code, logs, audio, and an image beside a file, so a long
+    /// timeline exercises every kind of file card and preview.
+    private static func timelineFileMessage(
+        _ input: TimelineFixtureInput,
+        index: Int,
+        id: MessageID,
+        author: User,
+        start: Date
+    ) -> Message {
+        let notes = demoResource("demo-notes", extension: "txt")
+        func file(_ name: String, _ url: URL?, type: String? = nil, size: Int) -> Attachment? {
+            url.map { Attachment(id: "timeline-file-\(index)-\(name)", filename: name, url: $0, mediaType: type, size: size) }
+        }
+        let files: [Attachment?] = switch index % 6 {
+        case 0: [file("release-notes-\(index).pdf", notes, size: 1_482_113), file("SakuraCord-\(index).zip", notes, size: 48_211_456)]
+        case 1: [file("FileCard\(index).swift", notes, type: "text/plain", size: 7_340)]
+        case 2: [file("field-recording-\(index).ogg", demoResource("demo-voice-message", extension: "ogg"), type: "audio/ogg", size: 18_723)]
+        case 3: [
+            input.mediaURL.map {
+                Attachment(id: "timeline-file-\(index)-image", filename: "shot-\(index).png", url: $0, mediaType: "image/png", width: 720, height: 420, size: 120_000)
+            },
+            file("notes-\(index).txt", notes, type: "text/plain", size: 218),
+        ]
+        case 4: [
+            file("budget-\(index).numbers", notes, size: 220_416), file("payload-\(index).bin", notes, size: 26),
+            file("README-\(index).md", demoResource("README", extension: "md"), type: "text/markdown", size: 796),
+        ]
+        default: [file("build-\(index).log", notes, type: "text/plain", size: 77_312)]
+        }
+        return Message(
+            id: id,
+            channelID: input.channelID,
+            author: author,
+            content: index.isMultiple(of: 3) ? "Files for build \(index)." : "",
+            timestamp: start.addingTimeInterval(Double(index) * 35),
+            attachments: files.compactMap { $0 },
+            guildID: input.guildID
         )
     }
 
@@ -467,6 +514,7 @@ private struct MockFixtureAssembly {
     let timelineMessageCount: Int?
     let timelineIncludesAnimatedMedia: Bool
     let timelineIncludesVoiceMessages: Bool
+    let timelineIncludesFiles: Bool
 
     var fixture: MockChatFixture {
         let auroraID = GuildID(rawValue: 100)
@@ -1030,7 +1078,8 @@ private struct MockFixtureAssembly {
                 videoURL: videoFixture,
                 lottieURL: lottieFixture,
                 includesAnimatedMedia: timelineIncludesAnimatedMedia,
-                includesVoiceMessages: timelineIncludesVoiceMessages
+                includesVoiceMessages: timelineIncludesVoiceMessages,
+                includesFiles: timelineIncludesFiles
             ))
         } else {
             // A short exchange of voice messages for interactive checks.
