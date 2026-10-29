@@ -47,25 +47,19 @@ extension NativeTimelineRowPainter {
             card.attachment.filename, in: card.nameFrame, font: NativeTimelineFileCard.nameFont,
             color: palette.name, lineBreakMode: .byTruncatingMiddle
         )
-        fileCardDetail(state: state, size: card.attachment.size, in: card.detailFrame, palette: palette)
-    }
-
-    /// A file's size, download progress, or result, with its trailing link.
-    private static func fileCardDetail(
-        state: AttachmentDownloadStore.State?, size: Int, in frame: CGRect, palette: FileCardPalette
-    ) {
-        let detail = NativeTimelineFileCard.detail(for: state, size: size)
-        let color = state == .failed ? palette.failure : palette.detail
-        text(detail.text, in: frame, font: NativeTimelineFileCard.detailFont, color: color)
-        guard let link = detail.link else { return }
-        var linkFrame = frame
-        let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: NativeTimelineFileCard.detailFont)
-        linkFrame.origin.x += offset
-        linkFrame.size.width = max(0, frame.width - offset)
-        text(
-            link, in: linkFrame, font: .interfaceSystemFont(ofSize: 12, weight: .semibold),
-            color: state == .failed ? palette.failure : palette.link
-        )
+        let detail = NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
+        let detailColor = state == .failed ? palette.failure : palette.detail
+        text(detail.text, in: card.detailFrame, font: NativeTimelineFileCard.detailFont, color: detailColor)
+        if let link = detail.link {
+            var frame = card.detailFrame
+            let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: NativeTimelineFileCard.detailFont)
+            frame.origin.x += offset
+            frame.size.width = max(0, frame.width - offset)
+            text(
+                link, in: frame, font: NativeTimelineFileCard.linkFont,
+                color: state == .failed ? palette.failure : palette.link
+            )
+        }
     }
 
     /// The file type's Finder icon, from a bitmap cached per type and size.
