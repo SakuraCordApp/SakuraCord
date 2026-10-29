@@ -19,7 +19,7 @@ extension NativeTimelineRowPainter {
         let highlight = 0.04 * ((isHovered ? 1 : 0) + pressProgress)
         if let bubble {
             if highlight > 0 {
-                let frame = card.frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4))
+                let frame = card.highlightFrame
                 palette.highlight.withAlphaComponent(highlight * (bubble.isOutgoing ? 3 : 1.5)).setFill()
                 NSBezierPath(
                     concentricRoundedRect: frame,
@@ -61,17 +61,12 @@ extension NativeTimelineRowPainter {
         isHovered: Bool,
         pressProgress: CGFloat
     ) {
-        let symbol: String
-        let fraction: Double?
-        switch state {
-        case nil:
-            (symbol, fraction) = (isHovered ? "arrow.down" : NativeTimelineFileCard.symbolName(for: card.attachment), nil)
-        case let .downloading(progress):
-            (symbol, fraction) = ("xmark", progress)
-        case .finished:
-            (symbol, fraction) = (isHovered ? "magnifyingglass" : NativeTimelineFileCard.symbolName(for: card.attachment), nil)
-        case .failed:
-            (symbol, fraction) = (isHovered ? "arrow.clockwise" : "exclamationmark", nil)
+        let typeSymbol = NativeTimelineFileCard.symbolName(for: card.attachment)
+        let symbol = switch state {
+        case nil: isHovered ? "arrow.down" : typeSymbol
+        case .downloading: "xmark"
+        case .finished: isHovered ? "magnifyingglass" : typeSymbol
+        case .failed: isHovered ? "arrow.clockwise" : "exclamationmark"
         }
         // The voice message play button's hover growth, then a press dip.
         let scale = isHovered ? 1.06 - 0.12 * pressProgress : 1
@@ -79,7 +74,7 @@ extension NativeTimelineRowPainter {
         let badge = base.insetBy(dx: base.width * (1 - scale) / 2, dy: base.height * (1 - scale) / 2)
         palette.badge.setFill()
         NSBezierPath(ovalIn: badge).fill()
-        guard let fraction else {
+        guard case let .downloading(fraction) = state else {
             systemSymbol(symbol, in: badge, color: palette.glyph, inset: badge.width * 0.27, weight: .semibold)
             return
         }
