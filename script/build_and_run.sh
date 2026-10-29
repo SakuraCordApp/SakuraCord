@@ -354,7 +354,9 @@ case "$MODE" in
   --offline-chat-voice-performance) open_offline_chat_voice_performance ;;
   --offline-chat-voice-performance-autoscroll) open_offline_chat_voice_performance_autoscroll ;;
   --offline-chat-files-performance|--offline-chat-files-performance-autoscroll|--offline-chat-files-performance-open)
-    open_app --args "$MODE" ;;
+    # Forward the result path, which `open` does not pass on by itself.
+    open_app ${SAKURACORD_PERFORMANCE_RESULT_PATH:+--env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH"} \
+      --args "$MODE" ;;
   --offline-pins-performance-autoscroll) open_offline_pins_performance_autoscroll ;;
   --offline-friends-performance) open_app --args --offline-friends-performance ;;
   --offline-incoming-private-call) open_offline_incoming_private_call ;;
