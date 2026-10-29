@@ -23,7 +23,9 @@ extension NativeTimelineRowPainter {
             for: box, in: bubble, fallback: surfaceRadius - (box.minX - preview.frame.minX)
         )
         let boxShape = NSBezierPath(concentricRoundedRect: box, cornerRadius: boxRadius)
-        (preview.isMarkdown ? NativeTimelineSemanticColor.opacity(.labelColor, 0.06) : discordCodeBackgroundColor).setFill()
+        // Rendered Markdown keeps the timeline's text colours, so it needs
+        // an opaque neutral page even on an accent bubble.
+        (preview.isMarkdown ? NSColor.controlBackgroundColor : discordCodeBackgroundColor).setFill()
         boxShape.fill()
         if let text = preview.text, let context = NSGraphicsContext.current?.cgContext {
             let stored = input.model?.attachmentTextPreviews.scrollOffsets[preview.attachment.id] ?? .zero

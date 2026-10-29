@@ -518,7 +518,9 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         )
         spinner.lineWidth = 2.4 * unit
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            spinner.strokeColor = NativeTimelineVoiceMessagePainter.spinnerColor(for: region.style).cgColor
+            spinner.strokeColor = NativeTimelineVoiceMessagePainter.spinnerColor(
+                for: region.style == .audioFile ? region.surface : region.style
+            ).cgColor
         }
     }
 

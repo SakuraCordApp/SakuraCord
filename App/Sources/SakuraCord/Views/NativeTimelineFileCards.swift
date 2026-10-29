@@ -68,13 +68,16 @@ extension NativeTimelineCanvasView {
             items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
             return
         }
-        // A progress tick changes only the badge's ring and the detail line.
+        // A progress tick changes only a card's ring and detail line, or a
+        // text preview's footer.
         guard var index = rowIndex(at: max(0, visibleRect.minY)) else { return }
         while items.indices.contains(index), displayedRowOrigin(at: index) < visibleRect.maxY {
             if let messageID = items[index].messageID, showsFile(items[index]) {
                 let origin = displayedRowOrigin(at: index)
-                for card in fileCards(at: index, messageID: messageID) where card.attachment.id == attachmentID {
-                    setNeedsDisplay(card.frame.offsetBy(dx: 0, dy: origin))
+                let frames = fileCards(at: index, messageID: messageID).filter { $0.attachment.id == attachmentID }.map(\.frame)
+                    + layouts[index].textPreviews.filter { $0.attachment.id == attachmentID }.map(\.footerFrame)
+                for frame in frames {
+                    setNeedsDisplay(frame.offsetBy(dx: 0, dy: origin))
                 }
             }
             index += 1
