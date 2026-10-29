@@ -20,6 +20,9 @@ struct NativeTimelineFileCard {
     let attachment: Attachment
     let isInBubble: Bool
     var isAudio = false
+    /// A message's text or code file, which opens in the media viewer; only
+    /// its badge downloads.
+    var opensInViewer = false
 
     /// The name row's height; an audio card adds its seek row below.
     static func height(isInBubble: Bool, isAudio: Bool = false) -> CGFloat {
@@ -48,7 +51,7 @@ struct NativeTimelineFileCard {
         return min(maximumWidth, Self.maximumWidth, max(minimum, ceil(width)))
     }
 
-    static var chipDiameter: CGFloat { InterfaceScale.metric(28) }
+    private static var chipDiameter: CGFloat { InterfaceScale.metric(28) }
 
     /// The name row, which is the whole card unless it plays audio.
     private var nameRow: CGRect {
@@ -91,7 +94,9 @@ struct NativeTimelineFileCard {
     /// What acts on the file: the whole card, or an audio card's name row
     /// beside its play button, including the detail line's Show in Finder or
     /// Retry link.
-    var actionFrame: CGRect { isAudio ? nameFrame.union(detailFrame).union(downloadFrame) : frame }
+    var actionFrame: CGRect {
+        isAudio ? nameFrame.union(detailFrame).union(downloadFrame) : opensInViewer ? badgeFrame : frame
+    }
 
     /// An audio card's seek row, under the name and ending with the card.
     var playerRowFrame: CGRect {

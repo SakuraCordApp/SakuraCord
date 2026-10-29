@@ -2,6 +2,11 @@ import AppKit
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {
+    /// Whether an attachment still hides behind its spoiler cover.
+    func isConcealedSpoiler(_ attachment: Attachment, in messageID: MessageID) -> Bool {
+        attachment.isSpoiler && !spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: attachment.id))
+    }
+
     /// The visible file cards in a message row, attachment cards first.
     private func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
@@ -50,7 +55,8 @@ extension NativeTimelineCanvasView {
     func installFileCardCursors(at index: Int, rowOrigin: CGFloat) {
         guard let messageID = items[index].messageID else { return }
         for card in fileCards(at: index, messageID: messageID) {
-            addCursorRect(card.actionFrame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+            // A text file's body opens the viewer, so the whole card points.
+            addCursorRect((card.isAudio ? card.actionFrame : card.frame).offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
         }
     }
 
@@ -73,17 +79,12 @@ extension NativeTimelineCanvasView {
             items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
             return
         }
-        // A progress tick changes only a card's ring and detail line, or a
-        // text preview's footer.
+        // A progress tick changes only the badge's ring and the detail line.
         forEachDisplayedRow(in: visibleRect) { index in
-            guard let messageID = items[index].messageID, showsFile(items[index]) else { return }
-            let origin = displayedRowOrigin(at: index)
-            if let frame = fileCardDisplayFrame(.fileCard(messageID: messageID, attachmentID: attachmentID), at: index) {
-                setNeedsDisplay(frame)
-            }
-            for preview in layouts[index].textPreviews where preview.attachment.id == attachmentID {
-                setNeedsDisplay(preview.footerFrame.offsetBy(dx: 0, dy: origin))
-            }
+            guard let messageID = items[index].messageID, showsFile(items[index]),
+                  let frame = fileCardDisplayFrame(.fileCard(messageID: messageID, attachmentID: attachmentID), at: index)
+            else { return }
+            setNeedsDisplay(frame)
         }
     }
 

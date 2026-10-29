@@ -195,19 +195,16 @@ struct NativeTimelineRowLayout {
     /// One region per attachment, in message order: a gallery tile or a file card.
     var attachmentRegions: [AttachmentRegion] = []
 
-    var textPreviews: [NativeTimelineTextPreview] = []
     var audioFilePlayers: [NativeTimelineVoiceMessageRegion] = []
 
-    /// File and audio cards; a text file shows as one when it can't preview.
+    /// File and audio cards.
     var fileCards: [NativeTimelineFileCard] {
         attachmentRegions.compactMap { region in
             let attachment = region.attachment
-            guard !attachment.mediaKind.isVisual,
-                  !textPreviews.contains(where: { $0.attachment.id == attachment.id })
-            else { return nil }
+            guard !attachment.mediaKind.isVisual else { return nil }
             return NativeTimelineFileCard(
                 frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil,
-                isAudio: attachment.mediaKind == .audio
+                isAudio: attachment.mediaKind == .audio, opensInViewer: attachment.textPreviewLanguage != nil
             )
         }
     }
@@ -515,14 +512,8 @@ struct NativeTimelineSearchPrefixLayout {
 }
 
 extension NativeTimelineRowLayout {
-    /// Whether presentation the row reads from outside its message, an
-    /// author's server tag and its text previews, is unchanged.
-    func matchesLivePresentation(for item: NativeMessageTimelineItem, source: AppModel) -> Bool {
-        guard let message = item.messageRow?.message else { return true }
-        let previews = source.attachmentTextPreviews
-        guard textPreviews.allSatisfy({ $0.presentation == previews.presentation(of: $0.attachment, in: message) })
-        else { return false }
-        guard authorFrame != nil else { return true }
-        return authorPrimaryGuild == source.authorPresentation(for: message).user.primaryGuild
+    func matchesAuthorPrimaryGuild(for item: NativeMessageTimelineItem, source: AppModel) -> Bool {
+        guard authorFrame != nil, let row = item.messageRow else { return true }
+        return authorPrimaryGuild == source.authorPresentation(for: row.message).user.primaryGuild
     }
 }

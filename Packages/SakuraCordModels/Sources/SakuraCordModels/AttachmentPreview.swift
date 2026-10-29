@@ -4,9 +4,9 @@ public extension Attachment {
     /// Discord's audio file extensions: such a file plays inline.
     internal static let audioFileExtensions: Set<String> = ["mp3", "m4a", "ogg", "opus", "wav", "flac"]
 
-    /// The language a text file previews as, which is its extension, or nil
-    /// when Discord shows the file as a plain card. Like Discord, the match is
-    /// case-sensitive.
+    /// The language a text or code file opens in the media viewer as, which
+    /// is its extension, or nil for any other file. Like Discord's preview
+    /// rule, the match is case-sensitive.
     var textPreviewLanguage: String? {
         guard mediaKind == .file, let language = filename.components(separatedBy: ".").last,
               Self.textPreviewExtensions.contains(language)
@@ -14,12 +14,7 @@ public extension Attachment {
         return language
     }
 
-    /// The languages a preview can switch to, in Discord's picker order.
-    static var textPreviewLanguages: [String] {
-        textPreviewExtensions.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-    }
-
-    /// Discord's previewable extensions: highlight.js language names and aliases.
+    /// Discord's previewable text extensions: highlight.js language names and aliases.
     private static let textPreviewExtensions: Set<String> = [
         "1c", "4d", "abnf", "accesslog", "ada", "arduino", "ino", "armasm", "arm", "avrasm", "actionscript", "as",
         "ass", "ssa", "alan", "ansi", "i", "log", "ln", "angelscript", "asc", "apache", "apacheconf", "applescript",

@@ -286,7 +286,7 @@ extension NativeMessageTimelineCoordinator {
                let cached = preparation.layouts[item.identifier],
                cached.item == item,
                cached.layout.fontRevision == ProfileNameFontCache.revision,
-               cached.layout.matchesLivePresentation(for: item, source: parent.model) {
+               cached.layout.matchesAuthorPrimaryGuild(for: item, source: parent.model) {
                 recentLayoutCacheHits += 1
                 return cached.layout
             }
@@ -451,7 +451,7 @@ extension NativeMessageTimelineCoordinator {
                 frame: geometry.frame,
                 bounds: geometry.bounds
             )
-            canvas.prefetchVisibleAttachments()
+            canvas.prefetchVisibleVoiceMessages()
         }
 
         @discardableResult

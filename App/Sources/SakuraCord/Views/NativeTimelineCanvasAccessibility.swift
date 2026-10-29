@@ -813,7 +813,7 @@ extension NativeTimelineCanvasView {
                     label: label,
                     help: isHiddenSpoiler
                         ? "Reveals this media without opening it"
-                        : !attachment.mediaKind.isVisual
+                        : !attachment.mediaKind.isVisual && attachment.textPreviewLanguage == nil
                             ? fileCardActionDescription(attachment, name: contentLabel)
                             : "Open \(contentLabel)",
                     frame: accessibilityChildFrame(
@@ -845,9 +845,6 @@ extension NativeTimelineCanvasView {
     ) {
         for region in layout.audioPlayers where !isConcealedSpoiler(region.attachment, in: message.id) {
             children.append(voiceMessageAccessibilityElement(region, rowIndex: rowIndex, parent: parent))
-        }
-        for preview in layout.textPreviews where !isConcealedSpoiler(preview.attachment, in: message.id) {
-            children.append(textPreviewAccessibilityElement(preview, message: message, rowIndex: rowIndex, parent: parent))
         }
     }
 
@@ -887,49 +884,6 @@ extension NativeTimelineCanvasView {
                     duration: duration,
                     fraction: (playback.position(of: region.playbackID) + offset) / duration
                 )
-                return true
-            }
-        })
-        return element
-    }
-
-    /// A text preview's controls, as the preview's custom actions.
-    private func textPreviewAccessibilityElement(
-        _ preview: NativeTimelineTextPreview,
-        message: Message,
-        rowIndex: Int,
-        parent: Any?
-    ) -> NSAccessibilityElement {
-        let element = accessibilityElement(
-            role: .group,
-            label: "Text preview, \(preview.attachment.filename)",
-            value: preview.preview.map {
-                NativeTimelineTextPreview.displayedText(
-                    $0,
-                    shownLines: preview.isExpanded ? NativeTimelineTextPreview.expandedLineCount
-                        : NativeTimelineTextPreview.collapsedLineCount
-                )
-            },
-            frame: accessibilityChildFrame(preview.frame, rowIndex: rowIndex),
-            parent: parent
-        )
-        let parts = NativeTimelineTextPreview.Part.allCases.filter { preview.frame(of: $0) != nil }
-        let row = items[rowIndex].identifier
-        element.setAccessibilityCustomActions(parts.map { part in
-            let name = switch part {
-            case .expand: preview.expandLabel
-            case .file: fileCardActionDescription(preview.attachment, name: preview.attachment.filename)
-            case .language: "Change Language"
-            case .viewWholeFile: "View Whole File"
-            case .more: "More Options"
-            }
-            return NSAccessibilityCustomAction(name: name) { [weak self] in
-                // Rows above can move this one after the element is made, so
-                // the menus anchor to where the row is now.
-                guard let self, let index = self.rowIndex(forIdentifier: row, hint: rowIndex) else { return false }
-                // The language and More menus track modally, so they open
-                // after the action returns rather than holding its reply.
-                Task { @MainActor in self.activateTextPreview(preview, part: part, message: message, rowIndex: index) }
                 return true
             }
         })

@@ -131,7 +131,6 @@ extension NativeTimelineCanvasView {
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
                 installFileCardCursors(at: index, rowOrigin: rowOrigin)
-                installTextPreviewCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -646,10 +645,6 @@ extension NativeTimelineCanvasView {
                     activateInvite(card, message: hit.message, expands: expands)
                 case let .fileCard(card):
                     model?.attachmentDownloads.activate(card.attachment)
-                case let .textPreview(preview, part?):
-                    activateTextPreview(preview, part: part, message: hit.message, rowIndex: hit.rowIndex)
-                case .textPreview(_, nil):
-                    break
                 }
             }
             return true
@@ -849,8 +844,9 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
-            } else if !attachment.mediaKind.isVisual {
-                // A revealed card or preview acts through its own controls.
+            } else if !attachment.mediaKind.isVisual, attachment.textPreviewLanguage == nil {
+                // A revealed file card acts through its own pointer hit; a
+                // text file's body opens the viewer below.
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,
@@ -1701,8 +1697,7 @@ extension NativeTimelineCanvasView {
                 )
             )
         }
-        if let hit = fileCardPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message)
-            ?? textPreviewPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message) {
+        if let hit = fileCardPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message) {
             return hit
         }
         for layout in layouts[index].componentLayouts {

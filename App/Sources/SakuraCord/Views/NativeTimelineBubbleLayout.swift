@@ -94,12 +94,9 @@ enum NativeTimelineBubbleLayout {
             )
         }
         for file in message.attachments where !file.mediaKind.isVisual {
-            // A text preview needs a code block's width.
             preferredWidth = max(
                 preferredWidth,
-                file.textPreviewLanguage != nil
-                    ? min(InterfaceScale.metric(420), maximumWidth)
-                    : NativeTimelineFileCard.fittedWidth(for: file, isInBubble: true, maximumWidth: maximumWidth)
+                NativeTimelineFileCard.fittedWidth(for: file, isInBubble: true, maximumWidth: maximumWidth)
             )
         }
         if !message.embeds.isEmpty || !message.components.isEmpty

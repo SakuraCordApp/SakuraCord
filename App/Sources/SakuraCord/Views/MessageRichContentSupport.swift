@@ -516,6 +516,8 @@ struct RichMediaItem: Identifiable, Hashable {
     enum Kind: Hashable {
         case image(animated: Bool)
         case video, audio, file
+        /// A text or code file, read and highlighted as its language.
+        case text(language: String)
         case youtube(YouTubeEmbedPlayback)
     }
 
@@ -565,7 +567,7 @@ struct RichMediaItem: Identifiable, Hashable {
             case .animatedImage: .image(animated: true)
             case .video: .video
             case .audio: .audio
-            case .file: .file
+            case .file: attachment.textPreviewLanguage.map { .text(language: $0) } ?? .file
             }
     }
 

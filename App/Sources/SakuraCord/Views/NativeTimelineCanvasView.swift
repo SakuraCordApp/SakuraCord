@@ -135,8 +135,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
             case fileCard(NativeTimelineFileCard)
-            /// A text preview's footer part, or its body, which acts on nothing.
-            case textPreview(NativeTimelineTextPreview, part: NativeTimelineTextPreview.Part?)
 
             var isDisabled: Bool {
                 switch self {
@@ -148,8 +146,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                     !expands && card.isDisabled
                 case .fileCard:
                     false
-                case let .textPreview(_, part):
-                    part == nil
                 }
             }
         }
@@ -340,14 +336,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
     /// A hovered audio file's seek bar while another player is active.
     var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
-    /// The text preview a scroll gesture began over, which keeps the gesture.
-    /// The row tells apart copies of one file, as in a forward.
-    struct TextPreviewScrollTarget {
-        let row: NativeMessageTimelineItem.Identifier
-        let attachmentID: String
-    }
-
-    var textPreviewScrollTarget: TextPreviewScrollTarget?
     var voiceMessageActiveID: VoiceMessagePlaybackID?
     var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?

@@ -111,7 +111,7 @@ extension NativeTimelineCanvasView {
         )
         scheduleInitialReactionCountCapture()
         reconcileVisibleReactionPreviewLoads()
-        prefetchVisibleAttachments()
+        prefetchVisibleVoiceMessages()
         startVisibleInlineVideosImmediately()
         scheduleAnimatedMediaReconciliation()
         positionAnimatedMediaOverlays()

@@ -77,9 +77,8 @@ extension NativeTimelineRowPainter {
         )
     }
 
-    /// Files and text previews below other bubble content share one
-    /// integrated section, as thread cards and invites do; a bubble holding
-    /// only files is their card.
+    /// Files below other bubble content share one integrated section, as
+    /// thread cards and invites do; a bubble holding only files is their card.
     private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
         let files = layout.attachmentRegions.filter { !$0.attachment.mediaKind.isVisual }.map(\.frame)
         guard let bubble = layout.bubbleRegion, let first = files.first,
@@ -498,10 +497,6 @@ extension NativeTimelineRowPainter {
                 }
                 if isVideo { mediaPlayGlyph(in: region.frame) }
             case .audio, .file:
-                if let preview = layout.textPreviews.first(where: { $0.attachment.id == attachment.id }) {
-                    textPreview(preview, input: input)
-                    continue
-                }
                 let target = NativeTimelineComponentButtonTarget.fileCard(messageID: message.id, attachmentID: attachment.id)
                 fileCard(
                     .init(

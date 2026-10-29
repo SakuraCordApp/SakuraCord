@@ -50,7 +50,7 @@ extension NativeTimelineRowPainter {
     }
 
     /// A file's size, download progress, or result, with its trailing link.
-    static func fileCardDetail(
+    private static func fileCardDetail(
         state: AttachmentDownloadStore.State?, size: Int, in frame: CGRect, palette: FileCardPalette
     ) {
         let detail = NativeTimelineFileCard.detail(for: state, size: size)
@@ -146,7 +146,7 @@ extension NativeTimelineRowPainter {
 
     /// A file card's colours: SakuraCord's accent badge with a white glyph,
     /// inverted on an outgoing bubble as its voice messages are.
-    struct FileCardPalette {
+    private struct FileCardPalette {
         let badge: NSColor
         let glyph: NSColor
         let name: NSColor

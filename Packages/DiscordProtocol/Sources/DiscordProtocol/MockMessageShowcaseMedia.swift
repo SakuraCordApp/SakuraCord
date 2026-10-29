@@ -56,7 +56,7 @@ extension MockMessageFixtureBuilder {
                     }
                 }
             },
-            showcaseMessage(236, content: "Text previews and an audio file without a length.") {
+            showcaseMessage(236, content: "A Markdown file and an audio file without a length.") {
                 $0.attachments = [
                     MockChatFixture.demoResource("README", extension: "md").map {
                         Attachment(id: "showcase-markdown", filename: "README.md", url: $0, mediaType: "text/markdown", size: 796)

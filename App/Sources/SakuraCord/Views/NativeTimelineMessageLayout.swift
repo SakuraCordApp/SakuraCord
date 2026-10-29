@@ -625,23 +625,11 @@ extension NativeTimelineRowLayout {
             usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
         }
 
-        /// Lays out a file's text preview, or its card with any audio player.
-        /// In a bubble, which grows to fit them, both span the column so
-        /// hover highlights line up with the bubble.
+        /// Lays out a file's card, with its player for audio. In a bubble,
+        /// which grows to fit it, a card spans the column so its hover
+        /// highlight lines up with the bubble.
         private mutating func appendFile(_ attachment: Attachment) -> CGRect {
             let origin = CGPoint(x: contentX, y: verticalOffset)
-            if attachment.textPreviewLanguage != nil, let previews = source?.attachmentTextPreviews {
-                let presentation = previews.presentation(of: attachment, in: message)
-                if presentation.state != .failed {
-                    let preview = NativeTimelineTextPreview.make(
-                        attachment: attachment, message: message, presentation: presentation,
-                        origin: origin, width: min(contentWidth, NativeTimelineTextPreview.maximumWidth),
-                        isInBubble: usesBubbles
-                    )
-                    result.textPreviews.append(preview)
-                    return preview.frame
-                }
-            }
             let isAudio = attachment.mediaKind == .audio
             let card = NativeTimelineFileCard(
                 frame: CGRect(

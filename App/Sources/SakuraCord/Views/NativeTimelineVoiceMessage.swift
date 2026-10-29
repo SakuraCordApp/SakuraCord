@@ -705,19 +705,13 @@ extension NativeTimelineCanvasView {
         if reconciles { reconcileVoiceMessageOverlay() } else { refreshVoiceMessageOverlay() }
     }
 
-    /// Fetches on-screen voice messages into the media cache, as images are,
-    /// and starts on-screen text previews. Audio files, which can be large,
-    /// wait to be hovered or played.
-    func prefetchVisibleAttachments() {
+    /// Fetches on-screen voice messages into the media cache, as images are.
+    /// Audio files, which can be large, wait to be hovered or played.
+    func prefetchVisibleVoiceMessages() {
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        guard let model, var index = rowIndex(at: max(0, viewport.minY)) else { return }
+        guard let playback = model?.voiceMessagePlayback, var index = rowIndex(at: max(0, viewport.minY)) else { return }
         while items.indices.contains(index), layouts.indices.contains(index), displayedRowOrigin(at: index) < viewport.maxY {
-            if case let .remote(url) = layouts[index].voiceMessageRegion?.source { model.voiceMessagePlayback.prefetch(url) }
-            if let messageID = items[index].messageID {
-                for preview in layouts[index].textPreviews {
-                    model.attachmentTextPreviews.load(preview.attachment, in: messageID, showing: preview.presentation.state)
-                }
-            }
+            if case let .remote(url) = layouts[index].voiceMessageRegion?.source { playback.prefetch(url) }
             index += 1
         }
     }

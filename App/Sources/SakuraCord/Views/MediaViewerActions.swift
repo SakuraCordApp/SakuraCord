@@ -218,6 +218,8 @@ nonisolated enum MediaViewerDetails {
             "Audio"
         case .file:
             "File"
+        case .text:
+            "Text file"
         }
     }
 }

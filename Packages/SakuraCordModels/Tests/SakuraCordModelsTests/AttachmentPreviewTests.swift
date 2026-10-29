@@ -2,7 +2,7 @@ import Foundation
 @testable import SakuraCordModels
 import Testing
 
-@Test func `attachments preview and play as Discord classifies them`() {
+@Test func `attachments open as text and play as Discord classifies them`() {
     func attachment(_ filename: String, type: String? = nil, width: Int? = nil) -> SakuraCordModels.Attachment {
         SakuraCordModels.Attachment(id: filename, filename: filename, url: URL(string: "https://cdn.discordapp.com/\(filename)")!,
                    mediaType: type, width: width, height: width)

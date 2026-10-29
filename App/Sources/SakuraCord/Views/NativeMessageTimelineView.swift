@@ -1179,10 +1179,6 @@ extension NativeMessageTimelineCoordinator {
                 || items != newItems
                 || layouts.count != newItems.count
                 || messageIDs.count != rows.count
-                // A text preview that loaded or changed needs its row laid out again.
-                || zip(items, layouts).contains(where: { item, layout in
-                    !layout.textPreviews.isEmpty && !layout.matchesLivePresentation(for: item, source: parent.model)
-                })
             {
                 // Without a width or presentation change, an unchanged item's
                 // layout is still current wherever the item moved. Rows
@@ -1200,7 +1196,7 @@ extension NativeMessageTimelineCoordinator {
                     if let index = reusableLayouts[item.identifier],
                        oldItems[index] == item,
                        oldLayouts[index].fontRevision == ProfileNameFontCache.revision,
-                       oldLayouts[index].matchesLivePresentation(for: item, source: parent.model) {
+                       oldLayouts[index].matchesAuthorPrimaryGuild(for: item, source: parent.model) {
                         // Retained live rows are not reads from a layout cache.
                         return oldLayouts[index]
                     }
@@ -1301,7 +1297,7 @@ extension NativeMessageTimelineCoordinator {
             guard let cached = cachedItemLayouts[key],
                   cached.item == item,
                   cached.layout.fontRevision == ProfileNameFontCache.revision,
-                  cached.layout.matchesLivePresentation(for: item, source: parent.model)
+                  cached.layout.matchesAuthorPrimaryGuild(for: item, source: parent.model)
             else { return nil }
             return cached.layout
         }
