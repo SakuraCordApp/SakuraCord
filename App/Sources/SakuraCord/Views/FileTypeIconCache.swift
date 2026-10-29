@@ -13,26 +13,64 @@ enum FileTypeIconCache {
 
     private static var images: [Key: NSImage] = [:]
 
+    /// Extensions common enough to have their icons ready before a
+    /// conversation first shows them.
+    private nonisolated static let commonExtensions = [
+        "", "pdf", "zip", "txt", "md", "log", "json", "swift", "js", "py", "html", "csv",
+        "doc", "docx", "pages", "xls", "xlsx", "numbers", "ppt", "pptx", "key", "rtf",
+        "png", "jpg", "gif", "mp4", "mov", "mp3", "m4a", "ogg", "wav", "dmg", "bin",
+    ]
+
+    /// The icon side the timeline draws, in pixels on the main screen.
+    static var cardIconPixels: Int {
+        Int(ceil(NativeTimelineFileCard.iconSide * (NSScreen.main?.backingScaleFactor ?? 2)))
+    }
+
+    /// Rasterizes the common icons off the main thread, so opening a
+    /// conversation of files never waits on Launch Services.
+    static func prewarm() {
+        let pixels = cardIconPixels
+        Task.detached(priority: .utility) {
+            let rendered = commonExtensions.compactMap { pathExtension in
+                render(pathExtension, pixels: pixels).map { (pathExtension, $0) }
+            }
+            await MainActor.run {
+                for (pathExtension, bitmap) in rendered {
+                    images[Key(pathExtension: pathExtension, pixels: pixels)] = image(bitmap, pixels: pixels)
+                }
+            }
+        }
+    }
+
     static func image(forFilename filename: String, pixels: Int) -> NSImage? {
         let pathExtension = (filename as NSString).pathExtension.lowercased()
         let key = Key(pathExtension: pathExtension, pixels: pixels)
         if let image = images[key] { return image }
-        // An unknown extension has a dynamic type, whose icon is the generic
-        // document; no extension at all is plain data.
+        guard let bitmap = render(pathExtension, pixels: pixels) else { return nil }
+        if images.count >= 64 { images.removeAll(keepingCapacity: true) }
+        let image = image(bitmap, pixels: pixels)
+        images[key] = image
+        return image
+    }
+
+    private static func image(_ bitmap: CGImage, pixels: Int) -> NSImage {
+        NSImage(cgImage: bitmap, size: CGSize(width: pixels, height: pixels))
+    }
+
+    /// An unknown extension has a dynamic type, whose icon is the generic
+    /// document; no extension at all is plain data.
+    private nonisolated static func render(_ pathExtension: String, pixels: Int) -> CGImage? {
         let type = UTType(filenameExtension: pathExtension) ?? .data
         guard let context = CGContext(
             data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
+        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.current = graphics
         NSWorkspace.shared.icon(for: type).draw(in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
         NSGraphicsContext.restoreGraphicsState()
-        guard let bitmap = context.makeImage() else { return nil }
-        if images.count >= 64 { images.removeAll(keepingCapacity: true) }
-        let image = NSImage(cgImage: bitmap, size: CGSize(width: pixels, height: pixels))
-        images[key] = image
-        return image
+        return context.makeImage()
     }
 }
