@@ -59,19 +59,19 @@ extension NativeTimelineCanvasView {
         guard let downloads = model?.attachmentDownloads, notification.object as AnyObject === downloads,
               let attachmentID = notification.userInfo?[AttachmentDownloadStore.attachmentIDKey] as? String
         else { return }
-        // Bitmaps survive navigation, so cached rows elsewhere need it too.
-        let identifiers = bitmapCache.compactMap { identifier, cached in
-            guard let message = cached.item.messageRow?.message else { return nil as NativeMessageTimelineItem.Identifier? }
+        func showsFile(_ item: NativeMessageTimelineItem) -> Bool {
+            guard let message = item.messageRow?.message else { return false }
             return message.attachments.contains { $0.id == attachmentID }
-                || NativeTimelineFileCard.isUnresolvedFileID(attachmentID, in: message) ? identifier : nil
+                || NativeTimelineFileCard.isUnresolvedFileID(attachmentID, in: message)
         }
-        identifiers.forEach(invalidateBitmap)
+        // Bitmaps survive navigation, so cached rows elsewhere need it too.
+        bitmapCache.filter { showsFile($0.value.item) }.keys.forEach(invalidateBitmap)
         setNeedsDisplay(visibleRect)
         // Starting, finishing, or failing moves the card's clickable parts;
         // a progress tick does not.
         if case let .downloading(fraction)? = downloads.states[attachmentID], fraction > 0 { return }
         window?.invalidateCursorRects(for: self)
-        identifiers.forEach(rebuildAccessibilityProxy)
+        items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
     }
 
     /// What activating a file card does in its current download state.
