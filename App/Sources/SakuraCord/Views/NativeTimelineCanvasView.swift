@@ -134,6 +134,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
+            /// A file card's part, or its body, which only shows hover.
+            case fileCard(NativeTimelineFileCard, part: NativeTimelineFileCard.Part?)
 
             var isDisabled: Bool {
                 switch self {
@@ -143,6 +145,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                     false
                 case let .invite(card, expands):
                     !expands && card.isDisabled
+                case let .fileCard(_, part):
+                    part == nil
                 }
             }
         }
@@ -410,6 +414,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                                        name: NSMenu.didEndTrackingNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(voiceMessagePlaybackDidChange(_:)),
                                        name: VoiceMessagePlaybackStore.didChange, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(attachmentDownloadsDidChange(_:)),
+                                       name: AttachmentDownloadStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(mediaPlaybackVisibilityDidChange(_:)),

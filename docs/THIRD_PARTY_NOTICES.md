@@ -647,6 +647,33 @@ Official Fresh 0.0.411, inspected on 2026-10-05.
 The artwork remains Discord’s property and identifies Discord's local command
 notices. Its inclusion does not imply affiliation or endorsement.
 
+## Discord file-type icons
+
+The `FileIcons/file-icon-*.svg` images on file attachment cards are the
+unmodified `icon-file-*.svg` assets of Discord Official Fresh 0.0.411, resolved
+from its web-client module map on 2026-10-29 and fetched from
+`https://discord.com/assets/`.
+
+| File | SHA-256 |
+| --- | --- |
+| `file-icon-acrobat.svg` | `ef01e9e5dc40a315b28d3898d7c5a6e02cdab8f2bff074823af48f0a3291f7c8` |
+| `file-icon-ae.svg` | `2605ae7b06593042b36a91d53d252f73c3b4518e8c74a35e853c16276f7111b5` |
+| `file-icon-ai.svg` | `f17da3913cdb3088a9952a44a3c74e0a37a14c6c79cde57e8bdd006ba1cd91dd` |
+| `file-icon-archive.svg` | `122fe449aec7835888e02aa8ec6995e75da859bb6f283ae62d8b945523377119` |
+| `file-icon-audio.svg` | `d02428e3944178922cd694c1367c023ee64257adac9eafe8c904b8c931a09530` |
+| `file-icon-code.svg` | `87e00c7c0eb5c41dd5a419a3af27c4d87f9168fc9dc01431cc5bf4cf14b04376` |
+| `file-icon-document.svg` | `b86552830315a43805b6b080dcc21deb6034c2017849304e95fe6e50bb801de1` |
+| `file-icon-image.svg` | `f2b5f6cbca9311d325f688ae299e9b4e2bd7e38d221fd9b050b1ce092fcb1d9d` |
+| `file-icon-ps.svg` | `7f19345a983949e56fa7cfb93a12d657aaeb2785120dc8b25b8fe401d2ef5b30` |
+| `file-icon-sketch.svg` | `7f3b85f7520bca06fe0b56db50fb92eeb006fd7e340c464ab7cb15cbb90be7d2` |
+| `file-icon-spreadsheet.svg` | `b1f1f10f10a4a370a4309ce25ae247c71a4f530b0eb417a52fbf9e9613809128` |
+| `file-icon-unknown.svg` | `d5b473bba1a201ebb4c72da1da032b5873a792d6c66d791fac515a94d3052691` |
+| `file-icon-video.svg` | `83a8ca9af8d4c03235d4ad5a1fe824cd4bd7d3ddd6dab9f376404cb13138641a` |
+| `file-icon-webcode.svg` | `73cd87c8b4629654e78428915746627628300359f1219bbc2e9cb80edd74409b` |
+
+The artwork remains Discord’s property; Discord has not published an open-source
+license for it. Its inclusion does not imply affiliation or endorsement.
+
 ## Public Suffix List
 
 SakuraCord bundles the unmodified Public Suffix List to reject wildcard trust

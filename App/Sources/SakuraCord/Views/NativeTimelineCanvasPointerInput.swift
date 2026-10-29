@@ -130,6 +130,7 @@ extension NativeTimelineCanvasView {
                 installReactionCursors(at: index, rowOrigin: rowOrigin)
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
+                installFileCardCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -642,6 +643,8 @@ extension NativeTimelineCanvasView {
                     _ = activateSakuraCordDeepLink(action, message: hit.message)
                 case let .invite(card, expands):
                     activateInvite(card, message: hit.message, expands: expands)
+                case let .fileCard(card, _):
+                    model?.attachmentDownloads.activate(card.attachment)
                 }
             }
             return true
@@ -841,6 +844,8 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
+            } else if attachment.mediaKind == .file {
+                // Like Discord, only a file card's name and button act.
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,
@@ -862,7 +867,7 @@ extension NativeTimelineCanvasView {
                     mediaKey: NativeTimelineMediaKey.attachment(attachment),
                     cornerRadius: InterfaceScale.metric(8),
                     fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                        itemCount: layout.attachmentRegions.count
+                        itemCount: layout.mediaGalleryItemCount
                     )
                 )
             } else {
@@ -1689,6 +1694,9 @@ extension NativeTimelineCanvasView {
                     dy: rowOrigin
                 )
             )
+        }
+        if let hit = fileCardPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message) {
+            return hit
         }
         for layout in layouts[index].componentLayouts {
             if layout.containers.contains(where: { container in

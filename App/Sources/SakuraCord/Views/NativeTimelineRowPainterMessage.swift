@@ -439,7 +439,7 @@ extension NativeTimelineRowPainter {
         }
         let attachmentFillsFrame =
             MediaGalleryImagePresentation.fillsFrame(
-                itemCount: layout.attachmentRegions.count
+                itemCount: layout.mediaGalleryItemCount
             )
         for region in layout.attachmentRegions {
             let attachment = region.attachment
@@ -459,11 +459,13 @@ extension NativeTimelineRowPainter {
                 )
                 continue
             }
-            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(
-                concentricRoundedRect: region.frame,
-                cornerRadius: attachmentCornerRadius
-            ).fill()
+            if attachment.mediaKind != .file {
+                NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
+                NSBezierPath(
+                    concentricRoundedRect: region.frame,
+                    cornerRadius: attachmentCornerRadius
+                ).fill()
+            }
             switch attachment.mediaKind {
             case .image, .animatedImage, .video:
                 let isVideo = attachment.mediaKind == .video
@@ -486,29 +488,12 @@ extension NativeTimelineRowPainter {
                     in: region.frame
                 )
             case .file:
-                systemSymbol(
-                    "doc",
-                    in: CGRect(
-                        x: region.frame.midX - InterfaceScale.metric(19),
-                        y: region.frame.midY - InterfaceScale.metric(34),
-                        width: InterfaceScale.metric(38),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    color: .labelColor,
-                    inset: 1
-                )
-                text(
-                    attachment.filename,
-                    in: CGRect(
-                        x: region.frame.minX + InterfaceScale.metric(12),
-                        y: region.frame.midY + InterfaceScale.metric(11),
-                        width: max(1, region.frame.width - InterfaceScale.metric(24)),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    font: .interfacePreferredFont(forTextStyle: .body),
-                    color: .labelColor,
-                    alignment: .center,
-                    lineBreakMode: .byTruncatingTail
+                fileCard(
+                    .init(frame: region.frame, attachment: attachment),
+                    messageID: message.id,
+                    state: input.model?.attachmentDownloads.states[attachment.id],
+                    hovered: input.hoveredComponentButton,
+                    pressed: input.pressedComponentButton
                 )
             }
         }

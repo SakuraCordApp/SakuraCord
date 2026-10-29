@@ -192,7 +192,18 @@ struct NativeTimelineRowLayout {
     var forwardedBarFrame: CGRect?
     var forwardedSourceRegion: ForwardedSourceRegion?
     var linkedImageRegions: [LinkedImageRegion] = []
+    /// One region per attachment, in message order: a gallery tile or a file card.
     var attachmentRegions: [AttachmentRegion] = []
+
+    var fileCards: [NativeTimelineFileCard] {
+        attachmentRegions.compactMap {
+            $0.attachment.mediaKind == .file ? NativeTimelineFileCard(frame: $0.frame, attachment: $0.attachment) : nil
+        }
+    }
+
+    var mediaGalleryItemCount: Int {
+        attachmentRegions.count { $0.attachment.mediaKind != .file }
+    }
     var voiceMessageRegion: NativeTimelineVoiceMessageRegion?
     var embedFrames: [CGRect] = []
     var embedRegions: [EmbedRegion] = []

@@ -14,7 +14,7 @@ extension NativeTimelineCanvasView {
         let message = input.message
         let rowIndex = input.rowIndex
         let parent = input.parent
-        let usesFileActionLabels = input.usesFileActionLabels
+        let file = input.file
         let viewerPresentation = input.viewerPresentation
         let key = NativeTimelineComponentRevealKey(
             messageID: message.id,
@@ -23,16 +23,16 @@ extension NativeTimelineCanvasView {
         let isHiddenSpoiler =
             isSpoiler && !spoilerRevealStore.isMediaRevealed(key)
         let accessibilityLabel =
-            if usesFileActionLabels {
-                isHiddenSpoiler ? "Reveal spoiler file" : "Open \(label)"
+            if file != nil {
+                isHiddenSpoiler ? "Reveal spoiler file" : "Download \(label)"
             } else {
                 isHiddenSpoiler ? "Reveal spoiler media" : label
             }
         children.append(accessibilityElement(
             role: .button,
             label: accessibilityLabel,
-            help: usesFileActionLabels
-                ? (isHiddenSpoiler ? "Reveal spoiler" : "Open \(label)")
+            help: file != nil
+                ? (isHiddenSpoiler ? "Reveal spoiler" : "Download \(label)")
                 : (
                     isHiddenSpoiler
                         ? "Reveals this media without opening it"
@@ -44,6 +44,8 @@ extension NativeTimelineCanvasView {
             guard let self else { return false }
             if isHiddenSpoiler {
                 self.reveal(key, rowIndex: rowIndex)
+            } else if let file {
+                self.model?.attachmentDownloads.activate(file)
             } else if let viewerPresentation {
                 self.model?.mediaViewerPresentation =
                     self.mediaViewerPresentation(
@@ -337,6 +339,8 @@ extension NativeTimelineCanvasView {
            !spoilerRevealStore.isMediaRevealed(revealKey)
         {
             reveal(revealKey, rowIndex: rowIndex)
+        } else if attachment.mediaKind == .file {
+            model?.attachmentDownloads.activate(attachment)
         } else if let presentation =
             NativeTimelineMediaViewerPlan.attachments(
                 in: message,
@@ -361,7 +365,7 @@ extension NativeTimelineCanvasView {
                 mediaKey: NativeTimelineMediaKey.attachment(attachment),
                 cornerRadius: InterfaceScale.metric(8),
                 fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                    itemCount: layouts[rowIndex].attachmentRegions.count
+                    itemCount: layouts[rowIndex].mediaGalleryItemCount
                 )
             )
         } else {

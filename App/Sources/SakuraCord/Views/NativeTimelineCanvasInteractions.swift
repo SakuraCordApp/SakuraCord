@@ -530,14 +530,12 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.files
             where region.frame.contains(point) {
-                return activateComponentMedia(
-                    id: region.componentID,
-                    openURL: region.openURL,
-                    isSpoiler: region.isSpoiler,
-                    layout: layout,
-                    message: message,
-                    rowIndex: rowIndex
-                )
+                // Like Discord, only a file card's name and button act.
+                let key = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
+                if region.isSpoiler, !spoilerRevealStore.isMediaRevealed(key) {
+                    reveal(key, rowIndex: rowIndex)
+                }
+                return true
             }
             for region in componentLayout.selects
             where region.frame.contains(point) {

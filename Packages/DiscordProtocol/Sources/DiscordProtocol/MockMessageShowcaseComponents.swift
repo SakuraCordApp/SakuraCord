@@ -35,9 +35,11 @@ extension MockMessageFixtureBuilder {
                     ]),
                 ]
                 $0.mentionedUsers = [nova]
+                $0.attachments = showcaseComponentAttachments
             },
             showcaseMessage(403, author: nova) {
                 $0.flags = [.isComponentsV2]
+                $0.attachments = showcaseComponentAttachments
                 $0.components = [
                     .textDisplay(id: "showcase-top-text", content: "## Top-level components\nText outside a container."),
                     .thumbnail(id: "showcase-top-thumbnail", media: showcaseComponentImage),
@@ -60,6 +62,7 @@ extension MockMessageFixtureBuilder {
                 hiddenImage.isSpoiler = true
                 var hiddenFile = showcaseComponentFile
                 hiddenFile.isSpoiler = true
+                $0.attachments = showcaseComponentAttachments
                 $0.components = [
                     .textDisplay(id: "showcase-media-spoilers", content: "Individual component media spoilers"),
                     .mediaGallery(id: "showcase-mixed-gallery", items: [
@@ -92,6 +95,13 @@ extension MockMessageFixtureBuilder {
 
     private var showcaseComponentImage: ComponentMedia {
         ComponentMedia(url: layoutAttachment?.url, width: 720, height: 420, contentType: "image/png", description: "Offline layout study")
+    }
+
+    /// Discord delivers a file component's attachment with its message.
+    private var showcaseComponentAttachments: [Attachment] {
+        MockChatFixture.demoResource("demo-notes", extension: "txt").map {
+            [Attachment(id: "showcase-component-file", filename: "demo-notes.txt", url: $0, mediaType: "text/plain", size: 218)]
+        } ?? []
     }
 
     private var showcaseComponentFile: ComponentMedia {
