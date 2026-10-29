@@ -914,6 +914,7 @@ extension NativeTimelineCanvasView {
             parent: parent
         )
         let parts = NativeTimelineTextPreview.Part.allCases.filter { preview.frame(of: $0) != nil }
+        let row = items[rowIndex].identifier
         element.setAccessibilityCustomActions(parts.map { part in
             let name = switch part {
             case .expand: preview.expandLabel
@@ -922,10 +923,13 @@ extension NativeTimelineCanvasView {
             case .more: "More Options"
             }
             return NSAccessibilityCustomAction(name: name) { [weak self] in
+                // Rows above can move this one after the element is made, so
+                // the menus anchor to where the row is now.
+                guard let self, let index = self.rowIndex(forIdentifier: row, hint: rowIndex) else { return false }
                 // The language and More menus track modally, so they open
                 // after the action returns rather than holding its reply.
-                Task { @MainActor in self?.activateTextPreview(preview, part: part, message: message, rowIndex: rowIndex) }
-                return self != nil
+                Task { @MainActor in self.activateTextPreview(preview, part: part, message: message, rowIndex: index) }
+                return true
             }
         } + [NSAccessibilityCustomAction(name: fileCardActionDescription(preview.attachment, name: preview.attachment.filename)) { [weak self] in
             self?.model?.attachmentDownloads.activate(preview.attachment)
