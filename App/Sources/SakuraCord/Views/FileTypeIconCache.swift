@@ -21,15 +21,10 @@ enum FileTypeIconCache {
         "png", "jpg", "gif", "mp4", "mov", "mp3", "m4a", "ogg", "wav", "dmg", "bin",
     ]
 
-    /// The icon side the timeline draws, in pixels on the main screen.
-    static var cardIconPixels: Int {
-        Int(ceil(NativeTimelineFileCard.iconSide * (NSScreen.main?.backingScaleFactor ?? 2)))
-    }
-
     /// Rasterizes the common icons off the main thread, so opening a
     /// conversation of files never waits on Launch Services.
     static func prewarm() {
-        let pixels = cardIconPixels
+        let pixels = Int(ceil(NativeTimelineFileCard.iconSide * (NSScreen.main?.backingScaleFactor ?? 2)))
         Task.detached(priority: .utility) {
             let rendered = commonExtensions.compactMap { pathExtension in
                 render(pathExtension, pixels: pixels).map { (pathExtension, $0) }
@@ -61,14 +56,11 @@ enum FileTypeIconCache {
     /// document; no extension at all is plain data.
     private nonisolated static func render(_ pathExtension: String, pixels: Int) -> CGImage? {
         let type = UTType(filenameExtension: pathExtension) ?? .data
-        guard let context = CGContext(
-            data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = ForumCardRasterizer.makeContext(
+            width: pixels, height: pixels, colorSpace: ForumCardRasterizer.defaultColorSpace
         ) else { return nil }
-        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = graphics
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
         NSWorkspace.shared.icon(for: type).draw(in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
         NSGraphicsContext.restoreGraphicsState()
         return context.makeImage()
