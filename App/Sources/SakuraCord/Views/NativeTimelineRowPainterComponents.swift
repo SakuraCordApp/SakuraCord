@@ -725,8 +725,7 @@ extension NativeTimelineRowPainter {
             concentricRoundedRect: frame,
             cornerRadius: cornerRadius
         )
-        // The same surface and border as a file card, which Discord draws
-        // flush inside a container.
+        // Discord's container surface and border.
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
         NSColor.controlBackgroundColor.setFill()
