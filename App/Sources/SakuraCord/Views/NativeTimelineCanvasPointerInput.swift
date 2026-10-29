@@ -1200,6 +1200,7 @@ extension NativeTimelineCanvasView {
         guard !actionCapsuleContains(point) else { return }
         synchronizeHoveredRow(at: point)
         setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
+        updateVoiceMessageHover(at: visibleRect.contains(point) ? point : nil)
         setHoveredCompactTimestampRow(
             visibleRect.contains(point)
                 ? compactTimestampRowIndex(at: point)
