@@ -37,10 +37,8 @@ extension AppModel {
     }
 
     /// Lets voice playback, file downloads, and the media viewer re-sign
-    /// expiring attachment links, and readies file cards' icons before a
-    /// conversation shows them.
+    /// expiring attachment links.
     func configureAttachmentMedia() {
-        FileTypeIconCache.prewarm()
         let resolveRemoteURL: @MainActor (URL) async -> URL = { [weak self] url in
             // Only Discord's own attachment links go to Discord; a local file
             // or another host's link is used as it is.
