@@ -288,8 +288,8 @@ func `Public beta accents migrate into native-surface single-color themes`(
     )
 
     let token = try SakuraCordThemeShareCodec.token(for: sharedTheme)
-    #expect(token == "AQJKz_VpjwzNszNAALhRczO9cP__yjw")
-    #expect(token.count == 31)
+    #expect(token == "AQNKz_VpjwzNszNAALhRczO9cP__AYHR")
+    #expect(token.count == 32)
     #expect(token.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
 
     let url = try SakuraCordThemeShareCodec.shareURL(for: sharedTheme)
@@ -325,6 +325,13 @@ func `Public beta accents migrate into native-surface single-color themes`(
         }
         #expect(abs(imported.windowOpacity - opacity) <= tolerance)
         #expect(imported.theme == decoded.theme)
+        translucentTheme.usePrimaryColorInBackground = false
+        let separateToken = try SakuraCordThemeShareCodec.token(for: translucentTheme)
+        guard case let .current(separate) = SakuraCordThemeShareCodec.decode(separateToken) else {
+            Issue.record("Separate-background theme did not decode")
+            continue
+        }
+        #expect(!separate.usePrimaryColorInBackground)
     }
 
     let previousCompactToken = "AQFKz_VpjwzNszNAALhRczO9cEn9"

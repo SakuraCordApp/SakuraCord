@@ -140,7 +140,8 @@ private struct ThemeShareCopyButton: View {
         let sharedTheme = SakuraCordSharedTheme(
             appearance: appearance,
             theme: themeStore.activeTheme,
-            windowOpacity: windowOpacity
+            windowOpacity: windowOpacity,
+            usePrimaryColorInBackground: themeStore.matchesBackgroundToPrimaryColor
         )
         guard let url = try? SakuraCordThemeShareCodec.shareURL(
             for: sharedTheme

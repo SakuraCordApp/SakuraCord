@@ -271,7 +271,8 @@ remain editable. Use primary color in background gradients defaults to on;
 disabling it uses colours 2 onwards for the background, with colour 1 as the
 fallback when alone. Saturation edits affect only editable colours; with only a
 locked primary, the saturation dial is disabled. Background contrast calculations
-use the same palette as the rendered background.
+use the same palette as the rendered background. Theme links include this option
+in reader version 3; earlier links default to including the primary colour.
 The designer indicates when the system accent is active;
 the override preference takes effect on the next launch. App appearance and system-colour changes
 refresh the detected system accent through the existing theme notification.

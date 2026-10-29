@@ -4,6 +4,7 @@ nonisolated struct SakuraCordSharedTheme: Equatable, Hashable, Sendable {
     let appearance: AppColorScheme
     let theme: SakuraCordGradientTheme
     var windowOpacity: Double = AppearanceSettingsSnapshot.defaultWindowOpacity
+    var usePrimaryColorInBackground = true
 }
 
 nonisolated enum SakuraCordThemeShareDecodeResult: Equatable, Sendable {
@@ -13,7 +14,7 @@ nonisolated enum SakuraCordThemeShareDecodeResult: Equatable, Sendable {
 
 nonisolated enum SakuraCordThemeShareCodec {
     static let transportVersion: UInt8 = 1
-    static let readerVersion: UInt8 = 2
+    static let readerVersion: UInt8 = 3
 
     private static let maximumTokenLength = 256
     private static let fixedHeaderLength = 3
@@ -59,6 +60,7 @@ nonisolated enum SakuraCordThemeShareCodec {
         bytes.append(contentsOf: encodedUnitScalar(
             AppearanceSettingsSnapshot.normalizedWindowOpacity(sharedTheme.windowOpacity)
         ))
+        bytes.append(sharedTheme.usePrimaryColorInBackground ? 1 : 0)
         bytes.append(contentsOf: encodedChecksum(for: bytes))
         return Data(bytes).base64URLEncodedString
     }
@@ -96,6 +98,7 @@ nonisolated enum SakuraCordThemeShareCodec {
             + scalarByteCount * 2
             + storedColorCount * scalarByteCount * 2
             + (minimumReaderVersion >= 2 ? scalarByteCount : 0)
+            + (minimumReaderVersion >= 3 ? 1 : 0)
         guard bytes.count >= knownPayloadEnd + checksumByteCount else {
             return nil
         }
@@ -125,6 +128,14 @@ nonisolated enum SakuraCordThemeShareCodec {
             ? decodedUnitScalar(bytes, at: &offset)
             : AppearanceSettingsSnapshot.defaultWindowOpacity
 
+        let usePrimaryColorInBackground: Bool
+        if minimumReaderVersion >= 3 {
+            guard bytes[offset] <= 1 else { return nil }
+            usePrimaryColorInBackground = bytes[offset] == 1
+        } else {
+            usePrimaryColorInBackground = true
+        }
+
         let sharedTheme = SakuraCordSharedTheme(
             appearance: appearance,
             theme: SakuraCordGradientTheme(
@@ -133,7 +144,8 @@ nonisolated enum SakuraCordThemeShareCodec {
                 intensity: intensity,
                 brightness: brightness
             ),
-            windowOpacity: windowOpacity
+            windowOpacity: windowOpacity,
+            usePrimaryColorInBackground: usePrimaryColorInBackground
         )
         if minimumReaderVersion > readerVersion {
             return .requiresNewerClient(preview: sharedTheme)
