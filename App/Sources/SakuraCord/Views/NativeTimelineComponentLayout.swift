@@ -4,19 +4,18 @@ import SakuraCordModels
 
 enum NativeTimelineComponentButtonMetrics {
     static var height: CGFloat { InterfaceScale.metric(32) }
+    static var minimumWidth: CGFloat { InterfaceScale.metric(60) }
+    static var cornerRadius: CGFloat { InterfaceScale.metric(8) }
     /// Shared by measurement, painting and the animated-emoji overlay.
     static var horizontalPadding: CGFloat { InterfaceScale.metric(12) }
-    static var leadingGlyphAdvance: CGFloat { InterfaceScale.metric(22) }
-    static var externalLinkAllowance: CGFloat { InterfaceScale.metric(30) }
+    static var leadingGlyphAdvance: CGFloat { DiscordComponentEmojiMetrics.buttonSize + InterfaceScale.metric(4) }
+    /// The launch icon and its 8-point gap after a link button's label.
+    static var linkIconSize: CGFloat { InterfaceScale.metric(16) }
+    static var linkIconAdvance: CGFloat { InterfaceScale.metric(8) + linkIconSize }
 
-    static var font: NSFont {
-        .interfaceSystemFont(
-            ofSize: NSFont.preferredFont(
-                forTextStyle: .callout
-            ).pointSize,
-            weight: .semibold
-        )
-    }
+    /// Discord's 14-pixel medium label, on the scale that draws its 16-pixel
+    /// message text at `messageTextSize`.
+    static var font: NSFont { .interfaceSystemFont(ofSize: 13, weight: .medium) }
 }
 
 enum NativeTimelineComponentSelectPolicy {
@@ -72,6 +71,16 @@ struct NativeTimelineComponentLayout {
         let url: URL?
         let isDisabled: Bool
         var isLoading = false
+        /// The emoji, label and link icon, centred when the button is wider.
+        let contentWidth: CGFloat
+
+        /// Discord dims a disabled button to half opacity, but not the one
+        /// showing this message's pending action.
+        var opacity: CGFloat { isDisabled && !isLoading ? 0.5 : 1 }
+
+        var contentMinX: CGFloat {
+            frame.minX + max(NativeTimelineComponentButtonMetrics.horizontalPadding, (frame.width - contentWidth) / 2)
+        }
     }
 
     struct SelectRegion {
@@ -184,30 +193,13 @@ struct NativeTimelineComponentLayout {
                 font: .interfaceSystemFont(ofSize: 13),
                 color: .systemRed
             )
+            let height = NodeBuilder.measuredHeight(errorBox, width: maximumWidth)
             nodes.append(
                 Node(
-                    size: CGSize(
-                        width: min(
-                            maximumWidth,
-                            NodeBuilder.idealWidth(errorBox)
-                        ),
-                        height: NodeBuilder.measuredHeight(
-                            errorBox,
-                            width: maximumWidth
-                        )
-                    ),
+                    size: CGSize(width: min(maximumWidth, NodeBuilder.idealWidth(errorBox)), height: height),
                     textRegions: [
                         .init(
-                            frame: CGRect(
-                                origin: .zero,
-                                size: CGSize(
-                                    width: maximumWidth,
-                                    height: NodeBuilder.measuredHeight(
-                                        errorBox,
-                                        width: maximumWidth
-                                    )
-                                )
-                            ),
+                            frame: CGRect(x: 0, y: 0, width: maximumWidth, height: height),
                             text: errorBox,
                             isSelectable: false,
                             contentID: nil
@@ -217,7 +209,34 @@ struct NativeTimelineComponentLayout {
             )
         }
 
-        let root = NodeBuilder.vertical(nodes, spacing: InterfaceScale.metric(8))
+        // Like Discord's stack, top-level containers, sections and dividers
+        // share the width of the widest component. A bubble draws its
+        // containers as full-width sections of itself instead.
+        let rootWidth = nodes.map(\.size.width).max() ?? 0
+        for (index, component) in components.enumerated() {
+            switch component {
+            case .container where !integratesWithBubble && nodes[index].size.width < rootWidth:
+                nodes[index] = NodeBuilder.containerNode(
+                    for: component,
+                    message: message,
+                    source: source,
+                    maximumWidth: maximumWidth,
+                    inBubble: false,
+                    width: rootWidth
+                )
+            case .section where rootWidth < maximumWidth, .separator where rootWidth < maximumWidth:
+                nodes[index] = NodeBuilder.node(
+                    for: component,
+                    message: message,
+                    source: source,
+                    maximumWidth: rootWidth,
+                    inBubble: integratesWithBubble
+                )
+            default:
+                break
+            }
+        }
+        let root = NodeBuilder.vertical(nodes, spacing: NodeBuilder.componentSpacing)
             .offsetBy(dx: origin.x, dy: origin.y)
         let expandsSingleBubbleContainer =
             integratesWithBubble
@@ -297,7 +316,8 @@ private struct Node {
                 customID: $0.customID,
                 url: $0.url,
                 isDisabled: $0.isDisabled,
-                isLoading: $0.isLoading
+                isLoading: $0.isLoading,
+                contentWidth: $0.contentWidth
             )
         }
         result.selects = selects.map {
@@ -401,7 +421,8 @@ private enum NodeBuilder {
         message: Message,
         source: AppModel?,
         maximumWidth: CGFloat,
-        inBubble: Bool = false
+        inBubble: Bool = false,
+        inContainer: Bool = false
     ) -> Node {
         let maximumWidth = max(1, maximumWidth)
         switch component {
@@ -437,7 +458,8 @@ private enum NodeBuilder {
                 message: message,
                 source: source,
                 maximumWidth: maximumWidth,
-                inBubble: inBubble
+                inBubble: inBubble,
+                inContainer: inContainer
             )
 
         case let .textDisplay(id, content):
@@ -446,7 +468,8 @@ private enum NodeBuilder {
                 content: content,
                 message: message,
                 source: source,
-                maximumWidth: maximumWidth
+                maximumWidth: maximumWidth,
+                inContainer: inContainer
             )
 
         case let .thumbnail(id, media):
@@ -460,7 +483,7 @@ private enum NodeBuilder {
                     maximumWidth: maximumWidth
                 )
             }
-            let size = min(InterfaceScale.metric(80), maximumWidth)
+            let size = min(InterfaceScale.metric(85), maximumWidth)
             return Node(
                 size: CGSize(width: size, height: size),
                 images: [
@@ -531,10 +554,11 @@ private enum NodeBuilder {
                     message: message,
                     source: source,
                     maximumWidth: maximumWidth,
-                    inBubble: true
+                    inBubble: true,
+                    inContainer: true
                 )
             },
-            spacing: InterfaceScale.metric(7)
+            spacing: componentSpacing
         )
         let size = CGSize(
             width: maximumWidth,
@@ -564,14 +588,19 @@ private enum NodeBuilder {
         content: String,
         message: Message,
         source: AppModel?,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inContainer: Bool
     ) -> Node {
+        // Discord sets a container's text at 14 pixels against the
+        // message's 16.
+        let scale: CGFloat = inContainer ? 14 / 16 : 1
         let box = richText(
             content,
             componentID: id,
             message: message,
             source: source,
-            emojiSize: 18
+            emojiSize: 18 * scale,
+            fontScale: scale
         )
         let width = min(maximumWidth, max(1, idealWidth(box)))
         let height = measuredHeight(box, width: width)
@@ -618,12 +647,12 @@ private enum NodeBuilder {
                     inBubble: inBubble
                 )
                 if horizontalOffset > 0 {
-                    if horizontalOffset + 8 + childNode.size.width > maximumWidth {
-                        verticalOffset += rowHeight + 8
+                    if horizontalOffset + componentSpacing + childNode.size.width > maximumWidth {
+                        verticalOffset += rowHeight + componentSpacing
                         horizontalOffset = 0
                         rowHeight = 0
                     } else {
-                        horizontalOffset += InterfaceScale.metric(8)
+                        horizontalOffset += componentSpacing
                     }
                 }
                 result.merge(childNode, at: CGPoint(x: horizontalOffset, y: verticalOffset))
@@ -662,18 +691,8 @@ private enum NodeBuilder {
             channelTypes
         ):
             let placeholder = rawPlaceholder ?? "Make a selection"
-            let font = NSFont.interfaceSystemFont(ofSize: 14)
-            let labelWidth = ceil(
-                (placeholder as NSString).size(
-                    withAttributes: [.font: font]
-                ).width
-            )
-            let width = inBubble
-                ? maximumWidth
-                : min(
-                    maximumWidth,
-                    max(InterfaceScale.metric(372), min(InterfaceScale.metric(420), labelWidth + InterfaceScale.metric(76)))
-                )
+            // Discord's select is 400 points wide whatever its placeholder.
+            let width = inBubble ? maximumWidth : min(maximumWidth, InterfaceScale.metric(400))
             let selectedOptions = source?.componentSelection(
                 messageID: message.id,
                 customID: customID
@@ -732,24 +751,27 @@ private enum NodeBuilder {
         message: Message,
         source: AppModel?,
         maximumWidth: CGFloat,
-        inBubble: Bool
+        inBubble: Bool,
+        inContainer: Bool
     ) -> Node {
         switch component {
         case let .section(_, children, accessory):
-            guard let accessory else {
-                return vertical(
+            func text(width: CGFloat) -> Node {
+                vertical(
                     children.map {
                         node(
                             for: $0,
                             message: message,
                             source: source,
-                            maximumWidth: maximumWidth,
-                            inBubble: inBubble
+                            maximumWidth: width,
+                            inBubble: inBubble,
+                            inContainer: inContainer
                         )
                     },
-                    spacing: InterfaceScale.metric(8)
+                    spacing: InterfaceScale.metric(4)
                 )
             }
+            guard let accessory else { return text(width: maximumWidth) }
             let accessoryNode = node(
                 for: accessory,
                 message: message,
@@ -757,29 +779,20 @@ private enum NodeBuilder {
                 maximumWidth: min(InterfaceScale.metric(180), maximumWidth),
                 inBubble: inBubble
             )
-            let leftWidth = max(
-                1,
-                maximumWidth - accessoryNode.size.width - 8
-            )
-            let left = vertical(
-                children.map {
-                    node(
-                        for: $0,
-                        message: message,
-                        source: source,
-                        maximumWidth: leftWidth,
-                        inBubble: inBubble
-                    )
-                },
-                spacing: InterfaceScale.metric(8)
-            )
-            var result = Node(
-                size: CGSize(
-                    width: maximumWidth,
-                    height: max(left.size.height, accessoryNode.size.height)
-                )
-            )
-            result.merge(left, at: .zero)
+            let accessoryGap = InterfaceScale.metric(12)
+            let left = text(width: max(1, maximumWidth - accessoryNode.size.width - accessoryGap))
+            let height = max(left.size.height, accessoryNode.size.height)
+            // The accessory sits at the trailing edge of the space offered,
+            // while the section reports only the width it needs, so a stack
+            // that fits its content and then offers that width lines up.
+            var result = Node(size: CGSize(
+                width: min(maximumWidth, left.size.width + accessoryGap + accessoryNode.size.width),
+                height: height
+            ))
+            // Discord centres the text beside a button, and tops it beside a
+            // thumbnail.
+            let isButton = if case .button = accessory { true } else { false }
+            result.merge(left, at: CGPoint(x: 0, y: isButton ? ((height - left.size.height) / 2).rounded() : 0))
             result.merge(
                 accessoryNode,
                 at: CGPoint(
@@ -821,20 +834,18 @@ private enum NodeBuilder {
                 ).width
             )
             let showsLeadingGlyph = emoji != nil || style == .premium
-            let showsExternalLink = url != nil
             let leadingGlyphWidth = label.isEmpty
                 ? DiscordComponentEmojiMetrics.buttonSize
                 : NativeTimelineComponentButtonMetrics.leadingGlyphAdvance
+            let contentWidth = labelWidth
+                + (showsLeadingGlyph ? leadingGlyphWidth : 0)
+                + (url == nil ? 0 : NativeTimelineComponentButtonMetrics.linkIconAdvance)
             let width = min(
                 maximumWidth,
-                max(NativeTimelineComponentButtonMetrics.height, ceil(
-                    labelWidth
-                        + NativeTimelineComponentButtonMetrics.horizontalPadding
-                        + (showsLeadingGlyph ? leadingGlyphWidth : 0)
-                        + (showsExternalLink
-                            ? NativeTimelineComponentButtonMetrics.externalLinkAllowance
-                            : NativeTimelineComponentButtonMetrics.horizontalPadding)
-                ))
+                max(
+                    NativeTimelineComponentButtonMetrics.minimumWidth,
+                    ceil(contentWidth + NativeTimelineComponentButtonMetrics.horizontalPadding * 2)
+                )
             )
             // While one action on this message is pending, its siblings are
             // disabled and the activated button shows progress.
@@ -871,7 +882,8 @@ private enum NodeBuilder {
                         customID: customID,
                         url: url,
                         isDisabled: isDisabled,
-                        isLoading: isLoading
+                        isLoading: isLoading,
+                        contentWidth: contentWidth
                     )
                 ]
             )
@@ -904,7 +916,7 @@ private enum NodeBuilder {
                     maximumWidth: maximumWidth
                 )
             }
-            let galleryWidth = min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), maximumWidth))
+            let galleryWidth = min(DiscordRichMessageMetrics.componentsMaximumWidth, maximumWidth)
             let frames = MediaGalleryPlan.frames(
                 count: resolved.count,
                 width: galleryWidth,
@@ -916,9 +928,8 @@ private enum NodeBuilder {
                 },
                 spacing: InterfaceScale.metric(4)
             )
-            let height = frames.map(\.maxY).max() ?? 0
             return Node(
-                size: CGSize(width: galleryWidth, height: height),
+                size: CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0),
                 media: zip(resolved, frames).map { pair, frame in
                     let (item, media) = pair
                     return .init(
@@ -979,19 +990,20 @@ private enum NodeBuilder {
         }
     }
 
-    private static func containerNode(
+    static func containerNode(
         for component: MessageComponent,
         message: Message,
         source: AppModel?,
         maximumWidth: CGFloat,
-        inBubble: Bool
+        inBubble: Bool,
+        width fixedWidth: CGFloat? = nil
     ) -> Node {
         switch component {
         case let .separator(_, divider, spacing):
+            // Discord's separator adds 8 or 24 points between the stack's
+            // 8-point gaps, with the 1-point divider centred in it.
             let height = InterfaceScale.metric(
-                divider
-                    ? (spacing == 2 ? 13 : 3)
-                    : (spacing == 2 ? 12 : 6)
+                (spacing == 2 ? 16 : 0) + (divider ? 1 : 0)
             )
             return Node(
                 // SwiftUI Divider has no intrinsic horizontal width. It
@@ -1013,58 +1025,35 @@ private enum NodeBuilder {
 
         case let .container(id, accent, spoiler, children):
             let padding = DiscordRichMessageMetrics.cardPadding
-            let accentWidth = accent == nil ? 0 : InterfaceScale.metric(4)
-            let fixedWidth = padding * 2 + accentWidth
-            let maximumContentWidth = max(1, maximumWidth - fixedWidth)
-            let firstPass = vertical(
-                children.map {
-                    node(
-                        for: $0,
-                        message: message,
-                        source: source,
-                        maximumWidth: maximumContentWidth,
-                        inBubble: inBubble
-                    )
-                },
-                spacing: InterfaceScale.metric(7)
-            )
-            let width = DiscordComponentContainerLayoutPlan.width(
-                idealContent: firstPass.size.width,
+            func content(width: CGFloat) -> Node {
+                vertical(
+                    children.map {
+                        node(
+                            for: $0,
+                            message: message,
+                            source: source,
+                            maximumWidth: width,
+                            inBubble: inBubble,
+                            inContainer: true
+                        )
+                    },
+                    spacing: componentSpacing
+                )
+            }
+            let width = fixedWidth ?? DiscordComponentContainerLayoutPlan.width(
+                idealContent: content(width: max(1, maximumWidth - padding * 2)).size.width,
                 available: maximumWidth,
-                maximum: DiscordRichMessageMetrics.maximumWidth,
-                padding: DiscordRichMessageMetrics.cardPadding,
-                hasAccent: accent != nil
+                maximum: DiscordRichMessageMetrics.componentsMaximumWidth,
+                padding: padding
             )
-            let contentWidth = max(1, width - fixedWidth)
-            let content = vertical(
-                children.map {
-                    node(
-                        for: $0,
-                        message: message,
-                        source: source,
-                        maximumWidth: contentWidth,
-                        inBubble: inBubble
-                    )
-                },
-                spacing: InterfaceScale.metric(7)
-            )
-            let height = content.size.height + padding * 2
+            let content = content(width: max(1, width - padding * 2))
+            let frame = CGRect(x: 0, y: 0, width: width, height: content.size.height + padding * 2)
             var result = Node(
-                size: CGSize(width: width, height: height),
+                size: frame.size,
                 containers: [
                     .init(
-                        frame: CGRect(
-                            x: 0,
-                            y: 0,
-                            width: width,
-                            height: height
-                        ),
-                        chromeFrame: CGRect(
-                            x: 0,
-                            y: 0,
-                            width: width,
-                            height: height
-                        ),
+                        frame: frame,
+                        chromeFrame: frame,
                         componentID: id,
                         accentColor: accent,
                         isSpoiler: spoiler,
@@ -1074,13 +1063,7 @@ private enum NodeBuilder {
                     )
                 ]
             )
-            result.merge(
-                content,
-                at: CGPoint(
-                    x: padding + accentWidth,
-                    y: padding
-                )
-            )
+            result.merge(content, at: CGPoint(x: padding, y: padding))
             return result
 
         default:
@@ -1088,14 +1071,21 @@ private enum NodeBuilder {
         }
     }
 
+    /// The gap Discord leaves between a stack's components and a row's
+    /// controls.
+    static var componentSpacing: CGFloat { InterfaceScale.metric(8) }
+
     static func vertical(_ children: [Node], spacing: CGFloat) -> Node {
         var result = Node()
         var verticalOffset: CGFloat = 0
         var width: CGFloat = 0
-        for child in children where child.size.height > 0 {
-            if verticalOffset > 0 {
+        var isFirst = true
+        // A spacing-only separator has no height but still adds its gaps.
+        for child in children where child.size.height > 0 || !child.separators.isEmpty {
+            if !isFirst {
                 verticalOffset += spacing
             }
+            isFirst = false
             result.merge(child, at: CGPoint(x: 0, y: verticalOffset))
             verticalOffset += child.size.height
             width = max(width, child.size.width)
@@ -1158,7 +1148,8 @@ private enum NodeBuilder {
         componentID: String,
         message: Message,
         source: AppModel?,
-        emojiSize: CGFloat
+        emojiSize: CGFloat,
+        fontScale: CGFloat
     ) -> NativeTimelineAttributedTextBox {
         let prepared = RichMessageAttributedText.prepare(source: content)
         let resolver = source.map {
@@ -1172,7 +1163,7 @@ private enum NodeBuilder {
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
-        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
+        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize * fontScale)
         let emojiSize = InterfaceScale.metric(emojiSize)
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
