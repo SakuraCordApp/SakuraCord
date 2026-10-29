@@ -136,6 +136,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             case invite(NativeTimelineInviteLayout, expands: Bool)
             /// A file card's part, or its body, which only shows hover.
             case fileCard(NativeTimelineFileCard, part: NativeTimelineFileCard.Part?)
+            /// A text preview's footer part, or its body, which acts on nothing.
+            case textPreview(NativeTimelineTextPreview, part: NativeTimelineTextPreview.Part?)
 
             var isDisabled: Bool {
                 switch self {
@@ -146,6 +148,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                 case let .invite(card, expands):
                     !expands && card.isDisabled
                 case let .fileCard(_, part):
+                    part == nil
+                case let .textPreview(_, part):
                     part == nil
                 }
             }
@@ -335,8 +339,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
-    var voiceMessageActiveMessageID: MessageID?
-    var voiceMessageSpeed: Float = 1
+    /// The text preview a scroll gesture began over, which keeps the gesture.
+    var textPreviewScrollTarget: String?
+    var voiceMessageActiveID: VoiceMessagePlaybackID?
+    var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?
     var hoveredVoiceMessage: VoiceMessageHover?
     struct ActivityIndicatorKey: Hashable {

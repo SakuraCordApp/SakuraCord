@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 import MediaPipeline
 import MessageRendering
@@ -8,16 +9,20 @@ import SakuraCordModels
 nonisolated enum VoiceMessagePlaybackID: Hashable, Sendable {
     case message(MessageID)
     case composer(MessageComposerDestination)
+    /// An audio file attachment, played in its file card.
+    case attachment(String)
 }
 
-/// Owns voice-message playback for the timeline and composer previews.
+/// Owns voice-message and audio-file playback for the timeline and composer
+/// previews.
 ///
-/// Like Discord, one voice message plays at a time; starting another pauses
-/// the first. Speed is device-local and shared by every player.
+/// Like Discord, one voice message or audio file plays at a time; starting
+/// another pauses the first. Speed is device-local and shared by every voice
+/// message player; audio files play at normal speed and can be muted.
 @MainActor
 @Observable
 final class VoiceMessagePlaybackStore {
-    enum Source: Equatable {
+    enum Source: Hashable {
         case local(URL)
         case remote(URL)
     }
@@ -47,7 +52,11 @@ final class VoiceMessagePlaybackStore {
     private(set) var activeID: VoiceMessagePlaybackID?
     private(set) var phase: Phase = .paused
     private(set) var speed: Float {
-        didSet { player?.rate = speed }
+        didSet { applyOutput() }
+    }
+    /// Discord's audio file mute, which voice messages ignore.
+    private(set) var isAudioFileMuted = false {
+        didSet { applyOutput() }
     }
 
     @ObservationIgnored private var player: VoiceMessagePlayer?
@@ -60,6 +69,10 @@ final class VoiceMessagePlaybackStore {
     /// open so returning to one starts at once.
     @ObservationIgnored private var cachedPlayers: [CachedPlayer] = []
     @ObservationIgnored private var prefetchedURLs: Set<URL> = []
+    /// Durations learned by playing or measuring audio files, which arrive
+    /// without one.
+    @ObservationIgnored private var knownDurations: [Source: TimeInterval] = [:]
+    @ObservationIgnored private var measuringSources: Set<Source> = []
     /// When play was last pressed, to tell a slow start from a quick one.
     @ObservationIgnored private var playRequestedAt: ContinuousClock.Instant?
     @ObservationIgnored private var resumesAfterScrub = false
@@ -94,6 +107,10 @@ final class VoiceMessagePlaybackStore {
     func duration(of id: VoiceMessagePlaybackID) -> TimeInterval? {
         activeID == id ? player?.duration ?? activeDuration : nil
     }
+
+    func knownDuration(of source: Source) -> TimeInterval? { knownDurations[source] }
+
+    var knownDurationCount: Int { knownDurations.count }
 
     /// Whether `id` was pressed and still hasn't sounded, after a moment;
     /// a cached message opens too quickly to be worth a spinner.
@@ -162,6 +179,25 @@ final class VoiceMessagePlaybackStore {
         guard activeID == id, resumesAfterScrub else { return }
         resumesAfterScrub = false
         play()
+    }
+
+    func toggleAudioFileMute() {
+        isAudioFileMuted.toggle()
+        notify()
+    }
+
+    /// Reads an audio file's length ahead of playing it, as Discord's player
+    /// loads its metadata when the pointer reaches it.
+    func measureDuration(of source: Source) {
+        guard knownDurations[source] == nil, measuringSources.insert(source).inserted else { return }
+        Task { [weak self] in
+            let duration = try? await Self.measuredDuration(of: source, resolve: self?.resolveRemoteURL)
+            guard let self else { return }
+            measuringSources.remove(source)
+            guard let duration else { return }
+            knownDurations[source] = duration
+            notify()
+        }
     }
 
     func cycleSpeed() {
@@ -241,18 +277,19 @@ final class VoiceMessagePlaybackStore {
                 self.loadTask = nil
                 self.phase = .paused
                 self.notify()
-                self.onError?("This voice message couldn't be played.")
+                self.onError?(Self.playbackFailure(for: id))
             }
         }
     }
 
     private func adopt(_ player: VoiceMessagePlayer, file: PlaybackFile, for id: VoiceMessagePlaybackID) {
-        player.rate = speed
         player.onFinish = { [weak self] in self?.finish(id) }
         player.onInterruption = { [weak self] in self?.interrupted(id) }
         self.player = player
         playerFile = file
         activeDuration = player.duration
+        if let activeSource { knownDurations[activeSource] = player.duration }
+        applyOutput()
         if pausedPosition > 0 { player.seek(to: pausedPosition) }
         start(player)
     }
@@ -265,9 +302,21 @@ final class VoiceMessagePlaybackStore {
             phase = .playing
         } catch {
             phase = .paused
-            onError?("This voice message couldn't be played.")
+            if let activeID { onError?(Self.playbackFailure(for: activeID)) }
         }
         notify()
+    }
+
+    private static func playbackFailure(for id: VoiceMessagePlaybackID) -> String {
+        if case .attachment = id { "This audio file couldn't be played." } else { "This voice message couldn't be played." }
+    }
+
+    /// Voice messages take the chosen speed; audio files play at normal
+    /// speed and follow the mute.
+    private func applyOutput() {
+        let isAudioFile = if case .attachment = activeID { true } else { false }
+        player?.rate = isAudioFile ? 1 : speed
+        player?.volume = isAudioFile && isAudioFileMuted ? 0 : 1
     }
 
     private func pause() {
@@ -378,11 +427,34 @@ final class VoiceMessagePlaybackStore {
             try Task.checkCancellation()
             let directory = FileManager.default.temporaryDirectory
                 .appending(path: "SakuraCordVoicePlayback", directoryHint: .isDirectory)
-            let fileURL = directory.appending(path: "\(UUID().uuidString).ogg")
+            // The extension tells Core Audio the file's format.
+            let fileURL = directory.appending(path: UUID().uuidString)
+                .appendingPathExtension(url.pathExtension.isEmpty ? "ogg" : url.pathExtension)
             let file = PlaybackFile(url: fileURL, removesOnRelease: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             return (try VoiceMessagePlayer(fileURL: fileURL), file)
+        }
+    }
+}
+
+private extension VoiceMessagePlaybackStore {
+    /// The length of an audio file from its header; a remote file is read
+    /// only as far as AVFoundation needs.
+    static func measuredDuration(
+        of source: Source,
+        resolve: (@MainActor (URL) async -> URL)?
+    ) async throws -> TimeInterval {
+        switch source {
+        case let .local(url):
+            return try await Task.detached(priority: .utility) {
+                let file = try AVAudioFile(forReading: url)
+                return Double(file.length) / file.processingFormat.sampleRate
+            }.value
+        case let .remote(url):
+            let duration = try await AVURLAsset(url: await resolve?(url) ?? url).load(.duration).seconds
+            guard duration.isFinite, duration > 0 else { throw CocoaError(.fileReadCorruptFile) }
+            return duration
         }
     }
 }

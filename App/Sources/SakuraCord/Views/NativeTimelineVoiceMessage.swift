@@ -11,6 +11,8 @@ struct NativeTimelineVoiceMessageRegion {
         case plain
         case outgoingBubble
         case incomingBubble
+        /// Discord's audio file player, the bottom row of its file card.
+        case audioFile
     }
 
     let frame: CGRect
@@ -24,10 +26,21 @@ struct NativeTimelineVoiceMessageRegion {
     let bars: [Float]
     let style: Style
 
-    var playbackID: VoiceMessagePlaybackID { .message(messageID) }
+    var playbackID: VoiceMessagePlaybackID {
+        style == .audioFile ? .attachment(attachment.id) : .message(messageID)
+    }
+
+    /// The bar behind an audio file's controls; its frame reaches above it
+    /// for the scrubbing time bubble.
+    var controlsFrame: CGRect { playFrame.union(speedFrame) }
 
     var source: VoiceMessagePlaybackStore.Source {
         attachment.url.isFileURL ? .local(attachment.url) : .remote(attachment.url)
+    }
+
+    /// The length a voice message carries, or one learned for an audio file.
+    func knownDuration(in playback: VoiceMessagePlaybackStore?) -> TimeInterval? {
+        duration > 0 ? duration : playback?.knownDuration(of: source)
     }
 
     static func make(
@@ -89,6 +102,37 @@ struct NativeTimelineVoiceMessageRegion {
         )
     }
 
+    /// An audio file card's player: play, time, seek bar, and mute, with the
+    /// seek bar in `waveformFrame` and mute in `speedFrame`.
+    static func audioFile(in card: NativeTimelineFileCard, messageID: MessageID) -> Self {
+        let controls = card.playerFrame
+        let button = InterfaceScale.metric(32)
+        let playFrame = CGRect(x: controls.minX, y: controls.minY, width: button, height: button)
+        let muteFrame = CGRect(x: controls.maxX - button, y: controls.minY, width: button, height: button)
+        let duration = card.attachment.durationSeconds ?? 0
+        let template = VoiceMessageDurationFormat.string(duration) + "\u{2009}/\u{2009}" + VoiceMessageDurationFormat.string(duration)
+        let timeWidth = ceil((template as NSString).size(withAttributes: [.font: NativeTimelineVoiceMessagePainter.audioFileTimeFont]).width)
+        let timeFrame = CGRect(
+            x: playFrame.maxX + InterfaceScale.metric(12), y: controls.minY, width: timeWidth, height: button
+        )
+        let barMinX = timeFrame.maxX + InterfaceScale.metric(11)
+        let barFrame = CGRect(
+            x: barMinX, y: controls.minY, width: max(1, muteFrame.minX - InterfaceScale.metric(7) - barMinX), height: button
+        )
+        return Self(
+            frame: controls.union(controls.offsetBy(dx: 0, dy: -InterfaceScale.metric(32))),
+            playFrame: playFrame,
+            waveformFrame: barFrame,
+            timeFrame: timeFrame,
+            speedFrame: muteFrame,
+            messageID: messageID,
+            attachment: card.attachment,
+            duration: duration,
+            bars: [],
+            style: .audioFile
+        )
+    }
+
     struct Metrics {
         let style: Style
         var height: CGFloat { InterfaceScale.metric(style == .plain ? 48 : 36) }
@@ -112,6 +156,21 @@ struct NativeTimelineVoiceMessageRegion {
     }
 }
 
+/// What resting players in cached rows show beyond their own message.
+struct VoiceMessageRestingPresentation: Equatable {
+    var speed: Float = 1
+    var isAudioFileMuted = false
+    var knownDurationCount = 0
+
+    init() {}
+
+    init(_ playback: VoiceMessagePlaybackStore) {
+        speed = playback.speed
+        isAudioFileMuted = playback.isAudioFileMuted
+        knownDurationCount = playback.knownDurationCount
+    }
+}
+
 struct NativeTimelineVoiceMessageDrawState {
     var progress: CGFloat = 0
     var isPlaying = false
@@ -128,6 +187,11 @@ struct NativeTimelineVoiceMessageDrawState {
     var reducesMotion = false
     var isPlayHovered = false
     var isSpeedHovered = false
+    /// An audio file's length, once known.
+    var duration: TimeInterval?
+    /// Where the pointer rests on an audio file's seek bar.
+    var hoverFraction: CGFloat?
+    var isMuted = false
 }
 
 enum NativeTimelineVoiceMessagePainter {
@@ -135,6 +199,8 @@ enum NativeTimelineVoiceMessagePainter {
         let factor: CGFloat
         let time: NSFont
         let speed: NSFont
+        let audioFileTime: NSFont
+        let bubble: NSFont
     }
 
     private static var fonts: Fonts?
@@ -145,7 +211,9 @@ enum NativeTimelineVoiceMessagePainter {
         let created = Fonts(
             factor: InterfaceScale.factor,
             time: .interfaceMonospacedDigitSystemFont(ofSize: 12, weight: .medium),
-            speed: .interfaceSystemFont(ofSize: 11, weight: .semibold)
+            speed: .interfaceSystemFont(ofSize: 11, weight: .semibold),
+            audioFileTime: .monospacedSystemFont(ofSize: InterfaceScale.fontSize(12), weight: .medium),
+            bubble: .interfaceSystemFont(ofSize: 12, weight: .semibold)
         )
         fonts = created
         return created
@@ -153,6 +221,8 @@ enum NativeTimelineVoiceMessagePainter {
 
     static var timeFont: NSFont { scaledFonts.time }
     static var speedFont: NSFont { scaledFonts.speed }
+    static var audioFileTimeFont: NSFont { scaledFonts.audioFileTime }
+    static var audioFileBubbleFont: NSFont { scaledFonts.bubble }
 
     /// The capsule behind a plain-style player. Bubble styles draw on the bubble.
     static func drawBackground(_ region: NativeTimelineVoiceMessageRegion) {
@@ -167,6 +237,10 @@ enum NativeTimelineVoiceMessagePainter {
 
     static func drawContent(_ region: NativeTimelineVoiceMessageRegion, state: NativeTimelineVoiceMessageDrawState) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        if region.style == .audioFile {
+            drawAudioFilePlayer(region, state: state, context: context)
+            return
+        }
         let palette = Palette(style: region.style)
         drawPlayButton(region, state: state, palette: palette, context: context)
         drawBars(region, state: state, palette: palette, context: context)
@@ -200,7 +274,7 @@ enum NativeTimelineVoiceMessagePainter {
                 chipFill = NSColor.white.withAlphaComponent(0.2)
                 chipHoverFill = NSColor.white.withAlphaComponent(0.32)
                 chipText = .white
-            case .plain, .incomingBubble:
+            case .plain, .incomingBubble, .audioFile:
                 buttonFill = accent
                 glyph = .white
                 played = accent
@@ -319,11 +393,16 @@ enum NativeTimelineVoiceMessagePainter {
     }
 
     /// The resting appearance painted into cached row bitmaps.
-    static func drawIdle(_ region: NativeTimelineVoiceMessageRegion, speedLabel: String, isActive: Bool) {
+    static func drawIdle(_ region: NativeTimelineVoiceMessageRegion, playback: VoiceMessagePlaybackStore?) {
         drawBackground(region)
-        // The live overlay draws the active message's player above the row.
-        guard !isActive else { return }
-        drawContent(region, state: .init(displayedTime: region.duration, speedLabel: speedLabel))
+        // The live overlay draws the active player above the row.
+        guard playback?.isActive(region.playbackID) != true else { return }
+        var state = NativeTimelineVoiceMessageDrawState(displayedTime: region.duration, speedLabel: playback?.speedLabel ?? "1×")
+        if region.style == .audioFile {
+            state.duration = region.knownDuration(in: playback)
+            state.isMuted = playback?.isAudioFileMuted == true
+        }
+        drawContent(region, state: state)
     }
 }
 
@@ -331,7 +410,7 @@ enum NativeTimelineVoiceMessagePainter {
 /// are reused. Lines take their colour from the context, so one entry serves
 /// every appearance.
 @MainActor
-private enum VoiceMessageLabelCache {
+enum VoiceMessageLabelCache {
     private static var lines: [String: CTLine] = [:]
 
     static func draw(_ text: String, font: NSFont, color: NSColor, centeredIn frame: CGRect, alignment: NSTextAlignment) {
@@ -501,26 +580,30 @@ extension NativeTimelineCanvasView {
         let origin: CGFloat
     }
 
+    /// The voice message or audio file control under `point`. An audio
+    /// file's controls fill its player row, so they take no extra margin.
     func voiceMessagePointerHit(at point: CGPoint) -> VoiceMessagePointerHit? {
         guard WindowModalCoordinator.allowsInput(for: self),
               let index = rowIndex(at: point.y),
-              layouts.indices.contains(index), items.indices.contains(index),
-              let region = layouts[index].voiceMessageRegion
+              layouts.indices.contains(index), items.indices.contains(index)
         else { return nil }
         let origin = displayedRowOrigin(at: index)
         let local = CGPoint(x: point.x, y: point.y - origin)
-        guard region.frame.contains(local) else { return nil }
-        let control: VoiceMessageControl
-        if region.playFrame.insetBy(dx: -4, dy: -4).contains(local) {
-            control = .play
-        } else if region.speedFrame.insetBy(dx: -3, dy: -6).contains(local) {
-            control = .speed
-        } else if region.waveformFrame.insetBy(dx: -4, dy: -6).contains(local) {
-            control = .waveform
-        } else {
-            return nil
+        for region in layouts[index].audioPlayers where region.frame.contains(local) && !isConcealedSpoiler(region.attachment, in: region.messageID) {
+            let isAudioFile = region.style == .audioFile
+            let control: VoiceMessageControl
+            if region.playFrame.insetBy(dx: isAudioFile ? 0 : -4, dy: isAudioFile ? 0 : -4).contains(local) {
+                control = .play
+            } else if region.speedFrame.insetBy(dx: isAudioFile ? 0 : -3, dy: isAudioFile ? 0 : -6).contains(local) {
+                control = .speed
+            } else if region.waveformFrame.insetBy(dx: isAudioFile ? 0 : -4, dy: isAudioFile ? 0 : -6).contains(local) {
+                control = .waveform
+            } else {
+                continue
+            }
+            return VoiceMessagePointerHit(row: items[index].identifier, region: region, control: control, origin: origin)
         }
-        return VoiceMessagePointerHit(row: items[index].identifier, region: region, control: control, origin: origin)
+        return nil
     }
 
     /// Returns true when the press belongs to a voice message.
@@ -553,7 +636,8 @@ extension NativeTimelineCanvasView {
                 playback.toggle(press.region.playbackID, source: press.region.source, duration: press.region.duration)
             }
         case .speed:
-            if released?.row == press.row, released?.control == .speed { playback.cycleSpeed() }
+            guard released?.row == press.row, released?.control == .speed else { break }
+            if press.region.style == .audioFile { playback.toggleAudioFileMute() } else { playback.cycleSpeed() }
         }
         return true
     }
@@ -568,41 +652,60 @@ extension NativeTimelineCanvasView {
 
     func updateVoiceMessageHover(at point: CGPoint?) {
         let hit = point.flatMap { voiceMessagePointerHit(at: $0) }
-        let hovered = hit.map { VoiceMessageHover(messageID: $0.region.messageID, control: $0.control) }
+        let hovered = hit.map {
+            VoiceMessageHover(
+                playbackID: $0.region.playbackID, control: $0.control,
+                // An audio file's seek bar follows the pointer.
+                pointerX: $0.region.style == .audioFile && $0.control == .waveform ? point?.x : nil
+            )
+        }
         guard hovered != hoveredVoiceMessage else { return }
+        if let hit, hit.region.style == .audioFile, hovered?.playbackID != hoveredVoiceMessage?.playbackID {
+            model?.voiceMessagePlayback.measureDuration(of: hit.region.source)
+        }
+        let showsHoverOverlay = { (hover: VoiceMessageHover?) in hover.map { if case .attachment = $0.playbackID { true } else { false } } ?? false }
+        let reconciles = showsHoverOverlay(hovered) || showsHoverOverlay(hoveredVoiceMessage)
         hoveredVoiceMessage = hovered
-        if voiceMessageOverlay != nil { refreshVoiceMessageOverlay() }
+        if reconciles { reconcileVoiceMessageOverlay() } else if voiceMessageOverlay != nil { refreshVoiceMessageOverlay() }
     }
 
-    /// Fetches on-screen voice messages into the media cache, as images are.
-    func prefetchVisibleVoiceMessages() {
+    /// Fetches on-screen voice messages into the media cache, as images are,
+    /// and starts on-screen text previews. Audio files, which can be large,
+    /// wait to be hovered or played.
+    func prefetchVisibleAttachments() {
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
-        guard let playback = model?.voiceMessagePlayback, var index = rowIndex(at: max(0, viewport.minY)) else { return }
+        guard let model, var index = rowIndex(at: max(0, viewport.minY)) else { return }
         while items.indices.contains(index), layouts.indices.contains(index), displayedRowOrigin(at: index) < viewport.maxY {
-            if case let .remote(url) = layouts[index].voiceMessageRegion?.source { playback.prefetch(url) }
+            if case let .remote(url) = layouts[index].voiceMessageRegion?.source { model.voiceMessagePlayback.prefetch(url) }
+            if let messageID = items[index].messageID {
+                for preview in layouts[index].textPreviews { model.attachmentTextPreviews.load(preview.attachment, in: messageID) }
+            }
             index += 1
         }
     }
 
     struct VoiceMessageHover: Equatable {
-        let messageID: MessageID
+        let playbackID: VoiceMessagePlaybackID
         let control: VoiceMessageControl
+        /// The pointer's position over an audio file's seek bar.
+        var pointerX: CGFloat?
     }
 
     // MARK: Overlay
 
     @objc func voiceMessagePlaybackDidChange(_ notification: Notification) {
         guard let playback = model?.voiceMessagePlayback, notification.object as AnyObject === playback else { return }
-        let activeMessageID = Self.activeMessageID(in: playback)
-        if activeMessageID != voiceMessageActiveMessageID {
-            let previous = voiceMessageActiveMessageID
-            voiceMessageActiveMessageID = activeMessageID
+        if playback.activeID != voiceMessageActiveID {
+            let previous = voiceMessageActiveID
+            voiceMessageActiveID = playback.activeID
             // Row bitmaps omit the active player's content; repaint both rows.
-            invalidateVoiceMessageBitmaps(messageIDs: Set([previous, activeMessageID].compactMap { $0 }))
+            invalidateVoiceMessageBitmaps(playbackIDs: Set([previous, playback.activeID].compactMap { $0 }))
         }
-        if voiceMessageSpeed != playback.speed {
-            voiceMessageSpeed = playback.speed
-            // Cached rows hold the speed label too, including other conversations.
+        // Cached rows hold the speed label, mute state, and learned lengths
+        // too, including other conversations.
+        let resting = VoiceMessageRestingPresentation(playback)
+        if resting != voiceMessageResting {
+            voiceMessageResting = resting
             invalidateVoiceMessageBitmaps()
         }
         reconcileVoiceMessageOverlay()
@@ -613,14 +716,14 @@ extension NativeTimelineCanvasView {
         if let index = visibleRowIndex(of: identifier) { setNeedsDisplay(rowFrame(at: index)) }
     }
 
-    private func invalidateVoiceMessageBitmaps(messageIDs: Set<MessageID>? = nil) {
+    private func invalidateVoiceMessageBitmaps(playbackIDs: Set<VoiceMessagePlaybackID>? = nil) {
         // Bitmaps survive navigation, so the current layouts alone cannot
         // identify every row whose playback presentation has changed.
         let identifiers = bitmapCache.compactMap { identifier, cached in
-            guard let message = cached.item.messageRow?.message,
-                  (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage)
-            else { return nil as NativeMessageTimelineItem.Identifier? }
-            if let messageIDs, !messageIDs.contains(message.id) { return nil }
+            guard let message = cached.item.messageRow?.message else { return nil as NativeMessageTimelineItem.Identifier? }
+            var players = message.attachments.filter { $0.mediaKind == .audio }.map { VoiceMessagePlaybackID.attachment($0.id) }
+            if (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) { players.append(.message(message.id)) }
+            guard !players.isEmpty, playbackIDs.map({ !$0.isDisjoint(with: players) }) ?? true else { return nil }
             return identifier
         }
         for identifier in identifiers {
@@ -640,29 +743,25 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
-    private static func activeMessageID(in playback: VoiceMessagePlaybackStore) -> MessageID? {
-        if case let .message(id) = playback.activeID { id } else { nil }
-    }
-
-    /// Shows the overlay only while the active voice message is on screen.
+    /// Shows the overlay only while the active voice message or audio file,
+    /// or else a hovered audio file, is on screen.
     func reconcileVoiceMessageOverlay() {
         // A timeline opened mid-playback has not seen a change notification yet.
-        if let playback = model?.voiceMessagePlayback { voiceMessageActiveMessageID = Self.activeMessageID(in: playback) }
+        if let playback = model?.voiceMessagePlayback { voiceMessageActiveID = playback.activeID }
+        let hoveredAudioFile = hoveredVoiceMessage.flatMap { if case .attachment = $0.playbackID { $0.playbackID } else { nil } }
         guard let playback = model?.voiceMessagePlayback,
-              let messageID = voiceMessageActiveMessageID,
+              let playbackID = voiceMessageActiveID ?? hoveredAudioFile,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {
             removeVoiceMessageOverlay()
             return
         }
         var found: (region: NativeTimelineVoiceMessageRegion, origin: CGFloat)?
-        while items.indices.contains(index), layouts.indices.contains(index),
+        while found == nil, items.indices.contains(index), layouts.indices.contains(index),
               displayedRowOrigin(at: index) < visibleRect.maxY
         {
-            if let region = layouts[index].voiceMessageRegion, region.messageID == messageID {
-                found = (region, displayedRowOrigin(at: index))
-                break
-            }
+            found = layouts[index].audioPlayers.first { $0.playbackID == playbackID }
+                .map { ($0, displayedRowOrigin(at: index)) }
             index += 1
         }
         guard let found else {
@@ -710,8 +809,9 @@ extension NativeTimelineCanvasView {
         let duration = playback.duration(of: id) ?? region.duration
         let position = playback.position(of: id)
         let phase = playback.phase(of: id)
-        let hover = hoveredVoiceMessage?.messageID == region.messageID ? hoveredVoiceMessage?.control : nil
-        return NativeTimelineVoiceMessageDrawState(
+        let hovered = hoveredVoiceMessage?.playbackID == id ? hoveredVoiceMessage : nil
+        let hover = hovered?.control
+        var state = NativeTimelineVoiceMessageDrawState(
             progress: duration > 0 ? CGFloat(min(max(position / duration, 0), 1)) : 0,
             isPlaying: phase == .playing,
             isLoading: playback.isLoading(id),
@@ -723,5 +823,13 @@ extension NativeTimelineCanvasView {
             isPlayHovered: hover == .play,
             isSpeedHovered: hover == .speed
         )
+        if region.style == .audioFile {
+            state.duration = playback.duration(of: id) ?? region.knownDuration(in: playback)
+            state.isMuted = playback.isAudioFileMuted
+            state.hoverFraction = hovered?.pointerX.map {
+                min(max(($0 - region.waveformFrame.minX) / max(region.waveformFrame.width, 1), 0), 1)
+            }
+        }
+        return state
     }
 }

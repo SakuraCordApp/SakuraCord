@@ -528,6 +528,12 @@ private struct ChatRootView: View {
             fileDropWatchdogTask = nil
             model.mediaViewerPresentation = nil
         }
+        .sheet(item: Binding(get: { model.textFilePresentation }, set: { model.textFilePresentation = $0 })) { presentation in
+            TextFilePreviewSheet(presentation: presentation) {
+                model.attachmentDownloads.activate(presentation.attachment)
+            }
+            .interfaceScaleRoot()
+        }
         .sheet(isPresented: $showAccountSwitcher) {
             AccountSwitcherView(
                 model: model,

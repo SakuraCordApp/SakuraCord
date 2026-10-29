@@ -251,6 +251,8 @@ final class AppModel {
     var conversationNewestRequest: ConversationNewestRequest?
     var presentedProfileGame: ProfileGame?
     var mediaViewerPresentation: NativeTimelineMediaViewerPresentation?
+    /// A text file opened whole from its timeline preview.
+    var textFilePresentation: TextFilePresentation?
     var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
     var members: [Member] = [] {
         didSet {
@@ -480,6 +482,7 @@ final class AppModel {
     @ObservationIgnored let composer: MessageComposerState
     @ObservationIgnored let voiceMessagePlayback = VoiceMessagePlaybackStore()
     @ObservationIgnored let attachmentDownloads = AttachmentDownloadStore()
+    @ObservationIgnored let attachmentTextPreviews = AttachmentTextPreviewStore()
     @ObservationIgnored let channelVoiceMessageComposer = VoiceMessageComposerState(destination: .channel)
     @ObservationIgnored let threadVoiceMessageComposer = VoiceMessageComposerState(destination: .thread)
     var gifResults: [GIFSearchResult] = []
