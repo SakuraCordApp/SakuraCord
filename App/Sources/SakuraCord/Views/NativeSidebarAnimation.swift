@@ -5,11 +5,14 @@ import SwiftUI
 /// own its layout, materials, divider, toolbar, and interactive resizing.
 struct NativeSidebarAnimation: NSViewRepresentable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Whether the sidebar snaps in the reader's settings, as under Reduce
+    /// Motion.
+    let snaps: Bool
 
     func makeNSView(context: Context) -> AnimationView { AnimationView() }
 
     func updateNSView(_ view: AnimationView, context: Context) {
-        view.reduceMotion = reduceMotion
+        view.reduceMotion = reduceMotion || snaps
         view.scheduleUpdate()
     }
 

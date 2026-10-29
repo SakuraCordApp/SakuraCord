@@ -430,7 +430,10 @@ extension NativeTimelineCanvasView {
             originY = origin + (layout.highlightFrame?.minY ?? 0) - InterfaceScale.metric(13)
         }
         let originX = max(minX, anchorMaxX - size.width)
-        host.frame = CGRect(x: originX, y: originY, width: size.width, height: size.height)
+        // Keep the capsule below the window toolbar when the row reaches it.
+        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
+        let clampedOriginY = visibleRect.isEmpty ? originY : max(originY, unobscuredMinY + InterfaceScale.metric(4))
+        host.frame = CGRect(x: originX, y: clampedOriginY, width: size.width, height: size.height)
         // A capsule clamped against the leading side grows away from it.
         let pinsLeadingEdge = originX > anchorMaxX - size.width
         if state.pinsLeadingEdge != pinsLeadingEdge {
@@ -1175,6 +1178,7 @@ extension NativeTimelineCanvasView {
         contentOriginY
             + (index >= disclosureRange.upperBound ? disclosureShiftAfter
                 : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
+            + unreadDividerGapShift(at: index)
             + NativeTimelineTransientRowGeometry.rowOrigin(
                 base: rowOrigins[index],
                 rowIndex: index,
@@ -1214,7 +1218,6 @@ extension NativeTimelineCanvasView {
             reconcileBeginningSelectionOverlay()
             positionInlineVideoOverlays()
             reconcileVoiceMessageOverlay()
-            positionLottieStickerOverlays()
             reconcileActivityIndicators()
             positionSpoilerOverlays()
             needsDisplay = true

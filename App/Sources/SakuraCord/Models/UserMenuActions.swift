@@ -35,6 +35,7 @@ extension AppModel {
         let isLocalIdentity = context.isLocalIdentity || user.isWebhookIdentity || user.isSystem
         let relationship = relationships.first { $0.id == user.id }
         let pending = friends.pendingUserIDs.contains(user.id)
+        let location = context.ignoreLocation ?? (context.guildID != nil ? .guildChannel : .contextMenu)
         var actions: [UserMenuAction] = []
         func add(_ id: String, _ title: String, _ symbol: String, _ group: UserMenuAction.Group,
                  enabled: Bool = true, _ perform: @escaping (AppModel) -> Void) {
@@ -77,10 +78,9 @@ extension AppModel {
         }
 
         if !isSelf, !isLocalIdentity, !user.isBot {
-            appendRelationshipMenuActions(for: user, relationship: relationship, pending: pending, add: add)
+            appendRelationshipMenuActions(for: user, relationship: relationship, pending: pending, location: location, add: add)
         }
         if !isSelf, !isLocalIdentity, relationship?.type != .blocked {
-            let location = context.ignoreLocation ?? (context.guildID != nil ? .guildChannel : .contextMenu)
             if relationship?.isIgnored == true {
                 add("unignore", "Unignore", "eye", .destructive, enabled: !pending) {
                     $0.setUserIgnored(user, ignored: false, location: location)
@@ -105,18 +105,16 @@ extension AppModel {
     }
 
     private func appendRelationshipMenuActions(
-        for user: User, relationship: Relationship?, pending: Bool,
+        for user: User, relationship: Relationship?, pending: Bool, location: IgnoreActionLocation,
         add: (String, String, String, UserMenuAction.Group, Bool, @escaping (AppModel) -> Void) -> Void
     ) {
         switch relationship?.type ?? .none {
         case .none, .implicit:
             guard !user.username.isEmpty else { break }
-            add("add-friend", "Add Friend…", "person.badge.plus", .relationship, !pending) { model in
+            add("add-friend", "Add Friend", "person.badge.plus", .relationship, !pending) { model in
                 let type = model.relationships.first { $0.id == user.id }?.type ?? .none
                 guard type == .none || type == .implicit else { return }
-                model.openFriends()
-                model.selectFriendsSection(.addFriend)
-                model.friends.addFriendText = user.tag
+                model.sendFriendRequest(to: user, location: location)
             }
         case .incomingRequest:
             if relationship?.note != nil {
@@ -132,12 +130,12 @@ extension AppModel {
             }
             add("decline", "Decline Request", "xmark", .destructive, !pending) { model in
                 guard model.relationships.first(where: { $0.id == user.id })?.type == .incomingRequest else { return }
-                model.removeRelationship(with: user, as: .declineIncomingRequest)
+                model.removeRelationship(with: user.id, as: .declineIncomingRequest)
             }
         case .outgoingRequest:
             add("cancel-request", "Cancel Request", "xmark", .destructive, !pending) { model in
                 guard model.relationships.first(where: { $0.id == user.id })?.type == .outgoingRequest else { return }
-                model.removeRelationship(with: user, as: .cancelOutgoingRequest)
+                model.removeRelationship(with: user.id, as: .cancelOutgoingRequest)
             }
         case .friend:
             add("remove-friend", "Remove Friend…", "person.badge.minus", .destructive, !pending) { model in
@@ -150,7 +148,7 @@ extension AppModel {
         if relationship?.type == .blocked {
             add("unblock", "Unblock", "hand.raised.slash", .destructive, !pending) { model in
                 guard model.relationships.first(where: { $0.id == user.id })?.type == .blocked else { return }
-                model.removeRelationship(with: user, as: .unblock)
+                model.removeRelationship(with: user.id, as: .unblock)
             }
         } else {
             add("block", "Block…", "hand.raised", .destructive, !pending) { model in

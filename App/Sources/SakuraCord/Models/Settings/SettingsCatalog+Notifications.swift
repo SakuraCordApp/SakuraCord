@@ -1,5 +1,10 @@
 import Foundation
 
+nonisolated extension SettingsControlID {
+    static let notificationMessageSound = Self(rawValue: "notifications.message-sound")
+    static let notificationCallRingtone = Self(rawValue: "notifications.call-ringtone")
+}
+
 nonisolated extension SettingsCatalog {
     static let notificationsPage = page(
         .notifications, group: .preferences, title: "Notifications", image: "bell",
@@ -48,6 +53,24 @@ nonisolated extension SettingsCatalog {
             scope: .appWideLocal
         ),
         control(
+            .notificationMessageSound,
+            page: .notifications,
+            section: .notificationDelivery,
+            label: "Message sound",
+            help: "Choose the sound played for message notifications.",
+            keywords: ["audio", "alert", "custom"],
+            scope: .appWideLocal
+        ),
+        control(
+            .notificationCallRingtone,
+            page: .notifications,
+            section: .notificationDelivery,
+            label: "Call ringtone",
+            help: "Choose the sound played for incoming calls.",
+            keywords: ["ring", "audio", "custom"],
+            scope: .appWideLocal
+        ),
+        control(
             .notificationDockBadge,
             page: .notifications,
             section: .notificationDelivery,
@@ -80,7 +103,7 @@ nonisolated extension SettingsCatalog {
         ),
         control(
             .notificationIncomingCalls, page: .notifications, section: .notificationEvents,
-            label: "Incoming calls", help: "Allow native alerts for newly ringing private calls.",
+            label: "Incoming calls", help: "Ring for newly ringing private calls.",
             keywords: ["call", "ring", "voice"], scope: .appWideLocal
         ),
         control(

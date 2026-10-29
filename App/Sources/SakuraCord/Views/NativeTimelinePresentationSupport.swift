@@ -118,8 +118,11 @@ nonisolated enum NativeTimelineAccessibilityPresentation {
 
     static func threadLabel(_ thread: MessageThreadSummary) -> String {
         let replyCount = thread.messageCount
-        return "\(thread.name), \(replyCount) "
+        var label = "\(thread.name), \(replyCount) "
             + (replyCount == 1 ? "reply" : "replies")
+        if thread.isArchived { label += ", archived" }
+        if thread.isLocked { label += ", locked" }
+        return label
     }
 
     static func nonblank(_ value: String?) -> String? {

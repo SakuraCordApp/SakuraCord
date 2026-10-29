@@ -35,7 +35,7 @@ are mapped in [Testing](TESTING.md#choose-the-verification-boundary).
 | Work | App model / state | Provider or service | Presentation |
 | --- | --- | --- | --- |
 | Send, retry, drafts | [MessageComposerState.swift](../App/Sources/SakuraCord/Models/MessageComposerState.swift); [AppModelOutgoing.swift](../App/Sources/SakuraCord/Models/AppModelOutgoing.swift) | [DiscordRESTProvider.swift](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProvider.swift) | [ComposerView.swift](../App/Sources/SakuraCord/Views/ComposerView.swift) |
-| History and rendering | [AppModelHistory.swift](../App/Sources/SakuraCord/Models/AppModelHistory.swift) | [History provider](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProviderMessageHistory.swift); [MessageRendering](../Packages/MessageRendering/Sources) | [NativeMessageTimelineView.swift](../App/Sources/SakuraCord/Views/NativeMessageTimelineView.swift) |
+| History and rendering | [AppModelHistory.swift](../App/Sources/SakuraCord/Models/AppModelHistory.swift); threads: [AppModelThreadHistory.swift](../App/Sources/SakuraCord/Models/AppModelThreadHistory.swift) | [History provider](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProviderMessageHistory.swift); [MessageRendering](../Packages/MessageRendering/Sources) | [NativeMessageTimelineView.swift](../App/Sources/SakuraCord/Views/NativeMessageTimelineView.swift) |
 | Inbox and read state | [InboxState.swift](../App/Sources/SakuraCord/Models/InboxState.swift); [AccountReadStateModel.swift](../App/Sources/SakuraCord/Models/AccountReadStateModel.swift) | [DiscordRESTInbox.swift](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTInbox.swift) | [InboxPopoverView.swift](../App/Sources/SakuraCord/Views/InboxPopoverView.swift) |
 | Friends and relationships | [FriendsState.swift](../App/Sources/SakuraCord/Models/FriendsState.swift); [AppModelFriends.swift](../App/Sources/SakuraCord/Models/AppModelFriends.swift) | [DiscordRESTRelationships.swift](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTRelationships.swift) | [FriendsView.swift](../App/Sources/SakuraCord/Views/FriendsView.swift) |
 | Joining, onboarding, Guide | [AppModelOnboarding.swift](../App/Sources/SakuraCord/Models/AppModelOnboarding.swift); [AppModelGuildGuide.swift](../App/Sources/SakuraCord/Models/AppModelGuildGuide.swift) | [DiscordRESTOnboarding.swift](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTOnboarding.swift); [DiscordRESTGuildGuide.swift](../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGuildGuide.swift) | [GuildCustomizationView.swift](../App/Sources/SakuraCord/Views/GuildCustomizationView.swift) |
@@ -297,8 +297,18 @@ items, menus, alerts) keeps the system size.
 `WindowModalOverlay` supplies the shared custom modal host. Closing transitions
 retain input ownership until removal. Native sheets and anchored popovers keep
 their platform behaviour; event monitors must respect modal ownership.
-Threads, channel previews and Guide resources reuse the supplementary conversation
-pane and native timeline rather than creating another workspace shell.
+
+Side chats (threads and forum posts, thread creation, voice channel chat, Guide
+resources and Browse Channels previews) are one concept. AppModel's
+`sideConversations` is their single source of truth;
+[AppModelSideConversations.swift](../App/Sources/SakuraCord/Models/AppModelSideConversations.swift)
+owns opening, closing and mutual exclusion. A thread opens above a context side
+chat and returns to it when closed. `WorkspacePresentation` alone decides the
+workspace's primary content and trailing column for the views, toolbar,
+commands and file drops. Every pane uses `SideConversationPane` and the native
+timeline; kinds differ by `SideConversationCapabilities` and message store.
+Voice chat and previews present the selected channel's store; threads and Guide
+resources keep their own.
 
 Profile drafts belong to the editor; permissions, entitlement checks and
 confirmed values belong to the provider. MediaPipeline owns crop/encoding work.

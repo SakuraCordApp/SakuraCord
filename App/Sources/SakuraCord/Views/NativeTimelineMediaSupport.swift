@@ -547,7 +547,7 @@ final class NativeTimelineMediaStore {
         animatedCache.setObject(
             media,
             forKey: key.cacheKey,
-            cost: decoded.estimatedByteCount
+            cost: decoded.storedByteCount
         )
         if let firstFrame = media.firstFrame {
             cacheImage(firstFrame, for: key)
@@ -603,7 +603,7 @@ final class NativeTimelineMediaStore {
                 animatedCache.setObject(
                     media,
                     forKey: key.cacheKey,
-                    cost: decoded.estimatedByteCount
+                    cost: decoded.storedByteCount
                 )
             }
             for completion in completions {
@@ -1112,6 +1112,12 @@ enum NativeTimelineMediaDecoder {
         _ data: Data,
         maximumPixelDimension: Int
     ) -> CGImage? {
+        if let lottie = LottieStickerFrameRenderer(
+            data: data,
+            maximumPixelDimension: maximumPixelDimension
+        ) {
+            return lottie.frame(at: 0)
+        }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             return nil
         }

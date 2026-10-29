@@ -13,7 +13,7 @@ and the outbox; MediaPipeline owns local media transformations.
 | --- | --- |
 | DM/history/send budgets | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [MessageSendRateLimitContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSendRateLimitContractTests.swift) |
 | Search, forwarding and pins | [MessageSearchContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSearchContractTests.swift); [MessageForwardingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageForwardingContractTests.swift); [PinnedMessagesContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PinnedMessagesContractTests.swift) |
-| Polls and threads | [PollContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PollContractTests.swift); [ForumProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ForumProviderContractTests.swift) |
+| Polls and threads | [PollContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PollContractTests.swift); [ForumProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ForumProviderContractTests.swift); [ThreadActionContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ThreadActionContractTests.swift); [ThreadPolicyTests.swift](../../Packages/SakuraCordModels/Tests/SakuraCordModelsTests/ThreadPolicyTests.swift) |
 | Uploads | [UploadPrivacyContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadPrivacyContractTests.swift); [AttachmentUploadURLValidationTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AttachmentUploadURLValidationTests.swift); [UploadPrivacyPreparationTests.swift](../../App/Tests/SakuraCordAppTests/UploadPrivacyPreparationTests.swift) |
 
 ## Sends and history
@@ -50,13 +50,55 @@ Current permissions, membership gates and slowmode are checked before consuming
 a draft or dispatching any send entry point. REST/Gateway confirmations reconcile
 the same optimistic message rather than creating duplicates.
 
-History uses permission-checked channel message reads. A cold newest page loads
-10 messages once per channel per uninterrupted Gateway connection. Warm
-newest-backed pages are session-cached; a Gateway gap invalidates completeness
+History uses permission-checked channel message reads. Counts and anchors match
+the official desktop client (build 650389, captured 27 October 2026) and follow
+its viewport formula (module 326337): with `h = max(windowHeight / zoom - 145, 400)`,
+`base = max(10, min(30, ceil(1.05 * ceil(h / ((compact ? 65 : 91) * (fontSize / 16))))))`.
+A cold newest page, a stale refetch and Jump to Present read `base` messages
+(10 in a 794 pt window), the cold page once per channel per uninterrupted Gateway
+connection. Scrolling reads `min(30, 2 * base)`: `before={oldest loaded}` upward
+and, in a detached window, `after={newest loaded}` downward, one request at a time.
+SakuraCord takes the window height from the timeline's hosting window (800 pt before
+one reports), divides it by Interface Size as Discord's zoom, and uses the cozy
+height and a 16 pt font, having no compact mode and a fixed message text size.
+A page is requested once the viewport is within 500 pt of the loaded edge, so a
+window shorter than the viewport plus 500 pt keeps loading until it fills. In an
+unread conversation the earlier edge waits until the viewport is 18 pt above the
+oldest loaded message (the scroller's 16 pt bar buffer plus 2). A jump to
+a message not loaded (search, link, reply) is one `around={message}&limit=30` read,
+also into a channel with nothing loaded, which reads no newest page first.
+Jump to the first unread, when its boundary is not loaded, is one `around` read of 30
+centred on the last acknowledged message, never a chain of `before` pages; a
+cold open into a long backlog loads only `base` messages and shows the unread bar.
+Warm newest-backed pages are session-cached; a Gateway gap invalidates completeness
 and refreshes a reopened/selected channel once. Distant navigation replaces the
 window with `around` history; older/newer edges paginate independently. It must
-not masquerade as a newest-backed cache. A superseded selection may still finish
-its dispatched read and populate the account cache without changing selection.
+not masquerade as a newest-backed cache: leaving a detached window caches it
+with its viewport anchor and open later edge, so returning makes no request and
+restores the same messages and position. A cached detached window admits no live
+message or send, is never acknowledged, and is discarded by a Gateway gap. A
+superseded selection may still finish its dispatched read and populate the
+account cache without changing selection.
+An edge stays open after a full page, counting returned messages that cannot be
+decoded. A newest page extends a loaded window only when it reaches messages
+known to be gap-free (not ones that arrived live after a Gateway gap);
+otherwise it replaces the window rather than joining disjoint blocks.
+
+Threads and forum posts use the same windows, request sizes and 500 pt trigger as
+channels. Gateway does not
+guarantee a closed thread's messages, so a cached thread reopens at once and
+always revalidates its newest page. Until a current read establishes the newest
+edge after such a reopen or a Gateway gap, the window counts as detached: sends
+load the newest messages first and nothing is acknowledged automatically; a reconnect also revalidates the open
+thread and a Guide resource that had reached its newest message. Results for a
+closed instance of a side chat, including an earlier one of the same thread,
+are discarded, and of competing whole-window reads, sends and returns to the
+newest message the latest wins. A read that began before a Gateway gap may
+show its messages but cannot mark the window as reaching the newest message
+or admit messages past its fetched edge. Earlier and later pages continue from
+the window's REST edges, not from the messages it shows, and live messages,
+send confirmations and edits never join the window past an edge with more
+history beyond it.
 
 Search uses guild search or read-only DM search. Pagination and indexing follow
 server cursors and the [shared budgets](../PROTOCOL_BASELINE.md#attempt-budgets).
@@ -256,14 +298,94 @@ stop unrelated REST or Gateway traffic.
 Forum browsing uses `threads/search` and preview `post-data` batches of at most
 ten. Publish the catalogue independently of starter previews. Advance pagination
 by raw server records, retain valid siblings and cancel obsolete searches.
-Creating a forum post uses one thread mutation after any attachment uploads.
+Creating a forum post uses one thread mutation after any attachment uploads. Its
+nested `message` carries `content` and uploaded `attachments` but no
+`sticker_ids` (official build 649389 omits the field).
 Composer Create Thread uses one thread POST followed by a message send to the new
-thread, with the current public/private-thread permission rules. An unknown
+thread, with the current public/private-thread permission rules. The request's
+`location` is `Plus Button` from the composer and `Thread Browser Toolbar` from
+the Threads browser. An unknown
 thread link may first require one Get Channel; a known one does not.
 
 Thread lifecycle events advance the parent forum boundary before unread
 projection. Metadata, archive, lock, pin and delete are explicit, permission-gated
 mutations. Message-created thread cards use cached thread/message data.
+
+### Thread retention
+
+A cached thread leaves the provider only through `THREAD_DELETE`, removal of its
+parent channel or guild, or a fresh READY that no longer lists its parent.
+Opening a guild channel subscribes it through opcode 37 with `threads: true`.
+The resulting `THREAD_LIST_SYNC` carries `threads` and `most_recent_messages`
+for every active thread the user can view, joined or not, with no `channel_ids`,
+`members` or per-thread `member`. Archived threads are never included. The sync is
+add-or-update only, including when `channel_ids` scopes it: absence is not
+deletion, archiving or leaving, so archived catalogue pages, linked-thread Get
+Channel results and unjoined posts survive it. A `members` entry, when present,
+only adds membership. Joined state comes from READY, a `THREAD_CREATE` carrying
+`member` (also for a known thread), `THREAD_MEMBER_UPDATE`, and
+`THREAD_MEMBERS_UPDATE`, where the current user's ID in `removed_member_ids`
+means leaving. Member events apply to any thread known to the post cache or the
+joined-thread catalogue. `THREAD_UPDATE` with `archived: true` changes state only.
+
+A fresh READY lists only joined active threads. Public threads learned through
+REST survive it while their parent is still listed; their content follows the
+parent's permissions, so READY's records restore active membership and the rest
+show as unjoined until a member event. Private threads READY does not list are
+dropped, because their access follows membership that READY's silence cannot
+settle. An open private thread READY does not list is withheld and not presented
+for read acknowledgements, with its timeline position reset, while one lookup
+resolves it again. Success, or a Gateway record carrying the current user's
+member, resolves it in place, keeping its composer work while the recreated
+timeline establishes its position; a failure stays unavailable until the user
+retries.
+
+A known thread is answered from the provider cache; an unknown one costs one
+Get Channel, whose thread `member` states the membership. Thread records and
+deletions advance a per-thread record revision, and membership events a
+membership revision. A lookup over a cached record applies the response's metadata,
+keeping cached previews and owner, unless a record superseded the read; its
+`member` applies unless the membership revision moved, because a member-less
+record is not evidence of leaving. A lookup whose
+record was deleted meanwhile reports the thread as not found; one whose
+membership revision moved for an uncached thread asks once more. Resolving an
+open private thread's access always performs that Get Channel, even over a
+cached record, because a member-less record settles no membership. Opening a
+private thread whose record carries no membership, without Manage Threads,
+enters that resolution from every entry point; public threads stay cache-first.
+
+The official client instead clears thread channels on `CONNECTION_OPEN` and
+refetches the selected thread with Get Channel. Retention keeps an open post and
+the loaded catalogue across reconnection; a thread deleted during the disconnect
+can stay listed until the account session restarts. RESUMED replays missed events
+and resets nothing.
+
+The open thread or forum post closes only on `THREAD_DELETE`, removal of its
+parent or guild, or a user action; lost parent access shows it as unavailable.
+Leaving it keeps it open. A catalogue page or Gateway list that omits it keeps it
+open and listed. Automatic channel reselection happens only when the selected
+channel is gone from a loaded channel list of the selected guild or DM scope, or a
+guild's channel update or a replacement READY that still lists the guild removes
+it, including its last channel. READY offers no cached guild versions, so each
+available guild arrives with its complete channel list. An unloaded list or a
+guild switch in progress is not removal.
+
+Inbox, pin, search, mention and message-link navigation to a thread no local
+projection knows resolves it on demand (cache, else one Get Channel) and reports
+failures instead of waiting for background metadata; not-found and forbidden
+lookups say that the thread does not exist or is not accessible. Repeating an in-flight
+navigation destination, including the requested side-pane or full-width
+presentation, does not restart it while nothing else has replaced the side
+conversation or guild page since it started; any other destination supersedes it,
+as does directly opening another thread or closing the one it is heading to.
+
+Official Fresh host 0.0.411, web build 641004 (`web.4d4b2f75fdea5470.js`),
+observed on 19 October 2026 with a moderator and a plain member, confirmed the
+opcode-37 sync shape, member-less listing of unjoined threads, join and leave
+events, and an open pane surviving a leave. Its ChannelStore, ActiveThreadsStore
+and JoinedThreadsStore handlers merge syncs and establish the `CONNECTION_OPEN`
+reset and selected-thread refetch; forum-specific branches are source evidence
+only, as the test server had no forum.
 
 ### Sidebar threads
 
@@ -286,8 +408,8 @@ inserted first. A thread open only in the side pane does not receive that except
 one of its threads is selected. Relevance and timed mute expiry re-evaluate the rows.
 Sidebar selection and channel keyboard traversal open the existing thread timeline
 as the main conversation; the hidden parent is not eligible for read acknowledgements.
-Thread menus resolve permissions against their own parent and recheck eligibility
-when invoking a mutation. Private threads additionally require membership or
+Thread menus resolve [ThreadActionPolicy](../../Packages/SakuraCordModels/Sources/SakuraCordModels/ThreadPolicies.swift)
+against their own parent and recheck eligibility when invoking a mutation. Private threads additionally require membership or
 Manage Threads to expose content or actions after leaving. Close requires Manage Threads or the unlocked thread's
 creator; reopening an unlocked thread uses the first-party send permissions,
 while reopening a locked thread requires Manage Threads. Lock/unlock and pin/unpin
@@ -300,13 +422,93 @@ These gates follow first-party modules 406704, 307623, 57907, and 375500 in the
 2026-10-06 official client. Sidebar action failures use a visible application alert,
 including when the forum browser is not presented.
 
-Follow/leave uses
-`POST`/`DELETE /channels/{id}/thread-members/@me?location=Context%20Menu` and
-reconciles membership through Gateway; notification responses also publish the
-joined-thread catalogue immediately.
 See [SidebarThreadPresentation.swift](../../App/Sources/SakuraCord/Models/SidebarThreadPresentation.swift).
 Observed in official web build `b70721f9bc10ca0b` (desktop host 0.0.411) on
 2026-10-06, where it matched 5 of 51 joined forum posts exactly.
+
+### Thread actions and browser
+
+[ThreadPolicies.swift](../../Packages/SakuraCordModels/Sources/SakuraCordModels/ThreadPolicies.swift)
+owns the action, creation and naming rules;
+[DiscordRESTThreadActions.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTThreadActions.swift)
+and [DiscordRESTForumAndMessaging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTForumAndMessaging.swift)
+own the requests. Each mutation is attempted once. These contracts follow
+official web build 641004 (desktop host 0.0.411), observed on 2026-10-19.
+
+Every REST result follows one rule, extending the [retention](#thread-retention)
+revisions. A response is reconciled against the revisions captured when its
+request started, never applied as if it were a Gateway event: a deletion
+meanwhile fails a mutation or drops a read's record, and newer cached records
+and membership are kept. Every accepted REST change, including each PATCH step,
+a created thread and a join or leave confirmation, advances the matching revision
+before it is published, so an older read still in flight cannot undo it. Gateway
+events and local mutations also advance a separate epoch per thread; only that
+epoch supersedes a pending mutation's result, so an overlapping read never
+cancels a PATCH, create or join/leave confirmation.
+
+Rename sends `PATCH /channels/{thread}` with only `name`, trimmed to 1–100
+characters. The first-party settings page saves its whole form; the minimal body
+cannot overwrite other settings with stale values. An archived thread is first
+unarchived with `{"archived":false}` and stays open, as before tag, lock and pin
+changes. The sequence is one provider operation that is never replayed; each
+completed step is committed as it returns, so a failed rename leaves the thread
+open. Edits to one thread run one at a time, each starting from the record the
+previous one committed. A PATCH result is ignored when a Gateway record or another mutation
+superseded it, and reports not found when the thread was deleted meanwhile. Any
+membership change meanwhile keeps the provider's membership even when the
+response carries `member`, and a response without `member` never changes it.
+Discord then sends
+`THREAD_UPDATE`, `THREAD_MEMBER_UPDATE` and a type-4 name-change message in the
+thread; the republished catalogue renames sidebar rows, the open thread and
+starter cards. Renaming requires Manage Threads or ownership of an unlocked
+thread; an archived thread also requires the send rights that would reopen it.
+
+Join (Follow) and leave (Unfollow) are `POST` and `DELETE`
+`/channels/{thread}/thread-members/@me?location=…` without a body; joining is
+not `PUT`. A full thread answers with code `30033`, shown in the application
+alert as "Cannot join thread" ("Cannot join post" for forum posts) and a
+member-limit explanation. `location` names the surface: `Context Menu` for channel-list and
+forum-card menus, `Sidebar Overflow` for the side-pane menu, `Toolbar Overflow`
+for the full-view menu and `Forum Toolbar` for the post header. A 204 updates
+known threads immediately unless a Gateway membership event or a newer join or
+leave arrived while it was pending. The Gateway member events listed
+under [retention](#thread-retention) remain authoritative; a confirmation never
+replaces a member they already delivered. Notification responses also publish
+the joined-thread catalogue.
+
+Starting a thread from a message posts
+`POST /channels/{parent}/messages/{message}/threads` with `name`, `type` (`10`
+under an announcement parent, otherwise `11`), `auto_archive_duration` (the
+parent's `default_auto_archive_duration`, else 4320) and `location: "Message"`.
+The 201 thread has the message's ID and the creator's `member`; its first message
+is an ordinary send. Discord usually delivers, before that response, a starter
+`MESSAGE_UPDATE` carrying only `flags: 32`, a member-less `THREAD_CREATE`
+(`newly_created`), `THREAD_MEMBER_UPDATE`, and a type-21 starter reference in the
+thread. The parent can also receive a type-18 "started a thread" message; it was
+observed for an older starter but not for the channel's newest message. The
+type-21 reference quotes the starter only through `message_reference`, so the
+quote comes from the cached parent message, and it is not counted as a reply. Whichever arrives first, the
+provider attaches the known thread to the starter so its card appears without a
+history reload. A confirmed message of type 0, 19, 20, 23, 26, 41, 45, 47 or 68
+posted directly in a text, announcement or forum parent qualifies when it lacks
+flag 32 and the user has Create Public Threads and Read Message History (forum
+parents: Send Messages). Message threads are public; messages inside threads and
+voice-channel chats never qualify. The default name is the first embed title
+(40 UTF-16 units plus `...`), else the poll question (80), else the first
+readable line without leading `#`, `-` or spaces, cut at a word boundary within 40;
+spoilers read as `<spoiler>`.
+
+The thread browser pages archived threads with
+`GET /channels/{parent}/threads/search?archived=true&sort_by=last_message_time&sort_order=desc&limit=25&tag_setting=match_some&offset=N`,
+advancing by raw records while `has_more`; a thread deleted meanwhile is omitted
+from both the page and the cache, which also guards the forum catalogue. Search
+runs on submit with
+`?name=<query>&tag_setting=match_some` and returns active and archived matches as
+one page. Responses carry `threads`, the current user's `members`, `has_more` and
+`total_results`; text channels omit message previews. Discord did not return an
+archived private thread to a non-member without Manage Threads. Joined and other
+active threads come from the retained local thread state without a request. Browsing requires View Channel and Read Message History on a
+text or announcement parent.
 
 Text-channel and voice-channel chats, existing threads, and existing forum posts
 support the same slash-command composer. The main conversation and supplementary

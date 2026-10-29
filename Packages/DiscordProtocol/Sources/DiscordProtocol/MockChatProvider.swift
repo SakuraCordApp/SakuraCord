@@ -11,6 +11,9 @@ public actor MockChatProvider: ChatProvider {
     var messagesByChannel: [ChannelID: [Message]]
     var pinnedAtByMessageID: [MessageID: Date]
     let pinMutationFailureStatus: Int?
+    /// Serves forum pages without previews, then publishes them as Discord's
+    /// batched post-data hydration does.
+    let forumPreviewsHydrateLate: Bool
     var forumPostsByChannel: [ChannelID: [ForumPost]]
     private var profilesByUser: [UserID: UserProfile]
     var privateCallsByChannel: [ChannelID: PrivateCall] = [:]
@@ -30,7 +33,7 @@ public actor MockChatProvider: ChatProvider {
     public internal(set) var acknowledgementRequests: [AcknowledgementRequest] = []
     public internal(set) var bulkAcknowledgementRequests:
         [[BulkReadStateAcknowledgement]] = []
-    var bulkAckAcceptedPrefixBeforeFailure: Int?
+    var failsBulkAcknowledgement = false
     public internal(set) var guildNotificationRequests: [GuildNotificationRequest] = []
     public internal(set) var channelNotificationRequests: [ChannelNotificationRequest] = []
     public internal(set) var categoryNotificationRequests: [CategoryNotificationRequest] = []
@@ -41,10 +44,17 @@ public actor MockChatProvider: ChatProvider {
     var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
     var relationshipPresences: [UserID: UserPresence]?
     var presenceChurnTask: Task<Void, Never>?
+#if SAKURACORD_MOTION_BENCHMARK
+    /// Threads seeded for the side-chat animation benchmark, and the latency
+    /// simulated before their history is served.
+    var motionThreadIDs: Set<ChannelID> = []
+    var motionThreadHistoryDelay: Duration = .zero
+#endif
 
     public init(
         includesLongServerList: Bool = false,
         forumPostCount: Int? = nil,
+        forumPreviewsHydrateLate: Bool = false,
         timelineMessageCount: Int? = nil,
         pinnedMessageCount: Int? = nil,
         pinMutationFailureStatus: Int? = nil,
@@ -61,6 +71,7 @@ public actor MockChatProvider: ChatProvider {
         )
         currentUser = fixture.currentUser
         self.pinMutationFailureStatus = pinMutationFailureStatus
+        self.forumPreviewsHydrateLate = forumPreviewsHydrateLate
         nextMessageID = UInt64(ClientNonce.make()) ?? 9000
         snapshot = fixture.snapshot
         for (index, guild) in fixture.snapshot.guilds.enumerated() {
@@ -94,19 +105,11 @@ public actor MockChatProvider: ChatProvider {
                 messages.filter(\.isPinned).map { ($0.id, $0.timestamp) }
             }
         )
+        let guildAuthors = fixture.membersByGuild[GuildID(rawValue: 100)]?.map(\.user) ?? [fixture.currentUser]
         let forumFixture = Self.makeForumPosts(
-            channelID: ChannelID(rawValue: 220),
-            authors: fixture.membersByGuild[GuildID(rawValue: 100)]?.map(\.user) ?? [
-                fixture.currentUser
-            ],
-            count: forumPostCount ?? 6
+            channelID: ChannelID(rawValue: 220), authors: guildAuthors, count: forumPostCount ?? 6
         )
-        let bugForumFixture = Self.makeForumPosts(
-            channelID: ChannelID(rawValue: 221),
-            authors: fixture.membersByGuild[GuildID(rawValue: 100)]?.map(\.user) ?? [
-                fixture.currentUser
-            ]
-        )
+        let bugForumFixture = Self.makeForumPosts(channelID: ChannelID(rawValue: 221), authors: guildAuthors)
         forumPostsByChannel = [
             ChannelID(rawValue: 220): forumFixture,
             ChannelID(rawValue: 221): bugForumFixture,
@@ -116,6 +119,18 @@ public actor MockChatProvider: ChatProvider {
                 messagesByChannel[post.id] = [message]
             }
         }
+#if SAKURACORD_MOTION_BENCHMARK
+        (motionThreadIDs, motionThreadHistoryDelay) = Self.seedRequestedMotionFixture(
+            authors: guildAuthors, messages: &messagesByChannel
+        )
+#endif
+        Self.seedThreadCatalogue(
+            forumPosts: &forumPostsByChannel, messages: &messagesByChannel,
+            channels: fixture.snapshot.channels, owner: fixture.currentUser
+        )
+#if SAKURACORD_MOTION_BENCHMARK
+        Self.completeMotionThreadPosts(motionThreadIDs, forumPosts: &forumPostsByChannel, messages: messagesByChannel)
+#endif
         profilesByUser = fixture.profilesByUser
         if let friendCount {
             let fixture = Self.performanceRelationships(friendCount: friendCount)
@@ -160,6 +175,7 @@ public actor MockChatProvider: ChatProvider {
             uniqueKeysWithValues: messages.filter(\.isPinned).map { ($0.id, $0.timestamp) }
         )
         pinMutationFailureStatus = nil
+        forumPreviewsHydrateLate = false
         forumPostsByChannel = [:]
         profilesByUser = Dictionary(uniqueKeysWithValues: snapshot.knownUsers.map {
             ($0.id, UserProfile(user: $0))

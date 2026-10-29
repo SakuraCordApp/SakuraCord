@@ -21,6 +21,10 @@
         <string>/Library/Application Support/discord/Local Storage/leveldb/</string>
         <string>/Library/Application Support/Discord/Local Storage/leveldb/</string>
     </array>
+    <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+    <array>
+        <string>/Library/Sounds/</string>
+    </array>
     <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
     <array>
         <string>__SAKURACORD_BUNDLE_IDENTIFIER__-spks</string>

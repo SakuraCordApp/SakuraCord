@@ -322,10 +322,7 @@ extension DiscordRESTProvider {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             }
-            throw apiDiagnostics.coalescing(ChatProviderError.transport(
-                status: response.statusCode,
-                requestID: response.value(forHTTPHeaderField: "x-request-id")
-            ), with: response)
+            throw unexplainedFailure(data, response)
         }
         do {
             let decodeName: StaticString = isMessageHistoryRequest
@@ -358,22 +355,28 @@ extension DiscordRESTProvider {
         query: [URLQueryItem] = [],
         body: [String: JSONValue]? = nil
     ) async throws {
-        let (_, response) = try await perform(
+        let (data, response) = try await perform(
             path, method: method, query: query, body: body, headers: [:])
-        try validateEmptyResponse(response)
+        try validateEmptyResponse(data, response)
     }
 
-    func validateEmptyResponse(_ response: HTTPURLResponse) throws {
+    func validateEmptyResponse(_ data: Data, _ response: HTTPURLResponse) throws {
         guard (200 ..< 300).contains(response.statusCode) else {
             if response.statusCode == 401 {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             }
-            throw apiDiagnostics.coalescing(ChatProviderError.transport(
-                status: response.statusCode,
-                requestID: response.value(forHTTPHeaderField: "x-request-id")
-            ), with: response)
+            throw unexplainedFailure(data, response)
         }
+    }
+
+    /// The failure for a response its route doesn't explain. A challenge left
+    /// unsolved reads as human copy rather than its raw status.
+    func unexplainedFailure(_ data: Data, _ response: HTTPURLResponse) -> any Error {
+        let error: ChatProviderError = DiscordCaptchaChallenge(data: data, status: response.statusCode) != nil
+            ? .invalidRequest("Couldn’t complete the security check.")
+            : .transport(status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id"))
+        return apiDiagnostics.coalescing(error, with: response)
     }
 
     func requestPerformance(
@@ -541,6 +544,10 @@ extension DiscordRESTProvider {
                 // the immutable status payload immediately before transmission.
                 if let statusSave = context.statusSave { try validateStatusSettingsSave(statusSave) }
                 try requireGuildCommunicationForRequest(path: path, method: method, body: context.body)
+                // A CAPTCHA replay may have waited for a rate-limit slot. Never
+                // send a body bound to a Gateway session that has since changed.
+                if context.headers["X-Captcha-Key"] != nil, case let .string(sessionID)? = context.body?["session_id"],
+                   await gatewaySession?.snapshot().sessionID != sessionID { throw CancellationError() }
                 let networkName: StaticString = isMessageHistoryRequest
                     ? "MessageHistoryNetworkAttempt"
                     : "RESTNetworkAttempt"
@@ -698,9 +705,40 @@ extension DiscordRESTProvider {
         maximumAttempts requestedMaximumAttempts: Int? = nil,
         statusSave: StatusSettingsSaveContext? = nil
     ) async throws -> (Data, HTTPURLResponse) {
-        try await requestPerformance(
+        try await performAnsweringChallenge(
+            path, method: method, query: query, body: body, headers: headers,
+            maximumAttempts: requestedMaximumAttempts, statusSave: statusSave
+        ).response
+    }
+
+    /// `perform`, also telling whether the person closed a challenge, so
+    /// nothing was replayed.
+    func performAnsweringChallenge(
+        _ path: String,
+        method: String,
+        query: [URLQueryItem],
+        body: [String: JSONValue]?,
+        headers: [String: String] = [:],
+        maximumAttempts requestedMaximumAttempts: Int? = nil,
+        statusSave: StatusSettingsSaveContext? = nil
+    ) async throws -> (response: (Data, HTTPURLResponse), challengeDismissed: Bool) {
+        let account = currentUser?.id
+        let response = try await requestPerformance(
             path, method, query, body, headers, requestedMaximumAttempts, statusSave: statusSave
         )
+        // Discord can challenge any route. The identical request is replayed
+        // once; a dismissed or repeated challenge reaches the route's own
+        // failure mapping.
+        guard let challenge = DiscordCaptchaChallenge(data: response.0, status: response.1.statusCode) else {
+            return (response, false)
+        }
+        let outcome = try await humanSolution(for: challenge, account: account)
+        guard case let .solved(solution) = outcome else { return (response, outcome == .dismissed) }
+        let replay = try await requestPerformance(
+            path, method, query, body, headers.merging(challenge.replayHeaders(solution: solution)) { $1 }, 1,
+            statusSave: statusSave
+        )
+        return (replay, false)
     }
     @discardableResult
     func reserveRateLimitSlot(

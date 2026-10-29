@@ -114,6 +114,11 @@ extension NativeMessageTimelineCoordinator {
             scrollView: scrollView
         )
         glide.lastAppliedY = scrollView.contentView.bounds.minY
-        if fraction >= 1 { cancelGlide() }
+        if fraction >= 1 {
+            cancelGlide()
+            // Report the settled reading offset, which intermediate frames
+            // within the same top message do not publish.
+            reportScrollState(force: true)
+        }
     }
 }

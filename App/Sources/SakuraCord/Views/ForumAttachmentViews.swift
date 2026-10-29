@@ -528,94 +528,6 @@ struct ForumAttachmentEditor: View {
     }
 }
 
-struct ForumPostAttachmentPreview: View {
-    let attachment: Attachment
-    let maximumPixelDimension: Int
-
-    var body: some View {
-        if attachment.isSpoiler {
-            VStack(spacing: InterfaceScale.metric(6)) {
-                Image(systemName: "eye.slash.fill")
-                Text("SPOILER")
-                    .font(.interface(.caption2).weight(.bold))
-            }
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityLabel("Spoiler attachment hidden")
-        } else {
-            switch attachment.mediaKind {
-            case .image, .animatedImage:
-                AnimatedRemoteImage(
-                    url: attachment.proxyURL ?? attachment.url,
-                    isLooping: false,
-                    fallbackSystemImage: "photo",
-                    maximumPixelDimension: maximumPixelDimension
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .video:
-                ForumPostVideoPreview(
-                    attachment: attachment,
-                    maximumPixelDimension: maximumPixelDimension
-                )
-            case .audio:
-                ForumPostFilePreview(systemImage: "waveform", filename: attachment.filename)
-            case .file:
-                ForumPostFilePreview(systemImage: "doc.fill", filename: attachment.filename)
-            }
-        }
-    }
-}
-
-private struct ForumPostVideoPreview: View {
-    let attachment: Attachment
-    let maximumPixelDimension: Int
-    @State private var failedPosterURL: URL?
-
-    var body: some View {
-        if let posterURL, failedPosterURL != posterURL {
-            AnimatedRemoteImage(
-                url: posterURL,
-                animates: false,
-                maximumPixelDimension: maximumPixelDimension,
-                onFailure: { failedPosterURL = posterURL }
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay {
-                Image(systemName: "play.fill")
-                    .font(.interfaceSystem(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: InterfaceScale.metric(34), height: InterfaceScale.metric(34))
-                    .background(.black.opacity(0.55), in: Circle())
-            }
-        } else {
-            ForumPostFilePreview(systemImage: "play.rectangle.fill", filename: attachment.filename)
-        }
-    }
-
-    private var posterURL: URL? {
-        attachment.videoPosterURL(maximumPixelDimension: maximumPixelDimension)
-    }
-}
-
-private struct ForumPostFilePreview: View {
-    let systemImage: String
-    let filename: String
-
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(7)) {
-            Image(systemName: systemImage)
-                .font(.interface(.title2))
-            Text(filename)
-                .font(.interface(.caption))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-        }
-        .foregroundStyle(.secondary)
-        .padding(InterfaceScale.metric(10))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 struct ForumActionErrorBanner: View {
     let message: String
     let dismiss: () -> Void
@@ -635,26 +547,15 @@ struct ForumActionErrorBanner: View {
         }
         .padding(.horizontal, InterfaceScale.metric(14))
         .padding(.vertical, InterfaceScale.metric(9))
-        .background(Color.red.opacity(0.08))
+        // Glass of its own: the forum header has no backdrop, and posts
+        // scroll beneath the banner.
+        .glassEffect(
+            .regular.tint(Color.red.opacity(0.2)),
+            in: RoundedRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous)
+        )
+        .padding(.horizontal, InterfaceScale.metric(14))
+        .padding(.bottom, InterfaceScale.metric(8))
         .accessibilityElement(children: .contain)
-    }
-}
-
-struct ForumLoadingView: View {
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: InterfaceScale.metric(10)) {
-                ForEach(0 ..< 5, id: \.self) { _ in
-                    ConcentricRectangle(cornerRadius: InterfaceScale.metric(14))
-                        .fill(.quaternary)
-                        .frame(height: InterfaceScale.metric(130))
-                }
-            }
-            .padding(InterfaceScale.metric(14))
-        }
-        .scrollDisabled(true)
-        .redacted(reason: .placeholder)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -676,20 +577,6 @@ struct ForumEmptyState: View {
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, InterfaceScale.metric(24))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct ForumSearchingState: View {
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(10)) {
-            ProgressView()
-                .controlSize(.small)
-            Text("Searching posts…")
-                .font(.interface(.callout))
-                .foregroundStyle(.secondary)
-        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
     }

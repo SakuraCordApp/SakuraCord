@@ -38,6 +38,17 @@ struct InboxTests {
         #expect(model.inbox.visibleMentions.map(\.id) == originalIDs)
     }
 
+    @Test func `Inbox acknowledges a forum up to now so posts after its captured boundary stay read`() {
+        let captured = MessageID(rawValue: 300)
+        let group = InboxUnreadGroup(
+            channelID: ChannelID(rawValue: 400), guildID: GuildID(rawValue: 401),
+            title: "forum", subtitle: nil, oldestReadMessageID: nil,
+            newestUnreadMessageID: captured, mentionCount: 0, isForum: true
+        )
+        let postedAfterCapture = MessageID(timestamp: .now)
+        #expect(AppModel.inboxAcknowledgementTarget(for: group, now: .now) >= postedAfterCapture)
+    }
+
     @Test func `opening paging and dismissing mentions never acknowledge a conversation`() async throws {
         let (model, provider) = await fixture()
         model.inbox.tab = .mentions
@@ -92,15 +103,6 @@ struct InboxTests {
         #expect(undo.lastViewed == 4200)
         #expect(model.inbox.groups.first?.messages.first?.content == "Edited while hidden")
         #expect(model.inbox.groups.first?.messages.first?.reactions.first?.count == 1)
-        #expect(model.inbox.groups.first?.messages.contains { $0.id == deleted.id } == false)
-
-        // Failed bulk acknowledgements restore a separate pending snapshot.
-        await provider.failBulkAcknowledgement(afterAcceptedCount: 0)
-        model.markAllInboxRead()
-        patch.content = "Edited while awaiting acknowledgement"
-        model.consumeImmediately(.messagePatched(patch))
-        await model.inbox.bulkTask?.value
-        #expect(model.inbox.groups.first?.messages.first?.content == "Edited while awaiting acknowledgement")
         #expect(model.inbox.groups.first?.messages.contains { $0.id == deleted.id } == false)
     }
 
@@ -190,11 +192,20 @@ struct InboxTests {
         #expect(await provider.acknowledgementRequests.isEmpty)
         model.inbox.groups[0].isAgeRestricted = false
         #expect(model.dismissEmptyInboxGroups())
-        if receivesNewerMessage { #expect((model.readState.entries[group.id]?.mentionCount ?? 0) > 0) }
         await model.acknowledgementProcessorTask?.value
         #expect(await provider.acknowledgementRequests.last?.messageID == group.newestUnreadMessageID)
         #expect(model.inbox.groups.isEmpty && model.inbox.undoGroups.isEmpty)
         #expect(model.readState.entries[group.id]?.isUnread == receivesNewerMessage)
+    }
+
+    /// A read leaves the Inbox at once; a failed request never undoes it.
+    @Test func `local reads remove the Inbox groups they read`() async throws {
+        let (model, _) = await fixture()
+        model.presentInbox()
+        await model.inbox.loadTask?.value
+        let group = try #require(model.inbox.groups.first { !$0.isEvents })
+        model.markConversationRead(channelID: group.id)
+        #expect(!model.inbox.groups.contains { $0.id == group.id })
     }
 
     @Test func `Unread keeps server order and channel positions independent of categories`() async throws {
@@ -217,13 +228,16 @@ struct InboxTests {
         model.readState.merge(guilds: snapshot.guilds)
         model.readState.merge(channels: snapshot.channels)
         model.readState.merge(thread: thread)
-        for id in [laterCategory.id, earlierCategory.id, thread.id] {
-            model.readState.applyRemote(ChannelReadState(channelID: id,
-                lastAcknowledgedMessageID: MessageID(rawValue: 300), mentionCount: 1))
+        // READY read states, the only ones that carry flags.
+        func replaceReadStates(laterCategoryFlags: UInt64?) {
+            model.readState.replaceReadStates(snapshot.readStates + [laterCategory.id, earlierCategory.id, thread.id].map {
+                ChannelReadState(channelID: $0, lastAcknowledgedMessageID: MessageID(rawValue: 300), mentionCount: 1,
+                                 flags: $0 == laterCategory.id ? laterCategoryFlags : nil)
+            })
         }
+        replaceReadStates(laterCategoryFlags: nil)
         #expect(model.makeInboxUnreadGroups().map(\.id) == [laterCategory.id, thread.id, earlierCategory.id, ChannelID(rawValue: 200)])
-        model.readState.applyRemote(ChannelReadState(channelID: laterCategory.id,
-            lastAcknowledgedMessageID: MessageID(rawValue: 300), mentionCount: 1, flags: 4))
+        replaceReadStates(laterCategoryFlags: 4)
         #expect(model.makeInboxUnreadGroups().map(\.id) == [thread.id, earlierCategory.id, ChannelID(rawValue: 200), laterCategory.id])
         model.consumeImmediately(.messageCreated(Message(
             id: MessageID(rawValue: 600), channelID: laterCategory.id,

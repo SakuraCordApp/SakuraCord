@@ -95,14 +95,12 @@ func `poll votes apply before confirmation ignore their echo and roll back on fa
     model.selectedGuildID = guildID
     model.onboarding.presentedGuildID = guildID
     model.onboarding.page = .guide
-    model.onboarding.guides[guildID] = GuildGuideEntry(resource: GuildResourceState(
-        channelID: message.channelID, messages: [message], rows: [MessageRowPresentation(
-            message: message, startsGroup: false, startsDay: false,
-            replyPreview: nil, isReplyAvailable: false, isResource: true
-        )]
-    ))
+    model.sideConversations.context = .guideResource(guildID, message.channelID)
+    model.guideResource = GuildResourceState(
+        channelID: message.channelID, messages: [message], rows: [MessageGrouping.resourceRow(for: message)]
+    )
     func resourceMessage() throws -> Message {
-        try #require(model.onboarding.guides[guildID]?.resource?.rows.first?.message)
+        try #require(model.presentedGuideResource?.rows.first?.message)
     }
     // The resource pane is the only retained copy; account actions must use it.
     _ = try #require(model.retainedMessage(channelID: message.channelID, messageID: message.id))
@@ -149,23 +147,23 @@ func `poll votes apply before confirmation ignore their echo and roll back on fa
                                  author: message.author, content: "Page snapshot")
     let liveMessage = Message(id: MessageID(rawValue: 99_102), channelID: message.channelID,
                               author: message.author, content: "Arrived after snapshot")
-    model.loadGuideResource(guildID: guildID)
+    model.loadGuideResource()
     await provider.waitForHistory()
     var edit = MessageUpdate(messageID: historyMessage.id, channelID: message.channelID)
     edit.content = "Edited during load"
     model.consumeImmediately(.messagePatched(edit))
     model.consumeImmediately(.messageCreated(liveMessage))
     await provider.resumeHistory(MessagePage(messages: [historyMessage], hasMoreBefore: false, hasMoreAfter: true))
-    #expect(await eventually { model.onboarding.guides[guildID]?.resource?.loading == false })
-    #expect(model.onboarding.guides[guildID]?.resource?.messages.map(\.id) == [message.id, historyMessage.id])
-    model.loadGuideResource(guildID: guildID)
+    #expect(await eventually { model.guideResource?.loading == false })
+    #expect(model.guideResource?.messages.map(\.id) == [message.id, historyMessage.id])
+    model.loadGuideResource()
     await provider.waitForHistory()
     let newest = Message(id: MessageID(rawValue: 99_103), channelID: message.channelID,
                          author: message.author, content: "Arrived during final page")
     model.consumeImmediately(.messageCreated(newest))
     await provider.resumeHistory(MessagePage(messages: [liveMessage], hasMoreBefore: false, hasMoreAfter: false))
-    #expect(await eventually { model.onboarding.guides[guildID]?.resource?.loading == false })
-    let loaded = try #require(model.onboarding.guides[guildID]?.resource)
+    #expect(await eventually { model.guideResource?.loading == false })
+    let loaded = try #require(model.guideResource)
     #expect(loaded.messages.map(\.id) == [message.id, historyMessage.id, liveMessage.id, newest.id])
     #expect(loaded.rows.first(where: { $0.id == historyMessage.id })?.message.content == "Edited during load")
 }

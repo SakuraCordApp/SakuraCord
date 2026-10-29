@@ -158,7 +158,7 @@ func `concealed spoiler policy gates loading animation and nested containers unt
     let nestedLayout = try #require(
         NativeTimelineComponentLayout.make(
             message: nestedMessage,
-            model: nil,
+            source: nil,
             origin: .zero,
             maximumWidth: 480
         )
@@ -1863,6 +1863,65 @@ func `fitting exact unread run opens at true bottom and reports newest boundary`
 }
 
 @MainActor @Test
+func `a moved unread boundary leaves its old row when rows change in the same update`() async throws {
+    let model = AppModel(launchMode: .offlineTesting)
+    await model.start()
+    model.navigate(to: ChannelID(rawValue: 210))
+    await model.guildActivationTask?.value
+    await model.channelLoadTask?.value
+    let conversationID = try #require(model.selectedChannelID)
+    let previousBoundary = try #require(model.messages.dropLast(2).last)
+    func timeline(unreadMessageID: MessageID) -> NativeMessageTimelineView {
+        NativeMessageTimelineView(
+            model: model,
+            conversation: .channel(conversationID),
+            beginning: nil,
+            firstMessageStartsDayOverride: nil,
+            hasMoreMessages: false,
+            isLoadingEarlier: false,
+            bottomContentInset: 76,
+            unreadMessageID: unreadMessageID,
+            highlightedMessageID: nil,
+            initialScrollTarget: .bottom,
+            scrollRequest: nil,
+            runsPerformanceAutoScroll: false,
+            loadEarlier: {},
+            openReply: { _ in },
+            onScrollActivityChange: { _ in },
+            onScrollStateChange: { _ in },
+            onUserScrollBegan: {},
+            onUserScrollEnded: { _ in }
+        )
+    }
+    let initialTimeline = timeline(unreadMessageID: previousBoundary.id)
+    let coordinator = initialTimeline.makeCoordinator()
+    let scrollView = coordinator.makeScrollView()
+    scrollView.frame = CGRect(x: 0, y: 0, width: 820, height: 700)
+    scrollView.tile()
+    scrollView.layoutSubtreeIfNeeded()
+    coordinator.update(parent: initialTimeline, scrollView: scrollView)
+
+    // A reply arrives after the reader's own message and becomes the new
+    // boundary in the same update that appends it.
+    let reply = Message(
+        id: MessageID(rawValue: (model.messages.last?.id.rawValue ?? 0) + 1),
+        channelID: conversationID,
+        author: User(id: UserID(rawValue: 9_341), username: "replier", displayName: "Replier"),
+        content: "A reply after the boundary moved"
+    )
+    model.appendSelectedMessage(reply)
+    coordinator.update(parent: timeline(unreadMessageID: reply.id), scrollView: scrollView)
+
+    let boundaryIDs = coordinator.items.compactMap { item -> MessageID? in
+        guard case let .message(row, isUnreadBoundary: true, _) = item else { return nil }
+        return row.id
+    }
+    #expect(coordinator.performanceUpdatePathForTesting == "append")
+    #expect(boundaryIDs == [reply.id])
+    coordinator.stopObserving()
+}
+
+@MainActor @Test
 func `scrolling a tall unread timeline to bottom publishes the read boundary`() async throws {
     let model = AppModel(launchMode: .offlineTesting)
     await model.start()
@@ -2337,7 +2396,7 @@ func `timeline mention text prewarms off main without changing its resolved pres
         NativeTimelineTextPresentation.preparation(
             message: message,
             plan: plan,
-            model: nil
+            source: nil
         )
     )
 
@@ -2347,7 +2406,7 @@ func `timeline mention text prewarms off main without changing its resolved pres
     let presentation = NativeTimelineTextPresentation.make(
         message: message,
         plan: plan,
-        model: nil
+        source: nil
     )
 
     #expect(presentation.attributedContent === prewarmed.value)

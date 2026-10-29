@@ -50,8 +50,8 @@ struct FriendsListPolicyTests {
     }
 
     @Test func `Add Friend input is parsed like Discord's request helper`() {
-        #expect(FriendsListPolicy.parseUsername("  @example.name ") == .valid(username: "example.name", discriminator: nil))
-        #expect(FriendsListPolicy.parseUsername("legacy#0042") == .valid(username: "legacy", discriminator: 42))
+        #expect(FriendsListPolicy.parseUsername("  @example.name ") == .valid(tag: "example.name", username: "example.name", discriminator: nil))
+        #expect(FriendsListPolicy.parseUsername("legacy#0042") == .valid(tag: "legacy#0042", username: "legacy", discriminator: 42))
         #expect(FriendsListPolicy.parseUsername("two words") == .invalid)
         #expect(FriendsListPolicy.parseUsername("@@double") == .invalid)
         #expect(FriendsListPolicy.parseUsername("bad#12") == .invalid)

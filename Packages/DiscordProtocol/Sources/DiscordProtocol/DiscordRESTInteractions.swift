@@ -94,14 +94,14 @@ extension DiscordRESTProvider {
             }
             if response.statusCode == 429 {
                 guard attempt < 2 else {
-                    throw apiDiagnostics.coalescing(interactionTransportError(response), with: response)
+                    throw interactionTransportError(data, response)
                 }
                 let delay = Self.retryAfter(from: data, response: response)
                 try await Task.sleep(for: .seconds(delay))
                 continue
             }
             guard (200 ..< 300).contains(response.statusCode) else {
-                throw apiDiagnostics.coalescing(interactionTransportError(response), with: response)
+                throw interactionTransportError(data, response)
             }
             return try ApplicationCommandIndexDecoder.decode(data, target: target)
         }
@@ -142,12 +142,12 @@ extension DiscordRESTProvider {
             await self?.expireAutocomplete(nonce: request.nonce)
         }
         do {
-            let (_, response) = try await perform(
+            let (data, response) = try await perform(
                 "/interactions", method: "POST", query: [], body: body
             )
             guard response.statusCode == 204 else {
                 forgetAutocomplete(nonce: request.nonce)
-                throw apiDiagnostics.coalescing(interactionTransportError(response), with: response)
+                throw interactionTransportError(data, response)
             }
         } catch {
             forgetAutocomplete(nonce: request.nonce)
@@ -202,11 +202,11 @@ extension DiscordRESTProvider {
             nonce: invocation.nonce
         )
         progress(.submitting(nonce: invocation.nonce))
-        let (_, response) = try await perform(
+        let (data, response) = try await perform(
             "/interactions", method: "POST", query: [], body: body
         )
         guard response.statusCode == 204 else {
-            throw apiDiagnostics.coalescing(interactionTransportError(response), with: response)
+            throw interactionTransportError(data, response)
         }
         progress(.awaitingResponse(nonce: invocation.nonce))
     }
@@ -246,11 +246,11 @@ extension DiscordRESTProvider {
             ),
             nonce: submission.nonce
         )
-        let (_, response) = try await perform(
+        let (responseData, response) = try await perform(
             "/interactions", method: "POST", query: [], body: body
         )
         guard response.statusCode == 204 else {
-            throw apiDiagnostics.coalescing(interactionTransportError(response), with: response)
+            throw interactionTransportError(responseData, response)
         }
     }
 
@@ -307,7 +307,7 @@ extension DiscordRESTProvider {
             throw apiDiagnostics.coalescing(rejection, with: response)
         }
         guard response.statusCode == 204 else {
-            throw apiDiagnostics.coalescing(interactionTransportError(response), with: response)
+            throw interactionTransportError(responseData, response)
         }
     }
 
@@ -413,14 +413,10 @@ extension DiscordRESTProvider {
         )
     }
 
-    func interactionTransportError(_ response: HTTPURLResponse) -> ChatProviderError {
-        if response.statusCode == 401 {
-            return .unauthenticated
-        }
-        return .transport(
-            status: response.statusCode,
-            requestID: response.value(forHTTPHeaderField: "x-request-id")
-        )
+    func interactionTransportError(_ data: Data, _ response: HTTPURLResponse) -> any Error {
+        response.statusCode == 401
+            ? apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
+            : unexplainedFailure(data, response)
     }
 
     /// Uploads interaction files through the shared privacy and reservation

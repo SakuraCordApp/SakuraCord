@@ -62,12 +62,35 @@ manifests.
   Never push a regular or beta release tag until its commit is present on the
   remote `nightly` branch. Follow `docs/RELEASING.md` for the exact sequence.
 
+## Keep changes lean
+
+Working code can still be slop. Before finishing, reread the diff as a reviewer
+would and remove what does not need to exist.
+
+- Search for an existing helper, extension, type, or pattern before adding one.
+  Reuse or extend it instead of adding a near-duplicate beside it.
+- Write the smallest change that fully solves the problem. Do not add
+  protocols, wrappers, options, or generality without a concrete need.
+- Do not add defensive code for states the types or the owner already rule
+  out, such as redundant optional checks, fallback values that hide failures,
+  empty or log-only `catch` blocks, or unexplained retries.
+- Delete what you replace. Superseded paths, unused parameters, dead helpers,
+  and stale comments go in the same change.
+- Comments explain why, not what, and do not describe the change itself.
+- Treat a SwiftLint length or complexity violation as a design signal. First
+  shorten the code itself by removing duplication, redundant steps, and
+  unnecessary branches. If it is still over the limit, move a cohesive
+  responsibility to the extension or type that owns it; that split is fine
+  even when the result has a single caller. Do not extract helpers or move
+  code solely to get under the limit, and do not compress code to fit.
+
 ## Tests
 
-Reserve committed automated tests for critical behavior, major new
-functionality, and high-value regression coverage. Do not commit automated
-tests for purely visual UI changes. Temporary UI tests may be used during
-development, but remove them before committing.
+Most changes need no new committed test. Before adding one, follow
+[When to commit tests](docs/TESTING.md#when-to-commit-tests): name the
+production failure it catches and state it in the pull request. Do not commit
+automated tests for purely visual UI changes. Temporary UI tests may be used
+during development, but remove them before committing.
 
 ## Before you finish
 

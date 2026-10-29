@@ -416,7 +416,9 @@ struct MessageActionCapsule: View {
     let togglePin: (() -> Void)?
     let showMoreActions: () -> Void
     let delete: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+
+    private var reduceMotion: Bool { systemReduceMotion || !model.animates(.overlays) }
 
     var body: some View {
         if message.outboxState == .failed {
@@ -552,7 +554,7 @@ private struct QuickReactionButton: View {
                 MessageReactionEmoji(
                     reaction: token,
                     url: MessageReactionPresentation.emojiURL(for: token, customEmojiURLsByID: customEmojiURLsByID),
-                    size: InterfaceScale.metric(20)
+                    size: InterfaceScale.metric(18)
                 )
             }
         }
@@ -601,16 +603,15 @@ private struct ReactionActionMenu: View {
                     .foregroundStyle(.primary)
                     .opacity(presentation == .inline ? 0.8 : 1)
                     .frame(width: width, height: height)
-                    .contentShape(
-                        ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    )
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
         .frame(width: width, height: height)
-        .contentShape(
-            ConcentricRectangle(cornerRadius: cornerRadius, style: .continuous)
-        )
+        // Hover tracks the square frame, so clicks and the pointer cover it
+        // too, as on the other hover action controls.
+        .contentShape(Rectangle())
+        .pointerStyle(.link)
         .onModalHover { isHovering = $0 }
         .help("Add reaction")
         .background {

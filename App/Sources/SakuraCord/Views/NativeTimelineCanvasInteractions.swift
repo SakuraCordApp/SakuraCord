@@ -238,7 +238,7 @@ extension NativeTimelineCanvasView {
     ) {
         let message = row.message
         for sticker in message.stickers
-        where sticker.format == .apng || sticker.format == .gif {
+        where sticker.format?.isAnimated == true {
             if let url = sticker.mediaURL {
                 keys.insert(.media(url, maximumPixelDimension: 384))
             }
@@ -1164,7 +1164,7 @@ extension NativeTimelineCanvasView {
                   highlightFrame: layouts[index].highlightFrame
               )
         else { return nil }
-        return messageContextMenu(
+        guard let menu = messageContextMenu(
             for: row,
             at: index,
             targetsAuthor: NativeTimelineAuthorProfileGeometry.hitFrame(
@@ -1177,7 +1177,9 @@ extension NativeTimelineCanvasView {
             failedMediaActions: interactionMode == .failed
                 ? imageItem.map(imageContextMenuActions(for:))
                 : nil
-        )
+        ) else { return nil }
+        prependTextLinkActions(to: menu, row: row, index: index, localPoint: localPoint)
+        return menu
     }
 
     /// `targetsAuthor` offers user commands instead of message commands in
@@ -1220,6 +1222,9 @@ extension NativeTimelineCanvasView {
                 ),
             canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.currentUser?.id && row.message.poll?.isClosed() == false,
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
+            threadAction: row.message.thread != nil
+                ? .viewThread
+                : (model?.canCreateThread(from: row.message) == true ? .createThread : nil),
             canPin: model?.canManagePins(for: row.message) == true,
             isPinned: row.message.isPinned,
             translationTitle: row.isResource ? nil : model?.messageTranslationMenuTitle(for: row.message),
@@ -1350,14 +1355,34 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    private func threadMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        actions: NativeTimelineRowActions
+    ) -> (() -> Void)? {
+        switch action {
+        case .createThread:
+            { [weak model] in model?.beginThreadCreation(from: row.message) }
+        case .viewThread:
+            {
+                guard let thread = row.message.thread else { return }
+                actions.openThread(thread)
+            }
+        default:
+            nil
+        }
+    }
+
     private func nonPinMessageMenuHandler(
         action: NativeTimelineMessageMenuAction,
         row: MessageRowPresentation,
         index: Int,
         actions: NativeTimelineRowActions
     ) -> () -> Void {
-        if let copyHandler = copyMessageMenuHandler(action: action, row: row) {
-            return copyHandler
+        if let handler = copyMessageMenuHandler(action: action, row: row)
+            ?? threadMessageMenuHandler(action: action, row: row, actions: actions)
+        {
+            return handler
         }
         return switch action {
         case .jumpToMessage:
@@ -1439,7 +1464,7 @@ extension NativeTimelineCanvasView {
                             from: item.url
                         )
                     } catch {
-                        self?.presentMediaActionError(error)
+                        self?.presentActionError(error)
                     }
                 }
             },
@@ -1471,7 +1496,7 @@ extension NativeTimelineCanvasView {
                     to: destination
                 )
             } catch {
-                self?.presentMediaActionError(error)
+                self?.presentActionError(error)
             }
         }
     }
@@ -1497,7 +1522,7 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    func presentMediaActionError(_ error: Error) {
+    func presentActionError(_ error: Error) {
         let alert = NSAlert(error: error)
         if let window {
             alert.beginSheetModal(for: window)

@@ -29,16 +29,29 @@ fi
 
 "$ROOT_DIR/script/build_and_run.sh" package-release
 sakuracord_select_app_variant release "${SAKURACORD_RELEASE_TRACK:-regular}"
-codesign --verify --deep --strict --verbose=2 "$SAKURACORD_APP_BUNDLE"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 DMG_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/SakuraCordDMG.XXXXXX")"
 cleanup() {
+  sakuracord_release_operation_lock
   rm -R "$DMG_TEMP_DIR"
 }
 trap cleanup EXIT
 
-export SAKURACORD_DMG_APP_BUNDLE="$SAKURACORD_APP_BUNDLE"
+# Package a private copy, since a local run-release may rebuild the shared bundle.
+APP_COPY="$DMG_TEMP_DIR/app/$(basename "$SAKURACORD_APP_BUNDLE")"
+mkdir -p "$(dirname "$APP_COPY")"
+sakuracord_acquire_operation_lock
+ditto "$SAKURACORD_APP_BUNDLE" "$APP_COPY"
+sakuracord_release_operation_lock
+if /usr/libexec/PlistBuddy -c "Print :SakuraCordInsecureDebugCredentialsEnabled" \
+  "$APP_COPY/Contents/Info.plist" >/dev/null 2>&1; then
+  echo "Refusing to package a bundle built with local debug credentials." >&2
+  exit 1
+fi
+codesign --verify --deep --strict --verbose=2 "$APP_COPY"
+
+export SAKURACORD_DMG_APP_BUNDLE="$APP_COPY"
 export SAKURACORD_DMG_BACKGROUND="$ROOT_DIR/App/Packaging/DMG/background.png"
 "$DMGBUILD" -s "$SETTINGS" SakuraCord "$DMG_TEMP_DIR/$DMG_NAME"
 hdiutil verify "$DMG_TEMP_DIR/$DMG_NAME"

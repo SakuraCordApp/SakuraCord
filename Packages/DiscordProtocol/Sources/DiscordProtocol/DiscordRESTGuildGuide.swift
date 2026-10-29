@@ -25,9 +25,7 @@ public extension DiscordRESTProvider {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             }
-            throw apiDiagnostics.coalescing(ChatProviderError.transport(
-                status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")
-            ), with: response)
+            throw unexplainedFailure(data, response)
         }
         if response.statusCode == 204, data.isEmpty { return GuildGuideProgress(guildID: guildID, userID: userID) }
         let value = try JSONDecoder().decode(GuildGuideProgress.self, from: data)

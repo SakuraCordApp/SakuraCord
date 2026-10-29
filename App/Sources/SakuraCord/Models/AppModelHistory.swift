@@ -14,6 +14,12 @@ struct ConversationRefreshMutations {
     var updatedUsers: [UserID: User] = [:]
 }
 
+extension ConversationRefreshMutations {
+    init(_ journal: ConversationRefreshJournal) {
+        self.init(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
+    }
+}
+
 struct ConversationRefreshJournal {
     let revision: UInt64
     var mutationsByMessageID: [MessageID: ConversationRefreshMutation] = [:]
@@ -59,7 +65,138 @@ struct ConversationRefreshJournal {
     }
 }
 
+/// A journal for one in-flight history request, so overlapping requests in
+/// the same conversation each reconcile the mutations made during their own
+/// flight.
+struct ScopedConversationRefreshJournal {
+    let channelID: ChannelID
+    var journal: ConversationRefreshJournal
+}
+
+/// The message IDs a fetched page vouches for. A message journaled outside
+/// them belongs to history the page does not cover, such as a live reply
+/// beyond an older window; inserting it would join the page to it across
+/// unloaded history.
+struct MessageHistorySpan {
+    /// Inclusive bounds; nil leaves that side open.
+    var lowerBound: MessageID?
+    var upperBound: MessageID?
+
+    static let unbounded = MessageHistorySpan()
+
+    init(lowerBound: MessageID? = nil, upperBound: MessageID? = nil) {
+        self.lowerBound = lowerBound
+        self.upperBound = upperBound
+    }
+
+    /// A page's span. An edge without more history is open; an edge the
+    /// request continued from is bounded by its anchor.
+    ///
+    /// - Parameter closesNewerEdge: The page cannot vouch for the live tail,
+    ///   as when it was read before a Gateway gap, so its newer edge ends at
+    ///   what it fetched.
+    init(
+        page: MessagePage,
+        continuingAfter lowerAnchor: MessageID? = nil,
+        continuingBefore upperAnchor: MessageID? = nil,
+        closesNewerEdge: Bool = false
+    ) {
+        let ids = page.messages.map(\.id)
+        lowerBound = page.hasMoreBefore ? ids.min() ?? lowerAnchor : lowerAnchor
+        upperBound = page.hasMoreAfter || closesNewerEdge
+            ? ids.max() ?? upperAnchor ?? lowerAnchor ?? MessageID(rawValue: 0)
+            : upperAnchor
+    }
+
+    func contains(_ messageID: MessageID) -> Bool {
+        (lowerBound.map { messageID >= $0 } ?? true) && (upperBound.map { messageID <= $0 } ?? true)
+    }
+}
+
+/// A cached window that stops short of its channel's newest message, such as
+/// one opened around a search result. Unlike a newest-backed cache it admits
+/// no live message, and it returns to the place the reader left.
+struct DetachedMessageWindow {
+    /// The Gateway epoch it was fetched in; a gap may have dropped changes
+    /// inside it, and nothing refreshes a window that is not newest-backed.
+    let historyEpoch: Int
+    let readingPosition: MessageTimelineScrollRequest.Target?
+
+    /// The reading position in `messages`, moved to the nearest retained
+    /// message when the cache dropped or a deletion removed the original.
+    func restoredPosition(in messages: [Message]) -> MessageTimelineScrollRequest.Target? {
+        guard case let .readingPosition(id, offset)? = readingPosition else { return nil }
+        return messages.first { $0.outboxState == .confirmed && $0.id >= id }
+            .map { .readingPosition($0.id, offsetFromViewportTop: offset) }
+    }
+}
+
 extension AppModel {
+    /// Keeps the window the reader leaves for their return. A detached one is
+    /// kept only if no Gateway gap has crossed it since it was fetched.
+    func retainSelectedMessageWindow(for channelID: ChannelID) {
+        defer { channelTimelinePosition = TimelineReadingPosition() }
+        guard hasMoreLaterMessages else {
+            storeCachedMessages(messages, for: channelID)
+            storeCachedMessageRows(messageRows, for: channelID)
+            return
+        }
+        guard detachedWindowEpoch == historyEpoch else {
+            cacheOnlyUnconfirmedSends(messages, for: channelID)
+            return
+        }
+        let reading = channelTimelinePosition.reading
+        let retained = Self.retainedDetachedMessages(messages, around: reading)
+        hasMoreCache[channelID] = hasMoreMessages || retained.first?.id != messages.first?.id
+        storeCachedMessages(retained, for: channelID)
+        storeCachedMessageRows(messageRows, for: channelID)
+        detachedMessageWindows[channelID] = DetachedMessageWindow(
+            historyEpoch: historyEpoch,
+            readingPosition: reading
+        )
+    }
+
+    /// The cache's message budget, spent around the reading position rather
+    /// than at the newest end, which a detached window does not reach.
+    /// Unconfirmed sends are always kept.
+    static func retainedDetachedMessages(
+        _ messages: [Message],
+        around reading: MessageTimelineScrollRequest.Target?
+    ) -> [Message] {
+        guard messages.count > ChannelMessageCachePolicy.maximumMessageCountPerChannel else { return messages }
+        let pending = messages.filter { $0.outboxState != .confirmed }
+        let confirmed = messages.filter { $0.outboxState == .confirmed }
+        let limit = max(1, ChannelMessageCachePolicy.maximumMessageCountPerChannel - pending.count)
+        guard confirmed.count > limit,
+              case let .readingPosition(id, _)? = reading,
+              let index = confirmed.firstIndex(where: { $0.id >= id })
+        else { return messages }
+        let start = min(max(0, index - limit / 2), confirmed.count - limit)
+        return Array(confirmed[start ..< start + limit]) + pending
+    }
+
+    /// Drops a detached window but keeps its unconfirmed sends, including
+    /// failed ones awaiting Retry or Discard, for the cold load that follows.
+    private func cacheOnlyUnconfirmedSends(_ messages: [Message], for channelID: ChannelID) {
+        _ = discardCachedHistory(for: channelID)
+        let pending = messages.filter { $0.outboxState != .confirmed }
+        if !pending.isEmpty { storeCachedMessages(pending, for: channelID) }
+    }
+
+    /// The detached window cached for `channelID`, unless a Gateway gap
+    /// crossed it while it was cached or deletions left it no confirmed
+    /// message to page from; such a window is dropped.
+    private func takeDetachedMessageWindow(for channelID: ChannelID) -> DetachedMessageWindow? {
+        guard let window = detachedMessageWindows.removeValue(forKey: channelID) else { return nil }
+        if window.historyEpoch == historyEpoch, hasMoreCache[channelID] != nil,
+           messageCache[channelID]?.contains(where: { $0.outboxState == .confirmed }) == true
+        {
+            return window
+        }
+        cacheOnlyUnconfirmedSends(messageCache[channelID] ?? [], for: channelID)
+        return nil
+    }
+
     func beginSelectedChannelLoad() {
         let cacheSignpost = AppPerformanceSignposts.signposter.beginInterval(
             "ConversationCachePresentation"
@@ -97,6 +234,7 @@ extension AppModel {
             return
         }
 
+        let detachedWindow = takeDetachedMessageWindow(for: channelID)
         let cachedMessages = takeCachedMessages(for: channelID)
         let cachedRows = takeCachedMessageRows(for: channelID)
         restoreSelectedMessages(
@@ -105,27 +243,50 @@ extension AppModel {
         )
         let cachedBoundary = hasMoreCache[channelID]
         hasMoreMessages = cachedBoundary ?? false
-        hasMoreLaterMessages = false
+        hasMoreLaterMessages = detachedWindow != nil
+        channelTimelinePosition = TimelineReadingPosition(
+            restore: detachedWindow?.restoredPosition(in: cachedMessages)
+        )
+        let jumpTarget = pendingChannelJumpTarget.flatMap { $0.channelID == channelID ? $0.messageID : nil }
+        if jumpTarget != nil { pendingChannelJumpTarget = nil }
         if cachedBoundary != nil {
-            isLoadingMessages = false
-            hasCompletedInitialMessageLoad = true
-            readState.observeLoadedMessages(channelID: channelID, messages: messages)
-            preserveUnreadDividerIfNeeded(channelID: channelID)
-            reportConversationHistoryLoaded(channelID: channelID)
-            let account = accountSession()
-            let draftRevision = composer.draftRevision
-            channelLoadTask = startAccountChildTask(account: account) { model, account in
-                let savedDraft = await model.storedDraft(in: channelID, account: account)
-                guard model.isCurrentAccountSession(account),
-                      model.isCurrentLoad(channelID, generation: generation)
-                else { return }
-                model.composer.restoreDraft(savedDraft, ifUnchangedSince: draftRevision)
-            }
+            presentLoadedSelectedHistory(channelID: channelID)
+            channelLoadTask = restoreSelectedDraft(channelID: channelID, generation: generation)
             return
         }
         isLoadingMessages = true
         preserveUnreadDividerIfNeeded(channelID: channelID)
         let account = accountSession()
+        if let jumpTarget {
+            // A jump into a channel with nothing loaded reads only the window
+            // around its target, as the official client does. The selection's
+            // load owns that read, so cancelling the navigation cannot strand it.
+            restoreSelectedDraft(channelID: channelID, generation: generation)
+            channelLoadTask = startAccountChildTask(account: account) { model, account in
+                let loaded = await model.loadSelectedMessageWindow(
+                    around: jumpTarget,
+                    channelID: channelID,
+                    session: account
+                )
+                guard model.isCurrentAccountSession(account),
+                      model.isCurrentLoad(channelID, generation: generation)
+                else { return }
+                guard loaded else {
+                    await model.loadSelectedChannel(channelID, generation: generation, account: account)
+                    return
+                }
+                model.presentLoadedSelectedHistory(channelID: channelID)
+                // Authors resolve after the jump lands, as on a cold load.
+                model.startAccountChildTask(account: account) { model, account in
+                    await model.resolveSelectedHistoryMembers(
+                        channelID: channelID,
+                        generation: generation,
+                        session: account
+                    )
+                }
+            }
+            return
+        }
         channelLoadTask = startAccountChildTask(account: account) { model, account in
             await model.loadSelectedChannel(
                 channelID,
@@ -133,6 +294,27 @@ extension AppModel {
                 account: account
             )
         }
+    }
+
+    @discardableResult
+    private func restoreSelectedDraft(channelID: ChannelID, generation: Int) -> Task<Void, Never> {
+        let draftRevision = composer.draftRevision
+        return startAccountChildTask(account: accountSession()) { model, account in
+            let savedDraft = await model.storedDraft(in: channelID, account: account)
+            guard model.isCurrentAccountSession(account),
+                  model.isCurrentLoad(channelID, generation: generation)
+            else { return }
+            model.composer.restoreDraft(savedDraft, ifUnchangedSince: draftRevision)
+        }
+    }
+
+    /// Ends the selection's loading state for history already in place.
+    private func presentLoadedSelectedHistory(channelID: ChannelID) {
+        isLoadingMessages = false
+        hasCompletedInitialMessageLoad = true
+        readState.observeLoadedMessages(channelID: channelID, messages: messages)
+        preserveUnreadDividerIfNeeded(channelID: channelID)
+        reportConversationHistoryLoaded(channelID: channelID)
     }
 
     func refreshSelectedChannelPreservingHistory() {
@@ -284,7 +466,8 @@ extension AppModel {
         )
         let initialRefreshedMessages = Self.applyingConversationRefreshMutations(
             initialMutations,
-            to: page.messages
+            to: page.messages,
+            within: MessageHistorySpan(page: page)
         )
         let initialReconciliationCurrent = hasMoreLaterMessages
             ? messages.filter { $0.outboxState != .confirmed }
@@ -293,7 +476,8 @@ extension AppModel {
             current: initialReconciliationCurrent,
             fresh: initialRefreshedMessages,
             hasMoreBefore: page.hasMoreBefore,
-            authoritativeOldestMessageID: page.messages.map(\.id).min()
+            authoritativeOldestMessageID: page.messages.map(\.id).min(),
+            contiguousThrough: contiguousHistoryBoundaries[channelID]
         )
         let preparedRows: [MessageRowPresentation]? =
             if initiallyMerged != messages {
@@ -316,7 +500,8 @@ extension AppModel {
             )
             let refreshedMessages = Self.applyingConversationRefreshMutations(
                 mutations,
-                to: page.messages
+                to: page.messages,
+                within: MessageHistorySpan(page: page)
             )
             let reconciliationCurrent = hasMoreLaterMessages
                 ? messages.filter { $0.outboxState != .confirmed }
@@ -325,7 +510,8 @@ extension AppModel {
                 current: reconciliationCurrent,
                 fresh: refreshedMessages,
                 hasMoreBefore: page.hasMoreBefore,
-                authoritativeOldestMessageID: page.messages.map(\.id).min()
+                authoritativeOldestMessageID: page.messages.map(\.id).min(),
+                contiguousThrough: contiguousHistoryBoundaries[channelID]
             )
             if merged != messages {
                 replaceSelectedMessages(with: merged, preparedRows: preparedRows)
@@ -372,17 +558,20 @@ extension AppModel {
         account: AppModelAccountSession
     ) -> Task<MessagePage, any Error> {
         let provider = account.provider
+        let limit = initialHistoryFetchLimit
         return Task.detached(priority: .userInitiated) {
             try await Self.requestInitialHistory(
                 provider: provider,
-                channelID: channelID
+                channelID: channelID,
+                limit: limit
             )
         }
     }
 
     nonisolated static func requestInitialHistory(
         provider: any ChatProvider,
-        channelID: ChannelID
+        channelID: ChannelID,
+        limit: Int
     ) async throws -> MessagePage {
         let interval = AppPerformanceSignposts.signposter.beginInterval(
             "ConversationHistoryRequest",
@@ -396,7 +585,7 @@ extension AppModel {
         return try await provider.messagesForImmediatePresentation(
             in: channelID,
             anchoredAt: .newest,
-            limit: 10
+            limit: limit
         )
     }
 
@@ -443,7 +632,8 @@ extension AppModel {
         )
         let refreshedMessages = Self.applyingConversationRefreshMutations(
             mutations,
-            to: freshMessages
+            to: freshMessages,
+            within: MessageHistorySpan(lowerBound: hasMoreBefore ? freshMessages.map(\.id).min() : nil)
         )
         let reconciliationCurrent = hasMoreLaterMessages
             ? messages.filter { $0.outboxState != .confirmed }
@@ -452,7 +642,8 @@ extension AppModel {
             current: reconciliationCurrent,
             fresh: refreshedMessages,
             hasMoreBefore: hasMoreBefore,
-            authoritativeOldestMessageID: freshMessages.map(\.id).min()
+            authoritativeOldestMessageID: freshMessages.map(\.id).min(),
+            contiguousThrough: contiguousHistoryBoundaries[channelID]
         )
         if reconciledMessages != messages {
             replaceSelectedMessages(with: reconciledMessages)
@@ -460,6 +651,7 @@ extension AppModel {
         hasMoreMessages = hasMoreBefore
         hasMoreLaterMessages = false
         hasMoreCache[channelID] = hasMoreBefore
+        contiguousHistoryBoundaries[channelID] = nil
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
         messageLoadErrorIsLaterPage = false
@@ -560,20 +752,30 @@ extension AppModel {
         messageLoadError = nil
         messageLoadErrorIsEarlierPage = false
         messageLoadErrorIsLaterPage = false
+        let refreshRevision = beginScopedConversationRefresh(in: channelID)
+        defer { endScopedConversationRefresh(refreshRevision) }
         do {
             let page = try await session.provider.messages(
                 in: channelID,
                 anchoredAt: .newest,
-                limit: 50
+                limit: initialHistoryFetchLimit
             )
             guard !Task.isCancelled,
                   isCurrentAccountSession(session),
                   selectedChannelID == channelID
             else { return false }
-            replaceSelectedMessages(with: page.messages)
+            replaceSelectedMessages(with: Self.merging(
+                current: messages.filter { $0.outboxState != .confirmed },
+                fresh: Self.applyingConversationRefreshMutations(
+                    scopedConversationRefreshMutations(refreshRevision),
+                    to: page.messages,
+                    within: MessageHistorySpan(page: page)
+                )
+            ))
             hasMoreMessages = page.hasMoreBefore
             hasMoreLaterMessages = false
             hasMoreCache[channelID] = page.hasMoreBefore
+            contiguousHistoryBoundaries[channelID] = nil
             requestNewestMessagePresentation(channelID: channelID)
             return true
         } catch is CancellationError {
@@ -588,7 +790,7 @@ extension AppModel {
         }
     }
 
-    private func requestNewestMessagePresentation(channelID: ChannelID) {
+    func requestNewestMessagePresentation(channelID: ChannelID) {
         conversationNewestRequestID &+= 1
         conversationNewestRequest = ConversationNewestRequest(
             requestID: conversationNewestRequestID,
@@ -645,11 +847,13 @@ extension AppModel {
             }
         }
         conversationRefreshJournals[channelID]?.record(mutation, messageID: messageID)
+        for revision in scopedRefreshJournals.keys where scopedRefreshJournals[revision]?.channelID == channelID {
+            scopedRefreshJournals[revision]?.journal.record(mutation, messageID: messageID)
+        }
         inbox.refreshJournal?.record(mutation, messageID: messageID)
         recordPollRefreshMutation(mutation, messageID: messageID, channelID: channelID)
-        for guildID in onboarding.guides.keys where onboarding.guides[guildID]?.resource?.channelID == channelID
-            && onboarding.guides[guildID]?.resource?.refreshJournal != nil {
-            onboarding.guides[guildID]?.resource?.refreshJournal?.record(mutation, messageID: messageID)
+        if guideResource?.channelID == channelID {
+            guideResource?.refreshJournal?.record(mutation, messageID: messageID)
         }
     }
 
@@ -660,7 +864,7 @@ extension AppModel {
         guard let journal = conversationRefreshJournals[channelID],
               journal.revision == revision
         else { return .init() }
-        return ConversationRefreshMutations(messages: journal.mutationsByMessageID, updatedUsers: journal.updatedUsers)
+        return ConversationRefreshMutations(journal)
     }
 
     func endConversationRefresh(
@@ -675,6 +879,26 @@ extension AppModel {
 
     func cancelConversationRefresh(in channelID: ChannelID) {
         conversationRefreshJournals[channelID] = nil
+        scopedRefreshJournals = scopedRefreshJournals.filter { $0.value.channelID != channelID }
+    }
+
+    func beginScopedConversationRefresh(in channelID: ChannelID) -> UInt64 {
+        conversationRefreshJournalRevision &+= 1
+        let revision = conversationRefreshJournalRevision
+        scopedRefreshJournals[revision] = ScopedConversationRefreshJournal(
+            channelID: channelID,
+            journal: ConversationRefreshJournal(revision: revision)
+        )
+        return revision
+    }
+
+    func scopedConversationRefreshMutations(_ revision: UInt64) -> ConversationRefreshMutations {
+        guard let journal = scopedRefreshJournals[revision]?.journal else { return .init() }
+        return ConversationRefreshMutations(journal)
+    }
+
+    func endScopedConversationRefresh(_ revision: UInt64) {
+        scopedRefreshJournals[revision] = nil
     }
 
     @discardableResult
@@ -702,6 +926,30 @@ extension AppModel {
     ) async -> String {
         guard isCurrentAccountSession(account), let database = account.database else { return "" }
         return (try? await composer.storedDraft(in: channelID, database: database)) ?? ""
+    }
+
+    /// Records that messages retained for `channelID` after this point may
+    /// follow a gap. An earlier, more conservative boundary is kept.
+    func markHistoryContiguous(through messages: [Message]?, in channelID: ChannelID) {
+        let newest = messages?.lazy.filter { $0.outboxState == .confirmed }.map(\.id).max()
+            ?? MessageID(rawValue: 0)
+        contiguousHistoryBoundaries[channelID] = min(contiguousHistoryBoundaries[channelID] ?? newest, newest)
+    }
+
+    /// A Gateway gap can drop live messages. Retained windows stay usable,
+    /// but only up to their current newest message.
+    func markHistoryGapForRetainedConversations() {
+        historyEpoch &+= 1
+        if let selectedChannelID { markHistoryContiguous(through: messages, in: selectedChannelID) }
+        if let threadID = openThread?.id {
+            markHistoryContiguous(through: threadMessages, in: threadID)
+            // Live replies may have been missed; the window's newest edge
+            // is unverified until a read in the new connection.
+            threadWindow.isNewestUnverified = true
+        }
+        for (channelID, cached) in messageCache {
+            markHistoryContiguous(through: cached, in: channelID)
+        }
     }
 
     func isCurrentLoad(_ channelID: ChannelID, generation: Int) -> Bool {
@@ -739,24 +987,42 @@ extension AppModel {
         return byID.values.sorted(by: messagePrecedes)
     }
 
+    /// Merges a newest page into a contiguous loaded window. Older confirmed
+    /// messages are retained only when the page reaches the window, so two
+    /// disjoint blocks are never joined across unloaded history.
+    ///
+    /// - Parameter contiguousThrough: The newest current message known to
+    ///   connect to the older ones. Defaults to the newest confirmed message;
+    ///   pass a recorded boundary when later messages arrived after a gap.
     static func reconcilingNewestPage(
         current: [Message],
         fresh: [Message],
         hasMoreBefore: Bool,
-        authoritativeOldestMessageID: MessageID? = nil
+        authoritativeOldestMessageID: MessageID? = nil,
+        contiguousThrough: MessageID? = nil
     ) -> [Message] {
         let oldestFreshID = authoritativeOldestMessageID ?? fresh.map(\.id).min()
+        let newestContiguousID = contiguousThrough
+            ?? current.lazy.filter { $0.outboxState == .confirmed }.map(\.id).max()
+        let reachesCurrent = if let oldestFreshID, let newestContiguousID {
+            oldestFreshID <= newestContiguousID
+        } else {
+            false
+        }
         let retainedCurrent = current.filter { message in
             guard message.outboxState == .confirmed else { return true }
-            guard hasMoreBefore, let oldestFreshID else { return false }
+            guard hasMoreBefore, reachesCurrent, let oldestFreshID else { return false }
             return message.id < oldestFreshID
         }
         return merging(current: retainedCurrent, fresh: fresh)
     }
 
+    /// - Parameter span: Journaled messages missing from `messages` are
+    ///   added only inside it.
     static func applyingConversationRefreshMutations(
         _ mutations: ConversationRefreshMutations,
-        to messages: [Message]
+        to messages: [Message],
+        within span: MessageHistorySpan = .unbounded
     ) -> [Message] {
         var byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
         // Message mutations already contain identity events that followed them.
@@ -768,6 +1034,7 @@ extension AppModel {
         for (messageID, mutation) in mutations.messages {
             switch mutation {
             case .upsert(let message):
+                guard byID[messageID] != nil || span.contains(messageID) else { continue }
                 byID[messageID] = message
             case .patch(let update):
                 if var message = byID[messageID] {

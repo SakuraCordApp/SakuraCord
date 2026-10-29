@@ -310,6 +310,8 @@ public enum StickerFormat: Int, Codable, Hashable, Sendable {
     case apng = 2
     case lottie = 3
     case gif = 4
+
+    public var isAnimated: Bool { self != .png }
 }
 
 public struct MessageSticker: Identifiable, Codable, Hashable, Sendable {
@@ -679,8 +681,12 @@ public enum MessageSendProgress: Equatable, Sendable {
 
 public extension Message {
     /// The thread this message shows a card for: the thread it started, or
-    /// the thread a thread-created system message announces.
+    /// the thread a thread-created system message announces. A started thread
+    /// shares the message's ID, and Discord's starter `MESSAGE_UPDATE` carries
+    /// only the has-thread flag.
     var referencedThreadID: ChannelID? {
-        thread?.id ?? (type == .threadCreated ? messageReference?.channelID : nil)
+        if let thread { return thread.id }
+        if type == .threadCreated { return messageReference?.channelID }
+        return flags.contains(.hasThread) ? ChannelID(rawValue: id.rawValue) : nil
     }
 }

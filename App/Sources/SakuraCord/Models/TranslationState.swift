@@ -25,7 +25,9 @@ final class TranslationState {
 
     func resetDraft(_ destination: MessageComposerDestination) {
         draftTasks.removeValue(forKey: destination)?.cancel()
-        drafts[destination] = nil
+        // Writing nil over nil still invalidates every observer of `drafts`,
+        // which costs a frame when a side chat opens.
+        if drafts[destination] != nil { drafts[destination] = nil }
     }
 
     func removeMessage(_ id: MessageID) {

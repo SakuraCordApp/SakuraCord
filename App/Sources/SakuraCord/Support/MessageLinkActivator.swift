@@ -88,22 +88,27 @@ enum MessageLinkActivator {
             }
         case .web:
             if customHandler(url) { break }
-            if let model, DiscordAttachmentLink.matches(url) {
-                model.startAccountChildTask(account: model.accountSession()) { model, _ in
-                    await model.openAttachmentLink(url) {
-                        confirmExternal(ExternalLinkSafetyPolicy.assess($0, displayedText: displayedText))
-                    }
-                }
-            } else {
-                confirmExternal(
-                    ExternalLinkSafetyPolicy.assess(
-                        url,
-                        displayedText: displayedText
-                    )
-                )
-            }
+            openExternal(url, model: model, displayedText: displayedText, confirmExternal: confirmExternal)
         }
         return true
+    }
+
+    static func openExternal(
+        _ url: URL,
+        model: AppModel?,
+        displayedText: String?,
+        confirmExternal: @escaping (ExternalLinkSafetyAssessment) -> Void
+    ) {
+        let confirm: (URL) -> Void = { target in
+            confirmExternal(ExternalLinkSafetyPolicy.assess(target, displayedText: displayedText))
+        }
+        if let model, DiscordAttachmentLink.matches(url) {
+            model.startAccountChildTask(account: model.accountSession()) { model, _ in
+                await model.openAttachmentLink(url, open: confirm)
+            }
+        } else {
+            confirm(url)
+        }
     }
 }
 

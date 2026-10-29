@@ -249,6 +249,10 @@ extension AppModel {
         completesReading: Bool = false,
         prepare: (@MainActor () async -> Bool)? = nil
     ) -> Task<Bool, Never> {
+        // The local row is already in the timeline; show it now rather than
+        // when Discord confirms it. Retries keep the user's position.
+        let advancedLocally = completesReading && !isRetry
+            && advanceTimelineForLocalSend(channelID: outgoing.channelID)
         guard allowOnboardingSubmission(in: outgoing.channelID), allowSlowmodeSubmission(in: outgoing.channelID) else {
             updateOutgoingState(.failed, nonce: outgoing.nonce, channelID: outgoing.channelID)
             return Task { false }
@@ -280,7 +284,7 @@ extension AppModel {
             if let prepare, !(await prepare()) { return false }
             let didSend = await deliverOutgoingSend(outgoing, isRetry: isRetry, session: session)
             if didSend, completesReading {
-                completeConversationReadingAndAdvance(channelID: outgoing.channelID)
+                completeConfirmedSend(channelID: outgoing.channelID, advancedLocally: advancedLocally)
             }
             return didSend
         }
@@ -418,6 +422,10 @@ extension AppModel {
             timelineSendTransitionStore.noteLocalSend(nonce: nonce)
         }
         if message.channelID == openThread?.id {
+            // A send is a later intent than a window request in flight.
+            supersedeThreadWindowRequests()
+            // Pending sends keep a row in any window so Retry and Discard
+            // stay available; they sort after the loaded messages.
             var updated = threadMessages
             Self.insert(message, intoSorted: &updated)
             threadMessages = updated

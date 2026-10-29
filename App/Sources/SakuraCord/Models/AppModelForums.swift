@@ -3,30 +3,9 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
-    func canDeleteForumPost(_ post: ForumPost) -> Bool {
-        return Self.canDeleteForumPost(
-            ownerID: post.thread.ownerID ?? post.owner?.id,
-            currentUserID: currentUser?.id,
-            canManage: canManageForumPosts
-        )
-    }
-
-    func canArchiveForumPost(_ post: ForumPost) -> Bool {
-        if canManageForumPosts { return true }
-        guard !post.thread.isLocked else { return false }
-        let ownerID = post.thread.ownerID ?? post.owner?.id
-        return ownerID != nil && ownerID == currentUser?.id
-    }
-
-    func canEditForumPostTags(_ post: ForumPost) -> Bool {
-        if canManageForumPosts { return true }
-        guard !post.thread.isLocked else { return false }
-        let ownerID = post.thread.ownerID ?? post.owner?.id
-        return ownerID != nil && ownerID == currentUser?.id
-    }
-
     func canToggleForumTag(_ tag: ForumTag, on post: ForumPost) -> Bool {
-        guard canEditForumPostTags(post), canManageForumPosts || !tag.isModerated else {
+        let policy = threadActionPolicy(post.thread)
+        guard policy.canEditTags, policy.canManage || !tag.isModerated else {
             return false
         }
         if selectedChannel?.requiresForumTag == true,
@@ -38,12 +17,18 @@ extension AppModel {
         return true
     }
 
-    nonisolated static func canDeleteForumPost(
-        ownerID: UserID?,
-        currentUserID: UserID?,
-        canManage: Bool
-    ) -> Bool {
-        canManage || (ownerID != nil && ownerID == currentUserID)
+    /// Adds or removes a tag from a post; Discord allows at most five.
+    func toggleForumTag(_ tagID: ForumTagID, on post: ForumPost, in channel: Channel) {
+        guard let tag = channel.availableTags.first(where: { $0.id == tagID }),
+              canToggleForumTag(tag, on: post)
+        else { return }
+        var tags = Set(post.thread.appliedTagIDs)
+        if tags.contains(tagID) {
+            tags.remove(tagID)
+        } else if tags.count < 5 {
+            tags.insert(tagID)
+        }
+        Task { await updateForumPostTags(post, tagIDs: Array(tags)) }
     }
 
     func resetForumLoadAndPresentationState() {
@@ -86,15 +71,85 @@ extension AppModel {
         hasMoreMessages = false
         hasMoreLaterMessages = false
         if let channel = selectedChannel {
-            forumSortOrder = channel.defaultSortOrder ?? .latestActivity
-            forumLayout =
-                channel.defaultForumLayout == .defaultLayout ? .list : channel.defaultForumLayout
-            forumTagMatch = channel.defaultTagMatch
+            // Returning to a forum shows it as it was left.
+            forumViewMemory.beginVisit(channel.id)
+            let saved = forumViewMemory.preferences(for: channel.id)
+            let defaults = forumDefaults(for: channel)
+            forumSortOrder = saved?.sortOrder ?? defaults.sortOrder
+            forumLayout = saved?.layout ?? defaults.layout
+            forumTagMatch = saved?.tagMatch ?? defaults.tagMatch
         }
         guard selectedConversationAccess.isReadable else { return }
         forumLoadTask = Task { [weak self] in
             await self?.loadForumPosts(reset: true)
         }
+    }
+
+    // MARK: Sort & view
+
+    func setForumSortOrder(_ value: ForumSortOrder) {
+        guard forumSortOrder != value else { return }
+        forumSortOrder = value
+        forumViewMemory.cancelPendingRestore()
+        rememberForumView()
+        reloadForumPosts()
+    }
+
+    func setForumLayout(_ value: ForumLayout) {
+        guard forumLayout != value else { return }
+        forumLayout = value
+        rememberForumView()
+    }
+
+    func setForumTagMatch(_ value: ForumTagMatch) {
+        guard forumTagMatch != value else { return }
+        forumTagMatch = value
+        forumViewMemory.cancelPendingRestore()
+        rememberForumView()
+        reloadForumPosts()
+    }
+
+    func toggleForumFilterTag(_ tagID: ForumTagID) {
+        if forumSelectedTagIDs.contains(tagID) {
+            forumSelectedTagIDs.remove(tagID)
+        } else {
+            forumSelectedTagIDs.insert(tagID)
+        }
+        forumViewMemory.cancelPendingRestore()
+        reloadForumPosts()
+    }
+
+    /// Returns to the forum's own defaults and forgets what was remembered.
+    func resetForumView() {
+        let channel = selectedChannel
+        let defaults = forumDefaults(for: channel)
+        forumSortOrder = defaults.sortOrder
+        forumLayout = defaults.layout
+        forumTagMatch = defaults.tagMatch
+        forumSelectedTagIDs = []
+        if let channel { forumViewMemory.forget(channel.id) }
+        reloadForumPosts()
+    }
+
+    private struct ForumSortAndView {
+        let sortOrder: ForumSortOrder
+        let layout: ForumLayout
+        let tagMatch: ForumTagMatch
+    }
+
+    /// The forum's own Sort & view choices, before anything remembered.
+    private func forumDefaults(for channel: Channel?) -> ForumSortAndView {
+        let layout = channel?.defaultForumLayout ?? .list
+        return ForumSortAndView(
+            sortOrder: channel?.defaultSortOrder ?? .latestActivity,
+            layout: layout == .defaultLayout ? .list : layout,
+            tagMatch: channel?.defaultTagMatch ?? .matchSome
+        )
+    }
+
+    private func rememberForumView() {
+        guard let channel = selectedChannel, channel.kind == .forum else { return }
+        forumViewMemory.remember(sortOrder: forumSortOrder, layout: forumLayout, tagMatch: forumTagMatch, for: channel.id)
     }
 
     func reloadForumPosts() {
@@ -111,6 +166,7 @@ extension AppModel {
     }
 
     func updateForumSearch(_ text: String) {
+        if text != forumSearchText { forumViewMemory.cancelPendingRestore() }
         let previousSearch = forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextSearch = text.trimmingCharacters(in: .whitespacesAndNewlines)
         forumSearchText = text
@@ -313,7 +369,7 @@ extension AppModel {
             readState.merge(forumPost: incoming)
             let post: ForumPost
             if let index = forumCatalogueIndexByID[incoming.id] {
-                post = forumPostPreservingReactionPresentation(
+                post = forumPostMergingPrevious(
                     incoming,
                     previous: forumCataloguePosts[index]
                 )
@@ -336,7 +392,17 @@ extension AppModel {
         forumCataloguePosts = posts.map { incoming in
             readState.merge(forumPost: incoming)
             guard let previous = previousByID[incoming.id] else { return incoming }
-            return forumPostPreservingReactionPresentation(incoming, previous: previous)
+            // The provider's catalogue carries authoritative membership, so a
+            // confirmed leave is not undone by the previous card's settings.
+            return forumPostMergingPrevious(incoming, previous: previous, preservesMembership: false)
+        }
+        // A page or provider list that omits the open post does not delete it.
+        // Deletion closes the post before its catalogue is republished.
+        if let openThreadID = openThread?.id,
+           let openPost = previousByID[openThreadID],
+           !posts.contains(where: { $0.id == openThreadID })
+        {
+            forumCataloguePosts.append(openPost)
         }
         forumCatalogueIndexByID = Dictionary(
             uniqueKeysWithValues: forumCataloguePosts.indices.map {
@@ -345,27 +411,19 @@ extension AppModel {
         )
     }
 
-    func forumPostPreservingReactionPresentation(
+    func forumPostMergingPrevious(
         _ incoming: ForumPost,
-        previous: ForumPost
+        previous: ForumPost,
+        preservesMembership: Bool = true
     ) -> ForumPost {
         var result = incoming
-        if let firstMessage = incoming.firstMessage {
-            result.firstMessage = firstMessage.preservingReactionReactors(
-                from: previous.firstMessage ?? firstMessage
-            )
-        } else {
+        if incoming.firstMessage == nil, !incoming.isFirstMessageLoaded {
             result.firstMessage = previous.firstMessage
+            result.isFirstMessageLoaded = previous.isFirstMessageLoaded
         }
-        if let mostRecentMessage = incoming.mostRecentMessage {
-            result.mostRecentMessage = mostRecentMessage.preservingReactionReactors(
-                from: previous.mostRecentMessage ?? mostRecentMessage
-            )
-        } else {
-            result.mostRecentMessage = previous.mostRecentMessage
-        }
+        result.mostRecentMessage = incoming.mostRecentMessage ?? previous.mostRecentMessage
         result.owner = incoming.owner ?? previous.owner
-        if result.thread.notificationSettings == nil {
+        if preservesMembership, result.thread.notificationSettings == nil {
             result.thread.notificationSettings = previous.thread.notificationSettings
         }
         return result
@@ -471,28 +529,15 @@ extension AppModel {
         }
     }
 
-    func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async {
-        switch mutation {
-        case .tags(let tagIDs):
-            guard validateForumTagMutation(tagIDs, for: post) else { return }
-        case .archived:
-            guard canArchiveForumPost(post) else {
-                forumActionError = "You do not have permission to close or reopen this post."
-                return
-            }
-        case .locked, .pinned:
-            guard canManageForumPosts else {
-                forumActionError = "Only moderators can change this post."
-                return
-            }
-        }
+    func updateForumPostTags(_ post: ForumPost, tagIDs: [ForumTagID]) async {
+        guard validateForumTagMutation(tagIDs, for: post) else { return }
 
         forumActionError = nil
         let session = accountSession()
         do {
             let updated = try await session.provider.updateForumPost(
                 post,
-                mutation: mutation
+                mutation: .tags(tagIDs)
             )
             guard isCurrentAccountSession(session) else { return }
             mergeForumCatalogue([updated])
@@ -508,7 +553,8 @@ extension AppModel {
         _ tagIDs: [ForumTagID],
         for post: ForumPost
     ) -> Bool {
-        guard canEditForumPostTags(post) else {
+        let policy = threadActionPolicy(post.thread)
+        guard policy.canEditTags else {
             forumActionError = "You do not have permission to edit this post’s tags."
             return false
         }
@@ -531,7 +577,7 @@ extension AppModel {
             forumActionError = "This forum requires every post to have at least one tag."
             return false
         }
-        if !canManageForumPosts {
+        if !policy.canManage {
             let changedTagIDs = uniqueTagIDs.symmetricDifference(post.thread.appliedTagIDs)
             guard changedTagIDs.allSatisfy({
                 availableTagsByID[$0]?.isModerated == false
@@ -541,27 +587,6 @@ extension AppModel {
             }
         }
         return true
-    }
-
-    func deleteForumPost(_ post: ForumPost) async {
-        guard canDeleteForumPost(post) else {
-            forumActionError = "You do not have permission to delete this post."
-            return
-        }
-        forumActionError = nil
-        let session = accountSession()
-        do {
-            try await session.provider.deleteForumPost(post)
-            guard isCurrentAccountSession(session) else { return }
-            removeForumPost(post.id)
-            if openThread?.id == post.id {
-                closeThread()
-            }
-            forumActionError = nil
-        } catch {
-            guard isCurrentAccountSession(session) else { return }
-            forumActionError = error.localizedDescription
-        }
     }
 
     func dismissForumActionError() {

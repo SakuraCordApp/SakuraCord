@@ -132,6 +132,21 @@ struct GatewayLifecycleEventTests {
         #expect(await provider.cachedChannelForTesting(channelID: textChannelID) == nil)
     }
 
+    @Test func `a server joined mid-session keeps the join time GUILD_CREATE carries`() async throws {
+        let provider = makeProvider()
+        guard case var .object(payload) = guildCreatePayload() else { return }
+        payload["joined_at"] = .string("2026-10-26T15:05:52.000000+00:00")
+        await provider.receiveGatewayDispatchForTesting(name: "GUILD_CREATE", data: .object(payload))
+        let joinedAt = try #require(await provider.cachedGuildForTesting(guildID: guildID)?.joinedAt)
+        #expect(joinedAt == DiscordDate.parse("2026-10-26T15:05:52.000000+00:00"))
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_UPDATE",
+            data: .object(["id": .string("100"), "name": .string("Renamed")])
+        )
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.joinedAt == joinedAt)
+    }
+
     @Test func `permission scoped member lists remain isolated when revisited`() async {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(

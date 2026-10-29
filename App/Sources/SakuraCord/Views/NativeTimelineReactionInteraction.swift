@@ -147,7 +147,7 @@ extension NativeTimelineCanvasView {
         var counts: [ReactionCountKey: Int] = [:]
         var visibleMessageIDs: Set<MessageID> = []
         let reducesMotion =
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            !AppMotionPolicy.animatesUncategorized
 
         while items.indices.contains(index),
               displayedRowOrigin(at: index) < visibleRect.maxY
@@ -349,9 +349,7 @@ extension NativeTimelineCanvasView {
         else {
             animatedMediaRows.removeAll()
             inlineVideoRows.removeAll()
-            lottieStickerRows.removeAll()
             removeInlineVideoOverlays()
-            removeLottieStickerOverlays()
             removeAnimatedMediaOverlays()
             return
         }
@@ -364,8 +362,6 @@ extension NativeTimelineCanvasView {
         var rows:
             [NativeMessageTimelineItem.Identifier: Set<NativeTimelineMediaKey>] = [:]
         var videoRows:
-            [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
-        var stickerRows:
             [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
         while items.indices.contains(index),
               displayedRowOrigin(at: index) < visibleRect.maxY
@@ -419,25 +415,14 @@ extension NativeTimelineCanvasView {
             if !videoURLs.isEmpty {
                 videoRows[identifier] = videoURLs
             }
-            let stickerURLs = Set(row.message.stickers.compactMap { sticker -> URL? in
-                guard sticker.format == .lottie else { return nil }
-                return sticker.mediaURL
-            })
-            if !stickerURLs.isEmpty {
-                stickerRows[identifier] = stickerURLs
-            }
             index += 1
         }
         animatedMediaRows = rows
         inlineVideoRows = videoRows
-        lottieStickerRows = stickerRows
         reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
         if !allowsScrolling {
             reconcileInlineVideoOverlays(
                 plays: !reduceMotion
-            )
-            reconcileLottieStickerOverlays(
-                reduceMotion: reduceMotion
             )
         }
     }

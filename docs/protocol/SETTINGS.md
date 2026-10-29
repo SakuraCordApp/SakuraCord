@@ -9,7 +9,7 @@
 | Profile reads | [DiscordRESTProviderProfiles.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProviderProfiles.swift) | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderBootstrapContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderBootstrapContractTests.swift) |
 | Profile saves and widgets | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordProfileWidgetEligibility.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileWidgetEligibility.swift) | [ProfileEditingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProfileEditingContractTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Nicknames | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordRESTRelationships.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTRelationships.swift); [AppModelNicknames.swift](../../App/Sources/SakuraCord/Models/AppModelNicknames.swift) | [NicknameCommandTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/NicknameCommandTests.swift) |
-| Group DM name, icon and leaving | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
+| Group DM name, icon, leaving and 1:1 DM closing | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
 | Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [QuickReactionPolicyTests.swift](../../App/Tests/SakuraCordAppTests/QuickReactionPolicyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
@@ -206,6 +206,28 @@ The same live desktop capture confirmed one bodyless DELETE with `silent=true`,
 a `200` channel response, and a `CHANNEL_DELETE` arriving before that response.
 The group disappeared from the sidebar. Its remaining member could re-add the
 leaving account through the ordinary Invite to Group DM UI.
+
+## Closing a 1:1 DM
+
+A 1:1 DM's context menu has an untinted **Close DM** at the top of its last
+section, above Remove Friend; group DMs offer Leave Group instead. There is no confirmation. Close DM sends one bodyless
+`DELETE /channels/{channel}` without `silent`, shares Leave Group's provider
+path, and is never replayed. It hides the DM without deleting messages. After a
+successful response the provider removes the DM from the list unless a Gateway
+event or session reset changed it during the request, and a selection on it
+moves to the next conversation. The matching `CHANNEL_DELETE` finds the DM gone.
+A failure keeps the DM and appears in the workspace error alert. A new message
+makes Discord send `CHANNEL_CREATE`, which the ordinary private-channel handling
+adds back to the list.
+
+The request follows the public
+[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
+route and the first-party `closePrivateChannel` call analysed for Leave Group.
+The omitted `silent` is inferred from that analysis; the request was not
+captured from the first-party client. A live SakuraCord check on 25 October 2026
+closed the DM between the two saved test accounts, kept its history visible from
+the other account, and showed the DM back in the closer's list after the other
+account sent a message.
 
 ## Protobuf preservation
 

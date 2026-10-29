@@ -566,7 +566,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             )
             let popover = NSPopover()
             popover.behavior = outsideClickHandler == nil ? configuration.behavior : .applicationDefined
-            popover.animates = configuration.animates
+            popover.animates = configuration.animates && AppMotionPolicy.animates(.overlays)
             popover.delegate = self
             popover.contentViewController = hostingController
             self.hostingController = hostingController
@@ -706,7 +706,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             // Re-presenting an already shown popover interrupts native scroll elasticity.
             // Reposition only when the anchor actually moves or the preferred edge changes.
             if !popover.isShown || presentedEdge != placement.edge || presentedAnchorFrame != sourceFrame {
-                let animates = popover.animates
+                let animates = configuration.animates && AppMotionPolicy.animates(.overlays)
                 if popover.isShown, configuration.reusesPresentationOnIdentityChange {
                     popover.animates = false
                 }
@@ -968,6 +968,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             // Only shown popovers can deliver a close notification.
             if let closingPopover, closingPopover.isShown {
                 programmaticallyClosingPopovers[ObjectIdentifier(closingPopover)] = closingPopover
+                closingPopover.animates = closingPopover.animates && AppMotionPolicy.animates(.overlays)
                 closingPopover.close()
             }
             removeGeometryObservers()

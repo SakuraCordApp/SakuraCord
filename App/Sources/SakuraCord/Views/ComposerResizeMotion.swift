@@ -25,7 +25,7 @@ enum ComposerResizeMotion {
     static var hover: Animation { .snappy(duration: 0.2) }
 
     static var isReduced: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        !AppMotionPolicy.animatesUncategorized
     }
 }
 

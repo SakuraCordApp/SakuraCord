@@ -262,7 +262,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
         content: (WindowModalContext) -> AnyView
     ) {
         self.presentationID = presentationID
-        let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reducesMotion = !AppMotionPolicy.animates(.overlays)
         self.reducesMotion = reducesMotion
         let animationState = WindowModalContext(
             dismiss: dismiss,

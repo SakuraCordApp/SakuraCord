@@ -69,7 +69,6 @@ final class InboxState {
     var groups: [InboxUnreadGroup] = []
     var undoGroups: [InboxUnreadGroup] = []
     @ObservationIgnored var unreadOrder: [ChannelID] = []
-    @ObservationIgnored var pendingReadGroups: [ChannelID: InboxUnreadGroup] = [:]
     var isLoading = false
     /// Set only by an explicit refresh, so background revalidation stays quiet.
     var isRefreshing = false
@@ -99,8 +98,7 @@ final class InboxState {
     @ObservationIgnored var bulkTask: Task<Void, Never>?
 
     var retainedMessages: some Sequence<Message> {
-        ([mentions] + groups.map(\.messages) + undoGroups.map(\.messages)
-            + pendingReadGroups.values.map(\.messages)).joined()
+        ([mentions] + groups.map(\.messages) + undoGroups.map(\.messages)).joined()
     }
 
     /// Update every retained copy; report whether visible rows need publication.
@@ -130,11 +128,6 @@ final class InboxState {
             if let updated = updatedMessages(undoGroups[index].messages) {
                 undoGroups[index].messages = updated
             }
-        }
-        for id in pendingReadGroups.keys {
-            guard var group = pendingReadGroups[id], let updated = updatedMessages(group.messages) else { continue }
-            group.messages = updated
-            pendingReadGroups[id] = group
         }
         return visibleChanged
     }
@@ -232,7 +225,6 @@ final class InboxState {
         groups = []
         undoGroups = []
         unreadOrder = []
-        pendingReadGroups = [:]
         nextBefore = nil
         errorMessage = nil
         isRefreshing = false

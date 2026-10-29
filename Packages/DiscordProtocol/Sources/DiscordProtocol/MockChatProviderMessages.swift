@@ -22,6 +22,11 @@ public extension MockChatProvider {
         anchoredAt anchor: MessageHistoryAnchor,
         limit: Int
     ) async throws -> MessagePage {
+#if SAKURACORD_MOTION_BENCHMARK
+        if motionThreadHistoryDelay > .zero, motionThreadIDs.contains(channelID) {
+            try await Task.sleep(for: motionThreadHistoryDelay)
+        }
+#endif
         guard
             snapshot.channels.contains(where: { $0.id == channelID })
             || messagesByChannel[channelID] != nil

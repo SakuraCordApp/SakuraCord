@@ -389,7 +389,7 @@ extension AppModel {
         case DiscordAttachmentUploadPolicy.basicAndClassicLimit:
             maximum = "50 MB"
         case DiscordAttachmentUploadPolicy.nitroLimit:
-            maximum = "500 MB"
+            maximum = "1 GB"
         default:
             maximum = formatter.string(fromByteCount: limit)
         }

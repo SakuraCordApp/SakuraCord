@@ -10,6 +10,14 @@ final class NativeTimelineInlineVideoOverlay: NSView {
     var url: URL?
     var requestedPlayback = false
     var preparationTask: Task<Void, Never>?
+    /// Discord's preview of the video, shown beneath the player until its
+    /// first frame covers it.
+    var placeholder: NSImage? {
+        didSet {
+            guard placeholder !== oldValue else { return }
+            layer?.contents = placeholder?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+    }
 
     override var isFlipped: Bool { true }
 
@@ -19,6 +27,7 @@ final class NativeTimelineInlineVideoOverlay: NSView {
         layer?.cornerRadius = 8
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
+        layer?.contentsGravity = .resizeAspectFill
         updateColorsForEffectiveAppearance()
     }
 

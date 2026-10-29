@@ -215,8 +215,19 @@ extension NativeTimelineRowLayout {
         )
     }
 
-    static func reactionSize(_ reaction: Reaction) -> CGSize {
-        let plan = MessageReactionPresentation.previewPlan(for: reaction)
+    /// The timeline shows reactor avatars after the count; a surface that
+    /// shows only the emoji and count passes `showsReactors: false`.
+    private static func reactionPreviewPlan(
+        for reaction: Reaction,
+        showsReactors: Bool
+    ) -> MessageReactionPreviewPlan {
+        showsReactors
+            ? MessageReactionPresentation.previewPlan(for: reaction)
+            : MessageReactionPreviewPlan(reactors: [], placeholderCount: 0)
+    }
+
+    static func reactionSize(_ reaction: Reaction, showsReactors: Bool = true) -> CGSize {
+        let plan = reactionPreviewPlan(for: reaction, showsReactors: showsReactors)
         var width = MessageReactionMetrics.horizontalPadding * 2 + MessageReactionMetrics.emojiSize
         if reaction.count > 0 {
             width += MessageReactionMetrics.horizontalPadding + measuredTextWidth(
@@ -244,7 +255,8 @@ extension NativeTimelineRowLayout {
 
     static func reactionRegion(
         _ reaction: Reaction,
-        frame: CGRect
+        frame: CGRect,
+        showsReactors: Bool = true
     ) -> ReactionRegion {
         var horizontalOffset = frame.minX + MessageReactionMetrics.horizontalPadding
         let emojiFrame = CGRect(
@@ -271,7 +283,7 @@ extension NativeTimelineRowLayout {
             horizontalOffset += countWidth
         }
 
-        let plan = MessageReactionPresentation.previewPlan(for: reaction)
+        let plan = reactionPreviewPlan(for: reaction, showsReactors: showsReactors)
         var avatars: [ReactionRegion.AvatarRegion] = []
         var placeholderAvatarFrames: [CGRect] = []
         if !plan.isEmpty {

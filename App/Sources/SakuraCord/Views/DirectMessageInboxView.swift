@@ -286,6 +286,9 @@ private struct DirectMessageInboxRow: View {
                         edit: { model.presentGroupDirectMessageEditor(for: channel.id) },
                         leave: { model.presentLeaveGroupDirectMessage(for: channel.id) }
                     )
+                    : nil,
+                closeDirectMessage: model.offersCloseDirectMessage(channel)
+                    ? { model.closeDirectMessage(channel) }
                     : nil
             )
         }

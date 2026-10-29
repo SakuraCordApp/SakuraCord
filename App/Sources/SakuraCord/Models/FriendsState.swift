@@ -26,11 +26,12 @@ final class FriendsState {
     /// The username a request was just sent to.
     var addFriendSuccess: String?
     var isSendingRequest = false
+    /// A failed friend request, shown as an alert beside any inline text.
+    var requestFailure: String?
     var addFriendFocusRequest = 0
     var pendingUserIDs: Set<UserID> = []
     var actionError: String?
     var confirmation: FriendsConfirmation?
-    let captcha = HumanCaptchaStore.friends()
     /// Sections whose full relationship read was requested on this connection.
     @ObservationIgnored var loadedSections: Set<FriendsSection> = []
 
@@ -109,7 +110,6 @@ final class FriendsState {
     }
 
     func reset() {
-        captcha.cancel()
         isPresented = false
         selectedSection = nil
         presences = [:]
@@ -119,6 +119,7 @@ final class FriendsState {
         isSendingRequest = false
         pendingUserIDs = []
         actionError = nil
+        requestFailure = nil
         confirmation = nil
         loadedSections = []
         revealedRequestIDs = []
@@ -260,12 +261,13 @@ nonisolated enum FriendsListPolicy {
     }
 
     enum UsernameInput: Equatable {
-        case valid(username: String, discriminator: Int?)
+        case valid(tag: String, username: String, discriminator: Int?)
         case invalid
     }
 
     // Official stable633029 module237309 and module395422 validation.
     static let usernameMaximumLength = 37
+    static let usernameFailureMessage = "Hm, didn’t work. Double check that the username is correct."
 
     /// Trims, drops one leading `@` from a username without a tag, and
     /// accepts a modern username or a legacy `name#0000` tag.
@@ -278,6 +280,6 @@ nonisolated enum FriendsListPolicy {
         let parts = tag.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
         // JavaScript `parseInt` reads leading digits; anything else is NaN and serializes as null.
         let discriminator = parts.count > 1 ? Int(String(parts[1].prefix { $0.isASCII && $0.isNumber })) : nil
-        return .valid(username: String(parts[0]), discriminator: discriminator)
+        return .valid(tag: tag, username: String(parts[0]), discriminator: discriminator)
     }
 }

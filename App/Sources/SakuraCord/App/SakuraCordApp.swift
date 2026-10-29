@@ -15,9 +15,14 @@ struct SakuraCordApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
     private let opensForumPerformanceFixture: Bool
+    private let runsForumPerformanceAutoScroll: Bool
     private let opensChatPerformanceFixture: Bool
     private let opensPinsPerformanceFixture: Bool
     private let runsFriendsPerformanceBenchmark: Bool
+#if SAKURACORD_MOTION_BENCHMARK
+    /// Set when the launch runs the side chat motion benchmark.
+    private let sideChatMotionOptions: SideChatMotionBenchmark.Options?
+#endif
     private let runsChatLiveArrivalStress: Bool
     private let runsAuthenticatedNavigationBenchmark: Bool
     private let runsAuthenticatedAccountSwitchBenchmark: Bool
@@ -36,9 +41,27 @@ struct SakuraCordApp: App {
         DiagnosticsPreferences.restore()
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
+        runsForumPerformanceAutoScroll = configuration.runsForumPerformanceAutoScroll
+#if DEBUG
+        ForumLayoutStabilityProbe.shared.isEnabled = configuration.includesForumPerformanceFixture
+#endif
         opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
         opensPinsPerformanceFixture = configuration.includesPinsPerformanceFixture
         runsFriendsPerformanceBenchmark = configuration.runsFriendsPerformanceBenchmark
+#if SAKURACORD_MOTION_BENCHMARK
+        let motionOptions = configuration.runsSideChatMotionBenchmark
+            ? SideChatMotionBenchmark.Options(arguments: ProcessInfo.processInfo.arguments)
+            : nil
+        sideChatMotionOptions = motionOptions
+        WorkspaceMotionProbes.isEnabled = motionOptions != nil
+        MockChatProvider.motionFixture = motionOptions.map {
+            MockChatProvider.MotionFixture(
+                threadCount: $0.cycles + 1,
+                messageCount: $0.threadMessageCount,
+                historyDelay: .milliseconds($0.historyDelayMilliseconds)
+            )
+        }
+#endif
         runsChatLiveArrivalStress = configuration.runsChatLiveArrivalStress
         runsAuthenticatedNavigationBenchmark =
             configuration.runsAuthenticatedNavigationBenchmark
@@ -68,6 +91,7 @@ struct SakuraCordApp: App {
             ? MockChatProvider(
                 includesLongServerList: configuration.includesLongServerList,
                 forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
+                forumPreviewsHydrateLate: configuration.includesForumPerformanceFixture,
                 timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
                 pinnedMessageCount: configuration.includesPinsPerformanceFixture ? 5_000 : nil,
                 timelineIncludesAnimatedMedia:
@@ -84,10 +108,11 @@ struct SakuraCordApp: App {
         let notificationService = MacNativeNotificationService(
             deliversNotifications: configuration.mode != .offlineTesting
         )
+        let notificationPreferences = NotificationPreferences()
         let soundPlayer: any AppSoundPlaying =
             configuration.mode == .offlineTesting
             ? NoopAppSoundPlayer()
-            : MacAppSoundPlayer()
+            : MacAppSoundPlayer(notificationPreferences: notificationPreferences)
         let appModel = AppModel(
             launchMode: configuration.mode,
             awaitsOfflineSignIn: configuration.includesSignInFixture,
@@ -95,7 +120,8 @@ struct SakuraCordApp: App {
                 && UserDefaultsSavedAccountStore.shared.hasSavedAccounts,
             provider: provider,
             notificationService: notificationService,
-            soundPlayer: soundPlayer
+            soundPlayer: soundPlayer,
+            notificationPreferences: notificationPreferences
         )
         appModel.showInspector = GeneralWindowRestorationStore.shared.memberListIsVisible
         AppAppearanceController.shared.apply(
@@ -167,9 +193,19 @@ struct SakuraCordApp: App {
                     } else if opensChatPerformanceFixture {
                         model.selectedChannelID = ChannelID(rawValue: 210)
                     }
+#if DEBUG
+                    if runsForumPerformanceAutoScroll {
+                        await ForumBoardBenchmark.run(model: model)
+                    }
+#endif
                     if runsFriendsPerformanceBenchmark {
                         await FriendsPerformanceBenchmark.run(model: model, provider: performanceMockProvider)
                     }
+#if SAKURACORD_MOTION_BENCHMARK
+                    if let sideChatMotionOptions {
+                        await SideChatMotionBenchmark.run(model: model, options: sideChatMotionOptions)
+                    }
+#endif
                     if opensPinsPerformanceFixture {
                         await model.channelLoadTask?.value
                         model.presentPinnedMessages(channelID: ChannelID(rawValue: 210))

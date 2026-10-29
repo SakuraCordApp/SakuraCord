@@ -209,6 +209,20 @@ import Testing
     #expect(openedURLs.isEmpty)
     presenter.present(ExternalLinkSafetyPolicy.assess(url))
     #expect(openedURLs == [url])
+
+    var selectedApplicationURLs: [URL] = []
+    let selectedApplicationOpener: (URL) -> Void = { selectedApplicationURLs.append($0) }
+    presenter.present(
+        ExternalLinkSafetyPolicy.assess(url, displayedText: "https://apple.com"),
+        opener: selectedApplicationOpener
+    )
+    #expect(selectedApplicationURLs.isEmpty)
+    presenter.present(ExternalLinkSafetyPolicy.assess(url), opener: selectedApplicationOpener)
+    #expect(selectedApplicationURLs == [url])
+    let unsupportedURL = try #require(URL(string: "javascript:alert(1)"))
+    presenter.present(ExternalLinkSafetyPolicy.assess(unsupportedURL), opener: selectedApplicationOpener)
+    #expect(selectedApplicationURLs == [url])
+    #expect(openedURLs == [url])
 }
 
 @MainActor
@@ -238,7 +252,7 @@ import Testing
     let expected: Set<SettingsControlID> = [
         .privacyTypingIndicators, .anonymiseFileNames, .removeMediaMetadata,
         .externalLinkProtection, .trustedDomains,
-        .clearLocalActivity, .ignoredAccounts,
+        .clearLocalActivity, .ignoredAccounts, .blockedAccounts,
     ]
     let controls = SettingsCatalog.foundation.controls.filter {
         $0.destination.page == .privacySafety
@@ -248,6 +262,7 @@ import Testing
     let state = SettingsViewState()
     for (term, control) in [
         ("ignored accounts", SettingsControlID.ignoredAccounts),
+        ("unblock", .blockedAccounts),
         ("phishing", SettingsControlID.externalLinkProtection),
         ("allow list", .trustedDomains),
         ("randomise", .anonymiseFileNames),

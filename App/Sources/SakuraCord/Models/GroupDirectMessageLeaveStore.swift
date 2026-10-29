@@ -14,7 +14,7 @@ final class GroupDirectMessageLeaveStore {
     var confirmation: Confirmation?
     /// Discord's "Leave without notifying other members" checkbox.
     var leavesSilently = false
-    /// Groups with a leave request in flight, so a second confirmation is ignored.
+    /// Groups being left or 1:1 DMs being closed, so a repeat request is ignored.
     var leaving: Set<ChannelID> = []
 
     func reset() {

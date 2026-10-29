@@ -52,8 +52,8 @@ func `account or thread draft replacement invalidates an external upload result`
     let channelID = try #require(model.selectedChannelID)
     let destination: MessageComposerDestination = resetsAccount ? .channel : .thread
     if !resetsAccount {
-        model.threadCreation = ThreadCreationDraft(parentID: channelID,
-                                                  permissions: .init(canCreatePublic: true, canCreatePrivate: false))
+        model.sideConversations.thread = .threadCreation(ThreadCreationDraft(parentID: channelID,
+                                                                             permissions: .init(canCreatePublic: true, canCreatePrivate: false)))
     }
     let prompt = OversizedAttachmentPrompt(
         fileURL: URL(fileURLWithPath: "/tmp/account-reset.bin"),
@@ -71,8 +71,8 @@ func `account or thread draft replacement invalidates an external upload result`
         await model.resetAccountScopedLoadsAndForumState()
     } else {
         model.closeThread()
-        model.threadCreation = ThreadCreationDraft(parentID: channelID,
-                                                  permissions: .init(canCreatePublic: true, canCreatePrivate: false))
+        model.sideConversations.thread = .threadCreation(ThreadCreationDraft(parentID: channelID,
+                                                                             permissions: .init(canCreatePublic: true, canCreatePrivate: false)))
     }
     await uploader.release(
         call: 1,
@@ -479,7 +479,7 @@ func `timeout during thread creation preserves its unsent message without replac
     let creation = ThreadCreationDraft(parentID: channelID, permissions: model.selectedChannelThreadCreationPermissions)
     try #require(creation.permissions.canCreatePublic)
     creation.name = "Thread"
-    model.threadCreation = creation
+    model.sideConversations.thread = .threadCreation(creation)
     let originalDraft = "  Keep this first message\n"
     let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/thread-timeout-draft.txt"))
     model.threadDraft = originalDraft

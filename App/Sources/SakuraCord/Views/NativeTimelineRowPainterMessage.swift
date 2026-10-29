@@ -24,6 +24,7 @@ struct NativeTimelineMessageDrawInput {
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
     let isForwardedSourceHovered: Bool
+    let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
     let isTranslationActionHovered: Bool
     let hidesMessageContent: Bool
@@ -33,7 +34,7 @@ struct NativeTimelineMessageDrawInput {
     let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
     let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
     let pollPresentation: NativeTimelinePollPresentation
-    let animatedReactionIDs: Set<String>
+    let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
     let reactionCountTransitions: [String: NativeTimelineReactionCountTransition]
 }
 
@@ -109,10 +110,16 @@ extension NativeTimelineRowPainter {
 
     private static func drawMessageSeparators(_ input: NativeTimelineMessageDrawInput) {
         if let frame = input.layout.daySeparatorFrame {
-            dateSeparator(date: input.row.message.timestamp, frame: frame)
+            dateSeparator(date: input.row.message.timestamp, frame: frame, isUnread: input.layout.foldedUnreadDay != nil)
         }
         if let frame = input.layout.unreadSeparatorFrame {
             newMessagesSeparator(frame: frame)
+        }
+        // While editing, the editor replaces the row's height, so the rule
+        // would sit at the starter's old bottom across later replies.
+        if let frame = input.layout.postStarterDividerFrame, !input.hidesMessageContent {
+            NSColor.labelColor.withAlphaComponent(0.16).setFill()
+            CGRect(x: frame.minX, y: frame.midY, width: frame.width, height: 1).fill()
         }
     }
 
@@ -467,6 +474,8 @@ extension NativeTimelineRowPainter {
                         cornerRadius: attachmentCornerRadius,
                         fillsFrame: attachmentFillsFrame
                     )
+                } else if let placeholder = region.placeholder?.image {
+                    drawImage(placeholder, in: region.frame, cornerRadius: attachmentCornerRadius, fillsFrame: true)
                 } else if isVideo {
                     systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
                 }
@@ -576,6 +585,8 @@ extension NativeTimelineRowPainter {
                     cornerRadius: imageRegion.cornerRadius,
                     fillsFrame: false
                 )
+            } else if let placeholder = imageRegion.placeholder?.image {
+                drawImage(placeholder, in: imageRegion.frame, cornerRadius: imageRegion.cornerRadius, fillsFrame: false)
             } else {
                 systemSymbol(
                     imageRegion.fallbackSystemImage,
@@ -599,11 +610,12 @@ extension NativeTimelineRowPainter {
                 image, in: frame, cornerRadius: InterfaceScale.metric(8),
                 fillsFrame: region.mediaPosterFillsFrame
             )
-            if region.mediaIsVideo { mediaPlayGlyph(in: frame) }
+        } else if let placeholder = region.mediaPlaceholder?.image {
+            drawImage(placeholder, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
         } else if region.mediaIsVideo {
             systemSymbol("film", in: frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-            mediaPlayGlyph(in: frame)
         }
+        if region.mediaIsVideo { mediaPlayGlyph(in: frame) }
     }
 
     private static func drawMessageComponentsAndStickers(
@@ -681,9 +693,8 @@ extension NativeTimelineRowPainter {
             let sticker = message.stickers.indices.contains(index)
                 ? message.stickers[index]
                 : nil
-            if sticker?.format == .lottie {
-                // A bounded native Lottie overlay owns loading, playback, and
-                // reduced-motion presentation for this exact layout frame.
+            if let sticker,
+               input.animatedOverlayRoles.contains(.sticker(sticker.id)) {
                 continue
             }
             let image = sticker?.mediaURL.flatMap {
@@ -724,13 +735,13 @@ extension NativeTimelineRowPainter {
                     toX: frame.minX - 4
                 )
             }
-            threadSummary(
+            threadCard(
                 thread,
                 preview: model?.threadPreviewMessages[thread.id],
-                message: message,
                 model: model,
                 in: frame,
-                bubbleRegion: layout.bubbleRegion
+                bubbleRegion: layout.bubbleRegion,
+                interaction: input.threadCardInteraction
             )
         }
         ComponentUnicodeEmojiRenderer.prepareImages(
@@ -743,11 +754,11 @@ extension NativeTimelineRowPainter {
             reaction(
                 region,
                 model: model,
-                isHovered: model?.canUpdateReactions(on: message) != false && hoveredReactionID == region.reaction.id,
+                isHovered: hoveredReactionID == region.reaction.id && model?.canUpdateReactions(on: message) != false,
                 countTransition: reactionCountTransitions[
                     region.reaction.id
                 ],
-                hasAnimatedEmojiOverlay: input.animatedReactionIDs.contains(region.reaction.id)
+                hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(.reaction(region.reaction.id))
             )
         }
         if let frame = layout.addReactionFrame, model?.canCreateReactions(on: message) != false {
@@ -1045,7 +1056,7 @@ extension NativeTimelineRowPainter {
             url: author.avatarURL,
             in: avatarFrame
         )
-        let font = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: NativeTimelineReplyMetrics.authorFont)
+        let font = ProfileNameFontCache.font(id: author.displayNameStyle?.fontID, fallback: NativeTimelineReplyMetrics.authorFont)
         let displayName = showsReplyMention
             ? NativeTimelineReplyMetrics.authorDisplayName(author, in: message)
             : author.displayName
@@ -1153,7 +1164,7 @@ extension NativeTimelineRowPainter {
         text(
             user?.displayName ?? "Someone",
             in: region.userFrame,
-            font: ProfileNameFontLoader.shared.resolvedFont(for: user, fallback: .interfaceSystemFont(
+            font: ProfileNameFontCache.font(id: user?.displayNameStyle?.fontID, fallback: .interfaceSystemFont(
                 ofSize: NSFont.preferredFont(
                     forTextStyle: .caption2
                 ).pointSize,
@@ -1226,15 +1237,27 @@ extension NativeTimelineRowPainter {
         )
     }
 
-    static func dateSeparator(date: Date, frame: CGRect) {
+    /// `isUnread` folds the NEW divider in, as Discord does when both fall on
+    /// the same message: the rule and date turn red and the pill ends the line.
+    static func dateSeparator(date: Date, frame: CGRect, isUnread: Bool = false) {
         let label = date.formatted(
             .dateTime.day().month(.wide).year()
         )
-        let labelFrame = NativeTimelineDateSeparatorMetrics.labelFrame(
+        let pill = newMessagesPillFrame(in: frame)
+        let pillLineEnd = lineEnd(before: pill)
+        var labelFrame = NativeTimelineDateSeparatorMetrics.labelFrame(
             for: label,
             in: frame
         )
-        NSColor.labelColor.withAlphaComponent(0.16).setFill()
+        // In a narrow timeline the date keeps clear of where NEW folds in,
+        // so it stays put while NEW fades in or out over it.
+        if labelFrame.maxX > pillLineEnd {
+            labelFrame.origin.x = max(frame.minX, pillLineEnd - labelFrame.width)
+            labelFrame.size.width = pillLineEnd - labelFrame.minX
+        }
+        let ruleEnd = isUnread ? pillLineEnd : frame.maxX
+        if isUnread { drawNewMessagesPill(pill) }
+        (isUnread ? MentionRed.nsColor : NSColor.labelColor.withAlphaComponent(0.16)).setFill()
         CGRect(
             x: frame.minX,
             y: frame.midY,
@@ -1252,7 +1275,7 @@ extension NativeTimelineRowPainter {
             y: frame.midY,
             width: max(
                 0,
-                frame.maxX
+                ruleEnd
                     - labelFrame.maxX
                     - NativeTimelineDateSeparatorMetrics.lineSpacing
             ),
@@ -1262,40 +1285,40 @@ extension NativeTimelineRowPainter {
             label,
             in: labelFrame,
             font: NativeTimelineDateSeparatorMetrics.font,
-            color: .secondaryLabelColor,
+            color: isUnread ? MentionRed.nsColor : .secondaryLabelColor,
             alignment: .center,
             lineBreakMode: .byClipping
         )
     }
 
     static func newMessagesSeparator(frame: CGRect) {
-        let font = NSFont.interfaceSystemFont(ofSize: 10, weight: .bold)
-        let labelWidth = ceil(
-            measuredTextWidth("NEW", font: font) + 14
-        )
-        let capsuleFrame = CGRect(
-            x: frame.maxX - labelWidth,
-            y: frame.minY
-                + NativeTimelineUnreadSeparatorMetrics.verticalPadding,
-            width: labelWidth,
-            height: NativeTimelineUnreadSeparatorMetrics.capsuleHeight
-        )
-        NSColor.systemRed.setFill()
-        CGRect(
-            x: frame.minX,
-            y: frame.midY,
-            width: max(0, capsuleFrame.minX - InterfaceScale.metric(8) - frame.minX),
-            height: 1
-        ).fill()
-        NSBezierPath(
-            roundedRect: capsuleFrame,
-            xRadius: capsuleFrame.height / 2,
-            yRadius: capsuleFrame.height / 2
-        ).fill()
+        let pill = newMessagesPillFrame(in: frame)
+        drawNewMessagesPill(pill)
+        MentionRed.nsColor.setFill()
+        CGRect(x: frame.minX, y: frame.midY, width: max(0, lineEnd(before: pill) - frame.minX), height: 1).fill()
+    }
+
+    /// Where a divider's line stops short of the NEW pill.
+    private static func lineEnd(before pill: CGRect) -> CGFloat {
+        pill.minX - InterfaceScale.metric(8)
+    }
+
+    private static var newMessagesPillFont: NSFont { .interfaceSystemFont(ofSize: 10, weight: .bold) }
+
+    /// Where the red NEW pill sits at the end of a divider's `frame`.
+    private static func newMessagesPillFrame(in frame: CGRect) -> CGRect {
+        let width = ceil(measuredTextWidth("NEW", font: newMessagesPillFont) + 14)
+        let height = NativeTimelineUnreadSeparatorMetrics.capsuleHeight
+        return CGRect(x: frame.maxX - width, y: frame.midY - height / 2, width: width, height: height)
+    }
+
+    private static func drawNewMessagesPill(_ pill: CGRect) {
+        MentionRed.nsColor.setFill()
+        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         text(
             "NEW",
-            in: capsuleFrame,
-            font: font,
+            in: pill,
+            font: newMessagesPillFont,
             color: .white,
             alignment: .center,
             lineBreakMode: .byClipping

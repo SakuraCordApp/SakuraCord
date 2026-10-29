@@ -285,6 +285,21 @@ extension NativeTimelineCanvasView {
         return keysByIdentifier
     }
 
+    /// Rows entering the viewport mid-scroll were painted from the overscan,
+    /// so no draw requested their media. Request it and reconcile their
+    /// overlays now rather than after scrolling settles.
+    func presentRowsEnteringViewport() {
+        let keysByIdentifier = refreshVisibleMediaPins()
+        let rowRange = visibleMediaProjection?.rowRange
+        guard rowRange != presentedMediaRowRange else { return }
+        presentedMediaRowRange = rowRange
+        for (identifier, keys) in keysByIdentifier {
+            enqueueVisibleMediaRequests(identifier: identifier, keys: keys)
+        }
+        reconcileSpoilerOverlays()
+        startVisibleInlineVideosImmediately()
+    }
+
     func uncachedMediaKeys(
         for item: NativeMessageTimelineItem,
         at index: Int?
@@ -554,7 +569,7 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         into keys: inout [NativeTimelineMediaKey]
     ) {
-        for sticker in message.stickers where sticker.format != .lottie {
+        for sticker in message.stickers {
             if let url = sticker.mediaURL {
                 keys.append(.media(url, maximumPixelDimension: 384))
             }
@@ -590,6 +605,7 @@ extension NativeTimelineCanvasView {
 
     func invalidateVisibleMediaProjection(keepingCapacity: Bool) {
         visibleMediaProjection = nil
+        presentedMediaRowRange = nil
         mediaKeysByIdentifier.removeAll(keepingCapacity: keepingCapacity)
     }
 

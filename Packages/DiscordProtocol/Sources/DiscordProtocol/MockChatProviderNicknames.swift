@@ -41,9 +41,20 @@ public extension MockChatProvider {
         return nicknames[userID]
     }
 
-    func sendFriendRequest(username: String, discriminator: Int?, note: String? = nil, captchaHandler: DiscordCaptchaHandler?) async throws {
+    func sendFriendRequest(username: String, discriminator: Int?, note: String? = nil) async throws {
         let known = snapshot.knownUsers + snapshot.relationships.compactMap(\.user)
-        guard let user = known.first(where: { $0.username == username }), user.id != currentUser.id else {
+        guard let user = known.first(where: { $0.username == username }) else {
+            throw RelationshipActionError.failed("Hm, didn’t work. Double check that the username is correct.")
+        }
+        try sendRequest(to: user, note: note)
+    }
+
+    func sendFriendRequest(to user: User, location: IgnoreActionLocation) async throws {
+        try sendRequest(to: user, note: nil)
+    }
+
+    private func sendRequest(to user: User, note: String?) throws {
+        guard user.id != currentUser.id else {
             throw RelationshipActionError.failed("Hm, didn’t work. Double check that the username is correct.")
         }
         if snapshot.relationships.contains(where: { $0.id == user.id && $0.type == .friend }) {
@@ -54,7 +65,7 @@ public extension MockChatProvider {
                                      note: try FriendRequestNote.normalized(note), isUserIgnored: ignored))
     }
 
-    func acceptFriendRequest(from userID: UserID, confirmingStranger: Bool, captchaHandler: DiscordCaptchaHandler?) async throws {
+    func acceptFriendRequest(from userID: UserID, confirmingStranger: Bool) async throws {
         guard var relationship = snapshot.relationships.first(where: { $0.id == userID && $0.type == .incomingRequest }) else {
             throw RelationshipActionError.failed("Discord couldn’t update this relationship. Try again.")
         }
@@ -76,7 +87,7 @@ public extension MockChatProvider {
         }
     }
 
-    func blockUser(_ userID: UserID, captchaHandler: DiscordCaptchaHandler? = nil) async throws {
+    func blockUser(_ userID: UserID) async throws {
         let user = snapshot.relationships.first { $0.id == userID }?.user
             ?? snapshot.knownUsers.first { $0.id == userID }
         let ignored = snapshot.relationships.first { $0.id == userID }?.isUserIgnored ?? false

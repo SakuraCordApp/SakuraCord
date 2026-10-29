@@ -1,44 +1,38 @@
 import SakuraCordModels
 import SwiftUI
 
-struct ChatWorkspaceView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// Equatable on its inputs: a binding never compares equal, so each update of
+/// the window's root view updated the workspace again, and with it every
+/// column, mid-motion. What the workspace reads from the model still updates
+/// it.
+struct ChatWorkspaceView: View, Equatable {
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.model === rhs.model
+                && lhs.presentsForumComposer == rhs.presentsForumComposer
+                && lhs.toolbarSearchFieldMetrics == rhs.toolbarSearchFieldMetrics
+        }
+    }
+
     let model: AppModel
     @Binding var presentsForumComposer: Bool
     let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
+    /// The trailing column's frame, reported by `WorkspaceColumnsHost`.
+    @State private var supplementaryPaneFrame = CGRect.zero
 
     @ViewBuilder var body: some View {
+        let presentation = model.workspacePresentation
         Group {
-            if let guildID = model.selectedGuildID, let page = model.guildWorkspacePage {
-                HStack(spacing: 0) {
-                    Group {
-                        switch page {
-                        case .channelsAndRoles: GuildCustomizationView(model: model, guildID: guildID)
-                            .id("customization-\(guildID)-\(model.currentUser?.id.description ?? "")")
-                        case .guide: GuildGuideView(model: model, guildID: guildID)
-                            .id("guide-\(guildID)-\(model.currentUser?.id.description ?? "")")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if model.hasThreadPane {
-                        Divider()
-                        ThreadConversationView(model: model)
-                    } else if model.customizationPreviewChannel != nil {
-                        Divider()
-                        SupplementaryConversationPane {
-                            ChatDetailView(model: model)
-                        }
-                    } else if page == .guide, let resource = model.onboarding.guides[guildID]?.resource {
-                        Divider()
-                        GuildResourceConversationView(model: model, guildID: guildID, resource: resource)
-                    }
+            switch presentation.primary {
+            case .guildPage(let page):
+                if let guildID = model.selectedGuildID {
+                    guildWorkspace(page, guildID: guildID, presentation: presentation)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.isFriendsPresented {
+            case .friends:
                 FriendsView(model: model)
                     .id("friends-\(model.currentUser?.id.description ?? "")")
-            } else {
-                conversation
+            case .channel, .fullWidthThread:
+                conversation(presentation)
             }
         }
         .windowModal(
@@ -58,48 +52,39 @@ struct ChatWorkspaceView: View {
         }
     }
 
-    @ViewBuilder private var conversation: some View {
-        let presentation = ChatWorkspacePresentation(
-            isVoiceChannel: model.selectedChannel?.kind == .voice,
-            isForumChannel: model.selectedChannel?.kind == .forum,
-            hasOpenThread: model.hasThreadPane && !model.isThreadFullWidth,
-            hasOpenVoiceChat: model.isVoiceChatOpen,
-            showsInspector: model.showInspector,
-            showsMessageSearch: model.isMessageSearchVisible
-        )
+    private func guildWorkspace(
+        _ page: GuildWorkspacePage,
+        guildID: GuildID,
+        presentation: WorkspacePresentation
+    ) -> some View {
+        workspaceColumns(presentation) {
+            Group {
+                switch page {
+                case .channelsAndRoles: GuildCustomizationView(model: model, guildID: guildID)
+                    .id("customization-\(guildID)-\(model.currentUser?.id.description ?? "")")
+                case .guide: GuildGuideView(model: model, guildID: guildID)
+                    .id("guide-\(guildID)-\(model.currentUser?.id.description ?? "")")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
 
-        HStack(spacing: 0) {
-            if model.isThreadFullWidth {
-                ThreadConversationView(model: model)
-            } else {
+    private func conversation(_ presentation: WorkspacePresentation) -> some View {
+        let widening = WorkspaceMotionPhase.shared.widening
+        let channelContent: WorkspacePresentation.ChannelContent? =
+            if case .channel(let content) = presentation.primary { content } else { widening?.channel }
+        return workspaceColumns(presentation) {
+            if let channelContent {
                 ChatWorkspacePrimaryContent(
                     model: model,
-                    content: presentation.primaryContent,
+                    content: channelContent,
                     presentsForumComposer: $presentsForumComposer
                 )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            }
-
-            if let supplementaryContent = presentation.supplementaryContent {
-                HStack(spacing: 0) {
-                    if supplementaryContent != .memberInspector
-                        || model.selectedChannel?.kind != .directMessage
-                    {
-                        Divider()
-                            .ignoresSafeArea(.container, edges: .top)
-                    }
-                    ChatWorkspaceSupplementaryContent(
-                        model: model,
-                        content: supplementaryContent,
-                        toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
-                    )
-                }
-                .transition(.move(edge: .trailing))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .workspaceMotionProbe("primary")
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(reduceMotion ? nil : .spring(ChatChromeMetrics.sidebarSpring), value: model.showInspector)
         .onChange(of: model.selectedChannelID) { _, channelID in
             guard let channelID else {
                 AppPerformanceSignposts.cancelConversationNavigation()
@@ -110,50 +95,67 @@ struct ChatWorkspaceView: View {
             )
         }
     }
-}
 
-struct ChatWorkspacePresentation: Equatable {
-    enum PrimaryContent: Equatable {
-        case chat
-        case forum
-        case voice
+    /// The primary content, a side chat (in the pane or at full width) and
+    /// the inspector, moved by `WorkspaceLayoutMotion`.
+    @ViewBuilder
+    private func workspaceColumns(
+        _ presentation: WorkspacePresentation,
+        @ViewBuilder primary: () -> some View
+    ) -> some View {
+        let motion = WorkspaceMotionPhase.shared
+        // A thread keeps one view, and its timeline, between the pane and
+        // full width.
+        let fullWidthThread = presentation.primary == .fullWidthThread
+            ? model.sideConversations.thread.map { WorkspaceTrailingColumn(.sideConversation($0)) }
+            : nil
+        let trailing = WorkspaceTrailingColumn(presentation)
+        // The column host keeps departing columns itself while they leave, so
+        // a motion updates no view after the change that starts it.
+        let columns = [fullWidthThread, trailing].compactMap(\.self)
+        WorkspaceColumnsHost(
+            conversation: AnyView(primary()),
+            columns: columns.map { column in
+                let isSideConversation = if case .sideConversation = column.content { true } else { false }
+                return WorkspaceColumnsHost.Column(
+                    id: column.id,
+                    isSideConversation: isSideConversation,
+                    isFullWidth: column.id == fullWidthThread?.id,
+                    content: AnyView(columnContent(column))
+                )
+            },
+            widening: fullWidthThread == nil || motion.widening == nil
+                ? nil : motion.wideningHasArrived ? .arriving : .starting,
+            supplementaryPaneFrameChanged: { supplementaryPaneFrame = $0 }
+        )
+        // Spans the window's top edge so the columns scroll under the
+        // toolbar; each column's hosting view insets its own content from it.
+        .ignoresSafeArea(.container, edges: .top)
+        .preference(key: SupplementaryPaneFramePreferenceKey.self, value: supplementaryPaneFrame)
     }
 
-    enum SupplementaryContent: Equatable {
-        case thread
-        case voiceChat
-        case memberInspector
-        case messageSearch
-    }
-
-    let primaryContent: PrimaryContent
-    let supplementaryContent: SupplementaryContent?
-
-    init(
-        isVoiceChannel: Bool,
-        isForumChannel: Bool = false,
-        hasOpenThread: Bool,
-        hasOpenVoiceChat: Bool,
-        showsInspector: Bool,
-        showsMessageSearch: Bool = false
-    ) {
-        primaryContent = isVoiceChannel ? .voice : (isForumChannel ? .forum : .chat)
-
-        if showsMessageSearch {
-            supplementaryContent = .messageSearch
-        } else if hasOpenThread, !isVoiceChannel || hasOpenVoiceChat {
-            supplementaryContent = .thread
-        } else if isVoiceChannel {
-            supplementaryContent = hasOpenVoiceChat ? .voiceChat : nil
-        } else {
-            supplementaryContent = showsInspector ? .memberInspector : nil
+    /// A trailing column as `WorkspaceColumnsHost` hosts it.
+    @ViewBuilder
+    private func columnContent(_ column: WorkspaceTrailingColumn) -> some View {
+        switch column.content {
+        case .sideConversation(let conversation):
+            SideConversationView(model: model, conversation: conversation)
+                .workspaceMotionProbe("pane")
+                .reportsSupplementaryPaneFrame(isEnabled: !conversation.isFullWidth)
+        case .inspector(let pane):
+            ChatWorkspaceSupplementaryContent(
+                model: model,
+                pane: pane,
+                toolbarSearchFieldMetrics: toolbarSearchFieldMetrics
+            )
+            .workspaceMotionProbe(column.id)
         }
     }
 }
 
 private struct ChatWorkspacePrimaryContent: View {
     let model: AppModel
-    let content: ChatWorkspacePresentation.PrimaryContent
+    let content: WorkspacePresentation.ChannelContent
     @Binding var presentsForumComposer: Bool
 
     var body: some View {
@@ -206,59 +208,72 @@ private struct ChatWorkspacePrimaryContent: View {
 
 private struct ChatWorkspaceSupplementaryContent: View {
     let model: AppModel
-    let content: ChatWorkspacePresentation.SupplementaryContent
+    let pane: SupplementaryPane
     let toolbarSearchFieldMetrics: ToolbarSearchFieldMetrics
 
     var body: some View {
-        let userContext = UserMenuContext(guildID: model.selectedGuildID, channelID: model.selectedChannelID)
-        switch content {
-        case .thread:
-            ThreadConversationView(model: model)
-        case .voiceChat:
-            VoiceChannelChatView(model: model)
+        switch pane {
+        case .sideConversation(let conversation):
+            SideConversationView(model: model, conversation: conversation)
         case .memberInspector:
-            if model.isThreadFullWidth, let thread = model.openThread,
-               model.openThreadParentChannel?.kind != .announcement {
-                ThreadMemberInspectorView(model: model, thread: thread)
-                    .frame(width: ChatChromeMetrics.memberListWidth)
-                    .frame(maxHeight: .infinity)
-            } else if let channel = model.selectedChannel,
-               channel.kind == .directMessage,
-               let recipient = channel.recipients.first
-            {
-                DirectMessageProfileInspector(
-                    model: model,
-                    recipient: recipient
-                )
-            } else {
-                MemberInspectorView(
-                    sections: model.directMessageInspectorSections,
-                    customEmojiURLsByID: model.customEmojiURLsByID,
-                    profilePresentation:
-                        model.liveProfilePresentation(for: .inspector),
-                    isProfilePresented: model.isInspectorProfilePresented,
-                    selectMember: model.selectMember,
-                    dismissProfile: model.dismissInspectorProfile,
-                    viewportIdentity: model.selectedChannelID,
-                    presentation: NativeMemberListPresentation(
-                        roleColorDisplay: model.accessibilitySettings.roleColorDisplay
-                    ),
-                    openProfile: model.expandProfile,
-                    sendProfileMessage: model.sendProfileMessage,
-                    userMenu: { UserContextMenu.make(for: $0.user, context: userContext, model: model) },
-                    userAccessibilityActions: { UserContextMenu.accessibilityActions(for: $0.user, context: userContext, model: model) },
-                    updateViewport: model.updateMemberListViewport
-                )
-                .frame(width: ChatChromeMetrics.memberListWidth)
-                .frame(maxHeight: .infinity)
+            HStack(spacing: 0) {
+                if model.selectedChannel?.kind != .directMessage {
+                    Divider()
+                        .ignoresSafeArea(.container, edges: .top)
+                }
+                memberInspector
             }
         case .messageSearch:
-            if toolbarSearchFieldMetrics.isValid {
-                MessageSearchPanelView(model: model)
-                    .id(ObjectIdentifier(model.messageSearch))
-                    .frame(width: ChatChromeMetrics.memberListWidth)
-                    .frame(maxHeight: .infinity)
+            HStack(spacing: 0) {
+                Divider()
+                    .ignoresSafeArea(.container, edges: .top)
+                if toolbarSearchFieldMetrics.isValid {
+                    MessageSearchPanelView(model: model)
+                        .id(ObjectIdentifier(model.messageSearch))
+                        .frame(width: ChatChromeMetrics.memberListWidth)
+                        .frame(maxHeight: .infinity)
+                        .reportsSupplementaryPaneFrame()
+                }
             }
+        }
+    }
+
+    @ViewBuilder private var memberInspector: some View {
+        let userContext = UserMenuContext(guildID: model.selectedGuildID, channelID: model.selectedChannelID)
+        if model.isThreadFullWidth, let thread = model.openThread,
+           model.openThreadParentChannel?.kind != .announcement {
+            ThreadMemberInspectorView(model: model, thread: thread)
+                .frame(width: ChatChromeMetrics.memberListWidth)
+                .frame(maxHeight: .infinity)
+        } else if let channel = model.selectedChannel,
+           channel.kind == .directMessage,
+           let recipient = channel.recipients.first
+        {
+            DirectMessageProfileInspector(
+                model: model,
+                recipient: recipient
+            )
+        } else {
+            MemberInspectorView(
+                sections: model.directMessageInspectorSections,
+                customEmojiURLsByID: model.customEmojiURLsByID,
+                profilePresentation:
+                    model.liveProfilePresentation(for: .inspector),
+                isProfilePresented: model.isInspectorProfilePresented,
+                selectMember: model.selectMember,
+                dismissProfile: model.dismissInspectorProfile,
+                viewportIdentity: model.selectedChannelID,
+                presentation: NativeMemberListPresentation(
+                    roleColorDisplay: model.accessibilitySettings.roleColorDisplay
+                ),
+                openProfile: model.expandProfile,
+                sendProfileMessage: model.sendProfileMessage,
+                userMenu: { UserContextMenu.make(for: $0.user, context: userContext, model: model) },
+                userAccessibilityActions: { UserContextMenu.accessibilityActions(for: $0.user, context: userContext, model: model) },
+                updateViewport: model.updateMemberListViewport
+            )
+            .frame(width: ChatChromeMetrics.memberListWidth)
+            .frame(maxHeight: .infinity)
         }
     }
 }
@@ -299,16 +314,6 @@ private struct DirectMessageProfileInspector: View {
             if model.inspectorProfilePresentation?.member.id != recipient.id {
                 model.showInspectorProfile(for: recipient)
             }
-        }
-    }
-}
-
-private struct VoiceChannelChatView: View {
-    let model: AppModel
-
-    var body: some View {
-        SupplementaryConversationPane {
-            ChatDetailView(model: model)
         }
     }
 }

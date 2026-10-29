@@ -1,5 +1,5 @@
-import DiscordProtocol
 import AppKit
+import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
@@ -8,32 +8,39 @@ struct ForumChannelView: View {
     let model: AppModel
     @Binding var presentsComposer: Bool
     @State private var searchText = ""
+    @State private var headerHeight: CGFloat = 0
 
     var body: some View {
         if let channel = model.selectedChannel {
-            VStack(spacing: 0) {
-                ForumBrowseHeader(
-                    model: model,
-                    channel: channel,
-                    searchText: $searchText,
-                    presentsComposer: $presentsComposer
-                )
-                if let error = model.forumActionError {
-                    ForumActionErrorBanner(
-                        message: error,
-                        dismiss: model.dismissForumActionError
-                    )
+            forumContent(channel: channel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Posts scroll beneath the header's glass controls and the
+                // window toolbar, as conversation timelines do.
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    VStack(spacing: 0) {
+                        ForumBrowseHeader(
+                            model: model,
+                            channel: channel,
+                            searchText: $searchText,
+                            presentsComposer: $presentsComposer
+                        )
+                        if let error = model.forumActionError {
+                            ForumActionErrorBanner(
+                                message: error,
+                                dismiss: model.dismissForumActionError
+                            )
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .animation(.snappy(duration: 0.25), value: model.forumActionError)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
                 }
-                Divider()
-                forumContent(channel: channel)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .onChange(of: channel.id) {
-                searchText = model.forumSearchText
-                reportPresentedForum(channel.id)
-            }
-            .onAppear { reportPresentedForum(channel.id) }
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .onChange(of: channel.id) {
+                    searchText = model.forumSearchText
+                    reportPresentedForum(channel.id)
+                }
+                .onAppear { reportPresentedForum(channel.id) }
         } else {
             ContentUnavailableView("Choose a forum", systemImage: "rectangle.3.group.bubble")
         }
@@ -46,11 +53,7 @@ struct ForumChannelView: View {
                 "Forum unavailable", systemImage: "lock.fill",
                 description: Text("You do not have permission to browse this forum.")
             )
-        } else if model.isLoadingForumPosts, model.forumPosts.isEmpty {
-            ForumLoadingView()
-        } else if !model.hasLoadedForumPosts {
-            Color.clear
-        } else if let error = model.forumPostError, model.forumPosts.isEmpty {
+        } else if model.hasLoadedForumPosts, let error = model.forumPostError, model.forumPosts.isEmpty {
             ContentUnavailableView(
                 "Forum could not be loaded", systemImage: "exclamationmark.triangle",
                 description: Text(error)
@@ -58,9 +61,9 @@ struct ForumChannelView: View {
             .overlay(alignment: .bottom) {
                 Button("Try Again") { model.reloadForumPosts() }.padding(InterfaceScale.metric(24))
             }
-        } else if model.forumPosts.isEmpty, model.isSearchingForumPosts {
-            ForumSearchingState()
-        } else if model.forumPosts.isEmpty {
+        } else if model.hasLoadedForumPosts, model.forumPosts.isEmpty,
+                  !model.isSearchingForumPosts, !model.isLoadingForumPosts
+        {
             let isFiltering =
                 !model.forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     || !model.forumSelectedTagIDs.isEmpty
@@ -72,8 +75,35 @@ struct ForumChannelView: View {
                 systemImage: isFiltering ? "magnifyingglass" : "bubble.left.and.text.bubble.right"
             )
         } else {
-            ForumPostCollection(model: model, channel: channel)
+            NativeForumBoardView(
+                model: model,
+                channel: channel,
+                snapshot: boardSnapshot(channel: channel),
+                headerHeight: headerHeight
+            )
+                .ignoresSafeArea(.container, edges: .top)
         }
+    }
+
+    private func boardSnapshot(channel: Channel) -> ForumBoardSnapshot {
+        ForumBoardSnapshot(
+            query: ForumBoardSnapshot.Query(
+                channelID: channel.id,
+                searchText: model.forumSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+                tagIDs: model.forumSelectedTagIDs,
+                tagMatch: model.forumTagMatch,
+                sortOrder: model.forumSortOrder
+            ),
+            mode: model.forumLayout == .gallery ? .gallery : .list,
+            posts: model.forumPosts,
+            recentCount: model.forumRecentPostCount,
+            showsPlaceholders: !model.hasLoadedForumPosts
+                || model.isLoadingForumPosts
+                || model.isSearchingForumPosts,
+            isLoadingMore: model.isLoadingMoreForumPosts,
+            paginationError: model.forumPaginationError,
+            hasMore: model.hasMoreForumPosts
+        )
     }
 
     private func reportPresentedForum(_ channelID: ChannelID) {
@@ -90,291 +120,161 @@ struct ForumChannelView: View {
     }
 }
 
-private struct ForumPostCollection: View {
-    let model: AppModel
-    let channel: Channel
-
-    var body: some View {
-        ScrollView {
-            if model.forumLayout == .gallery {
-                galleryContent
-            } else {
-                listContent
-            }
-        }
-    }
-
-    private var listContent: some View {
-        LazyVStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
-            ForumListPostSection(
-                model: model,
-                channel: channel,
-                posts: model.forumRecentPosts,
-                lastDisplayedPostID: lastDisplayedPostID
-            )
-            olderPostsHeader
-            ForumListPostSection(
-                model: model,
-                channel: channel,
-                posts: model.forumOlderPosts,
-                lastDisplayedPostID: lastDisplayedPostID
-            )
-            paginationStatus
-        }
-        .padding(InterfaceScale.metric(14))
-    }
-
-    private var galleryContent: some View {
-        LazyVStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
-            ForumGalleryPostSection(
-                model: model,
-                channel: channel,
-                posts: model.forumRecentPosts,
-                lastDisplayedPostID: lastDisplayedPostID
-            )
-            olderPostsHeader
-            ForumGalleryPostSection(
-                model: model,
-                channel: channel,
-                posts: model.forumOlderPosts,
-                lastDisplayedPostID: lastDisplayedPostID
-            )
-            paginationStatus
-        }
-        .padding(InterfaceScale.metric(14))
-    }
-
-    @ViewBuilder
-    private var olderPostsHeader: some View {
-        if !model.forumOlderPosts.isEmpty {
-            Text("Older Posts")
-                .font(.interface(.caption).weight(.bold))
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, InterfaceScale.metric(2))
-                .padding(.top, model.forumRecentPosts.isEmpty ? 0 : 12)
-        }
-    }
-
-    @ViewBuilder
-    private var paginationStatus: some View {
-        ForumPaginationStatusView(
-            isLoading: model.isLoadingMoreForumPosts,
-            errorMessage: model.forumPaginationError
-        ) {
-            Task { await model.loadMoreForumPosts() }
-        }
-    }
-
-    private var lastDisplayedPostID: ChannelID? {
-        model.forumOlderPosts.last?.id ?? model.forumRecentPosts.last?.id
-    }
-
-}
-
-private struct ForumPaginationStatusView: View {
-    let isLoading: Bool
-    let errorMessage: String?
-    let retry: () -> Void
-
-    @ViewBuilder
-    var body: some View {
-        if isLoading {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding()
-        } else if let errorMessage {
-            HStack(spacing: InterfaceScale.metric(10)) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
-                    Text("Couldn’t load more posts")
-                        .font(.interface(.callout).weight(.semibold))
-                    Text(errorMessage)
-                        .font(.interface(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: InterfaceScale.metric(8))
-                Button("Try Again", action: retry)
-            }
-            .padding(InterfaceScale.metric(12))
-            .background(.quaternary, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(12)))
-            .accessibilityElement(children: .combine)
-        }
-    }
-}
-
-private struct ForumListPostSection: View {
-    let model: AppModel
-    let channel: Channel
-    let posts: ArraySlice<ForumPost>
-    let lastDisplayedPostID: ChannelID?
-
-    var body: some View {
-        LazyVStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
-            ForEach(posts) { post in
-                ForumListPostCard(model: model, channel: channel, post: post)
-                    .onAppear {
-                        guard post.id == lastDisplayedPostID, model.hasMoreForumPosts else { return }
-                        Task { await model.loadMoreForumPosts() }
-                    }
-            }
-        }
-    }
-}
-
-private struct ForumGalleryPostSection: View {
-    let model: AppModel
-    let channel: Channel
-    let posts: ArraySlice<ForumPost>
-    let lastDisplayedPostID: ChannelID?
-
-    var body: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 320), spacing: InterfaceScale.metric(12))],
-            spacing: InterfaceScale.metric(12)
-        ) {
-            ForEach(posts) { post in
-                ForumGalleryPostCard(model: model, channel: channel, post: post)
-                    .onAppear {
-                        guard post.id == lastDisplayedPostID, model.hasMoreForumPosts else { return }
-                        Task { await model.loadMoreForumPosts() }
-                    }
-            }
-        }
-    }
-}
-
+/// The forum's search, filter tags, Sort & view and New Post in one row.
+/// Tags scroll sideways rather than wrap, so the header keeps one height at
+/// any width and does not reflow as a side chat opens or closes.
 private struct ForumBrowseHeader: View {
     let model: AppModel
     let channel: Channel
     @Binding var searchText: String
     @Binding var presentsComposer: Bool
-    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
-            GlassEffectContainer(spacing: InterfaceScale.metric(10)) {
-                HStack(spacing: InterfaceScale.metric(10)) {
-                    HStack(spacing: InterfaceScale.metric(10)) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Search posts", text: $searchText)
-                            .tint(SakuraCordAccentColor.color)
-                            .textFieldStyle(.plain)
-                            .focused($isSearchFocused)
-                            .onChange(of: searchText) { _, value in model.updateForumSearch(value) }
-                    }
-                    .padding(.horizontal, InterfaceScale.metric(14))
-                    .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(48))
-                    .contentShape(Rectangle())
-                    .glassEffect(
-                        .regular.interactive(),
-                        in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous)
-                    )
-                    .simultaneousGesture(TapGesture().onEnded { isSearchFocused = true })
+        HStack(spacing: InterfaceScale.metric(10)) {
+            // A side chat can leave the forum narrow; search gives way down
+            // to a minimum, then the tags scroll in what is left.
+            ForumSearchField(text: $searchText)
+                .frame(minWidth: InterfaceScale.metric(100), maxWidth: InterfaceScale.metric(220))
+                .layoutPriority(1)
+                .onChange(of: searchText) { _, value in model.updateForumSearch(value) }
+            // Each forum's tags start scrolled to the first one.
+            ForumTagStrip(model: model, channel: channel)
+                .id(channel.id)
+            ForumSortMenu(model: model)
+            ForumNewPostButton(isEnabled: model.canCreateForumPosts) { presentsComposer = true }
+        }
+        .padding(.horizontal, InterfaceScale.metric(14))
+        .frame(height: InterfaceScale.metric(50))
+    }
+}
 
-                    Button {
-                        isSearchFocused = false
-                        presentsComposer = true
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                            .font(.interfaceSystem(size: 16, weight: .semibold))
-                            .frame(width: InterfaceScale.metric(48), height: InterfaceScale.metric(48))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(
-                        .regular.interactive(),
-                        in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous)
-                    )
-                    .disabled(!model.canCreateForumPosts)
-                    .help("New Post")
-                    .accessibilityLabel("New Post")
-                }
-            }
+/// The forum's tags on one line, faded at whichever edge has more to scroll to.
+private struct ForumTagStrip: View {
+    let model: AppModel
+    let channel: Channel
+    @State private var fades = Fades()
 
-            HStack(spacing: InterfaceScale.metric(10)) {
-                ForumSortMenu(model: model)
-                Divider().frame(height: InterfaceScale.metric(24))
-                ScrollView(.horizontal) {
-                    GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
-                        HStack(spacing: InterfaceScale.metric(8)) {
-                            ForEach(channel.availableTags) { tag in
-                                ForumTagButton(
-                                    tag: tag,
-                                    customEmojiURL: tag.emojiID.flatMap {
-                                        model.customEmojiURLsByID[$0]
-                                    },
-                                    isSelected: model.forumSelectedTagIDs.contains(tag.id)
-                                ) {
-                                    if model.forumSelectedTagIDs.contains(tag.id) {
-                                        model.forumSelectedTagIDs.remove(tag.id)
-                                    } else {
-                                        model.forumSelectedTagIDs.insert(tag.id)
-                                    }
-                                    model.reloadForumPosts()
-                                }
-                            }
+    private struct Fades: Equatable {
+        var leading = false
+        var trailing = false
+    }
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            GlassEffectContainer(spacing: InterfaceScale.metric(4)) {
+                HStack(spacing: InterfaceScale.metric(6)) {
+                    ForEach(channel.availableTags) { tag in
+                        ForumTagButton(
+                            tag: tag,
+                            customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
+                            isSelected: model.forumSelectedTagIDs.contains(tag.id)
+                        ) {
+                            model.toggleForumFilterTag(tag.id)
                         }
                     }
                 }
-                .scrollIndicators(.hidden)
             }
+            // Room for the glass edges, which the scroll view would clip.
+            .padding(.vertical, InterfaceScale.metric(6))
+            .padding(.horizontal, InterfaceScale.metric(2))
         }
-        .padding(InterfaceScale.metric(14))
+        .scrollIndicators(.never)
+        .onScrollGeometryChange(for: Fades.self) { geometry in
+            Fades(
+                leading: geometry.contentOffset.x > 1,
+                trailing: geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1
+            )
+        } action: { _, value in
+            fades = value
+        }
+        .mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: fades.leading ? InterfaceScale.metric(24) : 0)
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: fades.trailing ? InterfaceScale.metric(32) : 0)
+            }
+            .animation(.easeOut(duration: 0.15), value: fades)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Chip sizes shared by the header's controls.
+enum ForumTagChipMetrics {
+    static var height: CGFloat { InterfaceScale.metric(30) }
+    static var horizontalPadding: CGFloat { InterfaceScale.metric(11) }
+    static var emojiSize: CGFloat { InterfaceScale.metric(16) }
+}
+
+/// New Post, the forum's primary action.
+private struct ForumNewPostButton: View {
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let label = Label("New Post", systemImage: "square.and.pencil")
+        Button(action: action) {
+            // Drops its title where the header is too narrow for it.
+            ViewThatFits(in: .horizontal) {
+                label
+                    .labelStyle(.titleAndIcon)
+                    .fixedSize()
+                    .padding(.horizontal, InterfaceScale.metric(13))
+                label
+                    .labelStyle(.iconOnly)
+                    .frame(width: ForumTagChipMetrics.height)
+            }
+            .font(.interface(.callout).weight(.semibold))
+            .foregroundStyle(.white)
+            .frame(height: ForumTagChipMetrics.height)
+            .glassEffect(.forumChip(isOn: true), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.5)
+        .pointerStyle(isEnabled ? .link : nil)
+    }
+}
+
+private extension Glass {
+    /// Regular glass for the forum's chips; accent-tinted when one is on.
+    static func forumChip(isOn: Bool) -> Glass {
+        isOn ? .regular.tint(SakuraCordAccentColor.color).interactive() : .regular.interactive()
     }
 }
 
 private struct ForumSortMenu: View {
     let model: AppModel
+    @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: InterfaceScale.metric(5)) {
-            Image(systemName: "arrow.up.arrow.down")
-            Text("Sort & view")
-            Image(systemName: "chevron.down")
-                .font(.interface(.caption2).weight(.bold))
-        }
-        .font(.interface(.callout).weight(.semibold))
-        .padding(.horizontal, InterfaceScale.metric(10))
-        .frame(height: InterfaceScale.metric(30))
-        .contentShape(Capsule())
-        .glassEffect(.regular.interactive(), in: Capsule())
-        .overlay {
-            NativeForumSortMenuButton(
-                sortOrder: model.forumSortOrder,
-                layout: model.forumLayout,
-                tagMatch: model.forumTagMatch,
-                selectSortOrder: selectSort,
-                selectLayout: { model.forumLayout = $0 },
-                selectTagMatch: selectTagMatch,
-                reset: resetToDefault
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        Image(systemName: "line.3.horizontal.decrease")
+            .font(.interface(.callout).weight(.semibold))
+            .frame(width: ForumTagChipMetrics.height, height: ForumTagChipMetrics.height)
+            .background { if isHovered { Circle().fill(Color.primary.opacity(0.1)) } }
+            .glassEffect(.regular, in: Circle())
+            .contentShape(Circle())
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.15), value: isHovered)
+            .pointerStyle(.link)
+            .overlay {
+                NativeForumSortMenuButton(
+                    sortOrder: model.forumSortOrder,
+                    layout: model.forumLayout,
+                    tagMatch: model.forumTagMatch,
+                    selectSortOrder: model.setForumSortOrder,
+                    selectLayout: model.setForumLayout,
+                    selectTagMatch: model.setForumTagMatch,
+                    reset: model.resetForumView,
+                    onHover: { isHovered = $0 }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
     }
 
-    private func selectSort(_ value: ForumSortOrder) {
-        guard model.forumSortOrder != value else { return }
-        model.forumSortOrder = value
-        model.reloadForumPosts()
-    }
-
-    private func selectTagMatch(_ value: ForumTagMatch) {
-        guard model.forumTagMatch != value else { return }
-        model.forumTagMatch = value
-        model.reloadForumPosts()
-    }
-
-    private func resetToDefault() {
-        model.forumSortOrder = model.selectedChannel?.defaultSortOrder ?? .latestActivity
-        let layout = model.selectedChannel?.defaultForumLayout ?? .list
-        model.forumLayout = layout == .defaultLayout ? .list : layout
-        model.forumTagMatch = model.selectedChannel?.defaultTagMatch ?? .matchSome
-        model.forumSelectedTagIDs = []
-        model.reloadForumPosts()
-    }
 }
 
 private struct NativeForumSortMenuButton: NSViewRepresentable {
@@ -385,6 +285,7 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
     let selectLayout: (ForumLayout) -> Void
     let selectTagMatch: (ForumTagMatch) -> Void
     let reset: () -> Void
+    let onHover: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -398,22 +299,25 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
         )
     }
 
-    func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(
+    func makeNSView(context: Context) -> ForumSortMenuNSButton {
+        let button = ForumSortMenuNSButton(
             title: "",
             target: context.coordinator,
             action: #selector(Coordinator.showMenu(_:))
         )
+        button.onHover = onHover
         button.isBordered = false
         button.isTransparent = true
         button.focusRingType = .none
         button.setButtonType(.momentaryPushIn)
+        button.toolTip = "Sort & view"
         button.setAccessibilityLabel("Sort and view options")
         button.setAccessibilityHelp("Opens forum sorting and layout options")
         return button
     }
 
-    func updateNSView(_ nsView: NSButton, context: Context) {
+    func updateNSView(_ nsView: ForumSortMenuNSButton, context: Context) {
+        nsView.onHover = onHover
         context.coordinator.update(
             sortOrder: sortOrder,
             layout: layout,
@@ -618,30 +522,62 @@ private struct NativeForumSortMenuButton: NSViewRepresentable {
     }
 }
 
+/// The sort menu's click target sits over the SwiftUI chip, so it reports
+/// hover back to the chip and shows the pointing hand itself.
+final class ForumSortMenuNSButton: NSButton {
+    var onHover: ((Bool) -> Void)?
+    private var hoverArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self
+        )
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHover?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHover?(false)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
 private struct ForumTagButton: View {
     let tag: ForumTag
     let customEmojiURL: URL?
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(5)) {
-                ForumTagEmoji(tag: tag, customEmojiURL: customEmojiURL, size: InterfaceScale.metric(16))
+                ForumTagEmoji(tag: tag, customEmojiURL: customEmojiURL, size: ForumTagChipMetrics.emojiSize)
                 Text(tag.name)
+                    .lineLimit(1)
             }
             .font(.interface(.callout).weight(.semibold))
-            .padding(.horizontal, InterfaceScale.metric(10))
-            .frame(height: InterfaceScale.metric(30))
+            .padding(.horizontal, ForumTagChipMetrics.horizontalPadding)
+            .frame(height: ForumTagChipMetrics.height)
+            .glassEffect(.forumChip(isOn: isSelected), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .glassEffect(
-            isSelected
-                ? .regular.tint(SakuraCordAccentColor.color.opacity(0.28)).interactive()
-                : .regular.interactive(),
-            in: Capsule()
-        )
+        .animation(.snappy(duration: 0.2), value: isSelected)
+        .pointerStyle(isEnabled ? .link : nil)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint(tag.isModerated ? "Only moderators can apply this tag" : "")
     }
@@ -676,13 +612,6 @@ private struct ForumTagEmoji: View {
     }
 }
 
-private enum ForumPostCardMetrics {
-    static var cornerRadius: CGFloat { InterfaceScale.metric(14) }
-    static var listAttachmentSize: CGFloat { InterfaceScale.metric(92) }
-    static var galleryCardHeight: CGFloat { InterfaceScale.metric(390) }
-    static var galleryHeroHeight: CGFloat { InterfaceScale.metric(238) }
-}
-
 nonisolated enum ForumTimestampPresentation {
     static func roundedRelativeText(for date: Date, relativeTo now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(date)))
@@ -702,519 +631,6 @@ nonisolated enum ForumTimestampPresentation {
         default:
             return "\(seconds / 31_557_600)y ago"
         }
-    }
-}
-
-private struct ForumTimestampLabel: View {
-    let date: Date
-    let exactPrefix: String
-    let open: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            Text(ForumTimestampPresentation.roundedRelativeText(for: date, relativeTo: context.date))
-                .contentShape(Rectangle())
-        }
-        .onTapGesture(perform: open)
-        .onModalHover { isHovering = $0 }
-        .nativeHoverPopover(isPresented: $isHovering) {
-            Text("\(exactPrefix) \(date.formatted(date: .complete, time: .shortened))")
-                .font(.interface(.subheadline).weight(.medium))
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: InterfaceScale.metric(280))
-                .padding(.horizontal, InterfaceScale.metric(12))
-                .padding(.vertical, InterfaceScale.metric(10))
-                .accessibilityHidden(true)
-        }
-        .accessibilityLabel(
-            "\(exactPrefix) \(date.formatted(date: .complete, time: .shortened))"
-        )
-    }
-}
-
-private struct ForumListPostCard: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-
-    var body: some View {
-        ForumPostCardChrome(model: model, channel: channel, post: post) {
-            ZStack(alignment: .topTrailing) {
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
-                    ForumPostStatusRow(model: model, channel: channel, post: post)
-                        .padding(.trailing, attachmentTrailingInset)
-                        .allowsHitTesting(false)
-
-                    VStack(alignment: .leading, spacing: InterfaceScale.metric(7)) {
-                        HStack(alignment: .firstTextBaseline, spacing: InterfaceScale.metric(8)) {
-                            Text(post.thread.name)
-                                .font(.interface(.title3).weight(.semibold))
-                                .foregroundStyle(
-                                    model.shouldEmphasizeForumPost(post) ? .primary : .secondary
-                                )
-                                .lineLimit(2)
-                            if model.isForumPostNew(post) {
-                                ForumPostNewBadge()
-                            }
-                        }
-                        .allowsHitTesting(false)
-                        // The excerpt takes clicks only on hidden spoilers.
-                        if let starterMessage, !starterMessage.content.isEmpty {
-                            ForumPostStarterExcerpt(
-                                model: model,
-                                message: starterMessage,
-                                isEmphasized: model.shouldEmphasizeForumPost(post)
-                            )
-                        }
-                    }
-                    .padding(.trailing, attachmentTrailingInset)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    ForumPostListFooter(model: model, channel: channel, post: post)
-                }
-
-                if let attachment = post.firstMessage?.attachments.first {
-                    ForumPostListAttachment(attachment: attachment)
-                        .allowsHitTesting(false)
-                }
-            }
-            .padding(InterfaceScale.metric(14))
-        }
-    }
-
-    private var starterMessage: Message? {
-        post.firstMessage
-    }
-
-    private var attachmentTrailingInset: CGFloat {
-        post.firstMessage?.attachments.first == nil
-            ? 0
-            : ForumPostCardMetrics.listAttachmentSize + 14
-    }
-}
-
-private struct ForumPostListAttachment: View {
-    let attachment: Attachment
-
-    var body: some View {
-        ZStack {
-            Color.clear
-            ForumPostAttachmentPreview(
-                attachment: attachment,
-                maximumPixelDimension: Int(ForumPostCardMetrics.listAttachmentSize * 2)
-            )
-            .frame(
-                width: ForumPostCardMetrics.listAttachmentSize,
-                height: ForumPostCardMetrics.listAttachmentSize
-            )
-        }
-        .frame(
-            width: ForumPostCardMetrics.listAttachmentSize,
-            height: ForumPostCardMetrics.listAttachmentSize
-        )
-        .background(.quaternary)
-        .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(11), style: .continuous))
-        .overlay {
-            ConcentricRectangle(cornerRadius: InterfaceScale.metric(11), style: .continuous)
-                .stroke(.separator.opacity(0.6), lineWidth: 1)
-        }
-    }
-}
-
-private struct ForumGalleryPostCard: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-
-    var body: some View {
-        ForumPostCardChrome(model: model, channel: channel, post: post) {
-            VStack(alignment: .leading, spacing: InterfaceScale.metric(9)) {
-                ForumGalleryPostHeader(model: model, post: post)
-
-                HStack(alignment: .firstTextBaseline, spacing: InterfaceScale.metric(8)) {
-                    Text(post.thread.name)
-                        .font(.interface(.title3).weight(.semibold))
-                        .foregroundStyle(
-                            model.shouldEmphasizeForumPost(post) ? .primary : .secondary
-                        )
-                        .lineLimit(2)
-                    if model.isForumPostNew(post) {
-                        ForumPostNewBadge()
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(48), alignment: .topLeading)
-                .allowsHitTesting(false)
-
-                ForumPostGalleryHero(model: model, channel: channel, post: post)
-
-                ForumPostGalleryFooter(model: model, channel: channel, post: post)
-            }
-            .padding(InterfaceScale.metric(14))
-            .frame(height: ForumPostCardMetrics.galleryCardHeight, alignment: .top)
-        }
-    }
-}
-
-private struct ForumPostNewBadge: View {
-    var body: some View {
-        Text("NEW")
-            .font(.interface(.caption2).weight(.bold))
-            .foregroundStyle(Color(hex: 0x5865F2))
-            .padding(.horizontal, InterfaceScale.metric(8))
-            .padding(.vertical, InterfaceScale.metric(3))
-            .background(Color(hex: 0xC9D2FF), in: Capsule())
-            .fixedSize()
-            .accessibilityLabel("New post")
-    }
-}
-
-private struct ForumGalleryPostHeader: View {
-    let model: AppModel
-    let post: ForumPost
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(7)) {
-            if let starterMessage = post.firstMessage {
-                ForumPostAuthorName(
-                    presentation: model.authorPresentation(for: starterMessage)
-                )
-                Text("•")
-                    .foregroundStyle(.tertiary)
-            } else if let owner = post.owner {
-                ForumPostAuthorName(
-                    presentation: MessageAuthorPresentation(user: owner, roleColorHex: nil)
-                )
-                Text("•")
-                    .foregroundStyle(.tertiary)
-            }
-            ForumTimestampLabel(
-                date: post.createdAt,
-                exactPrefix: "Posted",
-                open: { model.open(post) }
-            )
-            Spacer(minLength: InterfaceScale.metric(6))
-            if post.thread.isPinned {
-                Image(systemName: "pin.fill").help("Pinned post")
-            }
-            if post.thread.isLocked {
-                Image(systemName: "lock.fill").help("Locked post")
-            }
-        }
-        .font(.interface(.caption))
-        .foregroundStyle(.secondary)
-    }
-}
-
-private struct ForumPostGalleryHero: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-
-    var body: some View {
-        // Only the preview text takes clicks, and only on hidden spoilers;
-        // everything else belongs to the card, which opens the post.
-        ZStack(alignment: .bottomLeading) {
-            ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous)
-                .fill(Color.primary.opacity(0.07))
-                .allowsHitTesting(false)
-
-            if let attachment = post.firstMessage?.attachments.first {
-                ForumPostAttachmentPreview(attachment: attachment, maximumPixelDimension: 1_280)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .allowsHitTesting(false)
-            } else if let previewMessage, !previewMessage.content.isEmpty {
-                ForumPostPreviewText(
-                    model: model,
-                    message: previewMessage,
-                    maximumNumberOfLines: 8,
-                    isEmphasized: model.shouldEmphasizeForumPost(post)
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(InterfaceScale.metric(16))
-            } else {
-                Image(systemName: "bubble.left.and.text.bubble.right")
-                    .font(.interfaceSystem(size: 32, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .allowsHitTesting(false)
-            }
-
-            ForumPostAppliedTags(
-                model: model,
-                channel: channel,
-                post: post,
-                maximumVisibleTags: 3
-            )
-            .padding(InterfaceScale.metric(10))
-            .allowsHitTesting(false)
-        }
-        .frame(height: ForumPostCardMetrics.galleryHeroHeight)
-        .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous))
-        .overlay {
-            ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous)
-                .stroke(.separator.opacity(0.65), lineWidth: 1)
-        }
-    }
-
-    private var previewMessage: Message? {
-        post.mostRecentMessage ?? post.firstMessage
-    }
-}
-
-private struct ForumPostStatusRow: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(7)) {
-            if post.thread.isPinned {
-                Image(systemName: "pin.fill")
-                    .foregroundStyle(.secondary)
-                    .help("Pinned post")
-            }
-            if post.thread.isLocked {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(.secondary)
-                    .help("Locked post")
-            }
-            ForumPostAppliedTags(model: model, channel: channel, post: post)
-            Spacer(minLength: InterfaceScale.metric(6))
-        }
-    }
-}
-
-private struct ForumPostAuthorName: View {
-    @Environment(\.roleColorDisplay) private var roleColorDisplay
-    let presentation: MessageAuthorPresentation
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(4)) {
-            NameRoleColorIndicator(colorHex: presentation.roleColorHex)
-            Text(presentation.user.displayName)
-                .displayNameFont(presentation.user.displayNameStyle?.fontID, textStyle: .caption1)
-                .foregroundStyle(nameColor)
-                .lineLimit(1)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Posted by \(presentation.user.displayName)")
-    }
-
-    private var nameColor: Color {
-        if presentation.user.isBot { return SakuraCordAccentColor.color }
-        return roleColorDisplay == .inNames ? presentation.roleColorHex.map(Color.init(hex:)) ?? .primary : .primary
-    }
-}
-
-private struct ForumPostStarterExcerpt: View {
-    @Environment(\.roleColorDisplay) private var roleColorDisplay
-    let model: AppModel
-    let message: Message
-    let isEmphasized: Bool
-    @State private var authorFont: NSFont?
-
-    var body: some View {
-        let presentation = model.authorPresentation(for: message)
-        return ForumPostPreviewText(
-            model: model,
-            message: message,
-            maximumNumberOfLines: 2,
-            isEmphasized: isEmphasized,
-            prefix: ForumPostPreviewTextView.Prefix(
-                value: authorPrefix(presentation: presentation),
-                accessibilityText: "\(presentation.user.displayName): "
-            )
-        )
-        .task(id: AuthorFontRequest(fontID: presentation.user.displayNameStyle?.fontID, size: authorFontSize)) {
-            authorFont = nil
-            guard let definition = ProfileNameFontCache.customDefinition(for: presentation.user.displayNameStyle?.fontID) else { return }
-            authorFont = try? await ProfileNameFontLoader.shared.font(definition, size: authorFontSize)
-        }
-    }
-
-    private struct AuthorFontRequest: Equatable {
-        let fontID: Int?
-        let size: CGFloat
-    }
-
-    private var authorFontSize: CGFloat {
-        NSFont.interfacePreferredFont(forTextStyle: .body).pointSize
-    }
-
-    /// The author's name, preceded by a role color dot when names show roles
-    /// that way, and followed by the separator before the message.
-    private func authorPrefix(presentation: MessageAuthorPresentation) -> NSAttributedString {
-        let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
-        let value = NSMutableAttributedString()
-        if roleColorDisplay == .nextToNames,
-           let hex = presentation.roleColorHex, hex != 0,
-           let dot = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)?
-               .withSymbolConfiguration(
-                   NSImage.SymbolConfiguration(pointSize: InterfaceScale.fontSize(8), weight: .regular)
-                       .applying(.init(paletteColors: [NSColor(Color(hex: hex))]))
-               )
-        {
-            let attachment = NSTextAttachment()
-            attachment.image = dot
-            attachment.bounds = CGRect(origin: CGPoint(x: 0, y: 1), size: dot.size)
-            value.append(NSAttributedString(attachment: attachment))
-            value.append(NSAttributedString(string: " "))
-        }
-        value.append(NSAttributedString(
-            string: presentation.user.displayName,
-            attributes: [
-                .font: authorFont ?? NSFont.interfaceSystemFont(ofSize: bodySize, weight: .semibold),
-                .foregroundColor: NSColor(nameColor(presentation: presentation)),
-            ]
-        ))
-        value.append(NSAttributedString(
-            string: ": ",
-            attributes: [
-                .font: NSFont.interfaceSystemFont(ofSize: bodySize),
-                .foregroundColor: isEmphasized ? NSColor.labelColor : NSColor.secondaryLabelColor,
-            ]
-        ))
-        return value
-    }
-
-    private func nameColor(presentation: MessageAuthorPresentation) -> Color {
-        if presentation.user.isBot { return SakuraCordAccentColor.color }
-        return roleColorDisplay == .inNames ? presentation.roleColorHex.map(Color.init(hex:)) ?? .primary : .primary
-    }
-}
-
-nonisolated enum ForumPostCardEmphasis: Equatable {
-    case standard
-    case selected
-}
-
-nonisolated enum ForumPostCardPresentationPolicy {
-    static func emphasis(isSelected: Bool, isUnread _: Bool) -> ForumPostCardEmphasis {
-        if isSelected { return .selected }
-        return .standard
-    }
-}
-
-private struct ForumPostAppliedTags: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-    var maximumVisibleTags = 5
-
-    var body: some View {
-        GlassEffectContainer(spacing: InterfaceScale.metric(6)) {
-            HStack(spacing: InterfaceScale.metric(6)) {
-                ForEach(appliedTags.prefix(maximumVisibleTags)) { tag in
-                    HStack(spacing: InterfaceScale.metric(4)) {
-                        ForumTagEmoji(
-                            tag: tag,
-                            customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
-                            size: InterfaceScale.metric(13)
-                        )
-                        Text(tag.name).lineLimit(1)
-                    }
-                    .font(.interface(.caption).weight(.semibold))
-                    .padding(.horizontal, InterfaceScale.metric(8))
-                    .frame(height: InterfaceScale.metric(26))
-                    .glassEffect(.regular, in: Capsule())
-                }
-                if appliedTags.count > maximumVisibleTags {
-                    Text("+\(appliedTags.count - maximumVisibleTags)")
-                        .font(.interface(.caption).weight(.semibold))
-                        .padding(.horizontal, InterfaceScale.metric(8))
-                        .frame(height: InterfaceScale.metric(26))
-                        .glassEffect(.regular, in: Capsule())
-                }
-            }
-        }
-    }
-
-    private var appliedTags: [ForumTag] {
-        channel.availableTags.filter { post.thread.appliedTagIDs.contains($0.id) }
-    }
-}
-
-private struct ForumPostListFooter: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(12)) {
-            ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
-            ForumPostMessageCount(model: model, post: post)
-            ForumTimestampLabel(
-                date: post.lastActivityAt,
-                exactPrefix: "Last activity",
-                open: { model.open(post) }
-            )
-            Spacer()
-        }
-        .font(.interface(.caption))
-        .foregroundStyle(.secondary)
-    }
-}
-
-private struct ForumPostGalleryFooter: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(10)) {
-            ForumPostMessageCount(model: model, post: post)
-            Spacer()
-            ForumPostSummaryReactionPill(model: model, channel: channel, post: post)
-        }
-        .font(.interface(.callout))
-        .foregroundStyle(.secondary)
-    }
-}
-
-private struct ForumPostMessageCount: View {
-    let model: AppModel
-    let post: ForumPost
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(4)) {
-            Image(systemName: "bubble.left.fill")
-            Text(messageCount.formatted())
-            if unreadCount > 0 {
-                Text("(\(unreadCount.formatted()) New)")
-                    .fontWeight(.semibold)
-                    .foregroundStyle(SakuraCordAccentColor.color)
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-    }
-
-    private var unreadCount: Int {
-        model.forumUnreadMessageCount(post)
-    }
-
-    private var messageCount: Int {
-        ForumPostMessageCountPresentation.count(
-            threadMessageCount: post.thread.messageCount
-        )
-    }
-
-    private var accessibilityText: String {
-        let messages = messageCount == 1 ? "message" : "messages"
-        guard unreadCount > 0 else {
-            return "\(messageCount) \(messages)"
-        }
-        let newMessages = unreadCount == 1 ? "new message" : "new messages"
-        return "\(messageCount) \(messages), \(unreadCount) \(newMessages)"
-    }
-}
-
-nonisolated enum ForumPostMessageCountPresentation {
-    static func count(threadMessageCount: Int) -> Int {
-        max(0, threadMessageCount)
     }
 }
 
@@ -1244,239 +660,6 @@ nonisolated enum ForumPostReactionPresentation {
             return EmojiReference(id: id, name: value.emojiName ?? "emoji").rawToken
         }
         return value.emojiName
-    }
-}
-
-private struct ForumPostSummaryReactionPill: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-
-    var body: some View {
-        if let reaction = displayedReaction {
-            MessageReactionPill(
-                reaction: reaction,
-                emojiURL: MessageReactionPresentation.emojiURL(
-                    for: reaction,
-                    customEmojiURLsByID: model.customEmojiURLsByID
-                ),
-                react: toggleDisplayedReaction,
-                loadReactors: loadDisplayedReactionReactors
-            )
-            .fixedSize()
-            .disabled(model.guildTimeoutUntil(in: post.id, guildID: post.thread.guildID) != nil)
-        }
-    }
-
-    private var displayedReaction: Reaction? {
-        ForumPostReactionPresentation.displayedReaction(
-            reactions: post.firstMessage?.reactions ?? [],
-            defaultReaction: channel.defaultReaction
-        )
-    }
-
-    private func toggleDisplayedReaction() {
-        guard let message = post.firstMessage, let reaction = displayedReaction else {
-            return
-        }
-        Task { await model.toggleReaction(reaction.emoji, on: message) }
-    }
-
-    private func loadDisplayedReactionReactors() async {
-        guard let message = post.firstMessage, let reaction = displayedReaction else {
-            return
-        }
-        await model.loadReactionReactors(reaction, on: message)
-    }
-}
-
-private struct ForumPostCardChrome<Content: View>: View {
-    let model: AppModel
-    let channel: Channel
-    let post: ForumPost
-    let content: Content
-    @State private var isDeleteConfirmationPresented = false
-
-    init(
-        model: AppModel,
-        channel: Channel,
-        post: ForumPost,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.model = model
-        self.channel = channel
-        self.post = post
-        self.content = content()
-    }
-
-    var body: some View {
-        let emphasis = ForumPostCardPresentationPolicy.emphasis(
-            isSelected: model.openThread?.id == post.id,
-            isUnread: model.isForumPostUnread(post)
-        )
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                Button {
-                    model.open(post)
-                } label: {
-                    ConcentricRectangle(
-                        cornerRadius: ForumPostCardMetrics.cornerRadius,
-                        style: .continuous
-                    )
-                    .fill(
-                        emphasis == .selected
-                            ? Color.primary.opacity(0.055)
-                            : Color.clear
-                    )
-                    .contentShape(
-                        ConcentricRectangle(
-                            cornerRadius: ForumPostCardMetrics.cornerRadius,
-                            style: .continuous
-                        )
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(post.thread.name)
-                .accessibilityValue(model.shouldEmphasizeForumPost(post) ? "Unread" : "Read")
-                .accessibilityHint("Opens this post as a thread")
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay {
-                ConcentricRectangle(
-                    cornerRadius: ForumPostCardMetrics.cornerRadius,
-                    style: .continuous
-                )
-                .stroke(
-                    emphasis == .selected
-                        ? Color.primary.opacity(0.24)
-                        : Color(nsColor: .separatorColor),
-                    lineWidth: 1
-                )
-                .allowsHitTesting(false)
-            }
-            .overlay {
-                let canManage = model.canManageForumPosts
-                let canArchive = model.canArchiveForumPost(post)
-                let canEditTags = model.canEditForumPostTags(post)
-                let canDelete = model.canDeleteForumPost(post)
-                ForumPostContextMenuBridge(
-                    tags: channel.availableTags,
-                    appliedTagIDs: post.thread.appliedTagIDs,
-                    customEmojiURLsByID: model.customEmojiURLsByID,
-                    isArchived: post.thread.isArchived,
-                    isLocked: post.thread.isLocked,
-                    isPinned: post.thread.isPinned,
-                    isUnread: model.isForumPostUnread(post),
-                    isMutationPending:
-                        model.isForumNotificationMutationPending(post.id),
-                    notificationSettings: post.thread.notificationSettings,
-                    inheritedNotificationLevel:
-                        model.inheritedForumPostNotificationLevel(post),
-                    requiresTag: channel.requiresForumTag,
-                    canManage: canManage,
-                    canArchive: canArchive,
-                    canEditTags: canEditTags,
-                    canDelete: canDelete,
-                    markRead: {
-                        model.markConversationRead(channelID: post.id)
-                    },
-                    mute: { duration in
-                        model.setForumPostMute(
-                            true,
-                            until: duration.endDate(),
-                            for: post
-                        )
-                    },
-                    unmute: {
-                        model.setForumPostMute(false, until: nil, for: post)
-                    },
-                    setNotificationLevel: { level in
-                        model.setForumPostNotificationLevel(level, for: post)
-                    },
-                    copyLink: copyForumPostLink,
-                    copyThreadID: {
-                        copyToPasteboard(post.id.description)
-                    },
-                    toggleTag: toggleTag,
-                    toggleArchive: {
-                        Task {
-                            await model.updateForumPost(
-                                post, mutation: .archived(!post.thread.isArchived)
-                            )
-                        }
-                    },
-                    toggleLock: {
-                        Task {
-                            await model.updateForumPost(
-                                post, mutation: .locked(!post.thread.isLocked)
-                            )
-                        }
-                    },
-                    togglePin: {
-                        Task {
-                            await model.updateForumPost(
-                                post, mutation: .pinned(!post.thread.isPinned)
-                            )
-                        }
-                    },
-                    delete: {
-                        isDeleteConfirmationPresented = true
-                    }
-                )
-            }
-            .contentShape(
-                ConcentricRectangle(
-                    cornerRadius: ForumPostCardMetrics.cornerRadius,
-                    style: .continuous
-                )
-            )
-            .accessibilityElement(children: .contain)
-            .confirmationDialog(
-                "Delete this post?",
-                isPresented: $isDeleteConfirmationPresented
-            ) {
-                Button("Delete Post", role: .destructive) {
-                    Task { await model.deleteForumPost(post) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will permanently delete the post and all of its replies.")
-            }
-    }
-
-    private func copyForumPostLink() {
-        copyToPasteboard(
-            ForumPostContextValue.link(
-                guildID: post.thread.guildID ?? channel.guildID ?? model.selectedGuildID,
-                threadID: post.id
-            )
-        )
-    }
-
-    private func copyToPasteboard(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-
-    private func toggleTag(_ tagID: ForumTagID) {
-        guard let tag = channel.availableTags.first(where: { $0.id == tagID }),
-              model.canToggleForumTag(tag, on: post)
-        else { return }
-        var tags = Set(post.thread.appliedTagIDs)
-        if tags.contains(tagID) {
-            tags.remove(tagID)
-        } else if tags.count < 5 {
-            tags.insert(tagID)
-        }
-        Task { await model.updateForumPost(post, mutation: .tags(Array(tags))) }
-    }
-}
-
-nonisolated enum ForumPostContextValue {
-    static func link(guildID: GuildID?, threadID: ChannelID) -> String {
-        let guild = guildID?.description ?? "@me"
-        return "https://discord.com/channels/\(guild)/\(threadID)"
     }
 }
 

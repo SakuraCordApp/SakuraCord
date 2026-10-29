@@ -97,20 +97,20 @@ struct NativeTimelineInviteLayout {
     }
 
     init(reference: ServerInviteReference? = nil, index: Int, origin: CGPoint, maximumWidth: CGFloat,
-         model: AppModel?, isOwnMessage: Bool, fillsWidth: Bool = false, preview: NativeServerCardContent? = nil,
+         source: AppModel?, isOwnMessage: Bool, fillsWidth: Bool = false, preview: NativeServerCardContent? = nil,
          integratesWithBubble: Bool = false) {
         self.reference = reference
         self.integratesWithBubble = integratesWithBubble
         componentID = "server-invite:\(index):\(reference?.code ?? preview?.guildID.description ?? "")"
-        let entry = reference.flatMap { model?.serverInvites.entries[$0] }
+        let entry = reference.flatMap { source?.inviteEntry(for: $0) }
         invite = entry?.isUnavailable == true ? nil : entry?.invite
         content = preview ?? invite.map(NativeServerCardContent.init)
         gradientColor = content?.brandColor ?? entry?.adaptiveColor
         isUnavailable = entry?.isUnavailable == true
         error = entry?.error ?? invite.flatMap {
-            model?.serverRailGuildsByID[$0.guildID] == nil ? $0.unsupportedJoinReason : nil
+            source?.presentationGuild($0.guildID) == nil ? $0.unsupportedJoinReason : nil
         }
-        isExpanded = preview != nil || reference.map { model?.serverInvites.expanded.contains($0) == true } == true
+        isExpanded = preview != nil || reference.map { source?.isInviteExpanded($0) == true } == true
         let width = fillsWidth || integratesWithBubble ? maximumWidth : min(isUnavailable ? InterfaceScale.metric(432) : InterfaceScale.metric(302), maximumWidth)
         let inset = integratesWithBubble ? 0 : InterfaceScale.metric(16)
         let originX = origin.x, originY = origin.y, inner = max(1, width - inset * 2)
@@ -128,7 +128,7 @@ struct NativeTimelineInviteLayout {
         if let invite = content {
             cursor = originY + (integratesWithBubble ? 0 : InterfaceScale.metric(116))
             let identityInset = integratesWithBubble ? InterfaceScale.metric(60) : inset
-            inviterAvatar = Self.appendIdentity(invite, currentUserID: model?.currentUser?.id,
+            inviterAvatar = Self.appendIdentity(invite, currentUserID: source?.currentUserID,
                                                 originX: originX + identityInset, width: inner - (integratesWithBubble ? identityInset : 0), cursor: &cursor, labels: &labels)
             if integratesWithBubble { cursor = max(cursor, iconFrame.maxY) + InterfaceScale.metric(8) }
             Self.appendCounts(invite, originX: originX + inset, width: inner, cursor: &cursor, labels: &labels, dots: &countDots)
@@ -198,7 +198,7 @@ struct NativeTimelineInviteLayout {
         self.countDots = countDots
         self.labels = labels
         self.traits = traits
-        (buttonTitle, isDisabled) = Self.action(for: invite, entry: entry, model: model)
+        (buttonTitle, isDisabled) = Self.action(for: invite, entry: entry, source: source)
     }
 
     private static func appendIdentity(_ invite: NativeServerCardContent, currentUserID: UserID?, originX: CGFloat, width: CGFloat,
@@ -242,11 +242,11 @@ struct NativeTimelineInviteLayout {
         cursor += InterfaceScale.metric(20)
     }
 
-    private static func action(for invite: ServerInvite?, entry: ServerInvitePresentationStore.Entry?, model: AppModel?)
+    private static func action(for invite: ServerInvite?, entry: NativeTimelineInviteEntry?, source: AppModel?)
         -> (String, Bool) {
-        if let invite, model?.serverInvites.leaving.contains(invite.guildID) == true { return ("Leaving…", true) }
-        if let invite, model?.serverInvites.joining.contains(invite.guildID) == true { return ("Joining…", true) }
-        if let member = invite.flatMap({ model?.serverRailGuildsByID[$0.guildID] }) {
+        if let invite, source?.isLeavingInviteGuild(invite.guildID) == true { return ("Leaving…", true) }
+        if let invite, source?.isJoiningInviteGuild(invite.guildID) == true { return ("Joining…", true) }
+        if let member = invite.flatMap({ source?.presentationGuild($0.guildID) }) {
             return (member.isUnavailable ? "Server unavailable" : "Go to Server", member.isUnavailable)
         }
         if invite?.unsupportedJoinReason != nil { return ("Open in Discord", false) }

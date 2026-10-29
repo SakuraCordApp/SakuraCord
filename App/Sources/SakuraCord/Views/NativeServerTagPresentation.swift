@@ -42,8 +42,36 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
     let line: CTLine
     let width: CGFloat
     private let glyphBounds: CGRect
+    /// Whether the whole text fits at its own width, which any wider
+    /// maximum reproduces exactly.
+    private let isNatural: Bool
+
+    /// Untruncated lines by text and font: a row laid out again at another
+    /// width, as on every frame of a resize, reuses its identity's line.
+    private static let untruncated = Mutex<[UntruncatedKey: NativeIdentityTextPresentation]>([:])
+
+    /// Fonts are immutable.
+    private struct UntruncatedKey: Hashable, @unchecked Sendable {
+        let value: String
+        let font: NSFont
+    }
 
     init(_ value: String, font: NSFont, maximumWidth: CGFloat = .greatestFiniteMagnitude) {
+        let key = UntruncatedKey(value: value, font: font)
+        if let cached = Self.untruncated.withLock({ $0[key] }), cached.width <= maximumWidth {
+            self = cached
+            return
+        }
+        self.init(uncached: value, font: font, maximumWidth: maximumWidth)
+        guard isNatural else { return }
+        let presentation = self
+        Self.untruncated.withLock { cache in
+            if cache.count >= 4_096 { cache.removeAll(keepingCapacity: true) }
+            cache[key] = presentation
+        }
+    }
+
+    private init(uncached value: String, font: NSFont, maximumWidth: CGFloat) {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
@@ -56,7 +84,9 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         } else {
             line = source
         }
-        width = min(max(0, maximumWidth), ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))))
+        let lineWidth = ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
+        width = min(max(0, maximumWidth), lineWidth)
+        isNatural = naturalWidth <= maximumWidth && lineWidth <= maximumWidth
         let bounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
         if bounds.isNull || bounds.isEmpty {
             var ascent: CGFloat = 0

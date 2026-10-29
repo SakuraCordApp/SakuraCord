@@ -124,10 +124,8 @@ enum MentionAttachmentRenderer {
                     pointSize: iconSize,
                     weight: .semibold
                 ).applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-                if let icon = NSImage(
-                    systemSymbolName: systemImage,
-                    accessibilityDescription: nil
-                )?.withSymbolConfiguration(iconConfiguration) {
+                if let icon = SakuraCordSystemSymbol.image(named: systemImage)?
+                    .withSymbolConfiguration(iconConfiguration) {
                     let iconRect = NSRect(
                         x: horizontalPadding,
                         y: (height - iconSize) / 2,

@@ -418,6 +418,18 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .notificationMessageSound,
+            page: .notifications,
+            storage: .appWide(key: NotificationSoundKeys.messageSoundID),
+            defaultValue: .string(NotificationSoundLibrary.bundledID)
+        ),
+        SettingsPreferenceRegistration(
+            id: .notificationCallRingtone,
+            page: .notifications,
+            storage: .appWide(key: NotificationSoundKeys.callRingtoneID),
+            defaultValue: .string(NotificationSoundLibrary.bundledID)
+        ),
+        SettingsPreferenceRegistration(
             id: .notificationDockBadge,
             page: .notifications,
             storage: .appWide(key: "notifications.dockBadge"),
@@ -572,6 +584,30 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             id: .accessibilityDisableSendAnimations,
             page: .accessibility,
             storage: .appWide(key: "settings.accessibility.disableMessageSendingAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityDisableAllAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableAllAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityDisableSidebarAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableSidebarAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityDisableSideChatAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableSideChatAnimations"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .accessibilityDisableOverlayAnimations,
+            page: .accessibility,
+            storage: .appWide(key: "settings.accessibility.disableOverlayAnimations"),
             defaultValue: .bool(false)
         ),
         SettingsPreferenceRegistration(
@@ -939,6 +975,9 @@ final class SettingsPreferenceStore {
         var values: [String: SettingsPreferenceValue] = [:]
         for registration in registrations {
             guard let value = value(for: registration.id, accountID: accountID) else { continue }
+            // A custom sound is a machine-local file bookmark, like the download folder,
+            // so only its ID would travel and Import would silently restore Default.
+            if value == .string(NotificationSoundLibrary.customID) { continue }
             values[registration.id.rawValue] = value
         }
         return SettingsPreferenceExport(scope: scope, page: page, values: values)

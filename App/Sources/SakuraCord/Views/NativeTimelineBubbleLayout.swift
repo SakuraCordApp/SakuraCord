@@ -32,26 +32,10 @@ enum NativeTimelineBubbleLayout {
 
     static func context(
         for message: Message,
-        model: AppModel?
+        source: AppModel?
     ) -> Context {
-        let isEnabled =
-            model?.messageAppearance(for: message.channelID) == .bubbles
-                && !message.type.hasGeneratedContent
-        // Standard message layout never consumes bubble identity. Avoid an
-        // account-wide channel search for every newly paginated message.
-        guard isEnabled else {
-            return Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
-        }
-        let selectedChannel = model?.selectedChannel
-        let channel = selectedChannel?.id == message.channelID
-            ? selectedChannel
-            : model?.messagePresentationChannelsByID[message.channelID]
-        return Context(
-            isEnabled: isEnabled,
-            isOutgoing: isEnabled
-                && message.author.id == model?.currentUser?.id,
-            showsAvatar: showsAvatar(in: channel)
-        )
+        source?.bubbleContext(for: message)
+            ?? Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
     }
 
     /// One-to-one conversations leave incoming bubbles without avatars.

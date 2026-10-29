@@ -65,16 +65,26 @@ public extension DiscordRESTProvider {
     /// locally unless a Gateway event or session reset changed it meanwhile;
     /// the matching `CHANNEL_DELETE` then finds nothing left to remove.
     func leaveGroupDirectMessage(_ channelID: ChannelID, silently: Bool) async throws {
+        try await deletePrivateChannel(
+            channelID, kind: .groupDirectMessage,
+            query: [URLQueryItem(name: "silent", value: silently ? "true" : "false")]
+        )
+    }
+
+    /// Close DM: the same bodyless `DELETE /channels/{channel}` without `silent`,
+    /// which hides a 1:1 DM without deleting its messages.
+    func closeDirectMessage(_ channelID: ChannelID) async throws {
+        try await deletePrivateChannel(channelID, kind: .directMessage, query: [])
+    }
+
+    private func deletePrivateChannel(_ channelID: ChannelID, kind: ChannelKindValue, query: [URLQueryItem]) async throws {
         guard let user = currentUser else { throw ChatProviderError.unauthenticated }
-        guard privateChannel(id: channelID)?.kind == .groupDirectMessage else {
-            throw ChatProviderError.invalidRequest("This group is no longer available.")
+        guard privateChannel(id: channelID)?.kind == kind else {
+            throw ChatProviderError.invalidRequest("This conversation is no longer available.")
         }
         let generation = profileEditingGeneration
         let revision = privateChannelRevisions[channelID, default: 0]
-        try await requestEmpty(
-            "/channels/\(channelID)", method: "DELETE",
-            query: [URLQueryItem(name: "silent", value: silently ? "true" : "false")]
-        )
+        try await requestEmpty("/channels/\(channelID)", method: "DELETE", query: query)
         guard currentUser?.id == user.id, profileEditingGeneration == generation,
               privateChannelRevisions[channelID, default: 0] == revision
         else { return }

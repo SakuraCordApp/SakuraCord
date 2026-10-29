@@ -4,10 +4,13 @@ nonisolated extension SettingsCatalog {
     static let privacySafetyPage = page(
         .privacySafety, group: .dataSecurity, title: "Privacy", image: "hand.raised",
         help: "Control local privacy, external links, and scoped data clearing.",
-        keywords: ["links", "security", "typing indicators", "clear data", "ignore", "ignored accounts"]
+        keywords: ["links", "security", "typing indicators", "clear data", "ignore", "ignored accounts", "block", "blocked accounts"]
     )
 
     static let privacySafetyControls: [SettingsControlMetadata] = [
+        control(.blockedAccounts, page: .privacySafety, section: .privacyRelationships, label: "Blocked Accounts",
+                help: "Manage accounts you have blocked on Discord.", keywords: ["block", "unblock", "people", "relationships"],
+                owner: .appModel, scope: .discordSynchronized, persistence: .discordManaged, reset: .notApplicable),
         control(.ignoredAccounts, page: .privacySafety, section: .privacyRelationships, label: "Ignored Accounts",
                 help: "Manage accounts you have ignored on Discord.", keywords: ["ignore", "unignore", "people", "relationships"],
                 owner: .appModel, scope: .discordSynchronized, persistence: .discordManaged, reset: .notApplicable),

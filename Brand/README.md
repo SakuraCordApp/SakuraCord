@@ -12,6 +12,8 @@ consumes them:
 - `App/Packaging/SakuraCord Nightly.icon` — violet nightly-build app icon.
 - `App/Packaging/SakuraCord Debug.icon` — blueprint debug-build app icon.
 - `App/Packaging/SakuraCord Flower.icon` — flower-only alternate app icon.
+- `App/Packaging/SakuraCord Contributor.icon` — twin-bud contributor profile
+  badge. It is not compiled into the app; its exports live in `Brand/Logos`.
 
 `script/build_and_run.sh` compiles the variant matching the build: debug
 builds are packaged as `SakuraCord Debug`, nightly-track release builds as

@@ -55,7 +55,10 @@ struct AccountSwitcherView: View {
             DiscordLoginView(
                 showsCancel: true,
                 networkingEnabled: !model.isDiscordNetworkingDisabled,
-                savedAccountIDs: Set(model.savedAccounts.map(\.accountID))
+                // Allow importing a fresh session for accounts Discord rejected.
+                savedAccountIDs: Set(
+                    model.savedAccounts.filter { !$0.requiresSignIn }.map(\.accountID)
+                )
             ) { credential in
                 let connected = await model.connectPendingAuthenticatedAccount(
                     credential,
@@ -100,7 +103,7 @@ struct AccountSwitcherView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
-            Text("Manage accounts.")
+            Text("Manage accounts")
                 .font(.interface(.title).bold())
                 .foregroundStyle(.primary)
             Text("Switch between saved sessions or add another Discord account.")
@@ -168,8 +171,12 @@ struct AccountSwitcherView: View {
                     .frame(width: InterfaceScale.metric(78), height: 1)
                     .accessibilityHidden(true)
             } else {
-                Button("Switch") {
-                    switchToAccount(account)
+                Button(account.requiresSignIn ? "Log in" : "Switch") {
+                    if account.requiresSignIn {
+                        showsLogin = true
+                    } else {
+                        switchToAccount(account)
+                    }
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.capsule)

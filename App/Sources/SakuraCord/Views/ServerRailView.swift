@@ -70,11 +70,10 @@ struct ServerRailContainer: View {
             }
         }
         .windowModal(isPresented: $invites.showsJoinDialog, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular,
-                     isConcealed: { model.serverInvites.captcha.challenge != nil }, content: { JoinServerView(model: model) })
+                     isConcealed: { model.captcha.challenge != nil }, content: { JoinServerView(model: model) })
         .windowModal(item: Bindable(invites.creation).presentation, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             ServerInviteCreationView(model: model, presentation: $0)
         }
-        .modifier(HumanCaptchaPresentation(store: invites.captcha))
         .alert("Mark All Servers as Read?",
                isPresented: Binding(get: { readAllConfirmationSession != nil },
                                     set: { if !$0 { readAllConfirmationSession = nil } }),
@@ -125,7 +124,9 @@ struct ServerRailView: View {
     var moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void = { _, _ in }
     var combineGuilds: (GuildID, GuildID) -> Void = { _, _ in }
     let contextMenuActions: ServerRailContextMenuActions
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var folderLayoutRevision = 0
     @State private var drag = ServerRailDragController()
 
@@ -165,6 +166,8 @@ struct ServerRailView: View {
         }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
+        // Scrolled icons must not draw beneath the window's traffic lights.
+        .scrollEdgeEffectStyle(.hard, for: .top)
         .background {
             ScrollInputPerformanceProbeAttachment(surface: .serverList)
                 .allowsHitTesting(false)
@@ -507,7 +510,9 @@ struct GuildRailButton: View {
     var loadsImageWhenOffscreen = false
     var morphsInFolder = false
     let action: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @Environment(ServerRailDragController.self) private var drag
     @Environment(\.serverRailIsDragPreview) private var isDragPreview
     @Environment(\.serverRailFolderIndicatorsInOverlay) private var folderIndicatorsInOverlay
@@ -673,7 +678,9 @@ struct ServerRailSelectionIndicator: View {
     var isVisible = true
     var animatesStateChanges = true
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
 
     var body: some View {
         ServerRailIndicatorShape(

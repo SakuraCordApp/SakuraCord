@@ -112,7 +112,12 @@ public actor KeychainCredentialStore: CredentialStore {
 
     public func store(_ credential: Data, accountID: String) async throws -> CredentialHandle {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: accountID]
-        SecItemDelete(query as CFDictionary)
+        // Replace an existing session in place. Its access list may not let
+        // this build delete it, such as an item another SakuraCord build
+        // created, but still permits updating the stored value.
+        let update = SecItemUpdate(query as CFDictionary, [kSecValueData as String: credential] as CFDictionary)
+        if update == errSecSuccess { return CredentialHandle(accountID: accountID) }
+        guard update == errSecItemNotFound else { throw KeychainError(status: update) }
         var insert = query
         insert[kSecValueData as String] = credential
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly

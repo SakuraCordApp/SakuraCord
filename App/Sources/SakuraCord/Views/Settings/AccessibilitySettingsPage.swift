@@ -38,12 +38,32 @@ struct AccessibilitySettingsPage: View {
 
     private var motionSection: some View {
         Section {
-            Toggle("Disable message sending animations", isOn: $value.disablesMessageSendingAnimations)
+            Toggle("Disable all animations", isOn: $value.disablesAllAnimations)
                 .tint(SakuraCordAccentColor.color)
-                .settingsControlAnchor(.accessibilityDisableSendAnimations, state: state)
+                .settingsControlAnchor(.accessibilityDisableAllAnimations, state: state)
+            Group {
+                Toggle("Disable sidebar and member list animations", isOn: animationBinding(\.disablesSidebarAnimations))
+                    .settingsControlAnchor(.accessibilityDisableSidebarAnimations, state: state)
+                Toggle("Disable side chat and full width animations", isOn: animationBinding(\.disablesSideChatAnimations))
+                    .settingsControlAnchor(.accessibilityDisableSideChatAnimations, state: state)
+                Toggle("Disable search, popover and overlay animations", isOn: animationBinding(\.disablesOverlayAnimations))
+                    .settingsControlAnchor(.accessibilityDisableOverlayAnimations, state: state)
+                Toggle("Disable message sending animations", isOn: animationBinding(\.disablesMessageSendingAnimations))
+                    .settingsControlAnchor(.accessibilityDisableSendAnimations, state: state)
+            }
+            .tint(SakuraCordAccentColor.color)
+            .disabled(value.disablesAllAnimations)
         } header: {
             Text("Motion", bundle: #bundle)
         }
+    }
+
+    /// A category switch, which shows on while "Disable all animations" is.
+    private func animationBinding(_ keyPath: WritableKeyPath<AccessibilitySettingsSnapshot, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { value.disablesAllAnimations || value[keyPath: keyPath] },
+            set: { value[keyPath: keyPath] = $0 }
+        )
     }
 
     private var cosmeticsSection: some View {

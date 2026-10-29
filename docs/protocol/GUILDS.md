@@ -22,13 +22,12 @@ membership. Already-member cards navigate without posting another acceptance.
 Leaving is `DELETE /users/@me/guilds/{guild}` with `lurking:false`; guild owners
 cannot use it. `GUILD_DELETE unavailable:true` is an outage, not a leave.
 
-Supported invite and discoverable-server join hCaptcha retains the original
-body/context and permits one replay after human completion on the same provider and Gateway session. Empty
-solutions, cancellation, account replacement, another challenge or ambiguous
-failure terminate that attempt. Unsupported/malformed challenges and account
-restrictions report a join error without stopping unrelated account traffic.
-Widget test-token verification does not establish successful handling of a live
-join CAPTCHA.
+Invite and discoverable-server joins follow the shared
+[Human CAPTCHA](../PROTOCOL_BASELINE.md#human-captcha) contract. The replay keeps
+the body, including its Gateway `session_id`, and context, and is cancelled if
+that session is no longer current. Ambiguous failure is never
+replayed. Unsupported/malformed challenges and account restrictions report a
+join error without stopping unrelated account traffic.
 
 Onboarding invites can enter the native membership flow. Member screening and
 special guest/target flows remain delegated to Discord. Unknown catalogue or

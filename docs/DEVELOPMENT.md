@@ -59,7 +59,8 @@ contacting Discord:
 | --- | --- |
 | `./script/build_and_run.sh --offline-sign-in` | Welcome animation and shared native sign-in flow |
 | `./script/build_and_run.sh --offline-long-server-list` | Extended server rail |
-| `./script/build_and_run.sh --offline-forum-performance` | Large forum |
+| `./script/build_and_run.sh --offline-forum-performance` | Large forum; post previews arrive 1.2 s after each page |
+| `./script/build_and_run.sh --offline-forum-performance-autoscroll` | Same forum, then a 15-second, 2,000-point/second scroll; writes frame timing and layout-jump counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` and logs a `ForumBenchmark:` line |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-chat-voice-performance` | Large native timeline where every fifth message is a voice message |
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
@@ -76,6 +77,14 @@ account is read or changed, and no Discord transport is created. Hosted CAPTCHA
 verification requires Discord and is excluded from this offline fixture.
 **Build & Run Offline Sign In** rebuilds and launches the same mode from Codex.
 
+The side chat motion benchmark is not one of these scenes. Its code compiles
+only when `SAKURACORD_MOTION_BENCHMARK=1` is set at build time, so normal Debug
+and Release builds contain none of it. `./script/motion_benchmark.sh` sets the
+variable, builds that benchmark build, records the open, close, and widen
+motions of fixture threads, and reports them. A benchmark build is a developer
+tool, not a release build; it is packaged to the same `dist/` path as a normal
+build, so package again without the variable before using that app otherwise.
+
 Use `./script/build_and_run.sh run` to launch the normal app and restore an
 existing SakuraCord session through the configured credential mode. Read-only authenticated verification
 may observe existing state and allow normal connection or session-maintenance
@@ -91,8 +100,8 @@ normal use. Use explicit scoped fixtures for mutations and local tests for
 bulk actions that would otherwise affect unrelated conversations.
 
 Use `./script/build_and_run.sh run-release` to build the optimized release
-configuration, apply the release credential restrictions, and launch the
-staged app bundle.
+configuration and launch the staged app bundle. It uses Keychain unless the
+machine credential preference is enabled (see Local credential mode).
 
 ## Settings cards in chat
 
@@ -137,8 +146,11 @@ clones and worktrees use the same mode. Inspect or disable it with:
 
 An explicit `SAKURACORD_INSECURE_DEBUG_CREDENTIALS=0` or `1` overrides the
 machine setting for one invocation. Existing checkout-local settings are read
-only when no machine preference exists. Release and update-enabled packages
-always use Keychain and reject an explicit insecure override.
+only when no machine preference exists. `run-release` on this machine honours
+the machine preference, so rebuilt local Releases do not trigger a Keychain
+prompt each time. `package-release` and update-enabled packages always use
+Keychain, and every release mode rejects an explicit
+`SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1`.
 
 Both Run and Build & Run verify the packaged credential mode and signature
 before launch. A stale bundle with a different credential mode is refused.

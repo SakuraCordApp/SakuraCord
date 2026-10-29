@@ -334,7 +334,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onFirstResponderChange = { [weak coordinator = context.coordinator] in
             coordinator?.firstResponderDidChange($0)
         }
-        textView.isEditable = context.environment.isEnabled
+        textView.isEditable = context.environment.acceptsComposerInput
         textView.isSelectable = true
         textView.isRichText = true
         textView.importsGraphics = false
@@ -386,7 +386,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.canReceiveAttachments = { [weak coordinator = context.coordinator] in
             coordinator?.parent.canReceiveAttachments() ?? false
         }
-        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.isEnabled
+        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.acceptsComposerInput
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)
 
         let scrollView = NSScrollView()
@@ -438,8 +438,8 @@ struct ComposerTextView: NSViewRepresentable {
             && conversationID == context.coordinator.parent.conversationID
         context.coordinator.parent = self
         sendTransitionAnchor?.textView = textView
-        textView.isEditable = context.environment.isEnabled
-        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.isEnabled
+        textView.isEditable = context.environment.acceptsComposerInput
+        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.acceptsComposerInput
         context.coordinator.updateCompositionState(from: textView, deferringNotification: true)
 
         textView.onReturn = { [weak coordinator = context.coordinator] event in
@@ -1415,4 +1415,11 @@ final class ComposerFocusSurfaceView: NSView {
     override func mouseDown(with _: NSEvent) {
         focus()
     }
+}
+
+private extension EnvironmentValues {
+    /// A composer in a pane leaving the workspace takes no text: its thread
+    /// has closed, and a picker closing with it can hand the editor focus
+    /// back.
+    var acceptsComposerInput: Bool { isEnabled && !isLeavingWorkspace }
 }

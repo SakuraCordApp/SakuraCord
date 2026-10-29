@@ -94,8 +94,24 @@ struct DiscordCaptchaView: NSViewRepresentable {
             }
             hcaptcha.validate(on: host, resetOnError: false) { [weak self] result in
                 guard let self else { return }
-                let token = try? result.dematerialize()
-                Task { @MainActor in self.finish(token: token) }
+                // Closing the picture challenge is the person backing out, not a failure.
+                let (token, closed): (String?, Bool) = {
+                    do {
+                        return (try result.dematerialize(), false)
+                    } catch HCaptchaError.challengeClosed {
+                        return (nil, true)
+                    } catch {
+                        return (nil, false)
+                    }
+                }()
+                Task { @MainActor in
+                    if closed, let onCancel = self.onCancel, !self.finished {
+                        self.stop()
+                        onCancel()
+                    } else {
+                        self.finish(token: token)
+                    }
+                }
             }
         }
 

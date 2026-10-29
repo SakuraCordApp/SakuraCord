@@ -115,7 +115,7 @@ actor DiscordSessionAuthenticator {
             requestContext: .login,
             maximumRetries: 2
         )
-        if let captcha = captchaChallenge(data: data, response: response) {
+        if let captcha = DiscordCaptchaChallenge(data: data, status: response.statusCode) {
             pendingCaptchaRequest = PendingCaptchaRequest(
                 challengeID: captcha.id,
                 path: "/auth/login",
@@ -169,25 +169,18 @@ actor DiscordSessionAuthenticator {
         if pending.replayDelay > 0 {
             try await Task.sleep(for: .seconds(pending.replayDelay))
         }
-        var headers = ["X-Captcha-Key": solutionToken]
-        if let sessionID = challenge.sessionID {
-            headers["X-Captcha-Session-Id"] = sessionID
-        }
-        if let rqtoken = challenge.rqtoken {
-            headers["X-Captcha-Rqtoken"] = rqtoken
-        }
         let (data, response) = try await send(
             path: pending.path,
             method: "POST",
             body: pending.body,
             fingerprint: pending.fingerprint,
             installationID: pending.installationID,
-            additionalHeaders: headers,
+            additionalHeaders: challenge.replayHeaders(solution: solutionToken),
             retriesAlreadyPerformed: 1,
             requestContext: .login,
             maximumRetries: 2
         )
-        if captchaChallenge(data: data, response: response) != nil {
+        if DiscordCaptchaChallenge(data: data, status: response.statusCode) != nil {
             throw AuthenticationError.captchaRequired
         }
         try validateAuthenticationResponse(data: data, response: response)
@@ -293,7 +286,7 @@ actor DiscordSessionAuthenticator {
             body: body,
             installationID: installationID
         )
-        if let captcha = captchaChallenge(data: data, response: response) {
+        if let captcha = DiscordCaptchaChallenge(data: data, status: response.statusCode) {
             pendingRemoteAuthCaptchaRequest = PendingRemoteAuthCaptchaRequest(
                 challengeID: captcha.id,
                 body: body,
@@ -322,22 +315,15 @@ actor DiscordSessionAuthenticator {
         if pending.replayDelay > 0 {
             try await Task.sleep(for: .seconds(pending.replayDelay))
         }
-        var headers = ["X-Captcha-Key": solutionToken]
-        if let sessionID = challenge.sessionID {
-            headers["X-Captcha-Session-Id"] = sessionID
-        }
-        if let rqtoken = challenge.rqtoken {
-            headers["X-Captcha-Rqtoken"] = rqtoken
-        }
         let (data, response) = try await send(
             path: "/users/@me/remote-auth/login",
             method: "POST",
             body: pending.body,
             installationID: pending.installationID,
-            additionalHeaders: headers,
+            additionalHeaders: challenge.replayHeaders(solution: solutionToken),
             retriesAlreadyPerformed: 1
         )
-        if captchaChallenge(data: data, response: response) != nil {
+        if DiscordCaptchaChallenge(data: data, status: response.statusCode) != nil {
             throw AuthenticationError.captchaRequired
         }
         try validateAuthenticationResponse(data: data, response: response)
@@ -581,21 +567,6 @@ actor DiscordSessionAuthenticator {
         }
     }
 
-    private func captchaChallenge(data: Data, response: HTTPURLResponse) -> DiscordCaptchaChallenge? {
-        guard !(200 ..< 300).contains(response.statusCode),
-              let payload = try? JSONDecoder().decode(CaptchaResponse.self, from: data),
-              let siteKey = payload.siteKey,
-              !siteKey.isEmpty else { return nil }
-        return DiscordCaptchaChallenge(
-            id: UUID(),
-            siteKey: siteKey,
-            rqdata: payload.rqdata,
-            rqtoken: payload.rqtoken,
-            sessionID: payload.sessionID,
-            shouldServeInvisible: payload.shouldServeInvisible ?? false
-        )
-    }
-
     private static func retryAfter(data: Data, response: HTTPURLResponse) -> TimeInterval {
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         let bodyValue = (object?["retry_after"] as? NSNumber)?.doubleValue
@@ -763,22 +734,6 @@ private nonisolated struct LoginResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case token, ticket, mfa, totp, sms, backup
         case loginInstanceID = "login_instance_id"
-    }
-}
-
-private nonisolated struct CaptchaResponse: Decodable {
-    let siteKey: String?
-    let rqdata: String?
-    let rqtoken: String?
-    let sessionID: String?
-    let shouldServeInvisible: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case siteKey = "captcha_sitekey"
-        case rqdata = "captcha_rqdata"
-        case rqtoken = "captcha_rqtoken"
-        case sessionID = "captcha_session_id"
-        case shouldServeInvisible = "should_serve_invisible"
     }
 }
 

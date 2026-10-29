@@ -1356,7 +1356,6 @@ struct GatewayMessageAckDTO: Decodable {
 
 struct GatewayThreadListSyncDTO: Decodable {
     var guildID: String
-    var channelIDs: [String]
     var threads: [ChannelDTO]
     var members: [ThreadMemberDTO]
     /// Each synced thread's latest message, shown in its timeline card.
@@ -1364,7 +1363,6 @@ struct GatewayThreadListSyncDTO: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
-        case channelIDs = "channel_ids"
         case threads, members
         case mostRecentMessages = "most_recent_messages"
     }
@@ -1372,7 +1370,6 @@ struct GatewayThreadListSyncDTO: Decodable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         guildID = try values.decode(String.self, forKey: .guildID)
-        channelIDs = try values.decodeIfPresent([String].self, forKey: .channelIDs) ?? []
         threads =
             try values.decodeIfPresent(
                 LossyList<ChannelDTO>.self, forKey: .threads

@@ -10,7 +10,7 @@ enum ProfilePresentationLayout {
 
 struct ProfilePresentationContent<Footer: View>: View {
     @Environment(\.serverTagCardModel) private var model
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     let presentation: ProfilePresentationState
     var layout: ProfilePresentationLayout = .popover
     var maximumPopoverHeight: CGFloat = InterfaceScale.metric(560)
@@ -90,7 +90,7 @@ struct ProfilePresentationContent<Footer: View>: View {
             .id(presentation.member.id)
             .transition(.opacity)
             .animation(
-                layout == .popover && !reduceMotion ? .easeOut(duration: 0.12) : nil,
+                layout == .popover && !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .easeOut(duration: 0.12) : nil,
                 value: presentation.member.id
             )
         }
@@ -607,7 +607,7 @@ private struct ProfileHeroSection: View {
                 showsServerTag: !cosmeticPolicy.disables(.serverTag, for: member.id),
                 isBot: profile?.user.isBot ?? member.user.isBot,
                 isVerifiedApp: isVerifiedApp,
-                badges: profile.map(SakuraCordSponsors.badges) ?? [],
+                badges: profile.map(SakuraCordBadges.badges) ?? [],
                 premiumSince: profile?.premiumSince,
                 premiumGuildSince: profile?.premiumGuildSince,
                 nameSize: 22,
@@ -1005,8 +1005,8 @@ private struct ProfileBadgeIcon: View {
 
     var body: some View {
         Group {
-            if badge.id == SakuraCordSponsors.badge.id {
-                Image("SakuraCordSponsorBadge", bundle: .module)
+            if let imageName = SakuraCordBadges.imageName(for: badge) {
+                Image(imageName, bundle: .module)
                     .resizable()
                     .scaledToFit()
             } else if let iconURL = badge.iconURL {

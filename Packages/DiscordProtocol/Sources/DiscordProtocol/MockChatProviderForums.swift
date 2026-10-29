@@ -5,6 +5,11 @@ public extension MockChatProvider {
     func forumPosts(in channelID: ChannelID, query: ForumPostQuery) async throws
         -> ForumPostPage
     {
+        let page = try forumPage(in: channelID, query: query)
+        return forumPreviewsHydrateLate ? hydratingPreviewsLater(page, in: channelID) : page
+    }
+
+    private func forumPage(in channelID: ChannelID, query: ForumPostQuery) throws -> ForumPostPage {
         forumQueriesByChannel[channelID, default: []].append(query)
         guard snapshot.channels.contains(where: { $0.id == channelID && $0.kind == .forum }) else {
             throw ChatProviderError.channelNotFound
@@ -42,6 +47,36 @@ public extension MockChatProvider {
         return ForumPostPage(posts: posts, hasMore: false, nextOffset: nil)
     }
 
+    /// Strips a page's previews and republishes them later, like the live
+    /// provider's post-data hydration, so cards first lay out without them.
+    /// The delay outlasts the first paint, so previews land on visible cards.
+    private func hydratingPreviewsLater(_ page: ForumPostPage, in channelID: ChannelID) -> ForumPostPage {
+        var stripped = page
+        for index in stripped.posts.indices {
+            // Like a live catalogue entry, the stripped post keeps its
+            // activity order through its last message ID.
+            if let latest = stripped.posts[index].mostRecentMessage {
+                stripped.posts[index].thread.lastMessageID = .messageSearchBoundary(at: latest.timestamp)
+            }
+            stripped.posts[index].firstMessage = nil
+            stripped.posts[index].mostRecentMessage = nil
+        }
+        let postIDs = Set(page.posts.map(\.id))
+        Task {
+            do {
+                try await Task.sleep(for: .milliseconds(1_200))
+            } catch {
+                return
+            }
+            // Republish current records, so a post edited or deleted during
+            // the delay is not restored.
+            let current = (forumPostsByChannel[channelID] ?? []).filter { postIDs.contains($0.id) }
+            guard !current.isEmpty else { return }
+            continuation?.yield(.forumPostPreviewsChanged(channelID: channelID, posts: current))
+        }
+        return stripped
+    }
+
     func forumQueries(in channelID: ChannelID) -> [ForumPostQuery] {
         forumQueriesByChannel[channelID] ?? []
     }
@@ -75,12 +110,11 @@ public extension MockChatProvider {
                 $0.id == draft.channelID && $0.kind == .forum
             })
         else { throw ChatProviderError.channelNotFound }
-        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let selectedTags = DiscordRESTProvider.orderedUniqueForumTagIDs(
             draft.appliedTagIDs,
             availableTags: channel.availableTags
         )
-        guard (1 ... 100).contains(title.count), draft.content.count <= 2_000,
+        guard let title = ThreadNamePolicy.validatedName(draft.title), draft.content.count <= 2_000,
               !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
               || !draft.attachments.isEmpty,
               !channel.requiresForumTag || !selectedTags.isEmpty,
@@ -136,18 +170,100 @@ public extension MockChatProvider {
     }
 
     func createThread(_ draft: CreateThreadDraft) async throws -> MessageThreadSummary {
-        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let channel = snapshot.channels.first(where: { $0.id == draft.channelID }),
+        guard let name = ThreadNamePolicy.validatedName(draft.name),
+              let channel = snapshot.channels.first(where: { $0.id == draft.channelID }),
               channel.kind == .text || (channel.kind == .announcement && !draft.isPrivate),
-              (1 ... 100).contains(name.count), DiscordRESTProvider.validForumAutoArchiveDurations.contains(draft.autoArchiveDuration)
+              draft.starterMessageID == nil || !draft.isPrivate,
+              DiscordRESTProvider.validForumAutoArchiveDurations.contains(draft.autoArchiveDuration)
         else { throw ChatProviderError.invalidRequest("The thread does not meet this channel's requirements.") }
-        nextMessageID += 1
-        let thread = MessageThreadSummary(id: ChannelID(rawValue: nextMessageID), guildID: channel.guildID, parentID: channel.id, name: name,
+        let threadID: ChannelID
+        var starterIndex: Int?
+        if let starterID = draft.starterMessageID {
+            guard let index = messagesByChannel[channel.id]?.firstIndex(where: { $0.id == starterID }),
+                  messagesByChannel[channel.id]?[index].referencedThreadID == nil
+            else { throw ChatProviderError.invalidRequest("This message cannot start a thread.") }
+            threadID = ChannelID(rawValue: starterID.rawValue)
+            starterIndex = index
+        } else {
+            nextMessageID += 1
+            threadID = ChannelID(rawValue: nextMessageID)
+        }
+        let thread = MessageThreadSummary(id: threadID, guildID: channel.guildID, parentID: channel.id, name: name,
             memberCount: 1, ownerID: currentUser.id, createdAt: .now,
-            autoArchiveDuration: draft.autoArchiveDuration, notificationSettings: ThreadNotificationSettings()
+            autoArchiveDuration: draft.autoArchiveDuration,
+            notificationSettings: ThreadNotificationSettings(joinedAt: .now), isPrivate: draft.isPrivate
         )
         messagesByChannel[thread.id] = []
+        if let starterIndex, var starter = messagesByChannel[channel.id]?[starterIndex] {
+            starter.thread = thread
+            starter.flags.insert(.hasThread)
+            messagesByChannel[channel.id]?[starterIndex] = starter
+            continuation?.yield(.messageUpdated(starter))
+        }
+        forumPostsByChannel[channel.id, default: []].insert(ForumPost(thread: thread, owner: currentUser), at: 0)
+        publishMockThreads(parentID: channel.id, joinedThreadsChanged: true)
         return thread
+    }
+
+    func setThreadMembership(
+        threadID: ChannelID,
+        isJoined: Bool,
+        location: ThreadMembershipLocation
+    ) async throws {
+        guard let (parentID, index) = mockThreadIndex(threadID) else { throw ChatProviderError.channelNotFound }
+        forumPostsByChannel[parentID]?[index].thread.notificationSettings =
+            isJoined ? ThreadNotificationSettings(joinedAt: .now) : nil
+        publishMockThreads(parentID: parentID, joinedThreadsChanged: true)
+    }
+
+    func threadBrowserPage(in parentID: ChannelID, query: ThreadBrowserQuery) async throws
+        -> ForumPostPage
+    {
+        guard snapshot.channels.contains(where: {
+            $0.id == parentID && [.text, .announcement, .forum].contains($0.kind)
+        }) else { throw ChatProviderError.channelNotFound }
+        let posts = (forumPostsByChannel[parentID] ?? []).filter {
+            ForumPostQueryPolicy.matchesTags($0, selectedTagIDs: query.selectedTagIDs, tagMatch: query.tagMatch)
+        }
+        switch query.scope {
+        case .archived(let offset):
+            let archived = posts.filter(\.thread.isArchived).sorted { $0.lastActivityAt > $1.lastActivityAt }
+            let start = min(max(0, offset), archived.count)
+            let end = min(start + ThreadBrowserQuery.pageSize, archived.count)
+            return ForumPostPage(
+                posts: Array(archived[start ..< end]), hasMore: end < archived.count,
+                nextOffset: end < archived.count ? end : nil, totalResults: archived.count
+            )
+        case .search(let text):
+            let matches = posts.filter { $0.thread.name.localizedCaseInsensitiveContains(text) }
+                .sorted { $0.lastActivityAt > $1.lastActivityAt }
+            return ForumPostPage(posts: matches, hasMore: false, nextOffset: nil, totalResults: matches.count)
+        }
+    }
+
+    func activeThreads(in parentID: ChannelID) async -> [ForumPost] {
+        (forumPostsByChannel[parentID] ?? []).filter { !$0.thread.isArchived }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+    }
+
+    private func mockThreadIndex(_ threadID: ChannelID) -> (ChannelID, Int)? {
+        for (parentID, posts) in forumPostsByChannel {
+            if let index = posts.firstIndex(where: { $0.id == threadID }) { return (parentID, index) }
+        }
+        return nil
+    }
+
+    /// Publishes a parent's threads like Discord's thread events, keeping the
+    /// joined-thread snapshot and message thread cards in step.
+    private func publishMockThreads(parentID: ChannelID, joinedThreadsChanged: Bool = false) {
+        let posts = forumPostsByChannel[parentID] ?? []
+        if joinedThreadsChanged {
+            let joined = posts.filter { !$0.thread.isArchived && $0.thread.notificationSettings != nil }
+            snapshot.activeJoinedThreads.removeAll { $0.parentID == parentID }
+            snapshot.activeJoinedThreads += joined.map(\.thread)
+            continuation?.yield(.activeJoinedThreadsChanged(snapshot.activeJoinedThreads))
+        }
+        continuation?.yield(.forumPostsChanged(channelID: parentID, posts: posts))
     }
 
     func updateForumPost(_ post: ForumPost, mutation: ForumPostMutation) async throws
@@ -159,6 +275,12 @@ public extension MockChatProvider {
         else { throw ChatProviderError.channelNotFound }
         var updated = posts[index]
         switch mutation {
+        case .name(let value):
+            guard let name = ThreadNamePolicy.validatedName(value) else {
+                throw ChatProviderError.invalidRequest("Names must be between 1 and 100 characters.")
+            }
+            updated.thread.name = name
+            updated.thread.isArchived = false
         case .tags(let tags):
             guard let channel = snapshot.channels.first(where: { $0.id == parentID }) else {
                 throw ChatProviderError.channelNotFound
@@ -183,8 +305,7 @@ public extension MockChatProvider {
         }
         posts[index] = updated
         forumPostsByChannel[parentID] = posts
-        continuation?.yield(
-            .forumPostsChanged(channelID: parentID, posts: forumPostsByChannel[parentID] ?? []))
+        publishMockThreads(parentID: parentID, joinedThreadsChanged: true)
         return updated
     }
 
@@ -248,6 +369,36 @@ public extension MockChatProvider {
         continuation?.yield(
             .forumPostsChanged(channelID: parentID, posts: posts)
         )
+    }
+
+    /// Like Discord's channel store, known message threads also form their
+    /// parent's thread list; one archived thread exercises the thread browser.
+    internal static func seedThreadCatalogue(
+        forumPosts: inout [ChannelID: [ForumPost]],
+        messages: inout [ChannelID: [Message]],
+        channels: [Channel],
+        owner: User
+    ) {
+        for (channelID, channelMessages) in messages {
+            for thread in channelMessages.compactMap(\.thread) where thread.parentID == channelID {
+                forumPosts[channelID, default: []].append(ForumPost(thread: thread))
+            }
+        }
+        let parentID = ChannelID(rawValue: 216)
+        let archived = MessageThreadSummary(
+            id: ChannelID(rawValue: 903), guildID: channels.first { $0.id == parentID }?.guildID,
+            parentID: parentID, name: "Archived showcase notes", messageCount: 1, memberCount: 1,
+            isArchived: true, ownerID: owner.id, archiveTimestamp: .now.addingTimeInterval(-3 * 86_400),
+            createdAt: .now.addingTimeInterval(-10 * 86_400), autoArchiveDuration: 4_320
+        )
+        forumPosts[parentID, default: []].append(ForumPost(thread: archived, owner: owner))
+        messages[archived.id] = [
+            Message(
+                id: MessageID(rawValue: 609_101), channelID: archived.id, author: owner,
+                content: "Notes from an earlier showcase review.",
+                timestamp: .now.addingTimeInterval(-6 * 86_400), guildID: archived.guildID
+            )
+        ]
     }
 
     internal static func makeForumPosts(

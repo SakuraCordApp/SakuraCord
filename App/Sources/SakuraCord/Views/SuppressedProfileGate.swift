@@ -95,7 +95,7 @@ struct SuppressedProfileGate: View {
             }
         case .blocked:
             ModalGlassButton(symbol: "hand.raised.slash", label: "Unblock", isLoading: isPending, fillsWidth: fillsWidth, height: buttonHeight) {
-                model.removeRelationship(with: user, as: .unblock)
+                model.removeRelationship(with: user.id, as: .unblock)
             }
         }
     }

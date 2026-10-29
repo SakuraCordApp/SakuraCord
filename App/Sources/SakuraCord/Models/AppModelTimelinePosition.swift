@@ -5,10 +5,29 @@ extension AppModel {
     // Guild pages retain sidebar selection while replacing its conversation.
     func isConversationPresented(_ channelID: ChannelID) -> Bool {
         guard onboardingEntryGuildID == nil else { return false }
-        if openThread?.id == channelID { return true }
+        // A thread withheld while its access is resolved again is not viewed.
+        // A thread neither in its pane nor at full width is not viewed.
+        if openThread?.id == channelID {
+            return openThreadResolution == nil
+                && (isThreadFullWidth || workspacePresentation.paneSideConversation != nil)
+        }
         guard !isThreadFullWidth, selectedChannelID == channelID else { return false }
         guard guildWorkspacePage != nil else { return true }
-        return !hasThreadPane && customizationPreviewChannel?.id == channelID
+        return presentedSideConversation?.capabilities.presentsPrimaryConversation == true
+    }
+
+    /// The open thread's timeline has left the window while the thread
+    /// stays open: it is not viewed, and it comes back where the reader
+    /// left it.
+    func suspendOpenThreadPresentation() {
+        guard let threadID = openThread?.id, !isConversationPresented(threadID) else { return }
+        threadTimelinePosition.restore = threadTimelinePosition.reading
+        _ = readState.updatePresentation(
+            channelID: threadID,
+            isPresented: false,
+            initialPositionEstablished: false,
+            hasReachedReadBoundary: false
+        )
     }
 
     func suspendSelectedConversationPresentation() {
@@ -181,9 +200,15 @@ extension AppModel {
         }
     }
 
-    /// Releases a held visit. A scroll clamped at the newest edge reports no
-    /// new position, so an already visible newest message is acknowledged here.
+    /// Releases a held backlog, but not Mark Unread's hold.
     func reportTimelineScrollTowardNewest(channelID: ChannelID) {
+        guard readState.presentations[channelID]?.isHeldUntilSelectionChange != true else { return }
+        releaseHeldVisit(channelID: channelID)
+    }
+
+    /// A scroll clamped at the newest edge reports no new position, so an
+    /// already visible newest message is acknowledged here.
+    func releaseHeldVisit(channelID: ChannelID) {
         guard readState.holdsAutomaticAcknowledgement(channelID),
               isConversationPresented(channelID),
               let target = readState.unblockAutomaticAcknowledgement(channelID: channelID)

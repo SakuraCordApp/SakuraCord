@@ -11,9 +11,9 @@ source "$ROOT_DIR/script/release_metadata.sh"
 source "$ROOT_DIR/script/debug_credentials_config.sh"
 
 case "$MODE" in
-  package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
+  package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-forum-performance-autoscroll|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
   *)
-    echo "usage: $0 [package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-forum-performance-autoscroll|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
@@ -288,6 +288,16 @@ open_app() {
 open_offline_app() { open_app --args --offline; }
 open_offline_long_server_list() { open_app --args --offline-long-server-list; }
 open_offline_forum_performance() { open_app --args --offline-forum-performance; }
+open_offline_forum_performance_autoscroll() {
+  # `open` does not hand this shell's environment to the app, so forward the
+  # requested result path explicitly.
+  if [[ -n "${SAKURACORD_PERFORMANCE_RESULT_PATH:-}" ]]; then
+    open_app --env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH" \
+      --args --offline-forum-performance-autoscroll
+  else
+    open_app --args --offline-forum-performance-autoscroll
+  fi
+}
 open_offline_chat_performance() { open_app --args --offline-chat-performance; }
 open_offline_chat_performance_autoscroll() {
   open_app --args --offline-chat-performance-autoscroll
@@ -339,6 +349,7 @@ case "$MODE" in
   --offline-sign-in) open_app --args --offline-sign-in ;;
   --offline-long-server-list) open_offline_long_server_list ;;
   --offline-forum-performance) open_offline_forum_performance ;;
+  --offline-forum-performance-autoscroll) open_offline_forum_performance_autoscroll ;;
   --offline-chat-performance) open_offline_chat_performance ;;
   --offline-chat-performance-autoscroll) open_offline_chat_performance_autoscroll ;;
   --offline-chat-performance-live-autoscroll) open_offline_chat_performance_live_autoscroll ;;

@@ -559,6 +559,8 @@ extension NativeTimelineRowPainter {
                     cornerRadius: region.cornerRadius,
                     fillsFrame: false
                 )
+            } else if let placeholder = region.placeholder?.image {
+                drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: false)
             } else {
                 systemSymbol("photo", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(22))
             }
@@ -588,6 +590,8 @@ extension NativeTimelineRowPainter {
                let image = mediaImage(for: .media(previewURL))
             {
                 drawImage(image, in: region.frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
+            } else if let placeholder = region.placeholder?.image {
+                drawImage(placeholder, in: region.frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
             } else if region.isVideo {
                 systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
             }
@@ -900,95 +904,6 @@ extension NativeTimelineRowPainter {
             concentricRoundedRect: frame,
             cornerRadius: cornerRadius
         ).fill()
-    }
-
-    /// Discord's thread card: the name and message count, then the thread's
-    /// latest message or an empty state.
-    static func threadSummary(
-        _ thread: MessageThreadSummary,
-        preview: Message?,
-        message: Message,
-        model: AppModel?,
-        in frame: CGRect,
-        bubbleRegion: NativeTimelineBubbleRegion? = nil
-    ) {
-        if let bubbleRegion {
-            bubbleIntegratedSection(frame, bubbleRegion: bubbleRegion, accentColor: nil,
-                drawsTopSeparator: frame.minY - bubbleRegion.frame.minY > 8.5, drawsNeutralRail: false)
-        } else {
-            NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
-            NSBezierPath(concentricRoundedRect: frame, cornerRadius: InterfaceScale.metric(8)).fill()
-        }
-        let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion)
-        let secondary = NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion)
-        let inset: CGFloat = bubbleRegion == nil ? InterfaceScale.metric(10) : 0
-        let nameFont = NSFont.interfaceSystemFont(ofSize: 13, weight: .semibold)
-        let nameWidth = min(
-            NativeTimelineReplyMetrics.textWidth(thread.name, font: nameFont),
-            frame.width * 0.6
-        )
-        text(
-            thread.name,
-            in: CGRect(x: frame.minX + inset, y: frame.minY + InterfaceScale.metric(7), width: nameWidth, height: InterfaceScale.metric(18)),
-            font: nameFont,
-            color: foreground
-        )
-        text(
-            NativeTimelineThreadCard.countText(thread),
-            in: CGRect(
-                x: frame.minX + inset + nameWidth + InterfaceScale.metric(8),
-                y: frame.minY + InterfaceScale.metric(7),
-                width: max(1, frame.width - nameWidth - inset * 2 - InterfaceScale.metric(8)),
-                height: InterfaceScale.metric(18)
-            ),
-            font: .interfaceSystemFont(ofSize: 13, weight: .semibold),
-            color: bubbleRegion?.isOutgoing == true ? .white : .sakuraCordAccentColor
-        )
-
-        let rowFrame = CGRect(
-            x: frame.minX + inset,
-            y: frame.minY + InterfaceScale.metric(28),
-            width: frame.width - inset * 2,
-            height: InterfaceScale.metric(20)
-        )
-        let activity = NativeTimelineThreadCard.activityText(
-            thread.lastMessageID?.createdAt ?? thread.createdAt ?? thread.id.createdAt
-        )
-        let activityFont = NSFont.interfaceSystemFont(ofSize: 11)
-        let activityWidth = NativeTimelineReplyMetrics.textWidth(activity, font: activityFont)
-        text(
-            activity,
-            in: CGRect(x: rowFrame.maxX - activityWidth, y: rowFrame.minY + 1, width: activityWidth, height: InterfaceScale.metric(18)),
-            font: activityFont,
-            color: bubbleRegion?.isOutgoing == true ? secondary : .tertiaryLabelColor
-        )
-        let bodyFrame = CGRect(
-            x: rowFrame.minX,
-            y: rowFrame.minY,
-            width: max(0, rowFrame.width - activityWidth - InterfaceScale.metric(8)),
-            height: rowFrame.height
-        )
-        guard !thread.isArchived, thread.messageCount > 0, let preview else {
-            text(
-                thread.isArchived || thread.messageCount > 0
-                    ? "There are no recent messages in this thread."
-                    : "There are no messages in this thread yet.",
-                in: bodyFrame,
-                font: NativeTimelineReplyMetrics.summaryFont,
-                color: secondary
-            )
-            return
-        }
-        replyPreviewLine(
-            MessageReplyPreview(message: preview),
-            frame: bodyFrame,
-            avatarFrame: NativeTimelineAvatarPresentation.replyAvatarFrame(in: bodyFrame),
-            trailingInset: 0,
-            showsReplyMention: false,
-            message: message,
-            model: model,
-            foregroundColor: bubbleRegion?.isOutgoing == true ? foreground : nil
-        )
     }
 
     static func reaction(
@@ -1394,14 +1309,20 @@ extension NativeTimelineRowPainter {
     static func componentSelectLeadingImage(
         _ leading: SelectionFieldLeading
     ) -> NSImage? {
-        let url: URL? = switch leading {
-        case .role(_, let iconURL, _): iconURL
-        case .remoteImage(let url, _, _): url
-        case .none, .systemImage, .text: nil
-        }
-        guard let url else { return nil }
-        if url.isFileURL { return NSImage(contentsOf: url) }
+        guard let url = leading.imageURL else { return nil }
+        if url.isFileURL { return fileImage(at: url) }
         return mediaImage(for: .media(url, maximumPixelDimension: 64))
+    }
+
+    /// Loaded once per file: rows draw their selects on every redraw, and
+    /// reading the file each time held up the motions that redraw them.
+    private static let fileImages = NSCache<NSURL, NSImage>()
+
+    private static func fileImage(at url: URL) -> NSImage? {
+        if let image = fileImages.object(forKey: url as NSURL) { return image }
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        fileImages.setObject(image, forKey: url as NSURL)
+        return image
     }
 
     static func componentFile(

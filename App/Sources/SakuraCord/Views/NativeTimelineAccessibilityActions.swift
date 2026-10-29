@@ -191,7 +191,7 @@ extension NativeTimelineCanvasView {
                 Self.copyText(message.content)
                 return true
             },
-            NSAccessibilityCustomAction(name: "Copy Link") { [weak self] in
+            NSAccessibilityCustomAction(name: "Copy Message Link") { [weak self] in
                 guard let self else { return false }
                 Self.copyText(self.messageLink(for: message))
                 return true

@@ -20,10 +20,10 @@ nonisolated enum SidebarThreadPolicy {
     struct Candidate: Sendable {
         let thread: MessageThreadSummary
         let latestMessageID: MessageID?
-        /// Discord's raw `hasUnread`, independent of notification settings.
+        /// Discord's `hasUnread` for a joined thread. Like Discord's thread
+        /// row, it ignores the parent's mute and unread setting; only the
+        /// thread's own mute dims the row.
         let hasUnread: Bool
-        /// The read-state unread presentation used for the row's emphasis.
-        let showsUnread: Bool
         let mentionCount: Int
     }
 
@@ -89,7 +89,7 @@ nonisolated enum SidebarThreadPolicy {
         return visible.map {
             SidebarThreadRow(
                 thread: $0.thread,
-                isUnread: $0.showsUnread,
+                isUnread: $0.hasUnread,
                 mentionCount: $0.mentionCount,
                 isMuted: isMuted($0.thread, now: now)
             )
@@ -176,8 +176,7 @@ extension AppModel {
         return SidebarThreadPolicy.Candidate(
             thread: thread,
             latestMessageID: latestMessageID,
-            hasUnread: entry?.isUnread ?? false,
-            showsUnread: readState.unread(channelID: thread.id),
+            hasUnread: entry.map { $0.isUnread && readState.countsMentions($0) } ?? false,
             mentionCount: readState.mentions(channelID: thread.id)
         )
     }
@@ -197,22 +196,30 @@ extension AppModel {
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
         onboarding.presentedGuildID = nil
-        startConversationNavigation(to: historyDestination) { model, account in
+        let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
+        if historyDestination == nil, isNavigating(to: target) { return }
+        startConversationNavigation(target: target, to: historyDestination) { model, account in
             let guildID = thread.guildID ?? model.selectedGuildID
             if model.selectedGuildID != guildID {
                 await model.activateGuild(guildID, account: account)
             }
-            guard !Task.isCancelled, model.isCurrentAccountSession(account),
-                  let parentID = thread.parentID,
-                  let parent = model.snapshot?.channels.first(where: { $0.id == parentID }),
-                  model.conversationAccess(for: parent).isReadable else { return }
+            guard !Task.isCancelled, model.isCurrentAccountSession(account) else { return }
+            guard let parentID = thread.parentID,
+                  let parent = model.knownRootChannel(parentID)
+            else {
+                model.errorMessage = "That thread's parent channel has not been discovered yet."
+                return
+            }
+            guard model.conversationAccess(for: parent) != .hidden else {
+                model.errorMessage = "You do not have permission to view that thread."
+                return
+            }
             model.onboarding.presentedGuildID = nil
             if model.selectedChannelID != parentID { model.selectedChannelID = parentID }
             // Establish presentation before loading history so the hidden parent
             // cannot acknowledge messages while the thread occupies the workspace.
             if model.openThread?.id == thread.id {
-                model.isThreadFullWidth = true
-                model.suspendSelectedConversationPresentation()
+                model.presentOpenThreadFullWidth()
             } else {
                 model.openThreadConversation(
                     thread, starter: nil, startedAt: thread.createdAt,

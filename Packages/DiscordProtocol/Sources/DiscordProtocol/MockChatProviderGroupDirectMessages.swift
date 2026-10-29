@@ -42,4 +42,12 @@ public extension MockChatProvider {
         snapshot.channels.removeAll { $0.id == channelID }
         continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
     }
+
+    func closeDirectMessage(_ channelID: ChannelID) async throws {
+        guard snapshot.channels.contains(where: { $0.id == channelID && $0.kind == .directMessage }) else {
+            throw ChatProviderError.invalidRequest("That demo conversation is unavailable.")
+        }
+        snapshot.channels.removeAll { $0.id == channelID }
+        continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
+    }
 }

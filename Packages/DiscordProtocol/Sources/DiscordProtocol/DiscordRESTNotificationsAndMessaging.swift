@@ -563,7 +563,7 @@ extension DiscordRESTProvider {
                 requestID: response.value(forHTTPHeaderField: "x-request-id")
             ), with: response)
         }
-        try validateEmptyResponse(response)
+        try validateEmptyResponse(data, response)
         invalidateReactionReactors(channelID: channelID, messageID: messageID, reactionID: Reaction(emoji: emoji, count: 0).id)
         guard let currentUserID = currentUser?.id,
               var updated = cachedMessages[messageID]

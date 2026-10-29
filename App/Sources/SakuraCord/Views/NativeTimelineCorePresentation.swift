@@ -29,6 +29,10 @@ nonisolated enum TimelineInlineVideoPolicy {
     }
 }
 
+enum NativeTimelinePostStarterDividerMetrics {
+    static var rowHeight: CGFloat { InterfaceScale.metric(25) }
+}
+
 enum NativeTimelineDateSeparatorMetrics {
     static var rowHeight: CGFloat { InterfaceScale.metric(37) }
     static var verticalPadding: CGFloat { InterfaceScale.metric(12) }
@@ -67,7 +71,6 @@ enum NativeTimelineDateSeparatorMetrics {
 enum NativeTimelineUnreadSeparatorMetrics {
     static var rowHeight: CGFloat { InterfaceScale.metric(29) }
     static var capsuleHeight: CGFloat { InterfaceScale.metric(19) }
-    static var verticalPadding: CGFloat { InterfaceScale.metric(5) }
 }
 
 /// Text rules for the timeline thread card, matching Discord's client.
@@ -78,16 +81,25 @@ nonisolated enum NativeTimelineThreadCard {
 
     static func countText(_ thread: MessageThreadSummary) -> String {
         let count = thread.messageCount
-        guard count > 0 else { return "See Thread ›" }
-        guard count > 1 else { return "1 Message ›" }
-        let shown = if count >= 100_000 {
+        guard count > 0 else { return "See Thread" }
+        guard count > 1 else { return "1 Message" }
+        return "\(shownCount(thread)) Messages"
+    }
+
+    /// The count alone, for cards too narrow for the full label.
+    static func compactCountText(_ thread: MessageThreadSummary) -> String? {
+        thread.messageCount > 0 ? shownCount(thread) : nil
+    }
+
+    private static func shownCount(_ thread: MessageThreadSummary) -> String {
+        let count = thread.messageCount
+        return if count >= 100_000 {
             "100k+"
         } else if count >= 50, thread.id.createdAt <= cappedCountCutoff {
             "50+"
         } else {
             "\(count)"
         }
-        return "\(shown) Messages ›"
     }
 
     static func activityText(_ date: Date, now: Date = .now) -> String {
@@ -128,12 +140,12 @@ enum NativeTimelineReplyMetrics {
     static func summary(
         for preview: MessageReplyPreview,
         in message: Message,
-        model: AppModel?
+        model source: AppModel?
     ) -> MessageReplySummary.Prepared {
-        if let model {
+        if let source {
             MessageReplySummary.summary(
                 content: preview.content,
-                mentionLabel: MessageMentionResolver(model: model, message: message).label
+                mentionLabel: MessageMentionResolver(model: source, message: message).label
             )
         } else {
             MessageReplySummary.summary(content: preview.content)
@@ -170,17 +182,17 @@ enum NativeTimelineReplyMetrics {
     static func previewWidth(
         _ preview: MessageReplyPreview?,
         in message: Message,
-        model: AppModel?
+        source: AppModel?
     ) -> CGFloat {
         guard let preview else {
             return textWidth(unavailableText, font: unavailableFont)
         }
-        let presentation = model?.authorPresentation(for: preview, in: message)
+        let presentation = source?.authorPresentation(for: preview, in: message)
         let author = presentation?.user ?? preview.author
         let authorFont = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: authorFont)
-        let showsIndicator = model?.accessibilitySettings.roleColorDisplay == .nextToNames
+        let showsIndicator = source?.roleColorDisplay == .nextToNames
             && presentation?.roleColorHex != nil
-        let summary = summary(for: preview, in: message, model: model).text
+        let summary = summary(for: preview, in: message, model: source).text
         return avatarDiameter
             + horizontalSpacing
             + (showsIndicator ? InterfaceScale.metric(16) : 0)

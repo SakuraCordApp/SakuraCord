@@ -107,6 +107,15 @@ import Testing
 
     store.prepareLaunch(destination: .accountPicker)
     #expect(store.consumeLaunchRestoration(accountID: "100") == nil)
+
+    // Switching back returns to that account's own last conversation.
+    store.prepareAccountSwitch(to: "100")
+    #expect(
+        store.consumeLaunchRestoration(accountID: "100")
+            == SettingsConversationRestoration(accountID: "100", guildID: "10", channelID: "11")
+    )
+    store.prepareAccountSwitch(to: "300")
+    #expect(store.consumeLaunchRestoration(accountID: "300") == nil)
 }
 
 @MainActor

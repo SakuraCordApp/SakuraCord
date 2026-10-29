@@ -83,7 +83,7 @@ extension NativeTimelineCanvasView {
             pollRowIndexes[row.id] = index
             let state = pollStates[row.id] ?? .init()
             if rowFrame(at: index).intersects(visibleRect), let previous = pollSnapshots[row.id], previous.results != poll.results,
-               state.showsResults(for: poll), !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+               state.showsResults(for: poll), AppMotionPolicy.animatesUncategorized {
                 // Bars grow from zero when a vote first reveals the results.
                 let wasShowingResults = state.showsResults(for: previous)
                 let current = pollPresentation(for: row.id)
@@ -152,7 +152,7 @@ extension NativeTimelineCanvasView {
             state.revealsResults.toggle()
             pollStates[id] = state
             if state.revealsResults, poll.results == nil { Task { await model.loadUnknownPollResults(hit.message) } }
-            if state.revealsResults, poll.results != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if state.revealsResults, poll.results != nil, AppMotionPolicy.animatesUncategorized {
                 pollAnimations[id] = (Dictionary(uniqueKeysWithValues: poll.answers.map { ($0.id, 0) }), CACurrentMediaTime())
                 startPollAnimationTicker()
             }

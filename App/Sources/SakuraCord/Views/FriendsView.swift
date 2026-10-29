@@ -129,11 +129,11 @@ private struct FriendRowControls: View {
                         model.acceptFriendRequest(from: row.user)
                     }
                     rowButton("Decline Request", systemImage: "xmark") {
-                        model.removeRelationship(with: row.user, as: .declineIncomingRequest)
+                        model.removeRelationship(with: row.user.id, as: .declineIncomingRequest)
                     }
                 case .outgoingRequest:
                     rowButton("Cancel", systemImage: "xmark") {
-                        model.removeRelationship(with: row.user, as: .cancelOutgoingRequest)
+                        model.removeRelationship(with: row.user.id, as: .cancelOutgoingRequest)
                     }
                 default:
                     rowButton("Message", systemImage: "bubble.left.fill") { model.openDirectMessage(with: row.user) }

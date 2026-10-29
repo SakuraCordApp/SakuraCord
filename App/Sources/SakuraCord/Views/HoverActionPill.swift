@@ -121,9 +121,11 @@ struct HoverActionControlLabel<Content: View>: View {
         content()
             .foregroundStyle(iconColor)
             .frame(width: diameter, height: diameter)
-            .contentShape(Circle())
             .background(backgroundColor, in: Circle())
-            .contentShape(Circle())
+            // Hover tracks the square frame, so clicks and the pointer cover
+            // it too instead of only the circle.
+            .contentShape(Rectangle())
+            .pointerStyle(.link)
             .onModalHover {
                 isHovering = $0
                 onHoverChanged?($0)
