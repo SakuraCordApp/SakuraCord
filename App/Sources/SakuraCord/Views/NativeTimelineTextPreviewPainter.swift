@@ -81,11 +81,7 @@ extension NativeTimelineRowPainter {
             color: palette.name, lineBreakMode: .byTruncatingMiddle
         )
         // A download from the More menu reports here, as on a file card.
-        let detail = NativeTimelineFileCard.detail(for: downloadState, size: preview.attachment.size)
-        text(
-            detail.text + (detail.link ?? ""), in: preview.sizeFrame, font: NativeTimelineFileCard.detailFont,
-            color: downloadState == .failed ? palette.failure : palette.detail
-        )
+        fileCardDetail(state: downloadState, size: preview.attachment.size, in: preview.sizeFrame, palette: palette)
         let icons: [(NativeTimelineTextPreview.Part, String)] = [
             (.language, "chevron.left.forwardslash.chevron.right"),
             (.viewWholeFile, "arrow.up.left.and.arrow.down.right"),

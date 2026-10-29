@@ -28,6 +28,9 @@ struct NativeTimelineVoiceMessageRegion {
     /// What an audio file's player draws on: its capsule, or a bubble.
     var surface: Style = .plain
 
+    /// The style whose colours the player takes.
+    var paletteStyle: Style { style == .audioFile ? surface : style }
+
     var playbackID: VoiceMessagePlaybackID {
         style == .audioFile ? .attachment(messageID, attachmentID: attachment.id) : .message(messageID)
     }
@@ -256,7 +259,7 @@ enum NativeTimelineVoiceMessagePainter {
     static func drawContent(_ region: NativeTimelineVoiceMessageRegion, state: NativeTimelineVoiceMessageDrawState) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         if region.style == .audioFile {
-            drawAudioFilePlayer(region, state: state, palette: Palette(style: region.surface), context: context)
+            drawAudioFilePlayer(region, state: state, palette: Palette(style: region.paletteStyle), context: context)
             return
         }
         let palette = Palette(style: region.style)
@@ -518,9 +521,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         )
         spinner.lineWidth = 2.4 * unit
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            spinner.strokeColor = NativeTimelineVoiceMessagePainter.spinnerColor(
-                for: region.style == .audioFile ? region.surface : region.style
-            ).cgColor
+            spinner.strokeColor = NativeTimelineVoiceMessagePainter.spinnerColor(for: region.paletteStyle).cgColor
         }
     }
 

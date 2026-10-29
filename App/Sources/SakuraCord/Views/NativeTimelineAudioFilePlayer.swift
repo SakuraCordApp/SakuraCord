@@ -14,7 +14,10 @@ extension NativeTimelineVoiceMessagePainter {
         // changes; the opaque play button covers the row's own.
         if state.isResting {
             if state.isPlayHovered { drawPlayButton(region, state: state, palette: palette, context: context) }
-            if state.isSpeedHovered { drawMuteChip(region, palette: palette, isMuted: state.isMuted, context: context) }
+            // A second resting fill brings the row's chip to its hover shade.
+            if state.isSpeedHovered {
+                drawMuteChip(region, fill: palette.chipFill, palette: palette, isMuted: state.isMuted, context: context)
+            }
             drawAudioFileSeekHover(bar, state: state, palette: palette, context: context)
             return
         }
@@ -35,7 +38,10 @@ extension NativeTimelineVoiceMessagePainter {
             context.addPath(CGPath(roundedRect: played, cornerWidth: radius, cornerHeight: radius, transform: nil))
             context.fillPath()
         }
-        drawMuteChip(region, palette: palette, isMuted: state.isMuted, context: context)
+        drawMuteChip(
+            region, fill: state.isSpeedHovered ? palette.chipHoverFill : palette.chipFill,
+            palette: palette, isMuted: state.isMuted, context: context
+        )
         drawAudioFileSeekHover(bar, state: state, palette: palette, context: context)
     }
 
@@ -52,9 +58,9 @@ extension NativeTimelineVoiceMessagePainter {
 
     /// The voice message speed chip's look, holding the mute toggle.
     private static func drawMuteChip(
-        _ region: NativeTimelineVoiceMessageRegion, palette: Palette, isMuted: Bool, context: CGContext
+        _ region: NativeTimelineVoiceMessageRegion, fill: NSColor, palette: Palette, isMuted: Bool, context: CGContext
     ) {
-        context.setFillColor(palette.chipFill.cgColor)
+        context.setFillColor(fill.cgColor)
         context.fillEllipse(in: region.speedFrame)
         NativeTimelineRowPainter.systemSymbol(
             isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
@@ -86,7 +92,7 @@ extension NativeTimelineVoiceMessagePainter {
         guard let duration = state.duration else { return }
         let text = timeText(Double(hover) * duration)
         let font = audioFileBubbleFont
-        let width = ceil((text as NSString).size(withAttributes: [.font: font]).width) + InterfaceScale.metric(14)
+        let width = NativeTimelineRowLayout.measuredTextWidth(text, font: font) + InterfaceScale.metric(14)
         let label = CGRect(
             x: track.minX + track.width * hover - width / 2, y: track.minY - InterfaceScale.metric(26),
             width: width, height: InterfaceScale.metric(18)

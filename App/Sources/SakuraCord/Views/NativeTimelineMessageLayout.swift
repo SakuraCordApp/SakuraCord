@@ -544,14 +544,12 @@ extension NativeTimelineRowLayout {
 
         private mutating func appendAttachments() {
             if !usesComponentsV2, (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) {
-                let style: NativeTimelineVoiceMessageRegion.Style =
-                    usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
                 let voiceY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                 if let region = NativeTimelineVoiceMessageRegion.make(
                     message: message,
                     origin: CGPoint(x: contentX, y: voiceY),
                     maximumWidth: inlineMediaMaximumWidth,
-                    style: style
+                    style: voiceMessageStyle
                 ) {
                     result.voiceMessageRegion = region
                     verticalOffset = region.frame.maxY
@@ -622,6 +620,11 @@ extension NativeTimelineRowLayout {
             result.attachmentRegions = message.attachments.compactMap { regions[$0.id] }
         }
 
+        /// The surface voice messages and audio files draw on.
+        private var voiceMessageStyle: NativeTimelineVoiceMessageRegion.Style {
+            usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
+        }
+
         /// Lays out a file's text preview, or its card with any audio player.
         /// In a bubble, which grows to fit them, both span the column so
         /// hover highlights line up with the bubble.
@@ -659,7 +662,7 @@ extension NativeTimelineRowLayout {
             if isAudio {
                 result.audioFilePlayers.append(.audioFile(
                     in: card, messageID: message.id,
-                    surface: usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
+                    surface: voiceMessageStyle
                 ))
             }
             return card.frame
