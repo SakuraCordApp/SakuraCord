@@ -485,7 +485,10 @@ func `Public beta accents migrate into native-surface single-color themes`(
 }
 
 @MainActor
-@Test func `Animated Randomise publishes intermediate frames before one final commit`() async {
+@Test(arguments: [false, true])
+func `Animated Randomise publishes intermediate frames before one final commit`(
+    changesSystemAccent: Bool
+) async {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
@@ -495,12 +498,24 @@ func `Public beta accents migrate into native-surface single-color themes`(
     let original = themeStore.activeTheme
 
     let frames = ThemeIntermediateFrameProbe()
+    if changesSystemAccent {
+        frames.onIntermediateFrame = {
+            themeStore.setSystemAccentColor(.discordBlurple)
+        }
+    }
     frames.observe(themeStore, original: original)
     await themeStore.randomize(reduceMotion: false)
+    await frames.intermediateFrameAction?.value
     #expect(frames.observedIntermediateFrame)
+    #expect(themeStore.isSystemAccentActive == changesSystemAccent)
     #expect(themeStore.activeTheme == themeStore.committedTheme)
     #expect(themeStore.activeTheme.brightness == original.brightness)
     #expect(themeStore.activeTheme.intensity >= 0.6)
+    let saved = SakuraCordThemeSettingsStore(preferences: preferences).load()
+    let displayed = themeStore.activeTheme
+    themeStore.setSystemAccentColor(nil)
+    #expect(themeStore.activeTheme == saved)
+    #expect(saved.intensity == displayed.intensity)
 }
 
 @MainActor
@@ -857,6 +872,8 @@ func `Public beta accents migrate into native-surface single-color themes`(
 @MainActor
 private final class ThemeIntermediateFrameProbe {
     private(set) var observedIntermediateFrame = false
+    var onIntermediateFrame: (@MainActor () -> Void)?
+    private(set) var intermediateFrameAction: Task<Void, Never>?
 
     func observe(_ store: SakuraCordThemeStore, original: SakuraCordGradientTheme) {
         withObservationTracking {
@@ -870,6 +887,10 @@ private final class ThemeIntermediateFrameProbe {
                    store.committedTheme == original,
                    store.activeTheme.brightness == original.brightness {
                     self.observedIntermediateFrame = true
+                    if let action = self.onIntermediateFrame {
+                        self.onIntermediateFrame = nil
+                        self.intermediateFrameAction = Task { @MainActor in action() }
+                    }
                 }
                 self.observe(store, original: original)
             }

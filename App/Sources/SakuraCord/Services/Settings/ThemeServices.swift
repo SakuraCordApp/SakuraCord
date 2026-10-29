@@ -720,7 +720,6 @@ final class SakuraCordThemeStore {
 
     func setSystemAccentColor(_ color: SakuraCordThemeColor?) {
         guard systemAccentColor != color else { return }
-        interactionGeneration &+= 1
         systemAccentColor = color
         AppAccentColorController.shared.apply(committedTheme, background: committedBackgroundTheme)
         NotificationCenter.default.post(name: .sakuraCordThemeDidCommit, object: nil)
