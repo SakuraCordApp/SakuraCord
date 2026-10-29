@@ -47,7 +47,7 @@ final class VoiceMessagePlaybackStore {
     static let maximumPrefetchedURLs = 512
     /// Starts quicker than this show no spinner, so resuming doesn't flicker.
     static let startSpinnerDelay: Duration = .milliseconds(150)
-    /// Discord remembers where up to 25 messages were left.
+    /// Discord remembers where up to 25 voice messages and audio files were left.
     static let maximumResumePositions = 25
 
     private(set) var activeID: VoiceMessagePlaybackID?
@@ -77,8 +77,8 @@ final class VoiceMessagePlaybackStore {
     /// When play was last pressed, to tell a slow start from a quick one.
     @ObservationIgnored private var playRequestedAt: ContinuousClock.Instant?
     @ObservationIgnored private var resumesAfterScrub = false
-    @ObservationIgnored private var resumePositions: [MessageID: TimeInterval] = [:]
-    @ObservationIgnored private var resumeOrder: [MessageID] = []
+    @ObservationIgnored private var resumePositions: [VoiceMessagePlaybackID: TimeInterval] = [:]
+    @ObservationIgnored private var resumeOrder: [VoiceMessagePlaybackID] = []
     @ObservationIgnored private let defaults: UserDefaults
     /// Re-signs an expiring Discord attachment link before it is fetched.
     @ObservationIgnored var resolveRemoteURL: (@MainActor (URL) async -> URL)?
@@ -101,8 +101,7 @@ final class VoiceMessagePlaybackStore {
     /// The live position of the active item, or a remembered position.
     func position(of id: VoiceMessagePlaybackID) -> TimeInterval {
         if activeID == id { return player?.isPlaying == true ? player?.currentTime ?? pausedPosition : pausedPosition }
-        if case let .message(messageID) = id { return resumePositions[messageID] ?? 0 }
-        return 0
+        return resumePositions[id] ?? 0
     }
 
     func duration(of id: VoiceMessagePlaybackID) -> TimeInterval? {
@@ -245,8 +244,7 @@ final class VoiceMessagePlaybackStore {
     }
 
     private func position(ofInactive id: VoiceMessagePlaybackID) -> TimeInterval {
-        guard case let .message(messageID) = id else { return 0 }
-        return resumePositions[messageID] ?? 0
+        resumePositions[id] ?? 0
     }
 
     private func play() {
@@ -337,7 +335,7 @@ final class VoiceMessagePlaybackStore {
 
     private func finish(_ id: VoiceMessagePlaybackID) {
         guard activeID == id else { return }
-        if case let .message(messageID) = id { forgetResumePosition(messageID) }
+        forgetResumePosition(id)
         if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
         player = nil
         playerFile = nil
@@ -358,12 +356,12 @@ final class VoiceMessagePlaybackStore {
         if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
         player = nil
         playerFile = nil
-        if case let .message(messageID) = id {
-            if rememberingPosition, position > 0.5, duration > 0, position < duration * 0.95 {
-                rememberResumePosition(position, for: messageID)
-            } else {
-                forgetResumePosition(messageID)
-            }
+        // A composer preview's recording is about to go away.
+        let isComposer = if case .composer = id { true } else { false }
+        if !isComposer, rememberingPosition, position > 0.5, duration > 0, position < duration * 0.95 {
+            rememberResumePosition(position, for: id)
+        } else {
+            forgetResumePosition(id)
         }
         activeID = nil
         activeSource = nil
@@ -390,18 +388,18 @@ final class VoiceMessagePlaybackStore {
         }
     }
 
-    private func rememberResumePosition(_ position: TimeInterval, for messageID: MessageID) {
-        resumePositions[messageID] = position
-        resumeOrder.removeAll { $0 == messageID }
-        resumeOrder.append(messageID)
+    private func rememberResumePosition(_ position: TimeInterval, for id: VoiceMessagePlaybackID) {
+        resumePositions[id] = position
+        resumeOrder.removeAll { $0 == id }
+        resumeOrder.append(id)
         while resumeOrder.count > Self.maximumResumePositions {
             resumePositions[resumeOrder.removeFirst()] = nil
         }
     }
 
-    private func forgetResumePosition(_ messageID: MessageID) {
-        resumePositions[messageID] = nil
-        resumeOrder.removeAll { $0 == messageID }
+    private func forgetResumePosition(_ id: VoiceMessagePlaybackID) {
+        resumePositions[id] = nil
+        resumeOrder.removeAll { $0 == id }
     }
 
     /// AVAudioFile needs a file, so remote audio plays from its file in the
