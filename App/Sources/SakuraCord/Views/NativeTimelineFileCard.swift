@@ -90,6 +90,18 @@ struct NativeTimelineFileCard {
         isAudio ? nameFrame.union(detailFrame).union(buttonFrame) : opensInViewer ? buttonFrame : frame
     }
 
+    /// Where a click acts on the file. A text card also acts through the
+    /// detail line's Show in Finder or Retry link.
+    func actionFrames(for state: AttachmentDownloadStore.State?) -> [CGRect] {
+        let detail = Self.detail(for: state, size: attachment.size)
+        guard opensInViewer, detail.link != nil else { return [actionFrame] }
+        let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: Self.detailFont)
+        var link = detailFrame
+        link.origin.x += offset
+        link.size.width = max(0, link.width - offset)
+        return [actionFrame, link]
+    }
+
     /// An audio card's seek row, under the name and ending with the card.
     var playerRowFrame: CGRect {
         let minX = nameFrame.minX

@@ -16,8 +16,6 @@ struct MediaViewerText: View {
     /// Highlighting is skipped past this, where it would hold up the viewer.
     private static let highlightLimit = 128 * 1_024
     private nonisolated static let session = URLSession(configuration: .ephemeral)
-    /// Re-signs an expiring Discord attachment link before it is read.
-    static var resolveRemoteURL: (@MainActor (URL) async -> URL)?
 
     var body: some View {
         Group {
@@ -36,8 +34,11 @@ struct MediaViewerText: View {
         .task(id: url) {
             text = nil
             failed = false
-            let source = await Self.resolveRemoteURL?(url) ?? url
-            guard let loaded = try? await Self.load(source) else {
+            let source = await MediaViewerActionService.resolveRemoteURL?(url) ?? url
+            let loaded = try? await Self.load(source)
+            // A file left for another must not overwrite it.
+            guard !Task.isCancelled else { return }
+            guard let loaded else {
                 failed = true
                 return
             }

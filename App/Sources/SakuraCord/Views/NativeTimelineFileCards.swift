@@ -30,8 +30,10 @@ extension NativeTimelineCanvasView {
 
     func fileCardPointerHit(at local: CGPoint, rowIndex: Int, rowOrigin: CGFloat, message: Message)
         -> ComponentButtonPointerHit? {
-        guard let card = fileCards(at: rowIndex, messageID: message.id).first(where: { $0.actionFrame.contains(local) })
-        else { return nil }
+        let states = model?.attachmentDownloads.states
+        guard let card = fileCards(at: rowIndex, messageID: message.id).first(where: { card in
+            card.actionFrames(for: states?[card.attachment.id]).contains { $0.contains(local) }
+        }) else { return nil }
         return ComponentButtonPointerHit(
             target: .fileCard(messageID: message.id, attachmentID: card.attachment.id),
             rowIndex: rowIndex, message: message, kind: .fileCard(card),

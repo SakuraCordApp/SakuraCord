@@ -622,12 +622,17 @@ extension NativeTimelineCanvasView {
         let local = CGPoint(x: point.x, y: point.y - origin)
         for region in layouts[index].audioPlayers where region.frame.contains(local) && !isConcealedSpoiler(region.attachment, in: region.messageID) {
             let slop: CGFloat = region.style == .audioFile ? 0 : 1
+            // An audio file's bar starts after its time label, which a length
+            // learned after layout can widen.
+            let seekFrame = region.style == .audioFile
+                ? region.seekBarFrame(for: region.knownDuration(in: model?.voiceMessagePlayback))
+                : region.waveformFrame
             let control: VoiceMessageControl
             if region.playFrame.insetBy(dx: -4 * slop, dy: -4 * slop).contains(local) {
                 control = .play
             } else if region.speedFrame.insetBy(dx: -3 * slop, dy: -6 * slop).contains(local) {
                 control = .speed
-            } else if region.waveformFrame.insetBy(dx: -4 * slop, dy: -6 * slop).contains(local) {
+            } else if seekFrame.insetBy(dx: -4 * slop, dy: -6 * slop).contains(local) {
                 control = .waveform
             } else {
                 continue
@@ -674,8 +679,11 @@ extension NativeTimelineCanvasView {
     }
 
     private func scrubVoiceMessage(_ press: VoiceMessagePointerHit, to point: CGPoint) {
-        guard let playback = model?.voiceMessagePlayback else { return }
         let region = press.region
+        // Seeking needs an audio file's length, which its first hover reads.
+        guard let playback = model?.voiceMessagePlayback,
+              region.style != .audioFile || region.knownDuration(in: playback) != nil
+        else { return }
         let frame = region.style == .audioFile
             ? region.seekBarFrame(for: playback.duration(of: region.playbackID) ?? region.knownDuration(in: playback))
             : region.waveformFrame
