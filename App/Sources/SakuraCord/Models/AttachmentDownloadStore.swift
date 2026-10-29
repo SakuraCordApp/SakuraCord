@@ -57,7 +57,7 @@ final class AttachmentDownloadStore {
             do {
                 let source = await resolveRemoteURL?(attachment.url) ?? attachment.url
                 let file = try await Self.download(source) { reportProgress.yield($0) }
-                result = .finished(try Self.save(file, filename: attachment.filename, sourceURL: source))
+                result = .finished(try await Self.save(file, filename: attachment.filename, sourceURL: source))
             } catch {
                 result = Task.isCancelled ? nil : .failed
             }
@@ -97,35 +97,40 @@ final class AttachmentDownloadStore {
         return file
     }
 
-    private static func save(_ file: URL, filename: String, sourceURL: URL) throws -> URL {
-        defer { try? FileManager.default.removeItem(at: file) }
-        return try withDownloadFolder { folder in
-            let proposed = folder.appendingPathComponent(
-                MediaViewerFilePolicy.suggestedFilename(title: filename, sourceURL: sourceURL)
-            )
+    private static func save(_ file: URL, filename: String, sourceURL: URL) async throws -> URL {
+        let folder = openDownloadFolder()
+        defer { folder.scoped?.stopAccessingSecurityScopedResource() }
+        let proposed = folder.url.appendingPathComponent(
+            MediaViewerFilePolicy.suggestedFilename(title: filename, sourceURL: sourceURL)
+        )
+        // Moving onto another volume copies the whole file.
+        return try await Task.detached(priority: .utility) {
+            defer { try? FileManager.default.removeItem(at: file) }
             guard let destination = MediaViewerActionService.availableDestination(for: proposed) else {
                 throw MediaViewerActionError.couldNotChooseUniqueFilename
             }
             try FileManager.default.moveItem(at: file, to: destination)
             return destination
-        }
+        }.value
     }
 
     private static func fileExists(at url: URL) -> Bool {
-        withDownloadFolder { _ in FileManager.default.fileExists(atPath: url.path) }
+        let folder = openDownloadFolder()
+        defer { folder.scoped?.stopAccessingSecurityScopedResource() }
+        return FileManager.default.fileExists(atPath: url.path)
     }
 
-    /// Runs `body` with the Default Download Folder, or Downloads when none
-    /// is set or it can no longer be opened.
-    private static func withDownloadFolder<T>(_ body: (URL) throws -> T) rethrows -> T {
+    /// The Default Download Folder with its sandbox access started, which the
+    /// caller stops through `scoped`, or Downloads when none is set or it can
+    /// no longer be opened.
+    private static func openDownloadFolder() -> (url: URL, scoped: URL?) {
         if let folder = try? StorageDownloadsSettingsStore.shared.resolvedDefaultFolder(),
            folder.startAccessingSecurityScopedResource() {
-            defer { folder.stopAccessingSecurityScopedResource() }
-            return try body(folder)
+            return (folder, folder)
         }
         // The sandbox exposes Downloads through a container symlink; Finder
         // should select the file at its real location.
-        return try body(URL.downloadsDirectory.resolvingSymlinksInPath())
+        return (URL.downloadsDirectory.resolvingSymlinksInPath(), nil)
     }
 }
 

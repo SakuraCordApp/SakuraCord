@@ -949,7 +949,9 @@ private enum NodeBuilder {
             }
             let attachment = attachment(for: media, in: message.attachments) ?? Attachment(
                 id: NativeTimelineFileCard.unresolvedFileID(componentID: id, in: message),
-                filename: media.attachmentName ?? item.openURL.lastPathComponent,
+                // A delivered component's attachment name is its ID; the CDN
+                // path ends in the filename.
+                filename: item.openURL.lastPathComponent,
                 url: item.openURL,
                 mediaType: media.contentType
             )
