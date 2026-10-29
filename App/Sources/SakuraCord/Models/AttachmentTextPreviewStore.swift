@@ -146,21 +146,26 @@ final class AttachmentTextPreviewStore {
         return Preview(text: stripInvisibles(text), bytesLeft: bytesLeft)
     }
 
-    /// Decodes in the response's charset, or UTF-8, replacing what isn't
-    /// valid as Discord's decoder does rather than failing.
+    /// Decodes in the response's charset, or as UTF-8 that replaces what
+    /// isn't valid, as Discord's decoder does, rather than failing.
     private nonisolated static func decode(_ data: Data, contentType: String?) -> String {
-        let charset = contentType?.split(separator: "charset=").dropFirst().last
-            .map { CFStringConvertIANACharSetNameToEncoding(String($0) as CFString) }
-        let encoding = charset.flatMap { $0 == kCFStringEncodingInvalidId ? nil : CFStringConvertEncodingToNSStringEncoding($0) }
-            ?? String.Encoding.utf8.rawValue
-        var decoded: NSString?
-        _ = NSString.stringEncoding(
-            for: data,
-            encodingOptions: [.suggestedEncodingsKey: [encoding], .useOnlySuggestedEncodingsKey: true, .allowLossyKey: true],
-            convertedString: &decoded,
-            usedLossyConversion: nil
-        )
-        return decoded as String? ?? ""
+        if let charset = contentType?.split(separator: "charset=").dropFirst().last {
+            let encoding = CFStringConvertIANACharSetNameToEncoding(String(charset) as CFString)
+            if encoding != kCFStringEncodingInvalidId,
+               let text = String(data: data, encoding: .init(rawValue: CFStringConvertEncodingToNSStringEncoding(encoding))) {
+                return text
+            }
+        }
+        var decoder = UTF8()
+        var bytes = data.makeIterator()
+        var scalars = String.UnicodeScalarView()
+        while true {
+            switch decoder.decode(&bytes) {
+            case let .scalarValue(scalar): scalars.append(scalar)
+            case .error: scalars.append("\u{FFFD}")
+            case .emptyInput: return String(scalars)
+            }
+        }
     }
 
     /// Discord drops format and control characters other than newlines and

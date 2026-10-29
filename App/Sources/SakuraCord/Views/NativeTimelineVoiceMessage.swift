@@ -413,6 +413,10 @@ enum NativeTimelineVoiceMessagePainter {
         if region.style == .audioFile {
             state.duration = region.knownDuration(in: playback)
             state.isMuted = playback?.isAudioFileMuted == true
+            // An audio file left partway shows where it will resume.
+            if let duration = state.duration, duration > 0, let position = playback?.position(of: region.playbackID) {
+                state.progress = CGFloat(min(max(position / duration, 0), 1))
+            }
         }
         drawContent(region, state: state)
     }
@@ -835,7 +839,7 @@ extension NativeTimelineCanvasView {
         playback: VoiceMessagePlaybackStore
     ) -> NativeTimelineVoiceMessageDrawState {
         let id = region.playbackID
-        let duration = playback.duration(of: id) ?? region.duration
+        let duration = playback.duration(of: id) ?? region.knownDuration(in: playback) ?? 0
         let position = playback.position(of: id)
         let phase = playback.phase(of: id)
         let hovered = hoveredVoiceMessage?.playbackID == id ? hoveredVoiceMessage : nil
