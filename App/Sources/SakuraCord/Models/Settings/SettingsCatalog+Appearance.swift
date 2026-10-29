@@ -18,6 +18,15 @@ nonisolated extension SettingsCatalog {
             scope: .appWideLocal
         ),
         control(
+            .overrideMacOSAccent,
+            page: .appearance,
+            section: .appearanceTheme,
+            label: "Override macOS accent",
+            help: "Use the Theme Designer accent even when macOS has a specific accent selected. Requires restarting SakuraCord.",
+            keywords: ["accent", "color", "colour", "override", "system", "macos", "tint", "restart"],
+            scope: .appWideLocal
+        ),
+        control(
             .windowOpacity,
             page: .appearance,
             section: .appearanceTheme,

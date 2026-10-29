@@ -253,6 +253,27 @@ No catalogue downloads or account requests are needed. Exact entries retain
 their existing semantics, and the link-warning checkbox trusts only its exact
 hostname. Always Ask and Never Ask retain their existing behaviour.
 
+Theme Designer owns the accent through the first active colour and the existing
+readable light/dark colour recipe. `AppAccentColorController` applies the saved
+theme after launch and committed theme edits through AppKit's private
+`_setAccentColor:` on the main actor. This updates native accent-derived colours
+before theme observers invalidate cached presentation. Resetting the default
+theme restores the original dynamic bundled accent. Custom drawing continues to
+read `NSColor.controlAccentColor`, keeping native and app-drawn controls aligned.
+The optional Override macOS accent preference defaults to off. When enabled, the
+launcher places `AppleAccentColor = -2` in the standard defaults' volatile argument
+domain before AppKit initializes. This selects the app accent only for this
+process without changing persistent app or system colour preferences. Changes to
+the setting, including imports and resets, take effect on the next launch.
+When the override is off and the global preference selects a specific accent,
+macOS supplies the locked first colour while additional Theme Designer colours
+remain editable. Saturation edits affect only editable colours; with only a
+locked primary, the saturation dial is disabled. The saved primary is preserved
+while the system accent is active.
+The designer indicates when the system accent is active;
+the override preference takes effect on the next launch. App appearance and system-colour changes
+refresh the detected system accent through the existing theme notification.
+
 Platform-owned preferences use their platform services. Download bookmarks are
 usable only when accessible on the receiving Mac.
 

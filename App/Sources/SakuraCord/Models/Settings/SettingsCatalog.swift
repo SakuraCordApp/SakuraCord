@@ -247,6 +247,7 @@ nonisolated extension SettingsControlID {
     static let launchDestination = Self(rawValue: "general.launch-destination")
     static let confirmQuitActiveWork = Self(rawValue: "general.confirm-quit-active-work")
     static let appColorScheme = Self(rawValue: "appearance.color-scheme")
+    static let overrideMacOSAccent = Self(rawValue: "appearance.override-macos-accent")
     static let windowOpacity = Self(rawValue: "appearance.window-opacity")
     static let legacyAccentColorMigration = Self(rawValue: "appearance.accent-color")
     static let themeDesigner = Self(rawValue: "appearance.theme-designer")
