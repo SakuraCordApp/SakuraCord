@@ -18,6 +18,15 @@ nonisolated extension SettingsCatalog {
             scope: .appWideLocal
         ),
         control(
+            .matchBackgroundToPrimaryColor,
+            page: .appearance,
+            section: .appearanceTheme,
+            label: "Use primary color in background gradients",
+            help: "Include the primary color in the background. When disabled, use colors 2 onwards unless there is only one color.",
+            keywords: ["background", "primary", "color", "colour", "match"],
+            scope: .appWideLocal
+        ),
+        control(
             .overrideMacOSAccent,
             page: .appearance,
             section: .appearanceTheme,

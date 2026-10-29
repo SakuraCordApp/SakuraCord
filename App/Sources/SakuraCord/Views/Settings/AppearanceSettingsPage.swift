@@ -14,6 +14,7 @@ struct AppearanceSettingsPage: View {
         value.colorScheme == AppearanceSettingsSnapshot.defaults.colorScheme
             && value.windowOpacity == AppearanceSettingsSnapshot.defaults.windowOpacity
             && value.overrideMacOSAccent == AppearanceSettingsSnapshot.defaults.overrideMacOSAccent
+            && value.matchBackgroundToPrimaryColor == AppearanceSettingsSnapshot.defaults.matchBackgroundToPrimaryColor
             && themeStore.isUsingDefaultTheme
     }
 
@@ -76,7 +77,8 @@ struct AppearanceSettingsPage: View {
                         appearance: value.colorScheme,
                         windowOpacity: value.windowOpacity
                     ),
-                    overrideMacOSAccent: $value.overrideMacOSAccent
+                    overrideMacOSAccent: $value.overrideMacOSAccent,
+                    matchBackgroundToPrimaryColor: $value.matchBackgroundToPrimaryColor
                 )
                     .settingsControlAnchor(.themeDesigner, state: state)
 
@@ -109,6 +111,7 @@ struct AppearanceSettingsPage: View {
     }
 
     private func resetTheme() {
+        value.matchBackgroundToPrimaryColor = AppearanceSettingsSnapshot.defaults.matchBackgroundToPrimaryColor
         value.overrideMacOSAccent = AppearanceSettingsSnapshot.defaults.overrideMacOSAccent
         value.colorScheme = AppearanceSettingsSnapshot.defaults.colorScheme
         value.windowOpacity = AppearanceSettingsSnapshot.defaults.windowOpacity

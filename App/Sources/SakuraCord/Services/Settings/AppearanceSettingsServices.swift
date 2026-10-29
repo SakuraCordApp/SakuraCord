@@ -127,6 +127,7 @@ nonisolated struct AppearanceSettingsSnapshot: Equatable, Sendable {
     var composerIcons: ComposerIconLayout = .defaults
     var interfaceSize: Double = InterfaceScale.defaultFactor
     var windowOpacity: Double = defaultWindowOpacity
+    var matchBackgroundToPrimaryColor = true
     var overrideMacOSAccent = false
     var colorScheme: AppColorScheme
     var composerBarAppearance: ComposerBarAppearance
@@ -215,11 +216,15 @@ final class AppearanceSettingsStore {
         if case let .bool(stored) = preferences.value(for: .overrideMacOSAccent) {
             value.overrideMacOSAccent = stored
         }
+        if case let .bool(stored) = preferences.value(for: .matchBackgroundToPrimaryColor) {
+            value.matchBackgroundToPrimaryColor = stored
+        }
         value.normalize()
         return value
     }
 
     func save(_ value: AppearanceSettingsSnapshot) {
+        preferences.set(.bool(value.matchBackgroundToPrimaryColor), for: .matchBackgroundToPrimaryColor)
         preferences.set(.bool(value.overrideMacOSAccent), for: .overrideMacOSAccent)
         preferences.set(
             .double(AppearanceSettingsSnapshot.normalizedWindowOpacity(value.windowOpacity)),
@@ -284,6 +289,7 @@ extension AppModel {
             AppAppearanceController.shared.apply(value.colorScheme)
         }
         InterfaceScale.shared.update(value.interfaceSize)
+        SakuraCordThemeStore.shared.setMatchesBackgroundToPrimaryColor(value.matchBackgroundToPrimaryColor)
         appearanceSettings = value
         if colorSchemeChanged || messagePresentationChanged {
             timelinePresentationRevision &+= 1

@@ -643,6 +643,11 @@ final class SakuraCordThemeSettingsStore {
         return migrated
     }
 
+    var usesPrimaryColorInBackground: Bool {
+        guard case let .bool(value) = preferences.value(for: .matchBackgroundToPrimaryColor) else { return true }
+        return value
+    }
+
     func save(_ theme: SakuraCordGradientTheme) {
         preferences.set(.string(theme.storageValue), for: .themeDesigner)
     }
@@ -659,6 +664,8 @@ final class SakuraCordThemeStore {
     private var committedAuthoredTheme: SakuraCordGradientTheme
     private(set) var systemAccentColor: SakuraCordThemeColor?
 
+    private(set) var matchesBackgroundToPrimaryColor = true
+
     private func effectiveTheme(_ theme: SakuraCordGradientTheme) -> SakuraCordGradientTheme {
         guard let systemAccentColor else { return theme }
         var colors = theme.colors
@@ -667,12 +674,24 @@ final class SakuraCordThemeStore {
     }
 
     var activeTheme: SakuraCordGradientTheme { effectiveTheme(authoredTheme) }
-    var backgroundTheme: SakuraCordGradientTheme { activeTheme }
-    var committedBackgroundTheme: SakuraCordGradientTheme { committedTheme }
+    var backgroundTheme: SakuraCordGradientTheme { backgroundTheme(for: activeTheme) }
+    var committedBackgroundTheme: SakuraCordGradientTheme { backgroundTheme(for: committedTheme) }
     var editableSaturation: Double {
         let colors = isSystemAccentActive ? authoredTheme.activeColors.dropFirst() : authoredTheme.activeColors
         guard !colors.isEmpty else { return activeTheme.saturation }
         return colors.reduce(0) { $0 + $1.saturation } / Double(colors.count)
+    }
+
+    private func backgroundTheme(for theme: SakuraCordGradientTheme) -> SakuraCordGradientTheme {
+        guard !matchesBackgroundToPrimaryColor, theme.activeColorCount > 1 else { return theme }
+        return SakuraCordGradientTheme(colors: Array(theme.activeColors.dropFirst()), intensity: theme.intensity, brightness: theme.brightness)
+    }
+
+    func setMatchesBackgroundToPrimaryColor(_ matches: Bool) {
+        guard matchesBackgroundToPrimaryColor != matches else { return }
+        matchesBackgroundToPrimaryColor = matches
+        AppAccentColorController.shared.apply(committedTheme, background: committedBackgroundTheme)
+        NotificationCenter.default.post(name: .sakuraCordThemeDidCommit, object: nil)
     }
 
     var committedTheme: SakuraCordGradientTheme { effectiveTheme(committedAuthoredTheme) }
@@ -685,6 +704,7 @@ final class SakuraCordThemeStore {
 
     init(persistence: SakuraCordThemeSettingsStore = .shared) {
         self.persistence = persistence
+        matchesBackgroundToPrimaryColor = persistence.usesPrimaryColorInBackground
         let initial = persistence.load()
         authoredTheme = initial
         committedAuthoredTheme = initial

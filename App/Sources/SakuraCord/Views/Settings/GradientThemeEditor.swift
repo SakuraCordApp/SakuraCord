@@ -10,6 +10,7 @@ struct GradientThemeEditor: View {
     let themeStore: SakuraCordThemeStore
     let presentation: Presentation
     var overrideMacOSAccent: Binding<Bool>?
+    var matchBackgroundToPrimaryColor: Binding<Bool>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(18)) {
@@ -28,6 +29,10 @@ struct GradientThemeEditor: View {
                     }
                 }
                 .settingsControlAnchor(.overrideMacOSAccent)
+            }
+            if let matchBackgroundToPrimaryColor {
+                Toggle("Use primary color in background gradients", isOn: matchBackgroundToPrimaryColor)
+                    .settingsControlAnchor(.matchBackgroundToPrimaryColor)
             }
         }
         .padding(.vertical, InterfaceScale.metric(6))

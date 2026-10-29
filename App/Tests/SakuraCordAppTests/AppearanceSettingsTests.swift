@@ -122,6 +122,7 @@ func `Public beta accents migrate into native-surface single-color themes`(
     #expect(store.load() == .defaults)
 
     let selected = AppearanceSettingsSnapshot(
+        matchBackgroundToPrimaryColor: false,
         overrideMacOSAccent: true,
         colorScheme: .light,
         composerBarAppearance: .legacy,
@@ -204,6 +205,7 @@ func `Public beta accents migrate into native-surface single-color themes`(
         let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
         let appearance = AppearanceSettingsStore(preferences: preferences).load()
         let store = SakuraCordThemeStore(persistence: persistence)
+        #expect(appearance.matchBackgroundToPrimaryColor)
         #expect(!appearance.overrideMacOSAccent)
         #expect(AppAccentColorController.systemAccentColor(for: nil) == nil)
         #expect(AppAccentColorController.systemAccentColor(for: -2) == nil)
@@ -917,6 +919,7 @@ private final class ThemeIntermediateFrameProbe {
     let store = SakuraCordThemeStore(persistence: persistence)
     let custom = SakuraCordGradientTheme(colors: [.sakuraPink], intensity: 0.3, brightness: 0.8)
     store.apply(custom)
+    store.setMatchesBackgroundToPrimaryColor(false)
     let systemColor = try #require(AppAccentColorController.systemAccentColor(for: 4))
     store.setSystemAccentColor(systemColor)
     #expect(Array(store.backgroundTheme.activeColors) == [systemColor])
@@ -924,12 +927,13 @@ private final class ThemeIntermediateFrameProbe {
     #expect(store.activeTheme.colors[0] == systemColor)
     store.addColor(.discordBlurple)
     #expect(store.activeTheme.activeColorCount == 2)
-    #expect(Array(store.activeTheme.activeColors.dropFirst()) == [.discordBlurple])
+    #expect(Array(store.backgroundTheme.activeColors) == [.discordBlurple])
     store.setHue(0.4, at: 1)
     store.finishInteraction()
     #expect(store.activeTheme.colors[0] == systemColor)
-    #expect(store.activeTheme.colors[1].hue == 0.4)
+    #expect(store.backgroundTheme.colors[0].hue == 0.4)
     #expect(persistence.load().colors[1].hue == 0.4)
+    store.setMatchesBackgroundToPrimaryColor(true)
     #expect(Array(store.backgroundTheme.activeColors) == Array(store.activeTheme.activeColors))
     store.setSaturation(0)
     store.finishInteraction()

@@ -267,9 +267,11 @@ process without changing persistent app or system colour preferences. Changes to
 the setting, including imports and resets, take effect on the next launch.
 When the override is off and the global preference selects a specific accent,
 macOS supplies the locked first colour while additional Theme Designer colours
-remain editable. Saturation edits affect only editable colours; with only a
-locked primary, the saturation dial is disabled. The saved primary is preserved
-while the system accent is active.
+remain editable. Use primary color in background gradients defaults to on;
+disabling it uses colours 2 onwards for the background, with colour 1 as the
+fallback when alone. Saturation edits affect only editable colours; with only a
+locked primary, the saturation dial is disabled. Background contrast calculations
+use the same palette as the rendered background.
 The designer indicates when the system accent is active;
 the override preference takes effect on the next launch. App appearance and system-colour changes
 refresh the detected system accent through the existing theme notification.
