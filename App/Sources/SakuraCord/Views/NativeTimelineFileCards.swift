@@ -65,7 +65,9 @@ extension NativeTimelineCanvasView {
                 || NativeTimelineFileCard.isUnresolvedFileID(attachmentID, in: message)
         }
         // Bitmaps survive navigation, so cached rows elsewhere need it too.
-        bitmapCache.filter { showsFile($0.value.item) }.keys.forEach(invalidateBitmap)
+        for (identifier, cached) in bitmapCache where showsFile(cached.item) {
+            invalidateBitmap(identifier)
+        }
         setNeedsDisplay(visibleRect)
         // Starting, finishing, or failing moves the card's clickable parts;
         // a progress tick does not.

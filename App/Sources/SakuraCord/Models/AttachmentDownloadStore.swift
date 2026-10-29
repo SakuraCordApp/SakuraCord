@@ -113,12 +113,8 @@ final class AttachmentDownloadStore {
         // Moving onto another volume copies the whole file.
         let destination = try await Task.detached(priority: .utility) {
             defer { try? FileManager.default.removeItem(at: file) }
-            // A link counts as taken even when it points nowhere, since the
-            // move would fail on it.
-            let isTaken = { (try? FileManager.default.attributesOfItem(atPath: $0)) != nil }
             while true {
-                guard let destination = MediaViewerActionService.availableDestination(for: proposed, fileExists: isTaken)
-                else {
+                guard let destination = MediaViewerActionService.availableDestination(for: proposed) else {
                     throw MediaViewerActionError.couldNotChooseUniqueFilename
                 }
                 do {
