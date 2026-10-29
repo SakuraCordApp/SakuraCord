@@ -27,9 +27,17 @@ struct NativeTimelineTextPreview {
     let presentation: AttachmentTextPreviewStore.Presentation
     let boxFrame: CGRect
     let footerFrame: CGRect
+    struct ShapedText {
+        let value: NSAttributedString
+        let framesetter: CTFramesetter
+        let frame: CTFrame
+    }
+
     /// The whole shaped text, positioned for no scrolling; nil while loading.
-    let text: CTFrame?
+    let text: ShapedText?
     let textFrame: CGRect
+    /// The width the text shows at once; unwrapped lines can run past it.
+    let visibleTextWidth: CGFloat
     /// Code draws on the app's code-block colours; rendered Markdown on the
     /// timeline's.
     let isMarkdown: Bool
@@ -46,10 +54,13 @@ struct NativeTimelineTextPreview {
         if case let .loaded(preview) = presentation.state { preview } else { nil }
     }
 
-    /// How far the expanded box's text can scroll.
-    var maximumScroll: CGFloat {
-        guard isExpanded else { return 0 }
-        return max(0, textFrame.height + InterfaceScale.metric(26) - boxFrame.height)
+    /// How far the box's text can scroll: sideways past unwrapped lines,
+    /// and down once expanded.
+    var maximumScroll: CGPoint {
+        CGPoint(
+            x: max(0, textFrame.width - visibleTextWidth),
+            y: isExpanded ? max(0, textFrame.height + InterfaceScale.metric(26) - boxFrame.height) : 0
+        )
     }
 
     func frame(of part: Part) -> CGRect? {
@@ -82,25 +93,32 @@ struct NativeTimelineTextPreview {
         let isMarkdown = presentation.showsMarkdown
         // Discord keeps a stable scrollbar gutter right of the text.
         let textWidth = max(1, width - inset * 2 - InterfaceScale.metric(8))
-        var text: CTFrame?
-        var textHeight: CGFloat = 0
+        var text: ShapedText?
+        var textSize = CGSize(width: textWidth, height: 0)
         if let preview {
-            let framesetter = CTFramesetterCreateWithAttributedString(
-                attributedText(
-                    preview,
-                    shownLines: presentation.isExpanded ? expandedLineCount : collapsedLineCount,
-                    wrapsText: presentation.wrapsText,
-                    language: presentation.language,
-                    isMarkdown: isMarkdown
+            let value = attributedText(
+                preview,
+                shownLines: presentation.isExpanded ? expandedLineCount : collapsedLineCount,
+                wrapsText: presentation.wrapsText,
+                language: presentation.language,
+                isMarkdown: isMarkdown
+            )
+            let framesetter = CTFramesetterCreateWithAttributedString(value)
+            func suggestedSize(width: CGFloat) -> CGSize {
+                CTFramesetterSuggestFrameSizeWithConstraints(
+                    framesetter, CFRange(), nil, CGSize(width: width, height: .greatestFiniteMagnitude), nil
                 )
-            )
-            textHeight = ceil(CTFramesetterSuggestFrameSizeWithConstraints(
-                framesetter, CFRange(), nil, CGSize(width: textWidth, height: .greatestFiniteMagnitude), nil
-            ).height)
-            text = CTFramesetterCreateFrame(
-                framesetter, CFRange(), CGPath(rect: CGRect(x: 0, y: 0, width: textWidth, height: textHeight), transform: nil), nil
-            )
+            }
+            // Unwrapped code keeps its longest line, which scrolls sideways.
+            if !presentation.wrapsText, !isMarkdown {
+                textSize.width = max(textWidth, ceil(suggestedSize(width: .greatestFiniteMagnitude).width))
+            }
+            textSize.height = ceil(suggestedSize(width: textSize.width).height)
+            text = ShapedText(value: value, framesetter: framesetter, frame: CTFramesetterCreateFrame(
+                framesetter, CFRange(), CGPath(rect: CGRect(origin: .zero, size: textSize), transform: nil), nil
+            ))
         }
+        let textHeight = textSize.height
         // The box holds at least 100 points of text between its margins, at
         // most 500 points expanded, and six lines' worth collapsed.
         let naturalHeight = max(InterfaceScale.metric(100), textHeight) + InterfaceScale.metric(26)
@@ -142,7 +160,8 @@ struct NativeTimelineTextPreview {
             boxFrame: boxFrame,
             footerFrame: footerFrame,
             text: text,
-            textFrame: CGRect(x: boxFrame.minX + inset, y: boxFrame.minY + inset, width: textWidth, height: textHeight),
+            textFrame: CGRect(origin: CGPoint(x: boxFrame.minX + inset, y: boxFrame.minY + inset), size: textSize),
+            visibleTextWidth: textWidth,
             isMarkdown: isMarkdown,
             lineCount: lineCount,
             expandFrame: expandFrame,

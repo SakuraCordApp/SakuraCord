@@ -56,7 +56,7 @@ final class AttachmentTextPreviewStore {
     private var unwrapped: Set<String> = []
     private var plainMarkdown: Set<String> = []
     /// How far each expanded preview's text is scrolled.
-    private(set) var scrollOffsets: [String: CGFloat] = [:]
+    private(set) var scrollOffsets: [String: CGPoint] = [:]
     /// Re-signs an expiring Discord attachment link before it is fetched.
     var resolveRemoteURL: (@MainActor (URL) async -> URL)?
     /// Lays out the message again after one of its previews changes.
@@ -110,7 +110,7 @@ final class AttachmentTextPreviewStore {
         onChange?(message.id)
     }
 
-    func setScrollOffset(_ offset: CGFloat, for attachmentID: String) {
+    func setScrollOffset(_ offset: CGPoint, for attachmentID: String) {
         scrollOffsets[attachmentID] = offset
     }
 

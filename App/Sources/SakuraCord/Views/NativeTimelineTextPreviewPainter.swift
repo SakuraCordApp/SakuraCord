@@ -17,11 +17,25 @@ extension NativeTimelineRowPainter {
         let boxShape = NSBezierPath(roundedRect: box, topRadius: radius)
         (preview.isMarkdown ? NativeTimelineFileCard.audioBackgroundColor : discordCodeBackgroundColor).setFill()
         boxShape.fill()
-        if let text = preview.text {
-            let scroll = min(input.model?.attachmentTextPreviews.scrollOffsets[preview.attachment.id] ?? 0, preview.maximumScroll)
-            textPreviewText(text, in: preview.textFrame.offsetBy(dx: 0, dy: -scroll), clippedTo: box.insetBy(dx: 1, dy: 1))
-            if preview.maximumScroll > 0 {
-                textPreviewScrollbar(preview, scroll: scroll)
+        if let text = preview.text, let context = NSGraphicsContext.current?.cgContext {
+            let stored = input.model?.attachmentTextPreviews.scrollOffsets[preview.attachment.id] ?? .zero
+            let maximum = preview.maximumScroll
+            let scroll = CGPoint(x: min(stored.x, maximum.x), y: min(stored.y, maximum.y))
+            let frame = preview.textFrame.offsetBy(dx: -scroll.x, dy: -scroll.y)
+            context.saveGState()
+            context.clip(to: box.insetBy(dx: 1, dy: 1))
+            if preview.isMarkdown {
+                // Markdown needs the message painter's list, quote, and code decorations.
+                attributedText(text.value, framesetter: text.framesetter, in: frame, model: input.model)
+            } else {
+                context.translateBy(x: frame.minX, y: frame.maxY)
+                context.scaleBy(x: 1, y: -1)
+                context.textMatrix = .identity
+                CTFrameDraw(text.frame, context)
+            }
+            context.restoreGState()
+            if maximum.y > 0 {
+                textPreviewScrollbar(preview, scroll: scroll.y)
             }
         }
         (preview.isMarkdown ? NativeTimelineSemanticColor.opacity(.labelColor, 0.10) : discordCodeBorderColor).setStroke()
@@ -78,26 +92,15 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func textPreviewText(_ text: CTFrame, in frame: CGRect, clippedTo clip: CGRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.saveGState()
-        context.clip(to: clip)
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        CTFrameDraw(text, context)
-        context.restoreGState()
-    }
-
     /// The thin scroller in the box's gutter, shown while there is more to scroll.
     private static func textPreviewScrollbar(_ preview: NativeTimelineTextPreview, scroll: CGFloat) {
         let track = preview.boxFrame.insetBy(dx: 0, dy: InterfaceScale.metric(4))
-        let contentHeight = preview.boxFrame.height + preview.maximumScroll
+        let contentHeight = preview.boxFrame.height + preview.maximumScroll.y
         let height = max(InterfaceScale.metric(24), track.height * preview.boxFrame.height / contentHeight)
         let width = InterfaceScale.metric(4)
         let thumb = CGRect(
             x: preview.boxFrame.maxX - InterfaceScale.metric(3) - width,
-            y: track.minY + (track.height - height) * scroll / preview.maximumScroll,
+            y: track.minY + (track.height - height) * scroll / preview.maximumScroll.y,
             width: width, height: height
         )
         NSColor.white.withAlphaComponent(0.24).setFill()

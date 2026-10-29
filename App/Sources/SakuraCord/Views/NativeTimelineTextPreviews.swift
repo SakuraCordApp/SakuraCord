@@ -128,9 +128,14 @@ extension NativeTimelineCanvasView {
         else { return false }
         // Momentum follows the gesture, so the preview keeps it until then.
         if event.momentumPhase.contains(.ended) { textPreviewScrollTarget = nil }
-        let current = min(previews.scrollOffsets[target] ?? 0, preview.maximumScroll)
-        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * InterfaceScale.metric(16)
-        let next = min(max(current - delta, 0), preview.maximumScroll)
+        let maximum = preview.maximumScroll
+        let stored = previews.scrollOffsets[target] ?? .zero
+        let current = CGPoint(x: min(stored.x, maximum.x), y: min(stored.y, maximum.y))
+        let lineStep = event.hasPreciseScrollingDeltas ? 1 : InterfaceScale.metric(16)
+        let next = CGPoint(
+            x: min(max(current.x - event.scrollingDeltaX * lineStep, 0), maximum.x),
+            y: min(max(current.y - event.scrollingDeltaY * lineStep, 0), maximum.y)
+        )
         if next == current { return !isWheel }
         previews.setScrollOffset(next, for: target)
         invalidateBitmap(items[index].identifier)
@@ -144,7 +149,7 @@ extension NativeTimelineCanvasView {
         else { return nil }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         return textPreviews(at: index, messageID: messageID).first {
-            $0.boxFrame.contains(local) && $0.maximumScroll > 0
+            $0.boxFrame.contains(local) && $0.maximumScroll != .zero
         }
     }
 
