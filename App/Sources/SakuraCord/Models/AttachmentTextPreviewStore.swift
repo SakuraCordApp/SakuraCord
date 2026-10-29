@@ -149,7 +149,8 @@ final class AttachmentTextPreviewStore {
         defer { bytes.task.cancel() }
         let http = response as? HTTPURLResponse
         if let status = http?.statusCode, !(200 ..< 300).contains(status) { throw URLError(.badServerResponse) }
-        // The range's size, read even from a server that ignores the range.
+        // Stops at the limit, so a server that ignores the range can't
+        // stream the whole file.
         var data = Data()
         for try await byte in bytes {
             data.append(byte)
