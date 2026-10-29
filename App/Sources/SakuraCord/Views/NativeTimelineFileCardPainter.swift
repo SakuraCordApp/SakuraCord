@@ -7,124 +7,128 @@ extension NativeTimelineRowPainter {
     static func fileCard(
         _ card: NativeTimelineFileCard,
         messageID: MessageID,
+        bubbleRegion: NativeTimelineBubbleRegion?,
         state: AttachmentDownloadStore.State?,
         hovered: NativeTimelineComponentButtonTarget?,
-        pressed: NativeTimelineComponentButtonTarget?
+        pressProgress: CGFloat
     ) {
-        func target(_ part: NativeTimelineFileCard.Part?) -> NativeTimelineComponentButtonTarget {
-            .fileCard(messageID: messageID, attachmentID: card.attachment.id, part: part)
+        let isHovered = hovered == .fileCard(messageID: messageID, attachmentID: card.attachment.id)
+        let pressProgress = isHovered ? min(max(pressProgress, 0), 1) : 0
+        let bubble = card.isInBubble ? bubbleRegion : nil
+        let palette = FileCardPalette(bubble: bubble, isFailed: state == .failed)
+        let highlight = 0.04 * ((isHovered ? 1 : 0) + pressProgress)
+        if let bubble {
+            if highlight > 0 {
+                let frame = card.frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4))
+                palette.highlight.withAlphaComponent(highlight * (bubble.isOutgoing ? 3 : 1.5)).setFill()
+                NSBezierPath(
+                    concentricRoundedRect: frame,
+                    cornerRadius: bubbleConcentricCornerRadius(for: frame, in: bubble, fallback: frame.height / 2)
+                ).fill()
+            }
+        } else {
+            // A plain voice message's capsule, deepening under the pointer.
+            NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.10 + highlight).setFill()
+            NSBezierPath(concentricRoundedRect: card.frame, cornerRadius: card.frame.height / 2).fill()
         }
-        let radius = NativeTimelineFileCard.cornerRadius
-        let shape = NSBezierPath(roundedRect: card.frame, xRadius: radius, yRadius: radius)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.14)
-        shadow.shadowOffset = NSSize(width: 0, height: -InterfaceScale.metric(1))
-        shadow.shadowBlurRadius = InterfaceScale.metric(4)
-        shadow.set()
-        NSColor.controlBackgroundColor.setFill()
-        shape.fill()
-        NSGraphicsContext.restoreGraphicsState()
-        NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
-        let border = NSBezierPath(
-            roundedRect: card.frame.insetBy(dx: 0.5, dy: 0.5), xRadius: radius - 0.5, yRadius: radius - 0.5
-        )
-        border.lineWidth = 1
-        border.stroke()
+        fileCardBadge(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
 
-        if let icon = Bundle.module.url(
-            forResource: "file-icon-\(NativeTimelineFileCard.iconName(for: card.attachment))", withExtension: "svg"
-        ).flatMap(fileImage(at:)) {
-            icon.draw(in: card.iconFrame, from: .zero, operation: .sourceOver, fraction: 1,
-                      respectFlipped: true, hints: nil)
-        }
-        if case let .downloading(fraction) = state {
-            fileCardProgress(card, fraction: fraction, isCancelHovered: hovered == target(.action))
-            return
-        }
         text(
-            card.attachment.filename,
-            in: card.nameLineFrame(isDownloading: false),
-            font: NativeTimelineFileCard.nameFont,
-            color: .linkColor,
-            isInteractiveHovered: hovered == target(.name)
+            card.attachment.filename, in: card.nameFrame, font: NativeTimelineFileCard.nameFont,
+            color: palette.name, lineBreakMode: .byTruncatingMiddle
         )
         let detail = NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
-        text(
-            detail.text,
-            in: card.detailLineFrame(isDownloading: false),
-            font: NativeTimelineFileCard.detailFont,
-            color: state == .failed ? .systemRed : .secondaryLabelColor
-        )
-        if let link = detail.link, let frame = card.detailLinkFrame(for: state) {
+        let detailColor = state == .failed ? palette.failure : palette.detail
+        text(detail.text, in: card.detailFrame, font: NativeTimelineFileCard.detailFont, color: detailColor)
+        if let link = detail.link {
+            var frame = card.detailFrame
+            let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: NativeTimelineFileCard.detailFont)
+            frame.origin.x += offset
+            frame.size.width = max(0, frame.width - offset)
             text(
-                link, in: frame, font: NativeTimelineFileCard.detailFont, color: .linkColor,
-                isInteractiveHovered: hovered == target(.detailLink)
+                link, in: frame, font: .interfaceSystemFont(ofSize: 12, weight: .semibold),
+                color: state == .failed ? palette.failure : palette.link
             )
         }
-        let cardID = target(nil).componentID
-        guard let hovered, hovered.messageID == messageID,
-              hovered.componentID == cardID || hovered.componentID.hasPrefix(cardID + ":")
-        else { return }
-        let symbol = if case .finished = state { "magnifyingglass" } else { "arrow.down.to.line" }
-        fileCardHoverButton(
-            card,
-            symbol: symbol,
-            isHovered: hovered == target(.action),
-            isPressed: pressed == target(.action)
-        )
     }
 
-    /// Discord's in-progress card: a bar under the plain filename and a
-    /// trailing cancel button.
-    private static func fileCardProgress(_ card: NativeTimelineFileCard, fraction: Double, isCancelHovered: Bool) {
-        text(
-            card.attachment.filename,
-            in: card.nameLineFrame(isDownloading: true),
-            font: NativeTimelineFileCard.nameFont,
-            color: .labelColor
-        )
-        let line = card.detailLineFrame(isDownloading: true)
-        let track = CGRect(
-            x: line.minX, y: line.midY - InterfaceScale.metric(4),
-            width: max(0, line.width - InterfaceScale.metric(8)), height: InterfaceScale.metric(8)
-        )
-        let radius = track.height / 2
-        NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.24).setFill()
-        NSBezierPath(roundedRect: track, xRadius: radius, yRadius: radius).fill()
-        var fill = track
-        fill.size.width = max(track.height, track.width * min(max(fraction, 0), 1))
-        NSColor.sakuraCordAccentColor.setFill()
-        NSBezierPath(roundedRect: fill, xRadius: radius, yRadius: radius).fill()
-        systemSymbol(
-            "xmark", in: card.cancelFrame,
-            color: isCancelHovered ? .labelColor : .secondaryLabelColor, inset: InterfaceScale.metric(5)
-        )
-    }
-
-    /// The button group Discord overlays on a hovered card's corner.
-    private static func fileCardHoverButton(
-        _ card: NativeTimelineFileCard, symbol: String, isHovered: Bool, isPressed: Bool
+    /// The type badge, which turns into the card's action under the pointer
+    /// and rings its progress while downloading.
+    private static func fileCardBadge(
+        _ card: NativeTimelineFileCard,
+        state: AttachmentDownloadStore.State?,
+        palette: FileCardPalette,
+        isHovered: Bool,
+        pressProgress: CGFloat
     ) {
-        let frame = card.hoverButtonFrame
-        let radius = InterfaceScale.metric(5)
-        let shape = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
-        NSColor.controlBackgroundColor.setFill()
-        shape.fill()
-        if isHovered || isPressed {
-            NativeTimelineSemanticColor.opacity(.secondaryLabelColor, isPressed ? 0.16 : 0.12).setFill()
-            shape.fill()
+        let symbol: String
+        let fraction: Double?
+        switch state {
+        case nil:
+            (symbol, fraction) = (isHovered ? "arrow.down" : NativeTimelineFileCard.symbolName(for: card.attachment), nil)
+        case let .downloading(progress):
+            (symbol, fraction) = ("xmark", progress)
+        case .finished:
+            (symbol, fraction) = (isHovered ? "magnifyingglass" : NativeTimelineFileCard.symbolName(for: card.attachment), nil)
+        case .failed:
+            (symbol, fraction) = (isHovered ? "arrow.clockwise" : "exclamationmark", nil)
         }
-        NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
-        let outline = NSBezierPath(
-            roundedRect: frame.insetBy(dx: -0.5, dy: -0.5), xRadius: radius + 0.5, yRadius: radius + 0.5
+        // The voice message play button's hover growth, then a press dip.
+        let scale = isHovered ? 1.06 - 0.12 * pressProgress : 1
+        let base = card.badgeFrame
+        let badge = base.insetBy(dx: base.width * (1 - scale) / 2, dy: base.height * (1 - scale) / 2)
+        palette.badge.setFill()
+        NSBezierPath(ovalIn: badge).fill()
+        guard let fraction else {
+            systemSymbol(symbol, in: badge, color: palette.glyph, inset: badge.width * 0.27, weight: .semibold)
+            return
+        }
+        let ring = NSBezierPath(ovalIn: badge.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4)))
+        ring.lineWidth = InterfaceScale.metric(2.5)
+        palette.glyph.withAlphaComponent(0.3).setStroke()
+        ring.stroke()
+        let radius = badge.width / 2 - InterfaceScale.metric(4)
+        let arc = NSBezierPath()
+        // Flipped rows: -90° is the top, and positive angles turn clockwise.
+        arc.appendArc(
+            withCenter: CGPoint(x: badge.midX, y: badge.midY), radius: radius,
+            startAngle: -90, endAngle: -90 + 360 * min(max(fraction, 0.02), 1)
         )
-        outline.lineWidth = 1
-        outline.stroke()
-        systemSymbol(
-            symbol, in: frame.insetBy(dx: InterfaceScale.metric(6), dy: InterfaceScale.metric(6)),
-            color: isHovered || isPressed ? .labelColor : .secondaryLabelColor, inset: 0, weight: .medium
-        )
+        arc.lineWidth = ring.lineWidth
+        arc.lineCapStyle = .round
+        palette.glyph.setStroke()
+        arc.stroke()
+        systemSymbol(symbol, in: badge, color: palette.glyph, inset: badge.width * 0.34, weight: .bold)
     }
 
+    /// A file card's colours: SakuraCord's accent badge with a white glyph,
+    /// inverted on an outgoing bubble as its voice messages are.
+    private struct FileCardPalette {
+        let badge: NSColor
+        let glyph: NSColor
+        let name: NSColor
+        let detail: NSColor
+        let link: NSColor
+        let failure: NSColor
+        let highlight: NSColor
+
+        init(bubble: NativeTimelineBubbleRegion?, isFailed: Bool) {
+            let accent = NSColor.sakuraCordAccentColor
+            if bubble?.isOutgoing == true {
+                badge = .white
+                glyph = isFailed ? .systemRed : accent
+                link = .white
+                failure = .white
+                highlight = .white
+            } else {
+                badge = isFailed ? .systemRed : accent
+                glyph = .white
+                link = accent
+                failure = .systemRed
+                highlight = .labelColor
+            }
+            name = NativeTimelineBubbleDrawing.foregroundColor(for: bubble)
+            detail = NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubble)
+        }
+    }
 }

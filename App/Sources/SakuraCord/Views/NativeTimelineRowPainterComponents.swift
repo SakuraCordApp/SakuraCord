@@ -625,9 +625,12 @@ extension NativeTimelineRowPainter {
             fileCard(
                 region.card,
                 messageID: input.messageID,
+                bubbleRegion: input.bubbleRegion,
                 state: input.model?.attachmentDownloads.states[region.attachment.id],
                 hovered: input.hoveredComponentButton,
-                pressed: input.pressedComponentButton
+                pressProgress: input.pressedComponentButton == .fileCard(
+                    messageID: input.messageID, attachmentID: region.attachment.id
+                ) ? input.componentButtonPressProgress : 0
             )
         }
     }
@@ -1292,7 +1295,7 @@ extension NativeTimelineRowPainter {
     /// reading the file each time held up the motions that redraw them.
     private static let fileImages = NSCache<NSURL, NSImage>()
 
-    static func fileImage(at url: URL) -> NSImage? {
+    private static func fileImage(at url: URL) -> NSImage? {
         if let image = fileImages.object(forKey: url as NSURL) { return image }
         guard let image = NSImage(contentsOf: url) else { return nil }
         fileImages.setObject(image, forKey: url as NSURL)

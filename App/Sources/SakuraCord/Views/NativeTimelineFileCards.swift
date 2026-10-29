@@ -28,30 +28,27 @@ extension NativeTimelineCanvasView {
 
     func fileCardPointerHit(at local: CGPoint, rowIndex: Int, rowOrigin: CGFloat, message: Message)
         -> ComponentButtonPointerHit? {
-        for card in fileCards(at: rowIndex, messageID: message.id) {
-            let state = model?.attachmentDownloads.states[card.attachment.id]
-            let part = NativeTimelineFileCard.Part.allCases.lazy
-                .compactMap { part in card.frame(of: part, state: state).map { (part, $0) } }
-                .first { $0.1.contains(local) }
-            guard part != nil || card.frame.contains(local) else { continue }
-            return ComponentButtonPointerHit(
-                target: .fileCard(messageID: message.id, attachmentID: card.attachment.id, part: part?.0),
-                rowIndex: rowIndex, message: message, kind: .fileCard(card, part: part?.0),
-                frame: (part?.1 ?? card.frame).offsetBy(dx: 0, dy: rowOrigin)
-            )
-        }
-        return nil
+        guard let card = fileCards(at: rowIndex, messageID: message.id).first(where: { $0.frame.contains(local) })
+        else { return nil }
+        return ComponentButtonPointerHit(
+            target: .fileCard(messageID: message.id, attachmentID: card.attachment.id),
+            rowIndex: rowIndex, message: message, kind: .fileCard(card),
+            frame: card.frame.offsetBy(dx: 0, dy: rowOrigin)
+        )
+    }
+
+    /// Where a file card draws, including its bubble hover highlight, so
+    /// its press animation redraws the card alone rather than its row.
+    func fileCardDisplayFrame(_ target: NativeTimelineComponentButtonTarget, at index: Int) -> CGRect? {
+        fileCards(at: index, messageID: target.messageID)
+            .first { .fileCard(messageID: target.messageID, attachmentID: $0.attachment.id) == target }
+            .map { $0.frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4)).offsetBy(dx: 0, dy: displayedRowOrigin(at: index)) }
     }
 
     func installFileCardCursors(at index: Int, rowOrigin: CGFloat) {
         guard let messageID = items[index].messageID else { return }
         for card in fileCards(at: index, messageID: messageID) {
-            let state = model?.attachmentDownloads.states[card.attachment.id]
-            for part in NativeTimelineFileCard.Part.allCases {
-                if let frame = card.frame(of: part, state: state) {
-                    addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
-                }
-            }
+            addCursorRect(card.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
         }
     }
 
@@ -68,12 +65,23 @@ extension NativeTimelineCanvasView {
         for (identifier, cached) in bitmapCache where showsFile(cached.item) {
             invalidateBitmap(identifier)
         }
-        setNeedsDisplay(visibleRect)
-        // Starting, finishing, or failing moves the card's clickable parts;
-        // a progress tick does not.
-        if case let .downloading(fraction)? = downloads.states[attachmentID], fraction > 0 { return }
-        window?.invalidateCursorRects(for: self)
-        items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
+        let isProgressTick = if case let .downloading(fraction)? = downloads.states[attachmentID] { fraction > 0 } else { false }
+        guard isProgressTick else {
+            setNeedsDisplay(visibleRect)
+            items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
+            return
+        }
+        // A progress tick changes only the badge's ring and the detail line.
+        guard var index = rowIndex(at: max(0, visibleRect.minY)) else { return }
+        while items.indices.contains(index), displayedRowOrigin(at: index) < visibleRect.maxY {
+            if let messageID = items[index].messageID, showsFile(items[index]) {
+                let origin = displayedRowOrigin(at: index)
+                for card in fileCards(at: index, messageID: messageID) where card.attachment.id == attachmentID {
+                    setNeedsDisplay(card.frame.offsetBy(dx: 0, dy: origin))
+                }
+            }
+            index += 1
+        }
     }
 
     /// What activating a file card does in its current download state.

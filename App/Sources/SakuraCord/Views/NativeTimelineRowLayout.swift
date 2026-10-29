@@ -197,7 +197,9 @@ struct NativeTimelineRowLayout {
 
     var fileCards: [NativeTimelineFileCard] {
         attachmentRegions.compactMap {
-            $0.attachment.mediaKind == .file ? NativeTimelineFileCard(frame: $0.frame, attachment: $0.attachment) : nil
+            $0.attachment.mediaKind == .file
+                ? NativeTimelineFileCard(frame: $0.frame, attachment: $0.attachment, isInBubble: bubbleRegion != nil)
+                : nil
         }
     }
 

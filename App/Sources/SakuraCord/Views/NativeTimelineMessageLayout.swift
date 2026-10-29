@@ -616,10 +616,16 @@ extension NativeTimelineRowLayout {
                 if hasRichContent {
                     verticalOffset += NativeTimelineFileCard.spacing
                 }
+                // In a bubble, which grows to fit it, a file spans the
+                // column so its hover highlight lines up with the bubble.
                 let frame = CGRect(
                     x: contentX, y: verticalOffset,
-                    width: min(NativeTimelineFileCard.maximumWidth, inlineMediaMaximumWidth),
-                    height: NativeTimelineFileCard.height
+                    width: usesBubbles
+                        ? contentWidth
+                        : NativeTimelineFileCard.fittedWidth(
+                            for: attachment, isInBubble: false, maximumWidth: inlineMediaMaximumWidth
+                        ),
+                    height: NativeTimelineFileCard.height(isInBubble: usesBubbles)
                 )
                 regions[attachment.id] = AttachmentRegion(frame: frame, attachment: attachment, previewKey: nil)
                 verticalOffset = frame.maxY
