@@ -601,6 +601,12 @@ extension NativeTimelineCanvasView {
         let region: NativeTimelineVoiceMessageRegion
         let control: VoiceMessageControl
         let origin: CGFloat
+
+        /// Whether a release lands on the control this press began on. A row
+        /// can hold several audio files, so the player has to match too.
+        func isReleased(on released: VoiceMessagePointerHit?) -> Bool {
+            released?.row == row && released?.region.playbackID == region.playbackID && released?.control == control
+        }
     }
 
     /// The voice message or audio file control under `point`. An audio
@@ -655,11 +661,11 @@ extension NativeTimelineCanvasView {
         case .waveform:
             playback.endScrub(press.region.playbackID)
         case .play:
-            if released?.row == press.row, released?.control == .play {
+            if press.isReleased(on: released) {
                 playback.toggle(press.region.playbackID, source: press.region.source, duration: press.region.knownDuration(in: playback))
             }
         case .speed:
-            guard released?.row == press.row, released?.control == .speed else { break }
+            guard press.isReleased(on: released) else { break }
             if press.region.style == .audioFile { playback.toggleAudioFileMute() } else { playback.cycleSpeed() }
         }
         return true

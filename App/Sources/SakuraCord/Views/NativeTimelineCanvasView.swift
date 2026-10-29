@@ -342,7 +342,13 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     /// A hovered audio file's seek bar while another player is active.
     var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
     /// The text preview a scroll gesture began over, which keeps the gesture.
-    var textPreviewScrollTarget: String?
+    /// The row tells apart copies of one file, as in a forward.
+    struct TextPreviewScrollTarget {
+        let row: NativeMessageTimelineItem.Identifier
+        let attachmentID: String
+    }
+
+    var textPreviewScrollTarget: TextPreviewScrollTarget?
     var voiceMessageActiveID: VoiceMessagePlaybackID?
     var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?

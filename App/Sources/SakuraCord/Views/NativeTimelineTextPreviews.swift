@@ -119,17 +119,17 @@ extension NativeTimelineCanvasView {
     private func scrollTextPreview(with event: NSEvent) -> Bool {
         let isWheel = event.phase.isEmpty && event.momentumPhase.isEmpty
         if isWheel || event.phase.contains(.began) {
-            textPreviewScrollTarget = scrollableTextPreview(at: convert(event.locationInWindow, from: nil))?.attachment.id
+            textPreviewScrollTarget = scrollableTextPreview(at: convert(event.locationInWindow, from: nil))
         }
         guard let target = textPreviewScrollTarget,
               let previews = model?.attachmentTextPreviews,
-              let index = visibleTextPreviewRow(containing: target),
-              let preview = layouts[index].textPreviews.first(where: { $0.attachment.id == target })
+              let index = rowIndex(forIdentifier: target.row),
+              let preview = layouts[index].textPreviews.first(where: { $0.attachment.id == target.attachmentID })
         else { return false }
         // Momentum follows the gesture, so the preview keeps it until then.
         if event.momentumPhase.contains(.ended) { textPreviewScrollTarget = nil }
         let maximum = preview.maximumScroll
-        let stored = previews.scrollOffsets[target] ?? .zero
+        let stored = previews.scrollOffsets[target.attachmentID] ?? .zero
         let current = CGPoint(x: min(stored.x, maximum.x), y: min(stored.y, maximum.y))
         let lineStep = event.hasPreciseScrollingDeltas ? 1 : InterfaceScale.metric(16)
         let next = CGPoint(
@@ -137,28 +137,19 @@ extension NativeTimelineCanvasView {
             y: min(max(current.y - event.scrollingDeltaY * lineStep, 0), maximum.y)
         )
         if next == current { return !isWheel }
-        previews.setScrollOffset(next, for: target)
+        previews.setScrollOffset(next, for: target.attachmentID)
         invalidateBitmap(items[index].identifier)
         setNeedsDisplay(rowFrame(at: index))
         return true
     }
 
-    private func scrollableTextPreview(at point: CGPoint) -> NativeTimelineTextPreview? {
+    private func scrollableTextPreview(at point: CGPoint) -> TextPreviewScrollTarget? {
         guard let index = rowIndex(at: point.y), layouts.indices.contains(index),
               let messageID = items[index].messageID
         else { return nil }
         let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        return textPreviews(at: index, messageID: messageID).first {
-            $0.boxFrame.contains(local) && $0.maximumScroll != .zero
-        }
-    }
-
-    private func visibleTextPreviewRow(containing attachmentID: String) -> Int? {
-        guard var index = rowIndex(at: max(0, visibleRect.minY)) else { return nil }
-        while items.indices.contains(index), layouts.indices.contains(index), displayedRowOrigin(at: index) < visibleRect.maxY {
-            if layouts[index].textPreviews.contains(where: { $0.attachment.id == attachmentID }) { return index }
-            index += 1
-        }
-        return nil
+        return textPreviews(at: index, messageID: messageID)
+            .first { $0.boxFrame.contains(local) && $0.maximumScroll != .zero }
+            .map { TextPreviewScrollTarget(row: items[index].identifier, attachmentID: $0.attachment.id) }
     }
 }

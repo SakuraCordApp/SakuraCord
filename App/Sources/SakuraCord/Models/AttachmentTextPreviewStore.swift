@@ -46,8 +46,12 @@ final class AttachmentTextPreviewStore {
     }
 
     nonisolated static let byteLimit = 50_000
+    /// Finished previews kept, oldest dropped first. A dropped preview loads
+    /// again when a row next shows it, and far fewer than this fit on screen.
+    static let capacity = 50
 
     private(set) var states: [String: State] = [:]
+    private var finishOrder: [String] = []
     /// Messages showing a file that is still loading. The same file can
     /// appear in more than one, as in a forward.
     private var waitingMessages: [String: Set<MessageID>] = [:]
@@ -98,6 +102,8 @@ final class AttachmentTextPreviewStore {
                 let preview = try? await Self.fetch(source)
                 guard let self else { return }
                 states[attachment.id] = preview.map(State.loaded) ?? .failed
+                finishOrder.append(attachment.id)
+                if finishOrder.count > Self.capacity { states[finishOrder.removeFirst()] = nil }
                 for waiting in waitingMessages.removeValue(forKey: attachment.id) ?? [] { onChange?(waiting) }
             }
         case .loading:
@@ -139,13 +145,21 @@ final class AttachmentTextPreviewStore {
         var request = URLRequest(url: url)
         request.setValue("bytes=0-\(byteLimit)", forHTTPHeaderField: "Range")
         request.setValue("text/plain", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
+        defer { bytes.task.cancel() }
         let http = response as? HTTPURLResponse
         if let status = http?.statusCode, !(200 ..< 300).contains(status) { throw URLError(.badServerResponse) }
-        // Discord counts what is left from the range's total, so a server
-        // that ignores the range sends the whole file with nothing left.
+        // The range's size, read even from a server that ignores the range.
+        var data = Data()
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > byteLimit { break }
+        }
+        // Discord counts what is left from the range's total. A server that
+        // ignores the range gives the file's length instead.
         let total = (http?.value(forHTTPHeaderField: "Content-Range")?.split(separator: "/").last).flatMap { Int($0) }
-        let bytesLeft = total.map { max(0, $0 - data.count) } ?? 0
+            ?? Int(response.expectedContentLength)
+        let bytesLeft = max(0, total - data.count)
         var text = decode(data, contentType: http?.value(forHTTPHeaderField: "Content-Type"))
         // The range can end inside a character.
         if bytesLeft > 0, !text.isEmpty { text.removeLast() }

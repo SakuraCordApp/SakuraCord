@@ -1617,12 +1617,20 @@ extension DiscordMarkdown {
     /// numbers, keywords, operators, and capitalised or called names as titles.
     private static func highlightedCodeRuns(_ source: String, lineComment: String) -> [AppKitPlan.InlineRun] {
         var output: [AppKitPlan.InlineRun] = []
-        func append(_ text: Substring, _ color: AppKitPlan.SemanticColor?) {
-            if let last = output.last, last.color == color {
-                output[output.count - 1] = AppKitPlan.InlineRun(text: last.text + text, traits: [], link: nil, color: color)
-            } else {
-                output.append(AppKitPlan.InlineRun(text: String(text), traits: [], link: nil, color: color))
+        // Tokens are consecutive slices of `source`, so a run of one colour
+        // is cut from it once, when the colour changes.
+        var runStart = source.startIndex
+        var runColor: AppKitPlan.SemanticColor?
+        func endRun(at end: String.Index) {
+            if runStart < end {
+                output.append(AppKitPlan.InlineRun(text: String(source[runStart ..< end]), traits: [], link: nil, color: runColor))
             }
+            runStart = end
+        }
+        func append(_ token: Substring, _ color: AppKitPlan.SemanticColor?) {
+            guard color != runColor else { return }
+            endRun(at: token.startIndex)
+            runColor = color
         }
         // A block comment's continuation lines are coloured from their own start.
         let trimmed = source.drop { $0 == " " || $0 == "\t" }
@@ -1679,6 +1687,7 @@ extension DiscordMarkdown {
             append(source[cursor ..< end], "=+-*/%<>!&|^~?".contains(character) ? .codeOperator : nil)
             cursor = end
         }
+        endRun(at: source.endIndex)
         return output
     }
 }

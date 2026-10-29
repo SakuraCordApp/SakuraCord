@@ -913,11 +913,18 @@ extension NativeTimelineCanvasView {
             frame: accessibilityChildFrame(preview.frame, rowIndex: rowIndex),
             parent: parent
         )
-        let parts: [NativeTimelineTextPreview.Part] = (preview.expandFrame == nil ? [] : [.expand])
-            + (preview.viewWholeFileFrame == nil ? [] : [.viewWholeFile])
+        let parts = NativeTimelineTextPreview.Part.allCases.filter { preview.frame(of: $0) != nil }
         element.setAccessibilityCustomActions(parts.map { part in
-            NSAccessibilityCustomAction(name: part == .expand ? preview.expandLabel : "View Whole File") { [weak self] in
-                self?.activateTextPreview(preview, part: part, message: message, rowIndex: rowIndex)
+            let name = switch part {
+            case .expand: preview.expandLabel
+            case .language: "Change Language"
+            case .viewWholeFile: "View Whole File"
+            case .more: "More Options"
+            }
+            return NSAccessibilityCustomAction(name: name) { [weak self] in
+                // The language and More menus track modally, so they open
+                // after the action returns rather than holding its reply.
+                Task { @MainActor in self?.activateTextPreview(preview, part: part, message: message, rowIndex: rowIndex) }
                 return self != nil
             }
         } + [NSAccessibilityCustomAction(name: fileCardActionDescription(preview.attachment, name: preview.attachment.filename)) { [weak self] in
