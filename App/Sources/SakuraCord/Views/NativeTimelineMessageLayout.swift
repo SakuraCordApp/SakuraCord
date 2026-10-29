@@ -719,7 +719,8 @@ extension NativeTimelineRowLayout {
                         x: button.frame.midX - dots.width / 2, y: button.frame.midY - dots.height / 2,
                         width: dots.width, height: dots.height
                     ),
-                    style: .dots(.onFill)
+                    // Light dots on a solid fill, label-coloured on the translucent grey.
+                    style: .dots(DiscordComponentButtonAppearance.solidFillHexes(for: button.style) == nil ? .content : .onFill)
                 ))
             }
             for select in result.componentLayouts.flatMap(\.selects) where select.isLoading {

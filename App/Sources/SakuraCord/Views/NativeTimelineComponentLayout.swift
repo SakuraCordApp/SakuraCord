@@ -74,6 +74,10 @@ struct NativeTimelineComponentLayout {
         /// The emoji, label and link icon, centred when the button is wider.
         let contentWidth: CGFloat
 
+        /// Discord dims a disabled button to half opacity, but not the one
+        /// showing this message's pending action.
+        var opacity: CGFloat { isDisabled && !isLoading ? 0.5 : 1 }
+
         var contentMinX: CGFloat {
             frame.minX + max(NativeTimelineComponentButtonMetrics.horizontalPadding, (frame.width - contentWidth) / 2)
         }

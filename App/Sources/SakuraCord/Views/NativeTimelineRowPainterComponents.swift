@@ -1083,7 +1083,7 @@ extension NativeTimelineRowPainter {
     ) {
         // Discord darkens a button on hover and further while pressed, and
         // dims a disabled one to half opacity without either.
-        let isEnabled = !region.isDisabled || region.isLoading
+        let isEnabled = region.opacity == 1
         let pressProgress = isEnabled ? min(max(pressProgress, 0), 1) : 0
         let hover: CGFloat = isEnabled && isHovered ? 1 : 0
         let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -1104,7 +1104,7 @@ extension NativeTimelineRowPainter {
         }
 
         NSGraphicsContext.saveGraphicsState()
-        if !isEnabled { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
+        NSGraphicsContext.current?.cgContext.setAlpha(region.opacity)
         NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
         fill.setFill()
         NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: cornerRadius).fill()

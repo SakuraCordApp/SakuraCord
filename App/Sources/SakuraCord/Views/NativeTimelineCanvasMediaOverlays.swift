@@ -572,7 +572,8 @@ extension NativeTimelineCanvasView {
                 media: .media(url, maximumPixelDimension: 64),
                 frame: box.insetBy(dx: opticalInset, dy: opticalInset),
                 cornerRadius: InterfaceScale.metric(3),
-                isLooping: true
+                isLooping: true,
+                opacity: button.opacity
             )
         }
     }
