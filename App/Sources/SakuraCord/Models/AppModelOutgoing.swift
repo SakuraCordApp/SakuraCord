@@ -14,10 +14,53 @@ extension AppModel {
         if let outgoing = composer.outbox.draftsByNonce[nonce] { discardVoiceMessageFile(for: outgoing) }
         composer.outbox.draftsByNonce[nonce] = nil
         composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
+        attachmentUploads.finish(nonce: nonce)
         removeOutgoingMessage(
             nonce: nonce,
             channelID: message.channelID
         )
+        pruneOwnedPromisedAttachmentFiles()
+    }
+
+    /// Stops one file of a local send, in flight, waiting or failed. Like
+    /// the first-party upload card's cancel, stopping the last file stops
+    /// the whole message.
+    func cancelAttachmentUpload(_ attachmentID: String, of message: Message) {
+        guard let nonce = message.nonce,
+              attachmentUploads.canCancel(nonce: nonce, attachmentID: attachmentID),
+              let id = UUID(uuidString: attachmentID)
+        else { return }
+        // A failed send keeps no transfer; its retry starts from the edited draft.
+        guard outgoingState(nonce: nonce, channelID: message.channelID) != .failed else {
+            return removeOutgoingAttachment(id, nonce: nonce, channelID: message.channelID)
+        }
+        let session = accountSession()
+        Task {
+            // Storage can accept the last file before the stop arrives; the message then keeps it.
+            // An accepted stop already left the post, so a retry must not bring the file back.
+            guard await session.provider.cancelAttachmentUpload(id), isCurrentAccountSession(session) else { return }
+            removeOutgoingAttachment(id, nonce: nonce, channelID: message.channelID)
+        }
+    }
+
+    private func removeOutgoingAttachment(_ id: UUID, nonce: String, channelID: ChannelID) {
+        guard var outgoing = composer.outbox.draftsByNonce[nonce] else { return }
+        outgoing.attachments.removeAll { $0.id == id }
+        if outgoing.attachments.isEmpty {
+            composer.outbox.draftsByNonce[nonce] = nil
+            // Its slowmode reservation would otherwise block new sends until its turn.
+            if composer.outbox.withdrawWaitingDelivery(nonce: nonce) {
+                composer.slowmode.end(in: channelID)
+            }
+            attachmentUploads.finish(nonce: nonce)
+            removeOutgoingMessage(nonce: nonce, channelID: channelID)
+        } else {
+            composer.outbox.draftsByNonce[nonce] = outgoing
+            attachmentUploads.remove(attachmentID: id.uuidString, nonce: nonce)
+            mutateOutgoingMessage(nonce: nonce, channelID: channelID) {
+                $0.attachments.removeAll { $0.id == id.uuidString }
+            }
+        }
         pruneOwnedPromisedAttachmentFiles()
     }
 
@@ -258,6 +301,9 @@ extension AppModel {
             return Task { false }
         }
         let session = accountSession()
+        if composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] == nil {
+            attachmentUploads.begin(outgoing)
+        }
         composer.slowmode.begin(in: outgoing.channelID)
         let turn = composer.outbox.reserveDeliveryTurn(nonce: outgoing.nonce)
         let delivery = Task { @MainActor [weak self] () -> Bool in
@@ -265,12 +311,14 @@ extension AppModel {
             guard let self else { return false }
             defer {
                 if isCurrentAccountSession(session) {
-                    composer.slowmode.end(in: outgoing.channelID)
+                    if !composer.outbox.isWithdrawn(nonce: outgoing.nonce) {
+                        composer.slowmode.end(in: outgoing.channelID)
+                    }
                     composer.outbox.finishDelivery(for: turn)
                 }
             }
             let confirmedWhileWaiting = composer.outbox.beginDelivery(for: turn)
-            guard isCurrentAccountSession(session) else { return false }
+            guard isCurrentAccountSession(session), !composer.outbox.isWithdrawn(nonce: outgoing.nonce) else { return false }
             // A late Gateway confirmation can settle a retry while it waits;
             // sticker and poll bodies have no enforced nonce to stop a duplicate.
             if confirmedWhileWaiting
@@ -279,6 +327,7 @@ extension AppModel {
                 discardVoiceMessageFile(for: outgoing)
                 composer.outbox.draftsByNonce[outgoing.nonce] = nil
                 composer.outbox.stickerUploadSourceURLByNonce[outgoing.nonce] = nil
+                attachmentUploads.finish(nonce: outgoing.nonce)
                 return true
             }
             if let prepare, !(await prepare()) { return false }
@@ -323,8 +372,11 @@ extension AppModel {
             """
         )
         do {
-            let confirmed = try await session.provider.send(outgoing)
+            let confirmed = try await session.provider.send(outgoing) { [weak self] progress in
+                Task { @MainActor in self?.attachmentUploads.apply(progress, nonce: outgoing.nonce) }
+            }
             guard isCurrentAccountSession(session) else { return false }
+            attachmentUploads.finish(nonce: outgoing.nonce)
             recordMessageEmojiUsage(outgoing.content)
             confirmSlowmodeMessage(confirmed)
             let reconciled = reconcileVisibleOrCached(confirmed)
@@ -347,8 +399,14 @@ extension AppModel {
             // A Gateway confirmation is authoritative even if the REST request
             // subsequently times out or fails on the retired transport.
             if outgoingState(nonce: outgoing.nonce, channelID: outgoing.channelID) == .confirmed {
+                attachmentUploads.finish(nonce: outgoing.nonce)
                 return true
             }
+            // The user stopped every file, which already removed the message.
+            if error is CancellationError, composer.outbox.draftsByNonce[outgoing.nonce] == nil {
+                return false
+            }
+            attachmentUploads.fail(nonce: outgoing.nonce)
             recoverSlowmode(from: error, in: outgoing.channelID)
             // A timeout ends this attempt without proving whether it was delivered.
             // Keep the draft and nonce for explicit retry or discard; a late
@@ -390,7 +448,8 @@ extension AppModel {
             attachments: outgoing.attachments.enumerated().map {
                 var presentation = OptimisticAttachmentPresentation.attachment(
                     for: $0.element.url,
-                    index: $0.offset
+                    index: $0.offset,
+                    id: $0.element.id.uuidString
                 )
                 presentation.filename = $0.element.filename
                 presentation.description = $0.element.description

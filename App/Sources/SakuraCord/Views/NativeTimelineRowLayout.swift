@@ -212,6 +212,8 @@ struct NativeTimelineRowLayout {
     var mediaGalleryItemCount: Int {
         attachmentRegions.count { $0.attachment.mediaKind.isVisual }
     }
+
+    var uploadRegions: [UploadRegion] = []
     var voiceMessageRegion: NativeTimelineVoiceMessageRegion?
     /// Every voice message and audio file player in the row.
     var audioPlayers: [NativeTimelineVoiceMessageRegion] {
@@ -228,6 +230,16 @@ struct NativeTimelineRowLayout {
     var addReactionFrame: CGRect?
     var ephemeralRegion: EphemeralRegion?
     var failedFrame: CGRect?
+    var failedRetryFrame: CGRect?
+    /// A local send's upload cancels and its failed-send Retry.
+    var deliveryActions: [(frame: CGRect, kind: NativeTimelineFooterActionTarget.Kind)] {
+        uploadRegions.map { ($0.cancelFrame, .cancelUpload(attachmentID: $0.attachmentID)) }
+            + [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
+    }
+
+    func deliveryAction(at point: CGPoint) -> NativeTimelineFooterActionTarget.Kind? {
+        deliveryActions.first { $0.frame.contains(point) }?.kind
+    }
     var pinnedAtFrame: CGRect?
     var pollLayout: NativeTimelinePollLayout?
     var pollResultFrame: CGRect?

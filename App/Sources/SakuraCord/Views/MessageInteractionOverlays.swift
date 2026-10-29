@@ -229,6 +229,8 @@ nonisolated enum MessageOutboxPresentation {
         }
     }
 
+    static let retryTitle = String(localized: "Retry")
+
     static func failureText(for message: Message) -> String {
         guard message.outboxState == .failed,
               case let .autoModeration(explanation) = message.sendFailure

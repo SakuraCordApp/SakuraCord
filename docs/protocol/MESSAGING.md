@@ -14,7 +14,7 @@ and the outbox; MediaPipeline owns local media transformations.
 | DM/history/send budgets | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [MessageSendRateLimitContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSendRateLimitContractTests.swift) |
 | Search, forwarding and pins | [MessageSearchContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSearchContractTests.swift); [MessageForwardingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageForwardingContractTests.swift); [PinnedMessagesContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PinnedMessagesContractTests.swift) |
 | Polls and threads | [PollContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PollContractTests.swift); [ForumProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ForumProviderContractTests.swift); [ThreadActionContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ThreadActionContractTests.swift); [ThreadPolicyTests.swift](../../Packages/SakuraCordModels/Tests/SakuraCordModelsTests/ThreadPolicyTests.swift) |
-| Uploads | [UploadPrivacyContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadPrivacyContractTests.swift); [AttachmentUploadURLValidationTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AttachmentUploadURLValidationTests.swift); [UploadPrivacyPreparationTests.swift](../../App/Tests/SakuraCordAppTests/UploadPrivacyPreparationTests.swift) |
+| Uploads | [UploadPrivacyContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadPrivacyContractTests.swift); [UploadCancellationContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadCancellationContractTests.swift); [AttachmentUploadURLValidationTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AttachmentUploadURLValidationTests.swift); [UploadPrivacyPreparationTests.swift](../../App/Tests/SakuraCordAppTests/UploadPrivacyPreparationTests.swift) |
 
 ## Sends and history
 
@@ -780,6 +780,16 @@ policy. A prepared or compacted file fitting the account cap is accepted,
 including equality at the boundary. The provider repeats the cap check before
 reservation. Discord-issued upload URLs are validated and receive only the
 headers needed for storage, not account credentials.
+
+A message's files share one reservation, then every storage PUT starts at once.
+The official client (web build 653945, observed 29 October 2026) also PUTs in
+parallel, but reserves each file separately and starts as soon as it is attached;
+SakuraCord starts after Send. Each file reports its own progress and can be
+stopped alone: its PUT is cancelled and the message is posted without it.
+Stopping every file posts nothing. A failed upload leaves the message failed for
+explicit Retry, which reserves and uploads again. The official client instead
+resumes a failed PUT by itself every few seconds; SakuraCord does not replay
+storage PUTs.
 
 Compression and external-host preferences live in **Settings → Features**;
 unavailable dependent controls remain visible but disabled. Both policies default

@@ -484,6 +484,7 @@ final class AppModel {
     @ObservationIgnored let voiceMessagePlayback = VoiceMessagePlaybackStore()
     @ObservationIgnored let attachmentDownloads = AttachmentDownloadStore()
     @ObservationIgnored let attachmentTextPreviews = AttachmentTextPreviewStore()
+    @ObservationIgnored let attachmentUploads = AttachmentUploadProgressStore()
     @ObservationIgnored let channelVoiceMessageComposer = VoiceMessageComposerState(destination: .channel)
     @ObservationIgnored let threadVoiceMessageComposer = VoiceMessageComposerState(destination: .thread)
     var gifResults: [GIFSearchResult] = []
@@ -508,15 +509,6 @@ final class AppModel {
         ProfilePresentationState?
     var expandedProfilePresentation: ProfilePresentationState?
     var isInspectorProfilePresented = false
-    var selectedMember: Member? {
-        inspectorProfilePresentation?.member
-    }
-    var selectedProfile: UserProfile? {
-        inspectorProfilePresentation?.profile
-    }
-    var isLoadingProfile: Bool {
-        inspectorProfilePresentation?.isLoading ?? false
-    }
     var profileErrorMessage: String? {
         inspectorProfilePresentation?.errorMessage
     }

@@ -965,6 +965,7 @@ extension NativeTimelineCanvasView {
             threadCardInteraction: threadCardInteraction(forMessageID: item.messageID),
             isEphemeralDismissHovered: hoveredFooterAction?.messageID == item.messageID && hoveredFooterAction?.kind == .ephemeralDismiss,
             isTranslationActionHovered: hoveredFooterAction?.messageID == item.messageID && hoveredFooterAction?.kind == .translation,
+            hoveredDeliveryAction: hoveredFooterAction?.messageID == item.messageID ? hoveredFooterAction?.kind : nil,
             isSuppressedToggleHovered: isSuppressedToggleHovered(item),
             hoveredReactionID: hoveredReactionID(inMessageAt: index),
             isAddReactionHovered: isAddReactionHovered(inMessageAt: index),

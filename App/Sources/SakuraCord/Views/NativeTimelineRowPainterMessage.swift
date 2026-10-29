@@ -28,6 +28,8 @@ struct NativeTimelineMessageDrawInput {
     let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
     let isTranslationActionHovered: Bool
+    /// A hovered upload cancel or Retry of a local send.
+    let hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind?
     let hidesMessageContent: Bool
     let hoveredReactionID: String?
     let isAddReactionHovered: Bool
@@ -54,6 +56,7 @@ extension NativeTimelineRowPainter {
         drawPollResult(input)
         drawMessageLinkedImages(input)
         drawMessageAttachments(input)
+        drawMessageUploads(input)
         drawMessageVoiceMessage(input)
         drawMessageEmbeds(input)
         drawMessageComponentsAndStickers(input)
@@ -780,6 +783,15 @@ extension NativeTimelineRowPainter {
                 font: .interfacePreferredFont(forTextStyle: .caption2),
                 color: .systemRed,
                 lineBreakMode: .byWordWrapping
+            )
+        }
+        if let frame = layout.failedRetryFrame {
+            text(
+                MessageOutboxPresentation.retryTitle,
+                in: frame,
+                font: .interfacePreferredFont(forTextStyle: .caption2),
+                color: .sakuraCordAccentColor,
+                isInteractiveHovered: input.hoveredDeliveryAction == .retrySend
             )
         }
     }

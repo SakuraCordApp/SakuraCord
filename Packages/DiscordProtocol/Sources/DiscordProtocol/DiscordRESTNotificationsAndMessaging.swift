@@ -263,14 +263,13 @@ extension DiscordRESTProvider {
             try await performSend(draft, progress: progress)
         }
         messageSendTasks[key] = task
-        do {
-            let message = try await task.value
+        // Cleared in the job that answers the caller, so no stop is accepted
+        // between the post finishing and the caller learning of it.
+        defer {
             messageSendTasks[key] = nil
-            return message
-        } catch {
-            messageSendTasks[key] = nil
-            throw error
+            postingAttachmentUploads.subtract(draft.attachments.map(\.id))
         }
+        return try await task.value
     }
 
     func uploadAttachments(
@@ -310,7 +309,8 @@ extension DiscordRESTProvider {
         return AttachmentUploadFile(
             url: attachment.url,
             name: name,
-            description: description.isEmpty ? nil : description
+            description: description.isEmpty ? nil : description,
+            id: attachment.id
         )
     }
 
@@ -335,16 +335,28 @@ extension DiscordRESTProvider {
         channelID: ChannelID,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async throws -> [JSONValue] {
+        defer {
+            for id in files.compactMap(\.id) {
+                attachmentUploadDelegates[id] = nil
+                cancelledAttachmentUploads.remove(id)
+            }
+        }
+        // A file stopped while its message waited is never read, since its
+        // temporary copy may already be gone; stopping every file sends nothing.
+        let pending = files.filter { $0.id.map { !cancelledAttachmentUploads.contains($0) } ?? true }
+        guard files.isEmpty || !pending.isEmpty else { throw CancellationError() }
         let generation = profileEditingGeneration
         let userID = currentUser?.id
         var prepared: [PreparedUploadFile] = []
         defer { prepared.forEach { $0.discard() } }
-        for file in files {
+        for file in pending {
             prepared.append(try await prepareUploadFile(file.url))
             try Task.checkCancellation()
             guard profileEditingGeneration == generation, currentUser?.id == userID else { throw ChatProviderError.unauthenticated }
         }
-        let files = zip(files, prepared).map { AttachmentUploadFile(url: $1.url, name: $0.name, description: $0.description) }
+        let files = zip(pending, prepared).map {
+            AttachmentUploadFile(url: $1.url, name: $0.name, description: $0.description, id: $0.id)
+        }
         let descriptors = try attachmentReservationDescriptors(for: files)
         let reservation = try await reserveAttachmentSlots(
             descriptors: descriptors,
@@ -352,18 +364,48 @@ extension DiscordRESTProvider {
             fileCount: files.count,
             progress: progress
         )
-        var uploaded: [JSONValue] = []
-        for (file, slot) in zip(files, reservation.attachments) {
-            try await uploadAttachmentFile(file, to: slot, progress: progress)
-            uploaded.append(
-                Self.uploadedAttachmentPayload(
-                    id: slot.id,
-                    file: file,
-                    uploadFilename: slot.uploadFilename
-                )
-            )
+        let delegates = files.map { file in
+            let delegate = AttachmentUploadTaskDelegate { sent, expected in
+                progress(.uploading(fileID: file.id, fileName: file.name, completed: sent, total: expected))
+            }
+            if let id = file.id {
+                attachmentUploadDelegates[id] = delegate
+                if cancelledAttachmentUploads.contains(id) { delegate.cancel() }
+            }
+            return delegate
         }
+        // Like the first-party uploader, every file goes to storage at once.
+        let results = try await withThrowingTaskGroup(of: (Int, JSONValue?).self) { group in
+            for (index, (file, slot)) in zip(files, reservation.attachments).enumerated() {
+                let delegate = delegates[index]
+                group.addTask {
+                    do {
+                        try await self.uploadAttachmentFile(file, to: slot, delegate: delegate, progress: progress)
+                    } catch where delegate.isCancelled {
+                        return (index, nil)
+                    }
+                    return (index, Self.uploadedAttachmentPayload(id: slot.id, file: file, uploadFilename: slot.uploadFilename))
+                }
+            }
+            var results = [JSONValue?](repeating: nil, count: files.count)
+            for try await (index, payload) in group { results[index] = payload }
+            return results
+        }
+        // A file stopped just as storage accepted it stays out of the message too.
+        let uploaded = zip(results, delegates).compactMap { payload, delegate in delegate.isCancelled ? nil : payload }
+        // Stopping every file stops the message, as the first-party upload card's cancel does.
+        guard files.isEmpty || !uploaded.isEmpty else { throw CancellationError() }
         return uploaded
+    }
+
+    /// Stops one file of a message send, whether it waits for its turn or is
+    /// sending. The message goes without it, or not at all once every one of
+    /// its files is stopped. Refused once the message with it is being posted.
+    public func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool {
+        guard !postingAttachmentUploads.contains(attachmentID) else { return false }
+        cancelledAttachmentUploads.insert(attachmentID)
+        attachmentUploadDelegates[attachmentID]?.cancel()
+        return true
     }
 
     func attachmentReservationDescriptors(
@@ -422,8 +464,10 @@ extension DiscordRESTProvider {
     func uploadAttachmentFile(
         _ file: AttachmentUploadFile,
         to slot: AttachmentSlotDTO,
+        delegate: AttachmentUploadTaskDelegate? = nil,
         progress: @escaping @Sendable (MessageSendProgress) -> Void
     ) async throws {
+        if delegate?.isCancelled == true { throw CancellationError() }
         guard let uploadURL = Self.validatedAttachmentUploadURL(from: slot.uploadURL) else {
             throw ChatProviderError.invalidRequest(
                 "Discord returned an invalid attachment upload URL.")
@@ -434,16 +478,17 @@ extension DiscordRESTProvider {
             if accessed { fileURL.stopAccessingSecurityScopedResource() }
         }
         let total = ((try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size]) as? NSNumber)?.int64Value ?? 0
-        progress(.uploading(fileName: file.name, completed: 0, total: total))
+        progress(.uploading(fileID: file.id, fileName: file.name, completed: 0, total: total))
         let response = try await performStorageUpload(
             fileURL: fileURL, uploadURL: uploadURL, contentType: "application/octet-stream",
-            diagnosticTransport: "attachment_storage", diagnosticPath: "/attachments/\(slot.id)"
+            diagnosticTransport: "attachment_storage", diagnosticPath: "/attachments/\(slot.id)",
+            delegate: delegate
         )
         guard (200 ..< 300).contains(response.statusCode) else {
             throw apiDiagnostics.coalescing(ChatProviderError.invalidRequest(
                 "Discord's attachment storage rejected \(file.name)."), with: response)
         }
-        progress(.uploading(fileName: file.name, completed: total, total: total))
+        progress(.uploading(fileID: file.id, fileName: file.name, completed: total, total: total))
     }
 
     func performStorageUpload(
@@ -451,7 +496,8 @@ extension DiscordRESTProvider {
         uploadURL: URL,
         contentType: String,
         diagnosticTransport: String,
-        diagnosticPath path: String
+        diagnosticPath path: String,
+        delegate: (any URLSessionTaskDelegate)? = nil
     ) async throws -> HTTPURLResponse {
         var uploadRequest = URLRequest(url: uploadURL)
         uploadRequest.httpMethod = "PUT"
@@ -463,7 +509,7 @@ extension DiscordRESTProvider {
         let session = restSession
         let generation = restSessionGeneration
         do {
-            let (_, rawResponse) = try await session.upload(for: uploadRequest, fromFile: fileURL)
+            let (_, rawResponse) = try await session.upload(for: uploadRequest, fromFile: fileURL, delegate: delegate)
             guard let response = rawResponse as? HTTPURLResponse else {
                 throw ChatProviderError.invalidRequest(
                     "Discord's attachment storage returned an invalid HTTP response.")

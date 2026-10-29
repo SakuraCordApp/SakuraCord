@@ -3,6 +3,16 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    var selectedMember: Member? {
+        inspectorProfilePresentation?.member
+    }
+    var selectedProfile: UserProfile? {
+        inspectorProfilePresentation?.profile
+    }
+    var isLoadingProfile: Bool {
+        inspectorProfilePresentation?.isLoading ?? false
+    }
+
     func consumeProfileWidgetConnectionsChanged(userID: UserID, connections: [String: ProfileWidgetConnection]) {
         guard userID == snapshot?.currentUser.id else { return }
         preparedProfileEditingSnapshot?.presentation.widgetResources?.connections = connections

@@ -104,8 +104,8 @@ extension NativeTimelineCanvasView {
                     addCursorRect(region.profileFrame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                     addCursorRect(region.pillFrame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                 }
-                if let frame = layouts[index]
-                    .ephemeralRegion?.dismissFrame
+                for frame in [layouts[index].ephemeralRegion?.dismissFrame].compactMap(\.self)
+                    + layouts[index].deliveryActions.map(\.frame)
                 {
                     addCursorRect(
                         frame.offsetBy(dx: 0, dy: rowOrigin),
@@ -509,7 +509,7 @@ extension NativeTimelineCanvasView {
         if layouts[index].translationRegion?.actionFrame?.contains(local) == true {
             return .init(messageID: messageID, kind: .translation)
         }
-        return nil
+        return layouts[index].deliveryAction(at: local).map { .init(messageID: messageID, kind: $0) }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -736,6 +736,16 @@ extension NativeTimelineCanvasView {
         if layout.translationRegion?.actionFrame?.contains(point) == true {
             model?.performMessageTranslationCaptionAction(row.message)
             return true
+        }
+        switch layout.deliveryAction(at: point) {
+        case let .cancelUpload(attachmentID):
+            model?.cancelAttachmentUpload(attachmentID, of: row.message)
+            return true
+        case .retrySend:
+            actions?.retry(row.message)
+            return true
+        default:
+            break
         }
         if let tag = layout.serverTagRegion, tag.frame.contains(point),
            let guildID = tag.presentation.identity.guildID {
@@ -1594,6 +1604,9 @@ extension NativeTimelineCanvasView {
         }
         if layout.translationRegion?.actionFrame?.contains(point) == true {
             return .translationAction(message.id)
+        }
+        if let kind = layout.deliveryAction(at: point) {
+            return .deliveryAction(message.id, kind)
         }
         if let tag = layout.serverTagRegion, tag.frame.contains(point),
            let guildID = tag.presentation.identity.guildID {
