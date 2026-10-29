@@ -36,7 +36,8 @@ extension AppModel {
         currentVoiceConfiguration().inputDeviceID
     }
 
-    /// Lets voice playback and file downloads re-sign expiring attachment links.
+    /// Lets voice playback, file downloads, and the text viewer re-sign
+    /// expiring attachment links.
     func configureAttachmentMedia() {
         let resolveRemoteURL: @MainActor (URL) async -> URL = { [weak self] url in
             guard let self, DiscordAttachmentLink.needsRefresh(url, now: .now) else { return url }
@@ -45,6 +46,7 @@ extension AppModel {
         }
         voiceMessagePlayback.resolveRemoteURL = resolveRemoteURL
         attachmentDownloads.resolveRemoteURL = resolveRemoteURL
+        MediaViewerText.resolveRemoteURL = resolveRemoteURL
         voiceMessagePlayback.onError = { [weak self] message in
             self?.errorMessage = message
         }

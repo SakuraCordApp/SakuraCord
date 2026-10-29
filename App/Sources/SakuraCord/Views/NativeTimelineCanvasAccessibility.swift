@@ -792,42 +792,7 @@ extension NativeTimelineCanvasView {
                 parent: parent
             )
             let attachmentChildren = layout.attachmentRegions.map { region in
-                let attachment = region.attachment
-                let revealKey =
-                    NativeTimelineComponentRevealKey.attachment(
-                        messageID: message.id,
-                        attachmentID: attachment.id
-                    )
-                let isHiddenSpoiler =
-                    attachment.isSpoiler
-                    && !spoilerRevealStore.isMediaRevealed(revealKey)
-                let contentLabel =
-                    attachment.description
-                    ?? attachment.title
-                    ?? attachment.filename
-                let label = isHiddenSpoiler
-                    ? "Reveal spoiler media"
-                    : contentLabel
-                return accessibilityElement(
-                    role: .button,
-                    label: label,
-                    help: isHiddenSpoiler
-                        ? "Reveals this media without opening it"
-                        : !attachment.mediaKind.isVisual && attachment.textPreviewLanguage == nil
-                            ? fileCardActionDescription(attachment, name: contentLabel)
-                            : "Open \(contentLabel)",
-                    frame: accessibilityChildFrame(
-                        region.frame,
-                        rowIndex: rowIndex
-                    ),
-                    parent: gallery
-                ) { [weak self] in
-                    self?.activateAttachment(
-                        attachment,
-                        in: message,
-                        rowIndex: rowIndex
-                    ) ?? false
-                }
+                attachmentAccessibilityElement(region, message: message, rowIndex: rowIndex, parent: gallery)
             }
             gallery.setAccessibilityChildren(attachmentChildren)
             children.append(gallery)
@@ -835,7 +800,62 @@ extension NativeTimelineCanvasView {
         appendPlayerAccessibility(to: &children, message: message, layout: layout, rowIndex: rowIndex, parent: parent)
     }
 
-    /// Voice message and audio file players, and text previews, outside spoilers.
+    /// An attachment in a message's media gallery. A text file opens in the
+    /// viewer and offers its card's download as a custom action.
+    private func attachmentAccessibilityElement(
+        _ region: NativeTimelineRowLayout.AttachmentRegion,
+        message: Message,
+        rowIndex: Int,
+        parent: Any?
+    ) -> NSAccessibilityElement {
+        let attachment = region.attachment
+        let revealKey =
+            NativeTimelineComponentRevealKey.attachment(
+                messageID: message.id,
+                attachmentID: attachment.id
+            )
+        let isHiddenSpoiler =
+            attachment.isSpoiler
+            && !spoilerRevealStore.isMediaRevealed(revealKey)
+        let contentLabel =
+            attachment.description
+            ?? attachment.title
+            ?? attachment.filename
+        let label = isHiddenSpoiler
+            ? "Reveal spoiler media"
+            : contentLabel
+        let element = accessibilityElement(
+            role: .button,
+            label: label,
+            help: isHiddenSpoiler
+                ? "Reveals this media without opening it"
+                : !attachment.mediaKind.isVisual && attachment.textPreviewLanguage == nil
+                    ? fileCardActionDescription(attachment, name: contentLabel)
+                    : "Open \(contentLabel)",
+            frame: accessibilityChildFrame(
+                region.frame,
+                rowIndex: rowIndex
+            ),
+            parent: parent
+        ) { [weak self] in
+            self?.activateAttachment(
+                attachment,
+                in: message,
+                rowIndex: rowIndex
+            ) ?? false
+        }
+        if attachment.textPreviewLanguage != nil, !isHiddenSpoiler {
+            element.setAccessibilityCustomActions([
+                NSAccessibilityCustomAction(name: fileCardActionDescription(attachment, name: contentLabel)) { [weak self] in
+                    self?.model?.attachmentDownloads.activate(attachment)
+                    return self != nil
+                },
+            ])
+        }
+        return element
+    }
+
+    /// Voice message and audio file players outside spoilers.
     private func appendPlayerAccessibility(
         to children: inout [Any],
         message: Message,
