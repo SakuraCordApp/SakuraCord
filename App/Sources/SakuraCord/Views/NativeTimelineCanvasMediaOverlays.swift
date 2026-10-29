@@ -733,8 +733,9 @@ extension NativeTimelineCanvasView {
         reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
     }
 
-    /// The row's live reactions and stickers, whose still copies the row
-    /// leaves out: their transparent frames would show the still through.
+    /// The row's live reactions, stickers and button emoji, whose still
+    /// copies the row leaves out: their transparent frames would show the
+    /// still through.
     func animatedOverlayRoles(for row: NativeMessageTimelineItem.Identifier) -> Set<AnimatedMediaOverlayRole> {
         Set(animatedMediaOverlays.keys.compactMap { key in
             guard key.row == row, key.role.replacesPoster else { return nil }
