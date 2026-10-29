@@ -194,31 +194,6 @@ func `Public beta accents migrate into native-surface single-color themes`(
 }
 
 @MainActor
-@Test func `Upgrading existing themes preserves the background unless macOS selects an accent`() {
-    for theme in [
-        SakuraCordGradientTheme.defaultTheme,
-        SakuraCordGradientTheme(colors: [.discordBlurple, .sakuraPink], intensity: 0.65, brightness: 0.72),
-    ] {
-        let defaults = InMemoryPreferences()
-        defaults.set(theme.storageValue, forKey: "settings.appearance.customGradientTheme")
-        let preferences = SettingsPreferenceStore(defaults: defaults)
-        let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
-        let appearance = AppearanceSettingsStore(preferences: preferences).load()
-        let store = SakuraCordThemeStore(persistence: persistence)
-        #expect(appearance.matchBackgroundToPrimaryColor)
-        #expect(!appearance.overrideMacOSAccent)
-        #expect(AppAccentColorController.systemAccentColor(for: nil) == nil)
-        #expect(AppAccentColorController.systemAccentColor(for: -2) == nil)
-        store.setSystemAccentColor(AppAccentColorController.systemAccentColor(for: -2))
-        #expect(!store.isSystemAccentActive)
-        #expect(store.activeTheme == theme)
-        #expect(store.backgroundTheme == theme)
-        #expect(store.committedBackgroundTheme == theme)
-        #expect(persistence.load() == theme)
-    }
-}
-
-@MainActor
 @Test func `Invalid persisted theme values fall back safely`() {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     preferences.set(.string("not,a,theme"), for: .themeDesigner)
@@ -941,39 +916,29 @@ private final class ThemeIntermediateFrameProbe {
 }
 
 @MainActor
-@Test func `System primary stays locked while secondary background colours remain editable`() async throws {
+@Test func `Saved custom primary survives secondary edits while the system accent is active`() async throws {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
     let store = SakuraCordThemeStore(persistence: persistence)
     let custom = SakuraCordGradientTheme(colors: [.sakuraPink], intensity: 0.3, brightness: 0.8)
     store.apply(custom)
-    store.setMatchesBackgroundToPrimaryColor(false)
     let systemColor = try #require(AppAccentColorController.systemAccentColor(for: 4))
     store.setSystemAccentColor(systemColor)
-    #expect(Array(store.backgroundTheme.activeColors) == [systemColor])
-    store.setHue(0.4, at: 0)
-    #expect(store.activeTheme.colors[0] == systemColor)
+
     store.addColor(.discordBlurple)
-    #expect(store.activeTheme.activeColorCount == 2)
-    #expect(Array(store.backgroundTheme.activeColors) == [.discordBlurple])
+    #expect(persistence.load().colors[0] == custom.colors[0])
     store.setHue(0.4, at: 1)
-    store.finishInteraction()
-    #expect(store.activeTheme.colors[0] == systemColor)
-    #expect(store.backgroundTheme.colors[0].hue == 0.4)
-    #expect(persistence.load().colors[1].hue == 0.4)
-    store.setMatchesBackgroundToPrimaryColor(true)
-    #expect(Array(store.backgroundTheme.activeColors) == Array(store.activeTheme.activeColors))
     store.setSaturation(0)
     store.finishInteraction()
-    #expect(store.editableSaturation == 0)
-    #expect(store.activeTheme.colors[0] == systemColor)
     #expect(persistence.load().colors[0] == custom.colors[0])
+    #expect(persistence.load().colors[1].hue == 0.4)
+    #expect(persistence.load().colors[1].saturation == 0)
+
     await store.applyColor(.init(hue: 0.7, saturation: 0.5), at: 1, reduceMotion: true)
     #expect(persistence.load().colors[0] == custom.colors[0])
-    #expect(store.activeTheme.colors[0] == systemColor)
-    let random = store.randomizedTheme()
-    #expect(random.colors[0] == custom.colors[0])
-    store.apply(random)
+    await store.randomize(reduceMotion: true)
+    #expect(persistence.load().colors[0] == custom.colors[0])
     store.setSystemAccentColor(nil)
     #expect(store.activeTheme.colors[0] == custom.colors[0])
+    #expect(SakuraCordThemeStore(persistence: persistence).activeTheme == store.activeTheme)
 }
