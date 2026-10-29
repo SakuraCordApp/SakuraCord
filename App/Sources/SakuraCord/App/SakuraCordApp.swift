@@ -131,6 +131,8 @@ struct SakuraCordApp: App {
             appModel.appearanceSettings.colorScheme
         )
         InterfaceScale.shared.update(appModel.appearanceSettings.interfaceSize)
+        // After the interface size, which sets the icons' pixel size.
+        FileTypeIconCache.prewarm()
         SakuraCordRuntimeModelHolder.shared.model = appModel
         _model = State(initialValue: appModel)
     }
