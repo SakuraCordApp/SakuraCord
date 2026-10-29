@@ -12,6 +12,8 @@ struct NativeTimelineTextPreview {
     /// The footer's clickable parts.
     enum Part: String, CaseIterable {
         case expand
+        /// The name and size, which act on the file as a file card does.
+        case file
         case language
         case viewWholeFile
         case more
@@ -66,6 +68,7 @@ struct NativeTimelineTextPreview {
     func frame(of part: Part) -> CGRect? {
         switch part {
         case .expand: expandFrame
+        case .file: nameFrame.union(sizeFrame)
         case .language: languageFrame
         case .viewWholeFile: viewWholeFileFrame
         case .more: moreFrame

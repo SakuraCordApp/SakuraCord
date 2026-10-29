@@ -44,6 +44,8 @@ extension NativeTimelineCanvasView {
         switch part {
         case .expand:
             model.attachmentTextPreviews.toggleExpanded(preview.attachment, in: message)
+        case .file:
+            model.attachmentDownloads.activate(preview.attachment)
         case .language:
             showTextPreviewLanguageMenu(preview, message: message, rowIndex: rowIndex)
         case .viewWholeFile:

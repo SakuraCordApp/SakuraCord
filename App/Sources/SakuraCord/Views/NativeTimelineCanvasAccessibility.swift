@@ -918,6 +918,7 @@ extension NativeTimelineCanvasView {
         element.setAccessibilityCustomActions(parts.map { part in
             let name = switch part {
             case .expand: preview.expandLabel
+            case .file: fileCardActionDescription(preview.attachment, name: preview.attachment.filename)
             case .language: "Change Language"
             case .viewWholeFile: "View Whole File"
             case .more: "More Options"
@@ -931,10 +932,7 @@ extension NativeTimelineCanvasView {
                 Task { @MainActor in self.activateTextPreview(preview, part: part, message: message, rowIndex: index) }
                 return true
             }
-        } + [NSAccessibilityCustomAction(name: fileCardActionDescription(preview.attachment, name: preview.attachment.filename)) { [weak self] in
-            self?.model?.attachmentDownloads.activate(preview.attachment)
-            return self != nil
-        }])
+        })
         return element
     }
 
