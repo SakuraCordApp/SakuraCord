@@ -34,12 +34,15 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    /// Where a file card draws, including its bubble hover highlight, so
-    /// its press animation redraws the card alone rather than its row.
+    /// Where a file's cards draw, including their bubble hover highlight, so
+    /// a press animation redraws them alone rather than their row. Cards of
+    /// one file share a target, so all of them are included.
     func fileCardDisplayFrame(_ target: NativeTimelineComponentButtonTarget, at index: Int) -> CGRect? {
         fileCards(at: index, messageID: target.messageID)
-            .first { .fileCard(messageID: target.messageID, attachmentID: $0.attachment.id) == target }
-            .map { $0.frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4)).offsetBy(dx: 0, dy: displayedRowOrigin(at: index)) }
+            .filter { .fileCard(messageID: target.messageID, attachmentID: $0.attachment.id) == target }
+            .map { $0.frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4)) }
+            .reduce(nil as CGRect?) { $0?.union($1) ?? $1 }?
+            .offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
     }
 
     func installFileCardCursors(at index: Int, rowOrigin: CGFloat) {

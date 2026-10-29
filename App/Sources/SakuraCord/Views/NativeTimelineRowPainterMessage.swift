@@ -83,7 +83,7 @@ extension NativeTimelineRowPainter {
     private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
         let files = layout.attachmentRegions.filter { !$0.attachment.mediaKind.isVisual }.map(\.frame)
         guard let bubble = layout.bubbleRegion, let first = files.first,
-              first.minY - bubble.frame.minY > 8.5
+              first.minY - bubble.frame.minY > NativeTimelineBubbleLayout.verticalPadding + 0.5
         else { return nil }
         return files.dropFirst().reduce(first) { $0.union($1) }
     }
