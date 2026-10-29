@@ -14,6 +14,7 @@ struct NativeTimelineFileCard {
         .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize, weight: .medium)
     }
     static var detailFont: NSFont { .interfaceMonospacedDigitSystemFont(ofSize: 12, weight: .regular) }
+    static var linkFont: NSFont { .interfaceSystemFont(ofSize: 12, weight: .semibold) }
 
     let frame: CGRect
     let attachment: Attachment
@@ -30,10 +31,14 @@ struct NativeTimelineFileCard {
 
     /// The width that fits the name and size, which a bubble also grows to.
     static func fittedWidth(for attachment: Attachment, isInBubble: Bool, maximumWidth: CGFloat) -> CGFloat {
-        let text = max(
-            NativeTimelineRowLayout.measuredTextWidth(attachment.filename, font: nameFont),
-            NativeTimelineRowLayout.measuredTextWidth(sizeText(attachment.size), font: detailFont)
-        )
+        // Saved and failed files add Show in Finder or Retry to the detail line.
+        let states: [AttachmentDownloadStore.State?] = [nil, .finished(attachment.url, folder: nil), .failed]
+        let details = states.map { state in
+            let detail = detail(for: state, size: attachment.size)
+            return NativeTimelineRowLayout.measuredTextWidth(detail.text, font: detailFont)
+                + NativeTimelineRowLayout.measuredTextWidth(detail.link ?? "", font: linkFont)
+        }
+        let text = max(NativeTimelineRowLayout.measuredTextWidth(attachment.filename, font: nameFont), details.max() ?? 0)
         let width = inset(isInBubble: isInBubble) * 2 + iconSide + buttonDiameter + textGap * 2 + text
         return min(maximumWidth, Self.maximumWidth, max(minimumWidth, ceil(width)))
     }
