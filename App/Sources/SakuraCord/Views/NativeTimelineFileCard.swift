@@ -79,7 +79,7 @@ struct NativeTimelineFileCard {
         )
     }
 
-    /// An audio card's download button; any other card acts as a whole.
+    /// An audio card's download button.
     var downloadFrame: CGRect {
         let diameter = Self.chipDiameter
         return CGRect(
@@ -88,7 +88,10 @@ struct NativeTimelineFileCard {
         )
     }
 
-    var actionFrame: CGRect { isAudio ? downloadFrame : frame }
+    /// What acts on the file: the whole card, or an audio card's name row
+    /// beside its play button, including the detail line's Show in Finder or
+    /// Retry link.
+    var actionFrame: CGRect { isAudio ? nameFrame.union(detailFrame).union(downloadFrame) : frame }
 
     /// An audio card's seek row, under the name and ending with the card.
     var playerRowFrame: CGRect {
