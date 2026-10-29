@@ -25,7 +25,7 @@ struct NativeTimelineFileCard {
     /// The capsule's padding around its icon and button, which keeps the
     /// button concentric with the capsule's end.
     private static func inset(isInBubble: Bool) -> CGFloat { isInBubble ? 0 : InterfaceScale.metric(8) }
-    private static var iconSide: CGFloat { InterfaceScale.metric(40) }
+    static var iconSide: CGFloat { InterfaceScale.metric(40) }
     private static var buttonDiameter: CGFloat { InterfaceScale.metric(36) }
     private static var textGap: CGFloat { InterfaceScale.metric(10) }
 

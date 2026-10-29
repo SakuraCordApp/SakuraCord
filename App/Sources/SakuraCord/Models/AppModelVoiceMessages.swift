@@ -36,10 +36,15 @@ extension AppModel {
         currentVoiceConfiguration().inputDeviceID
     }
 
-    /// Lets voice playback and file downloads re-sign expiring attachment links.
+    /// Lets voice playback and file downloads re-sign expiring attachment
+    /// links, and readies file cards' icons before a conversation shows them.
     func configureAttachmentMedia() {
+        FileTypeIconCache.prewarm()
         let resolveRemoteURL: @MainActor (URL) async -> URL = { [weak self] url in
-            guard let self, DiscordAttachmentLink.needsRefresh(url, now: .now) else { return url }
+            // Only Discord's own attachment links go to Discord; a local file
+            // or another host's link is used as it is.
+            guard let self, DiscordAttachmentLink.matches(url), DiscordAttachmentLink.needsRefresh(url, now: .now)
+            else { return url }
             let session = accountSession()
             return (try? await session.provider.refreshAttachmentURL(url)) ?? url
         }
