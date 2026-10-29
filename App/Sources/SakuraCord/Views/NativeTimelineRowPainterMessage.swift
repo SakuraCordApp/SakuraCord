@@ -81,7 +81,7 @@ extension NativeTimelineRowPainter {
     /// thread cards and invites do; a bubble holding only files is their card.
     private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
         guard let bubble = layout.bubbleRegion, let first = layout.fileCards.first,
-              first.frame.minY - bubble.frame.minY > 8.5
+              first.frame.minY - bubble.frame.minY > NativeTimelineBubbleLayout.verticalPadding + 0.5
         else { return nil }
         return layout.fileCards.dropFirst().reduce(first.frame) { $0.union($1.frame) }
     }
