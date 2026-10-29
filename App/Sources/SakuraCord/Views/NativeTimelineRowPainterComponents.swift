@@ -856,8 +856,10 @@ extension NativeTimelineRowPainter {
         bubbleRegion: NativeTimelineBubbleRegion
     ) -> BubbleIntegratedSectionGeometry {
         let bubbleFrame = bubbleRegion.frame
-        let ownsTopEdge = frame.minY - bubbleFrame.minY <= 8.5
-        let ownsBottomEdge = bubbleFrame.maxY - frame.maxY <= 8.5
+        // Content within the bubble's own padding of an edge reaches it.
+        let edgeSlack = NativeTimelineBubbleLayout.verticalPadding + 0.5
+        let ownsTopEdge = frame.minY - bubbleFrame.minY <= edgeSlack
+        let ownsBottomEdge = bubbleFrame.maxY - frame.maxY <= edgeSlack
         let sectionMinY = ownsTopEdge
             ? bubbleFrame.minY
             : max(bubbleFrame.minY, frame.minY - 4.5)
