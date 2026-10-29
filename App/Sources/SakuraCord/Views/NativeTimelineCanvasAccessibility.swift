@@ -592,35 +592,9 @@ extension NativeTimelineCanvasView {
         let rowIndex = input.rowIndex
         let parent = input.parent
         if let region = layout.commandInvocationRegion {
-            let invokingUser =
-                message.interactionMetadata?.user?.displayName
-                ?? "Someone"
-            let commandName =
-                message.interactionMetadata?.displayName
-                ?? "command"
-            children.append(accessibilityElement(
-                role: .button,
-                label: "\(invokingUser) used /\(commandName)",
-                help: "Show profile",
-                frame: accessibilityChildFrame(
-                    region.frame,
-                    rowIndex: rowIndex
-                ),
-                parent: parent
-            ) { [weak self] in
-                guard let self,
-                      let user = message.interactionMetadata?.user
-                else { return false }
-                self.showMessageProfile(
-                    for: user,
-                    sourceMessage: message,
-                    anchor: self.accessibilityChildFrame(
-                        region.profileFrame,
-                        rowIndex: rowIndex
-                    )
-                )
-                return true
-            })
+            children.append(contentsOf: commandInvocationAccessibilityElements(
+                region, message: message, rowIndex: rowIndex, parent: parent
+            ) as [Any])
         }
         if !message.type.hasGeneratedContent,
            layout.avatarFrame != nil || layout.authorFrame != nil

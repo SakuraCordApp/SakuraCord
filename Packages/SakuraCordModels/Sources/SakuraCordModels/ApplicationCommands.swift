@@ -457,3 +457,30 @@ public struct MessageInteractionMetadata: Codable, Hashable, Sendable {
         localizedName ?? name
     }
 }
+
+/// The command a message's interaction ran, with the option values as typed.
+public struct MessageInteractionData: Hashable, Sendable {
+    public struct Option: Hashable, Sendable {
+        public var name: String
+        public var type: ApplicationCommandOptionType
+        /// A choice's name when the value matches one; otherwise the raw value,
+        /// which is an ID for users, channels, roles, mentionables and attachments.
+        public var value: String?
+        public var options: [Option]
+
+        public init(name: String, type: ApplicationCommandOptionType, value: String?, options: [Option] = []) {
+            self.name = name
+            self.type = type
+            self.value = value
+            self.options = options
+        }
+    }
+
+    public var commandName: String
+    public var options: [Option]
+
+    public init(commandName: String, options: [Option]) {
+        self.commandName = commandName
+        self.options = options
+    }
+}

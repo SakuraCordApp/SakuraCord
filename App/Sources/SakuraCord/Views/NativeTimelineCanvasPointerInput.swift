@@ -100,13 +100,9 @@ extension NativeTimelineCanvasView {
                         )
                     }
                 }
-                if let frame = layouts[index]
-                    .commandInvocationRegion?.profileFrame
-                {
-                    addCursorRect(
-                        frame.offsetBy(dx: 0, dy: rowOrigin),
-                        cursor: .pointingHand
-                    )
+                if let region = layouts[index].commandInvocationRegion {
+                    addCursorRect(region.profileFrame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+                    addCursorRect(region.pillFrame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                 }
                 if let frame = layouts[index]
                     .ephemeralRegion?.dismissFrame
@@ -229,6 +225,7 @@ extension NativeTimelineCanvasView {
             authorNamePointerHit(at: point)
         )
         setHoveredServerTagMessageID(serverTagPointerHit(at: point))
+        setHoveredCommandPillMessageID(commandPillPointerHit(at: point))
         setHoveredMention(
             mentionPointerHit(at: point)
         )
@@ -274,6 +271,7 @@ extension NativeTimelineCanvasView {
         )
         setHoveredAuthorMessageID(authorNamePointerHit(at: point))
         setHoveredServerTagMessageID(serverTagPointerHit(at: point))
+        setHoveredCommandPillMessageID(commandPillPointerHit(at: point))
         setHoveredMention(mentionPointerHit(at: point))
         setHoveredTextLink(textLinkPointerHit(at: point))
         setHoveredTextSpoiler(textSpoilerPointerHit(at: point))
@@ -757,6 +755,10 @@ extension NativeTimelineCanvasView {
             )
             return true
         }
+        if layout.commandInvocationRegion?.pillFrame.contains(point) == true {
+            showCommandInvocation(for: row.message)
+            return true
+        }
         if let invocation = layout.commandInvocationRegion,
            invocation.profileFrame.contains(point),
            let user = row.message.interactionMetadata?.user
@@ -1016,7 +1018,8 @@ extension NativeTimelineCanvasView {
     func showMentionPopover(
         _ content: AnyView,
         anchor: StablePopoverAnchor,
-        configuration: StablePopoverConfiguration = .interactive
+        configuration: StablePopoverConfiguration = .interactive,
+        presentationIdentity: AnyHashable? = nil
     ) {
         activeMentionPopoverAnchor = anchor
         mentionPopoverCoordinator.update(
@@ -1027,6 +1030,7 @@ extension NativeTimelineCanvasView {
             onDismiss: { [weak self] in
                 self?.activeMentionPopoverAnchor = nil
             },
+            presentationIdentity: presentationIdentity,
             content: content
         )
     }
@@ -1204,6 +1208,7 @@ extension NativeTimelineCanvasView {
                 : nil
         )
         setHoveredServerTagMessageID(visibleRect.contains(point) ? serverTagPointerHit(at: point) : nil)
+        setHoveredCommandPillMessageID(visibleRect.contains(point) ? commandPillPointerHit(at: point) : nil)
         setHoveredMention(
             visibleRect.contains(point)
                 ? mentionPointerHit(at: point)
@@ -1596,6 +1601,9 @@ extension NativeTimelineCanvasView {
             == true
         {
             return .invocationProfile(message.id)
+        }
+        if layout.commandInvocationRegion?.pillFrame.contains(point) == true {
+            return .commandPill(message.id)
         }
         if layout.replyFrame?.contains(point) == true,
            let replyID = row.replyMessageID

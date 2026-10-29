@@ -689,6 +689,16 @@ ephemeral dismissal sends no DELETE, unlike authoritative `MESSAGE_DELETE`.
 Ephemeral rows expose dismissal and their own component controls, but no message
 hover capsule, context menu or accessibility message actions.
 
+Message `interaction_metadata` names the command and its user, never its option
+values. Opening the command indicator above a reply reads them with GET
+`/channels/{channel}/messages/{message}/interaction-data` (official web build
+653945, 2026-10-29). The response repeats the invocation's `name` and executed
+`options`, including subcommand wrappers, ID-string entity values and registered
+choice values, plus the full `application_command` definition whose
+`name_localized` and choices supply display labels. The official client skips
+the read for invocations still in its local interaction store, shows a spinner
+until the response arrives, and leaves the spinner when the read fails.
+
 ### Returned modals and files
 
 `INTERACTION_MODAL_CREATE` supplies nested `application.id`, opening interaction

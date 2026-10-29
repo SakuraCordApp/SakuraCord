@@ -26,6 +26,7 @@ public struct EmojiFrecencySaveContribution: Sendable {
 public protocol ChatProvider: Sendable {
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide
     func guildProfile(in guildID: GuildID) async throws -> GuildProfile
+    func messageInteractionData(channelID: ChannelID, messageID: MessageID) async throws -> MessageInteractionData
     func guildGuideProgress(in guildID: GuildID) async throws -> GuildGuideProgress
     func completeGuildGuideAction(in guildID: GuildID, channelID: ChannelID) async throws -> GuildGuideProgress
     func guildOnboarding(in guildID: GuildID) async throws -> GuildOnboarding
@@ -352,6 +353,9 @@ public extension ChatProvider {
     }
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildProfile(in guildID: GuildID) async throws -> GuildProfile { throw ChatProviderError.invalidRequest("Server profile is unavailable.") }
+    func messageInteractionData(channelID: ChannelID, messageID: MessageID) async throws -> MessageInteractionData {
+        throw ChatProviderError.invalidRequest("Command details are unavailable.")
+    }
     func guildGuideProgress(in guildID: GuildID) async throws -> GuildGuideProgress { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func completeGuildGuideAction(in guildID: GuildID, channelID: ChannelID) async throws -> GuildGuideProgress { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildOnboarding(in guildID: GuildID) async throws -> GuildOnboarding {

@@ -419,7 +419,10 @@ extension NativeTimelineCanvasView {
             invalidateThreadCard(messageID: messageID)
         }
         if let messageID = clearedTargets.serverTagMessageID {
-            invalidateServerTag(messageID: messageID)
+            invalidateVisibleMessageRow(messageID: messageID)
+        }
+        if let messageID = clearedTargets.commandPillMessageID {
+            invalidateVisibleMessageRow(messageID: messageID)
         }
         if let messageID = clearedTargets.footerAction?.messageID,
            let index = items.firstIndex(where: { $0.messageID == messageID })
@@ -911,6 +914,7 @@ extension NativeTimelineCanvasView {
             || hoveredAuthorMessageID == item.messageID
             || hoveredServerTagMessageID == item.messageID
             || serverTagCardPresentation?.messageID == item.messageID
+            || hoveredCommandPillMessageID == item.messageID
             || hoveredMention?.itemIdentifier == item.identifier
             || hoveredTextLink?.itemIdentifier == item.identifier
             || hoveredTextSpoiler?.itemIdentifier == item.identifier
@@ -949,6 +953,7 @@ extension NativeTimelineCanvasView {
             showsCompactTimestamp: hoveredCompactTimestampRow == index,
             isAuthorHovered: hoveredAuthorMessageID == item.messageID,
             isServerTagHovered: hoveredServerTagMessageID == item.messageID || serverTagCardPresentation?.messageID == item.messageID,
+            isCommandPillHovered: hoveredCommandPillMessageID == item.messageID,
             hoveredMention: hoveredMention?.itemIdentifier == item.identifier ? hoveredMention : nil,
             hoveredTextLink: hoveredTextLink?.itemIdentifier == item.identifier ? hoveredTextLink : nil,
             hoveredTextSpoiler: hoveredTextSpoiler?.itemIdentifier == item.identifier ? hoveredTextSpoiler : nil,

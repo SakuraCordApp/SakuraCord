@@ -16,6 +16,7 @@ struct NativeTimelineMessageDrawInput {
     let showsCompactTimestamp: Bool
     let isAuthorHovered: Bool
     let isServerTagHovered: Bool
+    let isCommandPillHovered: Bool
     let hoveredMention: NativeTimelineMentionHover?
     let hoveredTextLink: NativeTimelineTextLinkHover?
     let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
@@ -255,7 +256,8 @@ extension NativeTimelineRowPainter {
                 region,
                 bubbleConnector: input.layout.bubbleReferenceConnector,
                 message: input.row.message,
-                cosmeticPolicy: input.model?.cosmeticPolicy ?? .init()
+                cosmeticPolicy: input.model?.cosmeticPolicy ?? .init(),
+                isPillHovered: input.isCommandPillHovered
             )
         }
     }
@@ -1134,7 +1136,8 @@ extension NativeTimelineRowPainter {
         _ region: NativeTimelineRowLayout.CommandInvocationRegion,
         bubbleConnector: NativeTimelineRowLayout.ReferenceConnector?,
         message: Message,
-        cosmeticPolicy: ProfileCosmeticPolicy
+        cosmeticPolicy: ProfileCosmeticPolicy,
+        isPillHovered: Bool
     ) {
         if let bubbleConnector {
             elbowConnector(
@@ -1178,7 +1181,9 @@ extension NativeTimelineRowPainter {
             font: .interfacePreferredFont(forTextStyle: .caption1),
             color: .secondaryLabelColor
         )
-        NSColor.sakuraCordAccentColor.withAlphaComponent(0.16).setFill()
+        // Like Discord, hovering fills the pill and turns its content white.
+        let pillContentColor: NSColor = isPillHovered ? .white : .sakuraCordAccentColor
+        NSColor.sakuraCordAccentColor.withAlphaComponent(isPillHovered ? 1 : 0.16).setFill()
         NSBezierPath(
             roundedRect: region.pillFrame,
             xRadius: InterfaceScale.metric(4),
@@ -1187,7 +1192,7 @@ extension NativeTimelineRowPainter {
         systemSymbol(
             SakuraCordSystemSymbol.applicationCommands,
             in: region.commandSymbolFrame,
-            color: .sakuraCordAccentColor,
+            color: pillContentColor,
             inset: 0,
             weight: .semibold
         )
@@ -1200,7 +1205,7 @@ extension NativeTimelineRowPainter {
                 ).pointSize,
                 weight: .semibold
             ),
-            color: .sakuraCordAccentColor,
+            color: pillContentColor,
             lineBreakMode: .byTruncatingTail
         )
     }

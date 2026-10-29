@@ -168,6 +168,7 @@ final class AppModel {
     @ObservationIgnored let friends = FriendsState()
     @ObservationIgnored let ignoredUsers = IgnoredUsersState()
     @ObservationIgnored let serverTagCards = ServerTagCardStore()
+    @ObservationIgnored let messageInteractionData = MessageInteractionDataStore()
     @ObservationIgnored let issueReports = IssueReportStore()
     @ObservationIgnored let nicknameEditor = NicknameEditorStore()
     @ObservationIgnored let groupDirectMessageEditor = GroupDirectMessageEditorStore()
