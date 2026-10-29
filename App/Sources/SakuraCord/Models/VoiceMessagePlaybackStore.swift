@@ -9,8 +9,9 @@ import SakuraCordModels
 nonisolated enum VoiceMessagePlaybackID: Hashable, Sendable {
     case message(MessageID)
     case composer(MessageComposerDestination)
-    /// An audio file attachment, played in its file card.
-    case attachment(String)
+    /// An audio file attachment in a message, played in its file card. A
+    /// forward shows the same file in another message, with its own player.
+    case attachment(MessageID, attachmentID: String)
 }
 
 /// Owns voice-message and audio-file playback for the timeline and composer

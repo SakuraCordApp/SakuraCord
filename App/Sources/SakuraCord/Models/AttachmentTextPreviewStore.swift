@@ -42,6 +42,15 @@ final class AttachmentTextPreviewStore {
     nonisolated static let byteLimit = 50_000
 
     private(set) var states: [String: State] = [:]
+    /// Messages showing a file that is still loading. The same file can
+    /// appear in more than one, as in a forward.
+    private var waitingMessages: [String: Set<MessageID>] = [:]
+    private var broughtUpToDate: Set<MessageAttachment> = []
+
+    private struct MessageAttachment: Hashable {
+        let messageID: MessageID
+        let attachmentID: String
+    }
     private var expansions: [String: Bool] = [:]
     private var languages: [String: String] = [:]
     private var unwrapped: Set<String> = []
@@ -70,17 +79,28 @@ final class AttachmentTextPreviewStore {
         message.content.isEmpty && message.attachments.count == 1 && message.embeds.isEmpty
     }
 
-    /// Starts fetching a preview the first time its row is shown.
-    func load(_ attachment: Attachment, in messageID: MessageID) {
-        guard states[attachment.id] == nil else { return }
-        states[attachment.id] = .loading
-        let resolveRemoteURL = resolveRemoteURL
-        Task { [weak self] in
-            let source = await resolveRemoteURL?(attachment.url) ?? attachment.url
-            let preview = try? await Self.fetch(source)
-            guard let self else { return }
-            states[attachment.id] = preview.map(State.loaded) ?? .failed
-            onChange?(messageID)
+    /// Starts fetching a preview the first time a row shows it, and brings
+    /// a row laid out before the file finished loading up to date.
+    func load(_ attachment: Attachment, in messageID: MessageID, showing shown: State?) {
+        switch states[attachment.id] {
+        case nil:
+            states[attachment.id] = .loading
+            waitingMessages[attachment.id] = [messageID]
+            let resolveRemoteURL = resolveRemoteURL
+            Task { [weak self] in
+                let source = await resolveRemoteURL?(attachment.url) ?? attachment.url
+                let preview = try? await Self.fetch(source)
+                guard let self else { return }
+                states[attachment.id] = preview.map(State.loaded) ?? .failed
+                for waiting in waitingMessages.removeValue(forKey: attachment.id) ?? [] { onChange?(waiting) }
+            }
+        case .loading:
+            waitingMessages[attachment.id, default: []].insert(messageID)
+        case let state?:
+            // Once per message, so a row that can't relayout never loops.
+            if state != shown, broughtUpToDate.insert(MessageAttachment(messageID: messageID, attachmentID: attachment.id)).inserted {
+                onChange?(messageID)
+            }
         }
     }
 

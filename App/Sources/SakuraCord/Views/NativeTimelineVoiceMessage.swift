@@ -27,7 +27,7 @@ struct NativeTimelineVoiceMessageRegion {
     let style: Style
 
     var playbackID: VoiceMessagePlaybackID {
-        style == .audioFile ? .attachment(attachment.id) : .message(messageID)
+        style == .audioFile ? .attachment(messageID, attachmentID: attachment.id) : .message(messageID)
     }
 
     /// The bar behind an audio file's controls; its frame reaches above it
@@ -678,7 +678,9 @@ extension NativeTimelineCanvasView {
         while items.indices.contains(index), layouts.indices.contains(index), displayedRowOrigin(at: index) < viewport.maxY {
             if case let .remote(url) = layouts[index].voiceMessageRegion?.source { model.voiceMessagePlayback.prefetch(url) }
             if let messageID = items[index].messageID {
-                for preview in layouts[index].textPreviews { model.attachmentTextPreviews.load(preview.attachment, in: messageID) }
+                for preview in layouts[index].textPreviews {
+                    model.attachmentTextPreviews.load(preview.attachment, in: messageID, showing: preview.presentation.state)
+                }
             }
             index += 1
         }
@@ -721,7 +723,7 @@ extension NativeTimelineCanvasView {
         // identify every row whose playback presentation has changed.
         let identifiers = bitmapCache.compactMap { identifier, cached in
             guard let message = cached.item.messageRow?.message else { return nil as NativeMessageTimelineItem.Identifier? }
-            var players = message.attachments.filter { $0.mediaKind == .audio }.map { VoiceMessagePlaybackID.attachment($0.id) }
+            var players = message.attachments.filter { $0.mediaKind == .audio }.map { VoiceMessagePlaybackID.attachment(message.id, attachmentID: $0.id) }
             if (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) { players.append(.message(message.id)) }
             guard !players.isEmpty, playbackIDs.map({ !$0.isDisjoint(with: players) }) ?? true else { return nil }
             return identifier
