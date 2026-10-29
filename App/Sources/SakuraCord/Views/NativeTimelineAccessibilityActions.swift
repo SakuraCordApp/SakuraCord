@@ -412,6 +412,7 @@ extension NativeTimelineCanvasView {
             return MessageLinkActivator.activate(url, model: model)
         }
         guard let customID = region.customID else { return false }
+        if model?.presentIssueReport(forComponent: customID, on: message) == true { return true }
         actions?.submitComponent(message, customID, .button, [])
         return true
     }
