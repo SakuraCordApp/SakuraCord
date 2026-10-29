@@ -7,9 +7,9 @@ import SakuraCordModels
 struct NativeTimelineFileCard {
     /// The card's clickable parts. Each acts on the file the same way; the
     /// card's body only shows the hover button.
-    enum Part: String {
-        case name
+    enum Part: String, CaseIterable {
         case action
+        case name
         case detailLink
     }
 
@@ -53,7 +53,7 @@ struct NativeTimelineFileCard {
     /// The filename's own extent, which alone acts like a link.
     var nameFrame: CGRect {
         var line = nameLineFrame(isDownloading: false)
-        line.size.width = min(line.width, NativeTimelineRowPainter.measuredTextWidth(attachment.filename, font: Self.nameFont))
+        line.size.width = min(line.width, NativeTimelineRowLayout.measuredTextWidth(attachment.filename, font: Self.nameFont))
         return line
     }
 
@@ -96,9 +96,9 @@ struct NativeTimelineFileCard {
         guard let link = detail.link else { return nil }
         let line = detailLineFrame(isDownloading: false)
         let minX = detail.text.isEmpty ? line.minX
-            : line.minX + NativeTimelineRowPainter.measuredTextWidth(detail.text, font: Self.detailFont)
+            : line.minX + NativeTimelineRowLayout.measuredTextWidth(detail.text, font: Self.detailFont)
                 + InterfaceScale.metric(8)
-        let width = NativeTimelineRowPainter.measuredTextWidth(link, font: Self.detailFont)
+        let width = NativeTimelineRowLayout.measuredTextWidth(link, font: Self.detailFont)
         return CGRect(x: minX, y: line.minY, width: min(width, max(0, line.maxX - minX)), height: line.height)
     }
 

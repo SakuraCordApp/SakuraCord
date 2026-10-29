@@ -707,9 +707,9 @@ extension NativeTimelineRowPainter {
 
     static func componentContainer(
         _ frame: CGRect,
-        accentColor: UInt32?,
-        cornerRadius: CGFloat = DiscordRichMessageMetrics.cardCornerRadius
+        accentColor: UInt32?
     ) {
+        let cornerRadius = DiscordRichMessageMetrics.cardCornerRadius
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: cornerRadius
@@ -1317,7 +1317,7 @@ extension NativeTimelineRowPainter {
     /// reading the file each time held up the motions that redraw them.
     private static let fileImages = NSCache<NSURL, NSImage>()
 
-    private static func fileImage(at url: URL) -> NSImage? {
+    static func fileImage(at url: URL) -> NSImage? {
         if let image = fileImages.object(forKey: url as NSURL) { return image }
         guard let image = NSImage(contentsOf: url) else { return nil }
         fileImages.setObject(image, forKey: url as NSURL)

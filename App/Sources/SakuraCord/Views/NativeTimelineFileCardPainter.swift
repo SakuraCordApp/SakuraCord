@@ -2,8 +2,6 @@ import AppKit
 import SakuraCordModels
 
 extension NativeTimelineRowPainter {
-    private static var fileIcons: [String: NSImage] = [:]
-
     /// Draws a file card in its rest, hover, pressed, downloading, finished,
     /// or failed state.
     static func fileCard(
@@ -34,7 +32,9 @@ extension NativeTimelineRowPainter {
         border.lineWidth = 1
         border.stroke()
 
-        if let icon = fileIcon(named: NativeTimelineFileCard.iconName(for: card.attachment)) {
+        if let icon = Bundle.module.url(
+            forResource: "file-icon-\(NativeTimelineFileCard.iconName(for: card.attachment))", withExtension: "svg"
+        ).flatMap(fileImage(at:)) {
             icon.draw(in: card.iconFrame, from: .zero, operation: .sourceOver, fraction: 1,
                       respectFlipped: true, hints: nil)
         }
@@ -62,12 +62,14 @@ extension NativeTimelineRowPainter {
                 isInteractiveHovered: hovered == target(.detailLink)
             )
         }
-        let isCardHovered = hovered.map { [nil, .name, .action, .detailLink].map(target).contains($0) } ?? false
-        guard isCardHovered else { return }
+        let cardID = target(nil).componentID
+        guard let hovered, hovered.messageID == messageID,
+              hovered.componentID == cardID || hovered.componentID.hasPrefix(cardID + ":")
+        else { return }
+        let symbol = if case .finished = state { "magnifyingglass" } else { "arrow.down.to.line" }
         fileCardHoverButton(
             card,
-            symbol: state.map { if case .finished = $0 { "magnifyingglass" } else { "arrow.down.to.line" } }
-                ?? "arrow.down.to.line",
+            symbol: symbol,
             isHovered: hovered == target(.action),
             isPressed: pressed == target(.action)
         )
@@ -106,11 +108,12 @@ extension NativeTimelineRowPainter {
     ) {
         let frame = card.hoverButtonFrame
         let radius = InterfaceScale.metric(5)
+        let shape = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
         NSColor.controlBackgroundColor.setFill()
-        NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).fill()
+        shape.fill()
         if isHovered || isPressed {
             NativeTimelineSemanticColor.opacity(.secondaryLabelColor, isPressed ? 0.16 : 0.12).setFill()
-            NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).fill()
+            shape.fill()
         }
         NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
         let outline = NSBezierPath(
@@ -124,11 +127,4 @@ extension NativeTimelineRowPainter {
         )
     }
 
-    private static func fileIcon(named name: String) -> NSImage? {
-        if let icon = fileIcons[name] { return icon }
-        let icon = Bundle.module.url(forResource: "file-icon-\(name)", withExtension: "svg")
-            .flatMap(NSImage.init(contentsOf:))
-        fileIcons[name] = icon
-        return icon
-    }
 }

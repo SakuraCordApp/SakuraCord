@@ -9,18 +9,18 @@ extension NativeTimelineCanvasView {
             !$0.attachment.isSpoiler
                 || spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: $0.attachment.id))
         }
-        let components = layout.componentLayouts.flatMap { component in
-            let hiddenContainers = component.containers.filter {
-                $0.isSpoiler && !spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(messageID: messageID, componentID: $0.componentID)
-                )
-            }.map(\.frame)
+        let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
+            guard !component.files.isEmpty else { return [] }
+            let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: component, messageID: messageID, store: spoilerRevealStore
+            )
             return component.files.filter { region in
                 !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
                     region.frame, hiddenContainerFrames: hiddenContainers
-                ) && (!region.isSpoiler || spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(messageID: messageID, componentID: region.componentID)
-                ))
+                ) && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    messageID: messageID, contentID: region.componentID,
+                    isSpoiler: region.isSpoiler, store: spoilerRevealStore
+                )
             }.map(\.card)
         }
         return attachments + components
@@ -30,14 +30,14 @@ extension NativeTimelineCanvasView {
         -> ComponentButtonPointerHit? {
         for card in fileCards(at: rowIndex, messageID: message.id) {
             let state = model?.attachmentDownloads.states[card.attachment.id]
-            let part = [NativeTimelineFileCard.Part.action, .name, .detailLink].first {
-                card.frame(of: $0, state: state)?.contains(local) == true
-            }
+            let part = NativeTimelineFileCard.Part.allCases.lazy
+                .compactMap { part in card.frame(of: part, state: state).map { (part, $0) } }
+                .first { $0.1.contains(local) }
             guard part != nil || card.frame.contains(local) else { continue }
             return ComponentButtonPointerHit(
-                target: .fileCard(messageID: message.id, attachmentID: card.attachment.id, part: part),
-                rowIndex: rowIndex, message: message, kind: .fileCard(card, part: part),
-                frame: (part.flatMap { card.frame(of: $0, state: state) } ?? card.frame).offsetBy(dx: 0, dy: rowOrigin)
+                target: .fileCard(messageID: message.id, attachmentID: card.attachment.id, part: part?.0),
+                rowIndex: rowIndex, message: message, kind: .fileCard(card, part: part?.0),
+                frame: (part?.1 ?? card.frame).offsetBy(dx: 0, dy: rowOrigin)
             )
         }
         return nil
@@ -47,7 +47,7 @@ extension NativeTimelineCanvasView {
         guard let messageID = items[index].messageID else { return }
         for card in fileCards(at: index, messageID: messageID) {
             let state = model?.attachmentDownloads.states[card.attachment.id]
-            for part in [NativeTimelineFileCard.Part.name, .action, .detailLink] {
+            for part in NativeTimelineFileCard.Part.allCases {
                 if let frame = card.frame(of: part, state: state) {
                     addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                 }
@@ -67,7 +67,9 @@ extension NativeTimelineCanvasView {
         }
         identifiers.forEach(invalidateBitmap)
         setNeedsDisplay(visibleRect)
-        // The cancel button replaces the hover button while downloading.
+        // Starting, finishing, or failing moves the card's clickable parts;
+        // a progress tick does not.
+        if case let .downloading(fraction)? = downloads.states[attachmentID], fraction > 0 { return }
         window?.invalidateCursorRects(for: self)
     }
 }
