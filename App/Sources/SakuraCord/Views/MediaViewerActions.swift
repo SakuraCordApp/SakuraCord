@@ -69,7 +69,9 @@ enum MediaViewerActionService {
 
     nonisolated static func availableDestination(
         for proposedURL: URL,
-        fileExists: (String) -> Bool = FileManager.default.fileExists(atPath:)
+        // A link counts as taken even when it points nowhere, since writing
+        // over it fails.
+        fileExists: (String) -> Bool = { (try? FileManager.default.attributesOfItem(atPath: $0)) != nil }
     ) -> URL? {
         guard fileExists(proposedURL.path) else { return proposedURL }
         let stem = proposedURL.deletingPathExtension().lastPathComponent
