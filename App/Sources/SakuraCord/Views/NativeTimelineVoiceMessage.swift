@@ -110,7 +110,7 @@ struct NativeTimelineVoiceMessageRegion {
         let row = card.playerRowFrame
         let mute = InterfaceScale.metric(24)
         let muteFrame = CGRect(
-            x: card.downloadFrame.midX - mute / 2, y: row.midY - mute / 2, width: mute, height: mute
+            x: card.buttonFrame.midX - mute / 2, y: row.midY - mute / 2, width: mute, height: mute
         )
         let duration = card.attachment.durationSeconds ?? 0
         let timeFrame = CGRect(x: row.minX, y: row.minY, width: audioFileTimeWidth(duration), height: row.height)
@@ -119,8 +119,8 @@ struct NativeTimelineVoiceMessageRegion {
             x: barMinX, y: row.minY, width: max(1, muteFrame.minX - InterfaceScale.metric(8) - barMinX), height: row.height
         )
         return Self(
-            frame: card.badgeFrame.union(row),
-            playFrame: card.badgeFrame,
+            frame: card.playFrame.union(row),
+            playFrame: card.playFrame,
             waveformFrame: barFrame,
             timeFrame: timeFrame,
             speedFrame: muteFrame,

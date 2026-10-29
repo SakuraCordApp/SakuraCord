@@ -4,9 +4,10 @@ import SakuraCordModels
 /// A file attachment's card, shared by message attachments and Components V2
 /// file components: the geometry that painting, hit testing, and cursors
 /// agree on. Outside a bubble it is a capsule like a plain voice message's;
-/// inside one it sits straight on the bubble, as a voice message does. An
-/// audio file's badge is its play button, with the player's seek row below
-/// and a download button at the end of the name row.
+/// inside one it sits straight on the bubble, as a voice message does. The
+/// file's Finder icon leads, and a round button at the end downloads it. An
+/// audio file leads with its play button instead, has a smaller download
+/// button, and keeps its player's seek row below the name.
 struct NativeTimelineFileCard {
     static var spacing: CGFloat { InterfaceScale.metric(8) }
     static var minimumWidth: CGFloat { InterfaceScale.metric(220) }
@@ -21,7 +22,7 @@ struct NativeTimelineFileCard {
     let isInBubble: Bool
     var isAudio = false
     /// A message's text or code file, which opens in the media viewer; only
-    /// its badge downloads.
+    /// its button downloads.
     var opensInViewer = false
 
     /// The name row's height; an audio card adds its seek row below.
@@ -29,12 +30,12 @@ struct NativeTimelineFileCard {
         InterfaceScale.metric(isInBubble ? 44 : 52) + (isAudio ? InterfaceScale.metric(32) : 0)
     }
 
-    /// The capsule's padding around the badge, which keeps the badge
-    /// concentric with the capsule's ends.
+    /// The capsule's padding around its icon and button, which keeps the
+    /// button concentric with the capsule's end.
     private static func inset(isInBubble: Bool) -> CGFloat { isInBubble ? 0 : InterfaceScale.metric(8) }
-    private static var badgeDiameter: CGFloat { InterfaceScale.metric(36) }
+    private static var iconSide: CGFloat { InterfaceScale.metric(40) }
+    private static var buttonDiameter: CGFloat { InterfaceScale.metric(36) }
     private static var textGap: CGFloat { InterfaceScale.metric(10) }
-    private static func trailingPadding(isInBubble: Bool) -> CGFloat { InterfaceScale.metric(isInBubble ? 4 : 18) }
 
     /// The width that fits the name and size, which a bubble also grows to.
     static func fittedWidth(for attachment: Attachment, isInBubble: Bool, maximumWidth: CGFloat) -> CGFloat {
@@ -42,16 +43,11 @@ struct NativeTimelineFileCard {
             NativeTimelineRowLayout.measuredTextWidth(attachment.filename, font: nameFont),
             NativeTimelineRowLayout.measuredTextWidth(sizeText(attachment.size), font: detailFont)
         )
-        // An audio card's download button sits beside the name, and its seek
-        // row needs room to scrub.
-        let isAudio = attachment.mediaKind == .audio
-        let width = inset(isInBubble: isInBubble) + badgeDiameter + textGap + text
-            + (isAudio ? chipDiameter + textGap : 0) + trailingPadding(isInBubble: isInBubble)
-        let minimum = isAudio ? InterfaceScale.metric(320) : minimumWidth
+        let width = inset(isInBubble: isInBubble) * 2 + iconSide + buttonDiameter + textGap * 2 + text
+        // An audio card's seek row needs room to scrub.
+        let minimum = attachment.mediaKind == .audio ? InterfaceScale.metric(320) : minimumWidth
         return min(maximumWidth, Self.maximumWidth, max(minimum, ceil(width)))
     }
-
-    private static var chipDiameter: CGFloat { InterfaceScale.metric(28) }
 
     /// The name row, which is the whole card unless it plays audio.
     private var nameRow: CGRect {
@@ -60,42 +56,33 @@ struct NativeTimelineFileCard {
         return row
     }
 
-    /// The round badge that shows the file's type and is its action button,
-    /// like a voice message's play button.
-    var badgeFrame: CGRect {
-        let diameter = Self.badgeDiameter
+    /// The file type's Finder icon.
+    var iconFrame: CGRect {
+        let side = Self.iconSide
+        return CGRect(x: frame.minX + Self.inset(isInBubble: isInBubble) - InterfaceScale.metric(2), y: nameRow.midY - side / 2, width: side, height: side)
+    }
+
+    /// An audio card's play button, where other cards show their icon.
+    var playFrame: CGRect {
+        let inset = (Self.iconSide - Self.buttonDiameter) / 2
+        return iconFrame.insetBy(dx: inset, dy: inset)
+    }
+
+    /// The round download button, like a voice message's play button, or
+    /// an audio card's smaller one beside its play button.
+    var buttonFrame: CGRect {
+        let slot = Self.buttonDiameter
+        let diameter = isAudio ? InterfaceScale.metric(28) : slot
         return CGRect(
-            x: frame.minX + Self.inset(isInBubble: isInBubble), y: nameRow.midY - diameter / 2,
+            x: frame.maxX - Self.inset(isInBubble: isInBubble) - (slot + diameter) / 2, y: nameRow.midY - diameter / 2,
             width: diameter, height: diameter
         )
     }
 
-    /// Where the card draws, including its hover highlight in a bubble.
-    var highlightFrame: CGRect { frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4)) }
-
-    var nameFrame: CGRect {
-        let minX = badgeFrame.maxX + Self.textGap
-        let maxX = isAudio ? downloadFrame.minX - Self.textGap : frame.maxX - Self.trailingPadding(isInBubble: isInBubble)
-        return CGRect(
-            x: minX, y: nameRow.midY - InterfaceScale.metric(17),
-            width: max(1, maxX - minX), height: InterfaceScale.metric(18)
-        )
-    }
-
-    /// An audio card's download button.
-    var downloadFrame: CGRect {
-        let diameter = Self.chipDiameter
-        return CGRect(
-            x: frame.maxX - Self.inset(isInBubble: isInBubble) - InterfaceScale.metric(isInBubble ? 0 : 4) - diameter,
-            y: nameRow.midY - diameter / 2, width: diameter, height: diameter
-        )
-    }
-
-    /// What acts on the file: the whole card, or an audio card's name row
-    /// beside its play button, including the detail line's Show in Finder or
-    /// Retry link.
+    /// What acts on the file: the whole card, a text file's button, or an
+    /// audio card's name row with its Show in Finder or Retry link and button.
     var actionFrame: CGRect {
-        isAudio ? nameFrame.union(detailFrame).union(downloadFrame) : opensInViewer ? badgeFrame : frame
+        isAudio ? nameFrame.union(detailFrame).union(buttonFrame) : opensInViewer ? buttonFrame : frame
     }
 
     /// An audio card's seek row, under the name and ending with the card.
@@ -103,7 +90,19 @@ struct NativeTimelineFileCard {
         let minX = nameFrame.minX
         return CGRect(
             x: minX, y: nameRow.maxY - InterfaceScale.metric(isInBubble ? 2 : 6),
-            width: max(1, downloadFrame.maxX - minX), height: InterfaceScale.metric(28)
+            width: max(1, buttonFrame.maxX - minX), height: InterfaceScale.metric(28)
+        )
+    }
+
+    /// Where the card draws, including its hover highlight in a bubble.
+    var highlightFrame: CGRect { frame.insetBy(dx: -InterfaceScale.metric(6), dy: -InterfaceScale.metric(4)) }
+
+    var nameFrame: CGRect {
+        let minX = iconFrame.maxX + Self.textGap
+        return CGRect(
+            x: minX, y: nameRow.midY - InterfaceScale.metric(17),
+            width: max(1, buttonFrame.minX - Self.textGap - minX),
+            height: InterfaceScale.metric(18)
         )
     }
 
@@ -151,36 +150,6 @@ struct NativeTimelineFileCard {
         }
         return value.formatted(.number.precision(.fractionLength(2))) + " " + unit
     }
-
-    /// The SF Symbol for the file's type, from Discord's file-type classes.
-    static func symbolName(for attachment: Attachment) -> String {
-        let type = attachment.mediaType?.lowercased() ?? ""
-        let name = attachment.filename.lowercased()
-        if type.hasPrefix("image/vnd.adobe.photoshop") { return "paintbrush.pointed.fill" }
-        if type.hasPrefix("image/svg+xml") { return "chevron.left.forwardslash.chevron.right" }
-        if type.hasPrefix("image/") { return "photo.fill" }
-        if type.hasPrefix("video/") { return "film.fill" }
-        let pathExtension = (name as NSString).pathExtension
-        if pathExtension == "pdf" { return "doc.richtext.fill" }
-        if name.hasSuffix(".tar.gz") { return "doc.zipper" }
-        return extensionSymbols.first { $0.extensions.contains(pathExtension) }?.symbol ?? "doc.fill"
-    }
-
-    private static let extensionSymbols: [(symbol: String, extensions: Set<String>)] = [
-        ("paintbrush.pointed.fill", ["sketch", "ai", "psd", "aep"]),
-        ("doc.zipper", ["rar", "zip", "7z", "tar", "gz"]),
-        ("chevron.left.forwardslash.chevron.right", [
-            "c++", "cpp", "cc", "c", "h", "hpp", "mm", "m", "json", "js", "ts", "rb", "rake", "py", "asm", "fs",
-            "pyc", "dtd", "cgi", "bat", "rss", "java", "graphml", "idb", "lua", "o", "gml", "prl", "sls", "conf",
-            "cmake", "make", "sln", "vbe", "cxx", "wbf", "vbs", "r", "wml", "php", "bash", "applescript", "fcgi",
-            "yaml", "ex", "exs", "sh", "ml", "actionscript", "swift",
-            "html", "xhtml", "htm", "xml", "xsd", "css", "styl",
-        ]),
-        ("doc.text.fill", ["txt", "rtf", "doc", "docx", "md", "pages", "log"]),
-        ("rectangle.on.rectangle.angled.fill", ["ppt", "pptx", "pptm", "key"]),
-        ("tablecells.fill", ["xls", "xlsx", "numbers", "csv"]),
-        ("waveform", ["mp3", "ogg", "opus", "wav", "aiff", "flac", "m4a"]),
-    ]
 }
 
 extension NativeTimelineComponentButtonTarget {

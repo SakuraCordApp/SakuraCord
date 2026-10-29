@@ -39,7 +39,8 @@ extension NativeTimelineRowPainter {
         if card.isAudio {
             fileCardDownloadButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
         } else {
-            fileCardBadge(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
+            fileCardIcon(card)
+            fileCardButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
         }
 
         text(
@@ -67,34 +68,50 @@ extension NativeTimelineRowPainter {
         )
     }
 
-    /// The type badge, which turns into the card's action under the pointer
+    /// The file type's Finder icon, from a bitmap cached per type and size.
+    private static func fileCardIcon(_ card: NativeTimelineFileCard) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let frame = card.iconFrame
+        let scale = context.convertToDeviceSpace(CGSize(width: 1, height: 1)).width
+        guard let image = FileTypeIconCache.image(
+            forFilename: card.attachment.filename, pixels: Int(ceil(frame.width * abs(scale)))
+        ) else { return }
+        // Rows draw flipped; the bitmap is upright.
+        context.saveGState()
+        context.translateBy(x: 0, y: frame.minY + frame.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = .high
+        context.draw(image, in: frame)
+        context.restoreGState()
+    }
+
+    /// The round download button, which shows the next step, grows under
+    /// the pointer like a voice message's play button, dips when pressed,
     /// and rings its progress while downloading.
-    private static func fileCardBadge(
+    private static func fileCardButton(
         _ card: NativeTimelineFileCard,
         state: AttachmentDownloadStore.State?,
         palette: FileCardPalette,
         isHovered: Bool,
         pressProgress: CGFloat
     ) {
-        let typeSymbol = NativeTimelineFileCard.symbolName(for: card.attachment)
         let symbol = switch state {
-        case nil: isHovered ? "arrow.down" : typeSymbol
+        case nil: "arrow.down"
         case .downloading: "xmark"
-        case .finished: isHovered ? "magnifyingglass" : typeSymbol
-        case .failed: isHovered ? "arrow.clockwise" : "exclamationmark"
+        case .finished: "magnifyingglass"
+        case .failed: "arrow.clockwise"
         }
-        // The voice message play button's hover growth, then a press dip.
         let scale = isHovered ? 1.06 - 0.12 * pressProgress : 1
-        let base = card.badgeFrame
-        let badge = base.insetBy(dx: base.width * (1 - scale) / 2, dy: base.height * (1 - scale) / 2)
-        palette.badge.setFill()
-        NSBezierPath(ovalIn: badge).fill()
+        let base = card.buttonFrame
+        let button = base.insetBy(dx: base.width * (1 - scale) / 2, dy: base.height * (1 - scale) / 2)
+        palette.button.setFill()
+        NSBezierPath(ovalIn: button).fill()
         guard case let .downloading(fraction) = state else {
-            systemSymbol(symbol, in: badge, color: palette.glyph, inset: badge.width * 0.27, weight: .semibold)
+            systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
             return
         }
-        downloadRing(in: badge, fraction: fraction, color: palette.glyph)
-        systemSymbol(symbol, in: badge, color: palette.glyph, inset: badge.width * 0.34, weight: .bold)
+        downloadRing(in: button, fraction: fraction, color: palette.glyph)
+        systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
     }
 
     /// An audio card's download button: a voice message's chip, ringed
@@ -112,7 +129,7 @@ extension NativeTimelineRowPainter {
         case .finished: "magnifyingglass"
         case .failed: "arrow.clockwise"
         }
-        let chip = card.downloadFrame
+        let chip = card.buttonFrame
         (isHovered ? palette.chipHover : palette.chip).setFill()
         NSBezierPath(ovalIn: chip).fill()
         if pressProgress > 0 {
@@ -126,16 +143,16 @@ extension NativeTimelineRowPainter {
         systemSymbol(symbol, in: chip, color: glyph, inset: chip.width * 0.3, weight: .semibold)
     }
 
-    private static func downloadRing(in badge: CGRect, fraction: Double, color: NSColor) {
-        let ring = NSBezierPath(ovalIn: badge.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4)))
+    private static func downloadRing(in circle: CGRect, fraction: Double, color: NSColor) {
+        let ring = NSBezierPath(ovalIn: circle.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4)))
         ring.lineWidth = InterfaceScale.metric(2.5)
         color.withAlphaComponent(0.3).setStroke()
         ring.stroke()
-        let radius = badge.width / 2 - InterfaceScale.metric(4)
+        let radius = circle.width / 2 - InterfaceScale.metric(4)
         let arc = NSBezierPath()
         // Flipped rows: -90° is the top, and positive angles turn clockwise.
         arc.appendArc(
-            withCenter: CGPoint(x: badge.midX, y: badge.midY), radius: radius,
+            withCenter: CGPoint(x: circle.midX, y: circle.midY), radius: radius,
             startAngle: -90, endAngle: -90 + 360 * min(max(fraction, 0.02), 1)
         )
         arc.lineWidth = ring.lineWidth
@@ -144,10 +161,10 @@ extension NativeTimelineRowPainter {
         arc.stroke()
     }
 
-    /// A file card's colours: SakuraCord's accent badge with a white glyph,
+    /// A file card's colours: SakuraCord's accent button with a white glyph,
     /// inverted on an outgoing bubble as its voice messages are.
     private struct FileCardPalette {
-        let badge: NSColor
+        let button: NSColor
         let glyph: NSColor
         let name: NSColor
         let detail: NSColor
@@ -160,7 +177,7 @@ extension NativeTimelineRowPainter {
         init(bubble: NativeTimelineBubbleRegion?, isFailed: Bool) {
             let accent = NSColor.sakuraCordAccentColor
             if bubble?.isOutgoing == true {
-                badge = .white
+                button = .white
                 glyph = isFailed ? .systemRed : accent
                 link = .white
                 failure = .white
@@ -168,7 +185,7 @@ extension NativeTimelineRowPainter {
                 chip = NSColor.white.withAlphaComponent(0.2)
                 chipHover = NSColor.white.withAlphaComponent(0.32)
             } else {
-                badge = isFailed ? .systemRed : accent
+                button = isFailed ? .systemRed : accent
                 glyph = .white
                 link = accent
                 failure = .systemRed
