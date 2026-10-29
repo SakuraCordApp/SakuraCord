@@ -31,10 +31,7 @@ extension NativeTimelineVoiceMessagePainter {
         VoiceMessageLabelCache.draw(
             time, font: audioFileTimeFont, color: iconColor, centeredIn: region.timeFrame, alignment: .left
         )
-        // A length learned after layout can run past the time's frame; the
-        // bar then starts after it, as Discord's flexible bar does.
-        let timeEnd = region.timeFrame.minX + ceil((time as NSString).size(withAttributes: [.font: audioFileTimeFont]).width)
-        drawAudioFileSeekBar(region, state: state, startingAfter: timeEnd + InterfaceScale.metric(11), context: context)
+        drawAudioFileSeekBar(region.seekBarFrame(for: state.duration), state: state, context: context)
         NativeTimelineRowPainter.systemSymbol(
             state.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill",
             in: region.speedFrame,
@@ -74,15 +71,10 @@ extension NativeTimelineVoiceMessagePainter {
 
     /// The seek bar, with the hover preview, grabber, and time bubble.
     private static func drawAudioFileSeekBar(
-        _ region: NativeTimelineVoiceMessageRegion,
+        _ area: CGRect,
         state: NativeTimelineVoiceMessageDrawState,
-        startingAfter minimumX: CGFloat,
         context: CGContext
     ) {
-        var area = region.waveformFrame
-        if minimumX > area.minX {
-            area = CGRect(x: minimumX, y: area.minY, width: max(1, area.maxX - minimumX), height: area.height)
-        }
         let height = InterfaceScale.metric(6)
         let bar = CGRect(x: area.minX, y: area.midY - height / 2, width: area.width, height: height)
         func fill(_ rect: CGRect, _ color: NSColor) {

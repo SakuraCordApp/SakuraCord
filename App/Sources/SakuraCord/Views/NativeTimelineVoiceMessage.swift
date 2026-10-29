@@ -110,10 +110,8 @@ struct NativeTimelineVoiceMessageRegion {
         let playFrame = CGRect(x: controls.minX, y: controls.minY, width: button, height: button)
         let muteFrame = CGRect(x: controls.maxX - button, y: controls.minY, width: button, height: button)
         let duration = card.attachment.durationSeconds ?? 0
-        let template = VoiceMessageDurationFormat.string(duration) + "\u{2009}/\u{2009}" + VoiceMessageDurationFormat.string(duration)
-        let timeWidth = ceil((template as NSString).size(withAttributes: [.font: NativeTimelineVoiceMessagePainter.audioFileTimeFont]).width)
         let timeFrame = CGRect(
-            x: playFrame.maxX + InterfaceScale.metric(12), y: controls.minY, width: timeWidth, height: button
+            x: playFrame.maxX + InterfaceScale.metric(12), y: controls.minY, width: audioFileTimeWidth(duration), height: button
         )
         let barMinX = timeFrame.maxX + InterfaceScale.metric(11)
         let barFrame = CGRect(
@@ -131,6 +129,20 @@ struct NativeTimelineVoiceMessageRegion {
             bars: [],
             style: .audioFile
         )
+    }
+
+    /// The width of an audio file's "elapsed / length" label.
+    private static func audioFileTimeWidth(_ duration: TimeInterval) -> CGFloat {
+        let length = VoiceMessageDurationFormat.string(duration)
+        let template = length + "\u{2009}/\u{2009}" + length
+        return ceil((template as NSString).size(withAttributes: [.font: NativeTimelineVoiceMessagePainter.audioFileTimeFont]).width)
+    }
+
+    /// An audio file's seek bar. Like Discord's flexible bar, it starts
+    /// after the time label, which a length learned after layout can widen.
+    func seekBarFrame(for duration: TimeInterval?) -> CGRect {
+        let minX = max(waveformFrame.minX, timeFrame.minX + Self.audioFileTimeWidth(duration ?? 0) + InterfaceScale.metric(11))
+        return CGRect(x: minX, y: waveformFrame.minY, width: max(1, waveformFrame.maxX - minX), height: waveformFrame.height)
     }
 
     struct Metrics {
@@ -644,7 +656,10 @@ extension NativeTimelineCanvasView {
 
     private func scrubVoiceMessage(_ press: VoiceMessagePointerHit, to point: CGPoint) {
         guard let playback = model?.voiceMessagePlayback else { return }
-        let frame = press.region.waveformFrame
+        let region = press.region
+        let frame = region.style == .audioFile
+            ? region.seekBarFrame(for: playback.duration(of: region.playbackID) ?? region.knownDuration(in: playback))
+            : region.waveformFrame
         let fraction = (point.x - frame.minX) / max(frame.width, 1)
         playback.seek(press.region.playbackID, source: press.region.source,
                       duration: press.region.knownDuration(in: playback), fraction: Double(fraction))
@@ -840,9 +855,8 @@ extension NativeTimelineCanvasView {
         if region.style == .audioFile {
             state.duration = playback.duration(of: id) ?? region.knownDuration(in: playback)
             state.isMuted = playback.isAudioFileMuted
-            state.hoverFraction = hovered?.pointerX.map {
-                min(max(($0 - region.waveformFrame.minX) / max(region.waveformFrame.width, 1), 0), 1)
-            }
+            let bar = region.seekBarFrame(for: state.duration)
+            state.hoverFraction = hovered?.pointerX.map { min(max(($0 - bar.minX) / max(bar.width, 1), 0), 1) }
         }
         return state
     }
