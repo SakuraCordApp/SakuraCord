@@ -17,12 +17,15 @@ extension NativeTimelineRowPainter {
         let radius = NativeTimelineFileCard.cornerRadius
         let shape = NSBezierPath(roundedRect: card.frame, xRadius: radius, yRadius: radius)
         NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.14)
-        shadow.shadowOffset = NSSize(width: 0, height: -InterfaceScale.metric(1))
-        shadow.shadowBlurRadius = InterfaceScale.metric(4)
-        shadow.set()
-        NSColor.controlBackgroundColor.setFill()
+        // Discord's audio card sits flat on its darker base colour.
+        if !card.isAudio {
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.14)
+            shadow.shadowOffset = NSSize(width: 0, height: -InterfaceScale.metric(1))
+            shadow.shadowBlurRadius = InterfaceScale.metric(4)
+            shadow.set()
+        }
+        (card.isAudio ? NativeTimelineFileCard.audioBackgroundColor : .controlBackgroundColor).setFill()
         shape.fill()
         NSGraphicsContext.restoreGraphicsState()
         NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
@@ -33,7 +36,9 @@ extension NativeTimelineRowPainter {
         border.stroke()
 
         if let icon = Bundle.module.url(
-            forResource: "file-icon-\(NativeTimelineFileCard.iconName(for: card.attachment))", withExtension: "svg"
+            // Discord's audio card always shows the audio icon.
+            forResource: "file-icon-\(card.isAudio ? "audio" : NativeTimelineFileCard.iconName(for: card.attachment))",
+            withExtension: "svg"
         ).flatMap(fileImage(at:)) {
             icon.draw(in: card.iconFrame, from: .zero, operation: .sourceOver, fraction: 1,
                       respectFlipped: true, hints: nil)
@@ -84,7 +89,15 @@ extension NativeTimelineRowPainter {
             font: NativeTimelineFileCard.nameFont,
             color: .labelColor
         )
-        let line = card.detailLineFrame(isDownloading: true)
+        downloadProgressBar(in: card.detailLineFrame(isDownloading: true), fraction: fraction)
+        systemSymbol(
+            "xmark", in: card.cancelFrame,
+            color: isCancelHovered ? .labelColor : .secondaryLabelColor, inset: InterfaceScale.metric(5)
+        )
+    }
+
+    /// Discord's upload bar, mirrored for downloads, across a detail line.
+    static func downloadProgressBar(in line: CGRect, fraction: Double) {
         let track = CGRect(
             x: line.minX, y: line.midY - InterfaceScale.metric(4),
             width: max(0, line.width - InterfaceScale.metric(8)), height: InterfaceScale.metric(8)
@@ -96,10 +109,6 @@ extension NativeTimelineRowPainter {
         fill.size.width = max(track.height, track.width * min(max(fraction, 0), 1))
         NSColor.sakuraCordAccentColor.setFill()
         NSBezierPath(roundedRect: fill, xRadius: radius, yRadius: radius).fill()
-        systemSymbol(
-            "xmark", in: card.cancelFrame,
-            color: isCancelHovered ? .labelColor : .secondaryLabelColor, inset: InterfaceScale.metric(5)
-        )
     }
 
     /// The button group Discord overlays on a hovered card's corner.

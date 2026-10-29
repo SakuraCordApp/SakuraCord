@@ -127,6 +127,7 @@ extension NativeTimelineCanvasView {
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
                 installFileCardCursors(at: index, rowOrigin: rowOrigin)
+                installTextPreviewCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -643,6 +644,10 @@ extension NativeTimelineCanvasView {
                     activateInvite(card, message: hit.message, expands: expands)
                 case let .fileCard(card, _):
                     model?.attachmentDownloads.activate(card.attachment)
+                case let .textPreview(preview, part?):
+                    activateTextPreview(preview, part: part, message: hit.message, rowIndex: hit.rowIndex)
+                case .textPreview(_, nil):
+                    break
                 }
             }
             return true
@@ -846,8 +851,8 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
-            } else if attachment.mediaKind == .file {
-                // Like Discord, only a file card's name and button act.
+            } else if !attachment.mediaKind.isVisual {
+                // Like Discord, only a card's or preview's controls act.
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,
@@ -1185,6 +1190,7 @@ extension NativeTimelineCanvasView {
         setHoveredThreadMessageID(nil)
         setHoveredFooterAction(nil)
         setHoveredReaction(nil)
+        updateVoiceMessageHover(at: nil)
         setHoveredRow(nil)
     }
 
@@ -1703,7 +1709,8 @@ extension NativeTimelineCanvasView {
                 )
             )
         }
-        if let hit = fileCardPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message) {
+        if let hit = fileCardPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message)
+            ?? textPreviewPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message) {
             return hit
         }
         for layout in layouts[index].componentLayouts {

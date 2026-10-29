@@ -563,12 +563,13 @@ extension NativeTimelineRowLayout {
                 }
             }
             guard !usesComponentsV2 else { return }
-            // Like Discord, files leave the media gallery for cards stacked
-            // below it. Regions keep the attachments' order, which the send
-            // transition matches against the composer's.
+            // Like Discord, audio and other files leave the media gallery for
+            // cards and text previews stacked below it. Regions keep the
+            // attachments' order, which the send transition matches against
+            // the composer's.
             let (files, media) = (
-                message.attachments.filter { $0.mediaKind == .file },
-                message.attachments.filter { $0.mediaKind != .file }
+                message.attachments.filter { !$0.mediaKind.isVisual },
+                message.attachments.filter(\.mediaKind.isVisual)
             )
             var regions: [String: AttachmentRegion] = [:]
             if !media.isEmpty {
@@ -616,16 +617,42 @@ extension NativeTimelineRowLayout {
                 if hasRichContent {
                     verticalOffset += NativeTimelineFileCard.spacing
                 }
-                let frame = CGRect(
-                    x: contentX, y: verticalOffset,
-                    width: min(NativeTimelineFileCard.maximumWidth, inlineMediaMaximumWidth),
-                    height: NativeTimelineFileCard.height
-                )
+                let frame = appendFile(attachment)
                 regions[attachment.id] = AttachmentRegion(frame: frame, attachment: attachment, previewKey: nil)
                 verticalOffset = frame.maxY
                 hasRichContent = true
             }
             result.attachmentRegions = message.attachments.compactMap { regions[$0.id] }
+        }
+
+        /// Lays out a file's text preview, or its card with any audio player.
+        private mutating func appendFile(_ attachment: Attachment) -> CGRect {
+            let origin = CGPoint(x: contentX, y: verticalOffset)
+            if attachment.textPreviewLanguage != nil, let previews = source?.attachmentTextPreviews {
+                let presentation = previews.presentation(of: attachment, in: message)
+                if presentation.state != .failed {
+                    let preview = NativeTimelineTextPreview.make(
+                        attachment: attachment, message: message, presentation: presentation,
+                        origin: origin, width: min(contentWidth, NativeTimelineTextPreview.maximumWidth)
+                    )
+                    result.textPreviews.append(preview)
+                    return preview.frame
+                }
+            }
+            let isAudio = attachment.mediaKind == .audio
+            let card = NativeTimelineFileCard(
+                frame: CGRect(
+                    origin: origin,
+                    size: CGSize(
+                        width: min(NativeTimelineFileCard.maximumWidth, inlineMediaMaximumWidth),
+                        height: isAudio ? NativeTimelineFileCard.audioHeight : NativeTimelineFileCard.height
+                    )
+                ),
+                attachment: attachment,
+                isAudio: isAudio
+            )
+            if isAudio { result.audioFilePlayers.append(.audioFile(in: card, messageID: message.id)) }
+            return card.frame
         }
 
         private mutating func appendCards() {

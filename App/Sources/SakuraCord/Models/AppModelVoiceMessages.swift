@@ -36,7 +36,8 @@ extension AppModel {
         currentVoiceConfiguration().inputDeviceID
     }
 
-    /// Lets voice playback and file downloads re-sign expiring attachment links.
+    /// Lets voice playback, file downloads, and text previews re-sign expiring
+    /// attachment links, and previews lay out their rows again as they change.
     func configureAttachmentMedia() {
         let resolveRemoteURL: @MainActor (URL) async -> URL = { [weak self] url in
             guard let self, DiscordAttachmentLink.needsRefresh(url, now: .now) else { return url }
@@ -45,6 +46,16 @@ extension AppModel {
         }
         voiceMessagePlayback.resolveRemoteURL = resolveRemoteURL
         attachmentDownloads.resolveRemoteURL = resolveRemoteURL
+        attachmentTextPreviews.resolveRemoteURL = resolveRemoteURL
+        attachmentTextPreviews.onChange = { [weak self] messageID in
+            guard let self else { return }
+            let inChannel = messages.contains { $0.id == messageID }
+            let inThread = threadMessages.contains { $0.id == messageID }
+            if inChannel { publishMessageRowsUpdate(changedMessageIDs: [messageID]) }
+            if inThread { publishThreadMessageRowsPresentationUpdate(changedMessageIDs: [messageID]) }
+            // Search results, pins, and other surfaces lay out from their own rows.
+            if !inChannel, !inThread { invalidateTimelinePresentation() }
+        }
         voiceMessagePlayback.onError = { [weak self] message in
             self?.errorMessage = message
         }

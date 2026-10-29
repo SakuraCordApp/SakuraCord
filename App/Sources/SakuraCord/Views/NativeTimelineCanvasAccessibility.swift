@@ -787,7 +787,7 @@ extension NativeTimelineCanvasView {
                     label: label,
                     help: isHiddenSpoiler
                         ? "Reveals this media without opening it"
-                        : attachment.mediaKind == .file
+                        : !attachment.mediaKind.isVisual
                             ? fileCardActionDescription(attachment, name: contentLabel)
                             : "Open \(contentLabel)",
                     frame: accessibilityChildFrame(
@@ -806,8 +806,22 @@ extension NativeTimelineCanvasView {
             gallery.setAccessibilityChildren(attachmentChildren)
             children.append(gallery)
         }
-        if let region = layout.voiceMessageRegion {
+        appendPlayerAccessibility(to: &children, message: message, layout: layout, rowIndex: rowIndex, parent: parent)
+    }
+
+    /// Voice message and audio file players, and text previews, outside spoilers.
+    private func appendPlayerAccessibility(
+        to children: inout [Any],
+        message: Message,
+        layout: NativeTimelineRowLayout,
+        rowIndex: Int,
+        parent: NSAccessibilityElement
+    ) {
+        for region in layout.audioPlayers where !isConcealedSpoiler(region.attachment, in: message.id) {
             children.append(voiceMessageAccessibilityElement(region, rowIndex: rowIndex, parent: parent))
+        }
+        for preview in layout.textPreviews where !isConcealedSpoiler(preview.attachment, in: message.id) {
+            children.append(textPreviewAccessibilityElement(preview, message: message, rowIndex: rowIndex, parent: parent))
         }
     }
 
@@ -816,27 +830,30 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: Any?
     ) -> NSAccessibilityElement {
+        let isAudioFile = region.style == .audioFile
         let element = accessibilityElement(
             role: .button,
-            label: "Voice message, \(VoiceMessageDurationFormat.string(region.duration))",
-            help: "Plays or pauses the voice message",
+            label: isAudioFile
+                ? "Audio file, \(region.attachment.filename)"
+                : "Voice message, \(VoiceMessageDurationFormat.string(region.duration))",
+            help: isAudioFile ? "Plays or pauses the audio file" : "Plays or pauses the voice message",
             frame: accessibilityChildFrame(region.frame, rowIndex: rowIndex),
             parent: parent
         ) { [weak self] in
             guard let playback = self?.model?.voiceMessagePlayback else { return false }
-            playback.toggle(region.playbackID, source: region.source, duration: region.duration)
+            playback.toggle(region.playbackID, source: region.source, duration: region.knownDuration(in: playback))
             return true
         }
         element.setAccessibilityCustomActions([
-            NSAccessibilityCustomAction(name: "Change Playback Speed") { [weak self] in
+            NSAccessibilityCustomAction(name: isAudioFile ? "Mute or Unmute" : "Change Playback Speed") { [weak self] in
                 guard let playback = self?.model?.voiceMessagePlayback else { return false }
-                playback.cycleSpeed()
+                if isAudioFile { playback.toggleAudioFileMute() } else { playback.cycleSpeed() }
                 return true
             },
         ] + [-10.0, 10.0].map { offset in
             NSAccessibilityCustomAction(name: offset < 0 ? "Skip Back 10 Seconds" : "Skip Forward 10 Seconds") { [weak self] in
                 guard let playback = self?.model?.voiceMessagePlayback else { return false }
-                let duration = playback.duration(of: region.playbackID) ?? region.duration
+                let duration = playback.duration(of: region.playbackID) ?? region.knownDuration(in: playback) ?? 0
                 guard duration > 0 else { return false }
                 playback.seek(
                     region.playbackID,
@@ -847,6 +864,51 @@ extension NativeTimelineCanvasView {
                 return true
             }
         })
+        return element
+    }
+
+    /// A text preview's controls, as the preview's custom actions.
+    private func textPreviewAccessibilityElement(
+        _ preview: NativeTimelineTextPreview,
+        message: Message,
+        rowIndex: Int,
+        parent: Any?
+    ) -> NSAccessibilityElement {
+        let element = accessibilityElement(
+            role: .group,
+            label: "Text preview, \(preview.attachment.filename)",
+            value: preview.preview.map {
+                NativeTimelineTextPreview.displayedText(
+                    $0,
+                    shownLines: preview.isExpanded ? NativeTimelineTextPreview.expandedLineCount
+                        : NativeTimelineTextPreview.collapsedLineCount
+                )
+            },
+            frame: accessibilityChildFrame(preview.frame, rowIndex: rowIndex),
+            parent: parent
+        )
+        let parts = NativeTimelineTextPreview.Part.allCases.filter { preview.frame(of: $0) != nil }
+        let row = items[rowIndex].identifier
+        element.setAccessibilityCustomActions(parts.map { part in
+            let name = switch part {
+            case .expand: preview.expandLabel
+            case .language: "Change Language"
+            case .viewWholeFile: "View Whole File"
+            case .more: "More Options"
+            }
+            return NSAccessibilityCustomAction(name: name) { [weak self] in
+                // Rows above can move this one after the element is made, so
+                // the menus anchor to where the row is now.
+                guard let self, let index = self.rowIndex(forIdentifier: row, hint: rowIndex) else { return false }
+                // The language and More menus track modally, so they open
+                // after the action returns rather than holding its reply.
+                Task { @MainActor in self.activateTextPreview(preview, part: part, message: message, rowIndex: index) }
+                return true
+            }
+        } + [NSAccessibilityCustomAction(name: fileCardActionDescription(preview.attachment, name: preview.attachment.filename)) { [weak self] in
+            self?.model?.attachmentDownloads.activate(preview.attachment)
+            return self != nil
+        }])
         return element
     }
 

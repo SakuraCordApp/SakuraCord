@@ -15,21 +15,51 @@ struct NativeTimelineFileCard {
 
     static var maximumWidth: CGFloat { InterfaceScale.metric(432) }
     static var height: CGFloat { InterfaceScale.metric(74) }
+    /// An audio card adds Discord's player row below the file details.
+    static var audioHeight: CGFloat { InterfaceScale.metric(110) }
     static var spacing: CGFloat { InterfaceScale.metric(8) }
     static var cornerRadius: CGFloat { InterfaceScale.metric(8) }
+    /// Discord's lower base colour: a shade below the surface file cards use.
+    static let audioBackgroundColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        var base = NSColor.controlBackgroundColor
+        appearance.performAsCurrentDrawingAppearance {
+            base = NSColor.controlBackgroundColor.usingColorSpace(.sRGB) ?? .controlBackgroundColor
+        }
+        return base.blended(withFraction: isDark ? 0.12 : 0.016, of: .black) ?? base
+    }
+
     static var nameFont: NSFont { .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize) }
     static var detailFont: NSFont { .interfaceSystemFont(ofSize: 12) }
 
     let frame: CGRect
     let attachment: Attachment
+    /// Whether this is a message's audio file, whose player sits below.
+    var isAudio = false
 
     /// The 16-point padding inside the 1-point border.
     private var inset: CGFloat { InterfaceScale.metric(17) }
 
+    /// The middle of the icon and details, which an audio card raises to
+    /// its top to leave room for the player.
+    private var detailsMidY: CGFloat { isAudio ? frame.minY + InterfaceScale.metric(33) : frame.midY }
+
     var iconFrame: CGRect {
+        // Discord squeezes the audio icon to 24 points wide, keeping its
+        // aspect ratio from the top of a 40-point box.
+        isAudio
+            ? CGRect(x: frame.minX + inset, y: frame.minY + inset, width: InterfaceScale.metric(24), height: InterfaceScale.metric(32))
+            : CGRect(
+                x: frame.minX + inset, y: frame.midY - InterfaceScale.metric(20),
+                width: InterfaceScale.metric(30), height: InterfaceScale.metric(40)
+            )
+    }
+
+    /// The player row below an audio card's details.
+    var playerFrame: CGRect {
         CGRect(
-            x: frame.minX + inset, y: frame.midY - InterfaceScale.metric(20),
-            width: InterfaceScale.metric(30), height: InterfaceScale.metric(40)
+            x: frame.minX + inset, y: frame.minY + inset + InterfaceScale.metric(44),
+            width: max(1, frame.width - inset * 2), height: InterfaceScale.metric(32)
         )
     }
 
@@ -38,7 +68,7 @@ struct NativeTimelineFileCard {
         let minX = iconFrame.maxX + InterfaceScale.metric(8)
         let maxX = isDownloading ? cancelFrame.minX - InterfaceScale.metric(4) : frame.maxX - inset
         return CGRect(
-            x: minX, y: frame.midY - InterfaceScale.metric(18),
+            x: minX, y: detailsMidY - InterfaceScale.metric(18),
             width: max(1, maxX - minX), height: InterfaceScale.metric(20)
         )
     }
@@ -68,7 +98,7 @@ struct NativeTimelineFileCard {
     /// The cancel button that replaces the hover button while downloading.
     var cancelFrame: CGRect {
         CGRect(
-            x: frame.maxX - inset - InterfaceScale.metric(24), y: frame.midY - InterfaceScale.metric(12),
+            x: frame.maxX - inset - InterfaceScale.metric(24), y: detailsMidY - InterfaceScale.metric(12),
             width: InterfaceScale.metric(24), height: InterfaceScale.metric(24)
         )
     }

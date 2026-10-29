@@ -195,16 +195,28 @@ struct NativeTimelineRowLayout {
     /// One region per attachment, in message order: a gallery tile or a file card.
     var attachmentRegions: [AttachmentRegion] = []
 
+    var textPreviews: [NativeTimelineTextPreview] = []
+    var audioFilePlayers: [NativeTimelineVoiceMessageRegion] = []
+
+    /// File and audio cards; a text file shows as one when it can't preview.
     var fileCards: [NativeTimelineFileCard] {
-        attachmentRegions.compactMap {
-            $0.attachment.mediaKind == .file ? NativeTimelineFileCard(frame: $0.frame, attachment: $0.attachment) : nil
+        attachmentRegions.compactMap { region in
+            let attachment = region.attachment
+            guard !attachment.mediaKind.isVisual,
+                  !textPreviews.contains(where: { $0.attachment.id == attachment.id })
+            else { return nil }
+            return NativeTimelineFileCard(frame: region.frame, attachment: attachment, isAudio: attachment.mediaKind == .audio)
         }
     }
 
     var mediaGalleryItemCount: Int {
-        attachmentRegions.count { $0.attachment.mediaKind != .file }
+        attachmentRegions.count { $0.attachment.mediaKind.isVisual }
     }
     var voiceMessageRegion: NativeTimelineVoiceMessageRegion?
+    /// Every voice message and audio file player in the row.
+    var audioPlayers: [NativeTimelineVoiceMessageRegion] {
+        (voiceMessageRegion.map { [$0] } ?? []) + audioFilePlayers
+    }
     var embedFrames: [CGRect] = []
     var embedRegions: [EmbedRegion] = []
     var sakuraCordDeepLinkRegions: [SakuraCordDeepLinkRegion] = []
@@ -496,5 +508,18 @@ struct NativeTimelineSearchPrefixLayout {
             ),
             height: sectionFrame.maxY + 4
         )
+    }
+}
+
+extension NativeTimelineRowLayout {
+    /// Whether presentation the row reads from outside its message, an
+    /// author's server tag and its text previews, is unchanged.
+    func matchesLivePresentation(for item: NativeMessageTimelineItem, source: AppModel) -> Bool {
+        guard let message = item.messageRow?.message else { return true }
+        let previews = source.attachmentTextPreviews
+        guard textPreviews.allSatisfy({ $0.presentation == previews.presentation(of: $0.attachment, in: message) })
+        else { return false }
+        guard authorFrame != nil else { return true }
+        return authorPrimaryGuild == source.authorPresentation(for: message).user.primaryGuild
     }
 }

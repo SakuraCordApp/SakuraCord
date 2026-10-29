@@ -5,10 +5,7 @@ extension NativeTimelineCanvasView {
     /// The visible file cards in a message row, attachment cards first.
     private func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
-        let attachments = layout.fileCards.filter {
-            !$0.attachment.isSpoiler
-                || spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: $0.attachment.id))
-        }
+        let attachments = layout.fileCards.filter { !isConcealedSpoiler($0.attachment, in: messageID) }
         let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
             guard !component.files.isEmpty else { return [] }
             let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
