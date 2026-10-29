@@ -13,8 +13,14 @@ final class AttachmentTextPreviewStore {
         let text: String
         /// Bytes past the fetched range; zero when `text` is the whole file.
         let bytesLeft: Int
+        /// Split once, since every layout of the preview counts and slices them.
+        let lines: [Substring]
 
-        var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
+        nonisolated init(text: String, bytesLeft: Int) {
+            self.text = text
+            self.bytesLeft = bytesLeft
+            lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        }
     }
 
     enum State: Equatable {
@@ -33,10 +39,10 @@ final class AttachmentTextPreviewStore {
         var wrapsText: Bool
         var rendersMarkdown: Bool
 
+        var isMarkdownLanguage: Bool { ["markdown", "md", "mkd", "mkdown"].contains(language) }
+
         /// Discord renders Markdown files as Markdown unless asked not to.
-        var showsMarkdown: Bool {
-            rendersMarkdown && ["markdown", "md", "mkd", "mkdown"].contains(language)
-        }
+        var showsMarkdown: Bool { rendersMarkdown && isMarkdownLanguage }
     }
 
     nonisolated static let byteLimit = 50_000

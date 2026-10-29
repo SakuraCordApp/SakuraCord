@@ -76,7 +76,7 @@ extension NativeTimelineCanvasView {
         }
         wrap.state = preview.presentation.wrapsText ? .on : .off
         menu.addItem(wrap)
-        if ["markdown", "md", "mkd", "mkdown"].contains(preview.presentation.language) {
+        if preview.presentation.isMarkdownLanguage {
             let markdown = actionItem("Render Markdown", systemImage: "doc.richtext") { [weak model] in
                 model?.attachmentTextPreviews.toggleMarkdown(attachment, in: message.id)
             }

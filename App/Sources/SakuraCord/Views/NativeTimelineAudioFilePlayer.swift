@@ -24,10 +24,9 @@ extension NativeTimelineVoiceMessagePainter {
         context.addPath(shape)
         context.fillPath()
         drawAudioFilePlayGlyph(in: region.playFrame, isPlaying: state.isPlaying, context: context)
-        let elapsed = state.duration.map { Double(state.progress) * $0 }
-        let time = state.duration == nil || elapsed == nil
-            ? "-:--\u{2009}/\u{2009}-:--"
-            : "\(Self.timeText(elapsed ?? 0))\u{2009}/\u{2009}\(Self.timeText(state.duration ?? 0))"
+        let time = state.duration.map {
+            "\(Self.timeText(Double(state.progress) * $0))\u{2009}/\u{2009}\(Self.timeText($0))"
+        } ?? "-:--\u{2009}/\u{2009}-:--"
         VoiceMessageLabelCache.draw(
             time, font: audioFileTimeFont, color: iconColor, centeredIn: region.timeFrame, alignment: .left
         )

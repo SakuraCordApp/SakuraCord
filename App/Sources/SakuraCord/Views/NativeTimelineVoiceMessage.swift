@@ -131,12 +131,19 @@ struct NativeTimelineVoiceMessageRegion {
         )
     }
 
-    /// The width of an audio file's "elapsed / length" label.
+    /// The width of an audio file's "elapsed / length" label. Only a few
+    /// lengths' digit counts occur, so drawing frames measure from a cache.
     private static func audioFileTimeWidth(_ duration: TimeInterval) -> CGFloat {
         let length = VoiceMessageDurationFormat.string(duration)
-        let template = length + "\u{2009}/\u{2009}" + length
-        return ceil((template as NSString).size(withAttributes: [.font: NativeTimelineVoiceMessagePainter.audioFileTimeFont]).width)
+        let font = NativeTimelineVoiceMessagePainter.audioFileTimeFont
+        let key = "\(font.pointSize)|\(length)"
+        if let width = audioFileTimeWidths[key] { return width }
+        let width = ceil((length + "\u{2009}/\u{2009}" + length as NSString).size(withAttributes: [.font: font]).width)
+        audioFileTimeWidths[key] = width
+        return width
     }
+
+    private static var audioFileTimeWidths: [String: CGFloat] = [:]
 
     /// An audio file's seek bar. Like Discord's flexible bar, it starts
     /// after the time label, which a length learned after layout can widen.
@@ -606,13 +613,13 @@ extension NativeTimelineCanvasView {
         let origin = displayedRowOrigin(at: index)
         let local = CGPoint(x: point.x, y: point.y - origin)
         for region in layouts[index].audioPlayers where region.frame.contains(local) && !isConcealedSpoiler(region.attachment, in: region.messageID) {
-            let isAudioFile = region.style == .audioFile
+            let slop: CGFloat = region.style == .audioFile ? 0 : 1
             let control: VoiceMessageControl
-            if region.playFrame.insetBy(dx: isAudioFile ? 0 : -4, dy: isAudioFile ? 0 : -4).contains(local) {
+            if region.playFrame.insetBy(dx: -4 * slop, dy: -4 * slop).contains(local) {
                 control = .play
-            } else if region.speedFrame.insetBy(dx: isAudioFile ? 0 : -3, dy: isAudioFile ? 0 : -6).contains(local) {
+            } else if region.speedFrame.insetBy(dx: -3 * slop, dy: -6 * slop).contains(local) {
                 control = .speed
-            } else if region.waveformFrame.insetBy(dx: isAudioFile ? 0 : -4, dy: isAudioFile ? 0 : -6).contains(local) {
+            } else if region.waveformFrame.insetBy(dx: -4 * slop, dy: -6 * slop).contains(local) {
                 control = .waveform
             } else {
                 continue
@@ -682,8 +689,10 @@ extension NativeTimelineCanvasView {
         if let hit, hit.region.style == .audioFile, hovered?.playbackID != hoveredVoiceMessage?.playbackID {
             model?.voiceMessagePlayback.measureDuration(of: hit.region.source)
         }
-        let showsHoverOverlay = { (hover: VoiceMessageHover?) in hover.map { if case .attachment = $0.playbackID { true } else { false } } ?? false }
-        let reconciles = showsHoverOverlay(hovered) || showsHoverOverlay(hoveredVoiceMessage)
+        // Moving along a seek bar only redraws; reaching or leaving an audio
+        // file places or removes its hover overlay.
+        let reconciles = hovered?.playbackID != hoveredVoiceMessage?.playbackID
+            && (hovered?.playbackID.isAudioFile == true || hoveredVoiceMessage?.playbackID.isAudioFile == true)
         hoveredVoiceMessage = hovered
         if reconciles { reconcileVoiceMessageOverlay() } else { refreshVoiceMessageOverlay() }
     }
@@ -769,7 +778,7 @@ extension NativeTimelineCanvasView {
     func reconcileVoiceMessageOverlay() {
         // A timeline opened mid-playback has not seen a change notification yet.
         if let playback = model?.voiceMessagePlayback { voiceMessageActiveID = playback.activeID }
-        let hoveredAudioFile = hoveredVoiceMessage.flatMap { if case .attachment = $0.playbackID { $0.playbackID } else { nil } }
+        let hoveredAudioFile = hoveredVoiceMessage.flatMap { $0.playbackID.isAudioFile ? $0.playbackID : nil }
         placeVoiceMessageOverlay(&voiceMessageOverlay, for: voiceMessageActiveID)
         placeVoiceMessageOverlay(
             &voiceMessageHoverOverlay, for: hoveredAudioFile == voiceMessageActiveID ? nil : hoveredAudioFile
@@ -791,9 +800,7 @@ extension NativeTimelineCanvasView {
             }
         }
         guard let found, let playback = model?.voiceMessagePlayback else {
-            overlay?.stop()
-            overlay?.removeFromSuperview()
-            overlay = nil
+            Self.remove(&overlay)
             return
         }
         let frame = found.region.frame.offsetBy(dx: 0, dy: found.origin)
@@ -826,12 +833,14 @@ extension NativeTimelineCanvasView {
     }
 
     func removeVoiceMessageOverlay() {
-        for overlay in [voiceMessageOverlay, voiceMessageHoverOverlay].compactMap(\.self) {
-            overlay.stop()
-            overlay.removeFromSuperview()
-        }
-        voiceMessageOverlay = nil
-        voiceMessageHoverOverlay = nil
+        Self.remove(&voiceMessageOverlay)
+        Self.remove(&voiceMessageHoverOverlay)
+    }
+
+    private static func remove(_ overlay: inout NativeTimelineVoiceMessageOverlay?) {
+        overlay?.stop()
+        overlay?.removeFromSuperview()
+        overlay = nil
     }
 
     func voiceMessageDrawState(
@@ -839,7 +848,8 @@ extension NativeTimelineCanvasView {
         playback: VoiceMessagePlaybackStore
     ) -> NativeTimelineVoiceMessageDrawState {
         let id = region.playbackID
-        let duration = playback.duration(of: id) ?? region.knownDuration(in: playback) ?? 0
+        let knownDuration = playback.duration(of: id) ?? region.knownDuration(in: playback)
+        let duration = knownDuration ?? 0
         let position = playback.position(of: id)
         let phase = playback.phase(of: id)
         let hovered = hoveredVoiceMessage?.playbackID == id ? hoveredVoiceMessage : nil
@@ -857,7 +867,7 @@ extension NativeTimelineCanvasView {
             isSpeedHovered: hover == .speed
         )
         if region.style == .audioFile {
-            state.duration = playback.duration(of: id) ?? region.knownDuration(in: playback)
+            state.duration = knownDuration
             state.isMuted = playback.isAudioFileMuted
             let bar = region.seekBarFrame(for: state.duration)
             state.hoverFraction = hovered?.pointerX.map { min(max(($0 - bar.minX) / max(bar.width, 1), 0), 1) }

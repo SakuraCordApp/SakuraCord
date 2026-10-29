@@ -12,6 +12,10 @@ nonisolated enum VoiceMessagePlaybackID: Hashable, Sendable {
     /// An audio file attachment in a message, played in its file card. A
     /// forward shows the same file in another message, with its own player.
     case attachment(MessageID, attachmentID: String)
+
+    var isAudioFile: Bool {
+        if case .attachment = self { true } else { false }
+    }
 }
 
 /// Owns voice-message and audio-file playback for the timeline and composer
@@ -307,13 +311,13 @@ final class VoiceMessagePlaybackStore {
     }
 
     private static func playbackFailure(for id: VoiceMessagePlaybackID) -> String {
-        if case .attachment = id { "This audio file couldn't be played." } else { "This voice message couldn't be played." }
+        id.isAudioFile ? "This audio file couldn't be played." : "This voice message couldn't be played."
     }
 
     /// Voice messages take the chosen speed; audio files play at normal
     /// speed and follow the mute.
     private func applyOutput() {
-        let isAudioFile = if case .attachment = activeID { true } else { false }
+        let isAudioFile = activeID?.isAudioFile == true
         player?.rate = isAudioFile ? 1 : speed
         player?.volume = isAudioFile && isAudioFileMuted ? 0 : 1
     }
