@@ -189,6 +189,15 @@ public protocol ChatProvider: Sendable {
     /// message goes without it, or not at all once every file is stopped.
     /// Returns false when the file can no longer leave the message.
     func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool
+    /// Stores a staged file before its message is sent; returns whether
+    /// storage accepted it. Its message then posts it as it is.
+    func preuploadAttachment(
+        _ attachment: ForumPostAttachment,
+        channelID: ChannelID,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async -> Bool
+    /// Drops a staged file's early upload when it will not be sent.
+    func discardPreuploadedAttachment(_ attachmentID: UUID) async
     func setPollAnswers(_ answerIDs: [Int], messageID: MessageID, channelID: ChannelID) async throws
     func pollVoters(messageID: MessageID, channelID: ChannelID, answerID: Int, after: UserID?, limit: Int) async throws -> MessagePeoplePage
     func endPoll(messageID: MessageID, channelID: ChannelID) async throws -> Message
@@ -754,6 +763,14 @@ public extension ChatProvider {
     }
 
     func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool { false }
+
+    func preuploadAttachment(
+        _ attachment: ForumPostAttachment,
+        channelID: ChannelID,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async -> Bool { false }
+
+    func discardPreuploadedAttachment(_ attachmentID: UUID) async {}
 
     func forward(_ draft: ForwardMessageDraft) async throws -> Message {
         throw ChatProviderError.capabilityDisabled(.messageForwarding)

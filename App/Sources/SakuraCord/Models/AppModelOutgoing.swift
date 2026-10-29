@@ -11,7 +11,10 @@ extension AppModel {
                 channelID: message.channelID
               ) == .failed
         else { return }
-        if let outgoing = composer.outbox.draftsByNonce[nonce] { discardVoiceMessageFile(for: outgoing) }
+        if let outgoing = composer.outbox.draftsByNonce[nonce] {
+            discardVoiceMessageFile(for: outgoing)
+            discardPreuploads(outgoing.attachments.map(\.id))
+        }
         composer.outbox.draftsByNonce[nonce] = nil
         composer.outbox.stickerUploadSourceURLByNonce[nonce] = nil
         attachmentUploads.finish(nonce: nonce)
@@ -32,6 +35,7 @@ extension AppModel {
         else { return }
         // A failed send keeps no transfer; its retry starts from the edited draft.
         guard outgoingState(nonce: nonce, channelID: message.channelID) != .failed else {
+            discardPreuploads([id])
             return removeOutgoingAttachment(id, nonce: nonce, channelID: message.channelID)
         }
         let session = accountSession()

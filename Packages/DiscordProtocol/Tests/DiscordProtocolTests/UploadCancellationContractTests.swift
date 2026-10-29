@@ -74,6 +74,29 @@ struct UploadCancellationContractTests {
         fixture.session?.invalidateAndCancel()
         _ = await send.result
     }
+
+    /// A file stored as it was attached posts as it is rather than uploading
+    /// twice, and one removed from the draft is deleted from storage.
+    @Test func filesStoredOnAttachPostWithoutUploadingAgain() async throws {
+        let fixture = HeldStorageFixture()
+        let directory = try fixture.directory(containing: ["kept.bin", "removed.bin"])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let attachments = ["kept.bin", "removed.bin"].map {
+            ForumPostAttachment(url: directory.appending(path: $0), filename: $0)
+        }
+        let provider = fixture.provider(holdsEveryUpload: false)
+        let channelID = ChannelID(rawValue: 200)
+        for attachment in attachments {
+            #expect(await provider.preuploadAttachment(attachment, channelID: channelID, progress: { _ in }))
+        }
+        await provider.discardPreuploadedAttachment(attachments[1].id)
+        #expect(fixture.events.requests.last == "DELETE /api/v9/attachments/removed-upload")
+        let requestCount = fixture.events.requests.count
+        let uploaded = try await provider.uploadForumAttachments([attachments[0]], channelID: channelID, progress: { _ in })
+        #expect(fixture.events.requests.count == requestCount)
+        guard case let .object(payload) = uploaded.first, uploaded.count == 1 else { Issue.record("Missing kept attachment"); return }
+        #expect(payload["uploaded_filename"] == .string("kept-upload"))
+    }
 }
 
 /// Owns one test's storage traffic. The URL protocol routes each request here
@@ -84,6 +107,7 @@ private final class HeldStorageFixture {
         var stopped = 0
         var reservedNames: [String] = []
         var postedNames: [String]?
+        var requests: [String] = []
     }
 
     private final class Storage: Sendable {
@@ -107,6 +131,7 @@ private final class HeldStorageFixture {
                 case .stopped: events.stopped += 1
                 case let .reserved(names): events.reservedNames = names
                 case let .posted(names): events.postedNames = names
+                case let .requested(request): events.requests.append(request)
                 }
             }
         }
@@ -147,6 +172,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
         case held, stopped
         case reserved([String])
         case posted([String])
+        case requested(String)
     }
 
     final class Exchange: Sendable {
@@ -166,6 +192,7 @@ private final class HeldStorageURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         guard let url = request.url else { return }
+        report(.requested("\(request.httpMethod ?? "GET") \(URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? url.path)"))
         if request.httpMethod == "PUT",
            url.lastPathComponent == "stopped" || request.value(forHTTPHeaderField: Self.holdsEveryUploadHeader) == "1"
         {

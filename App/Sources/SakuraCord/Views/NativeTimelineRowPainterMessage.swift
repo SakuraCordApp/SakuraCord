@@ -761,28 +761,11 @@ extension NativeTimelineRowPainter {
             ephemeralFooter(region, isDismissHovered: input.isEphemeralDismissHovered)
         }
         if let frame = layout.failedFrame {
-            systemSymbol(
-                "exclamationmark.circle",
-                in: CGRect(
-                    x: frame.minX,
-                    y: frame.minY + 1,
-                    width: InterfaceScale.metric(12),
-                    height: InterfaceScale.metric(12)
-                ),
-                color: .systemRed,
-                inset: 0
-            )
-            text(
+            failureNotice(
                 MessageOutboxPresentation.failureText(for: input.row.message),
-                in: CGRect(
-                    x: frame.minX + InterfaceScale.metric(16),
-                    y: frame.minY,
-                    width: max(0, frame.width - InterfaceScale.metric(16)),
-                    height: frame.height
-                ),
+                in: frame,
                 font: .interfacePreferredFont(forTextStyle: .caption2),
-                color: .systemRed,
-                lineBreakMode: .byWordWrapping
+                color: .systemRed
             )
         }
         if let frame = layout.failedRetryFrame {
@@ -794,6 +777,25 @@ extension NativeTimelineRowPainter {
                 isInteractiveHovered: input.hoveredDeliveryAction == .retrySend
             )
         }
+    }
+
+    /// A failed send's icon and wording, so the state also reads without colour.
+    static func failureNotice(_ notice: String, in frame: CGRect, font: NSFont, color: NSColor) {
+        let iconSize = InterfaceScale.metric(12)
+        let inset = InterfaceScale.metric(16)
+        systemSymbol(
+            "exclamationmark.circle",
+            in: CGRect(x: frame.minX, y: frame.minY + 1, width: iconSize, height: iconSize),
+            color: color,
+            inset: 0
+        )
+        text(
+            notice,
+            in: CGRect(x: frame.minX + inset, y: frame.minY, width: max(0, frame.width - inset), height: frame.height),
+            font: font,
+            color: color,
+            lineBreakMode: .byWordWrapping
+        )
     }
 
     private static func drawForwardedSource(_ input: NativeTimelineMessageDrawInput) {

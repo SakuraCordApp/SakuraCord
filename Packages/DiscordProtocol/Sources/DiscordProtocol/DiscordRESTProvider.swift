@@ -123,6 +123,8 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var attachmentUploadDelegates: [UUID: AttachmentUploadTaskDelegate] = [:]
     var cancelledAttachmentUploads: Set<UUID> = []
     var postingAttachmentUploads: Set<UUID> = []
+    /// Staged files storing ahead of their message, by draft attachment ID; each yields its stored name.
+    var attachmentPreuploads: [UUID: Task<String, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
     var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]

@@ -781,15 +781,32 @@ including equality at the boundary. The provider repeats the cap check before
 reservation. Discord-issued upload URLs are validated and receive only the
 headers needed for storage, not account credentials.
 
-A message's files share one reservation, then every storage PUT starts at once.
-The official client (web build 653945, observed 29 October 2026) also PUTs in
-parallel, but reserves each file separately and starts as soon as it is attached;
-SakuraCord starts after Send. Each file reports its own progress and can be
-stopped alone: its PUT is cancelled and the message is posted without it.
-Stopping every file posts nothing. A failed upload leaves the message failed for
-explicit Retry, which reserves and uploads again. The official client instead
-resumes a failed PUT by itself every few seconds; SakuraCord does not replay
-storage PUTs.
+Like the official client (web build 653945, observed 29 October 2026), a file
+staged in a conversation's composer is reserved on its own and stored as soon as
+its privacy and size check passes; the composer tile shows no transfer state.
+Send posts a stored file by its `uploaded_filename` without uploading it again,
+with the spoiler and filename chosen by then. Files still uploading show their
+progress cards and the message posts once they are stored. Removing a staged file
+stops its PUT, or deletes the stored file with one `DELETE
+/attachments/{uploaded_filename}` attempt. The official client keeps a
+channel's staged files across conversation switches; SakuraCord clears the
+composer on a switch and so deletes them. A thread still being created stores
+its files at Send. With metadata removal off, files also wait for Send, since
+turning it on before then must still strip them.
+
+Files not stored early share one reservation at Send, then every storage PUT
+starts at once. Each file reports its own progress and can be stopped alone:
+its PUT is cancelled and the message is posted without it. Stopping every file
+posts nothing. The official client resumes a failed PUT by itself every few
+seconds; SakuraCord does not replay storage PUTs. A file whose early upload
+failed is stored again when the user sends. A failed send keeps its files stored
+on attach: the explicit Retry posts them again as they are, like the official
+client's resend, and discarding the message deletes them. Files stored at Send
+are prepared and stored again on Retry, since the metadata setting may have
+changed; unused ones expire. A post Discord
+rejects (4xx; an expired stored file answers 400 with code 50146, "Uploaded
+file not found") drops them instead, so Retry stores the files again. The
+official client then only asks the user to remove and re-add the file.
 
 Compression and external-host preferences live in **Settings → Features**;
 unavailable dependent controls remain visible but disabled. Both policies default

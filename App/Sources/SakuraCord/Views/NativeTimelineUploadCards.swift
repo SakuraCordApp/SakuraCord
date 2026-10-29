@@ -75,15 +75,22 @@ extension NativeTimelineRowLayout {
 }
 
 extension NativeTimelineRowPainter {
+    /// Inside the sender's tinted bubble, the card's text and bar take the
+    /// bubble's foreground, as the invite card does, since red and the accent
+    /// do not read on that tint.
     static func uploadCard(
         _ region: NativeTimelineRowLayout.UploadRegion,
+        bubbleRegion: NativeTimelineBubbleRegion?,
         fraction: Double,
         isFailed: Bool,
         canCancel: Bool,
         isCancelHovered: Bool
     ) {
+        let isOutgoing = bubbleRegion?.isOutgoing == true
+        let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion)
+        let secondary = NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion)
         componentContainer(region.frame, accentColor: nil)
-        systemSymbol("doc.fill", in: region.iconFrame, color: .secondaryLabelColor, inset: 0)
+        systemSymbol("doc.fill", in: region.iconFrame, color: secondary, inset: 0)
         // The name truncates first so the size always stays readable.
         let font = NSFont.interfacePreferredFont(forTextStyle: .body)
         let detail = " — " + region.detail
@@ -91,19 +98,19 @@ extension NativeTimelineRowPainter {
         let titleWidth = min(NativeTimelineRowLayout.measuredTextWidth(region.title, font: font), region.titleFrame.width - detailWidth)
         var titleFrame = region.titleFrame
         titleFrame.size.width = titleWidth
-        text(region.title, in: titleFrame, font: font, color: .labelColor)
+        text(region.title, in: titleFrame, font: font, color: foreground)
         text(
             detail,
             in: CGRect(x: titleFrame.maxX, y: titleFrame.minY, width: detailWidth, height: titleFrame.height),
             font: font,
-            color: .secondaryLabelColor
+            color: secondary
         )
         if isFailed {
-            text(
+            failureNotice(
                 String(localized: "Upload failed"),
                 in: region.statusFrame,
                 font: .interfacePreferredFont(forTextStyle: .caption1),
-                color: .systemRed
+                color: isOutgoing ? foreground : .systemRed
             )
         } else {
             uploadProgressBar(
@@ -113,27 +120,29 @@ extension NativeTimelineRowPainter {
                     width: region.statusFrame.width,
                     height: NativeTimelineRowLayout.UploadCardMetrics.barHeight
                 ),
-                fraction: fraction
+                fraction: fraction,
+                track: foreground.withAlphaComponent(isOutgoing ? 0.24 : 0.16),
+                fill: isOutgoing ? foreground : .sakuraCordAccentColor
             )
         }
         guard canCancel else { return }
         systemSymbol(
             "xmark",
             in: region.cancelFrame.insetBy(dx: InterfaceScale.metric(5), dy: InterfaceScale.metric(5)),
-            color: isCancelHovered ? .labelColor : .secondaryLabelColor,
+            color: isCancelHovered ? foreground : secondary,
             inset: 0,
             weight: .semibold
         )
     }
 
-    private static func uploadProgressBar(in frame: CGRect, fraction: Double) {
+    private static func uploadProgressBar(in frame: CGRect, fraction: Double, track: NSColor, fill fillColor: NSColor) {
         let radius = frame.height / 2
-        NSColor.labelColor.withAlphaComponent(0.16).setFill()
+        track.setFill()
         NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).fill()
         guard fraction > 0 else { return }
         var fill = frame
         fill.size.width = max(frame.height, frame.width * min(1, fraction))
-        NSColor.sakuraCordAccentColor.setFill()
+        fillColor.setFill()
         NSBezierPath(roundedRect: fill, xRadius: radius, yRadius: radius).fill()
     }
 }
@@ -144,6 +153,7 @@ extension NativeTimelineRowPainter {
         for region in input.layout.uploadRegions {
             uploadCard(
                 region,
+                bubbleRegion: input.layout.bubbleRegion,
                 fraction: input.model?.attachmentUploads.fraction(nonce: message.nonce, attachmentID: region.attachmentID) ?? 0,
                 isFailed: message.outboxState == .failed,
                 canCancel: input.model?.attachmentUploads.canCancel(nonce: message.nonce, attachmentID: region.attachmentID) == true,
