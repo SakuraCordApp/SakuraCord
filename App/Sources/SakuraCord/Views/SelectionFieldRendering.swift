@@ -3,12 +3,18 @@ import AppKit
 @MainActor
 enum SelectionFieldLayoutMetrics {
     static var font: NSFont { .interfaceSystemFont(ofSize: 13, weight: .medium) }
-    static var minimumHeight: CGFloat { InterfaceScale.metric(44) }
-    static var leadingInset: CGFloat { InterfaceScale.metric(11) }
+    /// Discord's 16-pixel placeholder, at the message text's size.
+    static var placeholderFont: NSFont {
+        .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize, weight: .medium)
+    }
+    /// Discord's 40-point field with an 8-point radius and 12-point inset.
+    static var minimumHeight: CGFloat { InterfaceScale.metric(40) }
+    static var cornerRadius: CGFloat { InterfaceScale.metric(8) }
+    static var leadingInset: CGFloat { InterfaceScale.metric(12) }
     /// Token geometry shared by measurement, the native painter and the open field.
     static var tokenHeight: CGFloat { InterfaceScale.metric(28) }
     static var tokenSpacing: CGFloat { InterfaceScale.metric(6) }
-    static var tokenVerticalPadding: CGFloat { InterfaceScale.metric(7) }
+    static var tokenVerticalPadding: CGFloat { InterfaceScale.metric(6) }
     /// Width reserved beside the tokens for the chevron and insets.
     static var tokenTrailingReserve: CGFloat { InterfaceScale.metric(50) }
 
@@ -50,7 +56,7 @@ enum SelectionFieldLayoutMetrics {
 /// not move or restyle anything.
 @MainActor
 enum SelectionFieldRenderer {
-    /// The open field's 22×28 chevron button, inside its 11-point inset.
+    /// The open field's 22×28 chevron button, inside its leading inset.
     static func chevronRect(in frame: CGRect) -> CGRect {
         CGRect(
             x: frame.maxX - SelectionFieldLayoutMetrics.leadingInset - InterfaceScale.metric(22),
@@ -72,7 +78,7 @@ enum SelectionFieldRenderer {
         opacity: CGFloat = 1
     ) {
         guard !value.isEmpty else { return }
-        let font = SelectionFieldLayoutMetrics.font
+        let font = SelectionFieldLayoutMetrics.placeholderFont
         let lineHeight = lineHeight(of: font)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail

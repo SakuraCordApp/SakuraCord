@@ -560,7 +560,7 @@ extension NativeTimelineCanvasView {
             else { continue }
             let size = DiscordComponentEmojiMetrics.buttonSize
             let box = CGRect(
-                x: button.frame.minX + NativeTimelineComponentButtonMetrics.horizontalPadding,
+                x: button.contentMinX,
                 y: button.frame.midY - size / 2,
                 width: size,
                 height: size
