@@ -12,7 +12,9 @@ import Synchronization
 final class AttachmentDownloadStore {
     enum State: Equatable {
         case downloading(fraction: Double)
-        case finished(URL)
+        /// The saved file, and the security-scoped folder it was saved
+        /// into, if not Downloads.
+        case finished(URL, folder: URL?)
         case failed
     }
 
@@ -36,7 +38,7 @@ final class AttachmentDownloadStore {
         case .downloading:
             tasks.removeValue(forKey: attachment.id)?.cancel()
             setState(nil, for: attachment.id)
-        case let .finished(url) where Self.fileExists(at: url):
+        case let .finished(url, folder) where Self.fileExists(at: url, in: folder):
             NSWorkspace.shared.activateFileViewerSelecting([url])
         default:
             start(attachment)
@@ -57,14 +59,19 @@ final class AttachmentDownloadStore {
             do {
                 let source = await resolveRemoteURL?(attachment.url) ?? attachment.url
                 let file = try await Self.download(source) { reportProgress.yield($0) }
-                result = .finished(try await Self.save(file, filename: attachment.filename, sourceURL: source))
+                result = try await Self.save(file, filename: attachment.filename, sourceURL: source)
             } catch {
                 result = Task.isCancelled ? nil : .failed
             }
-            guard let self, !Task.isCancelled else { return }
+            guard let self else { return }
+            // A file saved as the user cancelled stays, so the card shows it
+            // unless a new download has begun.
+            if Task.isCancelled {
+                guard case .finished = result, states[id] == nil else { return }
+            }
             tasks[id] = nil
             setState(result, for: id)
-            if case let .finished(url) = result,
+            if case let .finished(url, _) = result,
                StorageDownloadsSettingsStore.shared.load().revealsCompletedDownloads {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
@@ -97,14 +104,14 @@ final class AttachmentDownloadStore {
         return file
     }
 
-    private static func save(_ file: URL, filename: String, sourceURL: URL) async throws -> URL {
+    private static func save(_ file: URL, filename: String, sourceURL: URL) async throws -> State {
         let folder = openDownloadFolder()
         defer { folder.scoped?.stopAccessingSecurityScopedResource() }
         let proposed = folder.url.appendingPathComponent(
             MediaViewerFilePolicy.suggestedFilename(title: filename, sourceURL: sourceURL)
         )
         // Moving onto another volume copies the whole file.
-        return try await Task.detached(priority: .utility) {
+        let destination = try await Task.detached(priority: .utility) {
             defer { try? FileManager.default.removeItem(at: file) }
             guard let destination = MediaViewerActionService.availableDestination(for: proposed) else {
                 throw MediaViewerActionError.couldNotChooseUniqueFilename
@@ -112,11 +119,12 @@ final class AttachmentDownloadStore {
             try FileManager.default.moveItem(at: file, to: destination)
             return destination
         }.value
+        return .finished(destination, folder: folder.scoped)
     }
 
-    private static func fileExists(at url: URL) -> Bool {
-        let folder = openDownloadFolder()
-        defer { folder.scoped?.stopAccessingSecurityScopedResource() }
+    private static func fileExists(at url: URL, in folder: URL?) -> Bool {
+        let accessed = folder?.startAccessingSecurityScopedResource() == true
+        defer { if accessed { folder?.stopAccessingSecurityScopedResource() } }
         return FileManager.default.fileExists(atPath: url.path)
     }
 

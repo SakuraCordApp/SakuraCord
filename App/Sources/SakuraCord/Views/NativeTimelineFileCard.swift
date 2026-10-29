@@ -82,10 +82,12 @@ struct NativeTimelineFileCard {
         for state: AttachmentDownloadStore.State?,
         size: Int
     ) -> (text: String, link: String?) {
-        switch state {
-        case .finished: (sizeText(size), "Show in Finder")
+        // A component file missing from the message's attachments has no size.
+        let sizeText = size > 0 ? sizeText(size) : ""
+        return switch state {
+        case .finished: (sizeText, "Show in Finder")
         case .failed: ("Download failed", "Retry")
-        case .downloading, nil: (sizeText(size), nil)
+        case .downloading, nil: (sizeText, nil)
         }
     }
 
@@ -93,8 +95,9 @@ struct NativeTimelineFileCard {
         let detail = Self.detail(for: state, size: attachment.size)
         guard let link = detail.link else { return nil }
         let line = detailLineFrame(isDownloading: false)
-        let minX = line.minX + NativeTimelineRowPainter.measuredTextWidth(detail.text, font: Self.detailFont)
-            + InterfaceScale.metric(8)
+        let minX = detail.text.isEmpty ? line.minX
+            : line.minX + NativeTimelineRowPainter.measuredTextWidth(detail.text, font: Self.detailFont)
+                + InterfaceScale.metric(8)
         let width = NativeTimelineRowPainter.measuredTextWidth(link, font: Self.detailFont)
         return CGRect(x: minX, y: line.minY, width: min(width, max(0, line.maxX - minX)), height: line.height)
     }
