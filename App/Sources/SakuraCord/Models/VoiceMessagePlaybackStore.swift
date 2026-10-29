@@ -77,7 +77,9 @@ final class VoiceMessagePlaybackStore {
     /// Durations learned by playing or measuring audio files, which arrive
     /// without one.
     @ObservationIgnored private var knownDurations: [Source: TimeInterval] = [:]
-    @ObservationIgnored private var measuringSources: Set<Source> = []
+    /// Files whose length was read or is being read. One that couldn't be
+    /// read isn't tried again while the pointer moves over it.
+    @ObservationIgnored private var measuredSources: Set<Source> = []
     /// When play was last pressed, to tell a slow start from a quick one.
     @ObservationIgnored private var playRequestedAt: ContinuousClock.Instant?
     @ObservationIgnored private var resumesAfterScrub = false
@@ -193,12 +195,10 @@ final class VoiceMessagePlaybackStore {
     /// Reads an audio file's length ahead of playing it, as Discord's player
     /// loads its metadata when the pointer reaches it.
     func measureDuration(of source: Source) {
-        guard knownDurations[source] == nil, measuringSources.insert(source).inserted else { return }
+        guard knownDurations[source] == nil, measuredSources.insert(source).inserted else { return }
         Task { [weak self] in
             let duration = try? await Self.measuredDuration(of: source, resolve: self?.resolveRemoteURL)
-            guard let self else { return }
-            measuringSources.remove(source)
-            guard let duration else { return }
+            guard let self, let duration else { return }
             knownDurations[source] = duration
             notify()
         }
