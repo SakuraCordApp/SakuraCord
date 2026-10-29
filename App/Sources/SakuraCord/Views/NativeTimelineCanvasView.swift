@@ -339,6 +339,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
+    /// A hovered audio file's seek bar while another player is active.
+    var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
     /// The text preview a scroll gesture began over, which keeps the gesture.
     var textPreviewScrollTarget: String?
     var voiceMessageActiveID: VoiceMessagePlaybackID?

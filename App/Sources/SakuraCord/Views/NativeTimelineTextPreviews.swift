@@ -126,7 +126,8 @@ extension NativeTimelineCanvasView {
               let index = visibleTextPreviewRow(containing: target),
               let preview = layouts[index].textPreviews.first(where: { $0.attachment.id == target })
         else { return false }
-        if event.phase.contains(.ended) || event.momentumPhase.contains(.ended) { textPreviewScrollTarget = nil }
+        // Momentum follows the gesture, so the preview keeps it until then.
+        if event.momentumPhase.contains(.ended) { textPreviewScrollTarget = nil }
         let current = min(previews.scrollOffsets[target] ?? 0, preview.maximumScroll)
         let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * InterfaceScale.metric(16)
         let next = min(max(current - delta, 0), preview.maximumScroll)

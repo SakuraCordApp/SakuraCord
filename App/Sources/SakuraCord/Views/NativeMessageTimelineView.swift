@@ -1179,6 +1179,10 @@ extension NativeMessageTimelineCoordinator {
                 || items != newItems
                 || layouts.count != newItems.count
                 || messageIDs.count != rows.count
+                // A text preview that loaded or changed needs its row laid out again.
+                || zip(items, layouts).contains(where: { item, layout in
+                    !layout.textPreviews.isEmpty && !layout.matchesLivePresentation(for: item, source: parent.model)
+                })
             {
                 // Without a width or presentation change, an unchanged item's
                 // layout is still current wherever the item moved. Rows

@@ -611,7 +611,7 @@ extension NativeTimelineCanvasView {
         guard let hit = voiceMessagePointerHit(at: point), let playback = model?.voiceMessagePlayback else { return false }
         voiceMessagePress = hit
         if hit.control == .waveform {
-            playback.beginScrub(hit.region.playbackID, source: hit.region.source, duration: hit.region.duration)
+            playback.beginScrub(hit.region.playbackID, source: hit.region.source, duration: hit.region.knownDuration(in: playback))
             scrubVoiceMessage(hit, to: point)
         }
         return true
@@ -633,7 +633,7 @@ extension NativeTimelineCanvasView {
             playback.endScrub(press.region.playbackID)
         case .play:
             if released?.row == press.row, released?.control == .play {
-                playback.toggle(press.region.playbackID, source: press.region.source, duration: press.region.duration)
+                playback.toggle(press.region.playbackID, source: press.region.source, duration: press.region.knownDuration(in: playback))
             }
         case .speed:
             guard released?.row == press.row, released?.control == .speed else { break }
@@ -647,7 +647,7 @@ extension NativeTimelineCanvasView {
         let frame = press.region.waveformFrame
         let fraction = (point.x - frame.minX) / max(frame.width, 1)
         playback.seek(press.region.playbackID, source: press.region.source,
-                      duration: press.region.duration, fraction: Double(fraction))
+                      duration: press.region.knownDuration(in: playback), fraction: Double(fraction))
     }
 
     func updateVoiceMessageHover(at point: CGPoint?) {
@@ -666,7 +666,7 @@ extension NativeTimelineCanvasView {
         let showsHoverOverlay = { (hover: VoiceMessageHover?) in hover.map { if case .attachment = $0.playbackID { true } else { false } } ?? false }
         let reconciles = showsHoverOverlay(hovered) || showsHoverOverlay(hoveredVoiceMessage)
         hoveredVoiceMessage = hovered
-        if reconciles { reconcileVoiceMessageOverlay() } else if voiceMessageOverlay != nil { refreshVoiceMessageOverlay() }
+        if reconciles { reconcileVoiceMessageOverlay() } else { refreshVoiceMessageOverlay() }
     }
 
     /// Fetches on-screen voice messages into the media cache, as images are,
@@ -743,62 +743,74 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
-    /// Shows the overlay only while the active voice message or audio file,
-    /// or else a hovered audio file, is on screen.
+    /// Shows the live overlay while the active voice message or audio file
+    /// is on screen, and a second over a hovered audio file's seek bar.
     func reconcileVoiceMessageOverlay() {
         // A timeline opened mid-playback has not seen a change notification yet.
         if let playback = model?.voiceMessagePlayback { voiceMessageActiveID = playback.activeID }
         let hoveredAudioFile = hoveredVoiceMessage.flatMap { if case .attachment = $0.playbackID { $0.playbackID } else { nil } }
-        guard let playback = model?.voiceMessagePlayback,
-              let playbackID = voiceMessageActiveID ?? hoveredAudioFile,
-              var index = rowIndex(at: max(0, visibleRect.minY))
-        else {
-            removeVoiceMessageOverlay()
-            return
-        }
+        placeVoiceMessageOverlay(&voiceMessageOverlay, for: voiceMessageActiveID)
+        placeVoiceMessageOverlay(
+            &voiceMessageHoverOverlay, for: hoveredAudioFile == voiceMessageActiveID ? nil : hoveredAudioFile
+        )
+    }
+
+    private func placeVoiceMessageOverlay(
+        _ overlay: inout NativeTimelineVoiceMessageOverlay?,
+        for playbackID: VoiceMessagePlaybackID?
+    ) {
         var found: (region: NativeTimelineVoiceMessageRegion, origin: CGFloat)?
-        while found == nil, items.indices.contains(index), layouts.indices.contains(index),
-              displayedRowOrigin(at: index) < visibleRect.maxY
-        {
-            found = layouts[index].audioPlayers.first { $0.playbackID == playbackID }
-                .map { ($0, displayedRowOrigin(at: index)) }
-            index += 1
+        if let playbackID, var index = rowIndex(at: max(0, visibleRect.minY)) {
+            while found == nil, items.indices.contains(index), layouts.indices.contains(index),
+                  displayedRowOrigin(at: index) < visibleRect.maxY
+            {
+                found = layouts[index].audioPlayers.first { $0.playbackID == playbackID }
+                    .map { ($0, displayedRowOrigin(at: index)) }
+                index += 1
+            }
         }
-        guard let found else {
-            removeVoiceMessageOverlay()
+        guard let found, let playback = model?.voiceMessagePlayback else {
+            overlay?.stop()
+            overlay?.removeFromSuperview()
+            overlay = nil
             return
         }
         let frame = found.region.frame.offsetBy(dx: 0, dy: found.origin)
         let state = voiceMessageDrawState(for: found.region, playback: playback)
-        if let overlay = voiceMessageOverlay {
+        if let overlay {
             overlay.region = found.region
             overlay.frame = frame
             overlay.state = state
             overlay.updateAnimation()
         } else {
-            let overlay = NativeTimelineVoiceMessageOverlay(region: found.region, state: state)
-            overlay.frame = frame
-            overlay.refresh = { [weak self, weak overlay] in
-                guard let self, let overlay, let playback = self.model?.voiceMessagePlayback else { return nil }
-                return self.voiceMessageDrawState(for: overlay.region, playback: playback)
+            let created = NativeTimelineVoiceMessageOverlay(region: found.region, state: state)
+            created.frame = frame
+            created.refresh = { [weak self, weak created] in
+                guard let self, let created, let playback = self.model?.voiceMessagePlayback else { return nil }
+                return self.voiceMessageDrawState(for: created.region, playback: playback)
             }
-            addSubview(overlay, positioned: .below, relativeTo: mediaViewerHost)
-            voiceMessageOverlay = overlay
-            overlay.updateAnimation()
+            addSubview(created, positioned: .below, relativeTo: mediaViewerHost)
+            overlay = created
+            created.updateAnimation()
         }
     }
 
     func refreshVoiceMessageOverlay() {
-        guard let overlay = voiceMessageOverlay, let playback = model?.voiceMessagePlayback else { return }
-        var state = voiceMessageDrawState(for: overlay.region, playback: playback)
-        state.clock = overlay.state.clock
-        overlay.state = state
+        guard let playback = model?.voiceMessagePlayback else { return }
+        for overlay in [voiceMessageOverlay, voiceMessageHoverOverlay].compactMap(\.self) {
+            var state = voiceMessageDrawState(for: overlay.region, playback: playback)
+            state.clock = overlay.state.clock
+            overlay.state = state
+        }
     }
 
     func removeVoiceMessageOverlay() {
-        voiceMessageOverlay?.stop()
-        voiceMessageOverlay?.removeFromSuperview()
+        for overlay in [voiceMessageOverlay, voiceMessageHoverOverlay].compactMap(\.self) {
+            overlay.stop()
+            overlay.removeFromSuperview()
+        }
         voiceMessageOverlay = nil
+        voiceMessageHoverOverlay = nil
     }
 
     func voiceMessageDrawState(

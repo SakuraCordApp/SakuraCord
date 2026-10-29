@@ -49,12 +49,12 @@ extension AppModel {
         attachmentTextPreviews.resolveRemoteURL = resolveRemoteURL
         attachmentTextPreviews.onChange = { [weak self] messageID in
             guard let self else { return }
-            if messages.contains(where: { $0.id == messageID }) {
-                publishMessageRowsUpdate(changedMessageIDs: [messageID])
-            }
-            if threadMessages.contains(where: { $0.id == messageID }) {
-                publishThreadMessageRowsPresentationUpdate(changedMessageIDs: [messageID])
-            }
+            let inChannel = messages.contains { $0.id == messageID }
+            let inThread = threadMessages.contains { $0.id == messageID }
+            if inChannel { publishMessageRowsUpdate(changedMessageIDs: [messageID]) }
+            if inThread { publishThreadMessageRowsPresentationUpdate(changedMessageIDs: [messageID]) }
+            // Search results, pins, and other surfaces lay out from their own rows.
+            if !inChannel, !inThread { invalidateTimelinePresentation() }
         }
         voiceMessagePlayback.onError = { [weak self] message in
             self?.errorMessage = message

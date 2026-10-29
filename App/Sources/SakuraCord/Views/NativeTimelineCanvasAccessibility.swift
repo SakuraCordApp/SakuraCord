@@ -867,7 +867,7 @@ extension NativeTimelineCanvasView {
             parent: parent
         ) { [weak self] in
             guard let playback = self?.model?.voiceMessagePlayback else { return false }
-            playback.toggle(region.playbackID, source: region.source, duration: region.duration)
+            playback.toggle(region.playbackID, source: region.source, duration: region.knownDuration(in: playback))
             return true
         }
         element.setAccessibilityCustomActions([
@@ -879,7 +879,7 @@ extension NativeTimelineCanvasView {
         ] + [-10.0, 10.0].map { offset in
             NSAccessibilityCustomAction(name: offset < 0 ? "Skip Back 10 Seconds" : "Skip Forward 10 Seconds") { [weak self] in
                 guard let playback = self?.model?.voiceMessagePlayback else { return false }
-                let duration = playback.duration(of: region.playbackID) ?? region.duration
+                let duration = playback.duration(of: region.playbackID) ?? region.knownDuration(in: playback) ?? 0
                 guard duration > 0 else { return false }
                 playback.seek(
                     region.playbackID,
