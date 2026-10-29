@@ -65,10 +65,10 @@ struct MediaViewerStage: View {
                     .padding(.top, topInset)
                     .padding(.bottom, bottomInset)
             case let .text(language):
-                MediaViewerText(
-                    url: item.url, language: language,
-                    horizontalInset: horizontalInset, topInset: topInset, bottomInset: bottomInset
-                )
+                MediaViewerText(url: item.url, language: language)
+                    .padding(.horizontal, horizontalInset)
+                    .padding(.top, topInset)
+                    .padding(.bottom, bottomInset)
             case .file:
                 MediaViewerFile(title: item.title, open: open)
                     .padding(.horizontal, horizontalInset)

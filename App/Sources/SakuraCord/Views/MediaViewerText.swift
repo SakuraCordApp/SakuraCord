@@ -8,9 +8,6 @@ import SwiftUI
 struct MediaViewerText: View {
     let url: URL
     let language: String
-    let horizontalInset: CGFloat
-    let topInset: CGFloat
-    let bottomInset: CGFloat
     @State private var text: NSAttributedString?
     @State private var failed = false
 
@@ -34,14 +31,8 @@ struct MediaViewerText: View {
             }
         }
         .frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
-        .background(
-            Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor),
-            in: ConcentricRectangle(cornerRadius: NativeTimelineBubbleDrawing.cornerRadius, style: .continuous)
-        )
+        .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
         .clipShape(ConcentricRectangle(cornerRadius: NativeTimelineBubbleDrawing.cornerRadius, style: .continuous))
-        .padding(.horizontal, horizontalInset)
-        .padding(.top, topInset)
-        .padding(.bottom, bottomInset)
         .task(id: url) {
             text = nil
             failed = false
