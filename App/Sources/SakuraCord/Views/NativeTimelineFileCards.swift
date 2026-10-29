@@ -76,7 +76,7 @@ extension NativeTimelineCanvasView {
             items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
             return
         }
-        // A progress tick changes only the badge's ring and the detail line.
+        // A progress tick changes only the button's ring and the detail line.
         forEachDisplayedRow(in: visibleRect) { index in
             guard let messageID = items[index].messageID, showsFile(items[index]),
                   let frame = fileCardDisplayFrame(.fileCard(messageID: messageID, attachmentID: attachmentID), at: index)
