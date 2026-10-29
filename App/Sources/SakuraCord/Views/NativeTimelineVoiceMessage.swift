@@ -693,7 +693,7 @@ extension NativeTimelineCanvasView {
     }
 
     /// A scroll passing cards under a still pointer doesn't fetch their
-    /// lengths; moving the pointer over one does, once.
+    /// lengths; any pointer movement over one does, once.
     func updateVoiceMessageHover(at point: CGPoint?, measuresDuration: Bool = true) {
         let hit = point.flatMap { voiceMessagePointerHit(at: $0) }
         let hovered = hit.map {
@@ -703,10 +703,10 @@ extension NativeTimelineCanvasView {
                 pointerX: $0.region.style == .audioFile && $0.control == .waveform ? point?.x : nil
             )
         }
-        guard hovered != hoveredVoiceMessage else { return }
         if measuresDuration, let hit, hit.region.style == .audioFile {
             model?.voiceMessagePlayback.measureDuration(of: hit.region.source)
         }
+        guard hovered != hoveredVoiceMessage else { return }
         // Moving along a seek bar only redraws; reaching or leaving an audio
         // file places or removes its hover overlay.
         let reconciles = hovered?.playbackID != hoveredVoiceMessage?.playbackID
