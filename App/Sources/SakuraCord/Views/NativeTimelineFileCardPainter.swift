@@ -47,7 +47,7 @@ extension NativeTimelineRowPainter {
             frame.origin.x += offset
             frame.size.width = max(0, frame.width - offset)
             text(
-                link, in: frame, font: .interfaceSystemFont(ofSize: 12, weight: .semibold),
+                link, in: frame, font: NativeTimelineFileCard.linkFont,
                 color: state == .failed ? palette.failure : palette.link
             )
         }
