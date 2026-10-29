@@ -116,7 +116,7 @@ struct NativeTimelineComponentLayout {
     }
 
     struct FileRegion {
-        let frame: CGRect
+        var frame: CGRect
         let componentID: String
         let openURL: URL
         let title: String
@@ -124,8 +124,9 @@ struct NativeTimelineComponentLayout {
         let isSpoiler: Bool
         /// The file the card names and downloads.
         let attachment: Attachment
+        let isInBubble: Bool
 
-        var card: NativeTimelineFileCard { .init(frame: frame, attachment: attachment) }
+        var card: NativeTimelineFileCard { .init(frame: frame, attachment: attachment, isInBubble: isInBubble) }
     }
 
     struct SeparatorRegion {
@@ -343,15 +344,9 @@ private struct Node {
             )
         }
         result.files = files.map {
-            .init(
-                frame: $0.frame.offsetBy(dx: dx, dy: dy),
-                componentID: $0.componentID,
-                openURL: $0.openURL,
-                title: $0.title,
-                description: $0.description,
-                isSpoiler: $0.isSpoiler,
-                attachment: $0.attachment
-            )
+            var file = $0
+            file.frame = file.frame.offsetBy(dx: dx, dy: dy)
+            return file
         }
         result.separators = separators.map {
             .init(
@@ -488,7 +483,8 @@ private enum NodeBuilder {
             return mediaNode(
                 for: component,
                 message: message,
-                maximumWidth: maximumWidth
+                maximumWidth: maximumWidth,
+                inBubble: inBubble
             )
 
         case .separator, .container:
@@ -884,7 +880,8 @@ private enum NodeBuilder {
     private static func mediaNode(
         for component: MessageComponent,
         message: Message,
-        maximumWidth: CGFloat
+        maximumWidth: CGFloat,
+        inBubble: Bool
     ) -> Node {
         switch component {
         case let .mediaGallery(_, items):
@@ -956,8 +953,10 @@ private enum NodeBuilder {
                 mediaType: media.contentType
             )
             let size = CGSize(
-                width: min(maximumWidth, NativeTimelineFileCard.maximumWidth),
-                height: NativeTimelineFileCard.height
+                width: NativeTimelineFileCard.fittedWidth(
+                    for: attachment, isInBubble: inBubble, maximumWidth: maximumWidth
+                ),
+                height: NativeTimelineFileCard.height(isInBubble: inBubble)
             )
             return Node(
                 size: size,
@@ -969,7 +968,8 @@ private enum NodeBuilder {
                         title: item.title,
                         description: item.description,
                         isSpoiler: item.isSpoiler,
-                        attachment: attachment
+                        attachment: attachment,
+                        isInBubble: inBubble
                     )
                 ]
             )

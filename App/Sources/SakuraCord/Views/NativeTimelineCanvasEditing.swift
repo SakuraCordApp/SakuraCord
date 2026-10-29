@@ -201,7 +201,7 @@ extension NativeTimelineCanvasView {
         guard let index = items.firstIndex(where: {
             $0.messageID == target.messageID
         }) else { return }
-        setNeedsDisplay(rowFrame(at: index))
+        setNeedsDisplay(fileCardDisplayFrame(target, at: index) ?? rowFrame(at: index))
     }
 
     func reconcileActionCapsule() {

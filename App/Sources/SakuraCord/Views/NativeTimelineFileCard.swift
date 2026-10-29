@@ -1,80 +1,66 @@
 import AppKit
 import SakuraCordModels
 
-/// Discord's file attachment card, shared by message attachments and
-/// Components V2 file components: the geometry that painting, hit testing,
-/// and cursors agree on.
+/// A file attachment's card, shared by message attachments and Components V2
+/// file components: the geometry that painting, hit testing, and cursors
+/// agree on. Outside a bubble it is a capsule like a plain voice message's;
+/// inside one it sits straight on the bubble, as a voice message does.
 struct NativeTimelineFileCard {
-    /// The card's clickable parts. Each acts on the file the same way; the
-    /// card's body only shows the hover button.
-    enum Part: String, CaseIterable {
-        case action
-        case name
-        case detailLink
-    }
-
-    static var maximumWidth: CGFloat { InterfaceScale.metric(432) }
-    static var height: CGFloat { InterfaceScale.metric(74) }
     static var spacing: CGFloat { InterfaceScale.metric(8) }
-    static var cornerRadius: CGFloat { InterfaceScale.metric(8) }
-    static var nameFont: NSFont { .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize) }
-    static var detailFont: NSFont { .interfaceSystemFont(ofSize: 12) }
+    static var minimumWidth: CGFloat { InterfaceScale.metric(220) }
+    static var maximumWidth: CGFloat { InterfaceScale.metric(400) }
+    static var nameFont: NSFont {
+        .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize, weight: .medium)
+    }
+    static var detailFont: NSFont { .interfaceMonospacedDigitSystemFont(ofSize: 12, weight: .regular) }
 
     let frame: CGRect
     let attachment: Attachment
+    let isInBubble: Bool
 
-    /// The 16-point padding inside the 1-point border.
-    private var inset: CGFloat { InterfaceScale.metric(17) }
+    static func height(isInBubble: Bool) -> CGFloat { InterfaceScale.metric(isInBubble ? 44 : 52) }
 
-    var iconFrame: CGRect {
-        CGRect(
-            x: frame.minX + inset, y: frame.midY - InterfaceScale.metric(20),
-            width: InterfaceScale.metric(30), height: InterfaceScale.metric(40)
+    /// The capsule's padding around the badge, which keeps the badge
+    /// concentric with the capsule's ends.
+    private static func inset(isInBubble: Bool) -> CGFloat { isInBubble ? 0 : InterfaceScale.metric(8) }
+    private static var badgeDiameter: CGFloat { InterfaceScale.metric(36) }
+    private static var textGap: CGFloat { InterfaceScale.metric(10) }
+    private static func trailingPadding(isInBubble: Bool) -> CGFloat { InterfaceScale.metric(isInBubble ? 4 : 18) }
+
+    /// The width that fits the name and size, which a bubble also grows to.
+    static func fittedWidth(for attachment: Attachment, isInBubble: Bool, maximumWidth: CGFloat) -> CGFloat {
+        let text = max(
+            NativeTimelineRowLayout.measuredTextWidth(attachment.filename, font: nameFont),
+            NativeTimelineRowLayout.measuredTextWidth(sizeText(attachment.size), font: detailFont)
         )
+        let width = inset(isInBubble: isInBubble) + badgeDiameter + textGap + text + trailingPadding(isInBubble: isInBubble)
+        return min(maximumWidth, Self.maximumWidth, max(minimumWidth, ceil(width)))
     }
 
-    /// The filename line; the progress or size line sits 20 points below.
-    func nameLineFrame(isDownloading: Bool) -> CGRect {
-        let minX = iconFrame.maxX + InterfaceScale.metric(8)
-        let maxX = isDownloading ? cancelFrame.minX - InterfaceScale.metric(4) : frame.maxX - inset
+    /// The round badge that shows the file's type and is its action button,
+    /// like a voice message's play button.
+    var badgeFrame: CGRect {
+        let diameter = Self.badgeDiameter
         return CGRect(
-            x: minX, y: frame.midY - InterfaceScale.metric(18),
-            width: max(1, maxX - minX), height: InterfaceScale.metric(20)
+            x: frame.minX + Self.inset(isInBubble: isInBubble), y: frame.midY - diameter / 2,
+            width: diameter, height: diameter
         )
     }
 
-    func detailLineFrame(isDownloading: Bool) -> CGRect {
-        var line = nameLineFrame(isDownloading: isDownloading)
+    var nameFrame: CGRect {
+        let minX = badgeFrame.maxX + Self.textGap
+        return CGRect(
+            x: minX, y: frame.midY - InterfaceScale.metric(17),
+            width: max(1, frame.maxX - Self.trailingPadding(isInBubble: isInBubble) - minX),
+            height: InterfaceScale.metric(18)
+        )
+    }
+
+    var detailFrame: CGRect {
+        var line = nameFrame
         line.origin.y = line.maxY
         line.size.height = InterfaceScale.metric(16)
         return line
-    }
-
-    /// The filename's own extent, which alone acts like a link.
-    var nameFrame: CGRect {
-        var line = nameLineFrame(isDownloading: false)
-        line.size.width = min(line.width, NativeTimelineRowLayout.measuredTextWidth(attachment.filename, font: Self.nameFont))
-        return line
-    }
-
-    /// Discord's hover button, overhanging the card's top trailing corner.
-    var hoverButtonFrame: CGRect {
-        CGRect(
-            x: frame.maxX - InterfaceScale.metric(24), y: frame.minY - InterfaceScale.metric(8),
-            width: InterfaceScale.metric(32), height: InterfaceScale.metric(32)
-        )
-    }
-
-    /// The cancel button that replaces the hover button while downloading.
-    var cancelFrame: CGRect {
-        CGRect(
-            x: frame.maxX - inset - InterfaceScale.metric(24), y: frame.midY - InterfaceScale.metric(12),
-            width: InterfaceScale.metric(24), height: InterfaceScale.metric(24)
-        )
-    }
-
-    func actionFrame(isDownloading: Bool) -> CGRect {
-        isDownloading ? cancelFrame : hoverButtonFrame
     }
 
     /// The detail line's text and its trailing link, if any, for a state.
@@ -85,29 +71,11 @@ struct NativeTimelineFileCard {
         // A component file missing from the message's attachments has no size.
         let sizeText = size > 0 ? sizeText(size) : ""
         return switch state {
-        case .finished: (sizeText, "Show in Finder")
-        case .failed: ("Download failed", "Retry")
-        case .downloading, nil: (sizeText, nil)
-        }
-    }
-
-    func detailLinkFrame(for state: AttachmentDownloadStore.State?) -> CGRect? {
-        let detail = Self.detail(for: state, size: attachment.size)
-        guard let link = detail.link else { return nil }
-        let line = detailLineFrame(isDownloading: false)
-        let minX = detail.text.isEmpty ? line.minX
-            : line.minX + NativeTimelineRowLayout.measuredTextWidth(detail.text, font: Self.detailFont)
-                + InterfaceScale.metric(8)
-        let width = NativeTimelineRowLayout.measuredTextWidth(link, font: Self.detailFont)
-        return CGRect(x: minX, y: line.minY, width: min(width, max(0, line.maxX - minX)), height: line.height)
-    }
-
-    func frame(of part: Part, state: AttachmentDownloadStore.State?) -> CGRect? {
-        let isDownloading = if case .downloading = state { true } else { false }
-        return switch part {
-        case .name: nameFrame
-        case .action: actionFrame(isDownloading: isDownloading)
-        case .detailLink: detailLinkFrame(for: state)
+        case nil: (sizeText, nil)
+        case let .downloading(fraction):
+            ("\(Int(fraction * 100))%" + (sizeText.isEmpty ? "" : " of \(sizeText)"), nil)
+        case .finished: (sizeText.isEmpty ? "" : "\(sizeText) · ", "Show in Finder")
+        case .failed: ("Download failed · ", "Retry")
         }
     }
 
@@ -133,45 +101,40 @@ struct NativeTimelineFileCard {
         return value.formatted(.number.precision(.fractionLength(2))) + " " + unit
     }
 
-    /// Discord's file-type classes, matched in the same order.
-    static func iconName(for attachment: Attachment) -> String {
+    /// The SF Symbol for the file's type, from Discord's file-type classes.
+    static func symbolName(for attachment: Attachment) -> String {
         let type = attachment.mediaType?.lowercased() ?? ""
         let name = attachment.filename.lowercased()
-        if type.hasPrefix("image/vnd.adobe.photoshop") { return "ps" }
-        if type.hasPrefix("image/svg+xml") { return "webcode" }
-        if type.hasPrefix("image/") { return "image" }
-        if type.hasPrefix("video/") { return "video" }
+        if type.hasPrefix("image/vnd.adobe.photoshop") { return "paintbrush.pointed.fill" }
+        if type.hasPrefix("image/svg+xml") { return "chevron.left.forwardslash.chevron.right" }
+        if type.hasPrefix("image/") { return "photo.fill" }
+        if type.hasPrefix("video/") { return "film.fill" }
         let pathExtension = (name as NSString).pathExtension
-        if pathExtension == "pdf" { return "acrobat" }
-        if name.contains(".ae") { return "ae" }
-        if name.hasSuffix(".tar.gz") { return "archive" }
-        return extensionClasses.first { $0.extensions.contains(pathExtension) }?.name ?? "unknown"
+        if pathExtension == "pdf" { return "doc.richtext.fill" }
+        if name.hasSuffix(".tar.gz") { return "doc.zipper" }
+        return extensionSymbols.first { $0.extensions.contains(pathExtension) }?.symbol ?? "doc.fill"
     }
 
-    private static let extensionClasses: [(name: String, extensions: Set<String>)] = [
-        ("sketch", ["sketch"]),
-        ("ai", ["ai"]),
-        ("archive", ["rar", "zip", "7z", "tar"]),
-        ("code", [
+    private static let extensionSymbols: [(symbol: String, extensions: Set<String>)] = [
+        ("paintbrush.pointed.fill", ["sketch", "ai", "psd", "aep"]),
+        ("doc.zipper", ["rar", "zip", "7z", "tar", "gz"]),
+        ("chevron.left.forwardslash.chevron.right", [
             "c++", "cpp", "cc", "c", "h", "hpp", "mm", "m", "json", "js", "ts", "rb", "rake", "py", "asm", "fs",
             "pyc", "dtd", "cgi", "bat", "rss", "java", "graphml", "idb", "lua", "o", "gml", "prl", "sls", "conf",
             "cmake", "make", "sln", "vbe", "cxx", "wbf", "vbs", "r", "wml", "php", "bash", "applescript", "fcgi",
-            "yaml", "ex", "exs", "sh", "ml", "actionscript",
+            "yaml", "ex", "exs", "sh", "ml", "actionscript", "swift",
+            "html", "xhtml", "htm", "xml", "xsd", "css", "styl",
         ]),
-        ("document", ["txt", "rtf", "doc", "docx", "md", "pages", "ppt", "pptx", "pptm", "key", "log"]),
-        ("spreadsheet", ["xls", "xlsx", "numbers", "csv"]),
-        ("webcode", ["html", "xhtml", "htm", "xml", "xsd", "css", "styl"]),
-        ("audio", ["mp3", "ogg", "opus", "wav", "aiff", "flac"]),
+        ("doc.text.fill", ["txt", "rtf", "doc", "docx", "md", "pages", "log"]),
+        ("rectangle.on.rectangle.angled.fill", ["ppt", "pptx", "pptm", "key"]),
+        ("tablecells.fill", ["xls", "xlsx", "numbers", "csv"]),
+        ("waveform", ["mp3", "ogg", "opus", "wav", "aiff", "flac", "m4a"]),
     ]
 }
 
 extension NativeTimelineComponentButtonTarget {
-    /// The hover target of a file card's body or one of its parts.
-    nonisolated static func fileCard(
-        messageID: MessageID,
-        attachmentID: String,
-        part: NativeTimelineFileCard.Part?
-    ) -> Self {
-        .init(messageID: messageID, componentID: "file:\(attachmentID)" + (part.map { ":\($0.rawValue)" } ?? ""))
+    /// The hover and press target of a file card.
+    nonisolated static func fileCard(messageID: MessageID, attachmentID: String) -> Self {
+        .init(messageID: messageID, componentID: "file:\(attachmentID)")
     }
 }

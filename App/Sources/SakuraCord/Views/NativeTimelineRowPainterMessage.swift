@@ -71,7 +71,19 @@ extension NativeTimelineRowPainter {
                 container.chrome == .bubbleSection ? container.chromeFrame : nil
             }
         }
-        bubbleIntegratedSectionsTint(integratedSectionFrames, bubbleRegion: bubbleRegion)
+        bubbleIntegratedSectionsTint(
+            integratedSectionFrames + [fileSectionFrame(input.layout)].compactMap { $0 },
+            bubbleRegion: bubbleRegion
+        )
+    }
+
+    /// Files below other bubble content share one integrated section, as
+    /// thread cards and invites do; a bubble holding only files is their card.
+    private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
+        guard let bubble = layout.bubbleRegion, let first = layout.fileCards.first,
+              first.frame.minY - bubble.frame.minY > 8.5
+        else { return nil }
+        return layout.fileCards.dropFirst().reduce(first.frame) { $0.union($1.frame) }
     }
 
     private static func drawMessageSearchContext(_ input: NativeTimelineMessageDrawInput) {
@@ -441,6 +453,11 @@ extension NativeTimelineRowPainter {
             MediaGalleryImagePresentation.fillsFrame(
                 itemCount: layout.mediaGalleryItemCount
             )
+        if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
+            bubbleIntegratedSection(
+                section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
+            )
+        }
         for region in layout.attachmentRegions {
             let attachment = region.attachment
             let isConcealed =
@@ -488,12 +505,14 @@ extension NativeTimelineRowPainter {
                     in: region.frame
                 )
             case .file:
+                let target = NativeTimelineComponentButtonTarget.fileCard(messageID: message.id, attachmentID: attachment.id)
                 fileCard(
-                    .init(frame: region.frame, attachment: attachment),
+                    .init(frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil),
                     messageID: message.id,
+                    bubbleRegion: layout.bubbleRegion,
                     state: input.model?.attachmentDownloads.states[attachment.id],
                     hovered: input.hoveredComponentButton,
-                    pressed: input.pressedComponentButton
+                    pressProgress: input.pressedComponentButton == target ? input.componentButtonPressProgress : 0
                 )
             }
         }
