@@ -64,19 +64,12 @@ extension NativeTimelineRowPainter {
 
     /// The file type's Finder icon, from a bitmap cached per type and size.
     private static func fileCardIcon(_ card: NativeTimelineFileCard) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
         let frame = card.iconFrame
-        let scale = context.convertToDeviceSpace(CGSize(width: 1, height: 1)).width
-        guard let image = FileTypeIconCache.image(
+        let scale = NSGraphicsContext.current?.cgContext.convertToDeviceSpace(CGSize(width: 1, height: 1)).width ?? 2
+        guard let icon = FileTypeIconCache.image(
             forFilename: card.attachment.filename, pixels: Int(ceil(frame.width * abs(scale)))
         ) else { return }
-        // Rows draw flipped; the bitmap is upright.
-        context.saveGState()
-        context.translateBy(x: 0, y: frame.minY + frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.interpolationQuality = .high
-        context.draw(image, in: frame)
-        context.restoreGState()
+        drawImage(icon, in: frame, cornerRadius: 0, fillsFrame: false)
     }
 
     /// The round download button, which shows the next step, grows under
