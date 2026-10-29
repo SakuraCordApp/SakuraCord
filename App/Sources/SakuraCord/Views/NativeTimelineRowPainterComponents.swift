@@ -619,13 +619,12 @@ extension NativeTimelineRowPainter {
                 )
                 continue
             }
-            componentFile(
-                region,
-                cornerRadius: bubbleConcentricCornerRadius(
-                    for: region.frame,
-                    in: input.bubbleRegion,
-                    fallback: DiscordRichMessageMetrics.cardCornerRadius
-                )
+            fileCard(
+                region.card,
+                messageID: input.messageID,
+                state: input.model?.attachmentDownloads.states[region.attachment.id],
+                hovered: input.hoveredComponentButton,
+                pressed: input.pressedComponentButton
             )
         }
     }
@@ -708,9 +707,9 @@ extension NativeTimelineRowPainter {
 
     static func componentContainer(
         _ frame: CGRect,
-        accentColor: UInt32?,
-        cornerRadius: CGFloat = DiscordRichMessageMetrics.cardCornerRadius
+        accentColor: UInt32?
     ) {
+        let cornerRadius = DiscordRichMessageMetrics.cardCornerRadius
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: cornerRadius
@@ -1318,69 +1317,11 @@ extension NativeTimelineRowPainter {
     /// reading the file each time held up the motions that redraw them.
     private static let fileImages = NSCache<NSURL, NSImage>()
 
-    private static func fileImage(at url: URL) -> NSImage? {
+    static func fileImage(at url: URL) -> NSImage? {
         if let image = fileImages.object(forKey: url as NSURL) { return image }
         guard let image = NSImage(contentsOf: url) else { return nil }
         fileImages.setObject(image, forKey: url as NSURL)
         return image
-    }
-
-    static func componentFile(
-        _ region: NativeTimelineComponentLayout.FileRegion,
-        cornerRadius: CGFloat = DiscordRichMessageMetrics.cardCornerRadius
-    ) {
-        componentContainer(
-            region.frame,
-            accentColor: nil,
-            cornerRadius: cornerRadius
-        )
-        systemSymbol(
-            "doc.fill",
-            in: CGRect(
-                x: region.frame.minX + InterfaceScale.metric(10),
-                y: region.frame.midY - InterfaceScale.metric(12),
-                width: InterfaceScale.metric(24),
-                height: InterfaceScale.metric(24)
-            ),
-            color: .secondaryLabelColor,
-            inset: 1
-        )
-        text(
-            region.title,
-            in: CGRect(
-                x: region.frame.minX + InterfaceScale.metric(44),
-                y: region.frame.minY + InterfaceScale.metric(8),
-                width: max(1, region.frame.width - InterfaceScale.metric(88)),
-                height: InterfaceScale.metric(18)
-            ),
-            font: .interfaceSystemFont(ofSize: 13, weight: .semibold),
-            color: .labelColor
-        )
-        if let description = region.description, !description.isEmpty {
-            text(
-                description,
-                in: CGRect(
-                    x: region.frame.minX + InterfaceScale.metric(44),
-                    y: region.frame.minY + InterfaceScale.metric(27),
-                    width: max(1, region.frame.width - InterfaceScale.metric(88)),
-                    height: max(InterfaceScale.metric(14), region.frame.height - InterfaceScale.metric(33))
-                ),
-                font: .interfaceSystemFont(ofSize: 11),
-                color: .secondaryLabelColor,
-                lineBreakMode: .byWordWrapping
-            )
-        }
-        systemSymbol(
-            "arrow.down.circle",
-            in: CGRect(
-                x: region.frame.maxX - InterfaceScale.metric(32),
-                y: region.frame.midY - InterfaceScale.metric(10),
-                width: InterfaceScale.metric(20),
-                height: InterfaceScale.metric(20)
-            ),
-            color: .secondaryLabelColor,
-            inset: 1
-        )
     }
 
     static func componentEmoji(
