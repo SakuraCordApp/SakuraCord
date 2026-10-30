@@ -12,8 +12,6 @@ struct MediaViewerWindowOverlay: View {
         WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { presentation, context in
             MediaViewerWindowAnimatedContent(presentation: presentation, context: context)
                 .environment(\.profileCosmeticPolicy, cosmeticPolicy)
-                // The viewer always sits on a near-black backdrop.
-                .environment(\.colorScheme, .dark)
         })
     }
 }
