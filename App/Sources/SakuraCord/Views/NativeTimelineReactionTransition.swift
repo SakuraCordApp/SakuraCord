@@ -334,7 +334,9 @@ extension NativeTimelineCanvasView {
             }
             return false
         }
-        let chipTop = chips.map { min($0.from.frame.minY, $0.to.frame.minY) }.min() ?? layout.height
+        // Chip outlines are stroked on their edges, so the band starts above them.
+        let chipTop = chips.map { min($0.from.frame.minY, $0.to.frame.minY) - Self.reactionPictureInset }.min()
+            ?? layout.height
         reactionTransitions[identifier] = NativeTimelineReactionTransition(
             rowIndex: index,
             startUptime: now,
@@ -581,23 +583,23 @@ extension NativeTimelineCanvasView {
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         for (pill, chip) in view.pills {
-            guard let region = chip.region else {
-                pill.contents = reactionPicture(["add", isAddHovered], covering: chip.to.frame) {
-                    NativeTimelineRowPainter.reactionAddControl(in: chip.to.frame, isHovered: isAddHovered)
+            let frame = chip.to.frame
+            let picture = if let region = chip.region {
+                reactionChipBackground(
+                    frame,
+                    selected: region.reaction.didCurrentUserReact,
+                    isHovered: canUpdate && hoveredReactionID == region.reaction.id
+                )
+            } else {
+                reactionPicture(["add", isAddHovered], covering: frame) {
+                    NativeTimelineRowPainter.reactionAddControl(in: frame, isHovered: isAddHovered)
                 }
-                pill.contentsScale = window?.backingScaleFactor ?? 2
-                pill.contentsGravity = .center
-                continue
             }
-            let colors = NativeTimelineRowPainter.reactionColors(
-                selected: region.reaction.didCurrentUserReact,
-                isHovered: canUpdate && hoveredReactionID == region.reaction.id
-            )
-            effectiveAppearance.performAsCurrentDrawingAppearance {
-                pill.backgroundColor = colors.fill.cgColor
-                pill.borderColor = colors.border?.cgColor
-                pill.borderWidth = colors.border == nil ? 0 : 1
-            }
+            pill.contents = picture.image
+            pill.contentsScale = window?.backingScaleFactor ?? 2
+            // A chip changing width stretches only between its rounded ends.
+            let cap = min(0.5, (InterfaceScale.metric(9) + 2 * Self.reactionPictureInset) / picture.frame.width)
+            pill.contentsCenter = CGRect(x: cap, y: 0, width: 1 - 2 * cap, height: 1)
         }
     }
 
@@ -631,20 +633,28 @@ extension NativeTimelineCanvasView {
     }
 
     /// A chip's outline moving, scaling and fading between two appearances;
-    /// its contents keep their offsets from its leading edge.
+    /// its contents keep their offsets from its leading edge. The layer
+    /// covers the chip's picture, so it lands on the pixels the row draws.
     private func reactionPillLayer(
         appearance: (from: NativeTimelineReactionChipAppearance, to: NativeTimelineReactionChipAppearance),
         begin: CFTimeInterval
     ) -> CALayer {
         let pill = CALayer()
         let (from, to) = appearance
-        pill.bounds = CGRect(origin: .zero, size: to.frame.size)
-        pill.position = CGPoint(x: to.frame.midX, y: to.frame.midY)
+        let frame = reactionPictureFrame(covering: to.frame)
+        let fromFrame = CGRect(
+            x: frame.minX + from.frame.minX - to.frame.minX,
+            y: frame.minY + from.frame.minY - to.frame.minY,
+            width: frame.width + from.frame.width - to.frame.width,
+            height: frame.height + from.frame.height - to.frame.height
+        )
+        pill.bounds = CGRect(origin: .zero, size: frame.size)
+        pill.position = CGPoint(x: frame.midX, y: frame.midY)
         pill.opacity = Float(to.opacity)
         pill.transform = CATransform3DMakeScale(to.scale, to.scale, 1)
         if from != to {
-            animate(pill, "bounds.size", from: NSValue(size: from.frame.size), begin: begin)
-            animate(pill, "position", from: NSValue(point: CGPoint(x: from.frame.midX, y: from.frame.midY)), begin: begin)
+            animate(pill, "bounds.size", from: NSValue(size: fromFrame.size), begin: begin)
+            animate(pill, "position", from: NSValue(point: CGPoint(x: fromFrame.midX, y: fromFrame.midY)), begin: begin)
             animate(pill, "opacity", from: Float(from.opacity), begin: begin)
             animate(pill, "transform", from: NSValue(caTransform3D: CATransform3DMakeScale(from.scale, from.scale, 1)), begin: begin)
         }
@@ -659,31 +669,30 @@ extension NativeTimelineCanvasView {
     ) -> CALayer {
         let pill = reactionPillLayer(appearance: appearance, begin: begin)
         let selected = region.reaction.didCurrentUserReact
-        pill.cornerRadius = InterfaceScale.metric(9)
-        let origin = region.frame.origin
-        func picture(_ image: CGImage?, at frame: CGRect, opacity: Float = 1) -> CALayer {
+        let origin = reactionPictureFrame(covering: region.frame).origin
+        func picture(_ picture: ReactionPicture, opacity: Float = 1) -> CALayer {
             let layer = CALayer()
-            layer.contents = image
+            layer.contents = picture.image
             layer.contentsScale = window?.backingScaleFactor ?? 2
-            layer.frame = frame.offsetBy(dx: -origin.x, dy: -origin.y)
-                .insetBy(dx: -Self.reactionPictureInset, dy: -Self.reactionPictureInset)
+            layer.frame = picture.frame.offsetBy(dx: -origin.x, dy: -origin.y)
             layer.opacity = opacity
             return layer
         }
-        pill.addSublayer(picture(emojiPicture(region), at: region.emojiFrame))
-        if let countFrame = region.countFrame {
+        pill.addSublayer(picture(emojiPicture(region)))
+        if let digits = countPicture(region, selected: selected) {
             let source = source.moved(to: region.frame)
-            let count = picture(countPicture(region, selected: selected), at: countFrame)
-            if let sourceFrame = source.countFrame, source.reaction.count != region.reaction.count {
+            let count = picture(digits)
+            if source.reaction.count != region.reaction.count, let sourceDigits = countPicture(source, selected: selected) {
                 // Digits roll through a window just inside the chip.
                 let window = CALayer()
-                window.frame = pill.bounds.insetBy(dx: 0, dy: InterfaceScale.metric(3))
+                window.frame = region.frame.insetBy(dx: 0, dy: InterfaceScale.metric(3))
+                    .offsetBy(dx: -origin.x, dy: -origin.y)
                 window.masksToBounds = true
                 let travel = region.frame.height / 2
                 let direction: CGFloat = region.reaction.count > source.reaction.count ? 1 : -1
-                let leaving = picture(countPicture(source, selected: selected), at: sourceFrame, opacity: 0)
+                let leaving = picture(sourceDigits, opacity: 0)
                 for layer in [leaving, count] {
-                    layer.position.y -= window.frame.minY
+                    layer.frame = layer.frame.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
                     window.addSublayer(layer)
                 }
                 leaving.position.y -= direction * travel
@@ -699,24 +708,24 @@ extension NativeTimelineCanvasView {
         let avatars = avatarsPicture(region)
         let sourceAvatars = avatarsPicture(source.moved(to: region.frame))
         if let avatars {
-            let layer = picture(avatars.image, at: avatars.frame)
+            let layer = picture(avatars.picture)
             pill.addSublayer(layer)
             if let sourceAvatars, sourceAvatars.key == avatars.key {
-                let shift = sourceAvatars.frame.minX - avatars.frame.minX
+                let shift = sourceAvatars.picture.frame.minX - avatars.picture.frame.minX
                 animate(layer, "position", from: NSValue(point: CGPoint(x: layer.position.x + shift, y: layer.position.y)), begin: begin)
             } else {
                 animate(layer, "opacity", from: Float(0), begin: begin)
             }
         }
         if let sourceAvatars, sourceAvatars.key != avatars?.key {
-            let layer = picture(sourceAvatars.image, at: sourceAvatars.frame, opacity: 0)
+            let layer = picture(sourceAvatars.picture, opacity: 0)
             pill.addSublayer(layer)
             animate(layer, "opacity", from: Float(1), begin: begin)
         }
         return pill
     }
 
-    private func emojiPicture(_ region: NativeTimelineRowLayout.ReactionRegion) -> CGImage? {
+    private func emojiPicture(_ region: NativeTimelineRowLayout.ReactionRegion) -> ReactionPicture {
         let url = MessageReactionPresentation.emojiURL(
             for: region.reaction,
             customEmojiURLsByID: model?.customEmojiURLsByID ?? [:]
@@ -733,7 +742,13 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private func countPicture(_ region: NativeTimelineRowLayout.ReactionRegion, selected: Bool) -> CGImage? {
+    private func reactionChipBackground(_ frame: CGRect, selected: Bool, isHovered: Bool) -> ReactionPicture {
+        reactionPicture(["chip", selected, isHovered], covering: frame) {
+            NativeTimelineRowPainter.drawReactionBackground(frame, selected: selected, isHovered: isHovered)
+        }
+    }
+
+    private func countPicture(_ region: NativeTimelineRowLayout.ReactionRegion, selected: Bool) -> ReactionPicture? {
         guard let frame = region.countFrame else { return nil }
         return reactionPicture(["count", region.reaction.count, selected], covering: frame) {
             NativeTimelineRowPainter.reactionCount(
@@ -754,34 +769,50 @@ extension NativeTimelineCanvasView {
             }] as [AnyHashable]
         }
         return ReactionAvatarsPicture(
-            image: reactionPicture(key, covering: frame) { NativeTimelineRowPainter.drawReactionAvatars(region) },
-            frame: frame,
+            picture: reactionPicture(key, covering: frame) { NativeTimelineRowPainter.drawReactionAvatars(region) },
             key: key
         )
     }
 
-    /// Room around a picture for antialiased edges.
+    /// Room around a picture for antialiased edges and stroked outlines.
     private static let reactionPictureInset: CGFloat = 1
+
+    /// The whole device pixels a picture of `frame` covers, in row
+    /// coordinates. Rows start on whole pixels, so a picture drawn at the
+    /// row's own subpixel offsets lands exactly on the pixels the row draws.
+    private func reactionPictureFrame(covering frame: CGRect) -> CGRect {
+        let scale = window?.backingScaleFactor ?? 2
+        let outset = frame.insetBy(dx: -Self.reactionPictureInset, dy: -Self.reactionPictureInset)
+        let minX = (outset.minX * scale).rounded(.down) / scale
+        let minY = (outset.minY * scale).rounded(.down) / scale
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: (outset.maxX * scale).rounded(.up) / scale - minX,
+            height: (outset.maxY * scale).rounded(.up) / scale - minY
+        )
+    }
 
     /// Draws `draw`, which paints within `frame`, into a cached picture.
     /// `content` must identify everything the drawing depends on besides its
-    /// size, scale and appearance.
-    private func reactionPicture(_ content: [AnyHashable], covering frame: CGRect, draw: () -> Void) -> CGImage? {
+    /// size, subpixel offset, scale and appearance.
+    private func reactionPicture(_ content: [AnyHashable], covering frame: CGRect, draw: () -> Void) -> ReactionPicture {
         let scale = window?.backingScaleFactor ?? 2
-        let bounds = frame.insetBy(dx: -Self.reactionPictureInset, dy: -Self.reactionPictureInset)
+        let bounds = reactionPictureFrame(covering: frame)
         let key = ReactionPictureKey(
             content: content,
-            size: frame.size,
+            frame: CGRect(origin: CGPoint(x: frame.minX - bounds.minX, y: frame.minY - bounds.minY), size: frame.size),
             scale: scale,
             appearance: effectiveAppearance.name,
+            colorSpace: window?.colorSpace,
             accent: NSColor.sakuraCordAccentColor.cgColor.components ?? []
         )
-        if let image = reactionPictures[key] { return image }
+        if let image = reactionPictures[key] { return ReactionPicture(image: image, frame: bounds) }
         guard let context = ForumCardRasterizer.makeContext(
-            width: Int(ceil(bounds.width * scale)),
-            height: Int(ceil(bounds.height * scale)),
-            colorSpace: window?.colorSpace?.cgColorSpace ?? ForumCardRasterizer.defaultColorSpace
-        ) else { return nil }
+            width: Int((bounds.width * scale).rounded()),
+            height: Int((bounds.height * scale).rounded()),
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        ) else { return ReactionPicture(image: nil, frame: bounds) }
         context.scaleBy(x: scale, y: scale)
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
@@ -790,10 +821,15 @@ extension NativeTimelineCanvasView {
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
         draw()
         NSGraphicsContext.restoreGraphicsState()
-        guard let image = context.makeImage() else { return nil }
+        // The canvas draws into a context without a colour space, so its
+        // pixels show as the display's own colours. Drawn in device RGB like
+        // the row bitmaps and tagged with the display's colour space, the
+        // picture shows the same colours.
+        var image = context.makeImage()
+        if let colorSpace = window?.colorSpace?.cgColorSpace { image = image?.copy(colorSpace: colorSpace) }
         if reactionPictures.count >= 512 { reactionPictures.removeAll(keepingCapacity: true) }
         reactionPictures[key] = image
-        return image
+        return ReactionPicture(image: image, frame: bounds)
     }
 
 }
@@ -849,18 +885,25 @@ final class NativeTimelineReactionBandView: NSView {
     }
 }
 
-/// A chip's reactor avatars as one picture, and what it shows.
-struct ReactionAvatarsPicture {
+/// A cached reaction picture and the row area it covers.
+struct ReactionPicture {
     let image: CGImage?
     let frame: CGRect
+}
+
+/// A chip's reactor avatars as one picture, and what it shows.
+struct ReactionAvatarsPicture {
+    let picture: ReactionPicture
     let key: [AnyHashable]
 }
 
 /// A cached reaction picture's identity.
 struct ReactionPictureKey: Hashable {
     let content: [AnyHashable]
-    let size: CGSize
+    /// The drawing's frame within the picture.
+    let frame: CGRect
     let scale: CGFloat
     let appearance: NSAppearance.Name
+    let colorSpace: NSColorSpace?
     let accent: [CGFloat]
 }
