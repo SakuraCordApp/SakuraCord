@@ -755,6 +755,8 @@ extension NativeTimelineCanvasView {
             cancelTranscriptGlide()
             return
         }
+        // The flight aims at the row's static place.
+        finishReactionTransitions()
         guard let window,
               let (geometry, bubbleInWindow) = sendTransitionGeometry(
                   from: pending, rowIndex: index, in: window
@@ -1040,7 +1042,7 @@ extension NativeTimelineCanvasView {
 
     private func suppressSendTransitionInteractions() {
         // A press begun before the rows moved must not activate on release.
-        pointer.clearHoverAndPressTargets()
+        clearHoverAndPressTargets()
         pressedPollTarget = nil
         hoveredPollTarget = nil
         textSelectionGesture = nil
