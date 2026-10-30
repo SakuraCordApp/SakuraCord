@@ -339,7 +339,7 @@ nonisolated enum NativeTimelineCoreText {
     }
 
     /// `bodyScale` shrinks every line but headings, and the mentions and
-    /// emoji in them.
+    /// emoji in them; its source must use line feeds alone.
     static func make(
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
@@ -362,7 +362,7 @@ nonisolated enum NativeTimelineCoreText {
         if bodyScale != 1 {
             var location = 0
             // The markdown output joins its plan's lines with line feeds,
-            // split as Characters like the plan, so CRLF stays in its line.
+            // which pair up when the source has no carriage returns.
             let texts = output.string.split(separator: "\n", omittingEmptySubsequences: false)
             for (line, text) in zip(prepared.markdownPlan.lines, texts) {
                 let range = NSRange(
