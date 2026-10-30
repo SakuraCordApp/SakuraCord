@@ -375,14 +375,18 @@ public enum DiscordMarkdown {
         let line = NSMutableAttributedString()
         for (index, run) in linePlan.runs.enumerated() {
             var text = run.text
+            var runAttributes = attributes(for: run, in: linePlan, metrics: metrics)
             if case let .listItem(_, isOrdered) = linePlan.block, index < 2 {
                 // Tab stops place the marker in Discord's list gutter and
                 // align wrapped item text with its first line.
                 text = index == 1 ? "\t" : isOrdered ? "\t" + text : text
+                if isOrdered, index == 0 {
+                    runAttributes[.font] = metrics.orderedMarkerFont
+                }
             }
             line.append(NSAttributedString(
                 string: text,
-                attributes: attributes(for: run, in: linePlan, metrics: metrics)
+                attributes: runAttributes
             ))
         }
         let fullRange = NSRange(location: 0, length: line.length)
@@ -1143,6 +1147,12 @@ public enum DiscordMarkdown {
             codeLineHeight = (baseFontSize * 1.125).rounded()
         }
 
+        /// Tabular digits make a number's width follow its length, so the
+        /// longest marker in a list is also the widest.
+        var orderedMarkerFont: NSFont {
+            NSFont.monospacedDigitSystemFont(ofSize: baseFontSize, weight: .regular)
+        }
+
         func inlineCodePadding(font: NSFont) -> CGFloat {
             font.pointSize * 0.2 + 1
         }
@@ -1273,7 +1283,7 @@ public enum DiscordMarkdown {
             // Discord hangs wide numbers into the message margin; Core Text
             // cannot draw left of its frame, so the gutter grows instead.
             let markerWidth = (line.widestMarker as NSString)
-                .size(withAttributes: [.font: NSFont.systemFont(ofSize: metrics.baseFontSize)]).width
+                .size(withAttributes: [.font: metrics.orderedMarkerFont]).width
             let gutter = max(metrics.listIndent, ceil(markerWidth) + metrics.orderedMarkerGap)
             let textIndent = indent + metrics.listIndent * CGFloat(level) + gutter
             paragraph.firstLineHeadIndent = textIndent - gutter
