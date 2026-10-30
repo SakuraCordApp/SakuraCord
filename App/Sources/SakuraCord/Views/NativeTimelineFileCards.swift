@@ -106,19 +106,8 @@ extension NativeTimelineCanvasView {
             downloads.activate(attachment)
             return
         }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Potentially Dangerous Download"
-        alert.informativeText = """
-            Whoa there! While programs downloaded from the internet may be beneficial, this type of file can damage \
-            your device or steal your personal data. Make sure to only run executables from developers that you trust!
-            """
-        alert.addButton(withTitle: "Close")
-        alert.addButton(withTitle: "Continue to Download").hasDestructiveAction = true
         Task { @MainActor [weak self] in
-            guard let window = self?.window, window.attachedSheet == nil,
-                  await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
-            else { return }
+            guard let window = self?.window, await DangerousDownloadPolicy.confirm(in: window) else { return }
             downloads.activate(attachment)
         }
     }
@@ -157,5 +146,28 @@ extension NativeTimelineCanvasView {
         case .failed: "Retry downloading \(name)"
         case nil: "Download \(name)"
         }
+    }
+}
+
+extension DangerousDownloadPolicy {
+    /// Asks with Discord's warning before a potentially dangerous download,
+    /// as a sheet on `window` or, over the media viewer, which sits above
+    /// sheets, as its own panel; true to download.
+    @MainActor static func confirm(in window: NSWindow?) async -> Bool {
+        guard window?.attachedSheet == nil else { return false }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Potentially Dangerous Download"
+        alert.informativeText = """
+            Whoa there! While programs downloaded from the internet may be beneficial, this type of file can damage \
+            your device or steal your personal data. Make sure to only run executables from developers that you trust!
+            """
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Continue to Download").hasDestructiveAction = true
+        guard let window else {
+            await Task.yield()
+            return alert.runModal() == .alertSecondButtonReturn
+        }
+        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
     }
 }

@@ -318,6 +318,9 @@ struct MediaViewer: View {
         interaction.isSaving = true
         Task {
             defer { interaction.isSaving = false }
+            if DangerousDownloadPolicy.isPotentiallyDangerous(item.url) {
+                guard await DangerousDownloadPolicy.confirm(in: nil) else { return }
+            }
             do {
                 if let savedURL = try await MediaViewerActionService.save(
                     item,
