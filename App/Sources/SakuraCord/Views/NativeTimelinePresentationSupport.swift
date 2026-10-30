@@ -494,9 +494,10 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         )
     }
 
-    /// The shown item's source when it hides itself rather than being covered.
-    var uncoveredSourceItemID: String? {
-        let id = items[selection].id
+    /// The shown item's source when it hides itself rather than being
+    /// covered. The viewer may have paged away from its first item.
+    func uncoveredSourceItemID(showing selectedItemID: String?) -> String? {
+        let id = selectedItemID.flatMap { id in items.contains { $0.id == id } ? id : nil } ?? items[selection].id
         return transitionSources[id]?.coversSource == false ? id : nil
     }
 
