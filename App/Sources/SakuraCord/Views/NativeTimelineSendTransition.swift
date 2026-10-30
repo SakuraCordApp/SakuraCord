@@ -355,6 +355,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             layer.cornerCurve = .continuous
             layer.cornerRadius = attachment.cornerRadius
             layer.frame = frame
+            layer.zPosition = 0.5
             overlay.layer?.addSublayer(layer)
             overlay.pieceLayers[index] = layer
             overlay.pieceSourceFrames[index] = frame
@@ -381,9 +382,10 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         root.masksToBounds = false
         layer = root
         wantsLayer = true
-        for sublayer in [bubbleLayer, tailLayer, clipLayer] {
-            // The message body flies over the attachment copies it crosses.
-            sublayer.zPosition = 1
+        // Attachment copies land on the bubble's fill, and the message body
+        // flies over the copies it crosses.
+        for (sublayer, zPosition) in [(bubbleLayer, 0.25), (tailLayer, 0.25), (clipLayer, 1)] as [(CALayer, CGFloat)] {
+            sublayer.zPosition = zPosition
             root.addSublayer(sublayer)
         }
         bubbleLayer.opacity = 0
@@ -407,7 +409,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         ring.contentsScale = window?.backingScaleFactor ?? 2
         ring.position = center
         // Above its tile, under the message body flying past.
-        ring.zPosition = 0.5
+        ring.zPosition = 0.75
         layer?.addSublayer(ring)
         ringLayers[index] = ring
         return ring
