@@ -70,6 +70,7 @@ struct MediaViewer: View {
 
                     MediaViewerStage(
                         item: item,
+                        messageID: presentation.messageID,
                         previewImage:
                             presentation.timelinePreviewImages[item.id],
                         isVisible: isVisible,

@@ -722,7 +722,7 @@ enum NativeTimelineMediaViewerPlan {
     ) -> RichMediaItem {
         var item = RichMediaItem(region.attachment)
         if item.kind == .file, RichMediaItem.isSupportedImageURL(region.openURL) {
-            item.kind = .image(animated: false)
+            item.kind = .image(animated: RichMediaItem.isAnimatedImageURL(region.openURL))
         }
         item.id = region.componentID
         item.title = region.title

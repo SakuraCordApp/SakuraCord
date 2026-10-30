@@ -1,9 +1,12 @@
 import AppKit
 import AVKit
+import SakuraCordModels
 import SwiftUI
 
 struct MediaViewerStage: View {
     let item: RichMediaItem
+    /// The message the item belongs to, if any, which an audio file plays as.
+    let messageID: MessageID?
     let previewImage: NSImage?
     let isVisible: Bool
     let transitionSource: MediaViewerTransitionSource?
@@ -88,7 +91,11 @@ struct MediaViewerStage: View {
                 }
             }
         case .audio:
-            MediaViewerAudio(item: item, download: download)
+            MediaViewerAudio(
+                item: item,
+                playbackID: messageID.map { .attachment($0, attachmentID: item.id) } ?? .file(item.url),
+                download: download
+            )
         case let .text(language):
             MediaViewerText(url: item.url, language: language)
         case .file:
@@ -133,9 +140,12 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
                 if let source, progress < 1 {
                     let size = source.frameInWindow.size
                     let scale = min(box.width / max(size.width, 1), box.height / max(size.height, 1))
+                    // A staged video's thumbnail fills its square tile, cropped.
                     Image(nsImage: source.image)
                         .resizable()
+                        .aspectRatio(contentMode: source.fillsFrame ? .fill : .fit)
                         .frame(width: size.width * scale, height: size.height * scale)
+                        .clipped()
                         .position(x: clip.midX, y: clip.midY)
                         .opacity(1 - Self.smoothstep(progress, from: 0, to: 0.45))
                         .allowsHitTesting(false)

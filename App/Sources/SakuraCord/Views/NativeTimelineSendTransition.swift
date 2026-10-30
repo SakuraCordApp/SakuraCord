@@ -1387,16 +1387,21 @@ extension NativeTimelineCanvasView {
                         spoilerRevealStore: spoilerRevealStore
                     )
                 }
-                let omittedFrames = omitted.compactMap {
-                    layout.attachmentRegions.indices.contains($0)
-                        ? layout.attachmentRegions[$0].frame : nil
+                // Each cutout takes the shape of what flies into it: a file's
+                // card, or a media tile.
+                let fileCards = layout.fileCards
+                let omittedShapes = omitted.compactMap { index -> (frame: CGRect, cornerRadius: CGFloat)? in
+                    guard layout.attachmentRegions.indices.contains(index) else { return nil }
+                    let region = layout.attachmentRegions[index]
+                    let card = fileCards.first { $0.attachment.id == region.attachment.id }
+                    return (region.frame, card?.cornerRadius ?? NativeTimelineRowPainter.attachmentCornerRadius)
                 }
-                guard !omittedFrames.isEmpty else { return }
+                guard !omittedShapes.isEmpty else { return }
                 context.setBlendMode(.clear)
-                for frame in omittedFrames {
+                for shape in omittedShapes {
                     context.addPath(NSBezierPath(
-                        concentricRoundedRect: frame,
-                        cornerRadius: NativeTimelineRowPainter.attachmentCornerRadius
+                        concentricRoundedRect: shape.frame,
+                        cornerRadius: shape.cornerRadius
                     ).cgPath)
                 }
                 context.fillPath()
