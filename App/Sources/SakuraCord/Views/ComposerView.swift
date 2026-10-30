@@ -77,7 +77,9 @@ struct ComposerView: View {
                             checkingIDs: model.composer.checkingAttachmentIDs,
                             uploads: model.attachmentUploads,
                             sendTransitionAnchor: sendTransitionAnchor,
-                            mediaViewerSourceID: { model.mediaViewerPresentation?.uncoveredSourceItemID },
+                            mediaViewerSourceID: {
+                                model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
+                            },
                             open: openComposerAttachment,
                             toggleSpoiler: {
                                 model.toggleComposerAttachmentSpoiler($0, in: conversation)
@@ -1558,9 +1560,14 @@ private extension ComposerView {
                   author: currentUser
               )
         else { return }
-        model.mediaViewerPresentation = sendTransitionAnchor.mediaViewerSource(for: id)
-            .map { presentation.withTimelineMedia(previewImages: [$0.itemID: $0.image], transitionSources: [$0.itemID: $0]) }
-            ?? presentation
+        // Every staged image zooms back into its own tile, whichever the
+        // viewer shows when it closes.
+        let sources = presentation.items.compactMap { UUID(uuidString: $0.id).flatMap(sendTransitionAnchor.mediaViewerSource) }
+        model.mediaViewerSelectedItemID = id.uuidString
+        model.mediaViewerPresentation = presentation.withTimelineMedia(
+            previewImages: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0.image) }),
+            transitionSources: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0) })
+        )
     }
 
     /// The timeline animates a sent message out of the field, as a bubble or
