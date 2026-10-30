@@ -5,8 +5,11 @@ import Synchronization
 
 enum DiscordRichMessageMetrics {
     static var maximumWidth: CGFloat { InterfaceScale.metric(520) }
+    /// Discord lays Components V2 out up to 600 points wide.
+    static var componentsMaximumWidth: CGFloat { InterfaceScale.metric(600) }
     static var cardCornerRadius: CGFloat { InterfaceScale.metric(8) }
-    static var cardPadding: CGFloat { InterfaceScale.metric(12) }
+    /// A container's 16-point padding inside its 1-point border.
+    static var cardPadding: CGFloat { InterfaceScale.metric(17) }
 }
 
 nonisolated enum DiscordFittingWidthPlan {
@@ -718,6 +721,9 @@ struct RichMediaItem: Identifiable, Hashable {
     }
 }
 
+/// Discord's media mosaic: one item at its own size, three as a hero beside
+/// a stacked pair, and otherwise rows of two and square rows of three, led by
+/// a full-width hero when the count leaves one over.
 nonisolated enum MediaGalleryPlan {
     static func rowCounts(for count: Int) -> [Int] {
         switch count {
@@ -726,13 +732,9 @@ nonisolated enum MediaGalleryPlan {
         case 2: [2]
         case 3: [1, 2]
         case 4: [2, 2]
-        case 5: [2, 3]
-        case 6: [3, 3]
-        case 7: [1, 3, 3]
-        case 8: [2, 3, 3]
-        case 9: [3, 3, 3]
-        case 10: [1, 3, 3, 3]
-        default: stride(from: 0, to: count, by: 3).map { min(3, count - $0) }
+        default:
+            // Rows of three, after a lone hero or a pair for what is left.
+            (count % 3 == 0 ? [] : [count % 3]) + Array(repeating: 3, count: count / 3)
         }
     }
 
@@ -742,11 +744,12 @@ nonisolated enum MediaGalleryPlan {
     ) -> [CGRect]
     {
         guard count > 0 else { return [] }
+        let maximumHeight = InterfaceScale.metric(350)
         if count == 1 {
             if let intrinsicSize = intrinsicSizes.first,
                intrinsicSize.width > 0, intrinsicSize.height > 0
             {
-                let scale = min(1, width / intrinsicSize.width, 350 / intrinsicSize.height)
+                let scale = min(1, width / intrinsicSize.width, maximumHeight / intrinsicSize.height)
                 return [
                     CGRect(
                         x: 0, y: 0, width: intrinsicSize.width * scale,
@@ -755,29 +758,33 @@ nonisolated enum MediaGalleryPlan {
                 ]
             }
             let ratio = max(0.2, min(12, aspectRatios.first ?? 16 / 9))
-            let fittedWidth = min(width, 350 * ratio)
-            let fittedHeight = min(350, fittedWidth / ratio)
+            let fittedWidth = min(width, maximumHeight * ratio)
+            let fittedHeight = min(maximumHeight, fittedWidth / ratio)
             return [CGRect(x: 0, y: 0, width: fittedWidth, height: max(InterfaceScale.metric(80), fittedHeight))]
         }
         if count == 3 {
-            let height = min(300, max(190, width * 0.62))
-            let heroWidth = (width - spacing) * 0.64
+            let height = min(maximumHeight, width * 7 / 12)
+            let heroWidth = (width - spacing) * 2 / 3
             let stackWidth = width - spacing - heroWidth
+            let stackHeight = (height - spacing) / 2
             return [
                 CGRect(x: 0, y: 0, width: heroWidth, height: height),
-                CGRect(x: heroWidth + spacing, y: 0, width: stackWidth, height: (height - spacing) / 2),
-                CGRect(
-                    x: heroWidth + spacing, y: (height + spacing) / 2, width: stackWidth,
-                    height: (height - spacing) / 2
-                )
+                CGRect(x: heroWidth + spacing, y: 0, width: stackWidth, height: stackHeight),
+                CGRect(x: heroWidth + spacing, y: stackHeight + spacing, width: stackWidth, height: stackHeight)
             ]
         }
+        // A row is as tall as its tallest item at the row's tile width, up
+        // to 280 points, or half the 350-point grid for four items. Rows of
+        // three are square.
+        let rowCap = count == 4 ? (maximumHeight - spacing) / 2 : InterfaceScale.metric(280)
         var result: [CGRect] = []
         var verticalOffset: CGFloat = 0
-        for (rowIndex, columns) in rowCounts(for: count).enumerated() {
+        for columns in rowCounts(for: count) {
             let tileWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
-            let hero = columns == 1 && (count == 7 || count == 10) && rowIndex == 0
-            let height = hero ? min(240, max(150, width * 0.44)) : min(175, max(92, tileWidth * 0.72))
+            let ratios = aspectRatios.dropFirst(result.count).prefix(columns).map { max(0.2, $0) }
+            let height = columns == 3
+                ? tileWidth
+                : min(rowCap, tileWidth / (ratios.min() ?? 1))
             for column in 0 ..< columns {
                 result.append(
                     CGRect(
@@ -805,12 +812,11 @@ nonisolated enum DiscordComponentContainerLayoutPlan {
         idealContent: CGFloat,
         available: CGFloat?,
         maximum: CGFloat,
-        padding: CGFloat,
-        hasAccent: Bool
+        padding: CGFloat
     ) -> CGFloat {
-        let fixedWidth = padding * 2 + (hasAccent ? InterfaceScale.metric(4) : 0)
-        return DiscordFittingWidthPlan.width(
-            ideal: idealContent + fixedWidth,
+        // The accent bar overlays the leading padding, so it adds no width.
+        DiscordFittingWidthPlan.width(
+            ideal: idealContent + padding * 2,
             available: available,
             maximum: maximum
         )

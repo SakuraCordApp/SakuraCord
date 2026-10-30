@@ -89,7 +89,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         /// Whether the row paints nothing beneath this overlay once it is live.
         var replacesPoster: Bool {
             switch self {
-            case .sticker, .reaction: true
+            case .sticker, .reaction, .componentButton: true
             default: false
             }
         }

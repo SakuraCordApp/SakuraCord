@@ -683,7 +683,8 @@ extension NativeTimelineRowPainter {
                 activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
-                    componentButtonPressProgress
+                    componentButtonPressProgress,
+                animatedOverlayRoles: input.animatedOverlayRoles
             ))
         }
         guard !layout.stickerFrames.isEmpty else { return }
