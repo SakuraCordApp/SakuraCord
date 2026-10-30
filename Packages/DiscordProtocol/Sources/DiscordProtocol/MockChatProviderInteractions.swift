@@ -15,6 +15,18 @@ public extension MockChatProvider {
         )
     }
 
+    /// Every offline command response reads as its invoker inspecting themselves.
+    func messageInteractionData(channelID: ChannelID, messageID: MessageID) async throws -> MessageInteractionData {
+        try await Task.sleep(for: .milliseconds(250))
+        guard let metadata = messagesByChannel[channelID]?.first(where: { $0.id == messageID })?.interactionMetadata,
+              let name = metadata.displayName
+        else { throw ChatProviderError.invalidRequest("Command details are unavailable.") }
+        return MessageInteractionData(commandName: name, options: [
+            .init(name: "user", type: .user, value: metadata.user?.id.description),
+            .init(name: "detail", type: .string, value: "full"),
+        ])
+    }
+
     func requestApplicationCommandAutocomplete(
         _ request: ApplicationCommandAutocompleteRequest
     ) async throws {

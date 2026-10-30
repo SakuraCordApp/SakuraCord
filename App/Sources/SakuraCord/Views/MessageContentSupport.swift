@@ -31,6 +31,8 @@ struct MessageMentionResolver {
 
 struct CustomEmojiRichText: View {
     var model: AppModel?
+    /// Resolves clicked user mentions the source message knows about.
+    var message: Message?
     let content: String
     let emojiSize: CGFloat
     var baseFontSize: CGFloat?
@@ -44,6 +46,7 @@ struct CustomEmojiRichText: View {
 
     init(
         model: AppModel? = nil,
+        message: Message? = nil,
         content: String,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
@@ -57,6 +60,7 @@ struct CustomEmojiRichText: View {
         onURLClick: @escaping (URL) -> Bool = { _ in false }
     ) {
         self.model = model
+        self.message = message
         self.content = content
         self.emojiSize = emojiSize
         self.baseFontSize = baseFontSize
@@ -115,11 +119,9 @@ struct CustomEmojiRichText: View {
         case .unresolved:
             return
         case let .user(id):
-            let user = model.membersByID[id]?.user
+            let user = model.mentionUser(id, in: message)
+                ?? model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
-                ?? model.messages.first { $0.author.id == id }?.author
-                ?? model.threadMessages.first { $0.author.id == id }?.author
-                ?? (model.currentUser?.id == id ? model.currentUser : nil)
             guard let user else { return }
             let requestID = model.showProfile(for: user)
             presentedMention = AnchoredMentionPresentation(

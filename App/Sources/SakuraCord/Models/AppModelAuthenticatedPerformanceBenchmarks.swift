@@ -51,7 +51,9 @@ import SakuraCordModels
                   sessionState == .workspace
             else { return }
             await channelLoadTask?.value
-            if await prepareSelectedTimelineScrollHistory() { return }
+            // The timeline starts its run on the first channel with more
+            // history and pages in the rest itself.
+            if hasMoreMessages { return }
             guard let snapshot else { return }
             let originalChannelID = selectedChannelID
             let candidates = benchmarkEligibleChannels(snapshot.channels)
@@ -68,7 +70,7 @@ import SakuraCordModels
                     channel: channel,
                     kind: kind
                 ) else { continue }
-                if await prepareSelectedTimelineScrollHistory() { return }
+                if hasMoreMessages { return }
             }
         }
 

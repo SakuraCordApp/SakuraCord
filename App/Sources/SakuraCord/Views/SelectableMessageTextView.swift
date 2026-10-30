@@ -621,9 +621,10 @@ final class RichMessageNSTextView: NSTextView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let mentionTrackingArea { removeTrackingArea(mentionTrackingArea) }
+        // Popovers stay non-key until clicked; their mentions still hover.
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .cursorUpdate],
+            options: [.activeInActiveApp, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .cursorUpdate],
             owner: self
         )
         addTrackingArea(area)
@@ -636,6 +637,8 @@ final class RichMessageNSTextView: NSTextView {
         updateHoveredMention(at: point)
         setHoveredLink(link(at: point)?.range)
         super.mouseMoved(with: event)
+        // NSTextView restores the I-beam on every move, even over a mention.
+        updateCursor(at: point)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -646,7 +649,10 @@ final class RichMessageNSTextView: NSTextView {
 
     override func cursorUpdate(with event: NSEvent) {
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        let point = convert(event.locationInWindow, from: nil)
+        updateCursor(at: convert(event.locationInWindow, from: nil))
+    }
+
+    private func updateCursor(at point: NSPoint) {
         if mentionAttachment(at: point) == nil, link(at: point) == nil {
             NSCursor.iBeam.set()
         } else {

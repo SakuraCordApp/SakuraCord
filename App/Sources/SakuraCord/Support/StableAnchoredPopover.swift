@@ -442,6 +442,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
         private var anchorSnapshot: StablePopoverAnchorSnapshot?
         private var presentedEdge: NSRectEdge?
         private var presentedAnchorFrame: CGRect?
+        private var presentedContentSize: CGSize?
         private var configuration = StablePopoverConfiguration.hover
         private var onDismiss: () -> Void = {}
         private var onWillDismiss: (() -> Void)?
@@ -551,7 +552,12 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                 return
             }
             let presentationContext = StablePopoverPresentationContext()
-            presentationContext.contentSizeDidChange = { [weak self] in self?.scheduleRefresh() }
+            // Once open, resize in the same pass, before AppKit draws the bubble grown to
+            // one side of its anchor; the later refresh measures state set by the caller.
+            presentationContext.contentSizeDidChange = { [weak self, weak presentationContext] in
+                if presentationContext?.hasFinishedPresenting == true { self?.refreshPresentation() }
+                self?.scheduleRefresh()
+            }
             presentationContext.dismiss = { [weak self] in
                 self?.dismissPresentation()
             }
@@ -667,6 +673,12 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                   let visibleFrame = visibleScreenFrame(for: sourceFrame)
             else { return }
 
+            // An open popover resizes at once: animated, AppKit grows the bubble to one
+            // side of its anchor, then slides it back. The open animation stays intact.
+            let resizesInPlace = popover.isShown && presentationContext?.hasFinishedPresenting == true
+            let animates = configuration.animates && AppMotionPolicy.animates(.overlays)
+            if resizesInPlace { popover.animates = false }
+            defer { popover.animates = animates }
             let initialSize: CGSize
             switch configuration.contentSizing {
             case let .fixed(size):
@@ -704,16 +716,17 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             let anchorView = anchorTracker.anchorView
             guard anchorView.window != nil, !anchorView.bounds.isEmpty else { return }
             // Re-presenting an already shown popover interrupts native scroll elasticity.
-            // Reposition only when the anchor actually moves or the preferred edge changes.
-            if !popover.isShown || presentedEdge != placement.edge || presentedAnchorFrame != sourceFrame {
-                let animates = configuration.animates && AppMotionPolicy.animates(.overlays)
+            // Reposition only when the anchor moves, the preferred edge changes, or a
+            // resize left the bubble off-center: AppKit keeps a resized popover's origin.
+            let resized = resizesInPlace && presentedContentSize != popover.contentSize
+            if !popover.isShown || resized || presentedEdge != placement.edge || presentedAnchorFrame != sourceFrame {
                 if popover.isShown, configuration.reusesPresentationOnIdentityChange {
                     popover.animates = false
                 }
                 popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: placement.edge)
-                popover.animates = animates
                 presentedEdge = placement.edge
                 presentedAnchorFrame = sourceFrame
+                presentedContentSize = popover.contentSize
             } else if popover.positioningRect != anchorView.bounds {
                 popover.positioningRect = anchorView.bounds
             }
@@ -937,6 +950,8 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                   shownPopover === popover
             else { return }
             presentationContext?.markPresentationFinished()
+            // Re-center content that changed size while the popover opened.
+            refreshPresentation()
         }
 
         func close() {
@@ -963,6 +978,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             anchorSnapshot = nil
             presentedEdge = nil
             presentedAnchorFrame = nil
+            presentedContentSize = nil
             anchorTracker.detach()
             // Clear the current presentation before close(), whose delegate can run synchronously.
             // Only shown popovers can deliver a close notification.

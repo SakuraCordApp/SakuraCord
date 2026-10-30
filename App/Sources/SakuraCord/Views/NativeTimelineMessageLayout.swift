@@ -94,6 +94,7 @@ extension NativeTimelineRowLayout {
             }
             let mediaFrames = layout.linkedImageRegions.map(\.frame)
                 + layout.attachmentRegions.map(\.frame)
+                + layout.uploadRegions.map(\.frame)
                 + [layout.voiceMessageRegion?.frame].compactMap { $0 }
                 + layout.embedFrames
                 + layout.stickerFrames
@@ -559,6 +560,19 @@ extension NativeTimelineRowLayout {
                     return
                 }
             }
+            if message.isUnconfirmedLocalSend, source?.attachmentUploads.tracks(nonce: message.nonce) == true {
+                if hasRichContent {
+                    verticalOffset += InterfaceScale.metric(8)
+                }
+                result.uploadRegions = NativeTimelineRowLayout.uploadRegions(
+                    for: message.attachments,
+                    origin: CGPoint(x: contentX, y: verticalOffset),
+                    maximumWidth: inlineMediaMaximumWidth
+                )
+                verticalOffset = result.uploadRegions.last?.frame.maxY ?? verticalOffset
+                hasRichContent = true
+                return
+            }
             guard !usesComponentsV2 else { return }
             // Like Discord, files leave the media gallery for cards stacked
             // below it. Regions keep the attachments' order, which the send
@@ -922,19 +936,27 @@ extension NativeTimelineRowLayout {
                 {
                     verticalOffset += InterfaceScale.metric(4)
                 }
+                let font = NSFont.interfacePreferredFont(forTextStyle: .caption2)
+                let failureText = NSAttributedString(
+                    string: MessageOutboxPresentation.failureText(for: message),
+                    attributes: [.font: font]
+                )
+                let noticeWidth = InterfaceScale.metric(16) + NativeTimelineRowLayout.measuredTextWidth(failureText.string, font: font)
+                let retryWidth = message.canRetrySending
+                    ? NativeTimelineRowLayout.measuredTextWidth(MessageOutboxPresentation.retryTitle, font: font)
+                    : 0
+                // Retry follows the notice after the icon's column and a word gap.
+                let labelsWidth = noticeWidth + (message.canRetrySending ? InterfaceScale.metric(6) + retryWidth : 0)
                 // The notice is below the bubble, so short message content
-                // must not squeeze a moderation explanation into that bubble.
-                let failureWidth = usesBubbles && message.sendFailure != nil
+                // must not squeeze it into that bubble.
+                let failureWidth = usesBubbles
                     ? max(contentWidth, min(
+                        labelsWidth,
                         NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
                         isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
                     ))
                     : contentWidth
                 let failureX = isOutgoingBubble ? contentX + contentWidth - failureWidth : contentX
-                let failureText = NSAttributedString(
-                    string: MessageOutboxPresentation.failureText(for: message),
-                    attributes: [.font: NSFont.interfacePreferredFont(forTextStyle: .caption2)]
-                )
                 let failureHeight = max(InterfaceScale.metric(14), ceil(failureText.boundingRect(
                     with: CGSize(width: max(1, failureWidth - InterfaceScale.metric(16)), height: .greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin, .usesFontLeading]
@@ -945,6 +967,15 @@ extension NativeTimelineRowLayout {
                     width: failureWidth,
                     height: failureHeight
                 )
+                if message.canRetrySending {
+                    let retryX = failureX + noticeWidth + InterfaceScale.metric(6)
+                    result.failedRetryFrame = CGRect(
+                        x: retryX,
+                        y: verticalOffset,
+                        width: min(retryWidth, max(0, failureX + failureWidth - retryX)),
+                        height: failureHeight
+                    )
+                }
                 verticalOffset += failureHeight
             }
 

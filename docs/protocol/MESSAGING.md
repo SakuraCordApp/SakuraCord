@@ -14,7 +14,7 @@ and the outbox; MediaPipeline owns local media transformations.
 | DM/history/send budgets | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [MessageSendRateLimitContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSendRateLimitContractTests.swift) |
 | Search, forwarding and pins | [MessageSearchContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageSearchContractTests.swift); [MessageForwardingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/MessageForwardingContractTests.swift); [PinnedMessagesContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PinnedMessagesContractTests.swift) |
 | Polls and threads | [PollContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/PollContractTests.swift); [ForumProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ForumProviderContractTests.swift); [ThreadActionContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ThreadActionContractTests.swift); [ThreadPolicyTests.swift](../../Packages/SakuraCordModels/Tests/SakuraCordModelsTests/ThreadPolicyTests.swift) |
-| Uploads | [UploadPrivacyContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadPrivacyContractTests.swift); [AttachmentUploadURLValidationTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AttachmentUploadURLValidationTests.swift); [UploadPrivacyPreparationTests.swift](../../App/Tests/SakuraCordAppTests/UploadPrivacyPreparationTests.swift) |
+| Uploads | [UploadPrivacyContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadPrivacyContractTests.swift); [UploadCancellationContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/UploadCancellationContractTests.swift); [AttachmentUploadURLValidationTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/AttachmentUploadURLValidationTests.swift); [UploadPrivacyPreparationTests.swift](../../App/Tests/SakuraCordAppTests/UploadPrivacyPreparationTests.swift) |
 
 ## Sends and history
 
@@ -64,7 +64,8 @@ height and a 16 pt font, having no compact mode and a fixed message text size.
 A page is requested once the viewport is within 500 pt of the loaded edge, so a
 window shorter than the viewport plus 500 pt keeps loading until it fills. In an
 unread conversation the earlier edge waits until the viewport is 18 pt above the
-oldest loaded message (the scroller's 16 pt bar buffer plus 2). A jump to
+oldest loaded message (the scroller's 16 pt bar buffer plus 2), unless the loaded
+messages do not fill the viewport, which keeps loading until they do. A jump to
 a message not loaded (search, link, reply) is one `around={message}&limit=30` read,
 also into a channel with nothing loaded, which reads no newest page first.
 Jump to the first unread, when its boundary is not loaded, is one `around` read of 30
@@ -689,6 +690,16 @@ ephemeral dismissal sends no DELETE, unlike authoritative `MESSAGE_DELETE`.
 Ephemeral rows expose dismissal and their own component controls, but no message
 hover capsule, context menu or accessibility message actions.
 
+Message `interaction_metadata` names the command and its user, never its option
+values. Opening the command indicator above a reply reads them with GET
+`/channels/{channel}/messages/{message}/interaction-data` (official web build
+653945, 2026-10-29). The response repeats the invocation's `name` and executed
+`options`, including subcommand wrappers, ID-string entity values and registered
+choice values, plus the full `application_command` definition whose
+`name_localized` and choices supply display labels. The official client skips
+the read for invocations still in its local interaction store, shows a spinner
+until the response arrives, and leaves the spinner when the read fails.
+
 ### Returned modals and files
 
 `INTERACTION_MODAL_CREATE` supplies nested `application.id`, opening interaction
@@ -770,6 +781,33 @@ policy. A prepared or compacted file fitting the account cap is accepted,
 including equality at the boundary. The provider repeats the cap check before
 reservation. Discord-issued upload URLs are validated and receive only the
 headers needed for storage, not account credentials.
+
+Like the official client (web build 653945, observed 29 October 2026), a file
+staged in a conversation's composer is reserved on its own and stored as soon as
+its privacy and size check passes; the composer tile shows no transfer state.
+Send posts a stored file by its `uploaded_filename` without uploading it again,
+with the spoiler and filename chosen by then. Files still uploading show their
+progress cards and the message posts once they are stored. Removing a staged file
+stops its PUT, or deletes the stored file with one `DELETE
+/attachments/{uploaded_filename}` attempt. The official client keeps a
+channel's staged files across conversation switches; SakuraCord clears the
+composer on a switch and so deletes them. A thread still being created stores
+its files at Send. With metadata removal off, files also wait for Send, since
+turning it on before then must still strip them.
+
+Files not stored early share one reservation at Send, then every storage PUT
+starts at once. Each file reports its own progress and can be stopped alone:
+its PUT is cancelled and the message is posted without it. Stopping every file
+posts nothing. The official client resumes a failed PUT by itself every few
+seconds; SakuraCord does not replay storage PUTs. A file whose early upload
+failed is stored again when the user sends. A failed send keeps its files stored
+on attach: the explicit Retry posts them again as they are, like the official
+client's resend, and discarding the message deletes them. Files stored at Send
+are prepared and stored again on Retry, since the metadata setting may have
+changed; unused ones expire. A post Discord
+rejects (4xx; an expired stored file answers 400 with code 50146, "Uploaded
+file not found") drops them instead, so Retry stores the files again. The
+official client then only asks the user to remove and re-add the file.
 
 Compression and external-host preferences live in **Settings → Features**;
 unavailable dependent controls remain visible but disabled. Both policies default
