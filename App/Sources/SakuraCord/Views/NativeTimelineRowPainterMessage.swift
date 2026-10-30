@@ -501,7 +501,6 @@ extension NativeTimelineRowPainter {
                 }
                 if isVideo { mediaPlayGlyph(in: region.frame) }
             case .audio, .file:
-                let target = NativeTimelineComponentButtonTarget.fileCard(messageID: message.id, attachmentID: attachment.id)
                 fileCard(
                     .init(
                         frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil,
@@ -512,7 +511,8 @@ extension NativeTimelineRowPainter {
                     state: input.model?.attachmentDownloads.states[attachment.id],
                     upload: uploadState(of: attachment, in: input),
                     hovered: input.hoveredComponentButton,
-                    pressProgress: input.pressedComponentButton == target ? input.componentButtonPressProgress : 0
+                    pressed: input.pressedComponentButton,
+                    pressProgress: input.componentButtonPressProgress
                 )
                 if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
                     NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)

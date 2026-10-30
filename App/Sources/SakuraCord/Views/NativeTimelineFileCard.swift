@@ -90,16 +90,39 @@ struct NativeTimelineFileCard {
         isAudio ? nameFrame.union(detailFrame).union(buttonFrame) : opensInViewer ? buttonFrame : frame
     }
 
-    /// Where a click acts on the file. A text card also acts through the
-    /// detail line's Show in Finder or Retry link.
-    func actionFrames(for state: AttachmentDownloadStore.State?) -> [CGRect] {
+    /// The parts of a card that take the pointer, each with its own hover
+    /// and press; all of them act on the file.
+    nonisolated enum Part: String, CaseIterable {
+        case card
+        case button
+        case link
+    }
+
+    /// The part under a point. The button takes only its circle, and the
+    /// link only its words; a text card's body opens the viewer instead.
+    func part(at point: CGPoint, state: AttachmentDownloadStore.State?) -> Part? {
+        guard frame.contains(point) else { return nil }
+        let button = buttonFrame
+        if hypot(point.x - button.midX, point.y - button.midY) <= button.width / 2 { return .button }
         let detail = Self.detail(for: state, size: attachment.size)
-        guard opensInViewer, detail.link != nil else { return [actionFrame] }
-        let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: Self.detailFont)
-        var link = detailFrame
-        link.origin.x += offset
-        link.size.width = max(0, link.width - offset)
-        return [actionFrame, link]
+        if let link = detail.link, linkFrame(after: detail.text, link: link).contains(point) { return .link }
+        return actionFrame.contains(point) && !opensInViewer ? .card : nil
+    }
+
+    /// The part of this card that a hover or press target names.
+    func part(of target: NativeTimelineComponentButtonTarget?, messageID: MessageID) -> Part? {
+        guard let target, target.messageID == messageID else { return nil }
+        return Part.allCases.first { target == .fileCard(messageID: messageID, attachmentID: attachment.id, part: $0) }
+    }
+
+    /// The detail line's Show in Finder or Retry link, as wide as its words.
+    func linkFrame(after text: String, link: String) -> CGRect {
+        var frame = detailFrame
+        frame.origin.x += NativeTimelineRowLayout.measuredTextWidth(text, font: Self.detailFont)
+        frame.size.width = min(
+            NativeTimelineRowLayout.measuredTextWidth(link, font: Self.linkFont), max(0, detailFrame.maxX - frame.minX)
+        )
+        return frame
     }
 
     /// An audio card's seek row, under the name and ending with the card.
@@ -170,8 +193,10 @@ struct NativeTimelineFileCard {
 }
 
 extension NativeTimelineComponentButtonTarget {
-    /// The hover and press target of a file card.
-    nonisolated static func fileCard(messageID: MessageID, attachmentID: String) -> Self {
-        .init(messageID: messageID, componentID: "file:\(attachmentID)")
+    /// The hover and press target of a part of a file card.
+    nonisolated static func fileCard(
+        messageID: MessageID, attachmentID: String, part: NativeTimelineFileCard.Part
+    ) -> Self {
+        .init(messageID: messageID, componentID: "file:\(part.rawValue):\(attachmentID)")
     }
 }

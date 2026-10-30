@@ -45,7 +45,7 @@ extension NativeTimelineCanvasView {
             if isHiddenSpoiler {
                 self.reveal(key, rowIndex: rowIndex)
             } else if let file {
-                self.model?.attachmentDownloads.activate(file)
+                self.activateFileCard(file)
             } else if let viewerPresentation {
                 self.model?.mediaViewerPresentation =
                     self.mediaViewerPresentation(
@@ -342,7 +342,7 @@ extension NativeTimelineCanvasView {
         } else if !attachment.mediaKind.isVisual, attachment.textPreviewLanguage == nil {
             // A message still being sent has only local files, not downloads.
             guard !message.isUnconfirmedLocalSend else { return false }
-            model?.attachmentDownloads.activate(attachment)
+            activateFileCard(attachment)
         } else if let presentation =
             NativeTimelineMediaViewerPlan.attachments(
                 in: message,

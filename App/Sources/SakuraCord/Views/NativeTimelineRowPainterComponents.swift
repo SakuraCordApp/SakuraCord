@@ -628,9 +628,8 @@ extension NativeTimelineRowPainter {
                 bubbleRegion: input.bubbleRegion,
                 state: input.model?.attachmentDownloads.states[region.attachment.id],
                 hovered: input.hoveredComponentButton,
-                pressProgress: input.pressedComponentButton == .fileCard(
-                    messageID: input.messageID, attachmentID: region.attachment.id
-                ) ? input.componentButtonPressProgress : 0
+                pressed: input.pressedComponentButton,
+                pressProgress: input.componentButtonPressProgress
             )
         }
     }

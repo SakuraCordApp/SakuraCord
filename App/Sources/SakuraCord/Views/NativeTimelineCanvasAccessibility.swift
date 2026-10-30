@@ -826,7 +826,7 @@ extension NativeTimelineCanvasView {
         if attachment.textPreviewLanguage != nil, !isHiddenSpoiler, !message.isUnconfirmedLocalSend {
             element.setAccessibilityCustomActions([
                 NSAccessibilityCustomAction(name: fileCardActionDescription(attachment, name: contentLabel)) { [weak self] in
-                    self?.model?.attachmentDownloads.activate(attachment)
+                    self?.activateFileCard(attachment)
                     return self != nil
                 },
             ])
