@@ -26,10 +26,8 @@ final class NativeTimelineCodeCopyControl: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = InterfaceScale.metric(6)
         layer?.cornerCurve = .continuous
         alphaValue = 0
-        glyph.symbolConfiguration = .init(pointSize: InterfaceScale.fontSize(13), weight: .medium)
         glyph.image = Self.symbol(Self.copySymbol)
         addSubview(glyph)
     }
@@ -47,8 +45,14 @@ final class NativeTimelineCodeCopyControl: NSView {
     func update(target: NativeTimelineCodeBlockPointerTarget?, isHovered: Bool, isPressed: Bool) {
         if let target, target != shown {
             // A different block shows its own copy glyph at once.
-            let isAnotherBlock = shown.map { $0.itemIdentifier != target.itemIdentifier || $0.rangeLocation != target.rangeLocation } ?? true
+            let isAnotherBlock = shown.map {
+                $0.itemIdentifier != target.itemIdentifier || $0.region != target.region
+                    || $0.rangeLocation != target.rangeLocation
+            } ?? true
             if isAnotherBlock { resetGlyph(animated: false) }
+            // Interface Size may have changed since the button last showed.
+            layer?.cornerRadius = InterfaceScale.metric(6)
+            glyph.symbolConfiguration = .init(pointSize: InterfaceScale.fontSize(13), weight: .medium)
             frame = target.copyButtonFrame
             glyph.frame = bounds.insetBy(dx: Self.glyphInset, dy: Self.glyphInset)
         }
