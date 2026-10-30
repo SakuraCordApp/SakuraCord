@@ -1111,18 +1111,19 @@ public enum DiscordMarkdown {
     }
 
     /// Discord's dark-theme code colours, each with a darker variant that
-    /// keeps its contrast on the translucent code fill in light appearance.
+    /// keeps 4.5:1 contrast on the translucent code fill over the lightest
+    /// and dimmest light-appearance backgrounds, bubbles included.
     private enum CodePalette {
-        static let jsonKey = color(dark: 0x4FA1FA, light: 0x0B62C4)
-        static let jsonString = color(dark: 0xA3D187, light: 0x1F7A3D)
-        static let jsonNumber = color(dark: 0xF08F4F, light: 0xB04A00)
-        static let jsonKeyword = color(dark: 0x73B8F5, light: 0x0B62C4)
-        static let keyword = color(dark: 0xF67774, light: 0xC0362C)
-        static let title = color(dark: 0x8195FB, light: 0x4A5BD4)
-        static let string = color(dark: 0x57AF74, light: 0x1F7A3D)
-        static let number = color(dark: 0xE18752, light: 0xB04A00)
-        static let `operator` = color(dark: 0xFC8884, light: 0xC0362C)
-        static let comment = color(dark: 0x888991, light: 0x696B73)
+        static let jsonKey = color(dark: 0x4FA1FA, light: 0x0A5AB4)
+        static let jsonString = color(dark: 0xA3D187, light: 0x1A6A35)
+        static let jsonNumber = color(dark: 0xF08F4F, light: 0x9A4100)
+        static let jsonKeyword = color(dark: 0x73B8F5, light: 0x0A5AB4)
+        static let keyword = color(dark: 0xF67774, light: 0xA8302A)
+        static let title = color(dark: 0x8195FB, light: 0x3F4FC0)
+        static let string = color(dark: 0x57AF74, light: 0x1A6A35)
+        static let number = color(dark: 0xE18752, light: 0x9A4100)
+        static let `operator` = color(dark: 0xFC8884, light: 0xA8302A)
+        static let comment = color(dark: 0x888991, light: 0x5C5E66)
 
         private static func color(dark: UInt32, light: UInt32) -> NSColor {
             let dark = srgb(dark)
