@@ -440,7 +440,8 @@ public enum DiscordMarkdown {
             }
             let index = levels.count - 1
             let level = levels[index]
-            levels[index].nextNumber += 1
+            // Saturates, so a number such as `9223372036854775807.` cannot trap.
+            levels[index].nextNumber = min(level.nextNumber, .max - 1) + 1
             return (
                 .listItem(level: index, isOrdered: level.isOrdered),
                 level.isOrdered ? "\(level.nextNumber)." : "•"
