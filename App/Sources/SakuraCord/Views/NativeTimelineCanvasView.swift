@@ -429,6 +429,12 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         reconcileHistorySkeletonShimmer()
     }
 
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        // Moving chips were drawn for the previous display's scale and colours.
+        finishReactionTransitions()
+    }
+
     deinit {
         MainActor.assumeIsolated {
             NotificationCenter.default.removeObserver(self)
