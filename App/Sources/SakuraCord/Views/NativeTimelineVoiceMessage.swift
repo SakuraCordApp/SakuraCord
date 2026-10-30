@@ -282,6 +282,8 @@ enum NativeTimelineVoiceMessagePainter {
         let chipFill: NSColor
         let chipHoverFill: NSColor
         let chipText: NSColor
+        /// The mute toggle's glyph, matching the file card's download chip.
+        let chipSymbol: NSColor
 
         init(style: NativeTimelineVoiceMessageRegion.Style) {
             let accent = NSColor.sakuraCordAccentColor
@@ -295,6 +297,7 @@ enum NativeTimelineVoiceMessagePainter {
                 chipFill = NSColor.white.withAlphaComponent(0.2)
                 chipHoverFill = NSColor.white.withAlphaComponent(0.32)
                 chipText = .white
+                chipSymbol = .white
             case .plain, .incomingBubble, .audioFile:
                 buttonFill = accent
                 glyph = .white
@@ -304,6 +307,7 @@ enum NativeTimelineVoiceMessagePainter {
                 chipFill = NSColor.labelColor.withAlphaComponent(0.09)
                 chipHoverFill = NSColor.labelColor.withAlphaComponent(0.16)
                 chipText = .secondaryLabelColor
+                chipSymbol = .labelColor
             }
         }
     }
