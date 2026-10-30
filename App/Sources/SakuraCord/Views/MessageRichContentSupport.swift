@@ -705,7 +705,7 @@ struct RichMediaItem: Identifiable, Hashable {
         return extensions.contains(url.pathExtension.lowercased())
     }
 
-    private static func isAnimatedImageURL(_ url: URL) -> Bool {
+    static func isAnimatedImageURL(_ url: URL) -> Bool {
         let pathExtension = url.pathExtension.lowercased()
         return pathExtension == "gif" || pathExtension == "apng"
     }

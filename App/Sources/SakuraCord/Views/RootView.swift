@@ -408,6 +408,7 @@ private struct ChatRootView: View {
                 dismiss: { model.mediaViewerPresentation = nil },
                 selectionChanged: { model.mediaViewerSelectedItemID = $0 }
             )
+            .environment(model.voiceMessagePlayback)
             .frame(width: 0, height: 0)
         }
         .modifier(ExpandedProfilePresentationModifier(model: model))

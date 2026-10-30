@@ -12,9 +12,15 @@ nonisolated enum VoiceMessagePlaybackID: Hashable, Sendable {
     /// An audio file attachment in a message, played in its file card. A
     /// forward shows the same file in another message, with its own player.
     case attachment(MessageID, attachmentID: String)
+    /// An audio file outside a message, such as one the media viewer shows
+    /// from the composer.
+    case file(URL)
 
     var isAudioFile: Bool {
-        if case .attachment = self { true } else { false }
+        switch self {
+        case .attachment, .file: true
+        case .message, .composer: false
+        }
     }
 }
 
@@ -63,6 +69,10 @@ final class VoiceMessagePlaybackStore {
     }
     /// Discord's audio file mute, which voice messages ignore.
     private(set) var isAudioFileMuted = false {
+        didSet { applyOutput() }
+    }
+    /// The media viewer's audio file volume, 0–1, which voice messages ignore.
+    private(set) var audioFileVolume: Float = 1 {
         didSet { applyOutput() }
     }
 
@@ -193,6 +203,12 @@ final class VoiceMessagePlaybackStore {
 
     func toggleAudioFileMute() {
         isAudioFileMuted.toggle()
+        notify()
+    }
+
+    func setAudioFileVolume(_ volume: Float) {
+        audioFileVolume = min(max(volume, 0), 1)
+        if audioFileVolume > 0 { isAudioFileMuted = false }
         notify()
     }
 
@@ -337,7 +353,7 @@ final class VoiceMessagePlaybackStore {
     private func applyOutput() {
         let isAudioFile = activeID?.isAudioFile == true
         player?.rate = isAudioFile ? 1 : speed
-        player?.volume = isAudioFile && isAudioFileMuted ? 0 : 1
+        player?.volume = isAudioFile ? (isAudioFileMuted ? 0 : audioFileVolume) : 1
     }
 
     private func pause() {

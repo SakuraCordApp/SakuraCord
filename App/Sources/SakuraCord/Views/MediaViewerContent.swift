@@ -1,9 +1,12 @@
 import AppKit
 import AVKit
+import SakuraCordModels
 import SwiftUI
 
 struct MediaViewerStage: View {
     let item: RichMediaItem
+    /// The message the item belongs to, if any, which an audio file plays as.
+    let messageID: MessageID?
     let previewImage: NSImage?
     let isVisible: Bool
     let transitionSource: MediaViewerTransitionSource?
@@ -88,7 +91,11 @@ struct MediaViewerStage: View {
                 }
             }
         case .audio:
-            MediaViewerAudio(item: item, download: download)
+            MediaViewerAudio(
+                item: item,
+                playbackID: messageID.map { .attachment($0, attachmentID: item.id) } ?? .file(item.url),
+                download: download
+            )
         case let .text(language):
             MediaViewerText(url: item.url, language: language)
         case .file:
