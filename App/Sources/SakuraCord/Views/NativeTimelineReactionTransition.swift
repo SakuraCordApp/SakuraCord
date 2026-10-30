@@ -59,7 +59,9 @@ struct NativeTimelineReactionTransition {
     }
 
     var rowIndex: Int
-    let startUptime: TimeInterval
+    /// Set on the first frame, like the other row motions, so time the main
+    /// thread spends finishing the update does not use up the motion.
+    var startUptime: TimeInterval?
     let bandTop: CGFloat
     /// The row as it was before its reactions began to change. Its bitmap,
     /// identical above the band, serves until the row lands, so a burst of
@@ -68,7 +70,7 @@ struct NativeTimelineReactionTransition {
     let chips: [Chip]
 
     func progress(at uptime: TimeInterval) -> CGFloat {
-        NativeTimelineRowDisclosure.progress(at: uptime - startUptime)
+        startUptime.map { NativeTimelineRowDisclosure.progress(at: uptime - $0) } ?? 0
     }
 }
 
@@ -85,9 +87,14 @@ struct NativeTimelineReactionRowMotion {
         let delta: CGFloat
     }
 
-    let startUptime: TimeInterval
+    /// Set on the first frame, as for a chip transition.
+    var startUptime: TimeInterval?
     let shift: CGFloat
     var steps: [Step]
+
+    func progress(at uptime: TimeInterval) -> CGFloat {
+        startUptime.map { NativeTimelineRowDisclosure.progress(at: uptime - $0) } ?? 0
+    }
 }
 
 /// The rows around the viewport as they were before an update.
@@ -229,7 +236,7 @@ extension NativeTimelineCanvasView {
         // Live reaction media pauses on its still while the chips move.
         if startedChips { positionAnimatedMediaOverlays() }
         if describesUpdate, let shift, !steps.isEmpty {
-            reactionRowMotions.append(.init(startUptime: now, shift: shift, steps: steps))
+            reactionRowMotions.append(.init(shift: shift, steps: steps))
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
         } else if !startedChips {
@@ -306,7 +313,6 @@ extension NativeTimelineCanvasView {
         let chipTop = chips.map { min($0.from.frame.minY, $0.to.frame.minY) }.min() ?? layout.height
         reactionTransitions[identifier] = NativeTimelineReactionTransition(
             rowIndex: index,
-            startUptime: now,
             bandTop: min(chipTop, layout.height, oldLayout.height),
             bitmapItem: reactionTransitions[identifier]?.bitmapItem ?? old.item,
             chips: chips
@@ -318,9 +324,13 @@ extension NativeTimelineCanvasView {
     private func stepReactionTransitions() {
         let now = ProcessInfo.processInfo.systemUptime
         let hadMotion = !reactionRowMotions.isEmpty
-        reactionRowMotions.removeAll {
-            NativeTimelineRowDisclosure.progress(at: now - $0.startUptime) >= 1
+        for index in reactionRowMotions.indices where reactionRowMotions[index].startUptime == nil {
+            reactionRowMotions[index].startUptime = now
         }
+        for (identifier, transition) in reactionTransitions where transition.startUptime == nil {
+            reactionTransitions[identifier]?.startUptime = now
+        }
+        reactionRowMotions.removeAll { $0.progress(at: now) >= 1 }
         // Frames that move no row by a whole pixel redraw only the chips; the
         // last one also hands hover back to the rows where they landed.
         let moved = refreshReactionMotionGeometry(at: now)
@@ -375,7 +385,7 @@ extension NativeTimelineCanvasView {
         var steps: [(index: Int, offset: CGFloat)] = []
         for motionIndex in reactionRowMotions.indices {
             let motion = reactionRowMotions[motionIndex]
-            let left = 1 - NativeTimelineRowDisclosure.progress(at: uptime - motion.startUptime)
+            let left = 1 - motion.progress(at: uptime)
             shift += motion.shift * left
             for stepIndex in motion.steps.indices {
                 let step = motion.steps[stepIndex]
