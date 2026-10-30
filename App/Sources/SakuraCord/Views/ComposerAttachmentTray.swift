@@ -192,7 +192,9 @@ private struct ComposerAttachmentTile: View {
         }
         // The name, its shade and the actions arrive and leave together.
         .overlay(alignment: .bottom) {
-            if isHovered {
+            // A file's flat face needs no shade under the glass pill, and
+            // a dark one only muddies its pale surface in Light.
+            if isHovered, attachment.isVisualMedia {
                 Self.scrim
                     .clipShape(shape)
                     .allowsHitTesting(false)
@@ -278,8 +280,8 @@ private struct ComposerAttachmentTile: View {
         reduceMotion ? .opacity : .scale(scale: 0.7, anchor: anchor).combined(with: .opacity)
     }
 
-    /// A soft shade under the name. Its eased stops leave no visible edge
-    /// where it starts.
+    /// A soft shade under the name over an image. Its eased stops leave no
+    /// visible edge where it starts.
     private static var scrim: some View {
         LinearGradient(stops: scrimStops, startPoint: .top, endPoint: .bottom)
             .frame(height: ComposerAttachmentTray.tileSize / 2)
