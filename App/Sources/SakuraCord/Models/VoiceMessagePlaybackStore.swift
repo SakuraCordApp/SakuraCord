@@ -53,6 +53,7 @@ final class VoiceMessagePlaybackStore {
     static let startSpinnerDelay: Duration = .milliseconds(150)
     /// Discord remembers where up to 25 voice messages and audio files were left.
     static let maximumResumePositions = 25
+    /// Audio files whose length, or failure to read it, is remembered.
     static let maximumKnownDurations = 128
 
     private(set) var activeID: VoiceMessagePlaybackID?
@@ -207,9 +208,11 @@ final class VoiceMessagePlaybackStore {
             guard let self, !Task.isCancelled else { return }
             measurements[source] = nil
             guard let duration else {
-                let now = ContinuousClock.now
-                failedMeasurements = failedMeasurements.filter { now - $0.value <= .seconds(30) }
-                failedMeasurements[source] = now
+                if failedMeasurements.count >= Self.maximumKnownDurations,
+                   let oldest = failedMeasurements.min(by: { $0.value < $1.value })?.key {
+                    failedMeasurements[oldest] = nil
+                }
+                failedMeasurements[source] = .now
                 return
             }
             rememberDuration(duration, for: source)
