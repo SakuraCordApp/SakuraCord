@@ -354,15 +354,12 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
             let union = rects.dropFirst().reduce(firstRect) {
                 $0.union($1)
             }
+            let inset = NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: value, at: range.location)
             let backgroundFrame = CGRect(
                 x: outerFrame.minX,
-                y: union.minY
-                    - NativeTimelineMarkdownChromeMetrics
-                        .codeBlockInset,
+                y: union.minY - inset,
                 width: outerFrame.width,
-                height: union.height
-                    + NativeTimelineMarkdownChromeMetrics
-                        .codeBlockInset * 2
+                height: union.height + inset * 2
             )
             let buttonWidth: CGFloat = InterfaceScale.metric(28)
             let buttonFrame = CGRect(

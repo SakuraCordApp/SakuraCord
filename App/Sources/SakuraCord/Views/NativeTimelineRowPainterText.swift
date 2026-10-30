@@ -452,6 +452,8 @@ extension NativeTimelineRowPainter {
         let frame: CGRect
         let isNested: Bool
         let isQuoted: Bool
+        /// One of Discord's CSS pixels at the item's size.
+        let em: CGFloat
     }
 
     static func drawMarkdownBlocks(
@@ -530,13 +532,14 @@ extension NativeTimelineRowPainter {
             guard let level = rawValue as? NSNumber else { return }
             let isQuoted = attributedText.attribute(.discordMarkdownBlock, at: range.location, effectiveRange: nil)
                 as? String == "quote"
+            let em = NativeTimelineMarkdownChromeMetrics.em(in: attributedText, at: range.location)
             result.listMarkers.append(
                 contentsOf:
                     NativeTimelineTextSelectionGeometry.rects(
                         in: textFrame,
                         outerFrame: outerFrame,
                         range: range
-                    ).map { ListMarker(frame: $0, isNested: level.intValue > 0, isQuoted: isQuoted) }
+                    ).map { ListMarker(frame: $0, isNested: level.intValue > 0, isQuoted: isQuoted, em: em) }
             )
         }
         // Quoted lines are separated by an unmarked newline, so one quote is
@@ -554,12 +557,15 @@ extension NativeTimelineRowPainter {
             }
         }
         result.quotes = quoteRanges.compactMap { range in
-            NativeTimelineTextSelectionGeometry.rects(
+            // Discord's bar is 4 px wide.
+            let width = 4 * NativeTimelineMarkdownChromeMetrics.em(in: attributedText, at: range.location)
+            return NativeTimelineTextSelectionGeometry.rects(
                 in: textFrame,
                 outerFrame: outerFrame,
                 range: range
             ).reduce(nil) { ($0 as CGRect?)?.union($1) ?? $1 }
-        }.map { CGRect(x: outerFrame.minX, y: $0.minY, width: InterfaceScale.metric(4), height: $0.height) }
+                .map { CGRect(x: outerFrame.minX, y: $0.minY, width: width, height: $0.height) }
+        }
         return result
     }
 
@@ -615,14 +621,14 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    /// Discord centers its disc 12 points before the item text, which
-    /// starts one 16-point gutter after the marker, and hollows nested ones.
+    /// Discord centers its 5.5 px disc 12 px before the item text, which
+    /// starts one 16 px gutter after the marker, and hollows nested ones.
     private static func drawListMarkerDecorations(_ markers: [ListMarker]) {
-        let diameter = InterfaceScale.metric(5.5)
         for marker in markers {
             (marker.isQuoted ? NSColor.secondaryLabelColor : NSColor.labelColor).set()
+            let diameter = 5.5 * marker.em
             let disc = CGRect(
-                x: marker.frame.minX + InterfaceScale.metric(4) - diameter / 2,
+                x: marker.frame.minX + 4 * marker.em - diameter / 2,
                 y: marker.frame.midY - diameter / 2,
                 width: diameter,
                 height: diameter

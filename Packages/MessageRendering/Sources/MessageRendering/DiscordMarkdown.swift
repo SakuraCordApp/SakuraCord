@@ -26,6 +26,13 @@ public extension NSAttributedString.Key {
     static let discordMarkdownListMarker = NSAttributedString.Key(
         "dev.sakuracord.markdown.list-marker"
     )
+
+    /// One of Discord's CSS pixels at this text's size: its body font size
+    /// over Discord's 16. Code blocks, quotes, and list markers carry it so
+    /// the painter sizes their chrome with the text. An NSNumber.
+    static let discordMarkdownEm = NSAttributedString.Key(
+        "dev.sakuracord.markdown.em"
+    )
 }
 
 public enum DiscordMarkdown {
@@ -373,6 +380,7 @@ public enum DiscordMarkdown {
                     separator[.font] = NSFont.systemFont(ofSize: baseFontSize)
                     separator[.paragraphStyle] = previousParagraph
                     separator[.discordMarkdownBlock] = blockName(for: previous)
+                    separator[.discordMarkdownEm] = NSNumber(value: metrics.em)
                 }
                 output.append(NSAttributedString(string: "\n", attributes: separator))
             }
@@ -412,6 +420,7 @@ public enum DiscordMarkdown {
         line.addAttribute(.paragraphStyle, value: paragraph, range: fullRange)
         if let blockName = blockName(for: linePlan) {
             line.addAttribute(.discordMarkdownBlock, value: blockName, range: fullRange)
+            line.addAttribute(.discordMarkdownEm, value: NSNumber(value: metrics.em), range: fullRange)
         }
         padInlineCode(in: line, metrics: metrics)
         return line
@@ -464,6 +473,7 @@ public enum DiscordMarkdown {
         }
         if run.traits.contains(.listMarker), case let .listItem(level, _) = line.block {
             attributes[.discordMarkdownListMarker] = NSNumber(value: level)
+            attributes[.discordMarkdownEm] = NSNumber(value: metrics.em)
             attributes[.foregroundColor] = NSColor.clear
         }
         if let link = run.link {
@@ -1011,32 +1021,35 @@ public enum DiscordMarkdown {
         return (range, url)
     }
 
-    /// Discord's block metrics, in points at the 15 pt message size that
-    /// stands in for Discord's 16 px body text. Font sizes keep Discord's
-    /// ratios to body text; gaps keep its pixel values.
+    /// Discord's block metrics, scaled from its 16 px body text to this
+    /// text's base size: every length is Discord's CSS pixels times `em`.
     private struct BlockMetrics {
         let baseFontSize: CGFloat
-        let listIndent: CGFloat = 16
-        let orderedMarkerGap: CGFloat = 4
-        let quoteIndent: CGFloat = 16
-        let codeInset: CGFloat = 8
+        /// One of Discord's CSS pixels at this text's size.
+        var em: CGFloat { baseFontSize / 16 }
+        var listIndent: CGFloat { px(16) }
+        var orderedMarkerGap: CGFloat { px(4) }
+        var quoteIndent: CGFloat { px(16) }
+        var codeInset: CGFloat { px(8) }
         /// Discord's 22 px line for 16 px message text, as a floor under
         /// paragraphs and list items; zero outside messages.
         let bodyLineHeight: CGFloat
         /// The empty line Discord leaves after a closing code fence.
         let emptyLineHeight: CGFloat
-        let codeLineHeight: CGFloat
+        /// Discord's 18 px code line.
+        var codeLineHeight: CGFloat { px(18) }
 
         init(baseFontSize: CGFloat, usesMessageLineHeight: Bool) {
             self.baseFontSize = baseFontSize
             let font = NSFont.systemFont(ofSize: baseFontSize)
-            bodyLineHeight = usesMessageLineHeight ? (baseFontSize * 1.375).rounded() : 0
+            bodyLineHeight = usesMessageLineHeight ? baseFontSize / 16 * 22 : 0
             emptyLineHeight = usesMessageLineHeight
                 ? bodyLineHeight
                 : ceil(font.ascender - font.descender + font.leading) + 1
-            codeLineHeight = (baseFontSize * 1.125).rounded()
             orderedMarkerFont = .monospacedDigitSystemFont(ofSize: baseFontSize, weight: .regular)
         }
+
+        func px(_ value: CGFloat) -> CGFloat { value * em }
 
         /// Tabular digits make a number's width follow its length, so the
         /// longest marker in a list is also the widest.
@@ -1050,9 +1063,9 @@ public enum DiscordMarkdown {
         /// 4 around every item, code blocks 6 above their border.
         func margins(_ line: AppKitPlan.Line, isFirst: Bool) -> (top: CGFloat, bottom: CGFloat) {
             switch line.block {
-            case .heading: (isFirst ? 8 : 16, 8)
-            case .listItem: (4, 4)
-            case .code: (6, 0)
+            case .heading: (px(isFirst ? 8 : 16), px(8))
+            case .listItem: (px(4), px(4))
+            case .code: (px(6), 0)
             case .paragraph, .subtext: (0, 0)
             }
         }
@@ -1064,10 +1077,10 @@ public enum DiscordMarkdown {
             let isFirstCodeLine = if case .code(_, true) = line.block { true } else { false }
             let codeTop = isFirstCodeLine ? codeInset : 0
             guard index > 0 else {
-                return max(margins(line, isFirst: true).top, line.isQuoted ? 4 : 0) + codeTop
+                return max(margins(line, isFirst: true).top, line.isQuoted ? px(4) : 0) + codeTop
             }
             let previous = lines[index - 1]
-            let quoteMargin: CGFloat = previous.isQuoted != line.isQuoted ? 4 : 0
+            let quoteMargin = previous.isQuoted != line.isQuoted ? px(4) : 0
             if case .code = previous.block {
                 if case .code(_, false) = line.block { return 0 }
                 return codeInset + emptyLineHeight + max(margins(line, isFirst: false).top, quoteMargin) + codeTop
@@ -1182,7 +1195,9 @@ public enum DiscordMarkdown {
         metrics: BlockMetrics
     ) -> NSParagraphStyle {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 1
+        // Discord's message lines sit one line height apart; elsewhere the
+        // natural line gets a point of leading.
+        paragraph.lineSpacing = metrics.bodyLineHeight > 0 ? 0 : 1
         paragraph.paragraphSpacingBefore = metrics.spacingBefore(index, in: lines)
         let indent = line.isQuoted ? metrics.quoteIndent : 0
         paragraph.firstLineHeadIndent = indent
@@ -1213,8 +1228,9 @@ public enum DiscordMarkdown {
             paragraph.maximumLineHeight = metrics.codeLineHeight
         case .paragraph:
             paragraph.minimumLineHeight = metrics.bodyLineHeight
-        case .heading:
-            break
+        case let .heading(level):
+            // Discord's headings keep its 1.375 line height at their own size.
+            paragraph.minimumLineHeight = metrics.bodyLineHeight * (level == 1 ? 1.5 : level == 2 ? 1.25 : 1)
         }
         // Inline code that opens a line has no preceding character to pad,
         // so the line itself starts inside the code's border.

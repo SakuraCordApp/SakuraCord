@@ -1469,7 +1469,16 @@ enum NativeTimelineEmbedLayout {
 }
 
 nonisolated enum NativeTimelineMarkdownChromeMetrics {
-    static var codeBlockInset: CGFloat { InterfaceScale.metric(8) }
+    /// Discord's 8 px code block padding, at the block's text size.
+    static func codeBlockInset(in value: NSAttributedString, at location: Int) -> CGFloat {
+        8 * em(in: value, at: location)
+    }
+
+    /// One of Discord's CSS pixels at the size of the markdown block or
+    /// list marker at `location`.
+    static func em(in value: NSAttributedString, at location: Int) -> CGFloat {
+        CGFloat((value.attribute(.discordMarkdownEm, at: location, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 1)
+    }
     // The painter gives CoreText one point of extra layout headroom and its
     // selection-derived block rect has fractional vertical bounds. Preserve
     // the established three-point message-highlight inset after that painted
@@ -1509,7 +1518,7 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
                   effectiveRange: nil
               ) as? String == "code"
         else { return 0 }
-        return codeBlockInset + codeBlockTerminalPaintAndHighlightInset
+        return codeBlockInset(in: value, at: index) + codeBlockTerminalPaintAndHighlightInset
     }
 }
 
