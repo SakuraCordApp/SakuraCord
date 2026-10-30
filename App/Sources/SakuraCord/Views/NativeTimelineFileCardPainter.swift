@@ -58,7 +58,7 @@ extension NativeTimelineRowPainter {
         let detail = upload == .failed
             ? (text: String(localized: "Upload failed"), link: nil)
             : NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
-        let detailColor = state == .failed || upload == .failed ? palette.failure : palette.detail
+        let detailColor = palette.isFailed ? palette.failure : palette.detail
         text(detail.text, in: card.detailFrame, font: NativeTimelineFileCard.detailFont, color: detailColor)
         if let link = detail.link {
             var frame = card.detailFrame
@@ -151,25 +151,22 @@ extension NativeTimelineRowPainter {
     }
 
     static func uploadState(of attachment: Attachment, in input: NativeTimelineMessageDrawInput) -> FileCardUpload? {
-        guard let ring = input.layout.uploadRings.first(where: { $0.attachmentID == attachment.id }) else { return nil }
-        if ring.isFailed { return .failed }
-        let isUploading = input.model?.attachmentUploads.isUploading(
-            nonce: input.row.message.nonce, attachmentID: attachment.id
-        ) == true
-        return isUploading ? .uploading : nil
+        input.layout.activeUploadRing(
+            for: attachment.id, uploads: input.model?.attachmentUploads, nonce: input.row.message.nonce
+        ).map { $0.isFailed ? .failed : .uploading }
     }
 
     private static func downloadRing(in circle: CGRect, fraction: Double, color: NSColor) {
         let ring = NSBezierPath(ovalIn: circle.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4)))
-        ring.lineWidth = InterfaceScale.metric(2.5)
-        color.withAlphaComponent(0.3).setStroke()
+        ring.lineWidth = AttachmentUploadRing.lineWidth
+        color.withAlphaComponent(AttachmentUploadRing.trackOpacity).setStroke()
         ring.stroke()
         let radius = circle.width / 2 - InterfaceScale.metric(4)
         let arc = NSBezierPath()
         // Flipped rows: -90° is the top, and positive angles turn clockwise.
         arc.appendArc(
             withCenter: CGPoint(x: circle.midX, y: circle.midY), radius: radius,
-            startAngle: -90, endAngle: -90 + 360 * min(max(fraction, 0.02), 1)
+            startAngle: -90, endAngle: -90 + 360 * AttachmentUploadRing.visibleFraction(fraction)
         )
         arc.lineWidth = ring.lineWidth
         arc.lineCapStyle = .round

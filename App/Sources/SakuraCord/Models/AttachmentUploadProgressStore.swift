@@ -32,6 +32,9 @@ final class AttachmentUploadProgressStore {
     /// By draft attachment ID.
     private var preuploads: [UUID: Preupload] = [:]
 
+    /// Whether any local send's files show their upload state.
+    var tracksAnySend: Bool { !uploads.isEmpty }
+
     /// Whether this local send's files show their upload state.
     func tracks(nonce: String?) -> Bool {
         nonce.map { uploads[$0] != nil } ?? false
@@ -110,7 +113,8 @@ final class AttachmentUploadProgressStore {
             let fraction = min(1, Double(completed) / Double(total))
             // Progress arrives on separate hops, so an older report can land late.
             if case let .sending(current) = preuploads[fileID] {
-                preuploads[fileID] = .sending(max(current, fraction))
+                guard fraction > current else { return }
+                preuploads[fileID] = .sending(fraction)
                 notify(attachmentID: fileID)
                 return
             }

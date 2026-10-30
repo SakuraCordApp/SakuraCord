@@ -213,7 +213,7 @@ private struct ComposerAttachmentTile: View {
 
     /// Images and videos fill the tile; other files show their type.
     @ViewBuilder private var face: some View {
-        if isVisualMedia {
+        if attachment.isVisualMedia {
             LocalAttachmentThumbnail(
                 url: attachment.url,
                 maximumPixelDimension: 720,
@@ -275,17 +275,14 @@ private struct ComposerAttachmentTile: View {
     /// A soft shade under the name. Its eased stops leave no visible edge
     /// where it starts.
     private static var scrim: some View {
-        let steps = 16
-        return LinearGradient(
-            stops: (0 ... steps).map { step in
-                let location = Double(step) / Double(steps)
-                let eased = location * location * (3 - 2 * location)
-                return .init(color: .black.opacity(0.32 * eased), location: location)
-            },
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: ComposerAttachmentTray.tileSize / 2)
+        LinearGradient(stops: scrimStops, startPoint: .top, endPoint: .bottom)
+            .frame(height: ComposerAttachmentTray.tileSize / 2)
+    }
+
+    private static let scrimStops: [Gradient.Stop] = (0 ... 16).map { step in
+        let location = Double(step) / 16
+        let eased = location * location * (3 - 2 * location)
+        return .init(color: .black.opacity(0.32 * eased), location: location)
     }
 
     private var accessibilityStatus: Text {
@@ -345,11 +342,6 @@ private struct ComposerAttachmentTile: View {
         }
     }
 
-    private var isVisualMedia: Bool {
-        let type = UTType(filenameExtension: attachment.url.pathExtension)
-        return type?.conforms(to: .image) == true || type?.conforms(to: .movie) == true
-    }
-
     /// Images and text files open in the media viewer.
     private var isViewable: Bool {
         let preview = OptimisticAttachmentPresentation.attachment(for: attachment.url, index: 0)
@@ -364,7 +356,7 @@ struct ComposerAttachmentFileFace: View {
 
     var body: some View {
         VStack(spacing: InterfaceScale.metric(6)) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+            Image(nsImage: NSWorkspace.shared.icon(for: UTType(filenameExtension: url.pathExtension) ?? .data))
                 .resizable()
                 .scaledToFit()
                 .frame(width: InterfaceScale.metric(76), height: InterfaceScale.metric(76))
@@ -378,5 +370,13 @@ struct ComposerAttachmentFileFace: View {
         .padding(InterfaceScale.metric(12))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.primary.opacity(0.06))
+    }
+}
+
+extension ForumPostAttachment {
+    /// Images and videos, which fill their tile and fly as their thumbnail.
+    var isVisualMedia: Bool {
+        let type = UTType(filenameExtension: url.pathExtension)
+        return type?.conforms(to: .image) == true || type?.conforms(to: .movie) == true
     }
 }

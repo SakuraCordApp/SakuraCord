@@ -46,7 +46,10 @@ nonisolated final class AttachmentUploadRingLayer: CALayer {
     }
 
     var color: CGColor = .white {
-        didSet { applyColor() }
+        didSet {
+            guard color != oldValue else { return }
+            applyColor()
+        }
     }
 
     override init() {

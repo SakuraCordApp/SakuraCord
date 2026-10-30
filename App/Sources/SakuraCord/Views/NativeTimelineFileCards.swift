@@ -11,9 +11,10 @@ extension NativeTimelineCanvasView {
     /// file still being sent acts only through its upload ring.
     private func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
+        let nonce = items[index].messageRow?.message.nonce
         let attachments = layout.fileCards.filter { card in
             !isConcealedSpoiler(card.attachment, in: messageID)
-                && !layout.uploadRings.contains { $0.attachmentID == card.attachment.id }
+                && layout.activeUploadRing(for: card.attachment.id, uploads: model?.attachmentUploads, nonce: nonce) == nil
         }
         let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
             guard !component.files.isEmpty else { return [] }

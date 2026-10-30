@@ -17,6 +17,13 @@ extension NativeTimelineRowLayout {
         let isFailed: Bool
     }
 
+    /// A file's ring while it shows: until storage has every file of the
+    /// send, or once its upload failed.
+    func activeUploadRing(for attachmentID: String, uploads: AttachmentUploadProgressStore?, nonce: String?) -> UploadRing? {
+        guard let ring = uploadRings.first(where: { $0.attachmentID == attachmentID }) else { return nil }
+        return ring.isFailed || uploads?.isUploading(nonce: nonce, attachmentID: attachmentID) == true ? ring : nil
+    }
+
     static func uploadRings(for regions: [AttachmentRegion], isInBubble: Bool, isFailed: Bool) -> [UploadRing] {
         regions.map { region in
             let attachment = region.attachment
@@ -189,6 +196,8 @@ extension NativeTimelineCanvasView {
     /// file's ring fades out, revealing the row beneath.
     func reconcileUploadRings() {
         guard let uploads = model?.attachmentUploads else { return removeUploadRings() }
+        // Rings exist only for sends the store tracks.
+        guard uploads.tracksAnySend || !uploadRings.isEmpty else { return }
         var shown = Set<UploadRingKey>()
         forEachDisplayedRow(in: visibleRect) { index in
             let layout = layouts[index]
@@ -199,7 +208,7 @@ extension NativeTimelineCanvasView {
             else { return }
             let origin = displayedRowOrigin(at: index)
             for ring in layout.uploadRings
-            where ring.isFailed || uploads.isUploading(nonce: nonce, attachmentID: ring.attachmentID) {
+            where layout.activeUploadRing(for: ring.attachmentID, uploads: uploads, nonce: nonce) != nil {
                 // A spoiler still hides its file card's button, but not the
                 // cover over an image.
                 if ring.mediaFrame == nil, let attachment = message.attachments.first(where: { $0.id == ring.attachmentID }),
@@ -217,13 +226,7 @@ extension NativeTimelineCanvasView {
                 view.frame = (ring.mediaFrame ?? ring.frame).offsetBy(dx: 0, dy: origin)
                 view.setColor(Self.uploadRingColor(ring, isOutgoing: layout.bubbleRegion?.isOutgoing == true))
                 view.isFailed = ring.isFailed
-                view.activate = { [weak self] in
-                    if ring.isFailed {
-                        self?.actions?.retry(message)
-                    } else {
-                        self?.model?.cancelAttachmentUpload(ring.attachmentID, of: message)
-                    }
-                }
+                view.activate = { [weak self] in self?.activateUploadRing(ring, of: message) }
                 view.fraction = uploads.fraction(nonce: nonce, attachmentID: ring.attachmentID)
             }
         }
@@ -245,6 +248,15 @@ extension NativeTimelineCanvasView {
         return ring.isAudio != isOutgoing ? .sakuraCordAccentColor : .white
     }
 
+    /// Retries a failed send, or cancels the file still uploading.
+    func activateUploadRing(_ ring: NativeTimelineRowLayout.UploadRing, of message: Message) {
+        if ring.isFailed {
+            actions?.retry(message)
+        } else {
+            model?.cancelAttachmentUpload(ring.attachmentID, of: message)
+        }
+    }
+
     func removeUploadRings() {
         for view in uploadRings.values {
             view.removeFromSuperview()
@@ -262,9 +274,9 @@ extension NativeTimelineCanvasView {
         parent: NSAccessibilityElement
     ) {
         for ring in layout.uploadRings {
-            guard let attachment = message.attachments.first(where: { $0.id == ring.attachmentID }) else { continue }
-            let isUploading = model?.attachmentUploads.isUploading(nonce: message.nonce, attachmentID: ring.attachmentID) == true
-            guard ring.isFailed || isUploading else { continue }
+            guard let attachment = message.attachments.first(where: { $0.id == ring.attachmentID }),
+                  layout.activeUploadRing(for: ring.attachmentID, uploads: model?.attachmentUploads, nonce: message.nonce) != nil
+            else { continue }
             children.append(accessibilityElement(
                 role: .button,
                 label: ring.isFailed
@@ -274,11 +286,7 @@ extension NativeTimelineCanvasView {
                 frame: accessibilityChildFrame(ring.frame, rowIndex: rowIndex),
                 parent: parent
             ) { [weak self] in
-                if ring.isFailed {
-                    self?.actions?.retry(message)
-                } else {
-                    self?.model?.cancelAttachmentUpload(ring.attachmentID, of: message)
-                }
+                self?.activateUploadRing(ring, of: message)
                 return true
             })
         }

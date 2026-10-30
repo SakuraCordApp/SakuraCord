@@ -8,8 +8,6 @@ struct LocalAttachmentThumbnail: View {
     let url: URL
     var maximumPixelDimension = 256
     var cachedImage: NSImage?
-    var preservesImageAspectRatio = false
-    var imageCornerRadius: CGFloat = 0
     var onImageLoaded: ((NSImage) -> Void)?
     @State private var image: NSImage?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,21 +16,10 @@ struct LocalAttachmentThumbnail: View {
         ZStack {
             Color.clear
             if let displayImage {
-                Group {
-                    if preservesImageAspectRatio {
-                        Image(nsImage: displayImage)
-                            .resizable()
-                            .scaledToFit()
-                    } else {
-                        Image(nsImage: displayImage)
-                            .resizable()
-                            .scaledToFill()
-                    }
-                }
-                .clipShape(
-                    ConcentricRectangle(cornerRadius: imageCornerRadius, style: .continuous)
-                )
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+                Image(nsImage: displayImage)
+                    .resizable()
+                    .scaledToFill()
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
                 if isVideoFile {
                     Image(systemName: "play.fill")
                         .font(.interfaceSystem(size: 14, weight: .semibold))

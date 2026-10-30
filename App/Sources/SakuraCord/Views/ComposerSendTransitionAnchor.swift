@@ -1,7 +1,6 @@
 import AppKit
 import SakuraCordModels
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Locates the composer text and attachment previews so a sent message can
 /// leave the field the way an iMessage bubble does. The timeline owns the
@@ -128,9 +127,8 @@ final class ComposerSendTransitionAnchor {
               window === textView?.window,
               view.visibleRect.contains(view.bounds)
         else { return nil }
-        let type = UTType(filenameExtension: attachment.url.pathExtension)
         let image: NSImage?
-        if type?.conforms(to: .image) == true || type?.conforms(to: .movie) == true {
+        if attachment.isVisualMedia {
             image = preview.thumbnail
         } else {
             let renderer = ImageRenderer(
