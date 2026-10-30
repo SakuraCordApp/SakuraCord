@@ -100,6 +100,8 @@ struct NativeTimelineReactionBaseline {
         let layout: NativeTimelineRowLayout
     }
 
+    /// The canvas width the rows were laid out at.
+    let width: CGFloat
     let rows: [NativeMessageTimelineItem.Identifier: Row]
 }
 
@@ -163,7 +165,7 @@ extension NativeTimelineCanvasView {
                 layout: layouts[index]
             )
         }
-        if !rows.isEmpty { pendingReactionBaseline = NativeTimelineReactionBaseline(rows: rows) }
+        if !rows.isEmpty { pendingReactionBaseline = NativeTimelineReactionBaseline(width: bounds.width, rows: rows) }
     }
 
     /// Starts the motion of the update just applied, after the coordinator
@@ -174,6 +176,7 @@ extension NativeTimelineCanvasView {
         guard let baseline = pendingReactionBaseline else { return }
         pendingReactionBaseline = nil
         guard AppMotionPolicy.animatesUncategorized,
+              abs(baseline.width - bounds.width) < 0.5,
               editingRowIndex == nil,
               rowDisclosure == nil,
               unreadDividerGap == nil,
@@ -228,6 +231,7 @@ extension NativeTimelineCanvasView {
         } else if !startedChips {
             return
         }
+        reactionTransitionWidth = bounds.width
         if reactionTicker.displayLink == nil {
             reactionTicker.start(on: self) { [weak self] in self?.stepReactionTransitions() }
         }

@@ -303,6 +303,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
     let reactionTicker = NativeTimelineDisplayLinkTicker()
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
+    /// The width the running reaction motions were laid out at.
+    var reactionTransitionWidth: CGFloat = 0
     var visibleReactionPreviewLoadKeys:
         Set<ReactionPreviewLoadKey> = []
     var reactionPreviewLoadTasks:

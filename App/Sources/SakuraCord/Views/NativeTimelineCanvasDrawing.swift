@@ -78,7 +78,10 @@ extension NativeTimelineCanvasView {
             }
         }
         // Rows laid out at another width no longer match the chips' frames.
-        if abs(frame.width - max(1, viewportWidth)) >= 0.5 { finishReactionTransitions() }
+        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty,
+           abs(reactionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
+            finishReactionTransitions()
+        }
         let size = NSSize(
             width: max(1, viewportWidth),
             height: max(displayedContentHeight, self.minimumHeight)
@@ -853,6 +856,10 @@ extension NativeTimelineCanvasView {
         defer {
             if clipMaxY != nil { NSGraphicsContext.current?.cgContext.restoreGState() }
         }
+        // Its pictures keep their own height and the clip cuts them short.
+        let paintFrame = clipMaxY == nil ? rowFrame : CGRect(
+            x: rowFrame.minX, y: rowFrame.minY, width: rowFrame.width, height: layouts[index].height
+        )
         if reactionBandTop != nil,
            !timelineRowRequiresDirectPresentation(item: item, index: index, revealState: revealState),
            let image = reactionTransitionBitmap(for: item, width: rowFrame.width)
@@ -872,12 +879,12 @@ extension NativeTimelineCanvasView {
             item: item, index: index, revealState: revealState
         ) {
             drawInteractiveTimelineRow(
-                item, at: index, rowFrame: rowFrame,
+                item, at: index, rowFrame: paintFrame,
                 preparedMediaKeys: preparedMediaKeys, revealState: revealState
             )
         } else {
             drawStableTimelineRow(
-                item, at: index, rowFrame: rowFrame, dirtyRect: dirtyRect,
+                item, at: index, rowFrame: paintFrame, dirtyRect: dirtyRect,
                 preparedMediaKeys: preparedMediaKeys, revealState: revealState
             )
         }
