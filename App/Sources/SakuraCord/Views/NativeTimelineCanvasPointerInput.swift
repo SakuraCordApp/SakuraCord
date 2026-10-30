@@ -70,6 +70,7 @@ extension NativeTimelineCanvasView {
                         codeBlock.copyButtonFrame,
                         cursor: .pointingHand
                     )
+                    addToolTip(codeBlock.copyButtonFrame, owner: self, userData: nil)
                 }
             }
             if layouts.indices.contains(index) {
@@ -416,8 +417,8 @@ extension NativeTimelineCanvasView {
             return
         }
         if let target = codeBlockCopyButtonHit(at: point) {
-            setHoveredCodeBlock(target)
             pressedCodeBlockCopyButton = target
+            setHoveredCodeBlock(target)
             textSelectionGesture = nil
             didDragTextSelection = false
             setTextSelection(nil)
@@ -611,6 +612,7 @@ extension NativeTimelineCanvasView {
                     == pressedCodeBlockCopyButton.rangeLocation
             {
                 Self.copyText(pressedCodeBlockCopyButton.content)
+                codeCopyControl?.confirmCopy()
             }
             return true
         }

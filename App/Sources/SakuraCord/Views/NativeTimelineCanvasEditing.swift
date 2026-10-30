@@ -84,17 +84,26 @@ extension NativeTimelineCanvasView {
     func setHoveredCodeBlock(
         _ value: NativeTimelineCodeBlockPointerTarget?
     ) {
-        guard hoveredCodeBlock != value else { return }
-        let oldIdentifier = hoveredCodeBlock?.itemIdentifier
         hoveredCodeBlock = value
-        for identifier
-            in [oldIdentifier, value?.itemIdentifier].compactMap({ $0 })
-        {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == identifier
-            }) else { continue }
-            setNeedsDisplay(rowFrame(at: index))
-        }
+        updateCodeCopyControl()
+    }
+
+    /// Shows the hovered code block's copy button with its hover and press,
+    /// which follow the pointer within the block.
+    func updateCodeCopyControl() {
+        guard hoveredCodeBlock != nil || codeCopyControl != nil else { return }
+        let control = codeCopyControl ?? {
+            let created = NativeTimelineCodeCopyControl()
+            addSubview(created, positioned: .below, relativeTo: mediaViewerHost)
+            codeCopyControl = created
+            return created
+        }()
+        let isPressed = pressedCodeBlockCopyButton != nil && pressedCodeBlockCopyButton == hoveredCodeBlock
+        control.update(
+            target: hoveredCodeBlock,
+            isHovered: isPressed || hoveredCodeBlock?.copyButtonFrame.contains(currentMouseLocationInCanvas()) == true,
+            isPressed: isPressed
+        )
     }
 
     func setHoveredComponentButton(

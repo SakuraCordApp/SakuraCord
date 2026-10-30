@@ -599,7 +599,11 @@ private enum NodeBuilder {
             fontScale: scale
         )
         let width = min(maximumWidth, max(1, idealWidth(box)))
-        let inset = NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value)
+        // Discord's text display drops its first child's top margin, so a
+        // leading heading or list sits at the top; a leading code block or
+        // quote keeps the inset that clears its own chrome.
+        let leadsWithChrome = box.value.length > 0 && box.value.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) != nil
+        let inset = leadsWithChrome ? NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value) : 0
         let height = measuredHeight(box, width: width)
         return Node(
             size: CGSize(width: width, height: inset + height),
