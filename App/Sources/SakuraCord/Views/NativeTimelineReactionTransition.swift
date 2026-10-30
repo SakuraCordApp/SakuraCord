@@ -198,6 +198,7 @@ extension NativeTimelineCanvasView {
         var previousIndex: Int?
         var describesUpdate = true
         var startedChips = false
+        var pausesMedia = false
         forEachDisplayedRow(in: reactionBaselineRect) { index in
             let identifier = items[index].identifier
             // Rows entering the followed area have no earlier place. One
@@ -231,10 +232,11 @@ extension NativeTimelineCanvasView {
                beginReactionTransition(at: index, from: old, now: now)
             {
                 startedChips = true
+                pausesMedia = pausesMedia || animatedMediaRows[identifier] != nil
             }
         }
         // Live reaction media pauses on its still while the chips move.
-        if startedChips { positionAnimatedMediaOverlays() }
+        if pausesMedia { positionAnimatedMediaOverlays() }
         if describesUpdate, let shift, !steps.isEmpty {
             reactionRowMotions.append(.init(shift: shift, steps: steps))
             refreshReactionMotionGeometry(at: now)
