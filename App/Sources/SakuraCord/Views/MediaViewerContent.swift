@@ -12,21 +12,19 @@ struct MediaViewerStage: View {
     let bottomInset: CGFloat
     let interaction: MediaViewerInteractionModel
     let finishPinchDismissal: (CGFloat) -> Bool
-    let open: () -> Void
+    let download: () -> Void
     let imageContextMenuActions: MediaImageContextMenuActions?
 
-    /// Where a file that is not an image lays out, which its tile's
-    /// snapshot zooms into.
+    /// The corner radius of a file's preview, player, or page.
+    static var contentCornerRadius: CGFloat { InterfaceScale.metric(24) }
+    private nonisolated static let space = "MediaViewerStage"
+    /// Where a file's content lays out, which its card zooms into.
     @State private var contentFrame: CGRect?
-    private static let space = "MediaViewerStage"
 
     var body: some View {
-        // A file that is not an image grows out of its tile as an image does:
-        // the tile's snapshot zooms into the content, which takes over as it
-        // lands.
-        let progress = isVisible ? 1 - interaction.pinchDismissalProgress : 0
         ZStack {
-            if case let .image(animated) = item.kind {
+            switch item.kind {
+            case let .image(animated):
                 MediaViewerZoomableImage(
                     url: item.url,
                     isAnimated: animated,
@@ -42,26 +40,23 @@ struct MediaViewerStage: View {
                     finishPinchDismissal: finishPinchDismissal,
                     contextMenuActions: imageContextMenuActions
                 )
-            } else {
-                // Its own container keeps a glass card under the opacity
-                // here; the viewer's container would draw it regardless.
+            default:
+                // Its own container keeps the content's glass under the
+                // zoom's fade and clip; the viewer's would draw it regardless.
                 GlassEffectContainer { content }
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { contentFrame = $0 }
-                    .modifier(MediaViewerZoomHandoff(progress: transitionSource == nil ? 1 : progress, isLanding: true))
+                    .modifier(MediaViewerContainerZoom(
+                        progress: isVisible ? 1 - interaction.pinchDismissalProgress : 0,
+                        source: transitionSource,
+                        destination: contentFrame
+                    ))
+                    .background {
+                        Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: {
+                            contentFrame = $0
+                        }
+                    }
                     .padding(.horizontal, horizontalInset)
                     .padding(.top, topInset)
                     .padding(.bottom, bottomInset)
-                if let transitionSource, let contentFrame {
-                    MediaViewerTransitionImage(
-                        url: nil,
-                        isAnimated: false,
-                        source: transitionSource,
-                        destinationFrame: contentFrame,
-                        presentationProgress: progress,
-                        isPresented: isVisible
-                    )
-                    .modifier(MediaViewerZoomHandoff(progress: progress, isLanding: false))
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,22 +88,23 @@ struct MediaViewerStage: View {
                 }
             }
         case .audio:
-            MediaViewerAudio(title: item.title, url: item.url)
+            MediaViewerAudio(item: item, download: download)
         case let .text(language):
             MediaViewerText(url: item.url, language: language)
         case .file:
-            MediaViewerFile(title: item.title, open: open)
+            MediaViewerFile(item: item, download: download)
         }
     }
 }
 
-/// Crossfades a zoomed snapshot into the content it lands on over the last
-/// part of the zoom. It reads the progress on every frame; a plain opacity
-/// would fade across the whole zoom instead.
-private struct MediaViewerZoomHandoff: ViewModifier, Animatable {
+/// Grows a file's card into the viewer's content and shrinks it back: the
+/// card's box moves and resizes into the content's frame, rounding to the
+/// content's corners, while the card's snapshot fades into the content.
+/// It reads the progress on every frame, which a plain opacity would not.
+private struct MediaViewerContainerZoom: ViewModifier, Animatable {
     var progress: CGFloat
-    /// The content landing, rather than the snapshot it replaces.
-    let isLanding: Bool
+    let source: MediaViewerTransitionSource?
+    let destination: CGRect?
 
     var animatableData: CGFloat {
         get { progress }
@@ -116,11 +112,63 @@ private struct MediaViewerZoomHandoff: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        let handoff = min(1, max(0, (progress - 0.6) / 0.4))
-        content.opacity(isLanding ? handoff : 1 - handoff)
+        let isZooming = source != nil && destination != nil
+        let progress = isZooming ? min(max(progress, 0), 1) : 1
+        let end = destination ?? .zero
+        let box = Self.interpolate(from: source?.frameInWindow ?? end, to: end, progress: progress)
+        // A card partly scrolled out starts cut to the viewport, in the
+        // stage's space, which offsetting the content doesn't move.
+        let viewport = progress < 1
+            ? Self.interpolate(from: source?.visibleFrameInWindow ?? end, to: end, progress: progress)
+                .offsetBy(dx: -end.minX, dy: -end.minY)
+            : .infinite
+        // The box in the content's own space, centred on it as it moves.
+        let clip = progress < 1
+            ? CGRect(x: (end.width - box.width) / 2, y: (end.height - box.height) / 2, width: box.width, height: box.height)
+            : .infinite
+        let radius = (source?.cornerRadius ?? 0) * (1 - progress) + MediaViewerStage.contentCornerRadius * progress
+        content
+            .opacity(Self.smoothstep(progress, from: 0.1, to: 0.6))
+            .overlay {
+                if let source, progress < 1 {
+                    let size = source.frameInWindow.size
+                    let scale = min(box.width / max(size.width, 1), box.height / max(size.height, 1))
+                    Image(nsImage: source.image)
+                        .resizable()
+                        .frame(width: size.width * scale, height: size.height * scale)
+                        .position(x: clip.midX, y: clip.midY)
+                        .opacity(1 - Self.smoothstep(progress, from: 0, to: 0.45))
+                        .allowsHitTesting(false)
+                }
+            }
+            .clipShape(MediaViewerZoomClip(rect: clip, cornerRadius: radius))
+            .offset(x: box.midX - end.midX, y: box.midY - end.midY)
+            .clipShape(MediaViewerZoomClip(rect: viewport, cornerRadius: 0))
+    }
+
+    private static func interpolate(from start: CGRect, to end: CGRect, progress: CGFloat) -> CGRect {
+        CGRect(
+            x: start.minX + (end.minX - start.minX) * progress,
+            y: start.minY + (end.minY - start.minY) * progress,
+            width: start.width + (end.width - start.width) * progress,
+            height: start.height + (end.height - start.height) * progress
+        )
+    }
+
+    private static func smoothstep(_ value: CGFloat, from lower: CGFloat, to upper: CGFloat) -> CGFloat {
+        let fraction = min(max((value - lower) / (upper - lower), 0), 1)
+        return fraction * fraction * (3 - 2 * fraction)
     }
 }
 
+private nonisolated struct MediaViewerZoomClip: Shape {
+    let rect: CGRect
+    let cornerRadius: CGFloat
+
+    func path(in bounds: CGRect) -> Path {
+        rect.isInfinite ? Path(bounds.insetBy(dx: -10_000, dy: -10_000)) : Path(roundedRect: rect, cornerRadius: cornerRadius, style: .continuous)
+    }
+}
 private struct MediaViewerZoomableImage: View {
     let url: URL
     let isAnimated: Bool
@@ -348,8 +396,7 @@ private struct MediaViewerTransitionImage: View {
     private static let remoteImageHandoffStartProgress: CGFloat = 0.86
     private static let remoteImageHandoffEndProgress: CGFloat = 0.58
 
-    /// The full image, which takes over from the snapshot as it lands.
-    let url: URL?
+    let url: URL
     let isAnimated: Bool
     let source: MediaViewerTransitionSource
     let destinationFrame: CGRect
@@ -358,7 +405,7 @@ private struct MediaViewerTransitionImage: View {
     @State private var presentsRemoteImage: Bool
 
     init(
-        url: URL?,
+        url: URL,
         isAnimated: Bool,
         source: MediaViewerTransitionSource,
         destinationFrame: CGRect,
@@ -419,7 +466,7 @@ private struct MediaViewerTransitionImage: View {
                     .resizable()
                     .scaledToFit()
 
-                if presentsRemoteImage, let url {
+                if presentsRemoteImage {
                     AnimatedRemoteImage(
                         url: url,
                         isLooping: isAnimated,
@@ -648,55 +695,6 @@ private struct MediaViewerVideo: View {
     var body: some View {
         ViewerAVPlayer(url: url)
             .aspectRatio(CGSize(width: mediaWidth ?? 16, height: mediaHeight ?? 9), contentMode: .fit)
-    }
-}
-
-private struct MediaViewerAudio: View {
-    let title: String
-    let url: URL
-
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(14)) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.interfaceSystem(size: 52))
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.interface(.headline))
-                .lineLimit(1)
-            ViewerAVPlayer(url: url)
-                .frame(height: InterfaceScale.metric(74))
-        }
-        .padding(InterfaceScale.metric(24))
-        .frame(width: InterfaceScale.metric(560))
-        .glassEffect(
-            .regular,
-            in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(24), style: .continuous)
-        )
-    }
-}
-
-private struct MediaViewerFile: View {
-    let title: String
-    let open: () -> Void
-
-    var body: some View {
-        VStack(spacing: InterfaceScale.metric(16)) {
-            Image(systemName: "doc.fill")
-                .font(.interfaceSystem(size: 56))
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.interface(.title3).weight(.semibold))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-            Button("Open File…", systemImage: "arrow.up.forward.app", action: open)
-                .buttonStyle(.glassProminent)
-        }
-        .padding(InterfaceScale.metric(30))
-        .frame(width: InterfaceScale.metric(420))
-        .glassEffect(
-            .regular,
-            in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(24), style: .continuous)
-        )
     }
 }
 

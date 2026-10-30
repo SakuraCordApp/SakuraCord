@@ -50,6 +50,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func resetCursorRects() {
+        removeAllToolTips()
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard !suppressesHoverPresentation,
               !sendTransitionBlocksInteractions,
@@ -642,7 +643,11 @@ extension NativeTimelineCanvasView {
                 case let .invite(card, expands):
                     activateInvite(card, message: hit.message, expands: expands)
                 case let .fileCard(card):
-                    activateFileCard(card.attachment)
+                    if card.part(of: hit.target, messageID: hit.message.id) == .card {
+                        previewFileCard(card, message: hit.message, rowIndex: hit.rowIndex)
+                    } else {
+                        activateFileCard(card.attachment)
+                    }
                 }
             }
             return true
@@ -853,9 +858,6 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
-            } else if !attachment.mediaKind.isVisual, attachment.textPreviewLanguage == nil {
-                // A revealed file card acts through its own pointer hit; a
-                // text file's body opens the viewer below.
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,

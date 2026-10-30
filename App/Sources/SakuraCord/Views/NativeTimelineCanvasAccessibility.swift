@@ -779,7 +779,7 @@ extension NativeTimelineCanvasView {
         appendPlayerAccessibility(to: &children, message: message, layout: layout, rowIndex: rowIndex, parent: parent)
     }
 
-    /// An attachment in a message's media gallery. A text file opens in the
+    /// An attachment in a message's media gallery. A file opens in the
     /// viewer and offers its card's download as a custom action.
     private func attachmentAccessibilityElement(
         _ region: NativeTimelineRowLayout.AttachmentRegion,
@@ -806,11 +806,7 @@ extension NativeTimelineCanvasView {
         let element = accessibilityElement(
             role: .button,
             label: label,
-            help: isHiddenSpoiler
-                ? "Reveals this media without opening it"
-                : !attachment.mediaKind.isVisual && attachment.textPreviewLanguage == nil
-                    ? fileCardActionDescription(attachment, name: contentLabel)
-                    : "Open \(contentLabel)",
+            help: isHiddenSpoiler ? "Reveals this media without opening it" : "Open \(contentLabel)",
             frame: accessibilityChildFrame(
                 region.frame,
                 rowIndex: rowIndex
@@ -823,7 +819,7 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex
             ) ?? false
         }
-        if attachment.textPreviewLanguage != nil, !isHiddenSpoiler, !message.isUnconfirmedLocalSend {
+        if !attachment.mediaKind.isVisual, !isHiddenSpoiler, !message.isUnconfirmedLocalSend {
             element.setAccessibilityCustomActions([
                 NSAccessibilityCustomAction(name: fileCardActionDescription(attachment, name: contentLabel)) { [weak self] in
                     self?.activateFileCard(attachment)

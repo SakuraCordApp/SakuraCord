@@ -22,30 +22,16 @@ extension NativeTimelineCanvasView {
         )
         let isHiddenSpoiler =
             isSpoiler && !spoilerRevealStore.isMediaRevealed(key)
-        let fileAction = file.map { fileCardActionDescription($0, name: label) }
-        let accessibilityLabel =
-            if let fileAction {
-                isHiddenSpoiler ? "Reveal spoiler file" : fileAction
-            } else {
-                isHiddenSpoiler ? "Reveal spoiler media" : label
-            }
-        children.append(accessibilityElement(
+        let element = accessibilityElement(
             role: .button,
-            label: accessibilityLabel,
-            help: fileAction.map { isHiddenSpoiler ? "Reveal spoiler" : $0 }
-                ?? (
-                    isHiddenSpoiler
-                        ? "Reveals this media without opening it"
-                        : "Open \(label)"
-                ),
+            label: isHiddenSpoiler ? (file == nil ? "Reveal spoiler media" : "Reveal spoiler file") : label,
+            help: isHiddenSpoiler ? "Reveals this media without opening it" : "Open \(label)",
             frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
             parent: parent
         ) { [weak self] in
             guard let self else { return false }
             if isHiddenSpoiler {
                 self.reveal(key, rowIndex: rowIndex)
-            } else if let file {
-                self.activateFileCard(file)
             } else if let viewerPresentation {
                 self.model?.mediaViewerPresentation =
                     self.mediaViewerPresentation(
@@ -57,7 +43,17 @@ extension NativeTimelineCanvasView {
                 NSWorkspace.shared.open(openURL)
             }
             return true
-        })
+        }
+        // A file previews when pressed; its card's button downloads it.
+        if let file, !isHiddenSpoiler {
+            element.setAccessibilityCustomActions([
+                NSAccessibilityCustomAction(name: fileCardActionDescription(file, name: label)) { [weak self] in
+                    self?.activateFileCard(file)
+                    return self != nil
+                },
+            ])
+        }
+        children.append(element)
     }
 
     func accessibilityMessageActions(
@@ -339,10 +335,6 @@ extension NativeTimelineCanvasView {
            !spoilerRevealStore.isMediaRevealed(revealKey)
         {
             reveal(revealKey, rowIndex: rowIndex)
-        } else if !attachment.mediaKind.isVisual, attachment.textPreviewLanguage == nil {
-            // A message still being sent has only local files, not downloads.
-            guard !message.isUnconfirmedLocalSend else { return false }
-            activateFileCard(attachment)
         } else if let presentation =
             NativeTimelineMediaViewerPlan.attachments(
                 in: message,

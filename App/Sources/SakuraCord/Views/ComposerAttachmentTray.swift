@@ -351,23 +351,42 @@ private struct ComposerAttachmentTile: View {
 /// type, filling the tile. It also renders the file's flight to the timeline.
 struct ComposerAttachmentFileFace: View {
     let url: URL
+    /// A sent tile's flying copy draws the icon and surface itself, so its
+    /// face is only the type label.
+    var isLabelOnly = false
+
+    private static var iconSide: CGFloat { InterfaceScale.metric(72) }
+    private static var labelHeight: CGFloat { InterfaceScale.metric(15) }
+    private static var spacing: CGFloat { InterfaceScale.metric(4) }
+    static let surfaceOpacity = 0.06
+
+    static func icon(for url: URL) -> NSImage {
+        NSWorkspace.shared.icon(for: UTType(filenameExtension: url.pathExtension) ?? .data)
+    }
+
+    /// Where the icon sits in a tile, from the tile's top.
+    static func iconFrame(in size: CGSize, url: URL) -> CGRect {
+        let height = iconSide + (url.pathExtension.isEmpty ? 0 : spacing + labelHeight)
+        return CGRect(x: (size.width - iconSide) / 2, y: (size.height - height) / 2, width: iconSide, height: iconSide)
+    }
 
     var body: some View {
-        VStack(spacing: InterfaceScale.metric(4)) {
-            Image(nsImage: NSWorkspace.shared.icon(for: UTType(filenameExtension: url.pathExtension) ?? .data))
+        VStack(spacing: Self.spacing) {
+            Image(nsImage: Self.icon(for: url))
                 .resizable()
                 .scaledToFit()
-                .frame(width: InterfaceScale.metric(56), height: InterfaceScale.metric(56))
+                .frame(width: Self.iconSide, height: Self.iconSide)
+                .opacity(isLabelOnly ? 0 : 1)
             if !url.pathExtension.isEmpty {
                 Text(url.pathExtension.uppercased())
                     .font(.interface(.caption).weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .frame(height: Self.labelHeight)
             }
         }
-        .padding(InterfaceScale.metric(9))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.primary.opacity(0.06))
+        .background(.primary.opacity(isLabelOnly ? 0 : Self.surfaceOpacity))
     }
 }
 

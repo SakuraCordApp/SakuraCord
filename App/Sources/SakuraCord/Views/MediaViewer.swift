@@ -79,9 +79,7 @@ struct MediaViewer: View {
                         bottomInset: presentation.items.count > 1 ? 82 : 14,
                         interaction: interaction,
                         finishPinchDismissal: finishPinchDismissal,
-                        open: {
-                            MediaViewerActionService.openInBrowser(item.url)
-                        },
+                        download: { save(item, to: .defaultFolder) },
                         imageContextMenuActions: MediaImageContextMenuActions(
                             copyImage: { copyImage(item) },
                             save: saveActions(for: item),

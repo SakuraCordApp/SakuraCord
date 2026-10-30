@@ -99,7 +99,8 @@ final class AttachmentDownloadStore {
         NotificationCenter.default.post(name: Self.didChange, object: self, userInfo: [Self.attachmentIDKey: id])
     }
 
-    private nonisolated static func download(
+    /// Fetches a file into a temporary location, which the caller moves.
+    nonisolated static func download(
         _ url: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {

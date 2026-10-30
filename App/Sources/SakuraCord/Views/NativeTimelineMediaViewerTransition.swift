@@ -14,9 +14,11 @@ extension NativeTimelineCanvasView {
             previewImages: media.previewImages,
             transitionSources: media.transitionSources
         )
-        guard presentation.items.indices.contains(presentation.selection),
-              case .image = presentation.items[presentation.selection].kind
-        else { return presentation }
+        guard presentation.items.indices.contains(presentation.selection) else { return presentation }
+        guard case .image = presentation.items[presentation.selection].kind else {
+            return fileCardTransitionSource(itemID: presentation.items[presentation.selection].id, rowIndex: rowIndex)
+                .map(presentation.withTransitionSource) ?? presentation
+        }
 
         let item = presentation.items[presentation.selection]
         let performanceProbe =
@@ -210,12 +212,43 @@ extension NativeTimelineCanvasView {
         )
     }
 
+    /// A file card's snapshot, which grows into the file's preview.
+    private func fileCardTransitionSource(itemID: String, rowIndex: Int) -> MediaViewerTransitionSource? {
+        guard window != nil, layouts.indices.contains(rowIndex) else { return nil }
+        let layout = layouts[rowIndex]
+        guard let card = layout.fileCards.first(where: { $0.attachment.id == itemID })
+            ?? layout.componentLayouts.lazy.flatMap(\.files).first(where: { $0.componentID == itemID })?.card
+        else { return nil }
+        let frameInCanvas = card.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
+        let visibleFrame = frameInCanvas.intersection(visibleRect)
+        guard !visibleFrame.isNull, visibleFrame.width > 0, visibleFrame.height > 0,
+              let bitmap = bitmapImageRepForCachingDisplay(in: frameInCanvas)
+        else { return nil }
+        cacheDisplay(in: frameInCanvas, to: bitmap)
+        let image = NSImage(size: frameInCanvas.size)
+        image.addRepresentation(bitmap)
+        return MediaViewerTransitionSource(
+            itemID: itemID,
+            image: image,
+            frameInWindow: convert(frameInCanvas, to: nil),
+            visibleFrameInWindow: convert(visibleFrame, to: nil),
+            cornerRadius: card.cornerRadius,
+            fillsFrame: true
+        )
+    }
+
     func mediaViewerPresentation(
         _ presentation: NativeTimelineMediaViewerPresentation,
         componentID: String,
         rowIndex: Int
     ) -> NativeTimelineMediaViewerPresentation {
         guard layouts.indices.contains(rowIndex) else { return presentation }
+        if presentation.items.indices.contains(presentation.selection),
+           presentation.items[presentation.selection].id == componentID,
+           layouts[rowIndex].componentLayouts.contains(where: { $0.files.contains { $0.componentID == componentID } }) {
+            return fileCardTransitionSource(itemID: componentID, rowIndex: rowIndex)
+                .map(presentation.withTransitionSource) ?? presentation
+        }
         for layout in layouts[rowIndex].componentLayouts {
             if let region = layout.images.first(where: {
                 $0.componentID == componentID

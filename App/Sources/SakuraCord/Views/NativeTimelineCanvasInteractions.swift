@@ -530,12 +530,15 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.files
             where region.frame.contains(point) {
-                // A revealed file card acts through its own pointer hit.
-                let key = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
-                if region.isSpoiler, !spoilerRevealStore.isMediaRevealed(key) {
-                    reveal(key, rowIndex: rowIndex)
-                }
-                return true
+                // The card's button and link act through their own pointer hit.
+                return activateComponentMedia(
+                    id: region.componentID,
+                    openURL: region.openURL,
+                    isSpoiler: region.isSpoiler,
+                    layout: layout,
+                    message: message,
+                    rowIndex: rowIndex
+                )
             }
             for region in componentLayout.selects
             where region.frame.contains(point) {
@@ -550,7 +553,7 @@ extension NativeTimelineCanvasView {
         return false
     }
 
-    private func activateComponentMedia(
+    func activateComponentMedia(
         id: String,
         openURL: URL,
         isSpoiler: Bool,

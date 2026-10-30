@@ -638,10 +638,7 @@ enum NativeTimelineMediaViewerPlan {
                     isSpoiler: region.isSpoiler,
                     id: region.componentID
                 ) else { return nil }
-                return componentImageFileItem(
-                    region,
-                    message: message
-                )
+                return componentFileItem(region)
             }
             return images + media + files
         }
@@ -717,29 +714,20 @@ enum NativeTimelineMediaViewerPlan {
         )
     }
 
-    private static func componentImageFileItem(
-        _ region: NativeTimelineComponentLayout.FileRegion,
-        message: Message
-    ) -> RichMediaItem? {
-        if let attachment = message.attachments.first(where: {
-            $0.url == region.openURL
-        }) {
-            var item = RichMediaItem(attachment)
-            guard case .image = item.kind else { return nil }
-            item.id = region.componentID
-            item.title = region.title
-            item.description = region.description
-            return item
+    /// A file component's item: its message attachment, or the file the
+    /// component names, previewed by its kind. A named file of no known type
+    /// with an image's extension shows as an image.
+    private static func componentFileItem(
+        _ region: NativeTimelineComponentLayout.FileRegion
+    ) -> RichMediaItem {
+        var item = RichMediaItem(region.attachment)
+        if item.kind == .file, RichMediaItem.isSupportedImageURL(region.openURL) {
+            item.kind = .image(animated: false)
         }
-        guard RichMediaItem.isSupportedImageURL(region.openURL) else {
-            return nil
-        }
-        return RichMediaItem(
-            imageID: region.componentID,
-            url: region.openURL,
-            title: region.title,
-            description: region.description
-        )
+        item.id = region.componentID
+        item.title = region.title
+        item.description = region.description
+        return item
     }
 }
 

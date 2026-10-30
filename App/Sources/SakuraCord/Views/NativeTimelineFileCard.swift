@@ -5,9 +5,10 @@ import SakuraCordModels
 /// file components: the geometry that painting, hit testing, and cursors
 /// agree on. Outside a bubble it is a capsule like a plain voice message's;
 /// inside one it sits straight on the bubble, as a voice message does. The
-/// file's Finder icon leads, and a round button at the end downloads it. An
-/// audio file leads with its play button instead, has a smaller download
-/// button, and keeps its player's seek row below the name.
+/// file's Finder icon leads, and a round button at the end downloads it; the
+/// rest of the card previews the file in the media viewer. An audio file
+/// leads with its play button instead, has a smaller download button, and
+/// keeps its player's seek row below the name.
 struct NativeTimelineFileCard {
     static var spacing: CGFloat { InterfaceScale.metric(8) }
     static var minimumWidth: CGFloat { InterfaceScale.metric(220) }
@@ -22,9 +23,6 @@ struct NativeTimelineFileCard {
     let attachment: Attachment
     let isInBubble: Bool
     var isAudio = false
-    /// A message's text or code file, which opens in the media viewer; only
-    /// its button downloads.
-    var opensInViewer = false
 
     /// The name row's height; an audio card adds its seek row below.
     static func height(isInBubble: Bool, isAudio: Bool = false) -> CGFloat {
@@ -84,14 +82,17 @@ struct NativeTimelineFileCard {
         )
     }
 
-    /// What acts on the file: the whole card, a text file's button, or an
-    /// audio card's name row with its Show in Finder or Retry link and button.
-    var actionFrame: CGRect {
-        isAudio ? nameFrame.union(detailFrame).union(buttonFrame) : opensInViewer ? buttonFrame : frame
+    /// The download button, which alone downloads the file.
+    var actionFrame: CGRect { buttonFrame }
+
+    /// The card's outline, which its snapshot zooms out of into the viewer.
+    var cornerRadius: CGFloat {
+        isInBubble ? InterfaceScale.metric(12) : Self.height(isInBubble: false) / 2
     }
 
     /// The parts of a card that take the pointer, each with its own hover
-    /// and press; all of them act on the file.
+    /// and press: the body previews the file, and the button and link act
+    /// on its download.
     nonisolated enum Part: String, CaseIterable {
         case card
         case button
@@ -99,14 +100,14 @@ struct NativeTimelineFileCard {
     }
 
     /// The part under a point. The button takes only its circle, and the
-    /// link only its words; a text card's body opens the viewer instead.
+    /// link only its words; the rest of the card is its body.
     func part(at point: CGPoint, state: AttachmentDownloadStore.State?) -> Part? {
         guard frame.contains(point) else { return nil }
         let button = buttonFrame
         if hypot(point.x - button.midX, point.y - button.midY) <= button.width / 2 { return .button }
         let detail = Self.detail(for: state, size: attachment.size)
         if let link = detail.link, linkFrame(after: detail.text, link: link).contains(point) { return .link }
-        return actionFrame.contains(point) && !opensInViewer ? .card : nil
+        return .card
     }
 
     /// The part of this card that a hover or press target names.
@@ -125,9 +126,10 @@ struct NativeTimelineFileCard {
         return frame
     }
 
-    /// An audio card's seek row, under the name and ending with the card.
+    /// An audio card's seek row, under the name and as wide as the play
+    /// and download buttons span.
     var playerRowFrame: CGRect {
-        let minX = nameFrame.minX
+        let minX = playFrame.minX
         return CGRect(
             x: minX, y: nameRow.maxY - InterfaceScale.metric(isInBubble ? 2 : 6),
             width: max(1, buttonFrame.maxX - minX), height: InterfaceScale.metric(28)

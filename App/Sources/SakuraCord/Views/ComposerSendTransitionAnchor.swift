@@ -121,20 +121,34 @@ final class ComposerSendTransitionAnchor {
               let view = attachmentPreviews[attachment.id]?.view,
               view.window === textView?.window,
               view.visibleRect.contains(view.bounds),
-              let image = tileImage(for: attachment)
+              let image = tileImage(for: attachment, isLabelOnly: !attachment.isVisualMedia)
         else { return nil }
-        return NativeTimelineSendTransitionSource.Attachment(
+        var snapshot = NativeTimelineSendTransitionSource.Attachment(
             image: image,
             frame: view.convert(view.bounds, to: nil),
             cornerRadius: ComposerAttachmentTray.cornerRadius,
             uploadFraction: uploadFraction,
             ringScale: ComposerAttachmentTray.ringScale
         )
+        if !attachment.isVisualMedia {
+            var iconFrame = ComposerAttachmentFileFace.iconFrame(in: view.bounds.size, url: attachment.url)
+            if !view.isFlipped { iconFrame.origin.y = view.bounds.height - iconFrame.maxY }
+            var surfaceColor = CGColor.clear
+            view.effectiveAppearance.performAsCurrentDrawingAppearance {
+                surfaceColor = NSColor.labelColor.withAlphaComponent(ComposerAttachmentFileFace.surfaceOpacity).cgColor
+            }
+            snapshot.file = .init(
+                icon: ComposerAttachmentFileFace.icon(for: attachment.url),
+                iconFrame: view.convert(iconFrame, to: nil),
+                surfaceColor: surfaceColor
+            )
+        }
+        return snapshot
     }
 
     /// What a staged attachment's tile shows: an image or video thumbnail,
     /// or another file's icon and type.
-    private func tileImage(for attachment: ForumPostAttachment) -> NSImage? {
+    private func tileImage(for attachment: ForumPostAttachment, isLabelOnly: Bool = false) -> NSImage? {
         guard let preview = attachmentPreviews[attachment.id],
               let view = preview.view,
               let window = view.window
@@ -144,7 +158,7 @@ final class ComposerSendTransitionAnchor {
             image = preview.thumbnail
         } else {
             let renderer = ImageRenderer(
-                content: ComposerAttachmentFileFace(url: attachment.url)
+                content: ComposerAttachmentFileFace(url: attachment.url, isLabelOnly: isLabelOnly)
                     .frame(width: view.bounds.width, height: view.bounds.height)
                     .environment(
                         \.colorScheme,
