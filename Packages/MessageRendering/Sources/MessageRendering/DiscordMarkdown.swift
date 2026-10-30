@@ -36,6 +36,9 @@ public enum DiscordMarkdown {
             /// Inside a `>` or `>>>` block quote, which can hold any
             /// non-code block, as in Discord.
             fileprivate var isQuoted = false
+            /// The widest number in this item's ordered list, which sizes
+            /// the gutter so every item's text shares one column.
+            fileprivate var widestMarker = ""
         }
 
         fileprivate enum Block: Hashable, Sendable {
@@ -297,7 +300,37 @@ public enum DiscordMarkdown {
             lines.insert(fence, at: firstCodeIndex)
         }
 
+        alignOrderedMarkers(&lines)
         return AppKitPlan(lines: qualifyingSpoilerIDs(lines))
+    }
+
+    /// Gives every item of an ordered list the list's widest marker. A list
+    /// ends at a line that is not one of its items or nested beneath them.
+    private static func alignOrderedMarkers(_ lines: inout [AppKitPlan.Line]) {
+        var open: [Int: [Int]] = [:]
+        func close(from level: Int) {
+            for (listLevel, indices) in open where listLevel >= level {
+                let widest = indices.map { lines[$0].runs[0].text }.max { $0.count < $1.count } ?? ""
+                for index in indices {
+                    lines[index].widestMarker = widest
+                }
+                open[listLevel] = nil
+            }
+        }
+        for index in lines.indices {
+            if index > 0, lines[index - 1].isQuoted != lines[index].isQuoted {
+                close(from: 0)
+            }
+            guard case let .listItem(level, isOrdered) = lines[index].block else {
+                close(from: 0)
+                continue
+            }
+            close(from: level + 1)
+            if isOrdered {
+                open[level, default: []].append(index)
+            }
+        }
+        close(from: 0)
     }
 
     public static func appKitAttributed(
@@ -1237,15 +1270,17 @@ public enum DiscordMarkdown {
         case .subtext:
             paragraph.lineSpacing = 0
         case let .listItem(level, isOrdered):
-            let textIndent = indent + metrics.listIndent * CGFloat(level + 1)
-            paragraph.firstLineHeadIndent = textIndent - metrics.listIndent
+            // Discord hangs wide numbers into the message margin; Core Text
+            // cannot draw left of its frame, so the gutter grows instead.
+            let markerWidth = (line.widestMarker as NSString)
+                .size(withAttributes: [.font: NSFont.systemFont(ofSize: metrics.baseFontSize)]).width
+            let gutter = max(metrics.listIndent, ceil(markerWidth) + metrics.orderedMarkerGap)
+            let textIndent = indent + metrics.listIndent * CGFloat(level) + gutter
+            paragraph.firstLineHeadIndent = textIndent - gutter
             paragraph.headIndent = textIndent
             paragraph.tabStops = (isOrdered
                 ? [NSTextTab(textAlignment: .right, location: textIndent - metrics.orderedMarkerGap)]
                 : []) + [NSTextTab(textAlignment: .left, location: textIndent)]
-            // A marker wider than the gutter pushes its text to the next
-            // multiple of this interval instead of a distant default stop.
-            paragraph.defaultTabInterval = metrics.orderedMarkerGap
         case .code:
             paragraph.lineSpacing = 0
             paragraph.firstLineHeadIndent = metrics.codeInset
