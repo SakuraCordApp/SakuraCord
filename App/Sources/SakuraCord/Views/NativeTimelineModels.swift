@@ -3,6 +3,16 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
+extension CAFrameRateRange {
+    /// Every frame the screen can show, up to 120 Hz on ProMotion, and never
+    /// fewer than 60 (or 80 on ProMotion): a lower minimum lets the system
+    /// halve the rate under load.
+    static func fullRate(on screen: NSScreen?) -> Self {
+        let rate = Float(screen?.maximumFramesPerSecond ?? 60)
+        return CAFrameRateRange(minimum: min(rate, 80), maximum: rate, preferred: rate)
+    }
+}
+
 @MainActor
 final class NativeTimelineDisplayLinkTicker: NSObject {
     var displayLink: CADisplayLink?
@@ -15,6 +25,7 @@ final class NativeTimelineDisplayLinkTicker: NSObject {
             target: self,
             selector: #selector(displayLinkDidFire(_:))
         )
+        displayLink.preferredFrameRateRange = .fullRate(on: view.window?.screen)
         self.displayLink = displayLink
         displayLink.add(to: .main, forMode: .common)
     }
