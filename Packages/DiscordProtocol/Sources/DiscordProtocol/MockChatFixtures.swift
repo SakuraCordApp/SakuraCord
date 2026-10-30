@@ -638,7 +638,10 @@ private struct MockFixtureAssembly {
             ),
             Channel(
                 id: ChannelID(rawValue: 210), guildID: auroraID, name: "general",
-                topic: "A relaxed place for the Aurora Studio community", category: "COMMUNITY",
+                topic: "Welcome to **SakuraCord**! A fast, native Discord client for *macOS*.\n\n"
+                    + "Check out the [Roadmap](https://roadmap.sakuracord.app) and "
+                    + "[Documentation](https://sakuracord.app). Have fun with `SwiftUI`!",
+                category: "COMMUNITY",
                 categoryID: communityCategoryID, position: 0, categoryPosition: 1,
                 unreadCount: 3
             ),

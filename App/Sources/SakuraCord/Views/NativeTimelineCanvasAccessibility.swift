@@ -333,12 +333,11 @@ extension NativeTimelineCanvasView {
             ])
             return element
         case let .beginning(beginning):
-            return accessibilityElement(
-                role: .row,
-                label: "\(beginning.title). \(beginning.description)",
-                identifier: "timeline-beginning-\(beginning.id)",
-                frame: rowFrame,
-                parent: self
+            return accessibilityBeginning(
+                beginning,
+                layout: layout,
+                rowFrame: rowFrame,
+                rowIndex: index
             )
         case let .loader(isLoading, kind):
             let element = accessibilityElement(
@@ -388,6 +387,62 @@ extension NativeTimelineCanvasView {
                 rowIndex: index
             )
         }
+    }
+
+    private func accessibilityBeginning(
+        _ beginning: NativeTimelineBeginning,
+        layout: NativeTimelineRowLayout,
+        rowFrame: CGRect,
+        rowIndex: Int
+    ) -> NSAccessibilityElement {
+        let revealedTextSpoilerState = textSpoilerRevealState(at: rowIndex)
+        let revealedLocations = revealedTextSpoilerState.locations(in: .beginningDescription)
+        let descriptionBox = layout.beginningLayout?.descriptionBox
+        let descriptionText = descriptionBox.map {
+            TimelineTextAccessibility.text($0.value, revealedLocations: revealedLocations)
+        } ?? beginning.description
+        let rowLabel = descriptionText.isEmpty
+            ? beginning.title
+            : "\(beginning.title). \(descriptionText)"
+        let element = accessibilityElement(
+            role: .row,
+            label: rowLabel,
+            identifier: "timeline-beginning-\(beginning.id)",
+            frame: rowFrame,
+            parent: self
+        )
+        guard let beginningLayout = layout.beginningLayout else {
+            return element
+        }
+        var children: [Any] = []
+        if !beginning.title.isEmpty {
+            children.append(accessibilityElement(
+                role: .staticText,
+                label: beginning.title,
+                frame: accessibilityChildFrame(
+                    beginningLayout.titleFrame,
+                    rowIndex: rowIndex
+                ),
+                parent: element
+            ))
+        }
+        appendTextAccessibility(
+            to: &children,
+            input: NativeTimelineTextAccessibilityInput(
+                value: beginningLayout.descriptionBox.value,
+                framesetter: beginningLayout.descriptionBox.framesetter,
+                drawingFrame: beginningLayout.descriptionFrame,
+                accessibilityFrame: beginningLayout.descriptionFrame,
+                sourceMessage: nil,
+                itemIdentifier: items[rowIndex].identifier,
+                region: .beginningDescription,
+                revealedLocations: revealedLocations,
+                rowIndex: rowIndex,
+                parent: element
+            )
+        )
+        element.setAccessibilityChildren(children)
+        return element
     }
 
     func accessibilityMessage(
@@ -1036,7 +1091,6 @@ extension NativeTimelineCanvasView {
         to children: inout [Any],
         input: NativeTimelineTextAccessibilityInput
     ) {
-        guard let sourceMessage = input.sourceMessage else { return }
         // A hidden spoiler exposes only its reveal button, not its links.
         let hiddenSpoilerRanges = NativeTimelineTextSpoilers.hiddenRanges(
             in: input.value,
@@ -1075,18 +1129,21 @@ extension NativeTimelineCanvasView {
                     parent: input.parent
                 ) { [weak self] in
                     guard let self else { return false }
-                    return MessageLinkActivator.activate(
-                        url,
-                        model: self.model,
-                        sourceMessage: sourceMessage,
-                        displayedText: linkLabel,
-                        presentSystemProfile: { [weak self] user in
+                    let presentSystemProfile: ((User) -> Void)? = input.sourceMessage.map { sourceMessage in
+                        { [weak self] user in
                             self?.showMessageProfile(
                                 for: user,
                                 sourceMessage: sourceMessage,
                                 anchor: anchor
                             )
                         }
+                    }
+                    return MessageLinkActivator.activate(
+                        url,
+                        model: self.model,
+                        sourceMessage: input.sourceMessage,
+                        displayedText: linkLabel,
+                        presentSystemProfile: presentSystemProfile
                     )
                 })
             }

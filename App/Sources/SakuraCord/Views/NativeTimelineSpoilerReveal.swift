@@ -82,6 +82,7 @@ nonisolated struct NativeTimelineTextSpoilerRevealKey: Hashable {
     /// Message body text renders to the same string on every surface, so the
     /// timeline and previews such as forum post cards share its reveal state.
     static let messageContentID = "message-content"
+    static let beginningDescriptionContentID = "beginning-description"
 
     let messageID: MessageID
     let contentID: String

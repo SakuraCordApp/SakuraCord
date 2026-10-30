@@ -1,5 +1,6 @@
 import AppKit
 import DiscordProtocol
+import MessageRendering
 import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
@@ -753,10 +754,18 @@ private struct ForumPostComposer: View {
             VStack(alignment: .leading, spacing: InterfaceScale.metric(16)) {
                 Text("Posting Guidelines").font(.interface(.title).bold())
                 ScrollView {
-                    Text(channel.topic ?? "")
-                        .textSelection(.enabled)
-                        .tint(SakuraCordAccentColor.color)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    CustomEmojiRichText(
+                        model: model,
+                        content: channel.topic ?? "",
+                        emojiSize: InterfaceScale.metric(20),
+                        baseFontSize: InterfaceScale.fontSize(14),
+                        isSelectable: true,
+                        foregroundColor: .labelColor,
+                        mentionPresentation: { mention in
+                            MessageMentionResolver(model: model, message: nil).presentation(mention)
+                        }
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 HStack {
                     Spacer()

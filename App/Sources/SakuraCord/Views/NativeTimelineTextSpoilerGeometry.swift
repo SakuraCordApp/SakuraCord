@@ -131,6 +131,27 @@ enum SelectableTextSpoilerGeometry {
         return result
     }
 
+    static func hiddenSpoilerRange(at point: CGPoint, in view: NSTextView) -> NSRange? {
+        guard let storage = view.textStorage, let manager = view.layoutManager,
+              let container = view.textContainer else { return nil }
+        manager.ensureLayout(for: container)
+        let origin = view.textContainerOrigin
+        let bounds = CGRect(origin: origin, size: container.containerSize).intersection(view.bounds)
+        let ranges = NativeTimelineTextSpoilers.ranges(in: storage)
+        guard !ranges.isEmpty else { return nil }
+        for range in ranges {
+            let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let frames = rects(
+                forGlyphRange: glyphs, manager: manager, container: container,
+                origin: origin, bounds: bounds
+            )
+            if frames.contains(where: { $0.contains(point) }) {
+                return range
+            }
+        }
+        return nil
+    }
+
     static func draw(in view: NSTextView, dirtyRect: CGRect) {
         NativeTimelineSpoilerAppearance.textBackgroundColor(isHovered: false).setFill()
         for rect in rects(in: view) where rect.intersects(dirtyRect) {

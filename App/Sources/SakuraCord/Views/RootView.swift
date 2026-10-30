@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import MessageRendering
 import SakuraCordModels
 import SwiftUI
 
@@ -309,7 +310,7 @@ private struct ChatRootView: View {
                 // Measures the conversation title outside the toolbar, whose
                 // item may be narrower than the title while it lays out.
                 if let title = conversationToolbarPresentation, model.guildWorkspacePage == .channelsAndRoles {
-                    ConversationToolbarTitle(presentation: title)
+                    ConversationToolbarTitle(presentation: title, model: model)
                         .fixedSize()
                         .hidden()
                         .accessibilityHidden(true)
@@ -646,7 +647,7 @@ private struct ChatRootView: View {
                     .padding(.vertical, 5)
                 }
             } else if let title = conversationToolbarPresentation {
-                ConversationToolbarTitle(presentation: title)
+                ConversationToolbarTitle(presentation: title, model: model)
                     // Remeasure changed text without replacing the toolbar item.
                     .id(title.title)
                     .transition(.identity)
@@ -691,7 +692,7 @@ private struct ChatRootView: View {
             groups.append(.init(
                 id: WorkspaceTitlebar.conversationID,
                 title: AnyView(
-                    ConversationToolbarTitle(presentation: title)
+                    ConversationToolbarTitle(presentation: title, model: model)
                         .frame(minHeight: 36)
                         .glassEffect(.regular, in: Capsule())
                 ),
@@ -1780,6 +1781,7 @@ struct ConversationToolbarLabel: View {
 /// Topic availability changes only its action and accessibility traits.
 private struct ConversationToolbarTitle: View {
     let presentation: ConversationToolbarPresentation
+    var model: AppModel?
     @State private var isTopicPresented = false
 
     var body: some View {
@@ -1807,7 +1809,9 @@ private struct ConversationToolbarTitle: View {
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .bottom
         ) {
-            if let topic = presentation.topic { ChannelTopicPopover(topic: topic) }
+            if let topic = presentation.topic {
+                ChannelTopicPopover(topic: topic, model: model)
+            }
         }
         .onChange(of: presentation.title) { isTopicPresented = false }
     }
@@ -1815,15 +1819,25 @@ private struct ConversationToolbarTitle: View {
 
 private struct ChannelTopicPopover: View {
     let topic: String
+    var model: AppModel?
 
     var body: some View {
-        Text(topic)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
-            .tint(SakuraCordAccentColor.color)
-            .padding(InterfaceScale.metric(16))
-            .frame(width: InterfaceScale.metric(320), alignment: .leading)
-            .interfaceScaleRoot()
+        CustomEmojiRichText(
+            model: model,
+            content: topic,
+            emojiSize: InterfaceScale.metric(18),
+            baseFontSize: InterfaceScale.fontSize(14),
+            isSelectable: true,
+            foregroundColor: .labelColor,
+            mentionPresentation: { mention in
+                model.map { MessageMentionResolver(model: $0, message: nil).presentation(mention) }
+                    ?? MentionPresentation.fallback(for: mention)
+            }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(InterfaceScale.metric(16))
+        .frame(width: InterfaceScale.metric(320), alignment: .leading)
+        .interfaceScaleRoot()
     }
 }
 

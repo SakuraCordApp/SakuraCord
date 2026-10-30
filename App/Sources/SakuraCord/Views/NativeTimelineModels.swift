@@ -461,6 +461,11 @@ enum NativeMessageTimelineItem: Equatable {
         return row
     }
 
+    var beginning: NativeTimelineBeginning? {
+        guard case let .beginning(beginning) = self else { return nil }
+        return beginning
+    }
+
     var identifier: Identifier {
         switch self {
         case let .suppressedMessages(group):

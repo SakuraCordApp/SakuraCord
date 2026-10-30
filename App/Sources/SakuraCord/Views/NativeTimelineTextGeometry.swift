@@ -4,6 +4,7 @@ import Combine
 import CoreText
 import ImageIO
 import Lottie
+import MessageRendering
 import QuartzCore
 import SakuraCordModels
 import SwiftUI
@@ -100,13 +101,36 @@ enum NativeTimelineBeginningText {
     }
 
     static func description(
-        _ beginning: NativeTimelineBeginning
+        _ beginning: NativeTimelineBeginning,
+        source: AppModel? = nil
     ) -> NativeTimelineAttributedTextBox {
-        box(
-            beginning.description,
-            font: .interfacePreferredFont(forTextStyle: .body),
-            color: .secondaryLabelColor
+        let baseFontSize = NSFont.interfacePreferredFont(forTextStyle: .body).pointSize
+        let prepared = RichMessageAttributedText.prepare(source: beginning.description)
+        let resolver = source.map { MessageMentionResolver(model: $0, message: nil) }
+        let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { result, token in
+            guard case let .mention(mention) = token else { return }
+            result[mention.rawToken] =
+                resolver?.presentation(mention)
+                ?? MentionPresentation.fallback(for: mention)
+        }
+        let emojiSize = InterfaceScale.metric(22)
+        let attributed = NSMutableAttributedString(
+            attributedString: NativeTimelineCoreText.make(
+                prepared: prepared,
+                emojiSize: emojiSize,
+                baseFontSize: baseFontSize,
+                mentionPresentations: mentions
+            )
         )
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        if fullRange.length > 0 {
+            attributed.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+                if let color = value as? NSColor, color == NSColor.labelColor {
+                    attributed.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
+                }
+            }
+        }
+        return NativeTimelineAttributedTextBox(attributed)
     }
 
     static func box(

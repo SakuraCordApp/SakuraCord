@@ -1123,6 +1123,7 @@ extension NativeTimelineCanvasView {
               items.indices.contains(rowIndex),
                layouts.indices.contains(rowIndex),
            let messageID = items[rowIndex].messageID
+               ?? items[rowIndex].beginning.map({ MessageID(rawValue: $0.id.rawValue) })
         else { return result }
         for selectable in selectableTextRegions(
             for: items[rowIndex],
@@ -1171,7 +1172,8 @@ extension NativeTimelineCanvasView {
             $0.identifier == itemIdentifier
         }),
            layouts.indices.contains(rowIndex),
-           let messageID = items[rowIndex].messageID,
+           let messageID = items[rowIndex].messageID
+               ?? items[rowIndex].beginning.map({ MessageID(rawValue: $0.id.rawValue) }),
            let selectable = selectableTextRegions(
                for: items[rowIndex],
                layout: layouts[rowIndex]
@@ -1194,8 +1196,10 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout
     ) -> String? {
         switch region {
-        case .beginningTitle, .beginningDescription:
+        case .beginningTitle:
             return nil
+        case .beginningDescription:
+            return NativeTimelineTextSpoilerRevealKey.beginningDescriptionContentID
         case .content:
             return NativeTimelineTextSpoilerRevealKey.messageContentID
         case let .translation(id):

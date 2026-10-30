@@ -266,7 +266,8 @@ struct NativeTimelineRowLayout {
         case let .beginning(beginning):
             let beginningLayout = NativeTimelineBeginningLayout.make(
                 beginning: beginning,
-                width: width
+                width: width,
+                source: source
             )
             return Self(
                 height: beginningLayout.height,
@@ -289,12 +290,14 @@ struct NativeTimelineBeginningLayout {
     let iconFrame: CGRect
     let titleFrame: CGRect
     let descriptionFrame: CGRect
+    let descriptionBox: NativeTimelineAttributedTextBox
     let dateSeparatorFrame: CGRect?
     let height: CGFloat
 
     static func make(
         beginning: NativeTimelineBeginning,
-        width: CGFloat
+        width: CGFloat,
+        source: AppModel? = nil
     ) -> Self {
         let horizontalInset: CGFloat = InterfaceScale.metric(16)
         let contentWidth = max(
@@ -306,7 +309,6 @@ struct NativeTimelineBeginningLayout {
             ofSize: NSFont.preferredFont(forTextStyle: .largeTitle).pointSize,
             weight: .bold
         )
-        let descriptionFont = NSFont.interfacePreferredFont(forTextStyle: .body)
         let titleHeight = legacyLargeTitleHeight(
             beginning.title,
             font: titleFont,
@@ -318,9 +320,12 @@ struct NativeTimelineBeginningLayout {
             width: contentWidth,
             height: titleHeight
         )
+        let descriptionBox = NativeTimelineBeginningText.description(
+            beginning,
+            source: source
+        )
         let descriptionHeight = textHeight(
-            beginning.description,
-            font: descriptionFont,
+            for: descriptionBox,
             width: contentWidth
         )
         let descriptionFrame = CGRect(
@@ -337,24 +342,26 @@ struct NativeTimelineBeginningLayout {
             iconFrame: iconFrame,
             titleFrame: titleFrame,
             descriptionFrame: descriptionFrame,
+            descriptionBox: descriptionBox,
             dateSeparatorFrame: dateSeparatorFrame,
             height: dateSeparatorFrame?.maxY ?? contentHeight
         )
     }
 
     private static func textHeight(
-        _ value: String,
-        font: NSFont,
+        for box: NativeTimelineAttributedTextBox,
         width: CGFloat
     ) -> CGFloat {
-        let bounds = (value as NSString).boundingRect(
-            with: CGSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font]
+        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+            box.framesetter,
+            CFRange(location: 0, length: box.value.length),
+            nil,
+            CGSize(width: max(1, width), height: 10_000),
+            nil
         )
         return max(
-            ceil(font.ascender - font.descender + font.leading),
-            ceil(bounds.height)
+            1,
+            ceil(size.height)
         )
     }
 
