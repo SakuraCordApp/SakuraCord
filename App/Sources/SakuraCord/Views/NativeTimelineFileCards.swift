@@ -34,24 +34,25 @@ extension NativeTimelineCanvasView {
     func fileCardPointerHit(at local: CGPoint, rowIndex: Int, rowOrigin: CGFloat, message: Message)
         -> ComponentButtonPointerHit? {
         let states = model?.attachmentDownloads.states
-        guard let card = fileCards(at: rowIndex, messageID: message.id).first(where: { card in
-            card.actionFrames(for: states?[card.attachment.id]).contains { $0.contains(local) }
-        }) else { return nil }
-        return ComponentButtonPointerHit(
-            target: .fileCard(messageID: message.id, attachmentID: card.attachment.id),
-            rowIndex: rowIndex, message: message, kind: .fileCard(card),
-            frame: card.actionFrame.offsetBy(dx: 0, dy: rowOrigin)
-        )
+        for card in fileCards(at: rowIndex, messageID: message.id) {
+            guard let part = card.part(at: local, state: states?[card.attachment.id]) else { continue }
+            return ComponentButtonPointerHit(
+                target: .fileCard(messageID: message.id, attachmentID: card.attachment.id, part: part),
+                rowIndex: rowIndex, message: message, kind: .fileCard(card),
+                frame: card.actionFrame.offsetBy(dx: 0, dy: rowOrigin)
+            )
+        }
+        return nil
     }
 
     /// Where a file's cards draw, including their bubble hover highlight, so
-    /// a press animation redraws them alone rather than their row. Cards of
-    /// one file share a target, so all of them are included.
+    /// a hover or press redraws them alone rather than their row. Cards of
+    /// one file share targets, so all of them are included.
     func fileCardDisplayFrame(_ target: NativeTimelineComponentButtonTarget, at index: Int) -> CGRect? {
         guard target.componentID.hasPrefix("file:") else { return nil }
         var frame: CGRect?
         for card in fileCards(at: index, messageID: target.messageID)
-        where .fileCard(messageID: target.messageID, attachmentID: card.attachment.id) == target {
+        where card.part(of: target, messageID: target.messageID) != nil {
             frame = frame?.union(card.highlightFrame) ?? card.highlightFrame
         }
         return frame?.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
@@ -87,9 +88,36 @@ extension NativeTimelineCanvasView {
         // A progress tick changes only the button's ring and the detail line.
         forEachDisplayedRow(in: visibleRect) { index in
             guard let messageID = items[index].messageID, showsFile(items[index]),
-                  let frame = fileCardDisplayFrame(.fileCard(messageID: messageID, attachmentID: attachmentID), at: index)
+                  let frame = fileCardDisplayFrame(
+                      .fileCard(messageID: messageID, attachmentID: attachmentID, part: .card), at: index
+                  )
             else { return }
             setNeedsDisplay(frame)
+        }
+    }
+
+    /// A file card's action. A download Discord deems potentially dangerous
+    /// asks first, with Discord's warning.
+    func activateFileCard(_ attachment: Attachment) {
+        guard let downloads = model?.attachmentDownloads else { return }
+        guard downloads.startsDownload(attachment), DangerousDownloadPolicy.isPotentiallyDangerous(attachment.url) else {
+            downloads.activate(attachment)
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Potentially Dangerous Download"
+        alert.informativeText = """
+            Whoa there! While programs downloaded from the internet may be beneficial, this type of file can damage \
+            your device or steal your personal data. Make sure to only run executables from developers that you trust!
+            """
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Continue to Download").hasDestructiveAction = true
+        Task { @MainActor [weak self] in
+            guard let window = self?.window, window.attachedSheet == nil,
+                  await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
+            else { return }
+            self?.model?.attachmentDownloads.activate(attachment)
         }
     }
 

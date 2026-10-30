@@ -38,10 +38,20 @@ final class AttachmentDownloadStore {
         case .downloading:
             tasks.removeValue(forKey: attachment.id)?.cancel()
             setState(nil, for: attachment.id)
-        case let .finished(url, folder) where Self.fileExists(at: url, in: folder):
+        case let .finished(url, _) where !startsDownload(attachment):
             NSWorkspace.shared.activateFileViewerSelecting([url])
         default:
             start(attachment)
+        }
+    }
+
+    /// Whether activating the file starts a download, rather than cancelling
+    /// one or showing the saved file.
+    func startsDownload(_ attachment: Attachment) -> Bool {
+        switch states[attachment.id] {
+        case .downloading: false
+        case let .finished(url, folder): !Self.fileExists(at: url, in: folder)
+        case .failed, nil: true
         }
     }
 

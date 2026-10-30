@@ -3,7 +3,8 @@ import SakuraCordModels
 
 extension NativeTimelineRowPainter {
     /// Draws a file card in its rest, hover, pressed, downloading, finished,
-    /// or failed state.
+    /// or failed state. The card, its button, and its link each take their
+    /// own hover and press.
     static func fileCard(
         _ card: NativeTimelineFileCard,
         messageID: MessageID,
@@ -11,16 +12,22 @@ extension NativeTimelineRowPainter {
         state: AttachmentDownloadStore.State?,
         upload: FileCardUpload? = nil,
         hovered: NativeTimelineComponentButtonTarget?,
+        pressed: NativeTimelineComponentButtonTarget?,
         pressProgress: CGFloat
     ) {
-        // A local send's file is not downloadable until it is posted.
+        // A local send's file is not downloadable until it is posted, so it
+        // takes no hover or press.
         let state = upload == nil ? state : nil
-        let isHovered = upload == nil && hovered == .fileCard(messageID: messageID, attachmentID: card.attachment.id)
-        let pressProgress = isHovered ? min(max(pressProgress, 0), 1) : 0
+        let hoveredPart = upload == nil ? card.part(of: hovered, messageID: messageID) : nil
+        let pressedPart = card.part(of: pressed, messageID: messageID)
+        // A press shows while the pointer stays on the part it pressed.
+        func press(_ part: NativeTimelineFileCard.Part) -> CGFloat {
+            hoveredPart == part && pressedPart == part ? min(max(pressProgress, 0), 1) : 0
+        }
         let bubble = card.isInBubble ? bubbleRegion : nil
         let palette = FileCardPalette(bubble: bubble, isFailed: state == .failed || upload == .failed)
         // An audio card's own button takes the hover, not the whole card.
-        let highlight = card.isAudio ? 0 : 0.04 * ((isHovered ? 1 : 0) + pressProgress)
+        let highlight = card.isAudio ? 0 : 0.04 * ((hoveredPart == nil ? 0 : 1) + press(.card))
         if let bubble {
             if highlight > 0 {
                 let frame = card.highlightFrame
@@ -40,14 +47,17 @@ extension NativeTimelineRowPainter {
             ).fill()
         }
         let symbol = buttonSymbol(state: state, upload: upload)
+        let isButtonHovered = hoveredPart == .button
         if card.isAudio {
             fileCardDownloadButton(
-                card, state: state, symbol: symbol, palette: palette, isHovered: isHovered, pressProgress: pressProgress
+                card, state: state, symbol: symbol, palette: palette,
+                isHovered: isButtonHovered, pressProgress: press(.button)
             )
         } else {
             fileCardIcon(card)
             fileCardButton(
-                card, state: state, symbol: symbol, palette: palette, isHovered: isHovered, pressProgress: pressProgress
+                card, state: state, symbol: symbol, palette: palette,
+                isHovered: isButtonHovered, pressProgress: press(.button)
             )
         }
 
@@ -60,14 +70,13 @@ extension NativeTimelineRowPainter {
             : NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
         let detailColor = palette.isFailed ? palette.failure : palette.detail
         text(detail.text, in: card.detailFrame, font: NativeTimelineFileCard.detailFont, color: detailColor)
-        if let link = detail.link {
-            var frame = card.detailFrame
-            let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: NativeTimelineFileCard.detailFont)
-            frame.origin.x += offset
-            frame.size.width = max(0, frame.width - offset)
+        if let link = detail.link, let frame = card.linkFrame(for: state) {
+            // Underlined like a text link under the pointer, and dimmed
+            // while pressed.
             text(
                 link, in: frame, font: NativeTimelineFileCard.linkFont,
-                color: state == .failed ? palette.failure : palette.link
+                color: (state == .failed ? palette.failure : palette.link).withAlphaComponent(1 - 0.4 * press(.link)),
+                isInteractiveHovered: hoveredPart == .link
             )
         }
     }
