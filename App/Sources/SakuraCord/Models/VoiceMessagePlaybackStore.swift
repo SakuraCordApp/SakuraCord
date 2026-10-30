@@ -208,10 +208,7 @@ final class VoiceMessagePlaybackStore {
             guard let self, !Task.isCancelled else { return }
             measurements[source] = nil
             guard let duration else {
-                if failedMeasurements.count >= Self.maximumKnownDurations,
-                   let oldest = failedMeasurements.min(by: { $0.value < $1.value })?.key {
-                    failedMeasurements[oldest] = nil
-                }
+                if failedMeasurements.count >= Self.maximumKnownDurations { failedMeasurements.removeAll() }
                 failedMeasurements[source] = .now
                 return
             }
@@ -423,13 +420,12 @@ final class VoiceMessagePlaybackStore {
     }
 
     private func rememberDuration(_ duration: TimeInterval, for source: Source) {
-        knownDurations[source] = duration
+        if knownDurations.updateValue(duration, forKey: source) != duration { knownDurationsRevision += 1 }
         knownDurationOrder.removeAll { $0 == source }
         knownDurationOrder.append(source)
         while knownDurationOrder.count > Self.maximumKnownDurations {
             knownDurations[knownDurationOrder.removeFirst()] = nil
         }
-        knownDurationsRevision += 1
     }
 
     private func forgetResumePosition(_ id: VoiceMessagePlaybackID) {
