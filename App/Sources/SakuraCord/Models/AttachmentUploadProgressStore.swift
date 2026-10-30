@@ -48,12 +48,13 @@ final class AttachmentUploadProgressStore {
         return upload.isUploaded ? 1 : upload.fractions[attachmentID] ?? 0
     }
 
-    /// A file still on its way to storage, which shows its upload ring and
-    /// can be stopped. Once storage has every file, the message itself is
-    /// being posted.
+    /// A file of a send whose files storage has not all accepted yet. It
+    /// shows its upload ring, full once its bytes are sent, and can still be
+    /// stopped. Once storage has every file, the message itself is being
+    /// posted.
     func isUploading(nonce: String?, attachmentID: String) -> Bool {
-        guard let nonce, let upload = uploads[nonce], let fraction = upload.fractions[attachmentID] else { return false }
-        return !upload.isUploaded && fraction < 1
+        guard let nonce, let upload = uploads[nonce], upload.fractions[attachmentID] != nil else { return false }
+        return !upload.isUploaded
     }
 
     func beginPreupload(_ attachmentID: UUID) {

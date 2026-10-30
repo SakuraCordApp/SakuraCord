@@ -56,7 +56,6 @@ extension NativeTimelineRowPainter {
         drawPollResult(input)
         drawMessageLinkedImages(input)
         drawMessageAttachments(input)
-        drawMessageUploads(input)
         drawMessageVoiceMessage(input)
         drawMessageEmbeds(input)
         drawMessageComponentsAndStickers(input)

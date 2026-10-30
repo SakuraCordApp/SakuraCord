@@ -41,29 +41,16 @@ extension NativeTimelineRowLayout {
     }
 }
 
-extension NativeTimelineRowPainter {
-    /// A failed upload's Retry over its image. A file card shows its own in
-    /// its button; uploads in progress draw over the row as it repaints.
-    static func drawMessageUploads(_ input: NativeTimelineMessageDrawInput) {
-        for ring in input.layout.uploadRings where ring.isFailed {
-            guard let media = ring.mediaFrame else { continue }
-            NSColor.black.withAlphaComponent(AttachmentUploadRing.dimOpacity).setFill()
-            NSBezierPath(concentricRoundedRect: media, cornerRadius: attachmentCornerRadius).fill()
-            NSColor.black.withAlphaComponent(0.45).setFill()
-            NSBezierPath(ovalIn: ring.frame).fill()
-            systemSymbol("arrow.clockwise", in: ring.frame, color: .white, inset: ring.frame.width * 0.3, weight: .semibold)
-        }
-    }
-}
-
-/// A file's live upload over its row: the dim over an image or video and
-/// the ring, with a cancel mark under the pointer. Progress moves only the
-/// ring's stroke.
+/// A file's upload over its row: the dim over an image or video and the
+/// ring, with a cancel mark under the pointer, or Retry once it failed.
+/// Progress moves only the ring's stroke. It sits above the row's animated
+/// media, which the row's own painting would sit beneath.
 final class NativeTimelineUploadRingView: NSView {
     private let dimsMedia: Bool
     private let dim = CALayer()
     private let ring = AttachmentUploadRingLayer()
     private let cancelMark = CAShapeLayer()
+    private let retry = CALayer()
 
     var fraction: Double {
         get { ring.fraction }
@@ -71,7 +58,15 @@ final class NativeTimelineUploadRingView: NSView {
     }
 
     var isCancelHovered = false {
-        didSet { cancelMark.opacity = isCancelHovered ? 1 : 0 }
+        didSet { cancelMark.opacity = isCancelHovered && !isFailed ? 1 : 0 }
+    }
+
+    var isFailed = false {
+        didSet {
+            ring.isHidden = isFailed
+            retry.isHidden = !isFailed
+            cancelMark.opacity = isCancelHovered && !isFailed ? 1 : 0
+        }
     }
 
     init(dimsMedia: Bool) {
@@ -99,6 +94,12 @@ final class NativeTimelineUploadRingView: NSView {
         cancelMark.lineCap = .round
         cancelMark.opacity = 0
         layer?.addSublayer(cancelMark)
+        retry.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
+        retry.contents = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: InterfaceScale.metric(14), weight: .semibold).applying(.init(paletteColors: [.white])))
+        retry.contentsGravity = .center
+        retry.isHidden = true
+        layer?.addSublayer(retry)
         setColor(.white)
     }
 
@@ -121,6 +122,11 @@ final class NativeTimelineUploadRingView: NSView {
         ring.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
         ring.position = center
         cancelMark.position = center
+        let control = AttachmentUploadRing.diameter + InterfaceScale.metric(8)
+        retry.bounds = CGRect(x: 0, y: 0, width: control, height: control)
+        retry.cornerRadius = control / 2
+        retry.position = center
+        retry.contentsScale = window?.backingScaleFactor ?? 2
         CATransaction.commit()
     }
 
@@ -148,8 +154,10 @@ extension NativeTimelineCanvasView {
                   let nonce = items[index].messageRow?.message.nonce
             else { return }
             let origin = displayedRowOrigin(at: index)
-            for ring in layout.uploadRings
-            where !ring.isFailed && uploads.isUploading(nonce: nonce, attachmentID: ring.attachmentID) {
+            // A file card shows a failed upload's Retry in its own button.
+            for ring in layout.uploadRings where ring.isFailed
+                ? ring.mediaFrame != nil
+                : uploads.isUploading(nonce: nonce, attachmentID: ring.attachmentID) {
                 let key = UploadRingKey(row: items[index].identifier, attachmentID: ring.attachmentID)
                 shown.insert(key)
                 let view = uploadRings[key] ?? {
@@ -160,8 +168,17 @@ extension NativeTimelineCanvasView {
                 }()
                 view.frame = (ring.mediaFrame ?? ring.frame).offsetBy(dx: 0, dy: origin)
                 view.setColor(Self.uploadRingColor(ring, isOutgoing: layout.bubbleRegion?.isOutgoing == true))
+                view.isFailed = ring.isFailed
                 view.isCancelHovered = hoveredFooterAction?.kind == .cancelUpload(attachmentID: ring.attachmentID)
                 view.fraction = uploads.fraction(nonce: nonce, attachmentID: ring.attachmentID)
+            }
+        }
+        // Media overlays installed later stack above earlier ones.
+        if let host = subviews.firstIndex(of: mediaViewerHost),
+           let lowest = subviews[..<host].firstIndex(where: { $0 is NativeTimelineUploadRingView }),
+           subviews[lowest ..< host].contains(where: { !($0 is NativeTimelineUploadRingView) }) {
+            for view in subviews[lowest ..< host] where view is NativeTimelineUploadRingView {
+                addSubview(view, positioned: .below, relativeTo: mediaViewerHost)
             }
         }
         for (key, view) in uploadRings where !shown.contains(key) {
