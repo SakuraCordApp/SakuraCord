@@ -213,6 +213,14 @@ nonisolated enum MediaViewerDetails {
         return item.size.formatted(.byteCount(style: .file))
     }
 
+    /// A file's type and size as its card shows it, such as "PDF · 1.41 MB".
+    @MainActor static func fileDetail(_ item: RichMediaItem) -> String {
+        let pathExtension = (MediaViewerFilePolicy.suggestedFilename(title: item.title, sourceURL: item.url) as NSString)
+            .pathExtension.uppercased()
+        let size = item.size > 0 ? NativeTimelineFileCard.sizeText(item.size) : ""
+        return [pathExtension, size].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     static func kind(_ item: RichMediaItem) -> String {
         switch item.kind {
         case let .image(animated):

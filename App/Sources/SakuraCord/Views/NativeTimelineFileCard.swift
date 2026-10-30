@@ -5,9 +5,10 @@ import SakuraCordModels
 /// file components: the geometry that painting, hit testing, and cursors
 /// agree on. Outside a bubble it is a capsule like a plain voice message's;
 /// inside one it sits straight on the bubble, as a voice message does. The
-/// file's Finder icon leads, and a round button at the end downloads it. An
-/// audio file leads with its play button instead, has a smaller download
-/// button, and keeps its player's seek row below the name.
+/// file's Finder icon leads, and a round button at the end downloads it; the
+/// rest of the card previews the file in the media viewer. An audio file
+/// leads with its play button instead, has a smaller download button, and
+/// keeps its player's seek row below the name.
 struct NativeTimelineFileCard {
     static var spacing: CGFloat { InterfaceScale.metric(8) }
     static var minimumWidth: CGFloat { InterfaceScale.metric(220) }
@@ -22,9 +23,6 @@ struct NativeTimelineFileCard {
     let attachment: Attachment
     let isInBubble: Bool
     var isAudio = false
-    /// A message's text or code file, which opens in the media viewer; only
-    /// its button downloads.
-    var opensInViewer = false
 
     /// The name row's height; an audio card adds its seek row below.
     static func height(isInBubble: Bool, isAudio: Bool = false) -> CGFloat {
@@ -84,17 +82,19 @@ struct NativeTimelineFileCard {
         )
     }
 
-    /// What acts on the file: the whole card, a text file's button, or an
-    /// audio card's name row with its Show in Finder or Retry link and button.
-    var actionFrame: CGRect {
-        isAudio ? nameFrame.union(detailFrame).union(buttonFrame) : opensInViewer ? buttonFrame : frame
+    /// The download button, which alone downloads the file.
+    var actionFrame: CGRect { buttonFrame }
+
+    /// The card's outline, which its snapshot zooms out of into the viewer.
+    var cornerRadius: CGFloat {
+        isInBubble ? InterfaceScale.metric(12) : Self.height(isInBubble: false) / 2
     }
 
-    /// Where a click acts on the file. A text card also acts through the
-    /// detail line's Show in Finder or Retry link.
+    /// Where a click acts on the file: its button, and the detail line's
+    /// Show in Finder or Retry link.
     func actionFrames(for state: AttachmentDownloadStore.State?) -> [CGRect] {
         let detail = Self.detail(for: state, size: attachment.size)
-        guard opensInViewer, detail.link != nil else { return [actionFrame] }
+        guard detail.link != nil else { return [actionFrame] }
         let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: Self.detailFont)
         var link = detailFrame
         link.origin.x += offset
@@ -102,9 +102,10 @@ struct NativeTimelineFileCard {
         return [actionFrame, link]
     }
 
-    /// An audio card's seek row, under the name and ending with the card.
+    /// An audio card's seek row, under the name and as wide as the play
+    /// and download buttons span.
     var playerRowFrame: CGRect {
-        let minX = nameFrame.minX
+        let minX = playFrame.minX
         return CGRect(
             x: minX, y: nameRow.maxY - InterfaceScale.metric(isInBubble ? 2 : 6),
             width: max(1, buttonFrame.maxX - minX), height: InterfaceScale.metric(28)

@@ -57,8 +57,10 @@ extension NativeTimelineCanvasView {
     func installFileCardCursors(at index: Int, rowOrigin: CGFloat) {
         guard let messageID = items[index].messageID else { return }
         for card in fileCards(at: index, messageID: messageID) {
-            // A text file's body opens the viewer, so the whole card points.
-            addCursorRect((card.isAudio ? card.actionFrame : card.frame).offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+            // The body previews and the button downloads, so both point; the
+            // button names what it does.
+            addCursorRect(card.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+            addToolTip(card.buttonFrame.offsetBy(dx: 0, dy: rowOrigin), owner: self, userData: nil)
         }
     }
 
@@ -87,6 +89,19 @@ extension NativeTimelineCanvasView {
                   let frame = fileCardDisplayFrame(.fileCard(messageID: messageID, attachmentID: attachmentID), at: index)
             else { return }
             setNeedsDisplay(frame)
+        }
+    }
+
+    /// The tooltip of the timeline's buttons that have no label.
+    func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
+        guard let index = rowIndex(at: point.y), items.indices.contains(index), let messageID = items[index].messageID else { return "" }
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        guard let card = fileCards(at: index, messageID: messageID).first(where: { $0.buttonFrame.contains(local) }) else { return "" }
+        return switch model?.attachmentDownloads.states[card.attachment.id] {
+        case .downloading: "Cancel Download"
+        case .finished: "Show in Finder"
+        case .failed: "Retry Download"
+        case nil: "Download"
         }
     }
 

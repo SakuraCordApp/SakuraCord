@@ -33,7 +33,7 @@ struct MediaViewerText: View {
         // as a dark code block over the viewer's dimmed backdrop.
         .background(Color(red: 13 / 255, green: 14 / 255, blue: 27 / 255))
         .environment(\.colorScheme, .dark)
-        .clipShape(ConcentricRectangle(cornerRadius: NativeTimelineBubbleDrawing.cornerRadius, style: .continuous))
+        .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
         .task(id: url) {
             text = nil
             failed = false
