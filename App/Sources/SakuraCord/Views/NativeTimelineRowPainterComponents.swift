@@ -718,7 +718,8 @@ extension NativeTimelineRowPainter {
 
     static func componentContainer(
         _ frame: CGRect,
-        accentColor: UInt32?
+        accentColor: UInt32?,
+        fill: NSColor = .controlBackgroundColor
     ) {
         let cornerRadius = DiscordRichMessageMetrics.cardCornerRadius
         let shape = NSBezierPath(
@@ -728,7 +729,7 @@ extension NativeTimelineRowPainter {
         // Discord's container surface and border.
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
-        NSColor.controlBackgroundColor.setFill()
+        fill.setFill()
         frame.fill()
         if let accent = roleColor(accentColor) {
             accent.setFill()
