@@ -119,13 +119,13 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
         let isZooming = source != nil && destination != nil
         let progress = isZooming ? min(max(progress, 0), 1) : 1
         let end = destination ?? .zero
-        let start = source?.visibleFrameInWindow ?? end
-        let box = CGRect(
-            x: start.minX + (end.minX - start.minX) * progress,
-            y: start.minY + (end.minY - start.minY) * progress,
-            width: start.width + (end.width - start.width) * progress,
-            height: start.height + (end.height - start.height) * progress
-        )
+        let box = Self.interpolate(from: source?.frameInWindow ?? end, to: end, progress: progress)
+        // A card partly scrolled out starts cut to the viewport, in the
+        // stage's space, which offsetting the content doesn't move.
+        let viewport = progress < 1
+            ? Self.interpolate(from: source?.visibleFrameInWindow ?? end, to: end, progress: progress)
+                .offsetBy(dx: -end.minX, dy: -end.minY)
+            : .infinite
         // The box in the content's own space, centred on it as it moves.
         let clip = progress < 1
             ? CGRect(x: (end.width - box.width) / 2, y: (end.height - box.height) / 2, width: box.width, height: box.height)
@@ -147,6 +147,16 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
             }
             .clipShape(MediaViewerZoomClip(rect: clip, cornerRadius: radius))
             .offset(x: box.midX - end.midX, y: box.midY - end.midY)
+            .clipShape(MediaViewerZoomClip(rect: viewport, cornerRadius: 0))
+    }
+
+    private static func interpolate(from start: CGRect, to end: CGRect, progress: CGFloat) -> CGRect {
+        CGRect(
+            x: start.minX + (end.minX - start.minX) * progress,
+            y: start.minY + (end.minY - start.minY) * progress,
+            width: start.width + (end.width - start.width) * progress,
+            height: start.height + (end.height - start.height) * progress
+        )
     }
 
     private static func smoothstep(_ value: CGFloat, from lower: CGFloat, to upper: CGFloat) -> CGFloat {

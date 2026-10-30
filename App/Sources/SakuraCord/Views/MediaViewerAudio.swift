@@ -271,6 +271,7 @@ final class MediaViewerAudioPlayer {
     func load(_ url: URL) async {
         stop()
         duration = nil
+        seekTarget = nil
         let source = await MediaViewerActionService.resolveRemoteURL?(url) ?? url
         guard !Task.isCancelled else { return }
         let item = AVPlayerItem(url: source)
@@ -319,10 +320,13 @@ final class MediaViewerAudioPlayer {
 
     private func seek(to seconds: TimeInterval) {
         seekTarget = seconds
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
-            guard finished else { return }
-            Task { @MainActor in
-                if self?.seekTarget == seconds { self?.seekTarget = nil }
+        let item = player.currentItem
+        // An interrupted seek clears its target too, unless another file or
+        // seek has taken over since.
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.player.currentItem === item, self.seekTarget == seconds else { return }
+                self.seekTarget = nil
             }
         }
     }

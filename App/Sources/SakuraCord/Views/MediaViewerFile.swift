@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import PDFKit
 import QuickLookThumbnailing
 import QuickLookUI
@@ -13,6 +14,9 @@ struct MediaViewerFile: View {
     let item: RichMediaItem
     let download: () -> Void
     @State private var phase = Phase.fetching(0)
+    /// The file the current preview is for, so a file left for another
+    /// can't overwrite it.
+    @State private var request: URL?
 
     enum Phase {
         case fetching(Double)
@@ -51,8 +55,14 @@ struct MediaViewerFile: View {
             }
         }
         .task(id: item.url) {
+            let url = item.url
+            request = url
             phase = .fetching(0)
-            phase = await Self.preview(of: item) { fraction in phase = .fetching(fraction) }
+            let preview = await Self.preview(of: item) { fraction in
+                if request == url, case .fetching = phase { phase = .fetching(fraction) }
+            }
+            guard !Task.isCancelled, request == url else { return }
+            phase = preview
         }
     }
 
@@ -178,7 +188,9 @@ enum MediaViewerPreviewCache {
     private nonisolated static let maximumFiles = 8
 
     static func file(for item: RichMediaItem, progress: @escaping @MainActor (Double) -> Void) async throws -> URL {
-        let folder = directory.appending(path: item.id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? item.id)
+        // A link's path names its file across messages; its query only signs it.
+        let key = SHA256.hash(data: Data(((item.url.host() ?? "") + item.url.path()).utf8))
+        let folder = directory.appending(path: key.map { String(format: "%02x", $0) }.joined())
         let destination = folder.appending(path: MediaViewerFilePolicy.suggestedFilename(title: item.title, sourceURL: item.url))
         if FileManager.default.fileExists(atPath: destination.path) { return destination }
         let source = await MediaViewerActionService.resolveRemoteURL?(item.url) ?? item.url
