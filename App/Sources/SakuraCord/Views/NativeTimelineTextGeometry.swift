@@ -277,11 +277,6 @@ nonisolated struct NativeTimelineCodeBlockRegion: Equatable {
 }
 
 nonisolated enum NativeTimelineCodeBlockGeometry {
-    struct LineRange {
-        let range: NSRange
-        let startsBlock: Bool
-    }
-
     static func regions(
         value: NSAttributedString,
         framesetter: CTFramesetter,
@@ -316,7 +311,8 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
     ) -> [NativeTimelineCodeBlockRegion] {
         guard value.length > 0 else { return [] }
         let fullRange = NSRange(location: 0, length: value.length)
-        var lines: [LineRange] = []
+        let source = value.string as NSString
+        var blocks: [NSRange] = []
         value.enumerateAttribute(
             .discordMarkdownBlock,
             in: fullRange
@@ -324,45 +320,36 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
             guard rawValue as? String == "code",
                   range.length > 0
             else { return }
-            let paragraph = value.attribute(
-                .paragraphStyle,
-                at: range.location,
-                effectiveRange: nil
-            ) as? NSParagraphStyle
-            lines.append(LineRange(
-                range: range,
-                startsBlock:
-                    (paragraph?.paragraphSpacingBefore ?? 0) > 0
-            ))
-        }
-        guard !lines.isEmpty else { return [] }
-
-        var groups: [[LineRange]] = []
-        for line in lines {
-            if line.startsBlock || groups.isEmpty {
-                groups.append([line])
-            } else {
-                groups[groups.count - 1].append(line)
-            }
-        }
-
-        let source = value.string as NSString
-        return groups.compactMap { group in
-            guard let first = group.first,
-                  let last = group.last
-            else { return nil }
-            let range = NSRange(
-                location: first.range.location,
-                length: NSMaxRange(last.range)
-                    - first.range.location
-            )
-            let rects = group.flatMap {
-                NativeTimelineTextSelectionGeometry.rects(
-                    in: textFrame,
-                    outerFrame: outerFrame,
-                    range: $0.range
+            // A blank code line's newline coalesces with the next line's
+            // run, which can open another block, so check each line in it.
+            var lineStart = range.location
+            while lineStart < NSMaxRange(range) {
+                let newline = source.range(
+                    of: "\n",
+                    range: NSRange(location: lineStart, length: NSMaxRange(range) - lineStart)
                 )
+                let lineEnd = newline.location == NSNotFound ? NSMaxRange(range) : NSMaxRange(newline)
+                let line = NSRange(location: lineStart, length: lineEnd - lineStart)
+                let paragraph = value.attribute(
+                    .paragraphStyle,
+                    at: lineStart,
+                    effectiveRange: nil
+                ) as? NSParagraphStyle
+                if let last = blocks.last, (paragraph?.paragraphSpacingBefore ?? 0) <= 0 {
+                    blocks[blocks.count - 1] = NSUnionRange(last, line)
+                } else {
+                    blocks.append(line)
+                }
+                lineStart = lineEnd
             }
+        }
+
+        return blocks.compactMap { range in
+            let rects = NativeTimelineTextSelectionGeometry.rects(
+                in: textFrame,
+                outerFrame: outerFrame,
+                range: range
+            )
             guard let firstRect = rects.first else { return nil }
             let union = rects.dropFirst().reduce(firstRect) {
                 $0.union($1)

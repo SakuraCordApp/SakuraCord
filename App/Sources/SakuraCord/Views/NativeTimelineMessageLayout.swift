@@ -470,6 +470,7 @@ extension NativeTimelineRowLayout {
             result.attributedContent = contentPresentation.attributedContent
             result.contentFramesetter = contentPresentation.framesetter
             if let attributedContent = contentPresentation.attributedContent {
+                verticalOffset += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributedContent)
                 let textHeight = NativeTimelineRowLayout.measuredTextHeight(
                     contentPresentation.framesetter,
                     value: attributedContent,
