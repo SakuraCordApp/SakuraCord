@@ -201,6 +201,7 @@ extension NativeTimelineCanvasView {
         // Rings exist only for sends the store tracks.
         guard uploads.tracksAnySend || !uploadRings.isEmpty else { return }
         var shown = Set<UploadRingKey>()
+        var visibleRows = Set<NativeMessageTimelineItem.Identifier>()
         forEachDisplayedRow(in: visibleRect) { index in
             let layout = layouts[index]
             guard !layout.uploadRings.isEmpty,
@@ -208,6 +209,7 @@ extension NativeTimelineCanvasView {
                   let message = items[index].messageRow?.message,
                   let nonce = message.nonce
             else { return }
+            visibleRows.insert(items[index].identifier)
             let origin = displayedRowOrigin(at: index)
             for ring in layout.uploadRings
             where layout.activeUploadRing(for: ring.attachmentID, uploads: uploads, nonce: nonce) != nil {
@@ -236,6 +238,12 @@ extension NativeTimelineCanvasView {
             uploadRings[key] = nil
             view.activate = nil
             window?.invalidateCursorRects(for: view)
+            // Only a finished upload in a row that stays put fades out; a ring
+            // whose row scrolled away or is flying leaves at once.
+            guard visibleRows.contains(key.row) else {
+                view.removeFromSuperview()
+                continue
+            }
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 view.animator().alphaValue = 0
