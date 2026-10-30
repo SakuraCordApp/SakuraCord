@@ -1342,6 +1342,14 @@ public extension DiscordMarkdown {
     }
 }
 
+public extension DiscordMarkdown.AppKitPlan.Line {
+    /// Headings keep their size where Discord shrinks the rest of the text,
+    /// as inside a Components V2 container.
+    var isHeading: Bool {
+        if case .heading = block { true } else { false }
+    }
+}
+
 private extension DiscordMarkdown {
     static func isComposerSyntaxCharacter(_ character: Character) -> Bool {
         switch character {

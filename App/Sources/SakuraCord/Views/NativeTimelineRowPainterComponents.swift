@@ -372,6 +372,7 @@ struct NativeTimelineComponentsDrawInput {
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
+    let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
 }
 
 extension NativeTimelineRowPainter {
@@ -478,7 +479,9 @@ extension NativeTimelineRowPainter {
                 separator.frame,
                 hiddenContainerFrames: hiddenContainerFrames
             ) {
-            NSColor.separatorColor.setFill()
+            // Discord draws dividers in its subtle border colour, like the
+            // container's own edge.
+            NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setFill()
             CGRect(
                 x: separator.frame.minX,
                 y: separator.frame.midY - 0.5,
@@ -553,14 +556,15 @@ extension NativeTimelineRowPainter {
                 region.displayURL,
                 maximumPixelDimension: region.maximumPixelDimension
             )) {
+                // Discord crops a thumbnail to fill its square.
                 drawImage(
                     image,
                     in: region.frame,
                     cornerRadius: region.cornerRadius,
-                    fillsFrame: false
+                    fillsFrame: true
                 )
             } else if let placeholder = region.placeholder?.image {
-                drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: false)
+                drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: true)
             } else {
                 systemSymbol("photo", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(22))
             }
@@ -581,17 +585,17 @@ extension NativeTimelineRowPainter {
                 isSpoiler: region.isSpoiler,
                 input: input
             ) {
-                spoilerConcealedBase(in: region.frame, cornerRadius: InterfaceScale.metric(8))
+                spoilerConcealedBase(in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8))
                 continue
             }
             NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: InterfaceScale.metric(8)).fill()
+            NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8)).fill()
             if let previewURL = region.previewURL,
                let image = mediaImage(for: .media(previewURL))
             {
-                drawImage(image, in: region.frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
+                drawImage(image, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
             } else if let placeholder = region.placeholder?.image {
-                drawImage(placeholder, in: region.frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
+                drawImage(placeholder, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
             } else if region.isVideo {
                 systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
             }
@@ -650,10 +654,13 @@ extension NativeTimelineRowPainter {
                 isHovered: input.hoveredComponentButton == target,
                 pressProgress: input.pressedComponentButton == target
                     ? input.componentButtonPressProgress : 0,
+                hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(
+                    .componentButton(input.layoutIndex, region.componentID)
+                ),
                 cornerRadius: bubbleConcentricCornerRadius(
                     for: region.frame,
                     in: input.bubbleRegion,
-                    fallback: 6
+                    fallback: NativeTimelineComponentButtonMetrics.cornerRadius
                 )
             )
         }
@@ -669,7 +676,9 @@ extension NativeTimelineRowPainter {
             guard target != input.activeComponentChoiceTarget else { continue }
             componentSelect(
                 region,
-                cornerRadius: bubbleConcentricCornerRadius(for: region.frame, in: input.bubbleRegion, fallback: 11)
+                cornerRadius: bubbleConcentricCornerRadius(
+                    for: region.frame, in: input.bubbleRegion, fallback: SelectionFieldLayoutMetrics.cornerRadius
+                )
             )
         }
     }
@@ -710,29 +719,31 @@ extension NativeTimelineRowPainter {
 
     static func componentContainer(
         _ frame: CGRect,
-        accentColor: UInt32?
+        accentColor: UInt32?,
+        fill: NSColor = .controlBackgroundColor
     ) {
         let cornerRadius = DiscordRichMessageMetrics.cardCornerRadius
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: cornerRadius
         )
+        // Discord's container surface and border.
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
-        NSColor.labelColor.withAlphaComponent(0.055).setFill()
+        fill.setFill()
         frame.fill()
         if let accent = roleColor(accentColor) {
             accent.setFill()
             CGRect(
                 x: frame.minX,
                 y: frame.minY,
-                width: InterfaceScale.metric(4),
+                width: DiscordRichMessageMetrics.px(4),
                 height: frame.height
             ).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
 
-        NSColor.labelColor.withAlphaComponent(0.13).setStroke()
+        NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
             cornerRadius: max(0, cornerRadius - 0.5)
@@ -1078,139 +1089,104 @@ extension NativeTimelineRowPainter {
         _ region: NativeTimelineComponentLayout.ButtonRegion,
         isHovered: Bool,
         pressProgress: CGFloat,
-        cornerRadius: CGFloat = 6
+        hasAnimatedEmojiOverlay: Bool,
+        cornerRadius: CGFloat = NativeTimelineComponentButtonMetrics.cornerRadius
     ) {
-        let pressProgress = min(max(pressProgress, 0), 1)
-        let scale = NativeTimelineComponentButtonVisualState.scale(
-            pressProgress: pressProgress
-        )
-        let brightness =
-            NativeTimelineComponentButtonVisualState.brightness(
-                isHovered: isHovered,
-                pressProgress: pressProgress
-            )
-        let opacity: CGFloat = region.isDisabled && !region.isLoading ? 0.65 : 1
-        let background = adjustedBrightness(
-            roleColor(
-                DiscordComponentButtonAppearance.backgroundHex(
-                    for: region.style
-                )
-            ) ?? .secondaryLabelColor,
-            amount: brightness
-        )
-
-        NSGraphicsContext.saveGraphicsState()
-        if abs(scale - 1) > 0.0001 {
-            let transform = NSAffineTransform()
-            transform.translateX(
-                by: region.frame.midX,
-                yBy: region.frame.midY
-            )
-            transform.scaleX(by: scale, yBy: scale)
-            transform.translateX(
-                by: -region.frame.midX,
-                yBy: -region.frame.midY
-            )
-            transform.concat()
+        // Discord darkens a button on hover and further while pressed, and
+        // dims a disabled one to half opacity without either.
+        let isDimmed = region.opacity < 1
+        let pressProgress = isDimmed ? 0 : min(max(pressProgress, 0), 1)
+        let hover: CGFloat = !isDimmed && isHovered ? 1 : 0
+        let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let fill: NSColor
+        let border: NSColor
+        let foreground: NSColor
+        if let fills = DiscordComponentButtonAppearance.solidFillHexes(for: region.style)?.compactMap(roleColor) {
+            let settled = fills[0].blended(withFraction: hover, of: fills[1]) ?? fills[0]
+            fill = settled.blended(withFraction: pressProgress, of: fills[2]) ?? settled
+            border = NSColor.white.withAlphaComponent(0.08)
+            foreground = .white
+        } else {
+            let alphas = DiscordComponentButtonAppearance.secondaryFillAlphas(isDark: isDark)
+            let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
+            fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
+            border = discordGrey.withAlphaComponent(isDark ? 0.04 : 0.2)
+            foreground = isDark ? .white : discordLightText
         }
 
-        background.withAlphaComponent(opacity).setFill()
-        NSBezierPath(
-            concentricRoundedRect: region.frame,
-            cornerRadius: cornerRadius
-        ).fill()
-        adjustedBrightness(
-            .white,
-            amount: brightness
-        ).withAlphaComponent(
-            NativeTimelineComponentButtonVisualState.borderAlpha(
-                isHovered: isHovered,
-                isEnabled: !region.isDisabled
-            ) * opacity
-        ).setStroke()
-        let border = NSBezierPath(
+        NSGraphicsContext.saveGraphicsState()
+        let context = NSGraphicsContext.current?.cgContext
+        if isDimmed {
+            context?.setAlpha(region.opacity)
+            context?.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
+        fill.setFill()
+        NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: cornerRadius).fill()
+        border.setStroke()
+        let outline = NSBezierPath(
             concentricRoundedRect: region.frame.insetBy(dx: 0.5, dy: 0.5),
             cornerRadius: max(0, cornerRadius - 0.5)
         )
-        border.lineWidth = 1
-        border.stroke()
-        drawComponentButtonContent(
-            region,
-            brightness: brightness,
-            opacity: opacity
-        )
+        outline.lineWidth = 1
+        outline.stroke()
+        drawComponentButtonContent(region, color: foreground, drawsEmoji: !hasAnimatedEmojiOverlay)
+        if isDimmed { context?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
 
+    /// The grey behind Discord's secondary buttons and its muted borders.
+    private static let discordGrey = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
+    private static let discordLightText = NSColor(srgbRed: 40 / 255, green: 40 / 255, blue: 45 / 255, alpha: 1)
+
     private static func drawComponentButtonContent(
         _ region: NativeTimelineComponentLayout.ButtonRegion,
-        brightness: CGFloat,
-        opacity: CGFloat
+        color: NSColor,
+        drawsEmoji: Bool
     ) {
         // The row's loading-dots overlay replaces the label.
         guard !region.isLoading else { return }
-        var horizontalPosition = region.frame.minX + NativeTimelineComponentButtonMetrics.horizontalPadding
+        var horizontalPosition = region.contentMinX
+        let glyphSize = DiscordComponentEmojiMetrics.buttonSize
+        let glyphFrame = CGRect(
+            x: horizontalPosition, y: region.frame.midY - glyphSize / 2, width: glyphSize, height: glyphSize
+        )
         if let emoji = region.emoji {
-            componentEmoji(emoji, in: CGRect(
-                x: horizontalPosition,
-                y: region.frame.midY - InterfaceScale.metric(8),
-                width: InterfaceScale.metric(16),
-                height: InterfaceScale.metric(16)
-            ))
+            // An animated emoji plays in its own overlay, at the button's
+            // opacity, so the painter leaves its slot empty.
+            if drawsEmoji { componentEmoji(emoji, in: glyphFrame) }
             horizontalPosition += NativeTimelineComponentButtonMetrics.leadingGlyphAdvance
         } else if region.style == .premium {
-            systemSymbol(
-                "sparkles",
-                in: CGRect(
-                    x: horizontalPosition,
-                    y: region.frame.midY - InterfaceScale.metric(8),
-                    width: InterfaceScale.metric(16),
-                    height: InterfaceScale.metric(16)
-                ),
-                color: adjustedBrightness(
-                    .white,
-                    amount: brightness
-                ).withAlphaComponent(opacity),
-                inset: 1
-            )
+            systemSymbol("sparkles", in: glyphFrame, color: color, inset: 1)
             horizontalPosition += NativeTimelineComponentButtonMetrics.leadingGlyphAdvance
         }
-        let trailingAllowance = region.url == nil
-            ? NativeTimelineComponentButtonMetrics.horizontalPadding
-            : NativeTimelineComponentButtonMetrics.externalLinkAllowance
+        let linkAdvance = region.url == nil ? 0 : NativeTimelineComponentButtonMetrics.linkIconAdvance
+        let labelMaxX = min(
+            region.frame.maxX - NativeTimelineComponentButtonMetrics.horizontalPadding,
+            region.contentMinX + region.contentWidth
+        ) - linkAdvance
         text(
             region.label,
             in: CGRect(
                 x: horizontalPosition,
                 y: region.frame.minY,
-                width: max(
-                    1,
-                    region.frame.maxX - horizontalPosition - trailingAllowance
-                ),
+                width: max(1, labelMaxX - horizontalPosition),
                 height: region.frame.height
             ),
             font: NativeTimelineComponentButtonMetrics.font,
-            color: adjustedBrightness(
-                .white,
-                amount: brightness
-            ).withAlphaComponent(
-                region.isDisabled ? 0.62 : 1
-            )
+            color: color
         )
         if region.url != nil {
+            let iconSize = NativeTimelineComponentButtonMetrics.linkIconSize
             systemSymbol(
-                "arrow.up.right",
+                "arrow.up.right.square",
                 in: CGRect(
-                    x: region.frame.maxX - InterfaceScale.metric(22),
-                    y: region.frame.midY - InterfaceScale.metric(7),
-                    width: InterfaceScale.metric(14),
-                    height: InterfaceScale.metric(14)
+                    x: labelMaxX + linkAdvance - iconSize,
+                    y: region.frame.midY - iconSize / 2,
+                    width: iconSize,
+                    height: iconSize
                 ),
-                color: adjustedBrightness(
-                    .white,
-                    amount: brightness
-                ).withAlphaComponent(opacity),
-                inset: 1
+                color: color,
+                inset: 0
             )
         }
     }
@@ -1232,7 +1208,7 @@ extension NativeTimelineRowPainter {
 
     static func componentSelect(
         _ region: NativeTimelineComponentLayout.SelectRegion,
-        cornerRadius: CGFloat = 11
+        cornerRadius: CGFloat
     ) {
         let opacity: CGFloat = region.isDisabled ? 0.65 : 1
         NSColor.labelColor.withAlphaComponent(0.075 * opacity).setFill()
