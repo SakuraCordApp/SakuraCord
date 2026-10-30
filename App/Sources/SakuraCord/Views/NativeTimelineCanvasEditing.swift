@@ -123,6 +123,7 @@ extension NativeTimelineCanvasView {
         guard hoveredFooterAction != value else { return }
         let old = hoveredFooterAction
         hoveredFooterAction = value
+        reconcileUploadRings()
         for target in [old, value].compactMap({ $0 }) {
             // A revealed run's header shares its first row's message ID.
             let header = NativeMessageTimelineItem.Identifier.suppressedMessages(target.messageID)
@@ -1258,7 +1259,6 @@ extension NativeTimelineCanvasView {
         }
         frames.append(contentsOf: layout.linkedImageRegions.map(\.frame))
         frames.append(contentsOf: layout.attachmentRegions.map(\.frame))
-        frames.append(contentsOf: layout.uploadRegions.map(\.frame))
         frames.append(contentsOf: layout.embedFrames)
         frames.append(contentsOf: layout.componentFrames)
         frames.append(contentsOf: layout.stickerFrames)

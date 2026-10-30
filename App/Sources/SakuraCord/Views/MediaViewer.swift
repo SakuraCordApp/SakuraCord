@@ -43,7 +43,7 @@ struct MediaViewer: View {
         GlassEffectContainer(spacing: InterfaceScale.metric(12)) {
             GeometryReader { proxy in
                 ZStack {
-                    if let transitionSource {
+                    if let transitionSource, transitionSource.coversSource {
                         let transitionSourceVisibleFrame =
                             transitionSource.visibleFrameInWindow
                         Color(nsColor: .windowBackgroundColor)

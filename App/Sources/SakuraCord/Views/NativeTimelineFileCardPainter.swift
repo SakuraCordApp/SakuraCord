@@ -9,13 +9,16 @@ extension NativeTimelineRowPainter {
         messageID: MessageID,
         bubbleRegion: NativeTimelineBubbleRegion?,
         state: AttachmentDownloadStore.State?,
+        upload: FileCardUpload? = nil,
         hovered: NativeTimelineComponentButtonTarget?,
         pressProgress: CGFloat
     ) {
-        let isHovered = hovered == .fileCard(messageID: messageID, attachmentID: card.attachment.id)
+        // A local send's file is not downloadable until it is posted.
+        let state = upload == nil ? state : nil
+        let isHovered = upload == nil && hovered == .fileCard(messageID: messageID, attachmentID: card.attachment.id)
         let pressProgress = isHovered ? min(max(pressProgress, 0), 1) : 0
         let bubble = card.isInBubble ? bubbleRegion : nil
-        let palette = FileCardPalette(bubble: bubble, isFailed: state == .failed)
+        let palette = FileCardPalette(bubble: bubble, isFailed: state == .failed || upload == .failed)
         // An audio card's own button takes the hover, not the whole card.
         let highlight = card.isAudio ? 0 : 0.04 * ((isHovered ? 1 : 0) + pressProgress)
         if let bubble {
@@ -36,19 +39,26 @@ extension NativeTimelineRowPainter {
                 cornerRadius: NativeTimelineFileCard.height(isInBubble: false) / 2
             ).fill()
         }
+        let symbol = buttonSymbol(state: state, upload: upload)
         if card.isAudio {
-            fileCardDownloadButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
+            fileCardDownloadButton(
+                card, state: state, symbol: symbol, palette: palette, isHovered: isHovered, pressProgress: pressProgress
+            )
         } else {
             fileCardIcon(card)
-            fileCardButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
+            fileCardButton(
+                card, state: state, symbol: symbol, palette: palette, isHovered: isHovered, pressProgress: pressProgress
+            )
         }
 
         text(
             card.attachment.filename, in: card.nameFrame, font: NativeTimelineFileCard.nameFont,
             color: palette.name, lineBreakMode: .byTruncatingMiddle
         )
-        let detail = NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
-        let detailColor = state == .failed ? palette.failure : palette.detail
+        let detail = upload == .failed
+            ? (text: String(localized: "Upload failed"), link: nil)
+            : NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
+        let detailColor = state == .failed || upload == .failed ? palette.failure : palette.detail
         text(detail.text, in: card.detailFrame, font: NativeTimelineFileCard.detailFont, color: detailColor)
         if let link = detail.link {
             var frame = card.detailFrame
@@ -78,21 +88,17 @@ extension NativeTimelineRowPainter {
     private static func fileCardButton(
         _ card: NativeTimelineFileCard,
         state: AttachmentDownloadStore.State?,
+        symbol: String?,
         palette: FileCardPalette,
         isHovered: Bool,
         pressProgress: CGFloat
     ) {
-        let symbol = switch state {
-        case nil: "arrow.down"
-        case .downloading: "xmark"
-        case .finished: "magnifyingglass"
-        case .failed: "arrow.clockwise"
-        }
         let scale = isHovered ? 1.06 - 0.12 * pressProgress : 1
         let base = card.buttonFrame
         let button = base.insetBy(dx: base.width * (1 - scale) / 2, dy: base.height * (1 - scale) / 2)
         palette.button.setFill()
         NSBezierPath(ovalIn: button).fill()
+        guard let symbol else { return }
         guard case let .downloading(fraction) = state else {
             systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
             return
@@ -106,16 +112,11 @@ extension NativeTimelineRowPainter {
     private static func fileCardDownloadButton(
         _ card: NativeTimelineFileCard,
         state: AttachmentDownloadStore.State?,
+        symbol: String?,
         palette: FileCardPalette,
         isHovered: Bool,
         pressProgress: CGFloat
     ) {
-        let symbol = switch state {
-        case nil: "arrow.down"
-        case .downloading: "xmark"
-        case .finished: "magnifyingglass"
-        case .failed: "arrow.clockwise"
-        }
         let chip = card.buttonFrame
         (isHovered ? palette.chipHover : palette.chip).setFill()
         NSBezierPath(ovalIn: chip).fill()
@@ -123,11 +124,39 @@ extension NativeTimelineRowPainter {
             palette.highlight.withAlphaComponent(0.06 * pressProgress).setFill()
             NSBezierPath(ovalIn: chip).fill()
         }
-        let glyph = state == .failed ? palette.failure : palette.name
+        guard let symbol else { return }
+        let glyph = palette.isFailed ? palette.failure : palette.name
         if case let .downloading(fraction) = state {
             downloadRing(in: chip, fraction: fraction, color: palette.link)
         }
         systemSymbol(symbol, in: chip, color: glyph, inset: chip.width * 0.3, weight: .semibold)
+    }
+
+    /// The button's next step. While a file uploads, its ring and cancel
+    /// draw over the row instead.
+    private static func buttonSymbol(state: AttachmentDownloadStore.State?, upload: FileCardUpload?) -> String? {
+        switch (upload, state) {
+        case (.uploading, _): nil
+        case (.failed, _), (nil, .failed): "arrow.clockwise"
+        case (nil, nil): "arrow.down"
+        case (nil, .downloading): "xmark"
+        case (nil, .finished): "magnifyingglass"
+        }
+    }
+
+    /// A local send's file still uploading, or whose upload failed.
+    enum FileCardUpload {
+        case uploading
+        case failed
+    }
+
+    static func uploadState(of attachment: Attachment, in input: NativeTimelineMessageDrawInput) -> FileCardUpload? {
+        guard let ring = input.layout.uploadRings.first(where: { $0.attachmentID == attachment.id }) else { return nil }
+        if ring.isFailed { return .failed }
+        let isUploading = input.model?.attachmentUploads.isUploading(
+            nonce: input.row.message.nonce, attachmentID: attachment.id
+        ) == true
+        return isUploading ? .uploading : nil
     }
 
     private static func downloadRing(in circle: CGRect, fraction: Double, color: NSColor) {
@@ -160,8 +189,10 @@ extension NativeTimelineRowPainter {
         let highlight: NSColor
         let chip: NSColor
         let chipHover: NSColor
+        let isFailed: Bool
 
         init(bubble: NativeTimelineBubbleRegion?, isFailed: Bool) {
+            self.isFailed = isFailed
             let accent = NSColor.sakuraCordAccentColor
             if bubble?.isOutgoing == true {
                 button = .white

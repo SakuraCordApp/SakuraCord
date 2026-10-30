@@ -194,7 +194,7 @@ struct NativeTimelineRowLayout {
     var linkedImageRegions: [LinkedImageRegion] = []
     /// One region per attachment, in message order: a gallery tile or a file card.
     var attachmentRegions: [AttachmentRegion] = []
-    var uploadRegions: [UploadRegion] = []
+    var uploadRings: [UploadRing] = []
 
     var audioFilePlayers: [NativeTimelineVoiceMessageRegion] = []
 
@@ -232,7 +232,7 @@ struct NativeTimelineRowLayout {
     var failedRetryFrame: CGRect?
     /// A local send's upload cancels and its failed-send Retry.
     var deliveryActions: [(frame: CGRect, kind: NativeTimelineFooterActionTarget.Kind)] {
-        uploadRegions.map { ($0.cancelFrame, .cancelUpload(attachmentID: $0.attachmentID)) }
+        uploadRings.map { ($0.frame, $0.isFailed ? .retrySend : .cancelUpload(attachmentID: $0.attachmentID)) }
             + [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
     }
 

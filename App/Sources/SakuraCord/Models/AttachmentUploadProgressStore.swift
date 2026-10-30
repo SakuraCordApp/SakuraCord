@@ -32,9 +32,15 @@ final class AttachmentUploadProgressStore {
     /// By draft attachment ID.
     private var preuploads: [UUID: Preupload] = [:]
 
-    /// Whether the row of this local send shows upload cards.
+    /// Whether this local send's files show their upload state.
     func tracks(nonce: String?) -> Bool {
         nonce.map { uploads[$0] != nil } ?? false
+    }
+
+    /// A staged file's upload, until storage accepts it or it fails.
+    func preuploadFraction(_ attachmentID: UUID) -> Double? {
+        guard case let .sending(fraction) = preuploads[attachmentID] else { return nil }
+        return fraction
     }
 
     func fraction(nonce: String?, attachmentID: String) -> Double {
@@ -42,19 +48,23 @@ final class AttachmentUploadProgressStore {
         return upload.isUploaded ? 1 : upload.fractions[attachmentID] ?? 0
     }
 
-    /// Once storage has every file, the message itself is being posted.
-    func canCancel(nonce: String?, attachmentID: String) -> Bool {
-        guard let nonce, let upload = uploads[nonce], upload.fractions[attachmentID] != nil else { return false }
-        return !upload.isUploaded
+    /// A file still on its way to storage, which shows its upload ring and
+    /// can be stopped. Once storage has every file, the message itself is
+    /// being posted.
+    func isUploading(nonce: String?, attachmentID: String) -> Bool {
+        guard let nonce, let upload = uploads[nonce], let fraction = upload.fractions[attachmentID] else { return false }
+        return !upload.isUploaded && fraction < 1
     }
 
     func beginPreupload(_ attachmentID: UUID) {
         preuploads[attachmentID] = .sending(0)
+        notify(attachmentID: attachmentID)
     }
 
     /// A file whose message was already sent keeps that message's progress,
     /// restarting it if the early upload failed.
     func endPreupload(_ attachmentID: UUID, stored: Bool) {
+        defer { notify(attachmentID: attachmentID) }
         if stored {
             if case .sending = preuploads[attachmentID] { preuploads[attachmentID] = .stored }
             return
@@ -90,7 +100,7 @@ final class AttachmentUploadProgressStore {
     }
 
     /// Progress leaves the message unchanged, so only these updates notify;
-    /// every other change here accompanies a change to the message itself.
+    /// every other change to a sent file accompanies a change to its message.
     /// A staged file's upload reports without a nonce, also once it is sent.
     func apply(_ progress: MessageSendProgress, nonce: String? = nil) {
         switch progress {
@@ -100,6 +110,7 @@ final class AttachmentUploadProgressStore {
             // Progress arrives on separate hops, so an older report can land late.
             if case let .sending(current) = preuploads[fileID] {
                 preuploads[fileID] = .sending(max(current, fraction))
+                notify(attachmentID: fileID)
                 return
             }
             let id = fileID.uuidString
@@ -147,7 +158,13 @@ final class AttachmentUploadProgressStore {
         )
     }
 
+    /// A staged file's upload, for its composer tile.
+    private func notify(attachmentID: UUID) {
+        NotificationCenter.default.post(name: Self.didChange, object: self, userInfo: [Self.attachmentIDKey: attachmentID])
+    }
+
     static let nonceKey = "nonce"
+    static let attachmentIDKey = "attachmentID"
     /// Set when the send's files can no longer be stopped.
     static let endsCancellationKey = "endsCancellation"
 }

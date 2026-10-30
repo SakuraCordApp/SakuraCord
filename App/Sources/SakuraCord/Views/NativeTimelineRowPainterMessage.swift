@@ -511,6 +511,7 @@ extension NativeTimelineRowPainter {
                     messageID: message.id,
                     bubbleRegion: layout.bubbleRegion,
                     state: input.model?.attachmentDownloads.states[attachment.id],
+                    upload: uploadState(of: attachment, in: input),
                     hovered: input.hoveredComponentButton,
                     pressProgress: input.pressedComponentButton == target ? input.componentButtonPressProgress : 0
                 )

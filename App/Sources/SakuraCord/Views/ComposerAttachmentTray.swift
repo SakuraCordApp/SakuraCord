@@ -1,17 +1,20 @@
 import SakuraCordModels
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ComposerAttachmentTray: View {
-    static var thumbnailCornerRadius: CGFloat { InterfaceScale.metric(16) }
-    static var tileSize: CGFloat { InterfaceScale.metric(230) }
-    static var filenameRowHeight: CGFloat { InterfaceScale.metric(38) }
+    static var cornerRadius: CGFloat { InterfaceScale.metric(16) }
+    static var tileSize: CGFloat { InterfaceScale.metric(176) }
 
     @AppStorage(PrivacySafetySettingsStore.anonymiseFileNamesKey, store: PRBuildProfile.defaults) private var anonymisesFileNames = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let attachments: [ForumPostAttachment]
     /// Files still being checked; they show at once but cannot be sent yet.
     var checkingIDs: Set<UUID> = []
+    let uploads: AttachmentUploadProgressStore
     var sendTransitionAnchor: ComposerSendTransitionAnchor?
+    /// The tile the media viewer is zoomed out of, which hides meanwhile.
+    var mediaViewerSourceID: String?
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
     let update: (ForumPostAttachment) -> Void
@@ -26,8 +29,10 @@ struct ComposerAttachmentTray: View {
                         ComposerAttachmentTile(
                             attachment: attachment,
                             isChecking: checkingIDs.contains(attachment.id),
+                            uploads: uploads,
                             anonymisesFileNames: anonymisesFileNames,
                             sendTransitionAnchor: sendTransitionAnchor,
+                            isMediaViewerSource: mediaViewerSourceID == attachment.id.uuidString,
                             open: open,
                             toggleSpoiler: toggleSpoiler,
                             toggleFilenamePrivacy: toggleFilenamePrivacy,
@@ -95,124 +100,92 @@ struct ComposerAttachmentTray: View {
 private struct ComposerAttachmentTile: View {
     let attachment: ForumPostAttachment
     let isChecking: Bool
+    let uploads: AttachmentUploadProgressStore
     let anonymisesFileNames: Bool
     let sendTransitionAnchor: ComposerSendTransitionAnchor?
+    let isMediaViewerSource: Bool
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
     let toggleFilenamePrivacy: (ForumPostAttachment) -> Void
     let edit: (UUID) -> Void
     let remove: (UUID) -> Void
     @State private var isHovered = false
+    @State private var uploadFraction: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var tileSize: CGFloat { ComposerAttachmentTray.tileSize }
-    private var filenameRowHeight: CGFloat { ComposerAttachmentTray.filenameRowHeight }
     private var shape: ConcentricRectangle {
-        ConcentricRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous)
+        ConcentricRectangle(cornerRadius: ComposerAttachmentTray.cornerRadius, style: .continuous)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            preview
-            filenameRow
-        }
-        .frame(width: tileSize, height: tileSize, alignment: .topLeading)
-        .background(.primary.opacity(isHovered ? 0.06 : 0.035))
-        .clipShape(shape)
-        .overlay {
-            shape.stroke(isHovered ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.separator), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(isHovered ? 0.12 : 0), radius: isHovered ? 10 : 0, y: isHovered ? 4 : 0)
-        .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous))
-        .onModalHover { hovering in
-            withAnimation(ComposerResizeMotion.hover) { isHovered = hovering }
-        }
-        .help(attachment.filename)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(attachment.filename)
-        .accessibilityValue(isChecking ? Text("Preparing") : Text(""))
-        .accessibilityAction(named: "Open attachment") {
-            guard isViewableImage else { return }
-            open(attachment.id)
-        }
-        .accessibilityAction(
-            named: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler"
-        ) {
-            toggleSpoiler(attachment.id)
-        }
-        .accessibilityActions {
-            if anonymisesFileNames {
-                Button(attachment.isFilenameAnonymised ? "Restore file name" : "Randomise file name") {
-                    toggleFilenamePrivacy(attachment)
-                }
-            }
-        }
-        .accessibilityAction(named: "Edit attachment") {
-            edit(attachment.id)
-        }
-        .accessibilityAction(named: "Delete attachment") {
-            remove(attachment.id)
-        }
-    }
-
-    private var filenameRow: some View {
-        HStack(spacing: InterfaceScale.metric(8)) {
-            Text(attachment.filename)
-                .font(.interface(.callout).weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(isChecking ? .secondary : .primary)
-                .contentTransition(.opacity)
-            Spacer(minLength: 0)
-            if isChecking {
-                ProgressView()
-                    .controlSize(.mini)
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.5).combined(with: .opacity))
-            }
-        }
-        .padding(.horizontal, InterfaceScale.metric(14))
-        .frame(width: tileSize, height: filenameRowHeight)
-        .animation(.smooth(duration: 0.25), value: isChecking)
-        .animation(.smooth(duration: 0.25), value: attachment.filename)
-    }
-
-    private var preview: some View {
-        ZStack {
-            LocalAttachmentThumbnail(
-                url: attachment.url,
-                maximumPixelDimension: 480,
-                preservesImageAspectRatio: true,
-                imageCornerRadius: ComposerAttachmentTray.thumbnailCornerRadius,
-                onImageLoaded: { [sendTransitionAnchor, id = attachment.id] image in
-                    sendTransitionAnchor?.recordAttachmentThumbnail(image, for: id)
-                }
-            )
+        tile
             .background {
                 ComposerSendTransitionAttachmentReader(anchor: sendTransitionAnchor, id: attachment.id)
             }
-            .padding(.horizontal, InterfaceScale.metric(10))
-            .padding(.vertical, InterfaceScale.metric(8))
-
-            if attachment.isSpoiler {
-                ZStack {
-                    Rectangle()
-                        .fill(.black.opacity(0.58))
-                    VStack(spacing: InterfaceScale.metric(5)) {
-                        Image(systemName: "eye.slash")
-                        Text("SPOILER")
-                            .font(.interface(.caption2).weight(.bold))
+            .animation(.smooth(duration: 0.22), value: attachment.isSpoiler)
+            .animation(.smooth(duration: 0.25), value: isChecking)
+            .animation(.smooth(duration: 0.25), value: uploadFraction == nil)
+            .contentShape(shape)
+            .onTapGesture {
+                guard isViewable else { return }
+                open(attachment.id)
+            }
+            .onModalHover { hovering in
+                withAnimation(ComposerResizeMotion.hover) { isHovered = hovering }
+            }
+            .onAppear { uploadFraction = uploads.preuploadFraction(attachment.id) }
+            .onReceive(NotificationCenter.default.publisher(for: AttachmentUploadProgressStore.didChange, object: uploads)) {
+                guard $0.userInfo?[AttachmentUploadProgressStore.attachmentIDKey] as? UUID == attachment.id else { return }
+                uploadFraction = uploads.preuploadFraction(attachment.id)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(attachment.filename)
+            .accessibilityValue(accessibilityStatus)
+            .accessibilityAction(named: "Open attachment") {
+                guard isViewable else { return }
+                open(attachment.id)
+            }
+            .accessibilityAction(
+                named: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler"
+            ) {
+                toggleSpoiler(attachment.id)
+            }
+            .accessibilityActions {
+                if anonymisesFileNames {
+                    Button(attachment.isFilenameAnonymised ? "Restore file name" : "Randomise file name") {
+                        toggleFilenamePrivacy(attachment)
                     }
-                    .foregroundStyle(.white)
                 }
-                .transition(.opacity)
+            }
+            .accessibilityAction(named: "Edit attachment") {
+                edit(attachment.id)
+            }
+            .accessibilityAction(named: "Delete attachment") {
+                remove(attachment.id)
+            }
+    }
+
+    private var tile: some View {
+        ZStack {
+            face
+            if attachment.isSpoiler {
+                spoilerCover
+            }
+            if isChecking || uploadFraction != nil {
+                uploadCover
             }
         }
-        .animation(.smooth(duration: 0.22), value: attachment.isSpoiler)
-        .frame(width: tileSize, height: tileSize - filenameRowHeight)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard isViewableImage else { return }
-            open(attachment.id)
+        .frame(width: tileSize, height: tileSize)
+        .clipShape(shape)
+        .overlay {
+            shape.stroke(.primary.opacity(isHovered ? 0.16 : 0.08), lineWidth: 1)
+        }
+        .overlay(alignment: .bottom) {
+            if isHovered {
+                filenameBar
+                    .transition(.opacity)
+            }
         }
         .overlay(alignment: .topTrailing) {
             if isHovered {
@@ -223,6 +196,79 @@ private struct ComposerAttachmentTile: View {
                             .combined(with: .opacity)
                     )
             }
+        }
+        .opacity(isMediaViewerSource ? 0 : 1)
+    }
+
+    /// Images and videos fill the tile; other files show their type.
+    @ViewBuilder private var face: some View {
+        if isVisualMedia {
+            LocalAttachmentThumbnail(
+                url: attachment.url,
+                maximumPixelDimension: 720,
+                onImageLoaded: { [sendTransitionAnchor, id = attachment.id] image in
+                    sendTransitionAnchor?.recordAttachmentThumbnail(image, for: id)
+                }
+            )
+        } else {
+            ComposerAttachmentFileFace(url: attachment.url)
+        }
+    }
+
+    private var spoilerCover: some View {
+        ZStack {
+            Rectangle()
+                .fill(.black.opacity(0.58))
+            VStack(spacing: InterfaceScale.metric(5)) {
+                Image(systemName: "eye.slash")
+                Text("SPOILER")
+                    .font(.interface(.caption2).weight(.bold))
+            }
+            .foregroundStyle(.white)
+        }
+        .transition(.opacity)
+    }
+
+    /// Dims the file while it is checked or uploaded, with its progress.
+    private var uploadCover: some View {
+        ZStack {
+            Rectangle()
+                .fill(.black.opacity(AttachmentUploadRing.dimOpacity))
+            if let uploadFraction {
+                AttachmentUploadRingView(fraction: uploadFraction)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .environment(\.colorScheme, .dark)
+            }
+        }
+        .transition(.opacity)
+    }
+
+    private var filenameBar: some View {
+        Text(attachment.filename)
+            .font(.interface(.caption).weight(.semibold))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding(.horizontal, InterfaceScale.metric(10))
+            .padding(.top, InterfaceScale.metric(20))
+            .padding(.bottom, InterfaceScale.metric(9))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                LinearGradient(colors: [.black.opacity(0), .black.opacity(0.62)], startPoint: .top, endPoint: .bottom)
+            }
+            .clipShape(shape)
+            .allowsHitTesting(false)
+    }
+
+    private var accessibilityStatus: Text {
+        if let uploadFraction {
+            Text("Uploading, \(uploadFraction, format: .percent.precision(.fractionLength(0)))")
+        } else if isChecking {
+            Text("Preparing")
+        } else {
+            Text("")
         }
     }
 
@@ -273,11 +319,38 @@ private struct ComposerAttachmentTile: View {
         }
     }
 
-    private var isViewableImage: Bool {
-        let kind = OptimisticAttachmentPresentation.attachment(
-            for: attachment.url,
-            index: 0
-        ).mediaKind
-        return kind == .image || kind == .animatedImage
+    private var isVisualMedia: Bool {
+        let type = UTType(filenameExtension: attachment.url.pathExtension)
+        return type?.conforms(to: .image) == true || type?.conforms(to: .movie) == true
+    }
+
+    /// Images and text files open in the media viewer.
+    private var isViewable: Bool {
+        let preview = OptimisticAttachmentPresentation.attachment(for: attachment.url, index: 0)
+        return preview.mediaKind == .image || preview.mediaKind == .animatedImage || preview.textPreviewLanguage != nil
+    }
+}
+
+/// A staged file that is not an image or video: its Finder icon over its
+/// type, filling the tile. It also renders the file's flight to the timeline.
+struct ComposerAttachmentFileFace: View {
+    let url: URL
+
+    var body: some View {
+        VStack(spacing: InterfaceScale.metric(6)) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                .resizable()
+                .scaledToFit()
+                .frame(width: InterfaceScale.metric(76), height: InterfaceScale.metric(76))
+            if !url.pathExtension.isEmpty {
+                Text(url.pathExtension.uppercased())
+                    .font(.interface(.caption).weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(InterfaceScale.metric(12))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.primary.opacity(0.06))
     }
 }

@@ -7,10 +7,14 @@ extension NativeTimelineCanvasView {
         attachment.isSpoiler && !spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: attachment.id))
     }
 
-    /// The visible file cards in a message row, attachment cards first.
+    /// The visible file cards in a message row, attachment cards first. A
+    /// file still being sent acts only through its upload ring.
     private func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
-        let attachments = layout.fileCards.filter { !isConcealedSpoiler($0.attachment, in: messageID) }
+        let attachments = layout.fileCards.filter { card in
+            !isConcealedSpoiler(card.attachment, in: messageID)
+                && !layout.uploadRings.contains { $0.attachmentID == card.attachment.id }
+        }
         let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
             guard !component.files.isEmpty else { return [] }
             let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(

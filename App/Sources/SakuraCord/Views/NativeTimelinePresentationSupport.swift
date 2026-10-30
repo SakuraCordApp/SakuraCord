@@ -431,6 +431,9 @@ struct MediaViewerTransitionSource {
     let visibleFrameInWindow: CGRect
     let cornerRadius: CGFloat
     let fillsFrame: Bool
+    /// Whether the viewer covers the source while it is shown. A source on
+    /// a surface the viewer cannot match, like the composer, hides itself.
+    var coversSource = true
 }
 
 struct NativeTimelineMediaViewerPresentation: Identifiable {
@@ -491,6 +494,12 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         )
     }
 
+    /// The shown item's source when it hides itself rather than being covered.
+    var uncoveredSourceItemID: String? {
+        let id = items[selection].id
+        return transitionSources[id]?.coversSource == false ? id : nil
+    }
+
     func withTransitionSource(
         _ transitionSource: MediaViewerTransitionSource
     ) -> Self {
@@ -520,6 +529,7 @@ enum NativeTimelineMediaViewerPlan {
             optimistic.isSpoiler = attachment.isSpoiler
             guard optimistic.mediaKind == .image
                     || optimistic.mediaKind == .animatedImage
+                    || optimistic.textPreviewLanguage != nil
             else { return nil }
             return RichMediaItem(optimistic)
         }

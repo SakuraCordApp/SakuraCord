@@ -766,6 +766,7 @@ extension NativeTimelineCanvasView {
 
     func reconcileActivityIndicators() {
         reconcileInboxHeaders()
+        reconcileUploadRings()
         positionUnreadDividerFades()
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
@@ -835,6 +836,7 @@ extension NativeTimelineCanvasView {
             view.removeFromSuperview()
         }
         activityIndicators.removeAll()
+        removeUploadRings()
     }
 
     static let maximumInlineVideoOverlayCount = 4

@@ -182,7 +182,8 @@ private struct MediaViewerTransitionFrameReader: NSViewRepresentable {
                                 from: nil
                             ),
                             cornerRadius: source.cornerRadius,
-                            fillsFrame: source.fillsFrame
+                            fillsFrame: source.fillsFrame,
+                            coversSource: source.coversSource
                         )
                     }
                     animationState?.setTransitionSources(resolvedSources)

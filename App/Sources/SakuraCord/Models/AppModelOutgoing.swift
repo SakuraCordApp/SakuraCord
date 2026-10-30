@@ -27,10 +27,10 @@ extension AppModel {
 
     /// Stops one file of a local send, in flight, waiting or failed. Like
     /// the first-party upload card's cancel, stopping the last file stops
-    /// the whole message.
+    /// the whole message. A file already stored has no ring left to stop it.
     func cancelAttachmentUpload(_ attachmentID: String, of message: Message) {
         guard let nonce = message.nonce,
-              attachmentUploads.canCancel(nonce: nonce, attachmentID: attachmentID),
+              attachmentUploads.isUploading(nonce: nonce, attachmentID: attachmentID),
               let id = UUID(uuidString: attachmentID)
         else { return }
         // A failed send keeps no transfer; its retry starts from the edited draft.
