@@ -395,7 +395,8 @@ struct MediaViewerTests {
             )
         )
 
-        #expect(presentation.items.map(\.id) == ["visible", "image-file"])
+        #expect(presentation.items.map(\.id) == ["visible", "image-file", "document"])
+        #expect(presentation.items[1].kind == .image(animated: false))
         #expect(presentation.selection == 1)
         #expect(
             NativeTimelineMediaViewerPlan.components(
@@ -411,7 +412,7 @@ struct MediaViewerTests {
                 layouts: layout.componentLayouts,
                 selectedComponentID: "document",
                 isRevealed: { _ in true }
-            ) == nil
+            )?.items.last?.kind == .text(language: "txt")
         )
     }
 
