@@ -1021,8 +1021,8 @@ public enum DiscordMarkdown {
         let quoteIndent: CGFloat = 16
         let codeInset: CGFloat = 8
         /// Discord's 22 px line for 16 px message text, as a floor under
-        /// paragraphs and list items.
-        let bodyLineHeight: CGFloat?
+        /// paragraphs and list items; zero outside messages.
+        let bodyLineHeight: CGFloat
         /// The empty line Discord leaves after a closing code fence.
         let emptyLineHeight: CGFloat
         let codeLineHeight: CGFloat
@@ -1030,8 +1030,10 @@ public enum DiscordMarkdown {
         init(baseFontSize: CGFloat, usesMessageLineHeight: Bool) {
             self.baseFontSize = baseFontSize
             let font = NSFont.systemFont(ofSize: baseFontSize)
-            bodyLineHeight = usesMessageLineHeight ? (baseFontSize * 1.375).rounded() : nil
-            emptyLineHeight = bodyLineHeight ?? ceil(font.ascender - font.descender + font.leading) + 1
+            bodyLineHeight = usesMessageLineHeight ? (baseFontSize * 1.375).rounded() : 0
+            emptyLineHeight = usesMessageLineHeight
+                ? bodyLineHeight
+                : ceil(font.ascender - font.descender + font.leading) + 1
             codeLineHeight = (baseFontSize * 1.125).rounded()
             orderedMarkerFont = .monospacedDigitSystemFont(ofSize: baseFontSize, weight: .regular)
         }
@@ -1196,7 +1198,7 @@ public enum DiscordMarkdown {
                 : 0
             let gutter = max(metrics.listIndent, ceil(markerWidth) + metrics.orderedMarkerGap)
             let textIndent = indent + metrics.listIndent * CGFloat(level) + gutter
-            paragraph.minimumLineHeight = metrics.bodyLineHeight ?? 0
+            paragraph.minimumLineHeight = metrics.bodyLineHeight
             paragraph.firstLineHeadIndent = textIndent - gutter
             paragraph.headIndent = textIndent
             paragraph.tabStops = (isOrdered
@@ -1211,7 +1213,7 @@ public enum DiscordMarkdown {
             paragraph.maximumLineHeight = metrics.codeLineHeight
         case .paragraph, .heading:
             if case .paragraph = line.block {
-                paragraph.minimumLineHeight = metrics.bodyLineHeight ?? 0
+                paragraph.minimumLineHeight = metrics.bodyLineHeight
             }
             if line.runs.first?.traits.contains(.inlineCode) == true {
                 let font = appKitFont(block: line.block, traits: .inlineCode, metrics: metrics)

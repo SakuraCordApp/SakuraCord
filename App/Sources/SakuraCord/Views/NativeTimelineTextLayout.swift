@@ -318,6 +318,11 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
     }
 }
 
+private extension NSParagraphStyle {
+    /// Message text floors its lines with a minimum and no maximum.
+    nonisolated var isMessageLine: Bool { maximumLineHeight == 0 && minimumLineHeight > 0 }
+}
+
 nonisolated enum NativeTimelineCoreText {
     private static let runDelegateKey = NSAttributedString.Key(
         rawValue: kCTRunDelegateAttributeName as String
@@ -443,9 +448,11 @@ nonisolated enum NativeTimelineCoreText {
             // floors the tallest font; code fixes both and keeps its own.
             // Normalizing drops markdown's line spacing, so the floor takes
             // it on and message lines keep their pitch.
-            let messageLineHeight = existing.map {
-                $0.maximumLineHeight == 0 && $0.minimumLineHeight > 0 ? $0.minimumLineHeight + $0.lineSpacing : 0
-            } ?? 0
+            let messageLineHeight = if let existing, existing.isMessageLine {
+                existing.minimumLineHeight + existing.lineSpacing
+            } else {
+                CGFloat(0)
+            }
             var lineHeight = messageLineHeight
             var containsInlineRun = false
             var containsSpoiler = false
@@ -491,7 +498,7 @@ nonisolated enum NativeTimelineCoreText {
             // CoreText otherwise rounds up the font bounding box and counts
             // that point once per line.
             style.lineSpacing = 0
-            if containsSpoiler {
+            if containsSpoiler || containsInlineRun && messageLineHeight > 0 {
                 // Natural line metrics agree between CoreText and TextKit.
                 // A fixed ceil(font height) changes TextKit's baseline at some
                 // sizes; the shared markdown line spacing adds another point.
@@ -501,8 +508,6 @@ nonisolated enum NativeTimelineCoreText {
                 style.minimumLineHeight = lineHeight
                 // A message line stays a floor, which row measurement reads.
                 style.maximumLineHeight = messageLineHeight > 0 ? 0 : lineHeight
-            } else if messageLineHeight > 0 {
-                style.minimumLineHeight = messageLineHeight
             }
             output.addAttribute(
                 .paragraphStyle,
@@ -1688,7 +1693,7 @@ extension NativeTimelineRowLayout {
         // preserved NSTextView usedRect omitted. A message's own line height
         // (a minimum without a maximum) replaces that compact row.
         let style = length > 0 ? value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil
-        if size.height < 20, style.map({ $0.minimumLineHeight == 0 || $0.maximumLineHeight > 0 }) ?? true {
+        if size.height < 20, style?.isMessageLine != true {
             return MessageRowLayoutMetrics.compactContentHeight
         }
         return ceil(size.height - 1.01)
