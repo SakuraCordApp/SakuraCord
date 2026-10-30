@@ -360,18 +360,30 @@ nonisolated enum NativeTimelineCoreText {
             )
         )
         if bodyScale != 1 {
-            let source = output.string as NSString
             var location = 0
-            // Each plan line is one paragraph of the markdown output.
-            for line in prepared.markdownPlan.lines where location < output.length {
-                let range = source.paragraphRange(for: NSRange(location: location, length: 0))
-                if !line.isHeading {
-                    output.replaceCharacters(
-                        in: range,
-                        with: output.attributedSubstring(from: range).scalingTypography(by: bodyScale)
+            // The markdown output joins its plan's lines with line feeds,
+            // split as Characters like the plan, so CRLF stays in its line.
+            let texts = output.string.split(separator: "\n", omittingEmptySubsequences: false)
+            for (line, text) in zip(prepared.markdownPlan.lines, texts) {
+                let range = NSRange(
+                    location: location,
+                    length: min(text.utf16.count + 1, output.length - location)
+                )
+                location = NSMaxRange(range)
+                guard !line.isHeading else { continue }
+                let scaled = NSMutableAttributedString(
+                    attributedString: output.attributedSubstring(from: range).scalingTypography(by: bodyScale)
+                )
+                // Shrinking keeps the interface's 9-point legibility floor.
+                output.enumerateAttribute(.font, in: range) { value, run, _ in
+                    guard let font = value as? NSFont, font.pointSize * bodyScale < 9 else { return }
+                    scaled.addAttribute(
+                        .font,
+                        value: font.withSize(min(font.pointSize, 9)),
+                        range: NSRange(location: run.location - range.location, length: run.length)
                     )
                 }
-                location = NSMaxRange(range)
+                output.replaceCharacters(in: range, with: scaled)
             }
         }
         let fullRange = NSRange(location: 0, length: output.length)
