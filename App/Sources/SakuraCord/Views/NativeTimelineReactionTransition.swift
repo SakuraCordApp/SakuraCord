@@ -849,7 +849,6 @@ final class NativeTimelineReactionBandView: NSView {
         layer = CALayer()
         wantsLayer = true
         layer?.masksToBounds = true
-        layer?.isGeometryFlipped = true
         layer?.addSublayer(content)
     }
 
@@ -876,6 +875,12 @@ final class NativeTimelineReactionBandView: NSView {
         self.pills = pills
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        // Row coordinates are top-down. AppKit may or may not flip the
+        // canvas's layer tree, so the band adapts once it is in it.
+        if let layer {
+            layer.isGeometryFlipped = false
+            layer.isGeometryFlipped = !layer.contentsAreFlipped()
+        }
         content.frame = CGRect(x: 0, y: -bandTop, width: bounds.width, height: bandTop + bounds.height)
         content.sublayers = pills.map(\.layer)
         CATransaction.commit()
