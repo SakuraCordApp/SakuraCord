@@ -5,6 +5,7 @@ import SwiftUI
 /// Media transitions stay feature-owned; window input and lifetime use the shared host.
 struct MediaViewerWindowOverlay: View {
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
+    @Environment(VoiceMessagePlaybackStore.self) private var playback
     let presentation: NativeTimelineMediaViewerPresentation?
     let dismiss: () -> Void
 
@@ -12,6 +13,7 @@ struct MediaViewerWindowOverlay: View {
         WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { presentation, context in
             MediaViewerWindowAnimatedContent(presentation: presentation, context: context)
                 .environment(\.profileCosmeticPolicy, cosmeticPolicy)
+                .environment(playback)
         })
     }
 }

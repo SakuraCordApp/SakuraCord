@@ -1,17 +1,33 @@
-import AVFoundation
 import SwiftUI
 
 /// An audio file in the media viewer: a player card with the file's name and
 /// size, a seek bar that names the time under the pointer, and transport,
-/// volume, and download controls.
+/// volume, and download controls. It plays through the app's voice message
+/// and audio file playback, so a message's file keeps one position with its
+/// timeline card.
 struct MediaViewerAudio: View {
     let item: RichMediaItem
+    let playbackID: VoiceMessagePlaybackID
     let download: () -> Void
-    @State private var player = MediaViewerAudioPlayer()
+    @Environment(VoiceMessagePlaybackStore.self) private var playback
+    /// Follows the playback's change notifications, which also cover what
+    /// it keeps out of Observation, such as a newly learned length.
+    @State private var revision = 0
+
+    private var source: VoiceMessagePlaybackStore.Source {
+        item.url.isFileURL ? .local(item.url) : .remote(item.url)
+    }
+
+    private var duration: TimeInterval? {
+        _ = revision
+        return playback.duration(of: playbackID) ?? playback.knownDuration(of: source)
+    }
+
+    private var isPlaying: Bool { playback.phase(of: playbackID) == .playing }
 
     var body: some View {
         VStack(spacing: InterfaceScale.metric(18)) {
-            MediaViewerAudioArtwork(isPlaying: player.isPlaying)
+            MediaViewerAudioArtwork(isPlaying: isPlaying)
             VStack(spacing: InterfaceScale.metric(3)) {
                 Text(item.title)
                     .font(.interface(.title3).weight(.semibold))
@@ -21,24 +37,37 @@ struct MediaViewerAudio: View {
                     .font(.interface(.callout).monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-            MediaViewerAudioSeekBar(player: player)
+            MediaViewerAudioSeekBar(
+                duration: duration ?? 0,
+                isPlaying: isPlaying,
+                position: { playback.position(of: playbackID) },
+                beginScrub: { playback.beginScrub(playbackID, source: source, duration: duration) },
+                seek: { playback.seek(playbackID, source: source, duration: duration, fraction: $0) },
+                endScrub: { playback.endScrub(playbackID) }
+            )
             transport
         }
         .padding(InterfaceScale.metric(26))
         .frame(width: InterfaceScale.metric(460))
         .glassEffect(.regular, in: .rect(cornerRadius: MediaViewerStage.contentCornerRadius))
-        .task(id: item.url) { await player.load(item.url) }
-        .onDisappear(perform: player.stop)
+        .onAppear { playback.measureDuration(of: source) }
+        .onReceive(NotificationCenter.default.publisher(for: VoiceMessagePlaybackStore.didChange, object: playback)) { _ in
+            revision += 1
+        }
+        // Leaving the file pauses it where it is.
+        .onDisappear { if isPlaying { playback.toggle(playbackID, source: source, duration: duration) } }
     }
 
     private var transport: some View {
         HStack(spacing: 0) {
-            MediaViewerAudioVolume(player: player)
+            MediaViewerAudioVolume()
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: InterfaceScale.metric(14)) {
                 skipButton(by: -15)
-                Button(action: player.togglePlayback) {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                Button {
+                    playback.toggle(playbackID, source: source, duration: duration)
+                } label: {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect(.replace.offUp))
                         .font(.interfaceSystem(size: 24, weight: .semibold))
                         .foregroundStyle(.white)
@@ -47,9 +76,8 @@ struct MediaViewerAudio: View {
                 }
                 .buttonStyle(MediaViewerAudioPressStyle(hoverScale: 1.05))
                 .keyboardShortcut(.space, modifiers: [])
-                .disabled(player.duration == nil)
-                .help(player.isPlaying ? "Pause" : "Play")
-                .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                .help(isPlaying ? "Pause" : "Play")
+                .accessibilityLabel(isPlaying ? "Pause" : "Play")
                 skipButton(by: 15)
             }
             Button(action: download) {
@@ -67,7 +95,9 @@ struct MediaViewerAudio: View {
 
     private func skipButton(by seconds: Double) -> some View {
         Button {
-            player.skip(by: seconds)
+            guard let duration, duration > 0 else { return }
+            let position = playback.position(of: playbackID) + seconds
+            playback.seek(playbackID, source: source, duration: duration, fraction: position / duration)
         } label: {
             HoverActionControlLabel(diameter: InterfaceScale.metric(38)) {
                 Image(systemName: seconds < 0 ? "gobackward.15" : "goforward.15")
@@ -75,7 +105,7 @@ struct MediaViewerAudio: View {
             }
         }
         .buttonStyle(MediaViewerAudioPressStyle())
-        .disabled(player.duration == nil)
+        .disabled(duration == nil)
         .help(seconds < 0 ? "Back 15 Seconds" : "Forward 15 Seconds")
     }
 }
@@ -104,16 +134,20 @@ private struct MediaViewerAudioArtwork: View {
 /// The seek bar and its times. It thickens under the pointer, shows the time
 /// there in a capsule, and seeks on a click or drag.
 private struct MediaViewerAudioSeekBar: View {
-    let player: MediaViewerAudioPlayer
+    let duration: TimeInterval
+    let isPlaying: Bool
+    let position: () -> TimeInterval
+    let beginScrub: () -> Void
+    let seek: (Double) -> Void
+    let endScrub: () -> Void
     @State private var hoverX: CGFloat?
     @State private var scrubFraction: Double?
 
     var body: some View {
-        TimelineView(.animation(paused: !player.isPlaying || scrubFraction != nil)) { _ in
-            let duration = player.duration ?? 0
-            let fraction = scrubFraction ?? (duration > 0 ? min(max(player.currentTime / duration, 0), 1) : 0)
+        TimelineView(.animation(paused: !isPlaying || scrubFraction != nil)) { _ in
+            let fraction = scrubFraction ?? (duration > 0 ? min(max(position() / duration, 0), 1) : 0)
             VStack(spacing: InterfaceScale.metric(6)) {
-                bar(fraction: fraction, duration: duration)
+                bar(fraction: fraction)
                 HStack {
                     Text(Self.time(fraction * duration))
                     Spacer()
@@ -125,7 +159,7 @@ private struct MediaViewerAudioSeekBar: View {
         }
     }
 
-    private func bar(fraction: Double, duration: TimeInterval) -> some View {
+    private func bar(fraction: Double) -> some View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let isActive = hoverX != nil || scrubFraction != nil
@@ -171,13 +205,15 @@ private struct MediaViewerAudioSeekBar: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        if scrubFraction == nil { player.beginScrub() }
-                        scrubFraction = min(max(value.location.x / max(width, 1), 0), 1)
-                        hoverX = min(max(value.location.x, 0), width)
+                        if scrubFraction == nil { beginScrub() }
+                        let fraction = min(max(value.location.x / max(width, 1), 0), 1)
+                        scrubFraction = fraction
+                        hoverX = fraction * width
+                        seek(fraction)
                     }
                     .onEnded { _ in
-                        if let scrubFraction { player.endScrub(at: scrubFraction) }
                         scrubFraction = nil
+                        endScrub()
                     }
             )
         }
@@ -187,7 +223,8 @@ private struct MediaViewerAudioSeekBar: View {
         .accessibilityLabel("Playback position")
         .accessibilityValue(Self.time(fraction * duration))
         .accessibilityAdjustableAction { direction in
-            player.skip(by: direction == .increment ? 5 : -5)
+            guard duration > 0 else { return }
+            seek((position() + (direction == .increment ? 5 : -5)) / duration)
         }
     }
 
@@ -196,31 +233,33 @@ private struct MediaViewerAudioSeekBar: View {
     }
 }
 
-/// Mute and a volume slider.
+/// Mute, shared with the timeline's audio files, and a volume slider.
 private struct MediaViewerAudioVolume: View {
-    @Bindable var player: MediaViewerAudioPlayer
+    @Environment(VoiceMessagePlaybackStore.self) private var playback
 
     var body: some View {
+        let isMuted = playback.isAudioFileMuted
         HStack(spacing: InterfaceScale.metric(4)) {
-            Button {
-                player.isMuted.toggle()
-            } label: {
+            Button(action: playback.toggleAudioFileMute) {
                 HoverActionControlLabel(diameter: InterfaceScale.metric(34)) {
-                    Image(systemName: "speaker.wave.3.fill", variableValue: player.isMuted ? 0 : Double(player.volume))
-                        .symbolVariant(player.isMuted ? .slash : .none)
+                    Image(systemName: "speaker.wave.3.fill", variableValue: isMuted ? 0 : Double(playback.audioFileVolume))
+                        .symbolVariant(isMuted ? .slash : .none)
                         .contentTransition(.symbolEffect(.replace))
                         .font(.interface(.body).weight(.medium))
                         .frame(width: InterfaceScale.metric(22))
                 }
             }
             .buttonStyle(MediaViewerAudioPressStyle())
-            .help(player.isMuted ? "Unmute" : "Mute")
-            .accessibilityLabel(player.isMuted ? "Unmute" : "Mute")
-            Slider(value: $player.volume, in: 0 ... 1)
-                .controlSize(.small)
-                .tint(SakuraCordAccentColor.color)
-                .frame(width: InterfaceScale.metric(64))
-                .accessibilityLabel("Volume")
+            .help(isMuted ? "Unmute" : "Mute")
+            .accessibilityLabel(isMuted ? "Unmute" : "Mute")
+            Slider(
+                value: Binding(get: { playback.audioFileVolume }, set: playback.setAudioFileVolume),
+                in: 0 ... 1
+            )
+            .controlSize(.small)
+            .tint(SakuraCordAccentColor.color)
+            .frame(width: InterfaceScale.metric(64))
+            .accessibilityLabel("Volume")
         }
     }
 }
@@ -237,97 +276,5 @@ private struct MediaViewerAudioPressStyle: ButtonStyle {
             .animation(.snappy(duration: 0.16), value: configuration.isPressed)
             .animation(.snappy(duration: 0.2), value: isHovering)
             .onHover { isHovering = $0 }
-    }
-}
-
-/// Plays the viewer's audio file with AVPlayer, which streams it.
-@MainActor
-@Observable
-final class MediaViewerAudioPlayer {
-    private(set) var duration: TimeInterval?
-    private(set) var isPlaying = false
-    var volume: Float = 1 {
-        didSet {
-            player.volume = volume
-            if volume > 0 { isMuted = false }
-        }
-    }
-
-    var isMuted = false {
-        didSet { player.isMuted = isMuted }
-    }
-
-    /// Where a seek is headed until it lands, which also redraws a paused
-    /// player's seek bar.
-    private var seekTarget: TimeInterval?
-    @ObservationIgnored private let player = AVPlayer()
-    @ObservationIgnored private var resumesAfterScrub = false
-    @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
-
-    var currentTime: TimeInterval {
-        seekTarget ?? (player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)
-    }
-
-    func load(_ url: URL) async {
-        stop()
-        duration = nil
-        seekTarget = nil
-        let source = await MediaViewerActionService.resolveRemoteURL?(url) ?? url
-        guard !Task.isCancelled else { return }
-        let item = AVPlayerItem(url: source)
-        player.replaceCurrentItem(with: item)
-        endObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.isPlaying = false
-                self?.seek(to: 0)
-            }
-        }
-        let seconds = try? await item.asset.load(.duration).seconds
-        guard !Task.isCancelled, let seconds, seconds.isFinite, seconds > 0 else { return }
-        duration = seconds
-    }
-
-    func togglePlayback() {
-        if isPlaying { player.pause() } else { player.play() }
-        isPlaying.toggle()
-    }
-
-    func skip(by seconds: TimeInterval) {
-        guard let duration else { return }
-        seek(to: min(max(currentTime + seconds, 0), duration))
-    }
-
-    func beginScrub() {
-        resumesAfterScrub = isPlaying
-        player.pause()
-        isPlaying = false
-    }
-
-    func endScrub(at fraction: Double) {
-        guard let duration else { return }
-        seek(to: fraction * duration)
-        if resumesAfterScrub { togglePlayback() }
-    }
-
-    func stop() {
-        player.pause()
-        isPlaying = false
-        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        endObserver = nil
-    }
-
-    private func seek(to seconds: TimeInterval) {
-        seekTarget = seconds
-        let item = player.currentItem
-        // An interrupted seek clears its target too, unless another file or
-        // seek has taken over since.
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.player.currentItem === item, self.seekTarget == seconds else { return }
-                self.seekTarget = nil
-            }
-        }
     }
 }
