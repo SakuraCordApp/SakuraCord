@@ -240,6 +240,7 @@ extension NativeTimelineCanvasView {
     ) -> DisclosureStart? {
         // Two row motions would fight over the same displacement.
         finishUnreadDividerGap()
+        finishReactionTransitions()
         let previous = rowDisclosure?.key == key ? rowDisclosure : nil
         // Reversing the same group continues from where it is; another group snaps to its end.
         if previous == nil { finishDisclosure() } else { rowDisclosure = nil }
@@ -367,22 +368,24 @@ extension NativeTimelineCanvasView {
         disclosureRelativeClipMaxY = .greatestFiniteMagnitude
     }
 
-    func redrawForRowMotion() {
+    func redrawForRowMotion(invalidating rect: CGRect? = nil) {
         // Hover regions are cached at the rows' displaced positions.
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
-        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, !suppressesHoverPresentation {
+        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, reactionRowMotions.isEmpty,
+           !suppressesHoverPresentation {
             // The motion has landed: tracking areas and cursor rects follow the rows.
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
         }
-        invalidateVisibleContent()
+        if let rect { setNeedsDisplay(rect) } else { invalidateVisibleContent() }
         reconcileInboxHeaders()
         positionAnimatedMediaOverlays()
         positionInlineVideoOverlays()
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
+        positionReactionBandViews()
         maskDisclosureSubviews()
     }
 

@@ -66,6 +66,8 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
 | `./script/build_and_run.sh --offline-friends-performance` | 1,000 friends plus 200 requests; 20-second scroll with 20 presence updates/second, then 80 category switches |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
+| `./script/build_and_run.sh --offline-chat-reaction-storm-autoscroll` | Large timeline scroll benchmark with 40 reaction adds and removals per second, mostly on the newest messages; writes frame timing, main-thread CPU and timeline update counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` |
+| `./script/build_and_run.sh --offline-chat-reaction-storm-idle` | The same reaction traffic and measurements on a still timeline pinned to the newest message |
 
 The offline sign-in fixture uses the production sign-in views and state handling
 with an in-memory authentication service. Use any nonempty email and an 8–72

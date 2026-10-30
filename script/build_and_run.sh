@@ -2,6 +2,17 @@
 set -euo pipefail
 
 MODE="${1:-run}"
+# The reaction storm scenes are the live timeline benchmark carrying only
+# reaction traffic, still or scrolling.
+LIVE_TIMELINE_ARGS=()
+case "$MODE" in
+  --offline-chat-reaction-storm-autoscroll) LIVE_TIMELINE_ARGS=(--offline-chat-performance-live-reactions-only) ;;
+  --offline-chat-reaction-storm-idle)
+    LIVE_TIMELINE_ARGS=(--offline-chat-performance-live-reactions-only --offline-chat-performance-idle) ;;
+esac
+if [[ ${#LIVE_TIMELINE_ARGS[@]} -gt 0 ]]; then
+  MODE=--offline-chat-performance-live-autoscroll
+fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=runtime.sh
 source "$ROOT_DIR/script/runtime.sh"
@@ -300,7 +311,9 @@ open_offline_chat_performance_autoscroll() {
   open_app --args --offline-chat-performance-autoscroll
 }
 open_offline_chat_performance_live_autoscroll() {
-  open_app --args --offline-chat-performance-live-autoscroll
+  # Forward the result path, which `open` does not pass on by itself.
+  open_app ${SAKURACORD_PERFORMANCE_RESULT_PATH:+--env "SAKURACORD_PERFORMANCE_RESULT_PATH=$SAKURACORD_PERFORMANCE_RESULT_PATH"} \
+    --args --offline-chat-performance-live-autoscroll ${LIVE_TIMELINE_ARGS[@]+"${LIVE_TIMELINE_ARGS[@]}"}
 }
 open_offline_chat_media_performance_autoscroll() {
   open_app --args --offline-chat-media-performance-autoscroll
