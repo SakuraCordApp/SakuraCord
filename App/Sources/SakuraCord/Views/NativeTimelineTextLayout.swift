@@ -1691,14 +1691,14 @@ extension NativeTimelineRowLayout {
         // 19 points because its suggested bounds include fractional font
         // leading. Multiline suggestions retain one trailing point that the
         // preserved NSTextView usedRect omitted. A message's own line height
-        // (a minimum without a maximum) replaces that compact row.
+        // (a minimum without a maximum) replaces that compact row, and a
+        // one-line code block still needs room for its bottom padding.
         let style = length > 0 ? value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil
-        if size.height < 20, style?.isMessageLine != true {
+        let overflow = NativeTimelineMarkdownChromeMetrics.trailingVisualOverflow(in: value)
+        if size.height < 20, overflow == 0, style?.isMessageLine != true {
             return MessageRowLayoutMetrics.compactContentHeight
         }
-        return ceil(size.height - 1.01)
-            + NativeTimelineMarkdownChromeMetrics
-                .trailingVisualOverflow(in: value)
+        return ceil(size.height - 1.01) + overflow
     }
 
     /// A single layout pass shares its font resolution and timestamp gutter.
