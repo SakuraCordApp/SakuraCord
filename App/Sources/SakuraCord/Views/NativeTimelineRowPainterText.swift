@@ -621,18 +621,18 @@ extension NativeTimelineRowPainter {
         let diameter = InterfaceScale.metric(5.5)
         for marker in markers {
             (marker.isQuoted ? NSColor.secondaryLabelColor : NSColor.labelColor).set()
-            let disc = NSBezierPath(ovalIn: CGRect(
+            let disc = CGRect(
                 x: marker.frame.minX + InterfaceScale.metric(4) - diameter / 2,
                 y: marker.frame.midY - diameter / 2,
                 width: diameter,
                 height: diameter
-            ))
-            if !marker.isNested {
-                disc.fill()
-            } else {
-                let ring = NSBezierPath(ovalIn: disc.bounds.insetBy(dx: 0.5, dy: 0.5))
+            )
+            if marker.isNested {
+                let ring = NSBezierPath(ovalIn: disc.insetBy(dx: 0.5, dy: 0.5))
                 ring.lineWidth = 1
                 ring.stroke()
+            } else {
+                NSBezierPath(ovalIn: disc).fill()
             }
         }
     }
@@ -651,7 +651,7 @@ extension NativeTimelineRowPainter {
     /// Discord tints code with its blurple and outlines it in a translucent
     /// gray, so both read on any background and in either appearance.
     static let discordCodeBackgroundColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor(srgbRed: 89 / 255, green: 102 / 255, blue: 242 / 255, alpha: 0.08)
             : NSColor(srgbRed: 77 / 255, green: 102 / 255, blue: 230 / 255, alpha: 0.04)
     }
@@ -661,7 +661,7 @@ extension NativeTimelineRowPainter {
             srgbRed: 150 / 255,
             green: 150 / 255,
             blue: 160 / 255,
-            alpha: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 0.2 : 0.4
+            alpha: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.2 : 0.4
         )
     }
 

@@ -340,28 +340,23 @@ public enum DiscordMarkdown {
         let output = NSMutableAttributedString()
         let metrics = BlockMetrics(baseFontSize: baseFontSize)
 
+        var previousParagraph: NSParagraphStyle?
         for (lineIndex, linePlan) in plan.lines.enumerated() {
             let paragraph = paragraphStyle(for: linePlan, index: lineIndex, in: plan.lines, metrics: metrics)
-            if lineIndex > 0 {
+            if let previousParagraph {
                 // An empty line is a paragraph of only its newline, which
                 // then carries the line's height and spacing.
-                let isBlank = plan.lines[lineIndex - 1].runs.isEmpty
+                let previous = plan.lines[lineIndex - 1]
                 var separator: [NSAttributedString.Key: Any] = [:]
-                if isBlank {
-                    let previous = plan.lines[lineIndex - 1]
+                if previous.runs.isEmpty {
                     separator[.font] = NSFont.systemFont(ofSize: baseFontSize)
-                    separator[.paragraphStyle] = paragraphStyle(
-                        for: previous, index: lineIndex - 1, in: plan.lines, metrics: metrics
-                    )
-                    if case .code = previous.block {
-                        separator[.discordMarkdownBlock] = "code" as NSString
-                    } else if previous.isQuoted {
-                        separator[.discordMarkdownBlock] = "quote" as NSString
-                    }
+                    separator[.paragraphStyle] = previousParagraph
+                    separator[.discordMarkdownBlock] = blockName(for: previous)
                 }
                 output.append(NSAttributedString(string: "\n", attributes: separator))
             }
             output.append(attributedLine(linePlan, paragraph: paragraph, metrics: metrics))
+            previousParagraph = paragraph
         }
 
         return NSAttributedString(attributedString: output)
@@ -376,12 +371,14 @@ public enum DiscordMarkdown {
         for (index, run) in linePlan.runs.enumerated() {
             var text = run.text
             var runAttributes = attributes(for: run, in: linePlan, metrics: metrics)
-            if case let .listItem(_, isOrdered) = linePlan.block, index < 2 {
-                // Tab stops place the marker in Discord's list gutter and
-                // align wrapped item text with its first line.
-                text = index == 1 ? "\t" : isOrdered ? "\t" + text : text
-                if isOrdered, index == 0 {
+            // Tab stops place the marker in Discord's list gutter and align
+            // wrapped item text with its first line.
+            if case let .listItem(_, isOrdered) = linePlan.block {
+                if index == 0, isOrdered {
+                    text = "\t" + text
                     runAttributes[.font] = metrics.orderedMarkerFont
+                } else if index == 1 {
+                    text = "\t"
                 }
             }
             line.append(NSAttributedString(
@@ -392,13 +389,16 @@ public enum DiscordMarkdown {
         let fullRange = NSRange(location: 0, length: line.length)
         guard fullRange.length > 0 else { return line }
         line.addAttribute(.paragraphStyle, value: paragraph, range: fullRange)
-        if case .code = linePlan.block {
-            line.addAttribute(.discordMarkdownBlock, value: "code" as NSString, range: fullRange)
-        } else if linePlan.isQuoted {
-            line.addAttribute(.discordMarkdownBlock, value: "quote" as NSString, range: fullRange)
+        if let blockName = blockName(for: linePlan) {
+            line.addAttribute(.discordMarkdownBlock, value: blockName, range: fullRange)
         }
         padInlineCode(in: line, metrics: metrics)
         return line
+    }
+
+    private static func blockName(for line: AppKitPlan.Line) -> NSString? {
+        if case .code = line.block { return "code" }
+        return line.isQuoted ? "quote" : nil
     }
 
     /// Discord pads inline code inside its border. Kerning after the
@@ -1145,13 +1145,12 @@ public enum DiscordMarkdown {
             let font = NSFont.systemFont(ofSize: baseFontSize)
             emptyLineHeight = ceil(font.ascender - font.descender + font.leading) + 1
             codeLineHeight = (baseFontSize * 1.125).rounded()
+            orderedMarkerFont = .monospacedDigitSystemFont(ofSize: baseFontSize, weight: .regular)
         }
 
         /// Tabular digits make a number's width follow its length, so the
         /// longest marker in a list is also the widest.
-        var orderedMarkerFont: NSFont {
-            NSFont.monospacedDigitSystemFont(ofSize: baseFontSize, weight: .regular)
-        }
+        let orderedMarkerFont: NSFont
 
         func inlineCodePadding(font: NSFont) -> CGFloat {
             font.pointSize * 0.2 + 1
@@ -1282,8 +1281,9 @@ public enum DiscordMarkdown {
         case let .listItem(level, isOrdered):
             // Discord hangs wide numbers into the message margin; Core Text
             // cannot draw left of its frame, so the gutter grows instead.
-            let markerWidth = (line.widestMarker as NSString)
-                .size(withAttributes: [.font: metrics.orderedMarkerFont]).width
+            let markerWidth = isOrdered
+                ? (line.widestMarker as NSString).size(withAttributes: [.font: metrics.orderedMarkerFont]).width
+                : 0
             let gutter = max(metrics.listIndent, ceil(markerWidth) + metrics.orderedMarkerGap)
             let textIndent = indent + metrics.listIndent * CGFloat(level) + gutter
             paragraph.firstLineHeadIndent = textIndent - gutter
