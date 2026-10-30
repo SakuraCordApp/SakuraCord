@@ -35,6 +35,9 @@ extension NativeTimelineRowLayout {
         private var message: Message { row.message }
         private var searchContext: MessageSearchRowContext? { row.searchContext }
         private var usesComponentsV2: Bool { message.flags.contains(.isComponentsV2) }
+        private var componentsMaximumWidth: CGFloat {
+            min(contentWidth, DiscordRichMessageMetrics.componentsMaximumWidth)
+        }
         private var isGenerated: Bool { message.type.hasGeneratedContent }
         private let bubbleContext: NativeTimelineBubbleLayout.Context
         private var messageSpacing: CGFloat {
@@ -686,7 +689,7 @@ extension NativeTimelineRowLayout {
                             components: embed.components ?? [],
                             source: source,
                             origin: CGPoint(x: contentX, y: embedY),
-                            maximumWidth: inlineMediaMaximumWidth,
+                            maximumWidth: componentsMaximumWidth,
                             integratesWithBubble: usesBubbles,
                             drawsTopSeparator: usesBubbles && hasRichContent
                         ) {
@@ -718,7 +721,7 @@ extension NativeTimelineRowLayout {
                 message: message,
                 source: source,
                 origin: CGPoint(x: contentX, y: componentY),
-                maximumWidth: inlineMediaMaximumWidth,
+                maximumWidth: componentsMaximumWidth,
                 integratesWithBubble: usesBubbles,
                 drawsTopSeparator: usesBubbles && hasRichContent
             ) {
@@ -736,7 +739,8 @@ extension NativeTimelineRowLayout {
                         x: button.frame.midX - dots.width / 2, y: button.frame.midY - dots.height / 2,
                         width: dots.width, height: dots.height
                     ),
-                    style: .dots(.onFill)
+                    // Light dots on a solid fill, label-coloured on the translucent grey.
+                    style: .dots(DiscordComponentButtonAppearance.solidFillHexes(for: button.style) == nil ? .content : .onFill)
                 ))
             }
             for select in result.componentLayouts.flatMap(\.selects) where select.isLoading {
