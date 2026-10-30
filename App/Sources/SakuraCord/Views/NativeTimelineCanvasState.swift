@@ -373,7 +373,22 @@ extension NativeTimelineCanvasView {
 
     var hoveredReaction: NativeTimelineReactionPointerTarget? {
         get { pointer.hoveredReaction }
-        set { pointer.hoveredReaction = newValue }
+        set {
+            let old = pointer.hoveredReaction
+            pointer.hoveredReaction = newValue
+            guard old != newValue else { return }
+            // Moving chips are layers the row's redraw does not recolour.
+            for target in [old, newValue].compactMap(\.self) {
+                if let index = rowIndex(for: target) { refreshReactionChipHover(at: index) }
+            }
+        }
+    }
+
+    /// Clears pointer targets, the hovered reaction through its setter.
+    @discardableResult
+    func clearHoverAndPressTargets() -> NativeTimelinePointerState.ClearedTargets {
+        hoveredReaction = nil
+        return pointer.clearHoverAndPressTargets()
     }
 
     var suppressesHoverPresentation: Bool {

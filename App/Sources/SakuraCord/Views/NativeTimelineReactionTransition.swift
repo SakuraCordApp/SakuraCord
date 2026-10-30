@@ -34,9 +34,8 @@ nonisolated struct NativeTimelineReactionChipAppearance: Equatable {
 /// ones shrink away, and changed counts roll.
 ///
 /// The row's bitmap already holds the final reactions, so while this runs it
-/// is drawn only above `bandTop`. Everything below, every reaction line before
-/// and after the change, is painted live each frame and is the only part of
-/// the row that is redrawn.
+/// is drawn only above `bandTop`. Below it the canvas paints only the band's
+/// highlight; the chips are Core Animation layers in the row's band view.
 struct NativeTimelineReactionTransition {
     struct Chip {
         /// The add-reaction control's key; reaction IDs are never empty.
@@ -70,24 +69,12 @@ struct NativeTimelineReactionTransition {
     let chips: [Chip]
 
     /// Ease-out quart as Core Animation draws it.
-    static let timing = (x1: CGFloat(0.165), y1: CGFloat(0.84), x2: CGFloat(0.44), y2: CGFloat(1))
+    static let curve = NativeTimelineGlideCurve(
+        x1: 0.165, y1: 0.84, x2: 0.44, y2: 1, duration: NativeTimelineRowDisclosure.duration
+    )
 
     func progress(at uptime: TimeInterval) -> CGFloat {
-        let time = min(1, max(0, CGFloat((uptime - startUptime) / NativeTimelineRowDisclosure.duration)))
-        let (x1, y1, x2, y2) = Self.timing
-        func bezier(_ point: CGFloat, _ first: CGFloat, _ second: CGFloat) -> CGFloat {
-            3 * (1 - point) * (1 - point) * point * first + 3 * (1 - point) * point * point * second
-                + point * point * point
-        }
-        // Solve the curve's x for `time`, then read its y there.
-        var point = time
-        for _ in 0 ..< 8 {
-            let slope = 3 * (1 - point) * (1 - point) * x1 + 6 * (1 - point) * point * (x2 - x1)
-                + 3 * point * point * (1 - x2)
-            guard abs(slope) > 1e-6 else { break }
-            point = min(1, max(0, point - (bezier(point, x1, x2) - time) / slope))
-        }
-        return bezier(point, y1, y2)
+        CGFloat(Self.curve.progress(at: (uptime - startUptime) / Self.curve.duration))
     }
 }
 
@@ -241,8 +228,7 @@ extension NativeTimelineCanvasView {
                 if abs(delta) >= 0.5 { describesUpdate = false }
                 // Its chips belong to a row that changed in another way.
                 if changed {
-                    reactionTransitions[identifier] = nil
-                    removeReactionBandView(identifier)
+                    endReactionTransition(identifier)
                     let motionCount = reactionRowMotions.count
                     reactionRowMotions.removeAll { $0.steps.contains { $0.identifier == identifier } }
                     droppedMotion = droppedMotion || reactionRowMotions.count != motionCount
@@ -263,7 +249,6 @@ extension NativeTimelineCanvasView {
         if droppedMotion {
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
-            positionReactionBandViews()
         }
         // Live reaction media pauses on its still while the chips move.
         if pausesMedia { positionAnimatedMediaOverlays() }
@@ -271,7 +256,6 @@ extension NativeTimelineCanvasView {
             reactionRowMotions.append(.init(shift: shift, steps: steps))
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
-            positionReactionBandViews()
         } else if !startedChips {
             return
         }
@@ -344,8 +328,8 @@ extension NativeTimelineCanvasView {
         } + arriving
         guard !chips.allSatisfy(\.isStatic) else {
             // A running transition toward reactions that are gone again ends here.
-            if reactionTransitions.removeValue(forKey: identifier) != nil {
-                removeReactionBandView(identifier)
+            if reactionTransitions[identifier] != nil {
+                endReactionTransition(identifier)
                 setNeedsDisplay(rowFrame(at: index))
             }
             return false
@@ -377,23 +361,18 @@ extension NativeTimelineCanvasView {
         var reconcilesMedia = false
         for (identifier, transition) in reactionTransitions {
             guard let index = rowIndex(forIdentifier: identifier, hint: transition.rowIndex) else {
-                reactionTransitions[identifier] = nil
-                removeReactionBandView(identifier)
+                endReactionTransition(identifier)
                 continue
             }
             if index != transition.rowIndex { reactionTransitions[identifier]?.rowIndex = index }
             if transition.progress(at: now) >= 1 {
                 // The row's bitmap takes over from the chip layers in the same frame.
-                reactionTransitions[identifier] = nil
-                removeReactionBandView(identifier)
+                endReactionTransition(identifier)
                 setNeedsDisplay(rowFrame(at: index))
                 reconcilesMedia = reconcilesMedia || animatedMediaRows[identifier] != nil
             }
         }
-        if redrawsRows {
-            redrawForRowMotion(invalidating: reactionMotionFrame)
-            positionReactionBandViews()
-        }
+        if redrawsRows { redrawForRowMotion(invalidating: reactionMotionFrame) }
         if reconcilesMedia { reconcileAnimatedMediaOverlays(reduceMotion: false) }
         if reactionTransitions.isEmpty, reactionRowMotions.isEmpty { reactionTicker.stop() }
     }
@@ -406,8 +385,7 @@ extension NativeTimelineCanvasView {
         let hadMotion = !reactionRowMotions.isEmpty
         let hadChips = !reactionTransitions.isEmpty
         reactionRowMotions.removeAll()
-        reactionTransitions.removeAll()
-        for identifier in reactionBandViews.keys { removeReactionBandView(identifier) }
+        for identifier in reactionTransitions.keys { endReactionTransition(identifier) }
         refreshReactionMotionGeometry()
         if hadMotion {
             redrawForRowMotion()
@@ -569,13 +547,13 @@ extension NativeTimelineCanvasView {
         let view = reactionBandViews[identifier] ?? NativeTimelineReactionBandView()
         if view.superview !== self { addSubview(view) }
         reactionBandViews[identifier] = view
-        positionReactionBandView(view, transition: transition, at: index)
+        view.setBandFrame(reactionBandFrame(in: rowFrame(at: index), bandTop: transition.bandTop))
         // The transition's clock in media time, so hit-testing and retargeting
         // read the same point of the motion the render server shows.
         let begin = CACurrentMediaTime() - (ProcessInfo.processInfo.systemUptime - transition.startUptime)
         let progress = transition.progress(at: now)
         let showsAddControl = model?.canCreateReactions(on: row.message) != false
-        var pills: [(layer: CALayer, chip: NativeTimelineReactionTransition.Chip)] = []
+        var pills: [NativeTimelineReactionBandView.Pill] = []
         for chip in transition.chips where chip.region != nil || showsAddControl {
             let appearance = (chip.from.interpolated(to: chip.to, progress: progress), chip.to)
             let pill = if let region = chip.region, let fromRegion = chip.fromRegion {
@@ -611,54 +589,35 @@ extension NativeTimelineCanvasView {
                 pill.contentsGravity = .center
                 continue
             }
-            let selected = region.reaction.didCurrentUserReact
-            let isHovered = canUpdate && hoveredReactionID == region.reaction.id
+            let colors = NativeTimelineRowPainter.reactionColors(
+                selected: region.reaction.didCurrentUserReact,
+                isHovered: canUpdate && hoveredReactionID == region.reaction.id
+            )
             effectiveAppearance.performAsCurrentDrawingAppearance {
-                let fill = selected
-                    ? NSColor.sakuraCordAccentColor.withAlphaComponent(isHovered ? 0.22 : 0.16)
-                    : NSColor.labelColor.withAlphaComponent(isHovered ? 0.14 : 0.09)
-                pill.backgroundColor = fill.cgColor
-                pill.borderColor = selected
-                    ? NSColor.sakuraCordAccentColor.withAlphaComponent(0.95).cgColor
-                    : NSColor.labelColor.withAlphaComponent(0.28).cgColor
-                pill.borderWidth = selected || isHovered ? 1 : 0
+                pill.backgroundColor = colors.fill.cgColor
+                pill.borderColor = colors.border?.cgColor
+                pill.borderWidth = colors.border == nil ? 0 : 1
             }
         }
     }
 
-    /// Clears pointer targets and the hover colour of a moving chip, which the
-    /// row's bitmap redraw does not reach.
-    @discardableResult
-    func clearHoverAndPressTargets() -> NativeTimelinePointerState.ClearedTargets {
-        let hoveredReactionRow = hoveredReaction.flatMap { rowIndex(for: $0) }
-        let cleared = pointer.clearHoverAndPressTargets()
-        if let hoveredReactionRow { refreshReactionChipHover(at: hoveredReactionRow) }
-        return cleared
-    }
-
-    /// Keeps a band view on its row while rows move, clipped to the height the
-    /// row has on screen.
-    private func positionReactionBandView(_ view: NativeTimelineReactionBandView, transition: NativeTimelineReactionTransition, at index: Int) {
-        view.setBandFrame(reactionBandFrame(in: rowFrame(at: index), bandTop: transition.bandTop))
-    }
-
+    /// Keeps band views on their rows while rows move, clipped to the height
+    /// each row has on screen.
     func positionReactionBandViews() {
         for (identifier, view) in reactionBandViews {
             guard let transition = reactionTransitions[identifier],
                   let index = rowIndex(forIdentifier: identifier, hint: transition.rowIndex)
             else { continue }
-            positionReactionBandView(view, transition: transition, at: index)
+            view.setBandFrame(reactionBandFrame(in: rowFrame(at: index), bandTop: transition.bandTop))
         }
     }
 
-    func removeReactionBandView(_ identifier: NativeMessageTimelineItem.Identifier) {
+    func endReactionTransition(_ identifier: NativeMessageTimelineItem.Identifier) {
+        reactionTransitions[identifier] = nil
         reactionBandViews.removeValue(forKey: identifier)?.removeFromSuperview()
     }
 
-    private static let reactionTiming: CAMediaTimingFunction = {
-        let (x1, y1, x2, y2) = NativeTimelineReactionTransition.timing
-        return CAMediaTimingFunction(controlPoints: Float(x1), Float(y1), Float(x2), Float(y2))
-    }()
+    private static let reactionTiming = NativeTimelineReactionTransition.curve.timingFunction
 
     private func animate(_ layer: CALayer, _ keyPath: String, from value: Any, begin: CFTimeInterval) {
         let animation = CABasicAnimation(keyPath: keyPath)
@@ -862,25 +821,24 @@ final class NativeTimelineReactionBandView: NSView {
     }
 
     func setBandFrame(_ frame: CGRect) {
+        guard frame != self.frame else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         self.frame = frame
         CATransaction.commit()
     }
 
-    /// Each chip's layer, with the chip it shows.
-    private(set) var pills: [(layer: CALayer, chip: NativeTimelineReactionTransition.Chip)] = []
+    /// A chip's layer, with the chip it shows.
+    typealias Pill = (layer: CALayer, chip: NativeTimelineReactionTransition.Chip)
 
-    func setPills(_ pills: [(layer: CALayer, chip: NativeTimelineReactionTransition.Chip)], bandTop: CGFloat) {
+    private(set) var pills: [Pill] = []
+
+    func setPills(_ pills: [Pill], bandTop: CGFloat) {
         self.pills = pills
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // Row coordinates are top-down. AppKit may or may not flip the
-        // canvas's layer tree, so the band adapts once it is in it.
-        if let layer {
-            layer.isGeometryFlipped = false
-            layer.isGeometryFlipped = !layer.contentsAreFlipped()
-        }
+        // Row coordinates are top-down; this needs the band in the canvas's tree.
+        layer?.orientTopDown()
         content.frame = CGRect(x: 0, y: -bandTop, width: bounds.width, height: bandTop + bounds.height)
         content.sublayers = pills.map(\.layer)
         CATransaction.commit()

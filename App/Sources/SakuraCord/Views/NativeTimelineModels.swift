@@ -13,6 +13,16 @@ extension CAFrameRateRange {
     }
 }
 
+extension CALayer {
+    /// Makes sublayer geometry top-down like a flipped view's. AppKit may or
+    /// may not flip a flipped view's backing layer, so this reads the tree the
+    /// layer is in.
+    func orientTopDown() {
+        isGeometryFlipped = false
+        isGeometryFlipped = !contentsAreFlipped()
+    }
+}
+
 @MainActor
 final class NativeTimelineDisplayLinkTicker: NSObject {
     var displayLink: CADisplayLink?

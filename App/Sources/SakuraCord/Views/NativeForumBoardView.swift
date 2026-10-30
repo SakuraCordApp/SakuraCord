@@ -272,13 +272,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         #endif
     }
 
-    /// Card coordinates are top-down like the view's. AppKit may or may not
-    /// flip a flipped view's backing layer, so the host layer adapts.
+    /// Card coordinates are top-down like the view's.
     private func orientCardsLayer() {
         guard let layer else { return }
         if cardsLayer.superlayer !== layer { layer.addSublayer(cardsLayer) }
-        cardsLayer.isGeometryFlipped = false
-        cardsLayer.isGeometryFlipped = !cardsLayer.contentsAreFlipped()
+        cardsLayer.orientTopDown()
     }
 
     override func viewDidChangeEffectiveAppearance() {

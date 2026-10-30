@@ -385,6 +385,7 @@ extension NativeTimelineCanvasView {
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
+        positionReactionBandViews()
         maskDisclosureSubviews()
     }
 

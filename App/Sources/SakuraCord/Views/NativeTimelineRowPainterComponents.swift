@@ -935,24 +935,28 @@ extension NativeTimelineRowPainter {
             xRadius: InterfaceScale.metric(9),
             yRadius: InterfaceScale.metric(9)
         )
-        (
-            selected
-                ? NSColor.sakuraCordAccentColor.withAlphaComponent(
-                    isHovered ? 0.22 : 0.16
-                )
-                : NSColor.labelColor.withAlphaComponent(
-                    isHovered ? 0.14 : 0.09
-                )
-        ).setFill()
+        let colors = reactionColors(selected: selected, isHovered: isHovered)
+        colors.fill.setFill()
         shape.fill()
+        if let border = colors.border {
+            border.setStroke()
+            shape.lineWidth = 1
+            shape.stroke()
+        }
+    }
+
+    /// A reaction chip's fill and its 1 pt border, if it has one.
+    static func reactionColors(selected: Bool, isHovered: Bool) -> (fill: NSColor, border: NSColor?) {
         if selected {
-            NSColor.sakuraCordAccentColor.withAlphaComponent(0.95).setStroke()
-            shape.lineWidth = 1
-            shape.stroke()
-        } else if isHovered {
-            NSColor.labelColor.withAlphaComponent(0.28).setStroke()
-            shape.lineWidth = 1
-            shape.stroke()
+            (
+                NSColor.sakuraCordAccentColor.withAlphaComponent(isHovered ? 0.22 : 0.16),
+                NSColor.sakuraCordAccentColor.withAlphaComponent(0.95)
+            )
+        } else {
+            (
+                NSColor.labelColor.withAlphaComponent(isHovered ? 0.14 : 0.09),
+                isHovered ? NSColor.labelColor.withAlphaComponent(0.28) : nil
+            )
         }
     }
 
