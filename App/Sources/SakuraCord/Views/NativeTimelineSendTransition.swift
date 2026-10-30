@@ -662,6 +662,8 @@ extension NativeTimelineCanvasView {
             cancelTranscriptGlide()
             return
         }
+        // The flight aims at the row's static place.
+        finishReactionTransitions()
         guard let window,
               let (geometry, bubbleInWindow) = sendTransitionGeometry(
                   from: pending, rowIndex: index, in: window

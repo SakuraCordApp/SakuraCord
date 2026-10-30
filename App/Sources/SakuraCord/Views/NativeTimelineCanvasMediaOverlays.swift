@@ -347,7 +347,7 @@ extension NativeTimelineCanvasView {
                                media: .media(url, maximumPixelDimension: 64), frame: frame,
                                cornerRadius: 0, isLooping: true)
         }
-        for reaction in layout.reactionRegions {
+        for reaction in layout.reactionRegions where !hidesAnimatedReactionMedia(in: identifier) {
             for (avatarIndex, avatar) in reaction.avatarRegions.enumerated() {
                 guard let url = avatar.reactor.avatarURL,
                       NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url)
@@ -600,7 +600,7 @@ extension NativeTimelineCanvasView {
                 ))
             )
         }
-        for reaction in layout.reactionRegions {
+        for reaction in layout.reactionRegions where !hidesAnimatedReactionMedia(in: identifier) {
             let reference = reaction.reaction.emojiReference
             guard reference.isAnimated,
                   let url = reference.id.flatMap({ model?.customEmojiURLsByID[$0] })

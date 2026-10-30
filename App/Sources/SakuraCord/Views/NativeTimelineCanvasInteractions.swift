@@ -293,24 +293,6 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    func reactionCountTransitions(
-        inMessageAt index: Int
-    ) -> [String: NativeTimelineReactionCountTransition] {
-        guard items.indices.contains(index),
-              let messageID = items[index].messageID
-        else { return [:] }
-        var result: [String: NativeTimelineReactionCountTransition] = [:]
-        for (key, animation) in activeReactionCountAnimations
-        where key.messageID == messageID {
-            result[key.reactionID] = NativeTimelineReactionCountTransition(
-                from: animation.from,
-                to: animation.to,
-                progress: 0
-            )
-        }
-        return result
-    }
-
     func setHoveredReaction(
         _ hit: ReactionPointerHit?,
         mouseLocationInScreen: CGPoint = NSEvent.mouseLocation

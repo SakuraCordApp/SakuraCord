@@ -1179,6 +1179,7 @@ extension NativeTimelineCanvasView {
             + (index >= disclosureRange.upperBound ? disclosureShiftAfter
                 : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
             + unreadDividerGapShift(at: index)
+            + reactionMotionOffset(at: index)
             + NativeTimelineTransientRowGeometry.rowOrigin(
                 base: rowOrigins[index],
                 rowIndex: index,
@@ -1194,7 +1195,7 @@ extension NativeTimelineCanvasView {
             rowIndex: index,
             replacementIndex: editingRowIndex,
             replacementHeight: editingRowHeight
-        )
+        ) - reactionMotionRemainingHeight(at: index)
     }
 
     func resizeForEditingChange(by delta: CGFloat) {

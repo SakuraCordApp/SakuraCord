@@ -581,8 +581,9 @@ extension NativeMessageTimelineCoordinator {
             let timestampDayChanged = currentTimestampDay != timestampDay
             let presentationChanged = parent.presentationRevision != presentationRevision
                 || timestampDayChanged
-            if parent.rowsRevision != rowsRevision || conversationChanged {
-                canvas.captureReactionCountsBeforeStorageMutation()
+            // The coordinator mutates the storage it shares with the canvas.
+            if parent.rowsRevision != rowsRevision, !conversationChanged {
+                canvas.captureReactionBaseline()
             }
             let oldItemCount = items.count
             let oldRowCount = rowCount
@@ -946,6 +947,8 @@ extension NativeMessageTimelineCoordinator {
                       let restoreAnchor = preparation.restoreAnchor {
                 restore(restoreAnchor)
             }
+            // Reaction changes move rows from where the scroll position just settled.
+            canvas.beginReactionTransitions()
         }
 
         func finishTimelineUpdate(
