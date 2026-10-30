@@ -306,13 +306,14 @@ databases, personal Discord data, or unsanitized protocol captures.
 
 ## Report a problem
 
-Type `/bug` or `/suggest` in a conversation's composer, or use **Help →
-Report a Bug…** or **Suggest a Feature…**. SakuraCord files the report with the
-signed-in Discord account and fills in the version and system information. Bug
-reports can also attach the sanitized Discord API log and the latest panic save
-directly. Matching reports appear while you type so you can follow one instead.
-Without a signed-in account, the Help menu opens the website form with the same
-values prefilled. Reports and discussion follow the shared
+Type `/bug` or `/suggest` in a conversation's composer, press the **Report a
+bug** or **Suggest a feature** buttons in the SakuraCord bot's posts, or use
+**Help → Report a Bug…** or **Suggest a Feature…**. SakuraCord files the report
+with the signed-in Discord account and fills in the version and system
+information. Bug reports can also attach the sanitized Discord API log and the
+latest panic save directly. Matching reports appear while you type so you can
+follow one instead. Without a signed-in account, the Help menu opens the
+website form with the same values prefilled. Reports and discussion follow the shared
 [issue-management flow](README.md#issues-and-roadmap).
 
 1. Record the steps, expected result, actual result, and approximate failure time.

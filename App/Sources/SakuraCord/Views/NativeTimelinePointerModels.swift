@@ -2,11 +2,13 @@ import Foundation
 import SakuraCordModels
 
 nonisolated struct NativeTimelineFooterActionTarget: Equatable {
-    enum Kind {
+    enum Kind: Hashable {
         case ephemeralDismiss
         case translation
         /// Keyed by the run's first message, which a revealed header shares with its first row.
         case suppressedToggle
+        case cancelUpload(attachmentID: String)
+        case retrySend
     }
 
     let messageID: MessageID
@@ -123,10 +125,12 @@ nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
         rangeLocation: Int
     )
     case ephemeralDismiss(MessageID)
+    case deliveryAction(MessageID, NativeTimelineFooterActionTarget.Kind)
     case translationAction(MessageID)
     case authorProfile(MessageID)
     case serverTag(MessageID, GuildID)
     case invocationProfile(MessageID)
+    case commandPill(MessageID)
     case reply(MessageID, MessageID)
     case forwardedSource(MessageID, ChannelID, GuildID?, MessageID?)
     case linkedImage(MessageID, URL)

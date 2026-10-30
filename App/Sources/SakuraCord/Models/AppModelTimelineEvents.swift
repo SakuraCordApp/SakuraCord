@@ -853,27 +853,29 @@ extension AppModel {
 
     func updateOutgoingState(_ state: OutboxState, nonce: String, channelID: ChannelID, failure: MessageSendFailure? = nil) {
         composer.outbox.updateState(state, nonce: nonce, channelID: channelID)
+        mutateOutgoingMessage(nonce: nonce, channelID: channelID) {
+            $0.outboxState = state
+            $0.sendFailure = failure
+        }
+    }
+
+    func mutateOutgoingMessage(nonce: String, channelID: ChannelID, _ body: (inout Message) -> Void) {
         if openThread?.id == channelID,
            let index = threadMessages.firstIndex(where: { $0.nonce == nonce })
         {
-            threadMessages[index].outboxState = state
-            threadMessages[index].sendFailure = failure
+            body(&threadMessages[index])
             return
         }
         if selectedChannelID == channelID,
            let index = messages.firstIndex(where: { $0.nonce == nonce })
         {
-            mutateSelectedMessages {
-                $0[index].outboxState = state
-                $0[index].sendFailure = failure
-            }
+            mutateSelectedMessages { body(&$0[index]) }
             return
         }
         guard var cached = messageCache[channelID],
               let index = cached.firstIndex(where: { $0.nonce == nonce })
         else { return }
-        cached[index].outboxState = state
-        cached[index].sendFailure = failure
+        body(&cached[index])
         messageCache[channelID] = cached
     }
 

@@ -16,6 +16,7 @@ struct NativeTimelineMessageDrawInput {
     let showsCompactTimestamp: Bool
     let isAuthorHovered: Bool
     let isServerTagHovered: Bool
+    let isCommandPillHovered: Bool
     let hoveredMention: NativeTimelineMentionHover?
     let hoveredTextLink: NativeTimelineTextLinkHover?
     let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
@@ -27,6 +28,8 @@ struct NativeTimelineMessageDrawInput {
     let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
     let isTranslationActionHovered: Bool
+    /// A hovered upload cancel or Retry of a local send.
+    let hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind?
     let hidesMessageContent: Bool
     let hoveredReactionID: String?
     let isAddReactionHovered: Bool
@@ -53,6 +56,7 @@ extension NativeTimelineRowPainter {
         drawPollResult(input)
         drawMessageLinkedImages(input)
         drawMessageAttachments(input)
+        drawMessageUploads(input)
         drawMessageVoiceMessage(input)
         drawMessageEmbeds(input)
         drawMessageComponentsAndStickers(input)
@@ -267,7 +271,8 @@ extension NativeTimelineRowPainter {
                 region,
                 bubbleConnector: input.layout.bubbleReferenceConnector,
                 message: input.row.message,
-                cosmeticPolicy: input.model?.cosmeticPolicy ?? .init()
+                cosmeticPolicy: input.model?.cosmeticPolicy ?? .init(),
+                isPillHovered: input.isCommandPillHovered
             )
         }
     }
@@ -776,30 +781,41 @@ extension NativeTimelineRowPainter {
             ephemeralFooter(region, isDismissHovered: input.isEphemeralDismissHovered)
         }
         if let frame = layout.failedFrame {
-            systemSymbol(
-                "exclamationmark.circle",
-                in: CGRect(
-                    x: frame.minX,
-                    y: frame.minY + 1,
-                    width: InterfaceScale.metric(12),
-                    height: InterfaceScale.metric(12)
-                ),
-                color: .systemRed,
-                inset: 0
-            )
-            text(
+            failureNotice(
                 MessageOutboxPresentation.failureText(for: input.row.message),
-                in: CGRect(
-                    x: frame.minX + InterfaceScale.metric(16),
-                    y: frame.minY,
-                    width: max(0, frame.width - InterfaceScale.metric(16)),
-                    height: frame.height
-                ),
+                in: frame,
                 font: .interfacePreferredFont(forTextStyle: .caption2),
-                color: .systemRed,
-                lineBreakMode: .byWordWrapping
+                color: .systemRed
             )
         }
+        if let frame = layout.failedRetryFrame {
+            text(
+                MessageOutboxPresentation.retryTitle,
+                in: frame,
+                font: .interfacePreferredFont(forTextStyle: .caption2),
+                color: .sakuraCordAccentColor,
+                isInteractiveHovered: input.hoveredDeliveryAction == .retrySend
+            )
+        }
+    }
+
+    /// A failed send's icon and wording, so the state also reads without colour.
+    static func failureNotice(_ notice: String, in frame: CGRect, font: NSFont, color: NSColor) {
+        let iconSize = InterfaceScale.metric(12)
+        let inset = InterfaceScale.metric(16)
+        systemSymbol(
+            "exclamationmark.circle",
+            in: CGRect(x: frame.minX, y: frame.minY + 1, width: iconSize, height: iconSize),
+            color: color,
+            inset: 0
+        )
+        text(
+            notice,
+            in: CGRect(x: frame.minX + inset, y: frame.minY, width: max(0, frame.width - inset), height: frame.height),
+            font: font,
+            color: color,
+            lineBreakMode: .byWordWrapping
+        )
     }
 
     private static func drawForwardedSource(_ input: NativeTimelineMessageDrawInput) {
@@ -1139,7 +1155,8 @@ extension NativeTimelineRowPainter {
         _ region: NativeTimelineRowLayout.CommandInvocationRegion,
         bubbleConnector: NativeTimelineRowLayout.ReferenceConnector?,
         message: Message,
-        cosmeticPolicy: ProfileCosmeticPolicy
+        cosmeticPolicy: ProfileCosmeticPolicy,
+        isPillHovered: Bool
     ) {
         if let bubbleConnector {
             elbowConnector(
@@ -1183,7 +1200,9 @@ extension NativeTimelineRowPainter {
             font: .interfacePreferredFont(forTextStyle: .caption1),
             color: .secondaryLabelColor
         )
-        NSColor.sakuraCordAccentColor.withAlphaComponent(0.16).setFill()
+        // Like Discord, hovering fills the pill and turns its content white.
+        let pillContentColor: NSColor = isPillHovered ? .white : .sakuraCordAccentColor
+        NSColor.sakuraCordAccentColor.withAlphaComponent(isPillHovered ? 1 : 0.16).setFill()
         NSBezierPath(
             roundedRect: region.pillFrame,
             xRadius: InterfaceScale.metric(4),
@@ -1192,7 +1211,7 @@ extension NativeTimelineRowPainter {
         systemSymbol(
             SakuraCordSystemSymbol.applicationCommands,
             in: region.commandSymbolFrame,
-            color: .sakuraCordAccentColor,
+            color: pillContentColor,
             inset: 0,
             weight: .semibold
         )
@@ -1205,7 +1224,7 @@ extension NativeTimelineRowPainter {
                 ).pointSize,
                 weight: .semibold
             ),
-            color: .sakuraCordAccentColor,
+            color: pillContentColor,
             lineBreakMode: .byTruncatingTail
         )
     }

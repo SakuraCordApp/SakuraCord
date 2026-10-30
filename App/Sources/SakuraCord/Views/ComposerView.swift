@@ -761,7 +761,8 @@ struct ComposerView: View {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                model.clearComposerAttachments(for: conversation)
+                // The files go on to the outbox, keeping their early uploads.
+                model.setComposerAttachments([], for: conversation)
             }
             Task { @MainActor in
                 // The draft and reply clear once the message is enqueued.
@@ -791,8 +792,8 @@ struct ComposerView: View {
                 // Nothing will arrive to take the held message over.
                 model.timelineSendTransitionStore.discard(conversationID)
             }
-            if !keepsCreationDraft, !result.consumedComposer, activeConversationID == conversationID {
-                model.restoreComposerAttachments(staged, to: conversation)
+            if !keepsCreationDraft, !result.consumedComposer {
+                model.returnUnsentComposerAttachments(staged, to: conversation, from: conversationID)
             }
             isSubmitting = false
             isFocused = true

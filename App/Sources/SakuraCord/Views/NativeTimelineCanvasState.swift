@@ -52,12 +52,14 @@ final class NativeTimelinePointerState {
         let threadMessageID: MessageID?
         let footerAction: NativeTimelineFooterActionTarget?
         let serverTagMessageID: MessageID?
+        let commandPillMessageID: MessageID?
     }
 
     var hoveredRow: Int?
     var hoveredCompactTimestampRow: Int?
     var hoveredAuthorMessageID: MessageID?
     var hoveredServerTagMessageID: MessageID?
+    var hoveredCommandPillMessageID: MessageID?
     var hoveredMention: NativeTimelineMentionHover?
     var hoveredTextLink: NativeTimelineTextLinkHover?
     var hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
@@ -98,12 +100,14 @@ final class NativeTimelinePointerState {
             forwardedSourceMessageID: hoveredForwardedSourceMessageID,
             threadMessageID: hoveredThreadMessageID,
             footerAction: hoveredFooterAction,
-            serverTagMessageID: hoveredServerTagMessageID
+            serverTagMessageID: hoveredServerTagMessageID,
+            commandPillMessageID: hoveredCommandPillMessageID
         )
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
         hoveredAuthorMessageID = nil
         hoveredServerTagMessageID = nil
+        hoveredCommandPillMessageID = nil
         hoveredMention = nil
         hoveredTextLink = nil
         hoveredTextSpoiler = nil
@@ -146,6 +150,7 @@ final class NativeTimelinePointerState {
             || hoveredCompactTimestampRow != nil
             || hoveredAuthorMessageID != nil
             || hoveredServerTagMessageID != nil
+            || hoveredCommandPillMessageID != nil
             || hoveredMention != nil
             || hoveredTextLink != nil
             || hoveredTextSpoiler != nil
@@ -275,6 +280,11 @@ extension NativeTimelineCanvasView {
     var hoveredServerTagMessageID: MessageID? {
         get { pointer.hoveredServerTagMessageID }
         set { pointer.hoveredServerTagMessageID = newValue }
+    }
+
+    var hoveredCommandPillMessageID: MessageID? {
+        get { pointer.hoveredCommandPillMessageID }
+        set { pointer.hoveredCommandPillMessageID = newValue }
     }
 
     var hoveredAuthorMessageID: MessageID? {

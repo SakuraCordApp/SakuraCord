@@ -120,7 +120,7 @@ struct ApplicationCommandIndexDecoder {
         }
     }
 
-    private struct ChoiceDTO: Decodable {
+    struct ChoiceDTO: Decodable {
         var name: String
         var defaultName: String?
         var localizedName: String?
@@ -157,7 +157,7 @@ struct ApplicationCommandIndexDecoder {
         }
     }
 
-    private struct OptionDTO: Decodable {
+    struct OptionDTO: Decodable {
         var type: Int
         var name: String
         var defaultName: String?

@@ -12,6 +12,7 @@ struct ProfileEditorFocusDismissal: NSViewRepresentable {
     final class FocusView: NSView {
         private var monitor: Any?
         private weak var textToBlur: NSTextView?
+        private weak var textOwner: AnyObject?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -21,9 +22,13 @@ struct ProfileEditorFocusDismissal: NSViewRepresentable {
                 guard let self, WindowModalCoordinator.allowsInput(for: self) else { return event }
                 if event.type == .leftMouseUp {
                     let text = self.textToBlur
+                    let owner = self.textOwner
                     self.textToBlur = nil
                     DispatchQueue.main.async { [weak text] in
-                        guard let text, WindowModalCoordinator.allowsInput(for: text), let window = text.window, window.firstResponder === text else { return }
+                        // The field editor is shared between text fields, so a click that moved
+                        // editing to another field leaves the same view with a new delegate.
+                        guard let text, WindowModalCoordinator.allowsInput(for: text), let window = text.window,
+                              window.firstResponder === text, text.delegate === owner else { return }
                         window.makeFirstResponder(nil)
                     }
                     return event
@@ -38,6 +43,7 @@ struct ProfileEditorFocusDismissal: NSViewRepresentable {
                 if let field = text.delegate as? NSTextField,
                    field.bounds.contains(field.convert(event.locationInWindow, from: nil)) { return event }
                 self.textToBlur = text
+                self.textOwner = text.delegate
                 return event
             }
         }
