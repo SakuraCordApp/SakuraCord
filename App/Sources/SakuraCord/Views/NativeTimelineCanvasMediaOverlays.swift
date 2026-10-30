@@ -386,7 +386,7 @@ extension NativeTimelineCanvasView {
             )
         }
         let fillsFrame = MediaGalleryImagePresentation.fillsFrame(
-            itemCount: layout.attachmentRegions.count
+            itemCount: layout.mediaGalleryItemCount
         )
         for region in layout.attachmentRegions
         where region.attachment.mediaKind == .animatedImage {

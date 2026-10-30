@@ -75,7 +75,19 @@ extension NativeTimelineRowPainter {
                 container.chrome == .bubbleSection ? container.chromeFrame : nil
             }
         }
-        bubbleIntegratedSectionsTint(integratedSectionFrames, bubbleRegion: bubbleRegion)
+        bubbleIntegratedSectionsTint(
+            integratedSectionFrames + [fileSectionFrame(input.layout)].compactMap { $0 },
+            bubbleRegion: bubbleRegion
+        )
+    }
+
+    /// Files below other bubble content share one integrated section, as
+    /// thread cards and invites do; a bubble holding only files is their card.
+    private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
+        guard let bubble = layout.bubbleRegion, let first = layout.fileCards.first,
+              first.frame.minY - bubble.frame.minY > NativeTimelineBubbleLayout.verticalPadding + 0.5
+        else { return nil }
+        return layout.fileCards.dropFirst().reduce(first.frame) { $0.union($1.frame) }
     }
 
     private static func drawMessageSearchContext(_ input: NativeTimelineMessageDrawInput) {
@@ -444,8 +456,13 @@ extension NativeTimelineRowPainter {
         }
         let attachmentFillsFrame =
             MediaGalleryImagePresentation.fillsFrame(
-                itemCount: layout.attachmentRegions.count
+                itemCount: layout.mediaGalleryItemCount
             )
+        if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
+            bubbleIntegratedSection(
+                section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
+            )
+        }
         for region in layout.attachmentRegions {
             let attachment = region.attachment
             let isConcealed =
@@ -464,11 +481,13 @@ extension NativeTimelineRowPainter {
                 )
                 continue
             }
-            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(
-                concentricRoundedRect: region.frame,
-                cornerRadius: attachmentCornerRadius
-            ).fill()
+            if attachment.mediaKind != .file {
+                NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
+                NSBezierPath(
+                    concentricRoundedRect: region.frame,
+                    cornerRadius: attachmentCornerRadius
+                ).fill()
+            }
             switch attachment.mediaKind {
             case .image, .animatedImage, .video:
                 let isVideo = attachment.mediaKind == .video
@@ -491,29 +510,14 @@ extension NativeTimelineRowPainter {
                     in: region.frame
                 )
             case .file:
-                systemSymbol(
-                    "doc",
-                    in: CGRect(
-                        x: region.frame.midX - InterfaceScale.metric(19),
-                        y: region.frame.midY - InterfaceScale.metric(34),
-                        width: InterfaceScale.metric(38),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    color: .labelColor,
-                    inset: 1
-                )
-                text(
-                    attachment.filename,
-                    in: CGRect(
-                        x: region.frame.minX + InterfaceScale.metric(12),
-                        y: region.frame.midY + InterfaceScale.metric(11),
-                        width: max(1, region.frame.width - InterfaceScale.metric(24)),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    font: .interfacePreferredFont(forTextStyle: .body),
-                    color: .labelColor,
-                    alignment: .center,
-                    lineBreakMode: .byTruncatingTail
+                let target = NativeTimelineComponentButtonTarget.fileCard(messageID: message.id, attachmentID: attachment.id)
+                fileCard(
+                    .init(frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil),
+                    messageID: message.id,
+                    bubbleRegion: layout.bubbleRegion,
+                    state: input.model?.attachmentDownloads.states[attachment.id],
+                    hovered: input.hoveredComponentButton,
+                    pressProgress: input.pressedComponentButton == target ? input.componentButtonPressProgress : 0
                 )
             }
         }

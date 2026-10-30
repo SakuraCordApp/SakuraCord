@@ -125,7 +125,7 @@ extension NativeTimelineCanvasView {
                 frame: region.frame,
                 cornerRadius: 8,
                 fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                    itemCount: layout.attachmentRegions.count
+                    itemCount: layout.mediaGalleryItemCount
                 )
             )
         }

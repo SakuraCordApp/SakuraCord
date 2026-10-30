@@ -134,6 +134,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
+            case fileCard(NativeTimelineFileCard)
 
             var isDisabled: Bool {
                 switch self {
@@ -143,6 +144,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                     false
                 case let .invite(card, expands):
                     !expands && card.isDisabled
+                case .fileCard:
+                    false
                 }
             }
         }
@@ -410,6 +413,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                                        name: NSMenu.didEndTrackingNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(voiceMessagePlaybackDidChange(_:)),
                                        name: VoiceMessagePlaybackStore.didChange, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(attachmentDownloadsDidChange(_:)),
+                                       name: AttachmentDownloadStore.didChange, object: nil)
         notificationCenter.addObserver(self, selector: #selector(attachmentUploadsDidChange(_:)),
                                        name: AttachmentUploadProgressStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(

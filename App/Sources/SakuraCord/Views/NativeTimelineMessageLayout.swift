@@ -573,15 +573,24 @@ extension NativeTimelineRowLayout {
                 hasRichContent = true
                 return
             }
-            if !usesComponentsV2, !message.attachments.isEmpty {
+            guard !usesComponentsV2 else { return }
+            // Like Discord, files leave the media gallery for cards stacked
+            // below it. Regions keep the attachments' order, which the send
+            // transition matches against the composer's.
+            let (files, media) = (
+                message.attachments.filter { $0.mediaKind == .file },
+                message.attachments.filter { $0.mediaKind != .file }
+            )
+            var regions: [String: AttachmentRegion] = [:]
+            if !media.isEmpty {
                 if hasRichContent {
                     verticalOffset += InterfaceScale.metric(8)
                 }
                 let galleryWidth = min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), inlineMediaMaximumWidth))
                 let galleryFrames = MediaGalleryPlan.frames(
-                    count: message.attachments.count,
+                    count: media.count,
                     width: galleryWidth,
-                    aspectRatios: message.attachments.map {
+                    aspectRatios: media.map {
                         guard let width = $0.width,
                               let height = $0.height,
                               width > 0,
@@ -589,7 +598,7 @@ extension NativeTimelineRowLayout {
                         else { return 16 / 9 }
                         return CGFloat(width) / CGFloat(height)
                     },
-                    intrinsicSizes: message.attachments.map {
+                    intrinsicSizes: media.map {
                         guard let width = $0.width,
                               let height = $0.height,
                               width > 0,
@@ -602,11 +611,8 @@ extension NativeTimelineRowLayout {
                     },
                     spacing: InterfaceScale.metric(4)
                 )
-                result.attachmentRegions = zip(
-                    message.attachments,
-                    galleryFrames
-                ).map { attachment, frame in
-                    AttachmentRegion(
+                for (attachment, frame) in zip(media, galleryFrames) {
+                    regions[attachment.id] = AttachmentRegion(
                         frame: frame.offsetBy(dx: contentX, dy: verticalOffset),
                         attachment: attachment,
                         previewKey: attachment.mediaKind == .video
@@ -617,7 +623,26 @@ extension NativeTimelineRowLayout {
                 verticalOffset += galleryFrames.map(\.maxY).max() ?? 0
                 hasRichContent = true
             }
-
+            for attachment in files {
+                if hasRichContent {
+                    verticalOffset += NativeTimelineFileCard.spacing
+                }
+                // In a bubble, which grows to fit it, a file spans the
+                // column so its hover highlight lines up with the bubble.
+                let frame = CGRect(
+                    x: contentX, y: verticalOffset,
+                    width: usesBubbles
+                        ? contentWidth
+                        : NativeTimelineFileCard.fittedWidth(
+                            for: attachment, isInBubble: false, maximumWidth: inlineMediaMaximumWidth
+                        ),
+                    height: NativeTimelineFileCard.height(isInBubble: usesBubbles)
+                )
+                regions[attachment.id] = AttachmentRegion(frame: frame, attachment: attachment, previewKey: nil)
+                verticalOffset = frame.maxY
+                hasRichContent = true
+            }
+            result.attachmentRegions = message.attachments.compactMap { regions[$0.id] }
         }
 
         private mutating func appendCards() {
