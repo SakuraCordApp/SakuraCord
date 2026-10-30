@@ -22,6 +22,16 @@ struct NativeTimelineSendTransitionSource {
         let uploadFraction: Double?
         /// The ring's size on the tile, relative to the message's.
         let ringScale: CGFloat
+        /// A file's tile, whose icon and surface morph into its card.
+        var file: File?
+    }
+
+    /// A file tile's parts that become its card's: `image` is then only the
+    /// tile's type label.
+    struct File {
+        let icon: NSImage
+        let iconFrame: CGRect
+        let surfaceColor: CGColor
     }
 
     let channelID: ChannelID
@@ -274,6 +284,17 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         /// Where the message shows this file's upload ring, if it is still
         /// uploading, and whether it dims the file under it.
         let uploadRing: UploadRing?
+        /// A file's card, which the tile's surface becomes.
+        var card: Card?
+    }
+
+    struct Card {
+        /// The card as the row draws it, faded in as the tile becomes it.
+        let image: NSImage
+        /// Where the tile's icon lands: the card's icon, or an audio card's
+        /// play button, which it fades into.
+        let iconFrame: CGRect
+        let iconFades: Bool
     }
 
     struct UploadRing {
@@ -318,6 +339,10 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     private var pieceSourceCornerRadii: [Int: CGFloat] = [:]
     /// Each tile's dim under its upload ring, clipped by the tile.
     private var pieceDimLayers: [Int: CALayer] = [:]
+    /// A file tile's icon, and the card its surface becomes.
+    private var pieceIconLayers: [Int: CALayer] = [:]
+    private var pieceIconSourceFrames: [Int: CGRect] = [:]
+    private var pieceCardLayers: [Int: CALayer] = [:]
     private var ringLayers: [Int: AttachmentUploadRingLayer] = [:]
     /// Rings keep showing progress while they fly.
     private var ringAttachmentIDs: [Int: String] = [:]
@@ -362,6 +387,21 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             overlay.pieceLayers[index] = layer
             overlay.pieceSourceFrames[index] = frame
             overlay.pieceSourceCornerRadii[index] = attachment.cornerRadius
+            if let file = attachment.file {
+                // The surface stretches into the card while the type label
+                // keeps its size, and the icon moves on its own.
+                layer.backgroundColor = file.surfaceColor
+                layer.contentsGravity = .center
+                let icon = CALayer()
+                icon.contents = file.icon
+                icon.contentsGravity = .resizeAspect
+                icon.contentsScale = window.backingScaleFactor
+                icon.frame = overlay.convert(file.iconFrame, from: nil)
+                icon.zPosition = 0.6
+                overlay.layer?.addSublayer(icon)
+                overlay.pieceIconLayers[index] = icon
+                overlay.pieceIconSourceFrames[index] = icon.frame
+            }
             if let fraction = attachment.uploadFraction {
                 // Oversized, so the tile's clip shapes it as the tile morphs.
                 let dim = CALayer()
@@ -505,23 +545,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             )
         }
 
-        var landingIndexes = Set<Int>()
-        let delay = mediaDelay
-        for piece in geometry.pieces {
-            guard let layer = pieceLayers[piece.index],
-                  let source = pieceSourceFrames[piece.index]
-            else { continue }
-            landingIndexes.insert(piece.index)
-            morph(
-                layer, from: source, to: piece.frame,
-                cornerRadius: (pieceSourceCornerRadii[piece.index] ?? piece.cornerRadius, piece.cornerRadius),
-                delay: delay
-            )
-            let opacity: Float = piece.fadesOut ? 0 : piece.opacity
-            layer.opacity = opacity
-            add(layer, "opacity", from: 1, to: CGFloat(opacity), timing: Timing.vertical, delay: delay)
-            flyUploadState(of: piece, from: source, delay: delay)
-        }
+        let landingIndexes = land(geometry.pieces)
         if let uploads, !ringAttachmentIDs.isEmpty {
             self.uploads = uploads.store
             uploadNonce = uploads.nonce
@@ -535,6 +559,63 @@ final class NativeTimelineSendTransitionOverlay: NSView {
                 layer.opacity = 0
                 add(layer, "opacity", from: 1, to: 0, duration: Timing.dismissalDuration)
             }
+        }
+    }
+
+    /// Flies each tile to where its message shows it, returning the tiles
+    /// that land.
+    private func land(_ pieces: [Piece]) -> Set<Int> {
+        typealias Timing = NativeTimelineSendTransitionTiming
+        var landingIndexes = Set<Int>()
+        let delay = mediaDelay
+        for piece in pieces {
+            guard let layer = pieceLayers[piece.index],
+                  let source = pieceSourceFrames[piece.index]
+            else { continue }
+            landingIndexes.insert(piece.index)
+            morph(
+                layer, from: source, to: piece.frame,
+                cornerRadius: (pieceSourceCornerRadii[piece.index] ?? piece.cornerRadius, piece.cornerRadius),
+                delay: delay
+            )
+            if let card = piece.card {
+                morphIntoCard(card, piece: piece, from: source, delay: delay)
+            } else {
+                let opacity: Float = piece.fadesOut ? 0 : piece.opacity
+                layer.opacity = opacity
+                add(layer, "opacity", from: 1, to: CGFloat(opacity), timing: Timing.vertical, delay: delay)
+            }
+            flyUploadState(of: piece, from: source, delay: delay)
+        }
+        return landingIndexes
+    }
+
+    /// Turns a file's tile into its card: the surface takes the card's frame
+    /// and corners as its label fades, the icon settles on the card's, and
+    /// the card's name and size fade in over the last of the flight.
+    private func morphIntoCard(_ card: Card, piece: Piece, from source: CGRect, delay: CFTimeInterval) {
+        typealias Timing = NativeTimelineSendTransitionTiming
+        guard let surface = pieceLayers[piece.index] else { return }
+        let cardLayer = CALayer()
+        cardLayer.contents = card.image
+        cardLayer.contentsGravity = .center
+        cardLayer.contentsScale = surface.contentsScale
+        cardLayer.masksToBounds = true
+        cardLayer.zPosition = 0.55
+        layer?.addSublayer(cardLayer)
+        pieceCardLayers[piece.index] = cardLayer
+        let radii = (pieceSourceCornerRadii[piece.index] ?? piece.cornerRadius, piece.cornerRadius)
+        morph(cardLayer, from: source, to: piece.frame, cornerRadius: radii, delay: delay)
+        let handoff = Timing.duration * 0.4
+        cardLayer.opacity = piece.opacity
+        add(cardLayer, "opacity", from: 0, to: CGFloat(piece.opacity), duration: Timing.duration - handoff, delay: delay + handoff)
+        surface.opacity = 0
+        add(surface, "opacity", from: 1, to: 0, duration: Timing.duration - handoff, delay: delay + handoff)
+        guard let icon = pieceIconLayers[piece.index], let iconSource = pieceIconSourceFrames[piece.index] else { return }
+        morph(icon, from: iconSource, to: card.iconFrame, cornerRadius: (0, 0), delay: delay)
+        if card.iconFades {
+            icon.opacity = 0
+            add(icon, "opacity", from: 1, to: 0, duration: Timing.duration - handoff, delay: delay + handoff)
         }
     }
 
@@ -594,7 +675,8 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        for layer in [bubbleLayer, tailLayer, clipLayer] + Array(pieceLayers.values) + Array(ringLayers.values) as [CALayer] {
+        let pieces = Array(pieceLayers.values) + Array(pieceIconLayers.values) + Array(pieceCardLayers.values)
+        for layer in [bubbleLayer, tailLayer, clipLayer] + pieces + Array(ringLayers.values) as [CALayer] {
             layer.position.x += delta.x
             layer.position.y += delta.y
             animateAxes(layer, offset: CGPoint(x: -delta.x, y: -delta.y), duration: duration)
@@ -828,10 +910,15 @@ extension NativeTimelineCanvasView {
         let flyingAttachments = Set(source.attachments.indices.filter {
             source.attachments[$0] != nil && layout.attachmentRegions.indices.contains($0)
         })
-        // A preview that fades out, such as a file icon, reveals what the
-        // bubble draws there instead.
+        let toOverlay = { (rect: CGRect) in overlay.convert(rect, from: nil) }
+        // A file's tile becomes its card, which the row leaves to it until it lands.
+        let cards = sendTransitionCards(
+            for: flyingAttachments, item: items[index], layout: layout, rowFrame: rowFrame
+        ) { toOverlay(toWindow($0)) }
+        // Any other preview that fades out, such as a video with no poster
+        // yet, reveals what the bubble draws there instead.
         let fadingAttachments = flyingAttachments.filter {
-            layout.attachmentRegions[$0].previewKey == nil
+            layout.attachmentRegions[$0].previewKey == nil && cards[$0] == nil
         }
         guard let content = sendTransitionContent(
             item: items[index],
@@ -839,7 +926,6 @@ extension NativeTimelineCanvasView {
             rowFrame: rowFrame,
             omittingAttachments: flyingAttachments.subtracting(fadingAttachments)
         ) else { return nil }
-        let toOverlay = { (rect: CGRect) in overlay.convert(rect, from: nil) }
         let targetFrame = toOverlay(targetInWindow)
         let fieldFrame = toOverlay(source.fieldFrame)
         // Text leaves from its own baseline; anything else leaves from the
@@ -854,17 +940,14 @@ extension NativeTimelineCanvasView {
             )
         }
         let mediaOpacity = Float(MessageOutboxPresentation.mediaOpacity(for: row.message.outboxState))
-        let fileCards = layout.fileCards
         let pieces = flyingAttachments.sorted().map { attachmentIndex in
             let attachmentRegion = layout.attachmentRegions[attachmentIndex]
             let attachmentID = attachmentRegion.attachment.id
-            // A file's tile settles into its card's icon as the card appears.
-            let frame = fileCards.first { $0.attachment.id == attachmentID }
-                .map { $0.isAudio ? $0.playFrame : $0.iconFrame } ?? attachmentRegion.frame
+            let card = cards[attachmentIndex]
             return NativeTimelineSendTransitionOverlay.Piece(
                 index: attachmentIndex,
-                frame: toOverlay(toWindow(frame)),
-                cornerRadius: NativeTimelineRowPainter.attachmentCornerRadius,
+                frame: toOverlay(toWindow(card?.card.frame ?? attachmentRegion.frame)),
+                cornerRadius: card?.card.cornerRadius ?? NativeTimelineRowPainter.attachmentCornerRadius,
                 opacity: mediaOpacity,
                 fadesOut: fadingAttachments.contains(attachmentIndex),
                 uploadRing: sendTransitionUploadRing(for: attachmentID, of: row.message, layout: layout).map { ring in
@@ -877,7 +960,8 @@ extension NativeTimelineCanvasView {
                         attachmentID: attachmentID, center: CGPoint(x: frame.midX, y: frame.midY),
                         color: color, dimsFile: ring.mediaFrame != nil
                     )
-                }
+                },
+                card: card?.morph
             )
         }
         let bubble = layout.bubbleRegion.map { region in
@@ -1226,6 +1310,56 @@ extension NativeTimelineCanvasView {
     /// bubble's fill, so the flying copy can morph its own background
     /// independently. Attachments that arrive as flying thumbnails are left
     /// out.
+    /// The cards that sent file tiles become, by attachment index, in the
+    /// overlay's space that `toOverlay` converts row frames to.
+    private func sendTransitionCards(
+        for attachmentIndexes: Set<Int>,
+        item: NativeMessageTimelineItem,
+        layout: NativeTimelineRowLayout,
+        rowFrame: CGRect,
+        toOverlay: (CGRect) -> CGRect
+    ) -> [Int: (card: NativeTimelineFileCard, morph: NativeTimelineSendTransitionOverlay.Card)] {
+        let fileCards = layout.fileCards
+        var cards: [Int: (card: NativeTimelineFileCard, morph: NativeTimelineSendTransitionOverlay.Card)] = [:]
+        for attachmentIndex in attachmentIndexes {
+            let attachmentID = layout.attachmentRegions[attachmentIndex].attachment.id
+            guard let card = fileCards.first(where: { $0.attachment.id == attachmentID }),
+                  let image = sendTransitionImage(of: card.frame, item: item, layout: layout, rowFrame: rowFrame)
+            else { continue }
+            cards[attachmentIndex] = (card, .init(
+                image: image,
+                iconFrame: toOverlay(card.isAudio ? card.playFrame : card.iconFrame),
+                iconFades: card.isAudio
+            ))
+        }
+        return cards
+    }
+
+    /// A part of the row as it draws it, such as a file's card.
+    private func sendTransitionImage(
+        of frame: CGRect,
+        item: NativeMessageTimelineItem,
+        layout: NativeTimelineRowLayout,
+        rowFrame: CGRect
+    ) -> NSImage? {
+        NativeTimelineSendTransitionSnapshot.render(size: frame.size, scale: window?.backingScaleFactor ?? 2) {
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            context.translateBy(x: -frame.minX, y: -frame.minY)
+            context.clip(to: frame)
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                NativeTimelineRowPainter.draw(
+                    item: item,
+                    layout: layout,
+                    in: CGRect(x: 0, y: 0, width: rowFrame.width, height: layout.height),
+                    model: model,
+                    isHovered: false,
+                    drawsBubbleBackground: false,
+                    spoilerRevealStore: spoilerRevealStore
+                )
+            }
+        }
+    }
+
     private func sendTransitionContent(
         item: NativeMessageTimelineItem,
         layout: NativeTimelineRowLayout,
