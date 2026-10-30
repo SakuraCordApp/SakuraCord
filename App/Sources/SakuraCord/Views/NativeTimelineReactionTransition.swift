@@ -205,14 +205,16 @@ extension NativeTimelineCanvasView {
             shift = shift ?? rowShift
             let delta = layouts[index].height - old.layout.height
             expectedShift = rowShift - delta
-            guard case let .message(oldRow, oldUnread, oldHighlighted) = old.item,
+            let changed = old.item != items[index]
+            guard changed,
+                  case let .message(oldRow, oldUnread, oldHighlighted) = old.item,
                   case let .message(row, unread, highlighted) = items[index],
                   unread == oldUnread, highlighted == oldHighlighted,
-                  oldRow != row, row.differsOnlyInReactions(from: oldRow)
+                  row.differsOnlyInReactions(from: oldRow)
             else {
                 if abs(delta) >= 0.5 { describesUpdate = false }
                 // Its chips belong to a row that changed in another way.
-                if old.item != items[index] { reactionTransitions[identifier] = nil }
+                if changed { reactionTransitions[identifier] = nil }
                 return
             }
             if abs(delta) >= 0.5 {
@@ -224,6 +226,8 @@ extension NativeTimelineCanvasView {
                 startedChips = true
             }
         }
+        // Live reaction media pauses on its still while the chips move.
+        if startedChips { positionAnimatedMediaOverlays() }
         if describesUpdate, let shift, !steps.isEmpty {
             reactionRowMotions.append(.init(startUptime: now, shift: shift, steps: steps))
             refreshReactionMotionGeometry(at: now)
@@ -307,9 +311,7 @@ extension NativeTimelineCanvasView {
             bitmapItem: reactionTransitions[identifier]?.bitmapItem ?? old.item,
             chips: chips
         )
-        // Live reaction media pauses on its still while the chips move.
-        if animatedMediaRows[identifier] != nil { positionAnimatedMediaOverlays() }
-        setNeedsDisplay(reactionBandFrame(at: index, bandTop: 0))
+        setNeedsDisplay(rowFrame(at: index))
         return true
     }
 
@@ -319,16 +321,18 @@ extension NativeTimelineCanvasView {
         reactionRowMotions.removeAll {
             NativeTimelineRowDisclosure.progress(at: now - $0.startUptime) >= 1
         }
-        // Frames that move no row by a whole pixel redraw only the chips.
-        let redrawsRows = hadMotion && refreshReactionMotionGeometry(at: now)
+        // Frames that move no row by a whole pixel redraw only the chips; the
+        // last one also hands hover back to the rows where they landed.
+        let moved = refreshReactionMotionGeometry(at: now)
+        let redrawsRows = hadMotion && (moved || reactionRowMotions.isEmpty)
         var reconcilesMedia = false
         for (identifier, transition) in reactionTransitions {
             guard let index = rowIndex(forIdentifier: identifier, hint: transition.rowIndex) else {
                 reactionTransitions[identifier] = nil
                 continue
             }
-            reactionTransitions[identifier]?.rowIndex = index
-            setNeedsDisplay(reactionBandFrame(at: index, bandTop: transition.bandTop))
+            if index != transition.rowIndex { reactionTransitions[identifier]?.rowIndex = index }
+            setNeedsDisplay(reactionBandFrame(in: rowFrame(at: index), bandTop: transition.bandTop))
             if transition.progress(at: now) >= 1 {
                 reactionTransitions[identifier] = nil
                 reconcilesMedia = reconcilesMedia || animatedMediaRows[identifier] != nil
@@ -397,7 +401,6 @@ extension NativeTimelineCanvasView {
         }
         let snappedShift = snapped(shift)
         let moved = snappedShift != reactionMotionShift
-            || remaining != reactionMotionRemainingHeights
             || !cumulative.elementsEqual(reactionMotionSteps) { $0.index == $1.index && $0.cumulative == $1.cumulative }
         reactionMotionSteps = cumulative
         reactionMotionShift = snappedShift
@@ -435,16 +438,11 @@ extension NativeTimelineCanvasView {
 
     /// The part of a row's height change that has not happened on screen yet.
     func reactionMotionRemainingHeight(at index: Int) -> CGFloat {
-        reactionMotionRemainingHeights.isEmpty ? 0 : reactionMotionRemainingHeights[index] ?? 0
+        reactionMotionRemainingHeights[index] ?? 0
     }
 
-    func hidesAnimatedReactionMedia(in row: NativeMessageTimelineItem.Identifier) -> Bool {
-        reactionTransitions[row] != nil
-    }
-
-    private func reactionBandFrame(at index: Int, bandTop: CGFloat) -> CGRect {
-        let frame = rowFrame(at: index)
-        return CGRect(x: frame.minX, y: frame.minY + bandTop, width: frame.width, height: max(0, frame.height - bandTop))
+    private func reactionBandFrame(in rowFrame: CGRect, bandTop: CGFloat) -> CGRect {
+        CGRect(x: rowFrame.minX, y: rowFrame.minY + bandTop, width: rowFrame.width, height: max(0, rowFrame.height - bandTop))
     }
 
     /// Where the row's chips and add-reaction control are on screen, in row
@@ -467,10 +465,7 @@ extension NativeTimelineCanvasView {
 
     /// The top of a transitioning row's live band, in canvas coordinates.
     func reactionBandTop(for item: NativeMessageTimelineItem, rowFrame: CGRect) -> CGFloat? {
-        guard !reactionTransitions.isEmpty,
-              let transition = reactionTransitions[item.identifier]
-        else { return nil }
-        return rowFrame.minY + transition.bandTop
+        reactionTransitions[item.identifier].map { rowFrame.minY + $0.bandTop }
     }
 
     /// The row's bitmap from before its reactions began to change, which
@@ -497,12 +492,7 @@ extension NativeTimelineCanvasView {
         let progress = transition.progress(at: ProcessInfo.processInfo.systemUptime)
         context.saveGState()
         defer { context.restoreGState() }
-        context.clip(to: CGRect(
-            x: rowFrame.minX,
-            y: rowFrame.minY + transition.bandTop,
-            width: rowFrame.width,
-            height: max(0, rowFrame.height - transition.bandTop)
-        ))
+        context.clip(to: reactionBandFrame(in: rowFrame, bandTop: transition.bandTop))
         context.translateBy(x: rowFrame.minX, y: rowFrame.minY)
         NativeTimelineRowPainter.drawHighlight(
             for: item,
@@ -636,7 +626,7 @@ extension NativeTimelineCanvasView {
         guard let first = frames.first else { return nil }
         let frame = frames.reduce(first) { $0.union($1) }
         let key: [AnyHashable] = ["avatars", region.placeholderAvatarFrames.count] + region.avatarRegions.map { avatar in
-            [avatar.reactor.id, avatar.reactor.displayName, avatar.reactor.avatarURL.map {
+            [avatar.reactor.id, avatar.reactor.displayName, avatar.reactor.avatarURL, avatar.reactor.avatarURL.map {
                 NativeTimelineRowPainter.mediaImage(for: .avatar($0)) != nil
             }] as [AnyHashable]
         }
@@ -664,14 +654,10 @@ extension NativeTimelineCanvasView {
             accent: NSColor.sakuraCordAccentColor.cgColor.components ?? []
         )
         if let image = reactionPictures[key] { return image }
-        guard let context = CGContext(
-            data: nil,
+        guard let context = ForumCardRasterizer.makeContext(
             width: Int(ceil(bounds.width * scale)),
             height: Int(ceil(bounds.height * scale)),
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            colorSpace: window?.colorSpace?.cgColorSpace ?? ForumCardRasterizer.defaultColorSpace
         ) else { return nil }
         context.scaleBy(x: scale, y: scale)
         context.translateBy(x: 0, y: bounds.height)
@@ -692,10 +678,7 @@ extension NativeTimelineCanvasView {
         let bounds = frame.insetBy(dx: -Self.reactionPictureInset, dy: -Self.reactionPictureInset)
         context.saveGState()
         context.setAlpha(alpha)
-        // Pictures are upright; the canvas is flipped.
-        context.translateBy(x: bounds.minX, y: bounds.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(image, in: CGRect(origin: .zero, size: bounds.size))
+        ForumCardRasterizer.drawUpright(image, in: bounds, context: context)
         context.restoreGState()
     }
 }
