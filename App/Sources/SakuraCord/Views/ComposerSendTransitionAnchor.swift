@@ -22,14 +22,10 @@ final class ComposerSendTransitionAnchor {
     var channelID: ChannelID?
     private var attachmentPreviews: [UUID: AttachmentPreview] = [:]
 
-    func registerAttachmentPreview(_ view: NSView, for id: UUID) {
-        preview(for: id).view = view
-    }
-
-    func recordAttachmentThumbnail(_ image: NSImage, for id: UUID) {
-        // A thumbnail can finish loading after its tile was removed.
-        guard let preview = attachmentPreviews[id], preview.view != nil else { return }
-        preview.thumbnail = image
+    func registerAttachmentPreview(_ view: NSView, thumbnail: NSImage?, for id: UUID) {
+        let preview = preview(for: id)
+        preview.view = view
+        preview.thumbnail = thumbnail
     }
 
     func removeAttachmentPreview(_ view: NSView, for id: UUID) {
@@ -59,7 +55,8 @@ final class ComposerSendTransitionAnchor {
               let image = preview.thumbnail,
               view.window != nil
         else { return nil }
-        let visibleRect = view.visibleRect
+        // SwiftUI hosting can report a visible rect beyond the tile itself.
+        let visibleRect = view.visibleRect.intersection(view.bounds)
         guard !visibleRect.isEmpty else { return nil }
         return MediaViewerTransitionSource(
             itemID: attachmentID.uuidString,
@@ -207,12 +204,14 @@ final class ComposerSendTransitionAnchor {
 struct ComposerSendTransitionAttachmentReader: NSViewRepresentable {
     let anchor: ComposerSendTransitionAnchor?
     let id: UUID
+    /// The tile's decoded image, which flies or zooms in its place.
+    let thumbnail: NSImage?
 
     func makeNSView(context: Context) -> ReaderView {
         let view = ReaderView()
         view.anchor = anchor
         view.id = id
-        anchor?.registerAttachmentPreview(view, for: id)
+        anchor?.registerAttachmentPreview(view, thumbnail: thumbnail, for: id)
         return view
     }
 
@@ -222,7 +221,7 @@ struct ComposerSendTransitionAttachmentReader: NSViewRepresentable {
         }
         view.anchor = anchor
         view.id = id
-        anchor?.registerAttachmentPreview(view, for: id)
+        anchor?.registerAttachmentPreview(view, thumbnail: thumbnail, for: id)
     }
 
     static func dismantleNSView(_ view: ReaderView, coordinator: ()) {

@@ -14,7 +14,9 @@ struct ComposerAttachmentTray: View {
     let uploads: AttachmentUploadProgressStore
     var sendTransitionAnchor: ComposerSendTransitionAnchor?
     /// The tile the media viewer is zoomed out of, which hides meanwhile.
-    var mediaViewerSourceID: String?
+    /// Read here rather than by the composer, which would otherwise redraw
+    /// as the viewer opens.
+    var mediaViewerSourceID: () -> String? = { nil }
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
     let update: (ForumPostAttachment) -> Void
@@ -22,7 +24,8 @@ struct ComposerAttachmentTray: View {
     @State private var editingTarget: ComposerAttachmentEditorTarget?
 
     var body: some View {
-        ScrollViewReader { proxy in
+        let mediaViewerSourceID = mediaViewerSourceID()
+        return ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: InterfaceScale.metric(12)) {
                     ForEach(attachments) { attachment in
@@ -111,6 +114,7 @@ private struct ComposerAttachmentTile: View {
     let remove: (UUID) -> Void
     @State private var isHovered = false
     @State private var uploadFraction: Double?
+    @State private var thumbnail: NSImage?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var tileSize: CGFloat { ComposerAttachmentTray.tileSize }
@@ -121,7 +125,7 @@ private struct ComposerAttachmentTile: View {
     var body: some View {
         tile
             .background {
-                ComposerSendTransitionAttachmentReader(anchor: sendTransitionAnchor, id: attachment.id)
+                ComposerSendTransitionAttachmentReader(anchor: sendTransitionAnchor, id: attachment.id, thumbnail: thumbnail)
             }
             .animation(.smooth(duration: 0.22), value: attachment.isSpoiler)
             .animation(.smooth(duration: 0.25), value: isChecking)
@@ -181,20 +185,27 @@ private struct ComposerAttachmentTile: View {
         .overlay {
             shape.stroke(.primary.opacity(isHovered ? 0.16 : 0.08), lineWidth: 1)
         }
+        // The name, its shade and the actions arrive and leave together.
         .overlay(alignment: .bottom) {
             if isHovered {
-                filenameBar
+                Self.scrim
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
                     .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if isHovered {
+                filenamePill
+                    .padding(InterfaceScale.metric(7))
+                    .transition(hoverPillTransition(anchor: .bottomLeading))
             }
         }
         .overlay(alignment: .topTrailing) {
             if isHovered {
                 actions
                     .padding(InterfaceScale.metric(7))
-                    .transition(
-                        reduceMotion ? .opacity : .scale(scale: 0.7, anchor: .topTrailing)
-                            .combined(with: .opacity)
-                    )
+                    .transition(hoverPillTransition(anchor: .topTrailing))
             }
         }
         .opacity(isMediaViewerSource ? 0 : 1)
@@ -206,9 +217,7 @@ private struct ComposerAttachmentTile: View {
             LocalAttachmentThumbnail(
                 url: attachment.url,
                 maximumPixelDimension: 720,
-                onImageLoaded: { [sendTransitionAnchor, id = attachment.id] image in
-                    sendTransitionAnchor?.recordAttachmentThumbnail(image, for: id)
-                }
+                onImageLoaded: { thumbnail = $0 }
             )
         } else {
             ComposerAttachmentFileFace(url: attachment.url)
@@ -245,21 +254,38 @@ private struct ComposerAttachmentTile: View {
         .transition(.opacity)
     }
 
-    private var filenameBar: some View {
-        Text(attachment.filename)
-            .font(.interface(.caption).weight(.semibold))
-            .foregroundStyle(.white)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .padding(.horizontal, InterfaceScale.metric(10))
-            .padding(.top, InterfaceScale.metric(20))
-            .padding(.bottom, InterfaceScale.metric(9))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                LinearGradient(colors: [.black.opacity(0), .black.opacity(0.62)], startPoint: .top, endPoint: .bottom)
-            }
-            .clipShape(shape)
-            .allowsHitTesting(false)
+    /// The name in a pill like the actions', so they read as one set.
+    private var filenamePill: some View {
+        HoverActionPill(spacing: 0, padding: 3) {
+            Text(attachment.filename)
+                .font(.interface(.caption).weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, InterfaceScale.metric(7))
+                .frame(height: InterfaceScale.metric(22))
+        }
+        .frame(maxWidth: tileSize - InterfaceScale.metric(14), alignment: .leading)
+        .allowsHitTesting(false)
+    }
+
+    private func hoverPillTransition(anchor: UnitPoint) -> AnyTransition {
+        reduceMotion ? .opacity : .scale(scale: 0.7, anchor: anchor).combined(with: .opacity)
+    }
+
+    /// A soft shade under the name. Its eased stops leave no visible edge
+    /// where it starts.
+    private static var scrim: some View {
+        let steps = 16
+        return LinearGradient(
+            stops: (0 ... steps).map { step in
+                let location = Double(step) / Double(steps)
+                let eased = location * location * (3 - 2 * location)
+                return .init(color: .black.opacity(0.32 * eased), location: location)
+            },
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: ComposerAttachmentTray.tileSize / 2)
     }
 
     private var accessibilityStatus: Text {
