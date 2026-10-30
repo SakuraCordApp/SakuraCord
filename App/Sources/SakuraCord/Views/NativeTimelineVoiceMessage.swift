@@ -104,8 +104,8 @@ struct NativeTimelineVoiceMessageRegion {
     }
 
     /// An audio file card's player: its badge plays, and the seek row under
-    /// its name holds the time, seek bar, and mute, with the seek bar in
-    /// `waveformFrame` and mute in `speedFrame`.
+    /// it holds the elapsed time, seek bar, remaining time, and mute, with
+    /// the times and bar in `waveformFrame` and mute in `speedFrame`.
     static func audioFile(in card: NativeTimelineFileCard, messageID: MessageID, surface: Style) -> Self {
         let row = card.playerRowFrame
         let mute = InterfaceScale.metric(24)
@@ -113,16 +113,14 @@ struct NativeTimelineVoiceMessageRegion {
             x: card.buttonFrame.midX - mute / 2, y: row.midY - mute / 2, width: mute, height: mute
         )
         let duration = card.attachment.durationSeconds ?? 0
-        let timeFrame = CGRect(x: row.minX, y: row.minY, width: audioFileTimeWidth(duration), height: row.height)
-        let barMinX = timeFrame.maxX + InterfaceScale.metric(10)
-        let barFrame = CGRect(
-            x: barMinX, y: row.minY, width: max(1, muteFrame.minX - InterfaceScale.metric(8) - barMinX), height: row.height
+        let span = CGRect(
+            x: row.minX, y: row.minY, width: max(1, muteFrame.minX - InterfaceScale.metric(8) - row.minX), height: row.height
         )
         return Self(
             frame: card.playFrame.union(row),
             playFrame: card.playFrame,
-            waveformFrame: barFrame,
-            timeFrame: timeFrame,
+            waveformFrame: span,
+            timeFrame: CGRect(x: span.minX, y: span.minY, width: audioFileTimeWidth(duration), height: span.height),
             speedFrame: muteFrame,
             messageID: messageID,
             attachment: card.attachment,
@@ -133,25 +131,29 @@ struct NativeTimelineVoiceMessageRegion {
         )
     }
 
-    /// The width of an audio file's "elapsed / length" label. Only a few
-    /// lengths' digit counts occur, so drawing frames measure from a cache.
+    /// The width of an audio file's elapsed and remaining times, which fit
+    /// "-" and its length. Only a few lengths' digit counts occur, so
+    /// drawing frames measure from a cache.
     private static func audioFileTimeWidth(_ duration: TimeInterval) -> CGFloat {
         let length = VoiceMessageDurationFormat.string(duration)
         let font = NativeTimelineVoiceMessagePainter.timeFont
         let key = "\(font.pointSize)|\(length)"
         if let width = audioFileTimeWidths[key] { return width }
-        let width = ceil((length + "\u{2009}/\u{2009}" + length as NSString).size(withAttributes: [.font: font]).width)
+        let width = ceil(("-" + length as NSString).size(withAttributes: [.font: font]).width)
         audioFileTimeWidths[key] = width
         return width
     }
 
     private static var audioFileTimeWidths: [String: CGFloat] = [:]
 
-    /// An audio file's seek bar. Like Discord's flexible bar, it starts
-    /// after the time label, which a length learned after layout can widen.
+    /// An audio file's seek bar, between its times, which a length learned
+    /// after layout can widen.
     func seekBarFrame(for duration: TimeInterval?) -> CGRect {
-        let minX = max(waveformFrame.minX, timeFrame.minX + Self.audioFileTimeWidth(duration ?? 0) + InterfaceScale.metric(10))
-        return CGRect(x: minX, y: waveformFrame.minY, width: max(1, waveformFrame.maxX - minX), height: waveformFrame.height)
+        let inset = Self.audioFileTimeWidth(duration ?? 0) + InterfaceScale.metric(10)
+        return CGRect(
+            x: waveformFrame.minX + inset, y: waveformFrame.minY,
+            width: max(1, waveformFrame.width - inset * 2), height: waveformFrame.height
+        )
     }
 
     struct Metrics {
@@ -195,6 +197,8 @@ struct VoiceMessageRestingPresentation: Equatable {
 struct NativeTimelineVoiceMessageDrawState {
     var progress: CGFloat = 0
     var isPlaying = false
+    /// How far the play glyph has turned into pause, while it morphs.
+    var pauseMorph: CGFloat?
     var isLoading = false
     /// Fetching, before the spinner appears; frames keep coming so it can.
     var isFetching = false
@@ -329,26 +333,35 @@ enum NativeTimelineVoiceMessagePainter {
             // The overlay's spinner layer turns on the render server, so it
             // keeps moving while the main thread is busy starting playback.
             return
-        } else if state.isPlaying {
-            for offset in [-4.0, 4.0] {
-                let bar = CGRect(x: frame.midX + offset * unit - 1.75 * unit, y: frame.midY - 6.5 * unit,
-                                 width: 3.5 * unit, height: 13 * unit)
-                context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.2 * unit, cornerHeight: 1.2 * unit, transform: nil))
-            }
-            context.fillPath()
-        } else {
-            // Optically centred: a triangle's mass sits left of its bounds.
-            let path = CGMutablePath()
-            path.move(to: CGPoint(x: frame.midX - 4.5 * unit, y: frame.midY - 7 * unit))
-            path.addLine(to: CGPoint(x: frame.midX + 7.5 * unit, y: frame.midY))
-            path.addLine(to: CGPoint(x: frame.midX - 4.5 * unit, y: frame.midY + 7 * unit))
-            path.closeSubpath()
-            context.addPath(path)
-            context.setLineJoin(.round)
-            context.setLineWidth(2 * unit)
-            context.setStrokeColor(palette.glyph.cgColor)
-            context.drawPath(using: .fillStroke)
         }
+        // Play's triangle, split down the middle, and pause's two bars share
+        // their corners, so either glyph morphs into the other.
+        let pause = state.pauseMorph ?? (state.isPlaying ? 1 : 0)
+        let play: [[CGPoint]] = [
+            [CGPoint(x: -4.5, y: -7), CGPoint(x: 1.5, y: -3.5), CGPoint(x: 1.5, y: 3.5), CGPoint(x: -4.5, y: 7)],
+            [CGPoint(x: 1.5, y: -3.5), CGPoint(x: 7.5, y: 0), CGPoint(x: 7.5, y: 0), CGPoint(x: 1.5, y: 3.5)],
+        ]
+        let bars: [[CGPoint]] = [-4.0, 4.0].map { offset in
+            [CGPoint(x: offset - 1.15, y: -5.9), CGPoint(x: offset + 1.15, y: -5.9),
+             CGPoint(x: offset + 1.15, y: 5.9), CGPoint(x: offset - 1.15, y: 5.9)]
+        }
+        let path = CGMutablePath()
+        for (from, to) in zip(play, bars) {
+            let points = zip(from, to).map { start, end in
+                CGPoint(
+                    x: frame.midX + (start.x + (end.x - start.x) * pause) * unit,
+                    y: frame.midY + (start.y + (end.y - start.y) * pause) * unit
+                )
+            }
+            path.addLines(between: points)
+            path.closeSubpath()
+        }
+        context.addPath(path)
+        context.setLineJoin(.round)
+        // Pause's rounding comes from a thinner stroke than play's.
+        context.setLineWidth((2 - 0.8 * pause) * unit)
+        context.setStrokeColor(palette.glyph.cgColor)
+        context.drawPath(using: .fillStroke)
     }
 
     private static func drawBars(
@@ -485,7 +498,25 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         didSet {
             needsDisplay = true
             if state.isLoading != oldValue.isLoading { updateSpinner() }
+            if state.isPlaying != oldValue.isPlaying, !state.reducesMotion {
+                pauseMorph = (from: pauseAmount(at: ProcessInfo.processInfo.systemUptime, isPlaying: oldValue.isPlaying),
+                              start: ProcessInfo.processInfo.systemUptime)
+            }
         }
+    }
+
+    /// Play and pause morph into each other over this long.
+    private static let morphDuration: TimeInterval = 0.2
+    /// Where a play and pause morph started, and when.
+    private var pauseMorph: (from: CGFloat, start: TimeInterval)?
+
+    /// How far the glyph is from play to pause.
+    private func pauseAmount(at time: TimeInterval, isPlaying: Bool) -> CGFloat {
+        let target: CGFloat = isPlaying ? 1 : 0
+        guard let pauseMorph else { return target }
+        let elapsed = min(max((time - pauseMorph.start) / Self.morphDuration, 0), 1)
+        let eased = 1 - pow(1 - elapsed, 3)
+        return pauseMorph.from + (target - pauseMorph.from) * eased
     }
 
     private let spinner = CAShapeLayer()
@@ -567,7 +598,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     /// Runs a display link only while something moves.
     func updateAnimation() {
-        let animates = window != nil && (state.isPlaying || state.isLoading || state.isFetching)
+        let animates = window != nil && (state.isPlaying || state.isLoading || state.isFetching || pauseMorph != nil)
         if animates, ticker.displayLink == nil {
             ticker.start(on: self) { [weak self] in self?.tick() }
         } else if !animates, ticker.displayLink != nil {
@@ -577,8 +608,13 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     private func tick() {
         guard var next = refresh?() else { return }
-        next.clock = ProcessInfo.processInfo.systemUptime - clockOrigin
+        let now = ProcessInfo.processInfo.systemUptime
+        next.clock = now - clockOrigin
         state = next
+        if let pauseMorph, now - pauseMorph.start >= Self.morphDuration {
+            self.pauseMorph = nil
+            updateAnimation()
+        }
     }
 
     func stop() {
@@ -590,6 +626,10 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         context.saveGState()
         // The overlay's bounds are the region's frame.
         context.translateBy(x: -region.frame.minX, y: -region.frame.minY)
+        var state = state
+        if pauseMorph != nil {
+            state.pauseMorph = pauseAmount(at: ProcessInfo.processInfo.systemUptime, isPlaying: state.isPlaying)
+        }
         NativeTimelineVoiceMessagePainter.drawContent(region, state: state)
         context.restoreGState()
     }

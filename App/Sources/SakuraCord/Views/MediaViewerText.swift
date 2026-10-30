@@ -30,7 +30,7 @@ struct MediaViewerText: View {
         }
         .frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
         .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
-        .clipShape(ConcentricRectangle(cornerRadius: NativeTimelineBubbleDrawing.cornerRadius, style: .continuous))
+        .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
         .task(id: url) {
             text = nil
             failed = false

@@ -1,7 +1,8 @@
 import AppKit
 
 /// An audio file's player, in a voice message's colours: the card's badge
-/// plays, and the seek row holds the time, a seek capsule, and mute.
+/// plays, and the seek row holds the elapsed time, a seek capsule, the time
+/// left, and mute.
 extension NativeTimelineVoiceMessagePainter {
     static func drawAudioFilePlayer(
         _ region: NativeTimelineVoiceMessageRegion,
@@ -14,34 +15,42 @@ extension NativeTimelineVoiceMessagePainter {
         // changes; the opaque play button covers the row's own.
         if state.isResting {
             if state.isPlayHovered { drawPlayButton(region, state: state, palette: palette, context: context) }
-            // A second resting fill brings the row's chip to its hover shade.
             if state.isSpeedHovered {
-                drawMuteChip(region, fill: palette.chipFill, palette: palette, isMuted: state.isMuted, context: context)
+                drawMuteChip(region, isHovered: true, palette: palette, isMuted: state.isMuted, context: context)
             }
             drawAudioFileSeekHover(bar, state: state, palette: palette, context: context)
             return
         }
         drawPlayButton(region, state: state, palette: palette, context: context)
-        let time = state.duration.map {
-            "\(Self.timeText(Double(state.progress) * $0))\u{2009}/\u{2009}\(Self.timeText($0))"
-        } ?? "-:--\u{2009}/\u{2009}-:--"
-        VoiceMessageLabelCache.draw(time, font: timeFont, color: palette.text, centeredIn: region.timeFrame, alignment: .left)
+        let times = state.duration.map { duration in
+            let elapsed = Double(state.progress) * duration
+            return (Self.timeText(elapsed), "-" + Self.timeText(duration - elapsed.rounded(.down)))
+        } ?? ("-:--", "-:--")
+        let gap = InterfaceScale.metric(10)
+        let span = region.waveformFrame
+        VoiceMessageLabelCache.draw(
+            times.0, font: timeFont, color: palette.text,
+            centeredIn: CGRect(x: span.minX, y: span.minY, width: bar.minX - gap - span.minX, height: span.height), alignment: .left
+        )
+        VoiceMessageLabelCache.draw(
+            times.1, font: timeFont, color: palette.text,
+            centeredIn: CGRect(x: bar.maxX + gap, y: span.minY, width: span.maxX - bar.maxX - gap, height: span.height),
+            alignment: .right
+        )
         let track = seekTrack(in: bar)
         let radius = track.height / 2
         context.setFillColor(palette.unplayed.cgColor)
         context.addPath(CGPath(roundedRect: track, cornerWidth: radius, cornerHeight: radius, transform: nil))
         context.fillPath()
-        var played = track
-        played.size.width = max(track.height, track.width * state.progress)
-        if state.progress > 0 {
+        if state.progress > 0 || state.isPlaying {
+            var played = track
+            played.size.width = max(track.height, track.width * state.progress)
             context.setFillColor(palette.played.cgColor)
             context.addPath(CGPath(roundedRect: played, cornerWidth: radius, cornerHeight: radius, transform: nil))
             context.fillPath()
+            drawGrabber(on: track, at: state.progress, palette: palette, context: context)
         }
-        drawMuteChip(
-            region, fill: state.isSpeedHovered ? palette.chipHoverFill : palette.chipFill,
-            palette: palette, isMuted: state.isMuted, context: context
-        )
+        drawMuteChip(region, isHovered: state.isSpeedHovered, palette: palette, isMuted: state.isMuted, context: context)
         drawAudioFileSeekHover(bar, state: state, palette: palette, context: context)
     }
 
@@ -52,19 +61,32 @@ extension NativeTimelineVoiceMessagePainter {
     }
 
     private static func seekTrack(in bar: CGRect) -> CGRect {
-        let height = InterfaceScale.metric(4)
+        let height = InterfaceScale.metric(5)
         return CGRect(x: bar.minX, y: bar.midY - height / 2, width: bar.width, height: height)
     }
 
-    /// The voice message speed chip's look, holding the mute toggle.
+    /// The playhead's knob.
+    private static func drawGrabber(on track: CGRect, at fraction: CGFloat, palette: Palette, context: CGContext) {
+        let grabber = InterfaceScale.metric(12)
+        context.setFillColor(palette.played.cgColor)
+        context.fillEllipse(in: CGRect(
+            x: track.minX + track.width * fraction - grabber / 2, y: track.midY - grabber / 2,
+            width: grabber, height: grabber
+        ))
+    }
+
+    /// Mute, a plain glyph that gains the file card's chip under the pointer.
     private static func drawMuteChip(
-        _ region: NativeTimelineVoiceMessageRegion, fill: NSColor, palette: Palette, isMuted: Bool, context: CGContext
+        _ region: NativeTimelineVoiceMessageRegion, isHovered: Bool, palette: Palette, isMuted: Bool, context: CGContext
     ) {
-        context.setFillColor(fill.cgColor)
-        context.fillEllipse(in: region.speedFrame)
+        if isHovered {
+            context.setFillColor(palette.chipHoverFill.cgColor)
+            context.fillEllipse(in: region.speedFrame)
+        }
         NativeTimelineRowPainter.systemSymbol(
             isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-            in: region.speedFrame, color: palette.chipSymbol, inset: InterfaceScale.metric(6), weight: .semibold
+            in: region.speedFrame, color: isHovered ? palette.chipSymbol : palette.text,
+            inset: InterfaceScale.metric(6), weight: .semibold
         )
     }
 
@@ -83,12 +105,7 @@ extension NativeTimelineVoiceMessagePainter {
         context.setFillColor(palette.played.withAlphaComponent(0.35).cgColor)
         context.addPath(CGPath(roundedRect: preview, cornerWidth: radius, cornerHeight: radius, transform: nil))
         context.fillPath()
-        let grabber = InterfaceScale.metric(10)
-        context.setFillColor(palette.played.cgColor)
-        context.fillEllipse(in: CGRect(
-            x: track.minX + track.width * state.progress - grabber / 2, y: track.midY - grabber / 2,
-            width: grabber, height: grabber
-        ))
+        drawGrabber(on: track, at: state.progress, palette: palette, context: context)
         guard let duration = state.duration else { return }
         let text = timeText(Double(hover) * duration)
         let font = audioFileBubbleFont

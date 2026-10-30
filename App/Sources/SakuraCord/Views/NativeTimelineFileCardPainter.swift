@@ -107,8 +107,8 @@ extension NativeTimelineRowPainter {
         systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
     }
 
-    /// An audio card's download button: a voice message's chip, ringed
-    /// while downloading.
+    /// An audio card's download button: a plain glyph that gains a voice
+    /// message's chip under the pointer, ringed while downloading.
     private static func fileCardDownloadButton(
         _ card: NativeTimelineFileCard,
         state: AttachmentDownloadStore.State?,
@@ -118,8 +118,10 @@ extension NativeTimelineRowPainter {
         pressProgress: CGFloat
     ) {
         let chip = card.buttonFrame
-        (isHovered ? palette.chipHover : palette.chip).setFill()
-        NSBezierPath(ovalIn: chip).fill()
+        if isHovered {
+            palette.chipHover.setFill()
+            NSBezierPath(ovalIn: chip).fill()
+        }
         if pressProgress > 0 {
             palette.highlight.withAlphaComponent(0.06 * pressProgress).setFill()
             NSBezierPath(ovalIn: chip).fill()
@@ -184,7 +186,6 @@ extension NativeTimelineRowPainter {
         let link: NSColor
         let failure: NSColor
         let highlight: NSColor
-        let chip: NSColor
         let chipHover: NSColor
         let isFailed: Bool
 
@@ -197,7 +198,6 @@ extension NativeTimelineRowPainter {
                 link = .white
                 failure = .white
                 highlight = .white
-                chip = NSColor.white.withAlphaComponent(0.2)
                 chipHover = NSColor.white.withAlphaComponent(0.32)
             } else {
                 button = isFailed ? .systemRed : accent
@@ -205,7 +205,6 @@ extension NativeTimelineRowPainter {
                 link = accent
                 failure = .systemRed
                 highlight = .labelColor
-                chip = NSColor.labelColor.withAlphaComponent(0.09)
                 chipHover = NSColor.labelColor.withAlphaComponent(0.16)
             }
             name = NativeTimelineBubbleDrawing.foregroundColor(for: bubble)
