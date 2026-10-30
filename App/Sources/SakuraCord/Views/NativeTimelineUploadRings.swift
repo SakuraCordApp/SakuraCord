@@ -131,7 +131,8 @@ final class NativeTimelineUploadRingView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let superview else { return nil }
+        // A ring fading out no longer acts.
+        guard let superview, activate != nil else { return nil }
         return controlFrame.contains(convert(point, from: superview)) ? self : nil
     }
 
@@ -145,6 +146,7 @@ final class NativeTimelineUploadRingView: NSView {
     }
 
     override func resetCursorRects() {
+        guard activate != nil else { return }
         addCursorRect(controlFrame, cursor: .pointingHand)
     }
 
@@ -232,6 +234,8 @@ extension NativeTimelineCanvasView {
         }
         for (key, view) in uploadRings where !shown.contains(key) {
             uploadRings[key] = nil
+            view.activate = nil
+            window?.invalidateCursorRects(for: view)
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 view.animator().alphaValue = 0
