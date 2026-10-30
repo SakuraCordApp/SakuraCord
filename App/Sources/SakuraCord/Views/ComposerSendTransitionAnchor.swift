@@ -47,18 +47,16 @@ final class ComposerSendTransitionAnchor {
         )
     }
 
-    /// Lets the media viewer zoom a staged image out of its tile and back.
-    func mediaViewerSource(for attachmentID: UUID) -> MediaViewerTransitionSource? {
-        guard let preview = attachmentPreviews[attachmentID],
-              let view = preview.view,
-              let image = preview.thumbnail,
-              view.window != nil
+    /// Lets the media viewer zoom a staged file out of its tile and back.
+    func mediaViewerSource(for attachment: ForumPostAttachment) -> MediaViewerTransitionSource? {
+        guard let view = attachmentPreviews[attachment.id]?.view,
+              let image = tileImage(for: attachment)
         else { return nil }
         // SwiftUI hosting can report a visible rect beyond the tile itself.
         let visibleRect = view.visibleRect.intersection(view.bounds)
         guard !visibleRect.isEmpty else { return nil }
         return MediaViewerTransitionSource(
-            itemID: attachmentID.uuidString,
+            itemID: attachment.id.uuidString,
             image: image,
             frameInWindow: view.convert(view.bounds, to: nil),
             visibleFrameInWindow: view.convert(visibleRect, to: nil),
@@ -113,19 +111,33 @@ final class ComposerSendTransitionAnchor {
         return preview
     }
 
-    /// What a staged attachment's tile shows: an image or video thumbnail,
-    /// or another file's icon and type, with its upload ring. Spoilers never
-    /// fly uncovered.
+    /// A staged attachment's tile in flight, with its upload ring. Spoilers
+    /// never fly uncovered.
     private func attachmentSnapshot(
         _ attachment: ForumPostAttachment,
         uploadFraction: Double?
     ) -> NativeTimelineSendTransitionSource.Attachment? {
         guard !attachment.isSpoiler,
-              let preview = attachmentPreviews[attachment.id],
+              let view = attachmentPreviews[attachment.id]?.view,
+              view.window === textView?.window,
+              view.visibleRect.contains(view.bounds),
+              let image = tileImage(for: attachment)
+        else { return nil }
+        return NativeTimelineSendTransitionSource.Attachment(
+            image: image,
+            frame: view.convert(view.bounds, to: nil),
+            cornerRadius: ComposerAttachmentTray.cornerRadius,
+            uploadFraction: uploadFraction,
+            ringScale: ComposerAttachmentTray.ringScale
+        )
+    }
+
+    /// What a staged attachment's tile shows: an image or video thumbnail,
+    /// or another file's icon and type.
+    private func tileImage(for attachment: ForumPostAttachment) -> NSImage? {
+        guard let preview = attachmentPreviews[attachment.id],
               let view = preview.view,
-              let window = view.window,
-              window === textView?.window,
-              view.visibleRect.contains(view.bounds)
+              let window = view.window
         else { return nil }
         let image: NSImage?
         if attachment.isVisualMedia {
@@ -143,13 +155,7 @@ final class ComposerSendTransitionAnchor {
             image = renderer.nsImage
         }
         guard let image, image.size.width > 0, image.size.height > 0 else { return nil }
-        return NativeTimelineSendTransitionSource.Attachment(
-            image: image,
-            frame: view.convert(view.bounds, to: nil),
-            cornerRadius: ComposerAttachmentTray.cornerRadius,
-            uploadFraction: uploadFraction,
-            ringScale: ComposerAttachmentTray.ringScale
-        )
+        return image
     }
 
     /// Draws the laid-out glyphs rather than caching the view, which would

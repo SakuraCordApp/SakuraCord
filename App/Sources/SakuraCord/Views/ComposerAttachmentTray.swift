@@ -136,10 +136,7 @@ private struct ComposerAttachmentTile: View {
             .animation(.smooth(duration: 0.25), value: isChecking)
             .animation(.smooth(duration: 0.25), value: uploadFraction == nil)
             .contentShape(shape)
-            .onTapGesture {
-                guard isViewable else { return }
-                open(attachment.id)
-            }
+            .onTapGesture { open(attachment.id) }
             .onModalHover { hovering in
                 withAnimation(ComposerResizeMotion.hover) { isHovered = hovering }
             }
@@ -152,7 +149,6 @@ private struct ComposerAttachmentTile: View {
             .accessibilityLabel(attachment.filename)
             .accessibilityValue(accessibilityStatus)
             .accessibilityAction(named: "Open attachment") {
-                guard isViewable else { return }
                 open(attachment.id)
             }
             .accessibilityAction(
@@ -348,12 +344,6 @@ private struct ComposerAttachmentTile: View {
                 remove(attachment.id)
             }
         }
-    }
-
-    /// Images and text files open in the media viewer.
-    private var isViewable: Bool {
-        let preview = OptimisticAttachmentPresentation.attachment(for: attachment.url, index: 0)
-        return preview.mediaKind == .image || preview.mediaKind == .animatedImage || preview.textPreviewLanguage != nil
     }
 }
 
