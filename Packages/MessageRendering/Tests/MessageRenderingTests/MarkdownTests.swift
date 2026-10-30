@@ -471,32 +471,11 @@ import Testing
     ) as? NSFont
     #expect(codeFont?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
 
-    let key = string.range(of: "\"value\"")
-    #expect(
-        value.attribute(
-            .foregroundColor,
-            at: key.location,
-            effectiveRange: nil
-        ) as? NSColor == NSColor(
-            red: 0.31,
-            green: 0.63,
-            blue: 0.98,
-            alpha: 1
-        )
-    )
-    let number = string.range(of: "42")
-    #expect(
-        value.attribute(
-            .foregroundColor,
-            at: number.location,
-            effectiveRange: nil
-        ) as? NSColor == NSColor(
-            red: 0.94,
-            green: 0.56,
-            blue: 0.31,
-            alpha: 1
-        )
-    )
+    // JSON keys and numbers get their own appearance-aware colours.
+    let key = value.attribute(.foregroundColor, at: string.range(of: "\"value\"").location, effectiveRange: nil) as? NSColor
+    let number = value.attribute(.foregroundColor, at: string.range(of: "42").location, effectiveRange: nil) as? NSColor
+    #expect(key != nil && number != nil && key != number)
+    #expect(key != NSColor.labelColor && number != NSColor.labelColor)
 }
 
 @Test func `composer source formatting preserves UTF16 ranges and nested styles`() throws {

@@ -1110,37 +1110,51 @@ public enum DiscordMarkdown {
         return font
     }
 
+    /// Discord's dark-theme code colours, each with a darker variant that
+    /// keeps its contrast on the translucent code fill in light appearance.
+    private enum CodePalette {
+        static let jsonKey = color(dark: 0x4FA1FA, light: 0x0B62C4)
+        static let jsonString = color(dark: 0xA3D187, light: 0x1F7A3D)
+        static let jsonNumber = color(dark: 0xF08F4F, light: 0xB04A00)
+        static let jsonKeyword = color(dark: 0x73B8F5, light: 0x0B62C4)
+        static let keyword = color(dark: 0xF67774, light: 0xC0362C)
+        static let title = color(dark: 0x8195FB, light: 0x4A5BD4)
+        static let string = color(dark: 0x57AF74, light: 0x1F7A3D)
+        static let number = color(dark: 0xE18752, light: 0xB04A00)
+        static let `operator` = color(dark: 0xFC8884, light: 0xC0362C)
+        static let comment = color(dark: 0x888991, light: 0x696B73)
+
+        private static func color(dark: UInt32, light: UInt32) -> NSColor {
+            let dark = srgb(dark)
+            let light = srgb(light)
+            return NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light }
+        }
+
+        private static func srgb(_ hex: UInt32) -> NSColor {
+            NSColor(
+                srgbRed: CGFloat(hex >> 16 & 0xFF) / 255,
+                green: CGFloat(hex >> 8 & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: 1
+            )
+        }
+    }
+
     private static func foregroundColor(
         for line: AppKitPlan.Line,
         semanticColor: AppKitPlan.SemanticColor?
     ) -> NSColor {
         switch semanticColor {
-        case .jsonKey: NSColor(
-            red: 0.31,
-            green: 0.63,
-            blue: 0.98,
-            alpha: 1
-        )
-        case .jsonString: NSColor(
-            red: 0.64,
-            green: 0.82,
-            blue: 0.53,
-            alpha: 1
-        )
-        case .jsonNumber: NSColor(
-            red: 0.94,
-            green: 0.56,
-            blue: 0.31,
-            alpha: 1
-        )
-        case .jsonKeyword: NSColor(red: 0.45, green: 0.72, blue: 0.96, alpha: 1)
-        // Discord's dark-theme code colours.
-        case .codeKeyword: NSColor(srgbRed: 246 / 255, green: 119 / 255, blue: 116 / 255, alpha: 1)
-        case .codeTitle: NSColor(srgbRed: 129 / 255, green: 149 / 255, blue: 251 / 255, alpha: 1)
-        case .codeString: NSColor(srgbRed: 87 / 255, green: 175 / 255, blue: 116 / 255, alpha: 1)
-        case .codeNumber: NSColor(srgbRed: 225 / 255, green: 135 / 255, blue: 82 / 255, alpha: 1)
-        case .codeOperator: NSColor(srgbRed: 252 / 255, green: 136 / 255, blue: 132 / 255, alpha: 1)
-        case .codeComment: NSColor(srgbRed: 136 / 255, green: 137 / 255, blue: 145 / 255, alpha: 1)
+        case .jsonKey: CodePalette.jsonKey
+        case .jsonString: CodePalette.jsonString
+        case .jsonNumber: CodePalette.jsonNumber
+        case .jsonKeyword: CodePalette.jsonKeyword
+        case .codeKeyword: CodePalette.keyword
+        case .codeTitle: CodePalette.title
+        case .codeString: CodePalette.string
+        case .codeNumber: CodePalette.number
+        case .codeOperator: CodePalette.operator
+        case .codeComment: CodePalette.comment
         case nil:
             switch line.block {
             case .subtext: NSColor.secondaryLabelColor
