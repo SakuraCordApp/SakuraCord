@@ -147,7 +147,8 @@ final class ComposerSendTransitionAnchor {
             image: image,
             frame: view.convert(view.bounds, to: nil),
             cornerRadius: ComposerAttachmentTray.cornerRadius,
-            uploadFraction: uploadFraction
+            uploadFraction: uploadFraction,
+            ringScale: ComposerAttachmentTray.ringScale
         )
     }
 

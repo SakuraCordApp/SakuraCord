@@ -20,6 +20,8 @@ struct NativeTimelineSendTransitionSource {
         let cornerRadius: CGFloat
         /// The tile's upload ring, which flies along to the message.
         let uploadFraction: Double?
+        /// The ring's size on the tile, relative to the message's.
+        let ringScale: CGFloat
     }
 
     let channelID: ChannelID
@@ -370,7 +372,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
                 overlay.pieceDimLayers[index] = dim
                 let ring = overlay.addRing(index: index, at: CGPoint(x: frame.midX, y: frame.midY))
                 ring.fraction = fraction
-                ring.setAffineTransform(CGAffineTransform(scaleX: ComposerAttachmentTray.ringScale, y: ComposerAttachmentTray.ringScale))
+                ring.setAffineTransform(CGAffineTransform(scaleX: attachment.ringScale, y: attachment.ringScale))
             }
         }
         CATransaction.commit()
@@ -560,10 +562,8 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         }()
         ringAttachmentIDs[piece.index] = target.attachmentID
         let sourceScale = ring.affineTransform().a
-        if sourceScale != 1 {
-            ring.setAffineTransform(.identity)
-            add(ring, "transform.scale", from: sourceScale, to: 1, timing: Timing.vertical, delay: delay)
-        }
+        ring.setAffineTransform(.identity)
+        add(ring, "transform.scale", from: sourceScale, to: 1, timing: Timing.vertical, delay: delay)
         ring.position = target.center
         animateAxes(
             ring,

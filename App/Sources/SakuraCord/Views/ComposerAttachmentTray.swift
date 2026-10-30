@@ -190,10 +190,10 @@ private struct ComposerAttachmentTile: View {
         .overlay {
             shape.stroke(.primary.opacity(isHovered ? 0.16 : 0.08), lineWidth: 1)
         }
-        // The name, its shade and the actions arrive and leave together.
+        // The name, an image's shade and the actions arrive and leave
+        // together. A file's flat face needs no shade, which would only
+        // muddy its pale surface in Light.
         .overlay(alignment: .bottom) {
-            // A file's flat face needs no shade under the glass pill, and
-            // a dark one only muddies its pale surface in Light.
             if isHovered, attachment.isVisualMedia {
                 Self.scrim
                     .clipShape(shape)
