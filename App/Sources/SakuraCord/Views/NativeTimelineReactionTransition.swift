@@ -626,6 +626,16 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// Clears pointer targets and the hover colour of a moving chip, which the
+    /// row's bitmap redraw does not reach.
+    @discardableResult
+    func clearHoverAndPressTargets() -> NativeTimelinePointerState.ClearedTargets {
+        let hoveredReactionRow = hoveredReaction.flatMap { rowIndex(for: $0) }
+        let cleared = pointer.clearHoverAndPressTargets()
+        if let hoveredReactionRow { refreshReactionChipHover(at: hoveredReactionRow) }
+        return cleared
+    }
+
     /// Keeps a band view on its row while rows move, clipped to the height the
     /// row has on screen.
     private func positionReactionBandView(_ view: NativeTimelineReactionBandView, transition: NativeTimelineReactionTransition, at index: Int) {
