@@ -303,9 +303,11 @@ extension NativeTimelineCanvasView {
         if oldTarget != newTarget {
             if let oldTarget, let index = rowIndex(for: oldTarget) {
                 setNeedsDisplay(rowFrame(at: index))
+                refreshReactionChipHover(at: index)
             }
             if let hit {
                 setNeedsDisplay(rowFrame(at: hit.rowIndex))
+                refreshReactionChipHover(at: hit.rowIndex)
             }
         }
 

@@ -574,32 +574,56 @@ extension NativeTimelineCanvasView {
         // read the same point of the motion the render server shows.
         let begin = CACurrentMediaTime() - (ProcessInfo.processInfo.systemUptime - transition.startUptime)
         let progress = transition.progress(at: now)
+        let showsAddControl = model?.canCreateReactions(on: row.message) != false
+        var pills: [(layer: CALayer, chip: NativeTimelineReactionTransition.Chip)] = []
+        for chip in transition.chips where chip.region != nil || showsAddControl {
+            let appearance = (chip.from.interpolated(to: chip.to, progress: progress), chip.to)
+            let pill = if let region = chip.region, let fromRegion = chip.fromRegion {
+                reactionChipLayer(region, from: fromRegion, appearance: appearance, begin: begin)
+            } else {
+                reactionPillLayer(appearance: appearance, begin: begin)
+            }
+            pills.append((pill, chip))
+        }
+        view.setPills(pills, bandTop: transition.bandTop)
+        refreshReactionChipHover(at: index)
+    }
+
+    /// Colours a transitioning row's chips for the pointer, which can enter
+    /// or leave a chip while it moves.
+    func refreshReactionChipHover(at index: Int) {
+        guard items.indices.contains(index),
+              let view = reactionBandViews[items[index].identifier],
+              case let .message(row, _, _) = items[index]
+        else { return }
         let hoveredReactionID = hoveredReactionID(inMessageAt: index)
         let canUpdate = model?.canUpdateReactions(on: row.message) != false
-        let showsAddControl = model?.canCreateReactions(on: row.message) != false
-        var chipLayers: [CALayer] = []
-        for chip in transition.chips {
-            let from = chip.from.interpolated(to: chip.to, progress: progress)
-            if let region = chip.region, let fromRegion = chip.fromRegion {
-                chipLayers.append(reactionChipLayer(
-                    region,
-                    from: fromRegion,
-                    appearance: (from, chip.to),
-                    isHovered: canUpdate && hoveredReactionID == region.reaction.id,
-                    begin: begin
-                ))
-            } else if showsAddControl {
-                let isHovered = isAddReactionHovered(inMessageAt: index)
-                let pill = reactionPillLayer(appearance: (from, chip.to), begin: begin)
-                pill.contents = reactionPicture(["add", isHovered], covering: chip.to.frame) {
-                    NativeTimelineRowPainter.reactionAddControl(in: chip.to.frame, isHovered: isHovered)
+        let isAddHovered = isAddReactionHovered(inMessageAt: index)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        for (pill, chip) in view.pills {
+            guard let region = chip.region else {
+                pill.contents = reactionPicture(["add", isAddHovered], covering: chip.to.frame) {
+                    NativeTimelineRowPainter.reactionAddControl(in: chip.to.frame, isHovered: isAddHovered)
                 }
                 pill.contentsScale = window?.backingScaleFactor ?? 2
                 pill.contentsGravity = .center
-                chipLayers.append(pill)
+                continue
+            }
+            let selected = region.reaction.didCurrentUserReact
+            let isHovered = canUpdate && hoveredReactionID == region.reaction.id
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                let fill = selected
+                    ? NSColor.sakuraCordAccentColor.withAlphaComponent(isHovered ? 0.22 : 0.16)
+                    : NSColor.labelColor.withAlphaComponent(isHovered ? 0.14 : 0.09)
+                pill.backgroundColor = fill.cgColor
+                pill.borderColor = selected
+                    ? NSColor.sakuraCordAccentColor.withAlphaComponent(0.95).cgColor
+                    : NSColor.labelColor.withAlphaComponent(0.28).cgColor
+                pill.borderWidth = selected || isHovered ? 1 : 0
             }
         }
-        view.setChipLayers(chipLayers, bandTop: transition.bandTop)
     }
 
     /// Keeps a band view on its row while rows move, clipped to the height the
@@ -662,23 +686,10 @@ extension NativeTimelineCanvasView {
         _ region: NativeTimelineRowLayout.ReactionRegion,
         from source: NativeTimelineRowLayout.ReactionRegion,
         appearance: (from: NativeTimelineReactionChipAppearance, to: NativeTimelineReactionChipAppearance),
-        isHovered: Bool,
         begin: CFTimeInterval
     ) -> CALayer {
         let pill = reactionPillLayer(appearance: appearance, begin: begin)
         let selected = region.reaction.didCurrentUserReact
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            let fill = selected
-                ? NSColor.sakuraCordAccentColor.withAlphaComponent(isHovered ? 0.22 : 0.16)
-                : NSColor.labelColor.withAlphaComponent(isHovered ? 0.14 : 0.09)
-            pill.backgroundColor = fill.cgColor
-            if selected || isHovered {
-                pill.borderColor = (selected
-                    ? NSColor.sakuraCordAccentColor.withAlphaComponent(0.95)
-                    : NSColor.labelColor.withAlphaComponent(0.28)).cgColor
-                pill.borderWidth = 1
-            }
-        }
         pill.cornerRadius = InterfaceScale.metric(9)
         let origin = region.frame.origin
         func picture(_ image: CGImage?, at frame: CGRect, opacity: Float = 1) -> CALayer {
@@ -848,11 +859,15 @@ final class NativeTimelineReactionBandView: NSView {
         CATransaction.commit()
     }
 
-    func setChipLayers(_ layers: [CALayer], bandTop: CGFloat) {
+    /// Each chip's layer, with the chip it shows.
+    private(set) var pills: [(layer: CALayer, chip: NativeTimelineReactionTransition.Chip)] = []
+
+    func setPills(_ pills: [(layer: CALayer, chip: NativeTimelineReactionTransition.Chip)], bandTop: CGFloat) {
+        self.pills = pills
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         content.frame = CGRect(x: 0, y: -bandTop, width: bounds.width, height: bandTop + bounds.height)
-        content.sublayers = layers
+        content.sublayers = pills.map(\.layer)
         CATransaction.commit()
     }
 }
