@@ -860,6 +860,8 @@ extension NativeTimelineCanvasView {
         let paintFrame = clipMaxY == nil ? rowFrame : CGRect(
             x: rowFrame.minX, y: rowFrame.minY, width: rowFrame.width, height: layouts[index].height
         )
+        // A shrinking row is taller on screen than its pictures.
+        guard paintFrame.intersects(dirtyRect) else { return }
         if reactionBandTop != nil,
            !timelineRowRequiresDirectPresentation(item: item, index: index, revealState: revealState),
            let image = reactionTransitionBitmap(for: item, width: rowFrame.width)
