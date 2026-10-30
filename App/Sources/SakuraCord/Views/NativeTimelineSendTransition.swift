@@ -1019,6 +1019,14 @@ extension NativeTimelineCanvasView {
         } else {
             transition.overlay.removeFromSuperview()
         }
+        if reconcilesHeldMedia {
+            // The landed row's upload dims and rings join its repaint. This
+            // commit can reach the screen before the next layout pass, so an
+            // overlay placed or laid out later leaves its media bare for a
+            // frame.
+            reconcileUploadRings()
+            uploadRings.values.forEach { $0.layoutSubtreeIfNeeded() }
+        }
         CATransaction.commit()
         guard reconcilesHeldMedia else { return }
         // The landed row's animated media, videos and spoiler covers were
