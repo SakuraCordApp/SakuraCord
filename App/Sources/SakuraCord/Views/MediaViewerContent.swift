@@ -643,17 +643,11 @@ private struct MediaViewerVideo: View {
     let mediaWidth: Int?
     let mediaHeight: Int?
 
+    /// Laid out at the video's own frame, which a staged video's tile zooms
+    /// into; the player letterboxes a video whose size is unknown.
     var body: some View {
-        GeometryReader { proxy in
-            let fittedSize = MediaViewerLayoutPolicy.fittedSize(
-                mediaWidth: mediaWidth ?? 16,
-                mediaHeight: mediaHeight ?? 9,
-                availableSize: proxy.size
-            )
-            ViewerAVPlayer(url: url)
-                .frame(width: fittedSize.width, height: fittedSize.height)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        ViewerAVPlayer(url: url)
+            .aspectRatio(CGSize(width: mediaWidth ?? 16, height: mediaHeight ?? 9), contentMode: .fit)
     }
 }
 
