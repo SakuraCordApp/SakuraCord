@@ -309,7 +309,11 @@ extension NativeTimelineCanvasView {
                 to: $0.appearance.hidden
             )
         } + arriving
-        guard !chips.allSatisfy(\.isStatic) else { return false }
+        guard !chips.allSatisfy(\.isStatic) else {
+            // A running transition toward reactions that are gone again ends here.
+            if reactionTransitions.removeValue(forKey: identifier) != nil { setNeedsDisplay(rowFrame(at: index)) }
+            return false
+        }
         let chipTop = chips.map { min($0.from.frame.minY, $0.to.frame.minY) }.min() ?? layout.height
         reactionTransitions[identifier] = NativeTimelineReactionTransition(
             rowIndex: index,
