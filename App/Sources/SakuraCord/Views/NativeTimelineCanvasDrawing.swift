@@ -49,6 +49,7 @@ extension NativeTimelineCanvasView {
         // rows landed the header.
         refreshDisclosureGeometry()
         refreshReactionMotionGeometry()
+        positionReactionBandViews()
         reconcileServerTagCardPresentation()
         contentOriginMoved =
             abs(previousContentOriginY - self.contentOriginY) >= 0.5

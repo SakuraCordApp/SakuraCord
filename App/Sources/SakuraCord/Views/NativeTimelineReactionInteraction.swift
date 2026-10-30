@@ -58,21 +58,22 @@ extension NativeTimelineCanvasView {
               case let .message(row, _, _) = items[index]
         else { return nil }
         let rowOrigin = displayedRowOrigin(at: index)
+        let frames = displayedReactionFrames(at: index)
         switch target {
         case let .reaction(_, reactionID):
-            guard let region = layouts[index].reactionRegions.first(where: {
+            guard let regionIndex = layouts[index].reactionRegions.firstIndex(where: {
                 $0.reaction.id == reactionID
             }) else { return nil }
             return ReactionPointerHit(
                 target: target,
                 rowIndex: index,
                 message: row.message,
-                reaction: region.reaction,
-                frame: region.frame.offsetBy(dx: 0, dy: rowOrigin)
+                reaction: layouts[index].reactionRegions[regionIndex].reaction,
+                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
             )
         case .add:
             guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = layouts[index].addReactionFrame else {
+                  let frame = frames.add else {
                 return nil
             }
             return ReactionPointerHit(

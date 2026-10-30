@@ -666,12 +666,6 @@ enum NativeTimelineBenchmarkArtifact {
         guard let path = ProcessInfo.processInfo.environment[
             "SAKURACORD_PERFORMANCE_RESULT_PATH"
         ] else { return }
-        let deficit = NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
-            completedDistance: completedDistance
-        )
-        let quality = NativeTimelineBenchmarkScrollPolicy.spatialQuality(
-            completedDistance: completedDistance
-        )
         let duration = NativeTimelineBenchmarkScrollPolicy.duration
         let overshoot = max(0, elapsed - duration)
         var contents = """
@@ -679,12 +673,18 @@ enum NativeTimelineBenchmarkArtifact {
         elapsed_seconds\t\(elapsed)
         nominal_duration_seconds\t\(duration)
         elapsed_overshoot_seconds\t\(overshoot)
-        completed_distance_points\t\(completedDistance)
-        nominal_distance_points\t\(NativeTimelineBenchmarkScrollPolicy.nominalDistance)
-        distance_deficit_points\t\(deficit)
-        spatial_quality_ratio\t\(quality)
 
         """
+        // A still timeline covers no distance by design.
+        if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+            contents += """
+            completed_distance_points\t\(completedDistance)
+            nominal_distance_points\t\(NativeTimelineBenchmarkScrollPolicy.nominalDistance)
+            distance_deficit_points\t\(NativeTimelineBenchmarkScrollPolicy.distanceDeficit(completedDistance: completedDistance))
+            spatial_quality_ratio\t\(NativeTimelineBenchmarkScrollPolicy.spatialQuality(completedDistance: completedDistance))
+
+            """
+        }
         if let completedTicks,
            let delayedTicks,
            let tickIntervals,

@@ -199,6 +199,7 @@ extension NativeTimelineCanvasView {
         var describesUpdate = true
         var startedChips = false
         var pausesMedia = false
+        var droppedMotion = false
         forEachDisplayedRow(in: reactionBaselineRect) { index in
             let identifier = items[index].identifier
             // Rows entering the followed area have no earlier place. One
@@ -222,7 +223,13 @@ extension NativeTimelineCanvasView {
             else {
                 if abs(delta) >= 0.5 { describesUpdate = false }
                 // Its chips belong to a row that changed in another way.
-                if changed { reactionTransitions[identifier] = nil }
+                if changed {
+                    reactionTransitions[identifier] = nil
+                    removeReactionBandView(identifier)
+                    let motionCount = reactionRowMotions.count
+                    reactionRowMotions.removeAll { $0.steps.contains { $0.identifier == identifier } }
+                    droppedMotion = droppedMotion || reactionRowMotions.count != motionCount
+                }
                 return
             }
             if abs(delta) >= 0.5 {
@@ -235,12 +242,18 @@ extension NativeTimelineCanvasView {
                 pausesMedia = pausesMedia || animatedMediaRows[identifier] != nil
             }
         }
+        // A row that changed in another way lands where the update put it.
+        if droppedMotion {
+            refreshReactionMotionGeometry(at: now)
+            redrawForRowMotion()
+        }
         // Live reaction media pauses on its still while the chips move.
         if pausesMedia { positionAnimatedMediaOverlays() }
         if describesUpdate, let shift, !steps.isEmpty {
             reactionRowMotions.append(.init(shift: shift, steps: steps))
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
+            positionReactionBandViews()
         } else if !startedChips {
             return
         }
@@ -313,7 +326,10 @@ extension NativeTimelineCanvasView {
         } + arriving
         guard !chips.allSatisfy(\.isStatic) else {
             // A running transition toward reactions that are gone again ends here.
-            if reactionTransitions.removeValue(forKey: identifier) != nil { setNeedsDisplay(rowFrame(at: index)) }
+            if reactionTransitions.removeValue(forKey: identifier) != nil {
+                removeReactionBandView(identifier)
+                setNeedsDisplay(rowFrame(at: index))
+            }
             return false
         }
         let chipTop = chips.map { min($0.from.frame.minY, $0.to.frame.minY) }.min() ?? layout.height
@@ -323,6 +339,7 @@ extension NativeTimelineCanvasView {
             bitmapItem: reactionTransitions[identifier]?.bitmapItem ?? old.item,
             chips: chips
         )
+        if let transition = reactionTransitions[identifier] { installReactionBandView(for: transition, at: index, now: now) }
         setNeedsDisplay(rowFrame(at: index))
         return true
     }
@@ -345,16 +362,22 @@ extension NativeTimelineCanvasView {
         for (identifier, transition) in reactionTransitions {
             guard let index = rowIndex(forIdentifier: identifier, hint: transition.rowIndex) else {
                 reactionTransitions[identifier] = nil
+                removeReactionBandView(identifier)
                 continue
             }
             if index != transition.rowIndex { reactionTransitions[identifier]?.rowIndex = index }
-            setNeedsDisplay(reactionBandFrame(in: rowFrame(at: index), bandTop: transition.bandTop))
             if transition.progress(at: now) >= 1 {
+                // The row's bitmap takes over from the chip layers in the same frame.
                 reactionTransitions[identifier] = nil
+                removeReactionBandView(identifier)
+                setNeedsDisplay(rowFrame(at: index))
                 reconcilesMedia = reconcilesMedia || animatedMediaRows[identifier] != nil
             }
         }
-        if redrawsRows { redrawForRowMotion(invalidating: reactionMotionFrame) }
+        if redrawsRows {
+            redrawForRowMotion(invalidating: reactionMotionFrame)
+            positionReactionBandViews()
+        }
         if reconcilesMedia { reconcileAnimatedMediaOverlays(reduceMotion: false) }
         if reactionTransitions.isEmpty, reactionRowMotions.isEmpty { reactionTicker.stop() }
     }
@@ -368,6 +391,7 @@ extension NativeTimelineCanvasView {
         let hadChips = !reactionTransitions.isEmpty
         reactionRowMotions.removeAll()
         reactionTransitions.removeAll()
+        for identifier in reactionBandViews.keys { removeReactionBandView(identifier) }
         refreshReactionMotionGeometry()
         if hadMotion {
             redrawForRowMotion()
@@ -496,16 +520,14 @@ extension NativeTimelineCanvasView {
         return cached.images[-1]
     }
 
-    /// Paints a transitioning row's band: its background, stretched to the
-    /// row's height on screen, and every chip where it is now.
+    /// Paints a transitioning row's band background, stretched to the row's
+    /// height on screen. The chips move above it in the row's band view.
     func drawReactionBand(at index: Int, rowFrame: CGRect) {
         let item = items[index]
         guard let transition = reactionTransitions[item.identifier],
-              case let .message(row, _, _) = item,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
         let layout = layouts[index]
-        let progress = transition.progress(at: ProcessInfo.processInfo.systemUptime)
         context.saveGState()
         defer { context.restoreGState() }
         context.clip(to: reactionBandFrame(in: rowFrame, bandTop: transition.bandTop))
@@ -519,94 +541,172 @@ extension NativeTimelineCanvasView {
             model: model,
             isHovered: hoveredRow == index || mediaViewerHighlightedMessageID == item.messageID
         )
+    }
+
+    /// Hands a row's chip motion to Core Animation: a view over the band
+    /// holds one layer per chip, built from the cached pictures and animated
+    /// from where it is on screen now. The render server runs the motion, so
+    /// the canvas does not redraw for it.
+    private func installReactionBandView(for transition: NativeTimelineReactionTransition, at index: Int, now: TimeInterval) {
+        let identifier = items[index].identifier
+        guard case let .message(row, _, _) = items[index] else { return }
+        let view = reactionBandViews[identifier] ?? NativeTimelineReactionBandView()
+        if view.superview !== self { addSubview(view) }
+        reactionBandViews[identifier] = view
+        positionReactionBandView(view, transition: transition, at: index)
+        let progress = transition.progress(at: now)
         let hoveredReactionID = hoveredReactionID(inMessageAt: index)
         let canUpdate = model?.canUpdateReactions(on: row.message) != false
         let showsAddControl = model?.canCreateReactions(on: row.message) != false
+        var chipLayers: [CALayer] = []
         for chip in transition.chips {
-            let appearance = chip.from.interpolated(to: chip.to, progress: progress)
-            guard appearance.opacity > 0.01, chip.region != nil || showsAddControl else { continue }
-            context.saveGState()
-            if appearance.scale != 1 {
-                let frame = appearance.frame
-                context.translateBy(x: frame.midX, y: frame.midY)
-                context.scaleBy(x: appearance.scale, y: appearance.scale)
-                context.translateBy(x: -frame.midX, y: -frame.midY)
-            }
-            if appearance.opacity < 1 {
-                context.setAlpha(appearance.opacity)
-                context.beginTransparencyLayer(in: appearance.frame.insetBy(dx: -2, dy: -2), auxiliaryInfo: nil)
-            }
+            let from = chip.from.interpolated(to: chip.to, progress: progress)
             if let region = chip.region, let fromRegion = chip.fromRegion {
-                drawReactionChip(
-                    region.moved(to: appearance.frame),
-                    from: fromRegion.moved(to: appearance.frame),
-                    progress: progress,
-                    isHovered: canUpdate && hoveredReactionID == region.reaction.id,
-                    in: context
-                )
-            } else {
-                NativeTimelineRowPainter.reactionAddControl(
-                    in: appearance.frame,
-                    isHovered: isAddReactionHovered(inMessageAt: index)
-                )
+                chipLayers.append(reactionChipLayer(
+                    region,
+                    from: fromRegion,
+                    appearance: (from, chip.to),
+                    isHovered: canUpdate && hoveredReactionID == region.reaction.id
+                ))
+            } else if showsAddControl {
+                let isHovered = isAddReactionHovered(inMessageAt: index)
+                let pill = reactionPillLayer(appearance: (from, chip.to))
+                pill.contents = reactionPicture(["add", isHovered], covering: chip.to.frame) {
+                    NativeTimelineRowPainter.reactionAddControl(in: chip.to.frame, isHovered: isHovered)
+                }
+                pill.contentsScale = window?.backingScaleFactor ?? 2
+                pill.contentsGravity = .center
+                chipLayers.append(pill)
             }
-            if appearance.opacity < 1 { context.endTransparencyLayer() }
-            context.restoreGState()
+        }
+        view.setChipLayers(chipLayers, bandTop: transition.bandTop)
+    }
+
+    /// Keeps a band view on its row while rows move, clipped to the height the
+    /// row has on screen.
+    private func positionReactionBandView(_ view: NativeTimelineReactionBandView, transition: NativeTimelineReactionTransition, at index: Int) {
+        view.setBandFrame(reactionBandFrame(in: rowFrame(at: index), bandTop: transition.bandTop))
+    }
+
+    func positionReactionBandViews() {
+        for (identifier, view) in reactionBandViews {
+            guard let transition = reactionTransitions[identifier],
+                  let index = rowIndex(forIdentifier: identifier, hint: transition.rowIndex)
+            else { continue }
+            positionReactionBandView(view, transition: transition, at: index)
         }
     }
 
-    /// One chip, both placed at its frame on screen. Its pill is painted;
-    /// its emoji, count and avatars are cached pictures, so a frame costs a
-    /// few image copies. A changed count rolls, and changed avatars fade.
-    private func drawReactionChip(
+    func removeReactionBandView(_ identifier: NativeMessageTimelineItem.Identifier) {
+        reactionBandViews.removeValue(forKey: identifier)?.removeFromSuperview()
+    }
+
+    private static let reactionTiming = CAMediaTimingFunction(controlPoints: 0.165, 0.84, 0.44, 1)
+
+    private func animate(_ layer: CALayer, _ keyPath: String, from value: Any) {
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.fromValue = value
+        animation.duration = NativeTimelineRowDisclosure.duration
+        animation.timingFunction = Self.reactionTiming
+        animation.preferredFrameRateRange = .fullRate(on: window?.screen)
+        layer.add(animation, forKey: keyPath)
+    }
+
+    /// A chip's outline moving, scaling and fading between two appearances;
+    /// its contents keep their offsets from its leading edge.
+    private func reactionPillLayer(
+        appearance: (from: NativeTimelineReactionChipAppearance, to: NativeTimelineReactionChipAppearance)
+    ) -> CALayer {
+        let pill = CALayer()
+        let (from, to) = appearance
+        pill.bounds = CGRect(origin: .zero, size: to.frame.size)
+        pill.position = CGPoint(x: to.frame.midX, y: to.frame.midY)
+        pill.opacity = Float(to.opacity)
+        pill.transform = CATransform3DMakeScale(to.scale, to.scale, 1)
+        if from != to {
+            animate(pill, "bounds.size", from: NSValue(size: from.frame.size))
+            animate(pill, "position", from: NSValue(point: CGPoint(x: from.frame.midX, y: from.frame.midY)))
+            animate(pill, "opacity", from: Float(from.opacity))
+            animate(pill, "transform", from: NSValue(caTransform3D: CATransform3DMakeScale(from.scale, from.scale, 1)))
+        }
+        return pill
+    }
+
+    private func reactionChipLayer(
         _ region: NativeTimelineRowLayout.ReactionRegion,
         from source: NativeTimelineRowLayout.ReactionRegion,
-        progress: CGFloat,
-        isHovered: Bool,
-        in context: CGContext
-    ) {
+        appearance: (from: NativeTimelineReactionChipAppearance, to: NativeTimelineReactionChipAppearance),
+        isHovered: Bool
+    ) -> CALayer {
+        let pill = reactionPillLayer(appearance: appearance)
         let selected = region.reaction.didCurrentUserReact
-        NativeTimelineRowPainter.drawReactionBackground(region.frame, selected: selected, isHovered: isHovered)
-        drawReactionPicture(emojiPicture(region), in: region.emojiFrame, context: context)
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let fill = selected
+                ? NSColor.sakuraCordAccentColor.withAlphaComponent(isHovered ? 0.22 : 0.16)
+                : NSColor.labelColor.withAlphaComponent(isHovered ? 0.14 : 0.09)
+            pill.backgroundColor = fill.cgColor
+            if selected || isHovered {
+                pill.borderColor = (selected
+                    ? NSColor.sakuraCordAccentColor.withAlphaComponent(0.95)
+                    : NSColor.labelColor.withAlphaComponent(0.28)).cgColor
+                pill.borderWidth = 1
+            }
+        }
+        pill.cornerRadius = InterfaceScale.metric(9)
+        let origin = region.frame.origin
+        func picture(_ image: CGImage?, at frame: CGRect, opacity: Float = 1) -> CALayer {
+            let layer = CALayer()
+            layer.contents = image
+            layer.contentsScale = window?.backingScaleFactor ?? 2
+            layer.frame = frame.offsetBy(dx: -origin.x, dy: -origin.y)
+                .insetBy(dx: -Self.reactionPictureInset, dy: -Self.reactionPictureInset)
+            layer.opacity = opacity
+            return layer
+        }
+        pill.addSublayer(picture(emojiPicture(region), at: region.emojiFrame))
         if let countFrame = region.countFrame {
+            let source = source.moved(to: region.frame)
+            let count = picture(countPicture(region, selected: selected), at: countFrame)
             if let sourceFrame = source.countFrame, source.reaction.count != region.reaction.count {
+                // Digits roll through a window just inside the chip.
+                let window = CALayer()
+                window.frame = pill.bounds.insetBy(dx: 0, dy: InterfaceScale.metric(3))
+                window.masksToBounds = true
                 let travel = region.frame.height / 2
                 let direction: CGFloat = region.reaction.count > source.reaction.count ? 1 : -1
-                context.saveGState()
-                context.clip(to: region.frame.insetBy(dx: 0, dy: InterfaceScale.metric(3)))
-                drawReactionPicture(
-                    countPicture(source, selected: selected),
-                    in: sourceFrame.offsetBy(dx: 0, dy: -direction * travel * progress),
-                    alpha: 1 - progress,
-                    context: context
-                )
-                drawReactionPicture(
-                    countPicture(region, selected: selected),
-                    in: countFrame.offsetBy(dx: 0, dy: direction * travel * (1 - progress)),
-                    alpha: progress,
-                    context: context
-                )
-                context.restoreGState()
+                let leaving = picture(countPicture(source, selected: selected), at: sourceFrame, opacity: 0)
+                for layer in [leaving, count] {
+                    layer.position.y -= window.frame.minY
+                    window.addSublayer(layer)
+                }
+                leaving.position.y -= direction * travel
+                animate(leaving, "position", from: NSValue(point: CGPoint(x: leaving.position.x, y: leaving.position.y + direction * travel)))
+                animate(leaving, "opacity", from: Float(1))
+                animate(count, "position", from: NSValue(point: CGPoint(x: count.position.x, y: count.position.y + direction * travel)))
+                animate(count, "opacity", from: Float(0))
+                pill.addSublayer(window)
             } else {
-                drawReactionPicture(countPicture(region, selected: selected), in: countFrame, context: context)
+                pill.addSublayer(count)
             }
         }
         let avatars = avatarsPicture(region)
-        let sourceAvatars = avatarsPicture(source)
-        if avatars?.key == sourceAvatars?.key, let avatars, let frame = sourceAvatars?.frame {
-            drawReactionPicture(
-                avatars.image,
-                in: frame.offsetBy(dx: (avatars.frame.minX - frame.minX) * progress, dy: 0),
-                context: context
-            )
-        } else {
-            if let sourceAvatars {
-                drawReactionPicture(sourceAvatars.image, in: sourceAvatars.frame, alpha: 1 - progress, context: context)
-            }
-            if let avatars {
-                drawReactionPicture(avatars.image, in: avatars.frame, alpha: progress, context: context)
+        let sourceAvatars = avatarsPicture(source.moved(to: region.frame))
+        if let avatars {
+            let layer = picture(avatars.image, at: avatars.frame)
+            pill.addSublayer(layer)
+            if let sourceAvatars, sourceAvatars.key == avatars.key {
+                let shift = sourceAvatars.frame.minX - avatars.frame.minX
+                animate(layer, "position", from: NSValue(point: CGPoint(x: layer.position.x + shift, y: layer.position.y)))
+            } else {
+                animate(layer, "opacity", from: Float(0))
             }
         }
+        if let sourceAvatars, sourceAvatars.key != avatars?.key {
+            let layer = picture(sourceAvatars.image, at: sourceAvatars.frame, opacity: 0)
+            pill.addSublayer(layer)
+            animate(layer, "opacity", from: Float(1))
+        }
+        return pill
     }
 
     private func emojiPicture(_ region: NativeTimelineRowLayout.ReactionRegion) -> CGImage? {
@@ -689,13 +789,44 @@ extension NativeTimelineCanvasView {
         return image
     }
 
-    private func drawReactionPicture(_ image: CGImage?, in frame: CGRect, alpha: CGFloat = 1, context: CGContext) {
-        guard let image, alpha > 0.01 else { return }
-        let bounds = frame.insetBy(dx: -Self.reactionPictureInset, dy: -Self.reactionPictureInset)
-        context.saveGState()
-        context.setAlpha(alpha)
-        ForumCardRasterizer.drawUpright(image, in: bounds, context: context)
-        context.restoreGState()
+}
+
+/// A transitioning row's chips above the canvas, clipped to the part of the
+/// row's reaction band on screen. Its layers are in row coordinates.
+final class NativeTimelineReactionBandView: NSView {
+    private let content = CALayer()
+
+    init() {
+        super.init(frame: .zero)
+        layer = CALayer()
+        wantsLayer = true
+        layer?.masksToBounds = true
+        layer?.isGeometryFlipped = true
+        layer?.addSublayer(content)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    func setBandFrame(_ frame: CGRect) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        self.frame = frame
+        CATransaction.commit()
+    }
+
+    func setChipLayers(_ layers: [CALayer], bandTop: CGFloat) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        content.frame = CGRect(x: 0, y: -bandTop, width: bounds.width, height: bandTop + bounds.height)
+        content.sublayers = layers
+        CATransaction.commit()
     }
 }
 

@@ -259,10 +259,13 @@ extension NativeMessageTimelineCoordinator {
             let hasMoreHistory = state.scrollsTowardLater
                 ? parent.hasMoreLaterMessages
                 : parent.hasMoreMessages
-            state.recordHistoryProgress(
-                didAdvance: didAdvance,
-                hasMoreHistory: hasMoreHistory
-            )
+            // A still timeline is not starved of history.
+            if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                state.recordHistoryProgress(
+                    didAdvance: didAdvance,
+                    hasMoreHistory: hasMoreHistory
+                )
+            }
             state.maximumScrollWork = max(
                 state.maximumScrollWork,
                 ProcessInfo.processInfo.systemUptime - workStart
