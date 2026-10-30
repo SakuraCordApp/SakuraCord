@@ -42,15 +42,16 @@ enum MediaViewerActionService {
         case .saveAs:
             destination = await savePanelDestination(for: item)
         case .defaultFolder:
-            guard let folder = try StorageDownloadsSettingsStore.shared
-                .resolvedDefaultFolder()
-            else {
-                throw MediaViewerActionError.defaultDownloadFolderUnavailable
+            // Without a Default Download Folder, files save to Downloads, as
+            // file cards' downloads do.
+            var folder = URL.downloadsDirectory.resolvingSymlinksInPath()
+            if let chosen = try StorageDownloadsSettingsStore.shared.resolvedDefaultFolder() {
+                guard chosen.startAccessingSecurityScopedResource() else {
+                    throw MediaViewerActionError.defaultDownloadFolderUnavailable
+                }
+                accessedFolder = chosen
+                folder = chosen
             }
-            guard folder.startAccessingSecurityScopedResource() else {
-                throw MediaViewerActionError.defaultDownloadFolderUnavailable
-            }
-            accessedFolder = folder
             let proposed = folder.appendingPathComponent(
                 MediaViewerFilePolicy.suggestedFilename(
                     title: item.title,
@@ -215,8 +216,8 @@ nonisolated enum MediaViewerDetails {
 
     /// A file's type and size as its card shows it, such as "PDF · 1.41 MB".
     @MainActor static func fileDetail(_ item: RichMediaItem) -> String {
-        let pathExtension = (MediaViewerFilePolicy.suggestedFilename(title: item.title, sourceURL: item.url) as NSString)
-            .pathExtension.uppercased()
+        let pathExtension = (item.url.pathExtension.isEmpty ? (item.title as NSString).pathExtension : item.url.pathExtension)
+            .uppercased()
         let size = item.size > 0 ? NativeTimelineFileCard.sizeText(item.size) : ""
         return [pathExtension, size].filter { !$0.isEmpty }.joined(separator: " · ")
     }
