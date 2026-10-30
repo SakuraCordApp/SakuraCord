@@ -16,7 +16,7 @@ extension NativeTimelineCanvasView {
         )
         guard presentation.items.indices.contains(presentation.selection) else { return presentation }
         guard case .image = presentation.items[presentation.selection].kind else {
-            return fileCardTransitionSource(itemID: presentation.items[presentation.selection].id, rowIndex: rowIndex)
+            return fileCardTransitionSource(for: presentation.items[presentation.selection], rowIndex: rowIndex)
                 .map(presentation.withTransitionSource) ?? presentation
         }
 
@@ -212,8 +212,14 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    /// A file card's snapshot, which grows into the file's preview.
-    private func fileCardTransitionSource(itemID: String, rowIndex: Int) -> MediaViewerTransitionSource? {
+    /// A file card's snapshot, which grows into the file's preview. A video
+    /// file shows without one, as the viewer zooms only files it previews.
+    private func fileCardTransitionSource(for item: RichMediaItem, rowIndex: Int) -> MediaViewerTransitionSource? {
+        switch item.kind {
+        case .audio, .text, .file: break
+        default: return nil
+        }
+        let itemID = item.id
         guard window != nil, layouts.indices.contains(rowIndex) else { return nil }
         let layout = layouts[rowIndex]
         guard let card = layout.fileCards.first(where: { $0.attachment.id == itemID })
@@ -246,7 +252,7 @@ extension NativeTimelineCanvasView {
         if presentation.items.indices.contains(presentation.selection),
            presentation.items[presentation.selection].id == componentID,
            layouts[rowIndex].componentLayouts.contains(where: { $0.files.contains { $0.componentID == componentID } }) {
-            return fileCardTransitionSource(itemID: componentID, rowIndex: rowIndex)
+            return fileCardTransitionSource(for: presentation.items[presentation.selection], rowIndex: rowIndex)
                 .map(presentation.withTransitionSource) ?? presentation
         }
         for layout in layouts[rowIndex].componentLayouts {
