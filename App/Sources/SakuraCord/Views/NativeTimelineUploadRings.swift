@@ -258,7 +258,8 @@ extension NativeTimelineCanvasView {
     }
 
     func removeUploadRings() {
-        for view in uploadRings.values {
+        // Including rings still fading out, which no longer have a key.
+        for view in subviews where view is NativeTimelineUploadRingView {
             view.removeFromSuperview()
         }
         uploadRings.removeAll()
