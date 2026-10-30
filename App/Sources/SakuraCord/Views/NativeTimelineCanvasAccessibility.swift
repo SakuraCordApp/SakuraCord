@@ -13,6 +13,8 @@ struct NativeTimelineAccessibilityRowState: Equatable {
     let translation: MessageTranslationEntry?
     let isTranslationEnabled: Bool
     let threadPreview: Message?
+    /// Upload progress leaves the item unchanged, but ends the files' cancel.
+    let isUploadCancellable: Bool
 }
 
 nonisolated enum TimelineAccessibilityWorkPolicy {
@@ -177,7 +179,10 @@ extension NativeTimelineCanvasView {
                     model?.messageTranslationPresentation(for: $0.message)
                 },
                 isTranslationEnabled: model?.translation.settings.isEnabled == true,
-                threadPreview: item.messageRow?.message.thread.flatMap { model?.threadPreviewMessages[$0.id] }
+                threadPreview: item.messageRow?.message.thread.flatMap { model?.threadPreviewMessages[$0.id] },
+                isUploadCancellable: layouts[index].uploadRegions.contains {
+                    model?.attachmentUploads.canCancel(nonce: item.messageRow?.message.nonce, attachmentID: $0.attachmentID) == true
+                }
             )
             let frame = rowFrame(at: index)
             desired.insert(identifier)
@@ -593,35 +598,9 @@ extension NativeTimelineCanvasView {
         let rowIndex = input.rowIndex
         let parent = input.parent
         if let region = layout.commandInvocationRegion {
-            let invokingUser =
-                message.interactionMetadata?.user?.displayName
-                ?? "Someone"
-            let commandName =
-                message.interactionMetadata?.displayName
-                ?? "command"
-            children.append(accessibilityElement(
-                role: .button,
-                label: "\(invokingUser) used /\(commandName)",
-                help: "Show profile",
-                frame: accessibilityChildFrame(
-                    region.frame,
-                    rowIndex: rowIndex
-                ),
-                parent: parent
-            ) { [weak self] in
-                guard let self,
-                      let user = message.interactionMetadata?.user
-                else { return false }
-                self.showMessageProfile(
-                    for: user,
-                    sourceMessage: message,
-                    anchor: self.accessibilityChildFrame(
-                        region.profileFrame,
-                        rowIndex: rowIndex
-                    )
-                )
-                return true
-            })
+            children.append(contentsOf: commandInvocationAccessibilityElements(
+                region, message: message, rowIndex: rowIndex, parent: parent
+            ) as [Any])
         }
         if !message.type.hasGeneratedContent,
            layout.avatarFrame != nil || layout.authorFrame != nil
@@ -1049,6 +1028,18 @@ extension NativeTimelineCanvasView {
                 parent: parent
             ))
         }
+        if let frame = layout.failedRetryFrame {
+            children.append(accessibilityElement(
+                role: .button,
+                label: MessageOutboxPresentation.retryTitle,
+                frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
+                parent: parent
+            ) { [weak self] in
+                self?.actions?.retry(message)
+                return true
+            })
+        }
+        appendUploadAccessibility(to: &children, message: message, layout: layout, rowIndex: rowIndex, parent: parent)
     }
 
     func appendTextAccessibility(

@@ -171,89 +171,41 @@ private struct FriendRowControls: View {
 }
 
 private struct AddFriendView: View {
+    private enum Field { case username, note }
+
     let model: AppModel
-    @FocusState private var isFieldFocused: Bool
+    @FocusState private var focusedField: Field?
+
+    /// Concentric with the capsule Send button: its 17 pt radius plus the 6 pt inset around it.
+    private var areaShape: ConcentricRectangle {
+        ConcentricRectangle(cornerRadius: InterfaceScale.metric(23), style: .continuous)
+    }
 
     var body: some View {
         @Bindable var friends = model.friends
-        let canSend = !friends.addFriendText.isEmpty && !friends.isSendingRequest
-            && friends.addFriendNote.utf16.count <= FriendRequestNote.maximumLength
         VStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
             Text("Add Friend")
-                .font(.interface(.title2).weight(.bold))
-            // Official stable633029 add-friend copy.
-            Text("You can add friends with their Discord username.")
-                .foregroundStyle(.secondary)
+                .font(.interface(.title2).weight(.semibold))
+            Text("You can add friends with their Discord usernames.")
 
-            HStack(spacing: InterfaceScale.metric(8)) {
-                TextField("Enter a username", text: $friends.addFriendText)
-                    .textFieldStyle(.plain)
-                    .tint(SakuraCordAccentColor.color)
-                    .focused($isFieldFocused)
-                    .onSubmit { if canSend { model.sendFriendRequest() } }
-                    .onChange(of: friends.addFriendText) { _, value in
-                        if value.count > FriendsListPolicy.usernameMaximumLength {
-                            friends.addFriendText = String(value.prefix(FriendsListPolicy.usernameMaximumLength))
-                        }
-                        friends.addFriendError = nil
-                        if !value.isEmpty { friends.addFriendSuccess = nil }
-                    }
-                    .accessibilityLabel("Username")
-                    .disabled(friends.isSendingRequest)
-                    .padding(.leading, InterfaceScale.metric(14))
-
-                Button {
-                    model.sendFriendRequest()
-                } label: {
-                    Text("Send Friend Request")
-                        .font(.interface(.callout).weight(.semibold))
-                        .opacity(friends.isSendingRequest ? 0 : 1)
-                        .overlay { if friends.isSendingRequest { InteractionLoadingDotsView(tone: .onFill) } }
-                        .padding(.horizontal, InterfaceScale.metric(14))
-                        .frame(height: InterfaceScale.metric(34))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .glassEffect(
-                    canSend ? .regular.tint(SakuraCordAccentColor.color).interactive() : .regular,
-                    in: Capsule()
-                )
-                .disabled(!canSend)
+            VStack(spacing: 0) {
+                usernameRow(friends: friends)
+                Divider()
+                    .padding(.horizontal, InterfaceScale.metric(14))
+                noteField(friends: friends)
             }
-            .padding(InterfaceScale.metric(6))
-            .frame(minHeight: InterfaceScale.metric(46))
-            .glassEffect(
-                .regular,
-                in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(23), style: .continuous)
-            )
+            .glassEffect(.regular, in: areaShape)
             .overlay {
-                ConcentricRectangle(cornerRadius: InterfaceScale.metric(23), style: .continuous)
+                areaShape
                     .stroke(borderColor(friends), lineWidth: 1)
                     .allowsHitTesting(false)
             }
+            .padding(.top, InterfaceScale.metric(6))
+            .onExitCommand { focusedField = nil }
 
-            VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
-                HStack {
-                    Text("Personalize your request (Optional)")
-                    Spacer()
-                    Text("\(friends.addFriendNote.utf16.count)/\(FriendRequestNote.maximumLength)")
-                        .monospacedDigit()
-                        .foregroundStyle(friends.addFriendNote.utf16.count > FriendRequestNote.maximumLength ? Color.red : .secondary)
-                }
+            Text("What you write here will also show up in your DM if you become friends.")
                 .font(.interface(.callout))
-                TextField("Say something about yourself", text: $friends.addFriendNote, axis: .vertical)
-                    .lineLimit(2 ... 3)
-                    .textFieldStyle(.plain)
-                    .padding(InterfaceScale.metric(14))
-                    .background(.quaternary.opacity(0.5), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous))
-                    .accessibilityLabel("Personalize your request")
-                    .disabled(friends.isSendingRequest)
-                Text("Your note will also appear in the DM if you become friends.")
-                    .font(.interface(.callout))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, InterfaceScale.metric(12))
+                .foregroundStyle(.secondary)
 
             if let error = friends.addFriendError {
                 Text(error)
@@ -269,13 +221,107 @@ private struct AddFriendView: View {
         .padding(InterfaceScale.metric(24))
         .frame(maxWidth: InterfaceScale.metric(720), alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { isFieldFocused = true }
-        .onChange(of: friends.addFriendFocusRequest) { _, _ in isFieldFocused = true }
+        .background { ProfileEditorFocusDismissal() }
+        .onAppear { focusedField = .username }
+        .onChange(of: friends.addFriendFocusRequest) { _, _ in focusedField = .username }
+    }
+
+    private func usernameRow(friends: FriendsState) -> some View {
+        @Bindable var friends = friends
+        let hasUsername = !friends.addFriendText.isEmpty
+        let canSend = hasUsername && !friends.isSendingRequest
+            && friends.addFriendNote.utf16.count <= FriendRequestNote.maximumLength
+        return HStack(spacing: InterfaceScale.metric(8)) {
+            // A single-line plain field draws its placeholder a point away from where its
+            // field editor does, so the native placeholder jumps when the field gains focus.
+            TextField(text: $friends.addFriendText, prompt: Text(verbatim: "")) { Text("Enter a username") }
+                .overlay(alignment: .leading) {
+                    Text("Enter a username")
+                        .foregroundStyle(Color(nsColor: .placeholderTextColor))
+                        .opacity(friends.addFriendText.isEmpty ? 1 : 0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .textFieldStyle(.plain)
+                .tint(SakuraCordAccentColor.color)
+                .focused($focusedField, equals: .username)
+                .onSubmit { if canSend { model.sendFriendRequest() } }
+                .onChange(of: friends.addFriendText) { _, value in
+                    if value.count > FriendsListPolicy.usernameMaximumLength {
+                        friends.addFriendText = String(value.prefix(FriendsListPolicy.usernameMaximumLength))
+                    }
+                    friends.addFriendError = nil
+                    if !value.isEmpty { friends.addFriendSuccess = nil }
+                }
+                .accessibilityLabel("Username")
+                .disabled(friends.isSendingRequest)
+                .padding(.leading, InterfaceScale.metric(14))
+
+            Button {
+                model.sendFriendRequest()
+            } label: {
+                Text("Send Friend Request")
+                    .font(.interface(.callout).weight(.semibold))
+                    .opacity(friends.isSendingRequest ? 0 : 1)
+                    .overlay { if friends.isSendingRequest { InteractionLoadingDotsView(tone: .onFill) } }
+                    .padding(.horizontal, InterfaceScale.metric(14))
+                    .frame(height: InterfaceScale.metric(34))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            // The accent fill stays while sending so the loading dots remain visible;
+            // white text on untinted glass would vanish in light mode.
+            .foregroundStyle(hasUsername ? Color.white : Color.secondary)
+            .glassEffect(
+                hasUsername ? .regular.tint(SakuraCordAccentColor.color).interactive() : .regular,
+                in: Capsule()
+            )
+            .disabled(!canSend)
+        }
+        .padding(InterfaceScale.metric(6))
+        .frame(minHeight: InterfaceScale.metric(46))
+        // Behind the field, so clicks inside its text stay with the native editor.
+        .background { Color.clear.contentShape(Rectangle()).onTapGesture { focusFromPadding(.username) } }
+    }
+
+    private func noteField(friends: FriendsState) -> some View {
+        @Bindable var friends = friends
+        let remaining = FriendRequestNote.maximumLength - friends.addFriendNote.utf16.count
+        return VStack(alignment: .trailing, spacing: InterfaceScale.metric(4)) {
+            TextField("Personalize your request (Optional)", text: $friends.addFriendNote, axis: .vertical)
+                .lineLimit(2 ... 3)
+                .textFieldStyle(.plain)
+                .tint(SakuraCordAccentColor.color)
+                .focused($focusedField, equals: .note)
+                .disabled(friends.isSendingRequest)
+            Text("\(remaining)")
+                .font(.interface(.callout))
+                .monospacedDigit()
+                .foregroundStyle(remaining < 0 ? Color.red : .secondary)
+        }
+        .padding(.horizontal, InterfaceScale.metric(14))
+        .padding(.vertical, InterfaceScale.metric(12))
+        // Behind the field, so clicks inside its text stay with the native editor.
+        .background { Color.clear.contentShape(Rectangle()).onTapGesture { focusFromPadding(.note) } }
+    }
+
+    /// A click in a field's padding focuses that field. ProfileEditorFocusDismissal
+    /// blurs the current field after any click outside it, so focus moves on the
+    /// next turn of the run loop, after that blur. Gaining focus selects the whole
+    /// field, so the caret then goes to the end, as a click beside the text would.
+    private func focusFromPadding(_ field: Field) {
+        DispatchQueue.main.async {
+            focusedField = field
+            DispatchQueue.main.async {
+                guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+                editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+            }
+        }
     }
 
     private func borderColor(_ friends: FriendsState) -> Color {
         if friends.addFriendError != nil { return Color(hex: 0xF23F43) }
         if friends.addFriendSuccess != nil { return Color(hex: 0x23A55A) }
-        return isFieldFocused ? SakuraCordAccentColor.color.opacity(0.7) : .clear
+        return focusedField == nil ? .clear : SakuraCordAccentColor.color.opacity(0.7)
     }
 }

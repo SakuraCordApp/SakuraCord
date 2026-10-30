@@ -224,6 +224,10 @@ extension DiscordRESTProvider {
             task.cancel()
         }
         messageSendTasks = [:]
+        for task in attachmentPreuploads.values {
+            task.cancel()
+        }
+        attachmentPreuploads = [:]
         for task in forumPreviewHydrationTasks.values {
             task.cancel()
         }

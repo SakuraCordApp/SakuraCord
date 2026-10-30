@@ -1331,6 +1331,7 @@ extension NativeTimelineRowLayout {
             contentFrame, forwardedHeaderFrame, voiceMessageRegion?.frame, pollLayout?.frame,
         ].compactMap { $0 }
             + attachmentRegions.map(\.frame)
+            + uploadRegions.map(\.frame)
             + linkedImageRegions.map(\.frame)
             + stickerFrames
             + embedFrames

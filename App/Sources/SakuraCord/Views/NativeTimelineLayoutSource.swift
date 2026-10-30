@@ -43,6 +43,10 @@ extension AppModel {
         AppModelMentionResolver(model: self, message: message).user(userID)
     }
 
+    func mentionRole(_ roleID: RoleID, in message: Message?) -> GuildRole? {
+        AppModelMentionResolver(model: self, message: message).role(roleID)
+    }
+
     func mentionPresentation(_ mention: RenderedMention, in message: Message?) -> MentionPresentation {
         AppModelMentionResolver(model: self, message: message).presentation(mention)
     }
@@ -144,13 +148,17 @@ private struct AppModelMentionResolver {
         )
     }
 
+    func role(_ roleID: RoleID) -> GuildRole? {
+        let roles = sourceGuildID.flatMap { model.guildRolesByGuildID[$0] }
+            ?? (sourceGuildID == model.selectedGuildID ? model.guildRoles : [])
+        return roles.first { $0.id == roleID }
+    }
+
     private func rolePresentation(_ mention: RenderedMention) -> MentionPresentation {
         guard let roleID = RoleID(mention.id) else {
             return MentionPresentation.fallback(for: mention)
         }
-        let roles = sourceGuildID.flatMap { model.guildRolesByGuildID[$0] }
-            ?? (sourceGuildID == model.selectedGuildID ? model.guildRoles : [])
-        let role = roles.first { $0.id == roleID }
+        let role = role(roleID)
         return MentionPresentation(
             rawToken: mention.rawToken,
             label: "@\(role?.name ?? "unknown-role")",

@@ -561,6 +561,7 @@ extension AppModel {
         resetReactionReactorLoads()
         resetForumLoadAndPresentationState()
         for outgoing in composer.outbox.draftsByNonce.values { discardVoiceMessageFile(for: outgoing) }
+        attachmentUploads.reset()
         await composer.reset()
     }
 }

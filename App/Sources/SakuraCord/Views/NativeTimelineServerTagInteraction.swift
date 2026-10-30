@@ -12,7 +12,7 @@ extension NativeTimelineCanvasView {
 
     /// Pointer changes only need the bounded visible rows, never a search of
     /// the entire message history. Rows outside the viewport need no redraw.
-    func visibleServerTagRowIndex(for messageID: MessageID) -> Int? {
+    func visibleMessageRowIndex(for messageID: MessageID) -> Int? {
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
         guard viewport.height > 0, var index = rowIndex(at: max(0, viewport.minY)) else { return nil }
         while items.indices.contains(index), layouts.indices.contains(index),
@@ -23,8 +23,8 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
-    func invalidateServerTag(messageID: MessageID) {
-        guard let index = visibleServerTagRowIndex(for: messageID) else { return }
+    func invalidateVisibleMessageRow(messageID: MessageID) {
+        guard let index = visibleMessageRowIndex(for: messageID) else { return }
         setNeedsDisplay(rowFrame(at: index))
     }
 
@@ -32,7 +32,7 @@ extension NativeTimelineCanvasView {
         guard hoveredServerTagMessageID != value else { return }
         let old = hoveredServerTagMessageID
         hoveredServerTagMessageID = value
-        for messageID in [old, value].compactMap({ $0 }) { invalidateServerTag(messageID: messageID) }
+        for messageID in [old, value].compactMap({ $0 }) { invalidateVisibleMessageRow(messageID: messageID) }
     }
 
     func serverTagPointerHit(at point: CGPoint) -> MessageID? {
@@ -45,7 +45,7 @@ extension NativeTimelineCanvasView {
 
     func serverTagPopoverSourceRect(for presentation: ServerTagCardPresentation) -> CGRect? {
         guard let model, model.isCurrentAccountSession(presentation.account),
-              let index = visibleServerTagRowIndex(for: presentation.messageID),
+              let index = visibleMessageRowIndex(for: presentation.messageID),
               let row = items[index].messageRow,
               let tag = layouts[index].serverTagRegion,
               tag.presentation.identity == presentation.identity,
@@ -79,7 +79,7 @@ extension NativeTimelineCanvasView {
                                                    identity: tag.presentation.identity, account: account)
         guard serverTagPopoverSourceRect(for: presentation) != nil else { return }
         serverTagCardPresentation = presentation
-        invalidateServerTag(messageID: messageID)
+        invalidateVisibleMessageRow(messageID: messageID)
         let popoverAnchor = StablePopoverAnchor(sourceView: self, sourceRect: { [weak self] in
             self?.serverTagPopoverSourceRect(for: presentation)
         })
@@ -101,6 +101,6 @@ extension NativeTimelineCanvasView {
         serverTagCardPresentation = nil
         activeServerTagPopoverAnchor = nil
         serverTagPopoverCoordinator.close()
-        if let previousMessageID { invalidateServerTag(messageID: previousMessageID) }
+        if let previousMessageID { invalidateVisibleMessageRow(messageID: previousMessageID) }
     }
 }

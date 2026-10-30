@@ -4,9 +4,14 @@ import SakuraCordModels
 
 extension NativeMessageTimelineCoordinator {
         func startPerformanceAutoScrollIfNeeded() {
+            // History pages are viewport-sized, as Discord's are, so a
+            // settled timeline holds about a screenful and the run pages in
+            // the rest itself. One with no more history, such as the launch
+            // conversation, has nothing to measure.
             guard parent.runsPerformanceAutoScroll,
                   !didStartPerformanceAutoScroll,
-                  items.count >= 100,
+                  parent.hasMoreMessages || parent.hasMoreLaterMessages,
+                  initialPositionConversation == parent.conversation,
                   let canvas
             else { return }
             didStartPerformanceAutoScroll = true
@@ -218,6 +223,15 @@ extension NativeMessageTimelineCoordinator {
             let targetDocumentY = state.scrollsTowardLater
                 ? visibleRect.minY + scrollDistance
                 : visibleRect.minY - scrollDistance
+            // A real gesture that pushes past the loaded edge enters the
+            // provisional reserve, which an unread conversation needs before
+            // it loads; this scroll is clamped short of it, so it crosses on
+            // the gesture's behalf.
+            let direction: TimelineHistoryDirection = state.scrollsTowardLater ? .later : .earlier
+            let boundaryY = materializedHistoryScrollBoundaryY(direction, viewportHeight: visibleRect.height)
+            if state.scrollsTowardLater ? targetDocumentY > boundaryY : targetDocumentY < boundaryY {
+                setFollowsMaterializedHistoryBoundary(true, direction: direction)
+            }
             scroll(toDocumentY: targetDocumentY, scrollView: scrollView)
             reportScrollState()
             let currentDocumentY = scrollView.contentView.bounds.minY

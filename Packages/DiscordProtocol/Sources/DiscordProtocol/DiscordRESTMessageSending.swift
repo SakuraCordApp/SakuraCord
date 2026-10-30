@@ -71,6 +71,8 @@ extension DiscordRESTProvider {
                 )
             )
         }
+        // Storage holds every file that was not stopped, so none can leave the message now.
+        postingAttachmentUploads.formUnion(draft.attachments.map(\.id))
         try requireGuildCommunication(in: draft.channelID)
         progress(.submitting)
         let path = "/channels/\(draft.channelID)/messages"

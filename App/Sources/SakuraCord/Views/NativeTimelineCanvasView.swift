@@ -417,6 +417,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                                        name: VoiceMessagePlaybackStore.didChange, object: nil)
         notificationCenter.addObserver(self, selector: #selector(attachmentDownloadsDidChange(_:)),
                                        name: AttachmentDownloadStore.didChange, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(attachmentUploadsDidChange(_:)),
+                                       name: AttachmentUploadProgressStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(mediaPlaybackVisibilityDidChange(_:)),
@@ -518,6 +520,7 @@ enum NativeTimelineRowPainter {
         showsCompactTimestamp: Bool = false,
         isAuthorHovered: Bool = false,
         isServerTagHovered: Bool = false,
+        isCommandPillHovered: Bool = false,
         hoveredMention: NativeTimelineMentionHover? = nil,
         hoveredTextLink: NativeTimelineTextLinkHover? = nil,
         hoveredTextSpoiler: NativeTimelineTextSpoilerHover? = nil,
@@ -532,6 +535,7 @@ enum NativeTimelineRowPainter {
         threadCardInteraction: NativeTimelineThreadCard.Interaction = .idle,
         isEphemeralDismissHovered: Bool = false,
         isTranslationActionHovered: Bool = false,
+        hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind? = nil,
         isSuppressedToggleHovered: Bool = false,
         hidesMessageContent: Bool = false,
         hoveredReactionID: String? = nil,
@@ -603,6 +607,7 @@ enum NativeTimelineRowPainter {
                 showsCompactTimestamp: showsCompactTimestamp,
                 isAuthorHovered: isAuthorHovered,
                 isServerTagHovered: isServerTagHovered,
+                isCommandPillHovered: isCommandPillHovered,
                 hoveredMention: hoveredMention,
                 hoveredTextLink: hoveredTextLink,
                 hoveredTextSpoiler: hoveredTextSpoiler,
@@ -615,6 +620,7 @@ enum NativeTimelineRowPainter {
                 threadCardInteraction: threadCardInteraction,
                 isEphemeralDismissHovered: isEphemeralDismissHovered,
                 isTranslationActionHovered: isTranslationActionHovered,
+                hoveredDeliveryAction: hoveredDeliveryAction,
                 hidesMessageContent: hidesMessageContent,
                 hoveredReactionID: hoveredReactionID,
                 isAddReactionHovered: isAddReactionHovered,

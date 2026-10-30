@@ -97,6 +97,7 @@ extension AppModel {
         lastDirectMessageSelection = nil
         ignoredUsers.reset()
         serverTagCards.reset()
+        messageInteractionData.reset()
         issueReports.reset()
         nicknameEditor.reset()
         groupDirectMessageEditor.reset()

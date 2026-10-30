@@ -246,6 +246,7 @@ struct ForwardedMessagePreview: View {
                     let resolver = MessageMentionResolver(model: model, message: message)
                     CustomEmojiRichText(
                         model: model,
+                        message: message,
                         content: content,
                         emojiSize: InterfaceScale.metric(22),
                         baseFontSize: InterfaceScale.fontSize(16),

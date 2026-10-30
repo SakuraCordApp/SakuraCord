@@ -1215,6 +1215,18 @@ public enum DiscordMarkdown {
     }
 }
 
+public extension DiscordMarkdown {
+    /// Source that renders `text` literally: every ASCII punctuation mark is
+    /// escaped, so no markdown, mention or emoji syntax survives. Bare URLs
+    /// still link, as plain text does.
+    static func escaped(_ text: String) -> String {
+        text.reduce(into: "") { output, character in
+            if character.isASCII, character.isPunctuation || character.isSymbol { output.append("\\") }
+            output.append(character)
+        }
+    }
+}
+
 private extension DiscordMarkdown {
     static func isComposerSyntaxCharacter(_ character: Character) -> Bool {
         switch character {
