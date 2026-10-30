@@ -816,6 +816,12 @@ final class NativeTimelineReactionBandView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// AppKit orients the hosted layer from this, so row coordinates are
+    /// top-down like the canvas's.
+    override var isFlipped: Bool {
+        true
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
@@ -837,8 +843,6 @@ final class NativeTimelineReactionBandView: NSView {
         self.pills = pills
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // Row coordinates are top-down; this needs the band in the canvas's tree.
-        layer?.orientTopDown()
         content.frame = CGRect(x: 0, y: -bandTop, width: bounds.width, height: bandTop + bounds.height)
         content.sublayers = pills.map(\.layer)
         CATransaction.commit()
