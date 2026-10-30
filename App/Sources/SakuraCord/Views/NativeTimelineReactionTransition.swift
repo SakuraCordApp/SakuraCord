@@ -245,7 +245,7 @@ extension NativeTimelineCanvasView {
         // Footers below the reactions would have to move with them.
         func hasFooter(_ layout: NativeTimelineRowLayout) -> Bool {
             layout.ephemeralRegion != nil || layout.failedFrame != nil || layout.pinnedAtFrame != nil
-                || layout.searchCardFrame != nil
+                || layout.searchCardFrame != nil || layout.postStarterDividerFrame != nil
         }
         guard !hasFooter(layout), !hasFooter(oldLayout) else { return false }
         typealias Current = (
@@ -259,7 +259,8 @@ extension NativeTimelineCanvasView {
             for chip in running.chips {
                 let appearance = chip.from.interpolated(to: chip.to, progress: progress)
                 guard appearance.opacity > 0.01 else { continue }
-                current[chip.id] = (chip.region, appearance)
+                // A count still rolling continues from the one mostly showing.
+                current[chip.id] = (progress < 0.5 ? chip.fromRegion : chip.region, appearance)
             }
         } else {
             for region in oldLayout.reactionRegions {
@@ -314,7 +315,7 @@ extension NativeTimelineCanvasView {
         reactionRowMotions.removeAll {
             NativeTimelineRowDisclosure.progress(at: now - $0.startUptime) >= 1
         }
-        // Frames that would move nothing by a whole pixel redraw only the chips.
+        // Frames that move no row by a whole pixel redraw only the chips.
         let redrawsRows = hadMotion && refreshReactionMotionGeometry(at: now)
         var reconcilesMedia = false
         for (identifier, transition) in reactionTransitions {
@@ -323,7 +324,7 @@ extension NativeTimelineCanvasView {
                 continue
             }
             reactionTransitions[identifier]?.rowIndex = index
-            if !redrawsRows { setNeedsDisplay(reactionBandFrame(at: index, bandTop: transition.bandTop)) }
+            setNeedsDisplay(reactionBandFrame(at: index, bandTop: transition.bandTop))
             if transition.progress(at: now) >= 1 {
                 reactionTransitions[identifier] = nil
                 reconcilesMedia = reconcilesMedia || animatedMediaRows[identifier] != nil
@@ -440,6 +441,24 @@ extension NativeTimelineCanvasView {
     private func reactionBandFrame(at index: Int, bandTop: CGFloat) -> CGRect {
         let frame = rowFrame(at: index)
         return CGRect(x: frame.minX, y: frame.minY + bandTop, width: frame.width, height: max(0, frame.height - bandTop))
+    }
+
+    /// Where the row's chips and add-reaction control are on screen, in row
+    /// coordinates, so a click lands on the chip under the pointer.
+    func displayedReactionFrames(at index: Int) -> (reactions: [CGRect], add: CGRect?) {
+        let layout = layouts[index]
+        guard let transition = reactionTransitions[items[index].identifier] else {
+            return (layout.reactionRegions.map(\.frame), layout.addReactionFrame)
+        }
+        let progress = transition.progress(at: ProcessInfo.processInfo.systemUptime)
+        var frames: [String: CGRect] = [:]
+        for chip in transition.chips where chip.to.opacity > 0 {
+            frames[chip.id] = chip.from.interpolated(to: chip.to, progress: progress).frame
+        }
+        return (
+            layout.reactionRegions.map { frames[$0.reaction.id] ?? $0.frame },
+            layout.addReactionFrame.map { frames[NativeTimelineReactionTransition.Chip.addControlID] ?? $0 }
+        )
     }
 
     /// The top of a transitioning row's live band, in canvas coordinates.

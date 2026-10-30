@@ -77,6 +77,8 @@ extension NativeTimelineCanvasView {
                 textSelectionGesture = nil
             }
         }
+        // Rows laid out at another width no longer match the chips' frames.
+        if abs(frame.width - max(1, viewportWidth)) >= 0.5 { finishReactionTransitions() }
         let size = NSSize(
             width: max(1, viewportWidth),
             height: max(displayedContentHeight, self.minimumHeight)

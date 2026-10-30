@@ -865,6 +865,8 @@ extension NativeTimelineCanvasView {
               model.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil,
               let actions
         else { return }
+        // The editor is placed at the row's static position.
+        finishReactionTransitions()
         removeActionCapsule()
         setTextSelection(nil)
         textSelectionGesture = nil

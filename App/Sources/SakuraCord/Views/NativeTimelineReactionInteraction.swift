@@ -15,10 +15,11 @@ extension NativeTimelineCanvasView {
         )
         let rowOrigin = displayedRowOrigin(at: index)
         let layout = layouts[index]
+        let frames = displayedReactionFrames(at: index)
         let target = NativeTimelineReactionClickHitTesting.target(
             at: local,
-            reactionFrames: layout.reactionRegions.map(\.frame),
-            addReactionFrame: layout.addReactionFrame
+            reactionFrames: frames.reactions,
+            addReactionFrame: frames.add
         )
         switch target {
         case let .reaction(regionIndex):
@@ -31,11 +32,11 @@ extension NativeTimelineCanvasView {
                 rowIndex: index,
                 message: row.message,
                 reaction: region.reaction,
-                frame: region.frame.offsetBy(dx: 0, dy: rowOrigin)
+                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
             )
         case .add:
             guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = layout.addReactionFrame else { return nil }
+                  let frame = frames.add else { return nil }
             return ReactionPointerHit(
                 target: .add(messageID: row.id),
                 rowIndex: index,
