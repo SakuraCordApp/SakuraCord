@@ -1,7 +1,6 @@
 import AppKit
 import SakuraCordModels
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Locates the composer text and attachment previews so a sent message can
 /// leave the field the way an iMessage bubble does. The timeline owns the
@@ -22,14 +21,10 @@ final class ComposerSendTransitionAnchor {
     var channelID: ChannelID?
     private var attachmentPreviews: [UUID: AttachmentPreview] = [:]
 
-    func registerAttachmentPreview(_ view: NSView, for id: UUID) {
-        preview(for: id).view = view
-    }
-
-    func recordAttachmentThumbnail(_ image: NSImage, for id: UUID) {
-        // A thumbnail can finish loading after its tile was removed.
-        guard let preview = attachmentPreviews[id], preview.view != nil else { return }
-        preview.thumbnail = image
+    func registerAttachmentPreview(_ view: NSView, thumbnail: NSImage?, for id: UUID) {
+        let preview = preview(for: id)
+        preview.view = view
+        preview.thumbnail = thumbnail
     }
 
     func removeAttachmentPreview(_ view: NSView, for id: UUID) {
@@ -41,13 +36,35 @@ final class ComposerSendTransitionAnchor {
     func source(
         channelID: ChannelID,
         content: String,
-        attachments: [ForumPostAttachment]
+        attachments: [ForumPostAttachment],
+        uploads: AttachmentUploadProgressStore
     ) -> NativeTimelineSendTransitionSource? {
         fieldSource(
             channelID: channelID,
             content: content,
             text: content.isEmpty ? nil : textSnapshot(),
-            attachments: attachments.map(attachmentSnapshot)
+            attachments: attachments.map { attachmentSnapshot($0, uploadFraction: uploads.preuploadFraction($0.id)) }
+        )
+    }
+
+    /// Lets the media viewer zoom a staged image out of its tile and back.
+    func mediaViewerSource(for attachmentID: UUID) -> MediaViewerTransitionSource? {
+        guard let preview = attachmentPreviews[attachmentID],
+              let view = preview.view,
+              let image = preview.thumbnail,
+              view.window != nil
+        else { return nil }
+        // SwiftUI hosting can report a visible rect beyond the tile itself.
+        let visibleRect = view.visibleRect.intersection(view.bounds)
+        guard !visibleRect.isEmpty else { return nil }
+        return MediaViewerTransitionSource(
+            itemID: attachmentID.uuidString,
+            image: image,
+            frameInWindow: view.convert(view.bounds, to: nil),
+            visibleFrameInWindow: view.convert(visibleRect, to: nil),
+            cornerRadius: ComposerAttachmentTray.cornerRadius,
+            fillsFrame: true,
+            coversSource: false
         )
     }
 
@@ -96,38 +113,41 @@ final class ComposerSendTransitionAnchor {
         return preview
     }
 
-    /// The visible preview of a staged attachment: an image or video
-    /// thumbnail, or another file's icon. Spoilers never fly uncovered.
+    /// What a staged attachment's tile shows: an image or video thumbnail,
+    /// or another file's icon and type, with its upload ring. Spoilers never
+    /// fly uncovered.
     private func attachmentSnapshot(
-        _ attachment: ForumPostAttachment
+        _ attachment: ForumPostAttachment,
+        uploadFraction: Double?
     ) -> NativeTimelineSendTransitionSource.Attachment? {
         guard !attachment.isSpoiler,
               let preview = attachmentPreviews[attachment.id],
               let view = preview.view,
-              view.window === textView?.window
+              let window = view.window,
+              window === textView?.window,
+              view.visibleRect.contains(view.bounds)
         else { return nil }
-        let type = UTType(filenameExtension: attachment.url.pathExtension)
-        let isMedia = type?.conforms(to: .image) == true
-            || type?.conforms(to: .movie) == true
-        let image: NSImage
-        let bounds: CGRect
-        if isMedia {
-            guard let thumbnail = preview.thumbnail else { return nil }
-            image = thumbnail
-            bounds = view.bounds
+        let image: NSImage?
+        if attachment.isVisualMedia {
+            image = preview.thumbnail
         } else {
-            // Matches the icon inset in `LocalAttachmentThumbnail`.
-            image = NSWorkspace.shared.icon(forFile: attachment.url.path)
-            bounds = view.bounds.insetBy(dx: InterfaceScale.metric(14), dy: InterfaceScale.metric(14))
+            let renderer = ImageRenderer(
+                content: ComposerAttachmentFileFace(url: attachment.url)
+                    .frame(width: view.bounds.width, height: view.bounds.height)
+                    .environment(
+                        \.colorScheme,
+                        view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+                    )
+            )
+            renderer.scale = window.backingScaleFactor
+            image = renderer.nsImage
         }
-        guard image.size.width > 0, image.size.height > 0 else { return nil }
-        let fitted = ComposerEmojiImageStore.aspectFitRect(imageSize: image.size, in: bounds)
-        guard view.visibleRect.contains(fitted) else { return nil }
+        guard let image, image.size.width > 0, image.size.height > 0 else { return nil }
         return NativeTimelineSendTransitionSource.Attachment(
             image: image,
-            frame: view.convert(fitted, to: nil),
-            cornerRadius: isMedia ? ComposerAttachmentTray.thumbnailCornerRadius : 0,
-            fillsFrame: isMedia
+            frame: view.convert(view.bounds, to: nil),
+            cornerRadius: ComposerAttachmentTray.cornerRadius,
+            uploadFraction: uploadFraction
         )
     }
 
@@ -182,12 +202,14 @@ final class ComposerSendTransitionAnchor {
 struct ComposerSendTransitionAttachmentReader: NSViewRepresentable {
     let anchor: ComposerSendTransitionAnchor?
     let id: UUID
+    /// The tile's decoded image, which flies or zooms in its place.
+    let thumbnail: NSImage?
 
     func makeNSView(context: Context) -> ReaderView {
         let view = ReaderView()
         view.anchor = anchor
         view.id = id
-        anchor?.registerAttachmentPreview(view, for: id)
+        anchor?.registerAttachmentPreview(view, thumbnail: thumbnail, for: id)
         return view
     }
 
@@ -197,7 +219,7 @@ struct ComposerSendTransitionAttachmentReader: NSViewRepresentable {
         }
         view.anchor = anchor
         view.id = id
-        anchor?.registerAttachmentPreview(view, for: id)
+        anchor?.registerAttachmentPreview(view, thumbnail: thumbnail, for: id)
     }
 
     static func dismantleNSView(_ view: ReaderView, coordinator: ()) {

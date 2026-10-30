@@ -12,14 +12,14 @@ struct NativeTimelineSendTransitionSource {
         let baseline: CGPoint
     }
 
-    /// A staged attachment's thumbnail, which flies into its place in the
+    /// A staged attachment's tile, which flies into its place in the
     /// bubble the way an iMessage photo does.
     struct Attachment {
         let image: NSImage
         let frame: CGRect
         let cornerRadius: CGFloat
-        /// Thumbnails fill their frame; file icons keep their shape.
-        let fillsFrame: Bool
+        /// The tile's upload ring, which flies along to the message.
+        let uploadFraction: Double?
     }
 
     let channelID: ChannelID
@@ -260,15 +260,25 @@ enum NativeTimelineSendTransitionSnapshot {
 /// canvas leaves the destination bubble transparent.
 @MainActor
 final class NativeTimelineSendTransitionOverlay: NSView {
-    /// An attachment thumbnail that flies from the composer to its frame.
+    /// An attachment tile that flies from the composer to its frame.
     struct Piece {
         let index: Int
         let frame: CGRect
         let cornerRadius: CGFloat
         let opacity: Float
         /// Whether the timeline draws something else in this frame, such as
-        /// a video that has no poster yet.
+        /// a video that has no poster yet or a file's card.
         let fadesOut: Bool
+        /// Where the message shows this file's upload ring, if it is still
+        /// uploading, and whether it dims the file under it.
+        let uploadRing: UploadRing?
+    }
+
+    struct UploadRing {
+        let attachmentID: String
+        let center: CGPoint
+        let color: CGColor
+        let dimsFile: Bool
     }
 
     /// The bubble the field becomes. Messages shown without bubbles have
@@ -304,6 +314,13 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     private var pieceLayers: [Int: CALayer] = [:]
     private var pieceSourceFrames: [Int: CGRect] = [:]
     private var pieceSourceCornerRadii: [Int: CGFloat] = [:]
+    /// Each tile's dim under its upload ring, clipped by the tile.
+    private var pieceDimLayers: [Int: CALayer] = [:]
+    private var ringLayers: [Int: AttachmentUploadRingLayer] = [:]
+    /// Rings keep showing progress while they fly.
+    private var ringAttachmentIDs: [Int: String] = [:]
+    private weak var uploads: AttachmentUploadProgressStore?
+    private var uploadNonce: String?
 
     /// Covers the composer's text and attachments with identical copies so
     /// clearing the composer cannot blink before the timeline takes the
@@ -332,16 +349,28 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             let frame = overlay.convert(attachment.frame, from: nil)
             let layer = CALayer()
             layer.contents = attachment.image
-            layer.contentsGravity = attachment.fillsFrame ? .resizeAspectFill : .resizeAspect
+            layer.contentsGravity = .resizeAspectFill
             layer.contentsScale = window.backingScaleFactor
             layer.masksToBounds = true
             layer.cornerCurve = .continuous
             layer.cornerRadius = attachment.cornerRadius
             layer.frame = frame
+            layer.zPosition = 0.5
             overlay.layer?.addSublayer(layer)
             overlay.pieceLayers[index] = layer
             overlay.pieceSourceFrames[index] = frame
             overlay.pieceSourceCornerRadii[index] = attachment.cornerRadius
+            if let fraction = attachment.uploadFraction {
+                // Oversized, so the tile's clip shapes it as the tile morphs.
+                let dim = CALayer()
+                dim.backgroundColor = .black
+                dim.opacity = Float(AttachmentUploadRing.dimOpacity)
+                dim.frame = layer.bounds.insetBy(dx: -4_000, dy: -4_000)
+                layer.addSublayer(dim)
+                overlay.pieceDimLayers[index] = dim
+                let ring = overlay.addRing(index: index, at: CGPoint(x: frame.midX, y: frame.midY))
+                ring.fraction = fraction
+            }
         }
         CATransaction.commit()
         return overlay
@@ -353,9 +382,10 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         root.masksToBounds = false
         layer = root
         wantsLayer = true
-        for sublayer in [bubbleLayer, tailLayer, clipLayer] {
-            // The message body flies over the attachment copies it crosses.
-            sublayer.zPosition = 1
+        // Attachment copies land on the bubble's fill, and the message body
+        // flies over the copies it crosses.
+        for (sublayer, zPosition) in [(bubbleLayer, 0.25), (tailLayer, 0.25), (clipLayer, 1)] as [(CALayer, CGFloat)] {
+            sublayer.zPosition = zPosition
             root.addSublayer(sublayer)
         }
         bubbleLayer.opacity = 0
@@ -374,7 +404,28 @@ final class NativeTimelineSendTransitionOverlay: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func run(_ geometry: Geometry, scale: CGFloat) {
+    private func addRing(index: Int, at center: CGPoint) -> AttachmentUploadRingLayer {
+        let ring = AttachmentUploadRingLayer()
+        ring.contentsScale = window?.backingScaleFactor ?? 2
+        ring.position = center
+        // Above its tile, under the message body flying past.
+        ring.zPosition = 0.75
+        layer?.addSublayer(ring)
+        ringLayers[index] = ring
+        return ring
+    }
+
+    /// Keeps the flying rings on the send's live progress.
+    @objc private func uploadsDidChange(_ notification: Notification) {
+        guard let uploads, let uploadNonce,
+              notification.userInfo?[AttachmentUploadProgressStore.nonceKey] as? String == uploadNonce
+        else { return }
+        for (index, id) in ringAttachmentIDs {
+            ringLayers[index]?.fraction = uploads.fraction(nonce: uploadNonce, attachmentID: id)
+        }
+    }
+
+    func run(_ geometry: Geometry, scale: CGFloat, uploads: (store: AttachmentUploadProgressStore, nonce: String)?) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -466,12 +517,54 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             let opacity: Float = piece.fadesOut ? 0 : piece.opacity
             layer.opacity = opacity
             add(layer, "opacity", from: 1, to: CGFloat(opacity), timing: Timing.vertical, delay: delay)
+            flyUploadState(of: piece, from: source, delay: delay)
+        }
+        if let uploads, !ringAttachmentIDs.isEmpty {
+            self.uploads = uploads.store
+            uploadNonce = uploads.nonce
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(uploadsDidChange), name: AttachmentUploadProgressStore.didChange, object: uploads.store
+            )
         }
         // Anything the destination has no frame for leaves with the field.
         for (index, layer) in pieceLayers where !landingIndexes.contains(index) {
-            layer.opacity = 0
-            add(layer, "opacity", from: 1, to: 0, duration: Timing.dismissalDuration)
+            for layer in [layer, ringLayers[index]].compactMap(\.self) {
+                layer.opacity = 0
+                add(layer, "opacity", from: 1, to: 0, duration: Timing.dismissalDuration)
+            }
         }
+    }
+
+    /// Carries a tile's dim and upload ring to where the message shows them,
+    /// bringing them in for a file that only starts uploading now, and
+    /// letting them go for one already stored.
+    private func flyUploadState(of piece: Piece, from source: CGRect, delay: CFTimeInterval) {
+        typealias Timing = NativeTimelineSendTransitionTiming
+        if let dim = pieceDimLayers[piece.index] {
+            let opacity = piece.uploadRing?.dimsFile == true ? dim.opacity : 0
+            add(dim, "opacity", from: CGFloat(dim.opacity), to: CGFloat(opacity), timing: Timing.vertical, delay: delay)
+            dim.opacity = opacity
+        }
+        let sourceCenter = CGPoint(x: source.midX, y: source.midY)
+        guard let target = piece.uploadRing else {
+            guard let ring = ringLayers[piece.index] else { return }
+            ring.opacity = 0
+            add(ring, "opacity", from: 1, to: 0, duration: Timing.fillFadeDuration * 2, delay: delay)
+            return
+        }
+        let ring = ringLayers[piece.index] ?? {
+            let ring = addRing(index: piece.index, at: sourceCenter)
+            fadeIn(ring, duration: Timing.duration, delay: delay)
+            return ring
+        }()
+        ringAttachmentIDs[piece.index] = target.attachmentID
+        ring.position = target.center
+        animateAxes(
+            ring,
+            offset: CGPoint(x: sourceCenter.x - target.center.x, y: sourceCenter.y - target.center.y),
+            delay: delay
+        )
+        ring.color = target.color
     }
 
     /// How long attachments wait for the text to lead them out.
@@ -495,7 +588,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        for layer in [bubbleLayer, tailLayer, clipLayer] + Array(pieceLayers.values) {
+        for layer in [bubbleLayer, tailLayer, clipLayer] + Array(pieceLayers.values) + Array(ringLayers.values) as [CALayer] {
             layer.position.x += delta.x
             layer.position.y += delta.y
             animateAxes(layer, offset: CGPoint(x: -delta.x, y: -delta.y), duration: duration)
@@ -693,7 +786,13 @@ extension NativeTimelineCanvasView {
         setNeedsDisplay(rowFrame(at: index))
         glideTranscript(by: transcriptShift)
         displayIfNeeded()
-        pending.overlay.run(geometry, scale: window.backingScaleFactor)
+        pending.overlay.run(
+            geometry,
+            scale: window.backingScaleFactor,
+            uploads: items[index].messageRow?.message.nonce.flatMap { nonce in
+                model.map { ($0.attachmentUploads, nonce) }
+            }
+        )
         CATransaction.commit()
         scheduleSendTransitionFinish(transition)
     }
@@ -749,14 +848,30 @@ extension NativeTimelineCanvasView {
             )
         }
         let mediaOpacity = Float(MessageOutboxPresentation.mediaOpacity(for: row.message.outboxState))
+        let fileCards = layout.fileCards
         let pieces = flyingAttachments.sorted().map { attachmentIndex in
             let attachmentRegion = layout.attachmentRegions[attachmentIndex]
+            let attachmentID = attachmentRegion.attachment.id
+            // A file's tile settles into its card's icon as the card appears.
+            let frame = fileCards.first { $0.attachment.id == attachmentID }
+                .map { $0.isAudio ? $0.playFrame : $0.iconFrame } ?? attachmentRegion.frame
             return NativeTimelineSendTransitionOverlay.Piece(
                 index: attachmentIndex,
-                frame: toOverlay(toWindow(attachmentRegion.frame)),
+                frame: toOverlay(toWindow(frame)),
                 cornerRadius: NativeTimelineRowPainter.attachmentCornerRadius,
                 opacity: mediaOpacity,
-                fadesOut: fadingAttachments.contains(attachmentIndex)
+                fadesOut: fadingAttachments.contains(attachmentIndex),
+                uploadRing: sendTransitionUploadRing(for: attachmentID, of: row.message, layout: layout).map { ring in
+                    let frame = toOverlay(toWindow(ring.frame))
+                    var color = CGColor.white
+                    effectiveAppearance.performAsCurrentDrawingAppearance {
+                        color = Self.uploadRingColor(ring, isOutgoing: layout.bubbleRegion?.isOutgoing == true).cgColor
+                    }
+                    return .init(
+                        attachmentID: attachmentID, center: CGPoint(x: frame.midX, y: frame.midY),
+                        color: color, dimsFile: ring.mediaFrame != nil
+                    )
+                }
             )
         }
         let bubble = layout.bubbleRegion.map { region in
@@ -785,6 +900,16 @@ extension NativeTimelineCanvasView {
             pieces: pieces
         )
         return (geometry, targetInWindow)
+    }
+
+    private func sendTransitionUploadRing(
+        for attachmentID: String,
+        of message: Message,
+        layout: NativeTimelineRowLayout
+    ) -> NativeTimelineRowLayout.UploadRing? {
+        guard model?.attachmentUploads.isUploading(nonce: message.nonce, attachmentID: attachmentID) == true
+        else { return nil }
+        return layout.uploadRings.first { $0.attachmentID == attachmentID && !$0.isFailed }
     }
 
     /// Keeps in-flight bubbles aimed at their rows after a later timeline
@@ -1331,7 +1456,6 @@ extension NativeTimelineRowLayout {
             contentFrame, forwardedHeaderFrame, voiceMessageRegion?.frame, pollLayout?.frame,
         ].compactMap { $0 }
             + attachmentRegions.map(\.frame)
-            + uploadRegions.map(\.frame)
             + linkedImageRegions.map(\.frame)
             + stickerFrames
             + embedFrames

@@ -733,9 +733,6 @@ extension NativeTimelineCanvasView {
             return true
         }
         switch layout.deliveryAction(at: point) {
-        case let .cancelUpload(attachmentID):
-            model?.cancelAttachmentUpload(attachmentID, of: row.message)
-            return true
         case .retrySend:
             actions?.retry(row.message)
             return true

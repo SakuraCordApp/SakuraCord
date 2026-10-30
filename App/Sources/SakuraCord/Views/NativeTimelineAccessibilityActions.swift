@@ -340,6 +340,8 @@ extension NativeTimelineCanvasView {
         {
             reveal(revealKey, rowIndex: rowIndex)
         } else if !attachment.mediaKind.isVisual, attachment.textPreviewLanguage == nil {
+            // A message still being sent has only local files, not downloads.
+            guard !message.isUnconfirmedLocalSend else { return false }
             model?.attachmentDownloads.activate(attachment)
         } else if let presentation =
             NativeTimelineMediaViewerPlan.attachments(

@@ -75,7 +75,11 @@ struct ComposerView: View {
                         ComposerAttachmentTray(
                             attachments: attachments,
                             checkingIDs: model.composer.checkingAttachmentIDs,
+                            uploads: model.attachmentUploads,
                             sendTransitionAnchor: sendTransitionAnchor,
+                            mediaViewerSourceID: {
+                                model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
+                            },
                             open: openComposerAttachment,
                             toggleSpoiler: {
                                 model.toggleComposerAttachmentSpoiler($0, in: conversation)
@@ -798,17 +802,6 @@ struct ComposerView: View {
             isSubmitting = false
             isFocused = true
         }
-    }
-
-    private func openComposerAttachment(_ id: UUID) {
-        guard let currentUser = model.currentUser,
-              let presentation = NativeTimelineMediaViewerPlan.composerAttachments(
-                  attachments,
-                  selectedAttachmentID: id,
-                  author: currentUser
-              )
-        else { return }
-        model.mediaViewerPresentation = presentation
     }
 
     private var autocompleteContext: ColonAutocompleteContext? {
@@ -1557,6 +1550,26 @@ private extension ComposerView {
         !reduceMotion && !model.accessibilitySettings.disablesAllAnimations && !isClearingForSend
     }
 
+    /// Opens a staged image in the media viewer, which zooms it out of its
+    /// tile and back into it.
+    func openComposerAttachment(_ id: UUID) {
+        guard let currentUser = model.currentUser,
+              let presentation = NativeTimelineMediaViewerPlan.composerAttachments(
+                  attachments,
+                  selectedAttachmentID: id,
+                  author: currentUser
+              )
+        else { return }
+        // Every staged image zooms back into its own tile, whichever the
+        // viewer shows when it closes.
+        let sources = presentation.items.compactMap { UUID(uuidString: $0.id).flatMap(sendTransitionAnchor.mediaViewerSource) }
+        model.mediaViewerSelectedItemID = id.uuidString
+        model.mediaViewerPresentation = presentation.withTimelineMedia(
+            previewImages: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0.image) }),
+            transitionSources: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0) })
+        )
+    }
+
     /// The timeline animates a sent message out of the field, as a bubble or
     /// as plain text; it consumes this when the optimistic row arrives.
     func registerSendTransition(
@@ -1570,7 +1583,8 @@ private extension ComposerView {
               let source = sendTransitionAnchor.source(
                   channelID: channelID,
                   content: draft.trimmingCharacters(in: .whitespacesAndNewlines),
-                  attachments: attachments
+                  attachments: attachments,
+                  uploads: model.attachmentUploads
               )
         else { return }
         model.timelineSendTransitionStore.register(source)

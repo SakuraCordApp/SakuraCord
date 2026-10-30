@@ -252,6 +252,8 @@ final class AppModel {
     var conversationNewestRequest: ConversationNewestRequest?
     var presentedProfileGame: ProfileGame?
     var mediaViewerPresentation: NativeTimelineMediaViewerPresentation?
+    /// The item the open media viewer shows as the user pages through it.
+    var mediaViewerSelectedItemID: String?
     var unreadDividerMessageIDs: [ChannelID: MessageID] = [:]
     var members: [Member] = [] {
         didSet {

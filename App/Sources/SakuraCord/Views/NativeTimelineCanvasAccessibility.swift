@@ -180,8 +180,8 @@ extension NativeTimelineCanvasView {
                 },
                 isTranslationEnabled: model?.translation.settings.isEnabled == true,
                 threadPreview: item.messageRow?.message.thread.flatMap { model?.threadPreviewMessages[$0.id] },
-                isUploadCancellable: layouts[index].uploadRegions.contains {
-                    model?.attachmentUploads.canCancel(nonce: item.messageRow?.message.nonce, attachmentID: $0.attachmentID) == true
+                isUploadCancellable: layouts[index].uploadRings.contains {
+                    model?.attachmentUploads.isUploading(nonce: item.messageRow?.message.nonce, attachmentID: $0.attachmentID) == true
                 }
             )
             let frame = rowFrame(at: index)
@@ -823,7 +823,7 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex
             ) ?? false
         }
-        if attachment.textPreviewLanguage != nil, !isHiddenSpoiler {
+        if attachment.textPreviewLanguage != nil, !isHiddenSpoiler, !message.isUnconfirmedLocalSend {
             element.setAccessibilityCustomActions([
                 NSAccessibilityCustomAction(name: fileCardActionDescription(attachment, name: contentLabel)) { [weak self] in
                     self?.model?.attachmentDownloads.activate(attachment)

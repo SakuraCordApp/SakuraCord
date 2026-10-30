@@ -96,7 +96,7 @@ struct MediaViewerTests {
         #expect(direct.canSave)
     }
 
-    @Test func `composer images open in the shared media viewer`() throws {
+    @Test func `composer images and text files open in the shared media viewer`() throws {
         let firstID = UUID()
         let secondID = UUID()
         let textID = UUID()
@@ -133,9 +133,10 @@ struct MediaViewerTests {
 
         #expect(presentation.items.map(\.id) == [
             firstID.uuidString,
+            textID.uuidString,
             secondID.uuidString,
         ])
-        #expect(presentation.selection == 1)
+        #expect(presentation.selection == 2)
         #expect(presentation.authorName == "Me")
         #expect(presentation.items[presentation.selection].url == attachments[2].url)
     }
