@@ -1154,7 +1154,9 @@ private enum NodeBuilder {
     ) -> NativeTimelineAttributedTextBox {
         // Discord's markdown reads CRLF and CR as line feeds, which also
         // keeps the body scaling's lines paired with the plan's.
-        let prepared = RichMessageAttributedText.prepare(source: content.replacing(/\r\n?/, with: "\n"))
+        let prepared = RichMessageAttributedText.prepare(
+            source: content.utf8.contains(13) ? content.replacing(/\r\n?/, with: "\n") : content
+        )
         let resolver = source.map {
             MessageMentionResolver(model: $0, message: message)
         }

@@ -371,19 +371,10 @@ nonisolated enum NativeTimelineCoreText {
                 )
                 location = NSMaxRange(range)
                 guard !line.isHeading else { continue }
-                let scaled = NSMutableAttributedString(
-                    attributedString: output.attributedSubstring(from: range).scalingTypography(by: bodyScale)
+                output.replaceCharacters(
+                    in: range,
+                    with: output.attributedSubstring(from: range).scalingTypography(by: bodyScale, keepingLegibility: true)
                 )
-                // Shrinking keeps the interface's 9-point legibility floor.
-                output.enumerateAttribute(.font, in: range) { value, run, _ in
-                    guard let font = value as? NSFont, font.pointSize * bodyScale < 9 else { return }
-                    scaled.addAttribute(
-                        .font,
-                        value: font.withSize(min(font.pointSize, 9)),
-                        range: NSRange(location: run.location - range.location, length: run.length)
-                    )
-                }
-                output.replaceCharacters(in: range, with: scaled)
             }
         }
         let fullRange = NSRange(location: 0, length: output.length)
