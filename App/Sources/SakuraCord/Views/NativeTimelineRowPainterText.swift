@@ -445,7 +445,13 @@ extension NativeTimelineRowPainter {
         var quotes: [CGRect] = []
         var inlineCode: [CGRect] = []
         var spoilers: [(CGRect, Bool)] = []
-        var listMarkers: [CGRect] = []
+        var listMarkers: [ListMarker] = []
+    }
+
+    private struct ListMarker {
+        let frame: CGRect
+        let isNested: Bool
+        let isQuoted: Bool
     }
 
     static func drawMarkdownBlocks(
@@ -470,7 +476,7 @@ extension NativeTimelineRowPainter {
         drawSpoilerDecorations(decorations.spoilers)
         drawCodeBlockDecorations(codeBlocks)
         drawListMarkerDecorations(decorations.listMarkers)
-        drawQuoteDecorations(decorations.quotes, outerFrame: outerFrame)
+        drawQuoteDecorations(decorations.quotes)
     }
 
     private static func markdownDecorationRects(
@@ -488,14 +494,19 @@ extension NativeTimelineRowPainter {
             guard (rawValue as? NSNumber)?.boolValue == true else {
                 return
             }
-            result.inlineCode.append(
-                contentsOf:
-                    NativeTimelineTextSelectionGeometry.rects(
-                        in: textFrame,
-                        outerFrame: outerFrame,
-                        range: range
-                )
+            var rects = NativeTimelineTextSelectionGeometry.rects(
+                in: textFrame,
+                outerFrame: outerFrame,
+                range: range
             )
+            // Markdown reserves the padding as kerning after the code and
+            // before it, so the trailing side is already inside the rect.
+            let padding = attributedText.attribute(.kern, at: NSMaxRange(range) - 1, effectiveRange: nil) as? CGFloat ?? 0
+            if !rects.isEmpty {
+                rects[0].origin.x -= padding
+                rects[0].size.width += padding
+            }
+            result.inlineCode.append(contentsOf: rects)
         }
         for range in NativeTimelineTextSpoilers.ranges(in: attributedText) {
             result.spoilers.append(
@@ -516,41 +527,45 @@ extension NativeTimelineRowPainter {
             .discordMarkdownListMarker,
             in: fullRange
         ) { rawValue, range, _ in
-            guard (rawValue as? NSNumber)?.boolValue == true else {
-                return
-            }
+            guard let level = rawValue as? NSNumber else { return }
+            let isQuoted = attributedText.attribute(.discordMarkdownBlock, at: range.location, effectiveRange: nil)
+                as? String == "quote"
             result.listMarkers.append(
                 contentsOf:
                     NativeTimelineTextSelectionGeometry.rects(
                         in: textFrame,
                         outerFrame: outerFrame,
                         range: range
-                    )
+                    ).map { ListMarker(frame: $0, isNested: level.intValue > 0, isQuoted: isQuoted) }
             )
         }
+        // Quoted lines are separated by an unmarked newline, so one quote is
+        // every marked range up to the next unquoted text.
+        var quoteRanges: [NSRange] = []
         attributedText.enumerateAttribute(
             .discordMarkdownBlock,
             in: fullRange
         ) { rawValue, range, _ in
-            guard let block = rawValue as? String else { return }
-            let rects = NativeTimelineTextSelectionGeometry.rects(
+            guard rawValue as? String == "quote" else { return }
+            if let last = quoteRanges.last, range.location - NSMaxRange(last) <= 1 {
+                quoteRanges[quoteRanges.count - 1] = NSUnionRange(last, range)
+            } else {
+                quoteRanges.append(range)
+            }
+        }
+        result.quotes = quoteRanges.compactMap { range in
+            NativeTimelineTextSelectionGeometry.rects(
                 in: textFrame,
                 outerFrame: outerFrame,
                 range: range
-            )
-            switch block {
-            case "quote":
-                result.quotes.append(contentsOf: rects)
-            default:
-                break
-            }
-        }
+            ).reduce(nil) { ($0 as CGRect?)?.union($1) ?? $1 }
+        }.map { CGRect(x: outerFrame.minX, y: $0.minY, width: InterfaceScale.metric(4), height: $0.height) }
         return result
     }
 
     private static func drawInlineCodeDecorations(_ rects: [CGRect]) {
         for inlineRect in rects {
-            let backgroundFrame = inlineRect.insetBy(dx: -InterfaceScale.metric(4), dy: -InterfaceScale.metric(2))
+            let backgroundFrame = inlineRect.insetBy(dx: 0, dy: InterfaceScale.metric(1))
             discordCodeBackgroundColor.setFill()
             NSBezierPath(
                 concentricRoundedRect: backgroundFrame,
@@ -600,79 +615,54 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func drawListMarkerDecorations(_ rects: [CGRect]) {
-        NSColor.labelColor.setFill()
-        for markerRect in rects {
-            let diameter: CGFloat = InterfaceScale.metric(6)
-            NSBezierPath(ovalIn: CGRect(
-                x: markerRect.midX - diameter / 2,
-                y: markerRect.midY - diameter / 2,
+    /// Discord centers its disc 12 points before the item text, which
+    /// starts one 16-point gutter after the marker, and hollows nested ones.
+    private static func drawListMarkerDecorations(_ markers: [ListMarker]) {
+        let diameter = InterfaceScale.metric(5.5)
+        for marker in markers {
+            (marker.isQuoted ? NSColor.secondaryLabelColor : NSColor.labelColor).set()
+            let disc = NSBezierPath(ovalIn: CGRect(
+                x: marker.frame.minX + InterfaceScale.metric(4) - diameter / 2,
+                y: marker.frame.midY - diameter / 2,
                 width: diameter,
                 height: diameter
-            )).fill()
+            ))
+            if !marker.isNested {
+                disc.fill()
+            } else {
+                let ring = NSBezierPath(ovalIn: disc.bounds.insetBy(dx: 0.5, dy: 0.5))
+                ring.lineWidth = 1
+                ring.stroke()
+            }
         }
     }
 
-    private static func drawQuoteDecorations(
-        _ rects: [CGRect],
-        outerFrame: CGRect
-    ) {
-        for group in verticallyContiguousGroups(rects) {
-            guard let union = group.reduce(nil, {
-                ($0 as CGRect?)?.union($1) ?? $1
-            }) else { continue }
-            let bar = CGRect(
-                x: outerFrame.minX + 1,
-                y: union.minY - 1,
-                width: InterfaceScale.metric(4),
-                height: union.height + InterfaceScale.metric(2)
-            )
-            NSColor.secondaryLabelColor.withAlphaComponent(0.65).setFill()
+    private static func drawQuoteDecorations(_ bars: [CGRect]) {
+        NSColor.tertiaryLabelColor.setFill()
+        for bar in bars {
             NSBezierPath(
                 roundedRect: bar,
-                xRadius: InterfaceScale.metric(2),
-                yRadius: InterfaceScale.metric(2)
+                xRadius: bar.width / 2,
+                yRadius: bar.width / 2
             ).fill()
         }
     }
 
-    static let discordCodeBackgroundColor = NSColor(
-        srgbRed: 13 / 255,
-        green: 14 / 255,
-        blue: 27 / 255,
-        alpha: 1
-    )
+    /// Discord tints code with its blurple and outlines it in a translucent
+    /// gray, so both read on any background and in either appearance.
+    static let discordCodeBackgroundColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 89 / 255, green: 102 / 255, blue: 242 / 255, alpha: 0.08)
+            : NSColor(srgbRed: 77 / 255, green: 102 / 255, blue: 230 / 255, alpha: 0.04)
+    }
 
-    static let discordCodeBorderColor = NSColor(
-        srgbRed: 46 / 255,
-        green: 47 / 255,
-        blue: 59 / 255,
-        alpha: 1
-    )
-
-    static func verticallyContiguousGroups(
-        _ rects: [CGRect]
-    ) -> [[CGRect]] {
-        let sorted = rects.sorted {
-            if abs($0.minY - $1.minY) >= 0.5 {
-                return $0.minY < $1.minY
-            }
-            return $0.minX < $1.minX
-        }
-        var groups: [[CGRect]] = []
-        for rect in sorted {
-            guard let last = groups.last,
-                  let union = last.reduce(nil, {
-                      ($0 as CGRect?)?.union($1) ?? $1
-                  }),
-                  rect.minY - union.maxY <= 4
-            else {
-                groups.append([rect])
-                continue
-            }
-            groups[groups.count - 1].append(rect)
-        }
-        return groups
+    static let discordCodeBorderColor = NSColor(name: nil) { appearance in
+        NSColor(
+            srgbRed: 150 / 255,
+            green: 150 / 255,
+            blue: 160 / 255,
+            alpha: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 0.2 : 0.4
+        )
     }
 
     enum InlineAttachmentDraw {

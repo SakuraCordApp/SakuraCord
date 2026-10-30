@@ -570,14 +570,15 @@ private enum NodeBuilder {
             emojiSize: 18
         )
         let width = min(maximumWidth, max(1, idealWidth(box)))
+        let inset = NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value)
         let height = measuredHeight(box, width: width)
         return Node(
-            size: CGSize(width: width, height: height),
+            size: CGSize(width: width, height: inset + height),
             textRegions: [
                 .init(
                     frame: CGRect(
                         x: 0,
-                        y: 0,
+                        y: inset,
                         width: width,
                         height: height
                     ),

@@ -436,8 +436,8 @@ import Testing
     #expect(!value.string.contains("```"))
     #expect(!value.string.contains("\u{001B}"))
     #expect(value.string.contains("[31mRed[0m"))
-    #expect(value.string.contains("• Item"))
-    #expect(value.string.contains("1. Ordered"))
+    // Discord continues a list with its first item's kind.
+    #expect(value.string.contains("•\tItem\n•\tOrdered"))
 
     let string = value.string as NSString
     let quote = string.range(of: "Quote")

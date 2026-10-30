@@ -786,6 +786,7 @@ enum NativeTimelineEmbedLayout {
                 if hasTextSection {
                     textY += spacing
                 }
+                textY += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value)
                 let height = measuredHeight(box, width: width)
                 textRegions.append(
                     .init(
@@ -1271,6 +1272,7 @@ enum NativeTimelineEmbedLayout {
                     field.name,
                     width: fieldWidth
                 )
+                let valueInset = NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: field.value.value)
                 let valueHeight = measuredHeight(
                     field.value,
                     width: fieldWidth
@@ -1291,7 +1293,7 @@ enum NativeTimelineEmbedLayout {
                     .init(
                         frame: CGRect(
                             x: fieldX,
-                            y: verticalOffset + nameHeight + InterfaceScale.metric(2),
+                            y: verticalOffset + nameHeight + InterfaceScale.metric(2) + valueInset,
                             width: fieldWidth,
                             height: valueHeight
                         ),
@@ -1299,7 +1301,7 @@ enum NativeTimelineEmbedLayout {
                         isSelectable: true
                     )
                 )
-                rowHeight = max(rowHeight, nameHeight + 2 + valueHeight)
+                rowHeight = max(rowHeight, nameHeight + 2 + valueInset + valueHeight)
             }
             verticalOffset += rowHeight
         }
@@ -1445,12 +1447,20 @@ enum NativeTimelineEmbedLayout {
 
 nonisolated enum NativeTimelineMarkdownChromeMetrics {
     static var codeBlockInset: CGFloat { InterfaceScale.metric(8) }
-    static var codeBlockParagraphBottomSpacing: CGFloat { InterfaceScale.metric(4) }
     // The painter gives CoreText one point of extra layout headroom and its
     // selection-derived block rect has fractional vertical bounds. Preserve
     // the established three-point message-highlight inset after that painted
     // geometry instead of merely making the block fit the row.
     static var codeBlockTerminalPaintAndHighlightInset: CGFloat { InterfaceScale.metric(5.5) }
+
+    /// CoreText ignores the first paragraph's spacing before, so layout
+    /// moves the text frame down by it instead. This keeps Discord's top
+    /// margin and a leading code block's padding clear of the content above.
+    static func leadingVisualInset(in value: NSAttributedString) -> CGFloat {
+        guard value.length > 0 else { return 0 }
+        return (value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?
+            .paragraphSpacingBefore ?? 0
+    }
 
     static func trailingVisualOverflow(
         in value: NSAttributedString
@@ -1476,12 +1486,7 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
                   effectiveRange: nil
               ) as? String == "code"
         else { return 0 }
-        return max(
-            0,
-            codeBlockInset
-                - codeBlockParagraphBottomSpacing
-                + codeBlockTerminalPaintAndHighlightInset
-        )
+        return codeBlockInset + codeBlockTerminalPaintAndHighlightInset
     }
 }
 
