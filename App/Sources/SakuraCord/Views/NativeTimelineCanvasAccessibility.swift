@@ -48,7 +48,8 @@ struct ComponentMediaA11yInput {
     let message: Message
     let rowIndex: Int
     let parent: NSAccessibilityElement
-    let usesFileActionLabels: Bool
+    /// The file a file component's element downloads; nil for media.
+    let file: Attachment?
     let viewerPresentation: NativeTimelineMediaViewerPresentation?
 }
 
@@ -791,7 +792,9 @@ extension NativeTimelineCanvasView {
                     label: label,
                     help: isHiddenSpoiler
                         ? "Reveals this media without opening it"
-                        : "Open \(contentLabel)",
+                        : attachment.mediaKind == .file
+                            ? fileCardActionDescription(attachment, name: contentLabel)
+                            : "Open \(contentLabel)",
                     frame: accessibilityChildFrame(
                         region.frame,
                         rowIndex: rowIndex
@@ -1475,7 +1478,7 @@ extension NativeTimelineCanvasView {
                     message: message,
                     rowIndex: rowIndex,
                     parent: parent,
-                    usesFileActionLabels: false,
+                    file: nil,
                     viewerPresentation:
                         NativeTimelineMediaViewerPlan.components(
                             in: message,
@@ -1506,7 +1509,7 @@ extension NativeTimelineCanvasView {
                     message: message,
                     rowIndex: rowIndex,
                     parent: parent,
-                    usesFileActionLabels: false,
+                    file: nil,
                     viewerPresentation:
                         NativeTimelineMediaViewerPlan.components(
                             in: message,
@@ -1529,7 +1532,7 @@ extension NativeTimelineCanvasView {
                 hiddenContainerFrames: hiddenContainerFrames
             ) {
                 appendComponentMediaAccessibility(to: &children, input: .init(
-                    label: region.title,
+                    label: region.attachment.filename,
                     frame: region.frame,
                     componentID: region.componentID,
                     openURL: region.openURL,
@@ -1537,7 +1540,7 @@ extension NativeTimelineCanvasView {
                     message: message,
                     rowIndex: rowIndex,
                     parent: parent,
-                    usesFileActionLabels: true,
+                    file: region.attachment,
                     viewerPresentation:
                         NativeTimelineMediaViewerPlan.components(
                             in: message,

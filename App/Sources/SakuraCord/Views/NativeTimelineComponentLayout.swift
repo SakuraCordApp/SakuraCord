@@ -116,12 +116,17 @@ struct NativeTimelineComponentLayout {
     }
 
     struct FileRegion {
-        let frame: CGRect
+        var frame: CGRect
         let componentID: String
         let openURL: URL
         let title: String
         let description: String?
         let isSpoiler: Bool
+        /// The file the card names and downloads.
+        let attachment: Attachment
+        let isInBubble: Bool
+
+        var card: NativeTimelineFileCard { .init(frame: frame, attachment: attachment, isInBubble: isInBubble) }
     }
 
     struct SeparatorRegion {
@@ -339,14 +344,9 @@ private struct Node {
             )
         }
         result.files = files.map {
-            .init(
-                frame: $0.frame.offsetBy(dx: dx, dy: dy),
-                componentID: $0.componentID,
-                openURL: $0.openURL,
-                title: $0.title,
-                description: $0.description,
-                isSpoiler: $0.isSpoiler
-            )
+            var file = $0
+            file.frame = file.frame.offsetBy(dx: dx, dy: dy)
+            return file
         }
         result.separators = separators.map {
             .init(
@@ -944,32 +944,32 @@ private enum NodeBuilder {
                     maximumWidth: maximumWidth
                 )
             }
-            let titleFont = NSFont.interfaceSystemFont(ofSize: 13, weight: .semibold)
-            let naturalWidth = ceil(
-                (item.title as NSString).size(
-                    withAttributes: [.font: titleFont]
-                ).width
-            ) + 96
-            let width = inBubble
-                ? maximumWidth
-                : min(maximumWidth, max(InterfaceScale.metric(220), naturalWidth))
-            let height: CGFloat =
-                item.description?.isEmpty == false ? InterfaceScale.metric(62) : InterfaceScale.metric(48)
+            let attachment = attachment(for: media, in: message.attachments) ?? Attachment(
+                id: NativeTimelineFileCard.unresolvedFileID(componentID: id, in: message),
+                // A delivered component's attachment name is its ID; the CDN
+                // path ends in the filename.
+                filename: item.openURL.lastPathComponent,
+                url: item.openURL,
+                mediaType: media.contentType
+            )
+            let size = CGSize(
+                width: NativeTimelineFileCard.fittedWidth(
+                    for: attachment, isInBubble: inBubble, maximumWidth: maximumWidth
+                ),
+                height: NativeTimelineFileCard.height(isInBubble: inBubble)
+            )
             return Node(
-                size: CGSize(width: width, height: height),
+                size: size,
                 files: [
                     .init(
-                        frame: CGRect(
-                            x: 0,
-                            y: 0,
-                            width: width,
-                            height: height
-                        ),
+                        frame: CGRect(origin: .zero, size: size),
                         componentID: id,
                         openURL: item.openURL,
                         title: item.title,
                         description: item.description,
-                        isSpoiler: item.isSpoiler
+                        isSpoiler: item.isSpoiler,
+                        attachment: attachment,
+                        isInBubble: inBubble
                     )
                 ]
             )
@@ -1233,11 +1233,7 @@ private enum NodeBuilder {
         componentID: String,
         attachments: [Attachment]
     ) -> ResolvedMedia? {
-        if let name = media.attachmentName,
-           let attachment = attachments.first(where: {
-               $0.filename == name || $0.id == name
-           })
-        {
+        if let attachment = attachment(for: media, in: attachments) {
             return ResolvedMedia(
                 displayURL: attachment.proxyURL ?? attachment.url,
                 previewURL: attachment.mediaKind == .video
@@ -1274,6 +1270,12 @@ private enum NodeBuilder {
             isVideo: isVideo,
             placeholder: .init(media)
         )
+    }
+
+    private static func attachment(for media: ComponentMedia, in attachments: [Attachment]) -> Attachment? {
+        media.attachmentName.flatMap { name in
+            attachments.first { $0.filename == name || $0.id == name }
+        }
     }
 
     private static func aspectRatio(

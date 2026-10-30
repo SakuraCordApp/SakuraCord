@@ -46,6 +46,16 @@ extension MockMessageFixtureBuilder {
             },
             showcaseMessage(233, content: "An inline image link: \(image.map { "[Layout study](\($0.url.absoluteString))" } ?? "Layout study")"),
             showcaseMessage(234, author: nova, content: animatedFixtureLink),
+            showcaseMessage(235, author: nova, content: "File types.") {
+                $0.attachments = [
+                    ("release-notes.pdf", 1_482_113), ("SakuraCord.zip", 48_211_456),
+                    ("FileCard.swift", 7_340), ("budget.numbers", 220_416), ("payload.bin", 26),
+                ].enumerated().compactMap { index, sample in
+                    file.map {
+                        Attachment(id: "showcase-file-type-\(index)", filename: sample.0, url: $0.url, size: sample.1)
+                    }
+                }
+            },
         ]
         let durations = [1.2, 6.2, 65.0]
         result += durations.enumerated().map { index, duration in
