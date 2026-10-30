@@ -89,13 +89,17 @@ extension NativeMessageTimelineCoordinator {
                     parent.conversation.loaderKind == .pins
                 let positionShift =
                     bottomInset + min(160, initialRect.height * 0.25)
-                scroll(
-                    toDocumentY:
-                        scrollsTowardLater
-                            ? initialRect.minY + positionShift
-                            : materializedHistoryMaximumY(viewportHeight: initialRect.height) - initialRect.height - min(160, initialRect.height * 0.25),
-                    scrollView: scrollView
-                )
+                // An idle run stays where the conversation opened, pinned
+                // to its newest message.
+                if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                    scroll(
+                        toDocumentY:
+                            scrollsTowardLater
+                                ? initialRect.minY + positionShift
+                                : materializedHistoryMaximumY(viewportHeight: initialRect.height) - initialRect.height - min(160, initialRect.height * 0.25),
+                        scrollView: scrollView
+                    )
+                }
                 startup.phase = "settling"
                 let ticksBeforePositionShift = startup.completedTicks
                 let positionShiftDeadline =
@@ -137,6 +141,8 @@ extension NativeMessageTimelineCoordinator {
             scrollsTowardLater: Bool
         ) {
                 canvas.resetDrawTelemetry()
+                performanceUpdateCount = 0
+                performanceUpdateTotalDuration = 0
                 // Exercise native pagination directly. This synthetic workload
                 // must never invoke the user-interaction callback: that callback
                 // deliberately unblocks read acknowledgements for real input.
@@ -170,7 +176,11 @@ extension NativeMessageTimelineCoordinator {
                                 outcome: outcome,
                                 elapsed: elapsed,
                                 state: state,
-                                canvas: canvas
+                                canvas: canvas,
+                                timelineUpdates: (
+                                    self?.performanceUpdateCount ?? 0,
+                                    self?.performanceUpdateTotalDuration ?? 0
+                                )
                             )
                         }
                     ) else { return }
@@ -317,7 +327,8 @@ extension NativeMessageTimelineCoordinator {
             outcome: NativeTimelineBenchmarkFinishOutcome,
             elapsed: TimeInterval,
             state: NativeTimelineBenchmarkRunState,
-            canvas: NativeTimelineCanvasView?
+            canvas: NativeTimelineCanvasView?,
+            timelineUpdates: (count: Int, milliseconds: Double)
         ) {
             NativeTimelineBenchmarkArtifact.write(
                 outcome: outcome,
@@ -332,7 +343,10 @@ extension NativeMessageTimelineCoordinator {
                 historyStarvedTicks: state.historyStarvedTicks,
                 maximumConsecutiveHistoryStarvedTicks:
                     state.maximumHistoryStarvedTicks,
-                renderTelemetry: canvas?.renderTelemetry
+                renderTelemetry: canvas?.renderTelemetry,
+                mainThreadCPUTime: NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
+                    - state.mainThreadCPUTimeAtStart,
+                timelineUpdates: timelineUpdates
             )
             AppPerformanceSignposts.endResourceWindow(
                 named: "MessageTimelineAutoScrollBenchmark",

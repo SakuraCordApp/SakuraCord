@@ -320,6 +320,9 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var performanceUpdatePath = "none"
         var performanceFallbackReason = "none"
         var lastPerformanceUpdateDuration = 0.0
+        /// Timeline updates and their main-thread time during a benchmark run.
+        var performanceUpdateCount = 0
+        var performanceUpdateTotalDuration = 0.0
         var lastLoggedPerformanceFallbackReason: String?
         var recentLayoutCacheHits = 0
 #if SAKURACORD_MOTION_BENCHMARK
@@ -954,6 +957,8 @@ extension NativeMessageTimelineCoordinator {
             if parent.runsPerformanceAutoScroll {
                 let milliseconds = (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000
                 lastPerformanceUpdateDuration = milliseconds
+                performanceUpdateCount += 1
+                performanceUpdateTotalDuration += milliseconds
                 if milliseconds >= 4 {
                     NSLog(
                         "SakuraCord timeline reload: %.2f ms (%d -> %d items)",

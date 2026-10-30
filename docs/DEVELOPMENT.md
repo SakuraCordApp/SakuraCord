@@ -63,6 +63,8 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-forum-performance-autoscroll` | Same forum, then a 15-second, 2,000-point/second scroll; writes frame timing and layout-jump counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` and logs a `ForumBenchmark:` line |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-chat-voice-performance` | Large native timeline where every fifth message is a voice message |
+| `./script/build_and_run.sh --offline-chat-reaction-storm-autoscroll` | Large timeline scroll benchmark with 40 reaction adds and removals per second, mostly on the newest messages; writes frame timing, main-thread CPU and timeline update counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` |
+| `./script/build_and_run.sh --offline-chat-reaction-storm-idle` | The same reaction traffic and measurements on a still timeline pinned to the newest message |
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
 | `./script/build_and_run.sh --offline-friends-performance` | 1,000 friends plus 200 requests; 20-second scroll with 20 presence updates/second, then 80 category switches |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |

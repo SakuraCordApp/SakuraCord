@@ -529,9 +529,12 @@ nonisolated enum NativeTimelineBenchmarkScrollPolicy {
     static let maximumStep: CGFloat = 40
     static let duration: TimeInterval = 20
     static let nominalDistance = pointsPerSecond * duration
+    /// Measures live updates on a still timeline instead of a scrolling one.
+    static let isIdle = ProcessInfo.processInfo.arguments.contains("--offline-chat-performance-idle")
 
     static func distance(tickInterval: TimeInterval) -> CGFloat {
-        min(
+        guard !isIdle else { return 0 }
+        return min(
             maximumStep,
             max(0, CGFloat(tickInterval)) * pointsPerSecond
         )
@@ -645,7 +648,9 @@ enum NativeTimelineBenchmarkArtifact {
         maximumScrollWork: TimeInterval? = nil,
         historyStarvedTicks: Int? = nil,
         maximumConsecutiveHistoryStarvedTicks: Int? = nil,
-        renderTelemetry: NativeTimelineRenderTelemetry? = nil
+        renderTelemetry: NativeTimelineRenderTelemetry? = nil,
+        mainThreadCPUTime: TimeInterval? = nil,
+        timelineUpdates: (count: Int, milliseconds: Double)? = nil
     ) {
         guard let path = ProcessInfo.processInfo.environment[
             "SAKURACORD_PERFORMANCE_RESULT_PATH"
@@ -728,11 +733,40 @@ enum NativeTimelineBenchmarkArtifact {
 
             """
         }
+        if let mainThreadCPUTime {
+            contents += "main_thread_cpu_ms\t\(mainThreadCPUTime * 1_000)\n"
+        }
+        if let timelineUpdates {
+            contents += """
+            timeline_update_count\t\(timelineUpdates.count)
+            timeline_update_total_ms\t\(timelineUpdates.milliseconds)
+
+            """
+        }
         try? contents.write(
             to: URL(fileURLWithPath: path),
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    /// CPU time the calling thread has used, user and system.
+    static func currentThreadCPUTime() -> TimeInterval {
+        let thread = mach_thread_self()
+        defer { mach_port_deallocate(mach_task_self_, thread) }
+        var info = thread_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                thread_info(thread, thread_flavor_t(THREAD_BASIC_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        let seconds = info.user_time.seconds + info.system_time.seconds
+        let microseconds = info.user_time.microseconds + info.system_time.microseconds
+        return TimeInterval(seconds) + TimeInterval(microseconds) / 1_000_000
     }
 
     private static func percentile(
