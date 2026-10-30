@@ -89,7 +89,12 @@ extension NativeTimelineRowPainter {
         let isOutgoing = bubbleRegion?.isOutgoing == true
         let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubbleRegion)
         let secondary = NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubbleRegion)
-        componentContainer(region.frame, accentColor: nil)
+        // On a bubble the card stays translucent, so the bubble's foreground
+        // reads on it.
+        componentContainer(
+            region.frame, accentColor: nil,
+            fill: bubbleRegion == nil ? .controlBackgroundColor : NativeTimelineSemanticColor.opacity(.labelColor, 0.055)
+        )
         systemSymbol("doc.fill", in: region.iconFrame, color: secondary, inset: 0)
         // The name truncates first so the size always stays readable.
         let font = NSFont.interfacePreferredFont(forTextStyle: .body)
