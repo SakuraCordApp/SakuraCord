@@ -351,12 +351,15 @@ public enum DiscordMarkdown {
         close(from: 0)
     }
 
+    /// `usesMessageLineHeight` gives paragraphs and list items Discord's
+    /// message line height; embeds and previews keep natural lines.
     public static func appKitAttributed(
         _ plan: AppKitPlan,
-        baseFontSize: CGFloat = 15
+        baseFontSize: CGFloat = 15,
+        usesMessageLineHeight: Bool = false
     ) -> NSAttributedString {
         let output = NSMutableAttributedString()
-        let metrics = BlockMetrics(baseFontSize: baseFontSize)
+        let metrics = BlockMetrics(baseFontSize: baseFontSize, usesMessageLineHeight: usesMessageLineHeight)
 
         var previousParagraph: NSParagraphStyle?
         for (lineIndex, linePlan) in plan.lines.enumerated() {
@@ -1017,14 +1020,18 @@ public enum DiscordMarkdown {
         let orderedMarkerGap: CGFloat = 4
         let quoteIndent: CGFloat = 16
         let codeInset: CGFloat = 8
+        /// Discord's 22 px line for 16 px message text, as a floor under
+        /// paragraphs and list items.
+        let bodyLineHeight: CGFloat?
         /// The empty line Discord leaves after a closing code fence.
         let emptyLineHeight: CGFloat
         let codeLineHeight: CGFloat
 
-        init(baseFontSize: CGFloat) {
+        init(baseFontSize: CGFloat, usesMessageLineHeight: Bool) {
             self.baseFontSize = baseFontSize
             let font = NSFont.systemFont(ofSize: baseFontSize)
-            emptyLineHeight = ceil(font.ascender - font.descender + font.leading) + 1
+            bodyLineHeight = usesMessageLineHeight ? (baseFontSize * 1.375).rounded() : nil
+            emptyLineHeight = bodyLineHeight ?? ceil(font.ascender - font.descender + font.leading) + 1
             codeLineHeight = (baseFontSize * 1.125).rounded()
             orderedMarkerFont = .monospacedDigitSystemFont(ofSize: baseFontSize, weight: .regular)
         }
@@ -1189,6 +1196,7 @@ public enum DiscordMarkdown {
                 : 0
             let gutter = max(metrics.listIndent, ceil(markerWidth) + metrics.orderedMarkerGap)
             let textIndent = indent + metrics.listIndent * CGFloat(level) + gutter
+            paragraph.minimumLineHeight = metrics.bodyLineHeight ?? 0
             paragraph.firstLineHeadIndent = textIndent - gutter
             paragraph.headIndent = textIndent
             paragraph.tabStops = (isOrdered
@@ -1202,6 +1210,9 @@ public enum DiscordMarkdown {
             paragraph.minimumLineHeight = metrics.codeLineHeight
             paragraph.maximumLineHeight = metrics.codeLineHeight
         case .paragraph, .heading:
+            if case .paragraph = line.block {
+                paragraph.minimumLineHeight = metrics.bodyLineHeight ?? 0
+            }
             if line.runs.first?.traits.contains(.inlineCode) == true {
                 let font = appKitFont(block: line.block, traits: .inlineCode, metrics: metrics)
                 paragraph.firstLineHeadIndent += metrics.inlineCodePadding(font: font)

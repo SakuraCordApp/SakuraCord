@@ -245,7 +245,8 @@ enum NativeTimelineTextPresentation {
                     prepared: preparation.prepared,
                     emojiSize: preparation.emojiSize,
                     baseFontSize: preparation.baseFontSize,
-                    mentionPresentations: preparation.mentions
+                    mentionPresentations: preparation.mentions,
+                    usesMessageLineHeight: true
                 )
             )
         }
@@ -327,14 +328,19 @@ nonisolated enum NativeTimelineCoreText {
     /// interface size to every resolved font once.
     static func scaledMarkdown(
         _ plan: DiscordMarkdown.AppKitPlan,
-        baseFontSize: CGFloat
+        baseFontSize: CGFloat,
+        usesMessageLineHeight: Bool = false
     ) -> NSAttributedString {
         let factor = InterfaceScale.factor
         guard factor != 1 else {
-            return DiscordMarkdown.appKitAttributed(plan, baseFontSize: baseFontSize)
+            return DiscordMarkdown.appKitAttributed(
+                plan, baseFontSize: baseFontSize, usesMessageLineHeight: usesMessageLineHeight
+            )
         }
         let unscaledBaseFontSize = baseFontSize / factor
-        return DiscordMarkdown.appKitAttributed(plan, baseFontSize: unscaledBaseFontSize)
+        return DiscordMarkdown.appKitAttributed(
+            plan, baseFontSize: unscaledBaseFontSize, usesMessageLineHeight: usesMessageLineHeight
+        )
             .scalingTypography(by: baseFontSize / unscaledBaseFontSize)
     }
 
@@ -342,7 +348,8 @@ nonisolated enum NativeTimelineCoreText {
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
-        mentionPresentations: [String: MentionPresentation]
+        mentionPresentations: [String: MentionPresentation],
+        usesMessageLineHeight: Bool = false
     ) -> NSAttributedString {
         let resolvedBaseFontSize =
             prepared.isEmojiOnly
@@ -352,7 +359,8 @@ nonisolated enum NativeTimelineCoreText {
         let output = NSMutableAttributedString(
             attributedString: scaledMarkdown(
                 prepared.markdownPlan,
-                baseFontSize: resolvedBaseFontSize
+                baseFontSize: resolvedBaseFontSize,
+                usesMessageLineHeight: usesMessageLineHeight && !prepared.isEmojiOnly
             )
         )
         let fullRange = NSRange(location: 0, length: output.length)
@@ -426,7 +434,14 @@ nonisolated enum NativeTimelineCoreText {
             let paragraphRange = source.paragraphRange(
                 for: NSRange(location: location, length: 0)
             )
-            var lineHeight: CGFloat = 0
+            let existing = output.attribute(
+                .paragraphStyle,
+                at: paragraphRange.location,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+            // A minimum without a maximum is a message's line height, which
+            // floors the tallest font; code fixes both and keeps its own.
+            var lineHeight = existing.map { $0.maximumLineHeight == 0 ? $0.minimumLineHeight : 0 } ?? 0
             var containsInlineRun = false
             var containsSpoiler = false
             var paragraphFont: NSFont?
@@ -463,11 +478,6 @@ nonisolated enum NativeTimelineCoreText {
                 location = NSMaxRange(paragraphRange)
                 continue
             }
-            let existing = output.attribute(
-                .paragraphStyle,
-                at: paragraphRange.location,
-                effectiveRange: nil
-            ) as? NSParagraphStyle
             let style = (existing?.mutableCopy()
                 as? NSMutableParagraphStyle)
                 ?? NSMutableParagraphStyle()
@@ -480,7 +490,7 @@ nonisolated enum NativeTimelineCoreText {
                 // Natural line metrics agree between CoreText and TextKit.
                 // A fixed ceil(font height) changes TextKit's baseline at some
                 // sizes; the shared markdown line spacing adds another point.
-                style.minimumLineHeight = 0
+                // Markdown's body line height stays as the floor.
                 style.maximumLineHeight = 0
             } else if !containsInlineRun, lineHeight > 0 {
                 style.minimumLineHeight = lineHeight
