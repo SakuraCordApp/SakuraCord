@@ -3,8 +3,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ComposerAttachmentTray: View {
-    static var cornerRadius: CGFloat { InterfaceScale.metric(16) }
-    static var tileSize: CGFloat { InterfaceScale.metric(176) }
+    static var cornerRadius: CGFloat { InterfaceScale.metric(12) }
+    static var tileSize: CGFloat { InterfaceScale.metric(132) }
+    /// The upload ring shrinks with the tile and grows back to the
+    /// timeline's size as it flies into the message.
+    static let ringScale: CGFloat = 0.75
 
     @AppStorage(PrivacySafetySettingsStore.anonymiseFileNamesKey, store: PRBuildProfile.defaults) private var anonymisesFileNames = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,7 +30,7 @@ struct ComposerAttachmentTray: View {
         let mediaViewerSourceID = mediaViewerSourceID()
         return ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                HStack(spacing: InterfaceScale.metric(12)) {
+                HStack(spacing: InterfaceScale.metric(9)) {
                     ForEach(attachments) { attachment in
                         ComposerAttachmentTile(
                             attachment: attachment,
@@ -46,8 +49,7 @@ struct ComposerAttachmentTray: View {
                         .transition(reduceMotion ? .opacity : Self.tileTransition)
                     }
                 }
-                .padding(.horizontal, InterfaceScale.metric(14))
-                .padding(.vertical, InterfaceScale.metric(14))
+                .padding(InterfaceScale.metric(10))
                 // Tiles settle on their own spring inside the composer's
                 // resize, which carries the tray itself.
                 .animation(reduceMotion ? .smooth(duration: 0.2) : ComposerResizeMotion.tile, value: attachments.map(\.id))
@@ -61,7 +63,7 @@ struct ComposerAttachmentTray: View {
                 }
             }
         }
-        .frame(height: Self.tileSize + InterfaceScale.metric(28))
+        .frame(height: Self.tileSize + InterfaceScale.metric(20))
         .accessibilityLabel("Message attachments")
         .onChange(of: anonymisesFileNames) { _, enabled in
             for var attachment in attachments {
@@ -88,7 +90,7 @@ struct ComposerAttachmentTray: View {
         .asymmetric(
             insertion: .scale(scale: 0.82, anchor: .bottom)
                 .combined(with: .opacity)
-                .combined(with: .offset(y: InterfaceScale.metric(10))),
+                .combined(with: .offset(y: InterfaceScale.metric(8))),
             removal: .scale(scale: 0.86).combined(with: .opacity)
         )
     }
@@ -118,6 +120,9 @@ private struct ComposerAttachmentTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var tileSize: CGFloat { ComposerAttachmentTray.tileSize }
+    /// The name and action pills' height, so they read as one set.
+    private var controlDiameter: CGFloat { InterfaceScale.metric(18) }
+    private var pillInset: CGFloat { InterfaceScale.metric(5) }
     private var shape: ConcentricRectangle {
         ConcentricRectangle(cornerRadius: ComposerAttachmentTray.cornerRadius, style: .continuous)
     }
@@ -197,14 +202,14 @@ private struct ComposerAttachmentTile: View {
         .overlay(alignment: .bottomLeading) {
             if isHovered {
                 filenamePill
-                    .padding(InterfaceScale.metric(7))
+                    .padding(pillInset)
                     .transition(hoverPillTransition(anchor: .bottomLeading))
             }
         }
         .overlay(alignment: .topTrailing) {
             if isHovered {
                 actions
-                    .padding(InterfaceScale.metric(7))
+                    .padding(pillInset)
                     .transition(hoverPillTransition(anchor: .topTrailing))
             }
         }
@@ -228,7 +233,7 @@ private struct ComposerAttachmentTile: View {
         ZStack {
             Rectangle()
                 .fill(.black.opacity(0.58))
-            VStack(spacing: InterfaceScale.metric(5)) {
+            VStack(spacing: InterfaceScale.metric(4)) {
                 Image(systemName: "eye.slash")
                 Text("SPOILER")
                     .font(.interface(.caption2).weight(.bold))
@@ -245,6 +250,7 @@ private struct ComposerAttachmentTile: View {
                 .fill(.black.opacity(AttachmentUploadRing.dimOpacity))
             if let uploadFraction {
                 AttachmentUploadRingView(fraction: uploadFraction)
+                    .scaleEffect(ComposerAttachmentTray.ringScale)
             } else {
                 ProgressView()
                     .controlSize(.small)
@@ -256,15 +262,15 @@ private struct ComposerAttachmentTile: View {
 
     /// The name in a pill like the actions', so they read as one set.
     private var filenamePill: some View {
-        HoverActionPill(spacing: 0, padding: 3) {
+        HoverActionPill(spacing: 0, padding: 2) {
             Text(attachment.filename)
                 .font(.interface(.caption).weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.horizontal, InterfaceScale.metric(7))
-                .frame(height: InterfaceScale.metric(22))
+                .padding(.horizontal, InterfaceScale.metric(5))
+                .frame(height: controlDiameter)
         }
-        .frame(maxWidth: tileSize - InterfaceScale.metric(14), alignment: .leading)
+        .frame(maxWidth: tileSize - 2 * pillInset, alignment: .leading)
         .allowsHitTesting(false)
     }
 
@@ -299,13 +305,13 @@ private struct ComposerAttachmentTile: View {
         HoverActionPill(
             glass: .regular.interactive(),
             spacing: 1,
-            padding: 3
+            padding: 2
         ) {
             HoverActionButton(
                 systemImage: attachment.isSpoiler ? "eye.slash" : "eye",
                 help: attachment.isSpoiler ? "Remove spoiler" : "Mark as spoiler",
                 isSelected: attachment.isSpoiler,
-                diameter: InterfaceScale.metric(22),
+                diameter: controlDiameter,
                 iconFont: .interface(.caption2).weight(.semibold)
             ) {
                 toggleSpoiler(attachment.id)
@@ -316,7 +322,7 @@ private struct ComposerAttachmentTile: View {
                     systemImage: "shuffle",
                     help: attachment.isFilenameAnonymised ? "Restore file name" : "Randomise file name",
                     isSelected: attachment.isFilenameAnonymised,
-                    diameter: InterfaceScale.metric(22),
+                    diameter: controlDiameter,
                     iconFont: .interface(.caption2).weight(.semibold)
                 ) {
                     toggleFilenamePrivacy(attachment)
@@ -325,7 +331,7 @@ private struct ComposerAttachmentTile: View {
             HoverActionButton(
                 systemImage: "pencil",
                 help: "Edit attachment",
-                diameter: InterfaceScale.metric(22),
+                diameter: controlDiameter,
                 iconFont: .interface(.caption2).weight(.semibold)
             ) {
                 edit(attachment.id)
@@ -334,7 +340,7 @@ private struct ComposerAttachmentTile: View {
                 systemImage: "trash",
                 help: "Delete attachment",
                 role: .destructive,
-                diameter: InterfaceScale.metric(22),
+                diameter: controlDiameter,
                 iconFont: .interface(.caption2).weight(.semibold)
             ) {
                 remove(attachment.id)
@@ -355,11 +361,11 @@ struct ComposerAttachmentFileFace: View {
     let url: URL
 
     var body: some View {
-        VStack(spacing: InterfaceScale.metric(6)) {
+        VStack(spacing: InterfaceScale.metric(4)) {
             Image(nsImage: NSWorkspace.shared.icon(for: UTType(filenameExtension: url.pathExtension) ?? .data))
                 .resizable()
                 .scaledToFit()
-                .frame(width: InterfaceScale.metric(76), height: InterfaceScale.metric(76))
+                .frame(width: InterfaceScale.metric(56), height: InterfaceScale.metric(56))
             if !url.pathExtension.isEmpty {
                 Text(url.pathExtension.uppercased())
                     .font(.interface(.caption).weight(.semibold))
@@ -367,7 +373,7 @@ struct ComposerAttachmentFileFace: View {
                     .lineLimit(1)
             }
         }
-        .padding(InterfaceScale.metric(12))
+        .padding(InterfaceScale.metric(9))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.primary.opacity(0.06))
     }

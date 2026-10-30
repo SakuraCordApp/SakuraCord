@@ -370,6 +370,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
                 overlay.pieceDimLayers[index] = dim
                 let ring = overlay.addRing(index: index, at: CGPoint(x: frame.midX, y: frame.midY))
                 ring.fraction = fraction
+                ring.setAffineTransform(CGAffineTransform(scaleX: ComposerAttachmentTray.ringScale, y: ComposerAttachmentTray.ringScale))
             }
         }
         CATransaction.commit()
@@ -558,6 +559,11 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             return ring
         }()
         ringAttachmentIDs[piece.index] = target.attachmentID
+        let sourceScale = ring.affineTransform().a
+        if sourceScale != 1 {
+            ring.setAffineTransform(.identity)
+            add(ring, "transform.scale", from: sourceScale, to: 1, timing: Timing.vertical, delay: delay)
+        }
         ring.position = target.center
         animateAxes(
             ring,
