@@ -439,9 +439,10 @@ struct MessageReactionTooltip: View {
         .frame(width: InterfaceScale.metric(260), alignment: .leading)
         .padding(.horizontal, InterfaceScale.metric(12))
         .padding(.vertical, InterfaceScale.metric(10))
-        // The tooltip floats over messages and the composer; a backing keeps
-        // its text legible while the popover glass still picks up the tint.
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.78))
+        // The tooltip floats over messages and the composer, whose text read
+        // through any translucent backing, so it sits on the window's own
+        // opaque background as the app's modal panels do.
+        .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityHidden(true)
     }
 }
