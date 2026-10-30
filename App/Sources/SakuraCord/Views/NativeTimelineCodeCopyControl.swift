@@ -28,6 +28,8 @@ final class NativeTimelineCodeCopyControl: NSView {
         wantsLayer = true
         layer?.cornerCurve = .continuous
         alphaValue = 0
+        // The canvas voices the button as its own element.
+        setAccessibilityHidden(true)
         glyph.image = Self.symbol(Self.copySymbol)
         addSubview(glyph)
     }
@@ -37,9 +39,8 @@ final class NativeTimelineCodeCopyControl: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    // The canvas hit tests the button and voices it as its own element.
+    // The canvas hit tests the button.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func isAccessibilityElement() -> Bool { false }
 
     /// Shows the button over `target`'s block, or hides it.
     func update(target: NativeTimelineCodeBlockPointerTarget?, isHovered: Bool, isPressed: Bool) {

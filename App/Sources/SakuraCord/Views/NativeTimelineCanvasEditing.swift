@@ -94,7 +94,9 @@ extension NativeTimelineCanvasView {
         guard hoveredCodeBlock != nil || codeCopyControl != nil else { return }
         let control = codeCopyControl ?? {
             let created = NativeTimelineCodeCopyControl()
-            addSubview(created, positioned: .below, relativeTo: mediaViewerHost)
+            // Under every overlay, as the row's own drawing is, so a spoiler
+            // cover hides a concealed block's button.
+            addSubview(created, positioned: .below, relativeTo: nil)
             codeCopyControl = created
             return created
         }()
