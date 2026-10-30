@@ -64,7 +64,7 @@ extension NativeTimelineVoiceMessagePainter {
         context.fillEllipse(in: region.speedFrame)
         NativeTimelineRowPainter.systemSymbol(
             isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-            in: region.speedFrame, color: palette.chipText, inset: InterfaceScale.metric(6), weight: .semibold
+            in: region.speedFrame, color: palette.chipSymbol, inset: InterfaceScale.metric(6), weight: .semibold
         )
     }
 
