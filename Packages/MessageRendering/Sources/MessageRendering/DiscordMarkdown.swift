@@ -1433,7 +1433,7 @@ public extension DiscordMarkdown {
                     lineIndex << 32 | $0
                 }
             }
-            lines[lineIndex] = AppKitPlan.Line(runs: runs, block: lines[lineIndex].block)
+            lines[lineIndex].runs = runs
         }
         return lines
     }

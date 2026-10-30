@@ -316,6 +316,7 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
     ) -> [NativeTimelineCodeBlockRegion] {
         guard value.length > 0 else { return [] }
         let fullRange = NSRange(location: 0, length: value.length)
+        let source = value.string as NSString
         var lines: [LineRange] = []
         value.enumerateAttribute(
             .discordMarkdownBlock,
@@ -324,16 +325,25 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
             guard rawValue as? String == "code",
                   range.length > 0
             else { return }
-            let paragraph = value.attribute(
-                .paragraphStyle,
-                at: range.location,
-                effectiveRange: nil
-            ) as? NSParagraphStyle
-            lines.append(LineRange(
-                range: range,
-                startsBlock:
-                    (paragraph?.paragraphSpacingBefore ?? 0) > 0
-            ))
+            // A blank code line's newline coalesces with the next line's
+            // run, which can open another block, so read every paragraph.
+            source.enumerateSubstrings(
+                in: range,
+                options: [.byParagraphs, .substringNotRequired]
+            ) { _, _, enclosingRange, _ in
+                let line = NSIntersectionRange(enclosingRange, range)
+                guard line.length > 0 else { return }
+                let paragraph = value.attribute(
+                    .paragraphStyle,
+                    at: line.location,
+                    effectiveRange: nil
+                ) as? NSParagraphStyle
+                lines.append(LineRange(
+                    range: line,
+                    startsBlock:
+                        (paragraph?.paragraphSpacingBefore ?? 0) > 0
+                ))
+            }
         }
         guard !lines.isEmpty else { return [] }
 
@@ -346,7 +356,6 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
             }
         }
 
-        let source = value.string as NSString
         return groups.compactMap { group in
             guard let first = group.first,
                   let last = group.last
