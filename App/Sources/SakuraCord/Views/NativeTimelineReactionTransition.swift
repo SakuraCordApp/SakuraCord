@@ -598,7 +598,7 @@ extension NativeTimelineCanvasView {
             pill.contents = picture.image
             pill.contentsScale = window?.backingScaleFactor ?? 2
             // A chip changing width stretches only between its rounded ends.
-            let cap = min(0.5, (InterfaceScale.metric(9) + 2 * Self.reactionPictureInset) / picture.frame.width)
+            let cap = (InterfaceScale.metric(9) + 2 * Self.reactionPictureInset) / picture.frame.width
             pill.contentsCenter = CGRect(x: cap, y: 0, width: 1 - 2 * cap, height: 1)
         }
     }
@@ -670,7 +670,7 @@ extension NativeTimelineCanvasView {
         let pill = reactionPillLayer(appearance: appearance, begin: begin)
         let selected = region.reaction.didCurrentUserReact
         let origin = reactionPictureFrame(covering: region.frame).origin
-        func picture(_ picture: ReactionPicture, opacity: Float = 1) -> CALayer {
+        func pictureLayer(_ picture: ReactionPicture, opacity: Float = 1) -> CALayer {
             let layer = CALayer()
             layer.contents = picture.image
             layer.contentsScale = window?.backingScaleFactor ?? 2
@@ -678,10 +678,10 @@ extension NativeTimelineCanvasView {
             layer.opacity = opacity
             return layer
         }
-        pill.addSublayer(picture(emojiPicture(region)))
+        pill.addSublayer(pictureLayer(emojiPicture(region)))
         if let digits = countPicture(region, selected: selected) {
             let source = source.moved(to: region.frame)
-            let count = picture(digits)
+            let count = pictureLayer(digits)
             if source.reaction.count != region.reaction.count, let sourceDigits = countPicture(source, selected: selected) {
                 // Digits roll through a window just inside the chip.
                 let window = CALayer()
@@ -690,7 +690,7 @@ extension NativeTimelineCanvasView {
                 window.masksToBounds = true
                 let travel = region.frame.height / 2
                 let direction: CGFloat = region.reaction.count > source.reaction.count ? 1 : -1
-                let leaving = picture(sourceDigits, opacity: 0)
+                let leaving = pictureLayer(sourceDigits, opacity: 0)
                 for layer in [leaving, count] {
                     layer.frame = layer.frame.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
                     window.addSublayer(layer)
@@ -708,7 +708,7 @@ extension NativeTimelineCanvasView {
         let avatars = avatarsPicture(region)
         let sourceAvatars = avatarsPicture(source.moved(to: region.frame))
         if let avatars {
-            let layer = picture(avatars.picture)
+            let layer = pictureLayer(avatars.picture)
             pill.addSublayer(layer)
             if let sourceAvatars, sourceAvatars.key == avatars.key {
                 let shift = sourceAvatars.picture.frame.minX - avatars.picture.frame.minX
@@ -718,7 +718,7 @@ extension NativeTimelineCanvasView {
             }
         }
         if let sourceAvatars, sourceAvatars.key != avatars?.key {
-            let layer = picture(sourceAvatars.picture, opacity: 0)
+            let layer = pictureLayer(sourceAvatars.picture, opacity: 0)
             pill.addSublayer(layer)
             animate(layer, "opacity", from: Float(1), begin: begin)
         }
