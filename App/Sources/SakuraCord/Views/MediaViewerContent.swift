@@ -133,9 +133,12 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
                 if let source, progress < 1 {
                     let size = source.frameInWindow.size
                     let scale = min(box.width / max(size.width, 1), box.height / max(size.height, 1))
+                    // A staged video's thumbnail fills its square tile, cropped.
                     Image(nsImage: source.image)
                         .resizable()
+                        .aspectRatio(contentMode: source.fillsFrame ? .fill : .fit)
                         .frame(width: size.width * scale, height: size.height * scale)
+                        .clipped()
                         .position(x: clip.midX, y: clip.midY)
                         .opacity(1 - Self.smoothstep(progress, from: 0, to: 0.45))
                         .allowsHitTesting(false)
