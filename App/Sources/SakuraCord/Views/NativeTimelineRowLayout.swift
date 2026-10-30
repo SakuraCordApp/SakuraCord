@@ -230,14 +230,25 @@ struct NativeTimelineRowLayout {
     var ephemeralRegion: EphemeralRegion?
     var failedFrame: CGRect?
     var failedRetryFrame: CGRect?
-    /// A local send's upload cancels and its failed-send Retry.
-    var deliveryActions: [(frame: CGRect, kind: NativeTimelineFooterActionTarget.Kind)] {
-        uploadRings.map { ($0.frame, $0.isFailed ? .retrySend : .cancelUpload(attachmentID: $0.attachmentID)) }
-            + [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
+    /// A local send's upload cancels while their rings show, and its
+    /// failed-send Retry.
+    func deliveryActions(
+        uploads: AttachmentUploadProgressStore?,
+        nonce: String?
+    ) -> [(frame: CGRect, kind: NativeTimelineFooterActionTarget.Kind)] {
+        uploadRings.compactMap { ring in
+            if ring.isFailed { return (ring.frame, .retrySend) }
+            guard uploads?.isUploading(nonce: nonce, attachmentID: ring.attachmentID) == true else { return nil }
+            return (ring.frame, .cancelUpload(attachmentID: ring.attachmentID))
+        } + [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
     }
 
-    func deliveryAction(at point: CGPoint) -> NativeTimelineFooterActionTarget.Kind? {
-        deliveryActions.first { $0.frame.contains(point) }?.kind
+    func deliveryAction(
+        at point: CGPoint,
+        uploads: AttachmentUploadProgressStore?,
+        nonce: String?
+    ) -> NativeTimelineFooterActionTarget.Kind? {
+        deliveryActions(uploads: uploads, nonce: nonce).first { $0.frame.contains(point) }?.kind
     }
     var pinnedAtFrame: CGRect?
     var pollLayout: NativeTimelinePollLayout?

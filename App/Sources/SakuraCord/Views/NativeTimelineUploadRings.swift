@@ -74,6 +74,9 @@ final class NativeTimelineUploadRingView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
+        // Media overlays installed later, such as a GIF that finishes
+        // decoding, would otherwise stack above it.
+        layer?.zPosition = 1
         if dimsMedia {
             dim.backgroundColor = .black
             dim.opacity = Float(AttachmentUploadRing.dimOpacity)
@@ -173,14 +176,6 @@ extension NativeTimelineCanvasView {
                 view.fraction = uploads.fraction(nonce: nonce, attachmentID: ring.attachmentID)
             }
         }
-        // Media overlays installed later stack above earlier ones.
-        if let host = subviews.firstIndex(of: mediaViewerHost),
-           let lowest = subviews[..<host].firstIndex(where: { $0 is NativeTimelineUploadRingView }),
-           subviews[lowest ..< host].contains(where: { !($0 is NativeTimelineUploadRingView) }) {
-            for view in subviews[lowest ..< host] where view is NativeTimelineUploadRingView {
-                addSubview(view, positioned: .below, relativeTo: mediaViewerHost)
-            }
-        }
         for (key, view) in uploadRings where !shown.contains(key) {
             uploadRings[key] = nil
             NSAnimationContext.runAnimationGroup { context in
@@ -255,6 +250,9 @@ extension NativeTimelineCanvasView {
         forEachDisplayedRow(in: visibleRect) { index in
             if items[index].messageRow?.message.nonce == nonce { setNeedsDisplay(rowFrame(at: index)) }
         }
-        if endsCancellation { reconcileAccessibilityProxiesIfActive() }
+        if endsCancellation {
+            window?.invalidateCursorRects(for: self)
+            reconcileAccessibilityProxiesIfActive()
+        }
     }
 }
