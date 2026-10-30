@@ -5,11 +5,18 @@ import Synchronization
 
 enum DiscordRichMessageMetrics {
     static var maximumWidth: CGFloat { InterfaceScale.metric(520) }
-    /// Discord lays Components V2 out up to 600 points wide.
-    static var componentsMaximumWidth: CGFloat { InterfaceScale.metric(600) }
-    static var cardCornerRadius: CGFloat { InterfaceScale.metric(8) }
-    /// A container's 16-point padding inside its 1-point border.
-    static var cardPadding: CGFloat { InterfaceScale.metric(17) }
+    /// Discord lays Components V2 out up to 600 pixels wide.
+    static var componentsMaximumWidth: CGFloat { px(600) }
+    static var cardCornerRadius: CGFloat { px(8) }
+    /// A container's 16-pixel padding inside its 1-point border.
+    static var cardPadding: CGFloat { px(16) + InterfaceScale.metric(1) }
+
+    /// One of Discord's CSS pixels. Discord sizes components against its
+    /// 16-pixel message text, which SakuraCord draws at `messageTextSize`,
+    /// so every Discord length keeps its proportion to the text.
+    nonisolated static func px(_ value: CGFloat) -> CGFloat {
+        InterfaceScale.metric((value * InterfaceTypographyMetrics.messageTextSize / 16 * 2).rounded() / 2)
+    }
 }
 
 nonisolated enum DiscordFittingWidthPlan {

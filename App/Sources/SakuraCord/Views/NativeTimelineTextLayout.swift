@@ -338,23 +338,42 @@ nonisolated enum NativeTimelineCoreText {
             .scalingTypography(by: baseFontSize / unscaledBaseFontSize)
     }
 
+    /// `bodyScale` shrinks every line but headings, and the mentions and
+    /// emoji in them.
     static func make(
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
+        bodyScale: CGFloat = 1,
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
         let resolvedBaseFontSize =
             prepared.isEmojiOnly
                 ? emojiSize
                 : baseFontSize ?? InterfaceScale.fontSize(15)
-        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize)
+        let bodyScale = prepared.isEmojiOnly ? 1 : bodyScale
+        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize * bodyScale)
         let output = NSMutableAttributedString(
             attributedString: scaledMarkdown(
                 prepared.markdownPlan,
                 baseFontSize: resolvedBaseFontSize
             )
         )
+        if bodyScale != 1 {
+            let source = output.string as NSString
+            var location = 0
+            // Each plan line is one paragraph of the markdown output.
+            for line in prepared.markdownPlan.lines where location < output.length {
+                let range = source.paragraphRange(for: NSRange(location: location, length: 0))
+                if !line.isHeading {
+                    output.replaceCharacters(
+                        in: range,
+                        with: output.attributedSubstring(from: range).scalingTypography(by: bodyScale)
+                    )
+                }
+                location = NSMaxRange(range)
+            }
+        }
         let fullRange = NSRange(location: 0, length: output.length)
         let placeholderRanges = ranges(of: "\u{FFFC}", in: output.string)
         for (range, token) in zip(
