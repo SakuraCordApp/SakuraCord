@@ -53,6 +53,8 @@ final class VoiceMessagePlaybackStore {
     static let startSpinnerDelay: Duration = .milliseconds(150)
     /// Discord remembers where up to 25 voice messages and audio files were left.
     static let maximumResumePositions = 25
+    /// Audio files whose length, or failure to read it, is remembered.
+    static let maximumKnownDurations = 128
 
     private(set) var activeID: VoiceMessagePlaybackID?
     private(set) var phase: Phase = .paused
@@ -77,7 +79,10 @@ final class VoiceMessagePlaybackStore {
     /// Durations learned by playing or measuring audio files, which arrive
     /// without one.
     @ObservationIgnored private var knownDurations: [Source: TimeInterval] = [:]
-    @ObservationIgnored private var measuringSources: Set<Source> = []
+    @ObservationIgnored private var knownDurationOrder: [Source] = []
+    /// Changes whenever a length is learned, so cached rows know to redraw.
+    @ObservationIgnored private(set) var knownDurationsRevision = 0
+    @ObservationIgnored private var measurements: [Source: Task<Void, Never>] = [:]
     /// When a file's length last couldn't be read, so moving the pointer over
     /// it waits before trying again rather than retrying on every move.
     @ObservationIgnored private var failedMeasurements: [Source: ContinuousClock.Instant] = [:]
@@ -116,8 +121,6 @@ final class VoiceMessagePlaybackStore {
     }
 
     func knownDuration(of source: Source) -> TimeInterval? { knownDurations[source] }
-
-    var knownDurationCount: Int { knownDurations.count }
 
     /// Whether `id` was pressed and still hasn't sounded, after a moment;
     /// a cached message opens too quickly to be worth a spinner.
@@ -198,17 +201,18 @@ final class VoiceMessagePlaybackStore {
     func measureDuration(of source: Source) {
         guard knownDurations[source] == nil,
               failedMeasurements[source].map({ ContinuousClock.now - $0 > .seconds(30) }) ?? true,
-              measuringSources.insert(source).inserted
+              measurements[source] == nil
         else { return }
-        Task { [weak self] in
+        measurements[source] = Task { [weak self] in
             let duration = try? await Self.measuredDuration(of: source, resolve: self?.resolveRemoteURL)
-            guard let self else { return }
-            measuringSources.remove(source)
+            guard let self, !Task.isCancelled else { return }
+            measurements[source] = nil
             guard let duration else {
+                if failedMeasurements.count >= Self.maximumKnownDurations { failedMeasurements.removeAll() }
                 failedMeasurements[source] = .now
                 return
             }
-            knownDurations[source] = duration
+            rememberDuration(duration, for: source)
             notify()
         }
     }
@@ -242,6 +246,11 @@ final class VoiceMessagePlaybackStore {
         cachedPlayers.removeAll()
         resumePositions.removeAll()
         resumeOrder.removeAll()
+        measurements.values.forEach { $0.cancel() }
+        measurements.removeAll()
+        knownDurations.removeAll()
+        knownDurationOrder.removeAll()
+        failedMeasurements.removeAll()
     }
 
     // MARK: Internals
@@ -300,7 +309,7 @@ final class VoiceMessagePlaybackStore {
         self.player = player
         playerFile = file
         activeDuration = player.duration
-        if let activeSource { knownDurations[activeSource] = player.duration }
+        if let activeSource { rememberDuration(player.duration, for: activeSource) }
         applyOutput()
         if pausedPosition > 0 { player.seek(to: pausedPosition) }
         start(player)
@@ -407,6 +416,15 @@ final class VoiceMessagePlaybackStore {
         resumeOrder.append(id)
         while resumeOrder.count > Self.maximumResumePositions {
             resumePositions[resumeOrder.removeFirst()] = nil
+        }
+    }
+
+    private func rememberDuration(_ duration: TimeInterval, for source: Source) {
+        if knownDurations.updateValue(duration, forKey: source) != duration { knownDurationsRevision += 1 }
+        knownDurationOrder.removeAll { $0 == source }
+        knownDurationOrder.append(source)
+        while knownDurationOrder.count > Self.maximumKnownDurations {
+            knownDurations[knownDurationOrder.removeFirst()] = nil
         }
     }
 

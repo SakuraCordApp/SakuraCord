@@ -181,14 +181,14 @@ struct NativeTimelineVoiceMessageRegion {
 struct VoiceMessageRestingPresentation: Equatable {
     var speed: Float = 1
     var isAudioFileMuted = false
-    var knownDurationCount = 0
+    var knownDurationsRevision = 0
 
     init() {}
 
     init(_ playback: VoiceMessagePlaybackStore) {
         speed = playback.speed
         isAudioFileMuted = playback.isAudioFileMuted
-        knownDurationCount = playback.knownDurationCount
+        knownDurationsRevision = playback.knownDurationsRevision
     }
 }
 
@@ -642,6 +642,21 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
+    /// The player of the audio file card under `point`, anywhere on the card
+    /// rather than only over its controls.
+    private func audioFilePlayer(onCardAt point: CGPoint) -> NativeTimelineVoiceMessageRegion? {
+        guard WindowModalCoordinator.allowsInput(for: self),
+              let index = rowIndex(at: point.y), layouts.indices.contains(index)
+        else { return nil }
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        let layout = layouts[index]
+        guard let card = layout.attachmentRegions.first(where: { $0.attachment.mediaKind == .audio && $0.frame.contains(local) })
+        else { return nil }
+        return layout.audioFilePlayers.first {
+            $0.attachment.id == card.attachment.id && !isConcealedSpoiler($0.attachment, in: $0.messageID)
+        }
+    }
+
     /// Returns true when the press belongs to a voice message.
     func beginVoiceMessagePress(at point: CGPoint) -> Bool {
         guard let hit = voiceMessagePointerHit(at: point), let playback = model?.voiceMessagePlayback else { return false }
@@ -703,8 +718,8 @@ extension NativeTimelineCanvasView {
                 pointerX: $0.region.style == .audioFile && $0.control == .waveform ? point?.x : nil
             )
         }
-        if measuresDuration, let hit, hit.region.style == .audioFile {
-            model?.voiceMessagePlayback.measureDuration(of: hit.region.source)
+        if measuresDuration, let point, let player = audioFilePlayer(onCardAt: point) {
+            model?.voiceMessagePlayback.measureDuration(of: player.source)
         }
         guard hovered != hoveredVoiceMessage else { return }
         // Moving along a seek bar only redraws; reaching or leaving an audio
