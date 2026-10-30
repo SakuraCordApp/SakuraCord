@@ -441,7 +441,12 @@ nonisolated enum NativeTimelineCoreText {
             ) as? NSParagraphStyle
             // A minimum without a maximum is a message's line height, which
             // floors the tallest font; code fixes both and keeps its own.
-            var lineHeight = existing.map { $0.maximumLineHeight == 0 ? $0.minimumLineHeight : 0 } ?? 0
+            // Normalizing drops markdown's line spacing, so the floor takes
+            // it on and message lines keep their pitch.
+            let messageLineHeight = existing.map {
+                $0.maximumLineHeight == 0 && $0.minimumLineHeight > 0 ? $0.minimumLineHeight + $0.lineSpacing : 0
+            } ?? 0
+            var lineHeight = messageLineHeight
             var containsInlineRun = false
             var containsSpoiler = false
             var paragraphFont: NSFont?
@@ -490,11 +495,13 @@ nonisolated enum NativeTimelineCoreText {
                 // Natural line metrics agree between CoreText and TextKit.
                 // A fixed ceil(font height) changes TextKit's baseline at some
                 // sizes; the shared markdown line spacing adds another point.
-                // Markdown's body line height stays as the floor.
+                style.minimumLineHeight = messageLineHeight
                 style.maximumLineHeight = 0
             } else if !containsInlineRun, lineHeight > 0 {
                 style.minimumLineHeight = lineHeight
                 style.maximumLineHeight = lineHeight
+            } else if messageLineHeight > 0 {
+                style.minimumLineHeight = messageLineHeight
             }
             output.addAttribute(
                 .paragraphStyle,
