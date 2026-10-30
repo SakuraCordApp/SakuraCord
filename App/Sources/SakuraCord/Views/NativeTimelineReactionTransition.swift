@@ -59,9 +59,9 @@ struct NativeTimelineReactionTransition {
     }
 
     var rowIndex: Int
-    /// Set on the first frame, like the other row motions, so time the main
-    /// thread spends finishing the update does not use up the motion.
-    var startUptime: TimeInterval?
+    /// When its layers were installed. The render server runs the motion
+    /// from then on the same curve, so `progress` is what is on screen.
+    let startUptime: TimeInterval
     let bandTop: CGFloat
     /// The row as it was before its reactions began to change. Its bitmap,
     /// identical above the band, serves until the row lands, so a burst of
@@ -69,8 +69,25 @@ struct NativeTimelineReactionTransition {
     let bitmapItem: NativeMessageTimelineItem
     let chips: [Chip]
 
+    /// Ease-out quart as Core Animation draws it.
+    static let timing = (x1: CGFloat(0.165), y1: CGFloat(0.84), x2: CGFloat(0.44), y2: CGFloat(1))
+
     func progress(at uptime: TimeInterval) -> CGFloat {
-        startUptime.map { NativeTimelineRowDisclosure.progress(at: uptime - $0) } ?? 0
+        let time = min(1, max(0, CGFloat((uptime - startUptime) / NativeTimelineRowDisclosure.duration)))
+        let (x1, y1, x2, y2) = Self.timing
+        func bezier(_ point: CGFloat, _ first: CGFloat, _ second: CGFloat) -> CGFloat {
+            3 * (1 - point) * (1 - point) * point * first + 3 * (1 - point) * point * point * second
+                + point * point * point
+        }
+        // Solve the curve's x for `time`, then read its y there.
+        var point = time
+        for _ in 0 ..< 8 {
+            let slope = 3 * (1 - point) * (1 - point) * x1 + 6 * (1 - point) * point * (x2 - x1)
+                + 3 * point * point * (1 - x2)
+            guard abs(slope) > 1e-6 else { break }
+            point = min(1, max(0, point - (bezier(point, x1, x2) - time) / slope))
+        }
+        return bezier(point, y1, y2)
     }
 }
 
@@ -246,6 +263,7 @@ extension NativeTimelineCanvasView {
         if droppedMotion {
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
+            positionReactionBandViews()
         }
         // Live reaction media pauses on its still while the chips move.
         if pausesMedia { positionAnimatedMediaOverlays() }
@@ -335,6 +353,7 @@ extension NativeTimelineCanvasView {
         let chipTop = chips.map { min($0.from.frame.minY, $0.to.frame.minY) }.min() ?? layout.height
         reactionTransitions[identifier] = NativeTimelineReactionTransition(
             rowIndex: index,
+            startUptime: now,
             bandTop: min(chipTop, layout.height, oldLayout.height),
             bitmapItem: reactionTransitions[identifier]?.bitmapItem ?? old.item,
             chips: chips
@@ -349,9 +368,6 @@ extension NativeTimelineCanvasView {
         let hadMotion = !reactionRowMotions.isEmpty
         for index in reactionRowMotions.indices where reactionRowMotions[index].startUptime == nil {
             reactionRowMotions[index].startUptime = now
-        }
-        for (identifier, transition) in reactionTransitions where transition.startUptime == nil {
-            reactionTransitions[identifier]?.startUptime = now
         }
         reactionRowMotions.removeAll { $0.progress(at: now) >= 1 }
         // Frames that move no row by a whole pixel redraw only the chips; the
@@ -554,6 +570,9 @@ extension NativeTimelineCanvasView {
         if view.superview !== self { addSubview(view) }
         reactionBandViews[identifier] = view
         positionReactionBandView(view, transition: transition, at: index)
+        // The transition's clock in media time, so hit-testing and retargeting
+        // read the same point of the motion the render server shows.
+        let begin = CACurrentMediaTime() - (ProcessInfo.processInfo.systemUptime - transition.startUptime)
         let progress = transition.progress(at: now)
         let hoveredReactionID = hoveredReactionID(inMessageAt: index)
         let canUpdate = model?.canUpdateReactions(on: row.message) != false
@@ -566,11 +585,12 @@ extension NativeTimelineCanvasView {
                     region,
                     from: fromRegion,
                     appearance: (from, chip.to),
-                    isHovered: canUpdate && hoveredReactionID == region.reaction.id
+                    isHovered: canUpdate && hoveredReactionID == region.reaction.id,
+                    begin: begin
                 ))
             } else if showsAddControl {
                 let isHovered = isAddReactionHovered(inMessageAt: index)
-                let pill = reactionPillLayer(appearance: (from, chip.to))
+                let pill = reactionPillLayer(appearance: (from, chip.to), begin: begin)
                 pill.contents = reactionPicture(["add", isHovered], covering: chip.to.frame) {
                     NativeTimelineRowPainter.reactionAddControl(in: chip.to.frame, isHovered: isHovered)
                 }
@@ -601,11 +621,16 @@ extension NativeTimelineCanvasView {
         reactionBandViews.removeValue(forKey: identifier)?.removeFromSuperview()
     }
 
-    private static let reactionTiming = CAMediaTimingFunction(controlPoints: 0.165, 0.84, 0.44, 1)
+    private static let reactionTiming: CAMediaTimingFunction = {
+        let (x1, y1, x2, y2) = NativeTimelineReactionTransition.timing
+        return CAMediaTimingFunction(controlPoints: Float(x1), Float(y1), Float(x2), Float(y2))
+    }()
 
-    private func animate(_ layer: CALayer, _ keyPath: String, from value: Any) {
+    private func animate(_ layer: CALayer, _ keyPath: String, from value: Any, begin: CFTimeInterval) {
         let animation = CABasicAnimation(keyPath: keyPath)
         animation.fromValue = value
+        animation.beginTime = begin
+        animation.fillMode = .backwards
         animation.duration = NativeTimelineRowDisclosure.duration
         animation.timingFunction = Self.reactionTiming
         animation.preferredFrameRateRange = .fullRate(on: window?.screen)
@@ -615,7 +640,8 @@ extension NativeTimelineCanvasView {
     /// A chip's outline moving, scaling and fading between two appearances;
     /// its contents keep their offsets from its leading edge.
     private func reactionPillLayer(
-        appearance: (from: NativeTimelineReactionChipAppearance, to: NativeTimelineReactionChipAppearance)
+        appearance: (from: NativeTimelineReactionChipAppearance, to: NativeTimelineReactionChipAppearance),
+        begin: CFTimeInterval
     ) -> CALayer {
         let pill = CALayer()
         let (from, to) = appearance
@@ -624,10 +650,10 @@ extension NativeTimelineCanvasView {
         pill.opacity = Float(to.opacity)
         pill.transform = CATransform3DMakeScale(to.scale, to.scale, 1)
         if from != to {
-            animate(pill, "bounds.size", from: NSValue(size: from.frame.size))
-            animate(pill, "position", from: NSValue(point: CGPoint(x: from.frame.midX, y: from.frame.midY)))
-            animate(pill, "opacity", from: Float(from.opacity))
-            animate(pill, "transform", from: NSValue(caTransform3D: CATransform3DMakeScale(from.scale, from.scale, 1)))
+            animate(pill, "bounds.size", from: NSValue(size: from.frame.size), begin: begin)
+            animate(pill, "position", from: NSValue(point: CGPoint(x: from.frame.midX, y: from.frame.midY)), begin: begin)
+            animate(pill, "opacity", from: Float(from.opacity), begin: begin)
+            animate(pill, "transform", from: NSValue(caTransform3D: CATransform3DMakeScale(from.scale, from.scale, 1)), begin: begin)
         }
         return pill
     }
@@ -636,9 +662,10 @@ extension NativeTimelineCanvasView {
         _ region: NativeTimelineRowLayout.ReactionRegion,
         from source: NativeTimelineRowLayout.ReactionRegion,
         appearance: (from: NativeTimelineReactionChipAppearance, to: NativeTimelineReactionChipAppearance),
-        isHovered: Bool
+        isHovered: Bool,
+        begin: CFTimeInterval
     ) -> CALayer {
-        let pill = reactionPillLayer(appearance: appearance)
+        let pill = reactionPillLayer(appearance: appearance, begin: begin)
         let selected = region.reaction.didCurrentUserReact
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let fill = selected
@@ -680,10 +707,10 @@ extension NativeTimelineCanvasView {
                     window.addSublayer(layer)
                 }
                 leaving.position.y -= direction * travel
-                animate(leaving, "position", from: NSValue(point: CGPoint(x: leaving.position.x, y: leaving.position.y + direction * travel)))
-                animate(leaving, "opacity", from: Float(1))
-                animate(count, "position", from: NSValue(point: CGPoint(x: count.position.x, y: count.position.y + direction * travel)))
-                animate(count, "opacity", from: Float(0))
+                animate(leaving, "position", from: NSValue(point: CGPoint(x: leaving.position.x, y: leaving.position.y + direction * travel)), begin: begin)
+                animate(leaving, "opacity", from: Float(1), begin: begin)
+                animate(count, "position", from: NSValue(point: CGPoint(x: count.position.x, y: count.position.y + direction * travel)), begin: begin)
+                animate(count, "opacity", from: Float(0), begin: begin)
                 pill.addSublayer(window)
             } else {
                 pill.addSublayer(count)
@@ -696,15 +723,15 @@ extension NativeTimelineCanvasView {
             pill.addSublayer(layer)
             if let sourceAvatars, sourceAvatars.key == avatars.key {
                 let shift = sourceAvatars.frame.minX - avatars.frame.minX
-                animate(layer, "position", from: NSValue(point: CGPoint(x: layer.position.x + shift, y: layer.position.y)))
+                animate(layer, "position", from: NSValue(point: CGPoint(x: layer.position.x + shift, y: layer.position.y)), begin: begin)
             } else {
-                animate(layer, "opacity", from: Float(0))
+                animate(layer, "opacity", from: Float(0), begin: begin)
             }
         }
         if let sourceAvatars, sourceAvatars.key != avatars?.key {
             let layer = picture(sourceAvatars.image, at: sourceAvatars.frame, opacity: 0)
             pill.addSublayer(layer)
-            animate(layer, "opacity", from: Float(1))
+            animate(layer, "opacity", from: Float(1), begin: begin)
         }
         return pill
     }
