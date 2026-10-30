@@ -39,8 +39,11 @@ extension NativeMessageTimelineCoordinator {
             // the canvas deliberately paints uncached rows directly; a
             // prewarm would defeat that fallback and make the first cold
             // AppKit/CoreText bitmap block the main thread before motion.
-            canvas.dismissHoverPresentationForScroll()
-            noteScrollActivity()
+            // An idle run measures the ordinary stationary timeline.
+            if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                canvas.dismissHoverPresentationForScroll()
+                noteScrollActivity()
+            }
             startup.phase = "launch-stabilization"
             performanceAutoScrollTask = Task { @MainActor [weak self, weak canvas] in
                 guard let self, let canvas else { return }
@@ -168,6 +171,9 @@ extension NativeMessageTimelineCoordinator {
                 self.performanceDisplayLinkTicker = state.ticker
                 let finish: (NativeTimelineBenchmarkFinishOutcome) -> Void = { [weak self, weak canvas, state] outcome in
                     guard let elapsed = state.finish(
+                        endActivity: {
+                            if !NativeTimelineBenchmarkScrollPolicy.isIdle { AppScrollWorkGate.endActivity() }
+                        },
                         beforeMeasurementClose: {
                             Self.emitPerformanceBenchmarkOutcome(outcome)
                         },
@@ -198,7 +204,7 @@ extension NativeMessageTimelineCoordinator {
                 // loading isolation keys off the same cross-surface gate as a
                 // real gesture. Exercise that scheduling policy here so the
                 // permanent benchmark catches priority regressions.
-                AppScrollWorkGate.beginActivity()
+                if !NativeTimelineBenchmarkScrollPolicy.isIdle { AppScrollWorkGate.beginActivity() }
                 state.ticker.start(on: canvas) { [weak self, weak scrollView, weak state] in
                     guard let self, let scrollView, let state else {
                         finish(.cancelled)
@@ -242,8 +248,10 @@ extension NativeMessageTimelineCoordinator {
             if state.scrollsTowardLater ? targetDocumentY > boundaryY : targetDocumentY < boundaryY {
                 setFollowsMaterializedHistoryBoundary(true, direction: direction)
             }
-            scroll(toDocumentY: targetDocumentY, scrollView: scrollView)
-            reportScrollState()
+            if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                scroll(toDocumentY: targetDocumentY, scrollView: scrollView)
+                reportScrollState()
+            }
             let currentDocumentY = scrollView.contentView.bounds.minY
             let didAdvance = state.scrollsTowardLater
                 ? currentDocumentY > visibleRect.minY + 0.5
