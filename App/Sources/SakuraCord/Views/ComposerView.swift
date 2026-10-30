@@ -1550,7 +1550,7 @@ private extension ComposerView {
         !reduceMotion && !model.accessibilitySettings.disablesAllAnimations && !isClearingForSend
     }
 
-    /// Opens a staged image in the media viewer, which zooms it out of its
+    /// Opens a staged file in the media viewer, which zooms it out of its
     /// tile and back into it.
     func openComposerAttachment(_ id: UUID) {
         guard let currentUser = model.currentUser,
@@ -1560,9 +1560,9 @@ private extension ComposerView {
                   author: currentUser
               )
         else { return }
-        // Every staged image zooms back into its own tile, whichever the
+        // Every staged file zooms back into its own tile, whichever the
         // viewer shows when it closes.
-        let sources = presentation.items.compactMap { UUID(uuidString: $0.id).flatMap(sendTransitionAnchor.mediaViewerSource) }
+        let sources = attachments.compactMap(sendTransitionAnchor.mediaViewerSource)
         model.mediaViewerSelectedItemID = id.uuidString
         model.mediaViewerPresentation = presentation.withTimelineMedia(
             previewImages: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0.image) }),

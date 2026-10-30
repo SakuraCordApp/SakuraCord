@@ -15,10 +15,18 @@ struct MediaViewerStage: View {
     let open: () -> Void
     let imageContextMenuActions: MediaImageContextMenuActions?
 
+    /// Where a file that is not an image lays out, which its tile's
+    /// snapshot zooms into.
+    @State private var contentFrame: CGRect?
+    private static let space = "MediaViewerStage"
+
     var body: some View {
+        // A file that is not an image grows out of its tile as an image does:
+        // the tile's snapshot zooms into the content, which takes over as it
+        // lands.
+        let progress = isVisible ? 1 - interaction.pinchDismissalProgress : 0
         ZStack {
-            switch item.kind {
-            case let .image(animated):
+            if case let .image(animated) = item.kind {
                 MediaViewerZoomableImage(
                     url: item.url,
                     isAnimated: animated,
@@ -34,52 +42,85 @@ struct MediaViewerStage: View {
                     finishPinchDismissal: finishPinchDismissal,
                     contextMenuActions: imageContextMenuActions
                 )
-            case .video:
-                MediaViewerVideo(
-                    url: item.url,
-                    mediaWidth: item.width,
-                    mediaHeight: item.height
-                )
-                .padding(.horizontal, horizontalInset)
-                .padding(.top, topInset)
-                .padding(.bottom, bottomInset)
-            case let .youtube(playback):
-                GeometryReader { proxy in
-                    let fittedSize = MediaViewerLayoutPolicy.fittedSize(
-                        mediaWidth: item.width ?? 16, mediaHeight: item.height ?? 9,
-                        availableSize: proxy.size
+            } else {
+                // Its own container keeps a glass card under the opacity
+                // here; the viewer's container would draw it regardless.
+                GlassEffectContainer { content }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { contentFrame = $0 }
+                    .modifier(MediaViewerZoomHandoff(progress: transitionSource == nil ? 1 : progress, isLanding: true))
+                    .padding(.horizontal, horizontalInset)
+                    .padding(.top, topInset)
+                    .padding(.bottom, bottomInset)
+                if let transitionSource, let contentFrame {
+                    MediaViewerTransitionImage(
+                        url: nil,
+                        isAnimated: false,
+                        source: transitionSource,
+                        destinationFrame: contentFrame,
+                        presentationProgress: progress,
+                        isPresented: isVisible
                     )
-                    if isVisible {
-                        YouTubePlayerView(playback: playback, openInBrowser: MediaViewerActionService.openInBrowser)
-                            .id(playback)
-                            .frame(width: fittedSize.width, height: fittedSize.height)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    .modifier(MediaViewerZoomHandoff(progress: progress, isLanding: false))
                 }
-                .padding(.horizontal, horizontalInset)
-                .padding(.top, topInset)
-                .padding(.bottom, bottomInset)
-            case .audio:
-                MediaViewerAudio(title: item.title, url: item.url)
-                    .padding(.horizontal, horizontalInset)
-                    .padding(.top, topInset)
-                    .padding(.bottom, bottomInset)
-            case let .text(language):
-                MediaViewerText(url: item.url, language: language)
-                    .padding(.horizontal, horizontalInset)
-                    .padding(.top, topInset)
-                    .padding(.bottom, bottomInset)
-            case .file:
-                MediaViewerFile(title: item.title, open: open)
-                    .padding(.horizontal, horizontalInset)
-                    .padding(.top, topInset)
-                    .padding(.bottom, bottomInset)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .coordinateSpace(.named(Self.space))
         .clipped()
     }
+
+    @ViewBuilder private var content: some View {
+        switch item.kind {
+        case .image:
+            EmptyView()
+        case .video:
+            MediaViewerVideo(
+                url: item.url,
+                mediaWidth: item.width,
+                mediaHeight: item.height
+            )
+        case let .youtube(playback):
+            GeometryReader { proxy in
+                let fittedSize = MediaViewerLayoutPolicy.fittedSize(
+                    mediaWidth: item.width ?? 16, mediaHeight: item.height ?? 9,
+                    availableSize: proxy.size
+                )
+                if isVisible {
+                    YouTubePlayerView(playback: playback, openInBrowser: MediaViewerActionService.openInBrowser)
+                        .id(playback)
+                        .frame(width: fittedSize.width, height: fittedSize.height)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        case .audio:
+            MediaViewerAudio(title: item.title, url: item.url)
+        case let .text(language):
+            MediaViewerText(url: item.url, language: language)
+        case .file:
+            MediaViewerFile(title: item.title, open: open)
+        }
+    }
 }
+
+/// Crossfades a zoomed snapshot into the content it lands on over the last
+/// part of the zoom. It reads the progress on every frame; a plain opacity
+/// would fade across the whole zoom instead.
+private struct MediaViewerZoomHandoff: ViewModifier, Animatable {
+    var progress: CGFloat
+    /// The content landing, rather than the snapshot it replaces.
+    let isLanding: Bool
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let handoff = min(1, max(0, (progress - 0.6) / 0.4))
+        content.opacity(isLanding ? handoff : 1 - handoff)
+    }
+}
+
 private struct MediaViewerZoomableImage: View {
     let url: URL
     let isAnimated: Bool
@@ -307,7 +348,8 @@ private struct MediaViewerTransitionImage: View {
     private static let remoteImageHandoffStartProgress: CGFloat = 0.86
     private static let remoteImageHandoffEndProgress: CGFloat = 0.58
 
-    let url: URL
+    /// The full image, which takes over from the snapshot as it lands.
+    let url: URL?
     let isAnimated: Bool
     let source: MediaViewerTransitionSource
     let destinationFrame: CGRect
@@ -316,7 +358,7 @@ private struct MediaViewerTransitionImage: View {
     @State private var presentsRemoteImage: Bool
 
     init(
-        url: URL,
+        url: URL?,
         isAnimated: Bool,
         source: MediaViewerTransitionSource,
         destinationFrame: CGRect,
@@ -377,7 +419,7 @@ private struct MediaViewerTransitionImage: View {
                     .resizable()
                     .scaledToFit()
 
-                if presentsRemoteImage {
+                if presentsRemoteImage, let url {
                     AnimatedRemoteImage(
                         url: url,
                         isLooping: isAnimated,
@@ -601,17 +643,11 @@ private struct MediaViewerVideo: View {
     let mediaWidth: Int?
     let mediaHeight: Int?
 
+    /// Laid out at the video's own frame, which a staged video's tile zooms
+    /// into; the player letterboxes a video whose size is unknown.
     var body: some View {
-        GeometryReader { proxy in
-            let fittedSize = MediaViewerLayoutPolicy.fittedSize(
-                mediaWidth: mediaWidth ?? 16,
-                mediaHeight: mediaHeight ?? 9,
-                availableSize: proxy.size
-            )
-            ViewerAVPlayer(url: url)
-                .frame(width: fittedSize.width, height: fittedSize.height)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        ViewerAVPlayer(url: url)
+            .aspectRatio(CGSize(width: mediaWidth ?? 16, height: mediaHeight ?? 9), contentMode: .fit)
     }
 }
 

@@ -96,7 +96,7 @@ struct MediaViewerTests {
         #expect(direct.canSave)
     }
 
-    @Test func `composer images and text files open in the shared media viewer`() throws {
+    @Test func `staged composer files open in the shared media viewer`() throws {
         let firstID = UUID()
         let secondID = UUID()
         let textID = UUID()

@@ -519,7 +519,7 @@ enum NativeTimelineMediaViewerPlan {
         selectedAttachmentID: UUID,
         author: User
     ) -> NativeTimelineMediaViewerPresentation? {
-        let items = attachments.enumerated().compactMap { index, attachment -> RichMediaItem? in
+        let items = attachments.enumerated().map { index, attachment in
             var optimistic = OptimisticAttachmentPresentation.attachment(
                 for: attachment.url,
                 index: index,
@@ -528,10 +528,6 @@ enum NativeTimelineMediaViewerPlan {
             optimistic.filename = attachment.filename
             optimistic.description = attachment.description
             optimistic.isSpoiler = attachment.isSpoiler
-            guard optimistic.mediaKind == .image
-                    || optimistic.mediaKind == .animatedImage
-                    || optimistic.textPreviewLanguage != nil
-            else { return nil }
             return RichMediaItem(optimistic)
         }
         guard let selection = items.firstIndex(where: {
