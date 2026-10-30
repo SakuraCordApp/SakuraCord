@@ -291,10 +291,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     struct Card {
         /// The card as the row draws it, faded in as the tile becomes it.
         let image: NSImage
-        /// Where the tile's icon lands: the card's icon, or an audio card's
-        /// play button, which it fades into.
+        /// Where the tile's icon lands and fades into the card's: its icon,
+        /// or an audio card's play button.
         let iconFrame: CGRect
-        let iconFades: Bool
     }
 
     struct UploadRing {
@@ -339,9 +338,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     private var pieceSourceCornerRadii: [Int: CGFloat] = [:]
     /// Each tile's dim under its upload ring, clipped by the tile.
     private var pieceDimLayers: [Int: CALayer] = [:]
-    /// A file tile's icon, and the card its surface becomes.
+    /// A file tile's icon, inside its surface and under its dim, and the
+    /// card the surface becomes.
     private var pieceIconLayers: [Int: CALayer] = [:]
-    private var pieceIconSourceFrames: [Int: CGRect] = [:]
     private var pieceCardLayers: [Int: CALayer] = [:]
     private var ringLayers: [Int: AttachmentUploadRingLayer] = [:]
     /// Rings keep showing progress while they fly.
@@ -389,18 +388,16 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             overlay.pieceSourceCornerRadii[index] = attachment.cornerRadius
             if let file = attachment.file {
                 // The surface stretches into the card while the type label
-                // keeps its size, and the icon moves on its own.
+                // keeps its size, and the icon moves on its own within it.
                 layer.backgroundColor = file.surfaceColor
                 layer.contentsGravity = .center
                 let icon = CALayer()
                 icon.contents = file.icon
                 icon.contentsGravity = .resizeAspect
                 icon.contentsScale = window.backingScaleFactor
-                icon.frame = overlay.convert(file.iconFrame, from: nil)
-                icon.zPosition = 0.6
-                overlay.layer?.addSublayer(icon)
+                icon.frame = overlay.convert(file.iconFrame, from: nil).offsetBy(dx: -frame.minX, dy: -frame.minY)
+                layer.addSublayer(icon)
                 overlay.pieceIconLayers[index] = icon
-                overlay.pieceIconSourceFrames[index] = icon.frame
             }
             if let fraction = attachment.uploadFraction {
                 // Oversized, so the tile's clip shapes it as the tile morphs.
@@ -606,17 +603,15 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         pieceCardLayers[piece.index] = cardLayer
         let radii = (pieceSourceCornerRadii[piece.index] ?? piece.cornerRadius, piece.cornerRadius)
         morph(cardLayer, from: source, to: piece.frame, cornerRadius: radii, delay: delay)
+        // The row's drawing already carries a pending message's opacity.
         let handoff = Timing.duration * 0.4
-        cardLayer.opacity = piece.opacity
-        add(cardLayer, "opacity", from: 0, to: CGFloat(piece.opacity), duration: Timing.duration - handoff, delay: delay + handoff)
+        add(cardLayer, "opacity", from: 0, to: 1, duration: Timing.duration - handoff, delay: delay + handoff)
         surface.opacity = 0
         add(surface, "opacity", from: 1, to: 0, duration: Timing.duration - handoff, delay: delay + handoff)
-        guard let icon = pieceIconLayers[piece.index], let iconSource = pieceIconSourceFrames[piece.index] else { return }
-        morph(icon, from: iconSource, to: card.iconFrame, cornerRadius: (0, 0), delay: delay)
-        if card.iconFades {
-            icon.opacity = 0
-            add(icon, "opacity", from: 1, to: 0, duration: Timing.duration - handoff, delay: delay + handoff)
-        }
+        // The icon moves within the surface, so it lands relative to it.
+        guard let icon = pieceIconLayers[piece.index] else { return }
+        let target = card.iconFrame.offsetBy(dx: -piece.frame.minX, dy: -piece.frame.minY)
+        morph(icon, from: icon.frame, to: target, cornerRadius: (0, 0), delay: delay)
     }
 
     /// Carries a tile's dim and upload ring to where the message shows them,
@@ -675,7 +670,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        let pieces = Array(pieceLayers.values) + Array(pieceIconLayers.values) + Array(pieceCardLayers.values)
+        let pieces = Array(pieceLayers.values) + Array(pieceCardLayers.values)
         for layer in [bubbleLayer, tailLayer, clipLayer] + pieces + Array(ringLayers.values) as [CALayer] {
             layer.position.x += delta.x
             layer.position.y += delta.y
@@ -1328,8 +1323,7 @@ extension NativeTimelineCanvasView {
             else { continue }
             cards[attachmentIndex] = (card, .init(
                 image: image,
-                iconFrame: toOverlay(card.isAudio ? card.playFrame : card.iconFrame),
-                iconFades: card.isAudio
+                iconFrame: toOverlay(card.isAudio ? card.playFrame : card.iconFrame)
             ))
         }
         return cards
