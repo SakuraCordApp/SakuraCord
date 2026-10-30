@@ -16,7 +16,8 @@ extension NativeTimelineRowPainter {
         let pressProgress = isHovered ? min(max(pressProgress, 0), 1) : 0
         let bubble = card.isInBubble ? bubbleRegion : nil
         let palette = FileCardPalette(bubble: bubble, isFailed: state == .failed)
-        let highlight = 0.04 * ((isHovered ? 1 : 0) + pressProgress)
+        // An audio card's own button takes the hover, not the whole card.
+        let highlight = card.isAudio ? 0 : 0.04 * ((isHovered ? 1 : 0) + pressProgress)
         if let bubble {
             if highlight > 0 {
                 let frame = card.highlightFrame
@@ -27,12 +28,20 @@ extension NativeTimelineRowPainter {
                 ).fill()
             }
         } else {
-            // A plain voice message's capsule, deepening under the pointer.
+            // A plain voice message's capsule, deepening under the pointer;
+            // an audio card keeps its ends' radius over two rows.
             NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.10 + highlight).setFill()
-            NSBezierPath(concentricRoundedRect: card.frame, cornerRadius: card.frame.height / 2).fill()
+            NSBezierPath(
+                concentricRoundedRect: card.frame,
+                cornerRadius: NativeTimelineFileCard.height(isInBubble: false) / 2
+            ).fill()
         }
-        fileCardIcon(card)
-        fileCardButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
+        if card.isAudio {
+            fileCardDownloadButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
+        } else {
+            fileCardIcon(card)
+            fileCardButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)
+        }
 
         text(
             card.attachment.filename, in: card.nameFrame, font: NativeTimelineFileCard.nameFont,
@@ -88,22 +97,55 @@ extension NativeTimelineRowPainter {
             systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
             return
         }
-        let ring = NSBezierPath(ovalIn: button.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4)))
+        downloadRing(in: button, fraction: fraction, color: palette.glyph)
+        systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
+    }
+
+    /// An audio card's download button: a voice message's chip, ringed
+    /// while downloading.
+    private static func fileCardDownloadButton(
+        _ card: NativeTimelineFileCard,
+        state: AttachmentDownloadStore.State?,
+        palette: FileCardPalette,
+        isHovered: Bool,
+        pressProgress: CGFloat
+    ) {
+        let symbol = switch state {
+        case nil: "arrow.down"
+        case .downloading: "xmark"
+        case .finished: "magnifyingglass"
+        case .failed: "arrow.clockwise"
+        }
+        let chip = card.buttonFrame
+        (isHovered ? palette.chipHover : palette.chip).setFill()
+        NSBezierPath(ovalIn: chip).fill()
+        if pressProgress > 0 {
+            palette.highlight.withAlphaComponent(0.06 * pressProgress).setFill()
+            NSBezierPath(ovalIn: chip).fill()
+        }
+        let glyph = state == .failed ? palette.failure : palette.name
+        if case let .downloading(fraction) = state {
+            downloadRing(in: chip, fraction: fraction, color: palette.link)
+        }
+        systemSymbol(symbol, in: chip, color: glyph, inset: chip.width * 0.3, weight: .semibold)
+    }
+
+    private static func downloadRing(in circle: CGRect, fraction: Double, color: NSColor) {
+        let ring = NSBezierPath(ovalIn: circle.insetBy(dx: InterfaceScale.metric(4), dy: InterfaceScale.metric(4)))
         ring.lineWidth = InterfaceScale.metric(2.5)
-        palette.glyph.withAlphaComponent(0.3).setStroke()
+        color.withAlphaComponent(0.3).setStroke()
         ring.stroke()
-        let radius = button.width / 2 - InterfaceScale.metric(4)
+        let radius = circle.width / 2 - InterfaceScale.metric(4)
         let arc = NSBezierPath()
         // Flipped rows: -90° is the top, and positive angles turn clockwise.
         arc.appendArc(
-            withCenter: CGPoint(x: button.midX, y: button.midY), radius: radius,
+            withCenter: CGPoint(x: circle.midX, y: circle.midY), radius: radius,
             startAngle: -90, endAngle: -90 + 360 * min(max(fraction, 0.02), 1)
         )
         arc.lineWidth = ring.lineWidth
         arc.lineCapStyle = .round
-        palette.glyph.setStroke()
+        color.setStroke()
         arc.stroke()
-        systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
     }
 
     /// A file card's colours: SakuraCord's accent button with a white glyph,
@@ -116,6 +158,8 @@ extension NativeTimelineRowPainter {
         let link: NSColor
         let failure: NSColor
         let highlight: NSColor
+        let chip: NSColor
+        let chipHover: NSColor
 
         init(bubble: NativeTimelineBubbleRegion?, isFailed: Bool) {
             let accent = NSColor.sakuraCordAccentColor
@@ -125,12 +169,16 @@ extension NativeTimelineRowPainter {
                 link = .white
                 failure = .white
                 highlight = .white
+                chip = NSColor.white.withAlphaComponent(0.2)
+                chipHover = NSColor.white.withAlphaComponent(0.32)
             } else {
                 button = isFailed ? .systemRed : accent
                 glyph = .white
                 link = accent
                 failure = .systemRed
                 highlight = .labelColor
+                chip = NSColor.labelColor.withAlphaComponent(0.09)
+                chipHover = NSColor.labelColor.withAlphaComponent(0.16)
             }
             name = NativeTimelineBubbleDrawing.foregroundColor(for: bubble)
             detail = NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubble)

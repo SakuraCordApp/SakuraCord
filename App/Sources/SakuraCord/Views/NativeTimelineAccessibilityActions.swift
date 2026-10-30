@@ -339,7 +339,7 @@ extension NativeTimelineCanvasView {
            !spoilerRevealStore.isMediaRevealed(revealKey)
         {
             reveal(revealKey, rowIndex: rowIndex)
-        } else if attachment.mediaKind == .file {
+        } else if !attachment.mediaKind.isVisual, attachment.textPreviewLanguage == nil {
             model?.attachmentDownloads.activate(attachment)
         } else if let presentation =
             NativeTimelineMediaViewerPlan.attachments(

@@ -56,6 +56,21 @@ extension MockMessageFixtureBuilder {
                     }
                 }
             },
+            showcaseMessage(236, content: "A Markdown file and an audio file without a length.") {
+                $0.attachments = [
+                    MockChatFixture.demoResource("README", extension: "md").map {
+                        Attachment(id: "showcase-markdown", filename: "README.md", url: $0, mediaType: "text/markdown", size: 796)
+                    },
+                    MockChatFixture.demoResource("demo-voice-message", extension: "ogg").map {
+                        Attachment(id: "showcase-audio-file", filename: "field-recording.ogg", url: $0, mediaType: "audio/ogg", size: 18_723)
+                    },
+                ].compactMap { $0 }
+            },
+            showcaseMessage(237, author: nova) {
+                $0.attachments = MockChatFixture.demoResource("benchmark-lottie", extension: "json").map {
+                    [Attachment(id: "showcase-json", filename: "pulse.json", url: $0, mediaType: "application/json", size: 1_149)]
+                } ?? []
+            },
         ]
         let durations = [1.2, 6.2, 65.0]
         result += durations.enumerated().map { index, duration in

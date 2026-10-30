@@ -2,13 +2,15 @@ import AppKit
 import SakuraCordModels
 
 extension NativeTimelineCanvasView {
+    /// Whether an attachment still hides behind its spoiler cover.
+    func isConcealedSpoiler(_ attachment: Attachment, in messageID: MessageID) -> Bool {
+        attachment.isSpoiler && !spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: attachment.id))
+    }
+
     /// The visible file cards in a message row, attachment cards first.
     private func fileCards(at index: Int, messageID: MessageID) -> [NativeTimelineFileCard] {
         let layout = layouts[index]
-        let attachments = layout.fileCards.filter {
-            !$0.attachment.isSpoiler
-                || spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: $0.attachment.id))
-        }
+        let attachments = layout.fileCards.filter { !isConcealedSpoiler($0.attachment, in: messageID) }
         let components = layout.componentLayouts.flatMap { component -> [NativeTimelineFileCard] in
             guard !component.files.isEmpty else { return [] }
             let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
@@ -28,12 +30,14 @@ extension NativeTimelineCanvasView {
 
     func fileCardPointerHit(at local: CGPoint, rowIndex: Int, rowOrigin: CGFloat, message: Message)
         -> ComponentButtonPointerHit? {
-        guard let card = fileCards(at: rowIndex, messageID: message.id).first(where: { $0.frame.contains(local) })
-        else { return nil }
+        let states = model?.attachmentDownloads.states
+        guard let card = fileCards(at: rowIndex, messageID: message.id).first(where: { card in
+            card.actionFrames(for: states?[card.attachment.id]).contains { $0.contains(local) }
+        }) else { return nil }
         return ComponentButtonPointerHit(
             target: .fileCard(messageID: message.id, attachmentID: card.attachment.id),
             rowIndex: rowIndex, message: message, kind: .fileCard(card),
-            frame: card.frame.offsetBy(dx: 0, dy: rowOrigin)
+            frame: card.actionFrame.offsetBy(dx: 0, dy: rowOrigin)
         )
     }
 
@@ -53,7 +57,8 @@ extension NativeTimelineCanvasView {
     func installFileCardCursors(at index: Int, rowOrigin: CGFloat) {
         guard let messageID = items[index].messageID else { return }
         for card in fileCards(at: index, messageID: messageID) {
-            addCursorRect(card.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+            // A text file's body opens the viewer, so the whole card points.
+            addCursorRect((card.isAudio ? card.actionFrame : card.frame).offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
         }
     }
 

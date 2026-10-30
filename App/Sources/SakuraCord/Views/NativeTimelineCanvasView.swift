@@ -334,8 +334,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
-    var voiceMessageActiveMessageID: MessageID?
-    var voiceMessageSpeed: Float = 1
+    /// A hovered audio file's seek bar while another player is active.
+    var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
+    var voiceMessageActiveID: VoiceMessagePlaybackID?
+    var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?
     var hoveredVoiceMessage: VoiceMessageHover?
     struct ActivityIndicatorKey: Hashable {

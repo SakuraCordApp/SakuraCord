@@ -548,14 +548,12 @@ extension NativeTimelineRowLayout {
 
         private mutating func appendAttachments() {
             if !usesComponentsV2, (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) {
-                let style: NativeTimelineVoiceMessageRegion.Style =
-                    usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
                 let voiceY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                 if let region = NativeTimelineVoiceMessageRegion.make(
                     message: message,
                     origin: CGPoint(x: contentX, y: voiceY),
                     maximumWidth: inlineMediaMaximumWidth,
-                    style: style
+                    style: voiceMessageStyle
                 ) {
                     result.voiceMessageRegion = region
                     verticalOffset = region.frame.maxY
@@ -577,12 +575,13 @@ extension NativeTimelineRowLayout {
                 return
             }
             guard !usesComponentsV2 else { return }
-            // Like Discord, files leave the media gallery for cards stacked
-            // below it. Regions keep the attachments' order, which the send
-            // transition matches against the composer's.
+            // Like Discord, audio and other files leave the media gallery for
+            // cards and text previews stacked below it. Regions keep the
+            // attachments' order, which the send transition matches against
+            // the composer's.
             let (files, media) = (
-                message.attachments.filter { $0.mediaKind == .file },
-                message.attachments.filter { $0.mediaKind != .file }
+                message.attachments.filter { !$0.mediaKind.isVisual },
+                message.attachments.filter(\.mediaKind.isVisual)
             )
             var regions: [String: AttachmentRegion] = [:]
             if !media.isEmpty {
@@ -630,22 +629,48 @@ extension NativeTimelineRowLayout {
                 if hasRichContent {
                     verticalOffset += NativeTimelineFileCard.spacing
                 }
-                // In a bubble, which grows to fit it, a file spans the
-                // column so its hover highlight lines up with the bubble.
-                let frame = CGRect(
-                    x: contentX, y: verticalOffset,
-                    width: usesBubbles
-                        ? contentWidth
-                        : NativeTimelineFileCard.fittedWidth(
-                            for: attachment, isInBubble: false, maximumWidth: inlineMediaMaximumWidth
-                        ),
-                    height: NativeTimelineFileCard.height(isInBubble: usesBubbles)
-                )
+                let frame = appendFile(attachment)
                 regions[attachment.id] = AttachmentRegion(frame: frame, attachment: attachment, previewKey: nil)
                 verticalOffset = frame.maxY
                 hasRichContent = true
             }
             result.attachmentRegions = message.attachments.compactMap { regions[$0.id] }
+        }
+
+        /// The surface voice messages and audio files draw on.
+        private var voiceMessageStyle: NativeTimelineVoiceMessageRegion.Style {
+            usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
+        }
+
+        /// Lays out a file's card, with its player for audio. In a bubble,
+        /// which grows to fit it, a card spans the column so its hover
+        /// highlight lines up with the bubble.
+        private mutating func appendFile(_ attachment: Attachment) -> CGRect {
+            let origin = CGPoint(x: contentX, y: verticalOffset)
+            let isAudio = attachment.mediaKind == .audio
+            let card = NativeTimelineFileCard(
+                frame: CGRect(
+                    origin: origin,
+                    size: CGSize(
+                        width: usesBubbles
+                            ? contentWidth
+                            : NativeTimelineFileCard.fittedWidth(
+                                for: attachment, isInBubble: false, maximumWidth: inlineMediaMaximumWidth
+                            ),
+                        height: NativeTimelineFileCard.height(isInBubble: usesBubbles, isAudio: isAudio)
+                    )
+                ),
+                attachment: attachment,
+                isInBubble: usesBubbles,
+                isAudio: isAudio
+            )
+            if isAudio {
+                result.audioFilePlayers.append(.audioFile(
+                    in: card, messageID: message.id,
+                    surface: voiceMessageStyle
+                ))
+            }
+            return card.frame
         }
 
         private mutating func appendCards() {
