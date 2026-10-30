@@ -1211,14 +1211,16 @@ public enum DiscordMarkdown {
             paragraph.tailIndent = -metrics.codeInset
             paragraph.minimumLineHeight = metrics.codeLineHeight
             paragraph.maximumLineHeight = metrics.codeLineHeight
-        case .paragraph, .heading:
-            if case .paragraph = line.block {
-                paragraph.minimumLineHeight = metrics.bodyLineHeight
-            }
-            if line.runs.first?.traits.contains(.inlineCode) == true {
-                let font = appKitFont(block: line.block, traits: .inlineCode, metrics: metrics)
-                paragraph.firstLineHeadIndent += metrics.inlineCodePadding(font: font)
-            }
+        case .paragraph:
+            paragraph.minimumLineHeight = metrics.bodyLineHeight
+        case .heading:
+            break
+        }
+        // Inline code that opens a line has no preceding character to pad,
+        // so the line itself starts inside the code's border.
+        if line.runs.first?.traits.contains(.inlineCode) == true {
+            let font = appKitFont(block: line.block, traits: .inlineCode, metrics: metrics)
+            paragraph.firstLineHeadIndent += metrics.inlineCodePadding(font: font)
         }
         return paragraph
     }
