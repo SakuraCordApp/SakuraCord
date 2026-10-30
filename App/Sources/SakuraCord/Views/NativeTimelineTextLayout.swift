@@ -499,7 +499,8 @@ nonisolated enum NativeTimelineCoreText {
                 style.maximumLineHeight = 0
             } else if !containsInlineRun, lineHeight > 0 {
                 style.minimumLineHeight = lineHeight
-                style.maximumLineHeight = lineHeight
+                // A message line stays a floor, which row measurement reads.
+                style.maximumLineHeight = messageLineHeight > 0 ? 0 : lineHeight
             } else if messageLineHeight > 0 {
                 style.minimumLineHeight = messageLineHeight
             }
@@ -1684,8 +1685,10 @@ extension NativeTimelineRowLayout {
         // 18-point compact row. CoreText reports that same line just under
         // 19 points because its suggested bounds include fractional font
         // leading. Multiline suggestions retain one trailing point that the
-        // preserved NSTextView usedRect omitted.
-        if size.height < 20 {
+        // preserved NSTextView usedRect omitted. A message's own line height
+        // (a minimum without a maximum) replaces that compact row.
+        let style = length > 0 ? value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil
+        if size.height < 20, style.map({ $0.minimumLineHeight == 0 || $0.maximumLineHeight > 0 }) ?? true {
             return MessageRowLayoutMetrics.compactContentHeight
         }
         return ceil(size.height - 1.01)
