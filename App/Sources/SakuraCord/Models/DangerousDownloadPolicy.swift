@@ -37,13 +37,17 @@ nonisolated enum DangerousDownloadPolicy {
         // after it steps back over one segment, as Discord counts them.
         let segments = (path.removingPercentEncoding ?? path).split(separator: "/", omittingEmptySubsequences: false)
         var parents = 0
-        guard let index = segments.indices.reversed().first(where: { index in
-            let segment = segments[index]
-            if segment == ".." { parents += 1 }
-            return !segment.isEmpty && segment != "." && segment != ".."
-        }), parents <= index else { return false }
-        let parts = segments[index - parents].split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count > 1, let pathExtension = parts.last else { return false }
-        return extensions.contains(pathExtension.lowercased())
+        for index in segments.indices.reversed() {
+            switch segments[index] {
+            case "", ".": continue
+            case "..": parents += 1
+            default:
+                guard parents <= index else { return false }
+                let filename = segments[index - parents]
+                guard let dot = filename.lastIndex(of: ".") else { return false }
+                return extensions.contains(filename[filename.index(after: dot)...].lowercased())
+            }
+        }
+        return false
     }
 }

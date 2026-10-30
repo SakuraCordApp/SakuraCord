@@ -117,7 +117,7 @@ extension NativeTimelineCanvasView {
             guard let window = self?.window, window.attachedSheet == nil,
                   await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
             else { return }
-            self?.model?.attachmentDownloads.activate(attachment)
+            downloads.activate(attachment)
         }
     }
 

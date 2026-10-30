@@ -70,11 +70,9 @@ extension NativeTimelineRowPainter {
             : NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
         let detailColor = palette.isFailed ? palette.failure : palette.detail
         text(detail.text, in: card.detailFrame, font: NativeTimelineFileCard.detailFont, color: detailColor)
-        if let link = detail.link, let frame = card.linkFrame(for: state) {
-            // Underlined like a text link under the pointer, and dimmed
-            // while pressed.
+        if let link = detail.link {
             text(
-                link, in: frame, font: NativeTimelineFileCard.linkFont,
+                link, in: card.linkFrame(after: detail.text, link: link), font: NativeTimelineFileCard.linkFont,
                 color: (state == .failed ? palette.failure : palette.link).withAlphaComponent(1 - 0.4 * press(.link)),
                 isInteractiveHovered: hoveredPart == .link
             )
