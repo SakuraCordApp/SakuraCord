@@ -1058,11 +1058,11 @@ public enum DiscordMarkdown {
                 return max(margins(line, isFirst: true).top, line.isQuoted ? 4 : 0) + codeTop
             }
             let previous = lines[index - 1]
+            let quoteMargin: CGFloat = previous.isQuoted != line.isQuoted ? 4 : 0
             if case .code = previous.block {
                 if case .code(_, false) = line.block { return 0 }
-                return codeInset + emptyLineHeight + margins(line, isFirst: false).top + codeTop
+                return codeInset + emptyLineHeight + max(margins(line, isFirst: false).top, quoteMargin) + codeTop
             }
-            let quoteMargin: CGFloat = previous.isQuoted != line.isQuoted ? 4 : 0
             return max(
                 margins(previous, isFirst: false).bottom,
                 margins(line, isFirst: false).top,
