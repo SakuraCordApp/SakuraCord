@@ -46,6 +46,31 @@ extension MockMessageFixtureBuilder {
             },
             showcaseMessage(233, content: "An inline image link: \(image.map { "[Layout study](\($0.url.absoluteString))" } ?? "Layout study")"),
             showcaseMessage(234, author: nova, content: animatedFixtureLink),
+            showcaseMessage(235, author: nova, content: "File types.") {
+                $0.attachments = [
+                    ("release-notes.pdf", 1_482_113), ("SakuraCord.zip", 48_211_456),
+                    ("FileCard.swift", 7_340), ("budget.numbers", 220_416), ("payload.bin", 26),
+                ].enumerated().compactMap { index, sample in
+                    file.map {
+                        Attachment(id: "showcase-file-type-\(index)", filename: sample.0, url: $0.url, size: sample.1)
+                    }
+                }
+            },
+            showcaseMessage(236, content: "A Markdown file and an audio file without a length.") {
+                $0.attachments = [
+                    MockChatFixture.demoResource("README", extension: "md").map {
+                        Attachment(id: "showcase-markdown", filename: "README.md", url: $0, mediaType: "text/markdown", size: 796)
+                    },
+                    MockChatFixture.demoResource("demo-voice-message", extension: "ogg").map {
+                        Attachment(id: "showcase-audio-file", filename: "field-recording.ogg", url: $0, mediaType: "audio/ogg", size: 18_723)
+                    },
+                ].compactMap { $0 }
+            },
+            showcaseMessage(237, author: nova) {
+                $0.attachments = MockChatFixture.demoResource("benchmark-lottie", extension: "json").map {
+                    [Attachment(id: "showcase-json", filename: "pulse.json", url: $0, mediaType: "application/json", size: 1_149)]
+                } ?? []
+            },
         ]
         let durations = [1.2, 6.2, 65.0]
         result += durations.enumerated().map { index, duration in

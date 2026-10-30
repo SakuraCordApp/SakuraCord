@@ -104,10 +104,3 @@ extension NativeTimelineCanvasView {
         if let previousMessageID { invalidateVisibleMessageRow(messageID: previousMessageID) }
     }
 }
-
-extension NativeTimelineRowLayout {
-    func matchesAuthorPrimaryGuild(for item: NativeMessageTimelineItem, source: AppModel) -> Bool {
-        guard authorFrame != nil, let row = item.messageRow else { return true }
-        return authorPrimaryGuild == source.authorPresentation(for: row.message).user.primaryGuild
-    }
-}

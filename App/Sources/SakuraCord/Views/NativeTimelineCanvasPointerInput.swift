@@ -126,6 +126,7 @@ extension NativeTimelineCanvasView {
                 installReactionCursors(at: index, rowOrigin: rowOrigin)
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
+                installFileCardCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -640,6 +641,8 @@ extension NativeTimelineCanvasView {
                     _ = activateSakuraCordDeepLink(action, message: hit.message)
                 case let .invite(card, expands):
                     activateInvite(card, message: hit.message, expands: expands)
+                case let .fileCard(card):
+                    model?.attachmentDownloads.activate(card.attachment)
                 }
             }
             return true
@@ -853,6 +856,9 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
+            } else if !attachment.mediaKind.isVisual, attachment.textPreviewLanguage == nil {
+                // A revealed file card acts through its own pointer hit; a
+                // text file's body opens the viewer below.
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,
@@ -874,7 +880,7 @@ extension NativeTimelineCanvasView {
                     mediaKey: NativeTimelineMediaKey.attachment(attachment),
                     cornerRadius: InterfaceScale.metric(8),
                     fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                        itemCount: layout.attachmentRegions.count
+                        itemCount: layout.mediaGalleryItemCount
                     )
                 )
             } else {
@@ -1190,6 +1196,7 @@ extension NativeTimelineCanvasView {
         setHoveredThreadMessageID(nil)
         setHoveredFooterAction(nil)
         setHoveredReaction(nil)
+        updateVoiceMessageHover(at: nil)
         setHoveredRow(nil)
     }
 
@@ -1207,6 +1214,7 @@ extension NativeTimelineCanvasView {
         guard !actionCapsuleContains(point) else { return }
         synchronizeHoveredRow(at: point)
         setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
+        updateVoiceMessageHover(at: visibleRect.contains(point) ? point : nil, measuresDuration: false)
         setHoveredCompactTimestampRow(
             visibleRect.contains(point)
                 ? compactTimestampRowIndex(at: point)
@@ -1710,6 +1718,9 @@ extension NativeTimelineCanvasView {
                     dy: rowOrigin
                 )
             )
+        }
+        if let hit = fileCardPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message) {
+            return hit
         }
         for layout in layouts[index].componentLayouts {
             if layout.containers.contains(where: { container in

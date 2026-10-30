@@ -13,6 +13,10 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let includesChatPerformanceFixture: Bool
     let includesChatMediaPerformanceFixture: Bool
     let includesChatVoicePerformanceFixture: Bool
+    /// A channel full of uploaded files of every kind.
+    let includesChatFilesPerformanceFixture: Bool
+    /// Opens that channel repeatedly, timing each open to its first frame.
+    let runsChannelOpenBenchmark: Bool
     let includesPinsPerformanceFixture: Bool
     let includesIncomingPrivateCallFixture: Bool
     let runsChatPerformanceAutoScroll: Bool
@@ -79,6 +83,11 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
         includesChatVoicePerformanceFixture =
             arguments.contains("--offline-chat-voice-performance")
             || arguments.contains("--offline-chat-voice-performance-autoscroll")
+        runsChannelOpenBenchmark = arguments.contains("--offline-chat-files-performance-open")
+        includesChatFilesPerformanceFixture =
+            arguments.contains("--offline-chat-files-performance")
+            || arguments.contains("--offline-chat-files-performance-autoscroll")
+            || runsChannelOpenBenchmark
         includesPinsPerformanceFixture =
             arguments.contains("--offline-pins-performance-autoscroll")
         includesIncomingPrivateCallFixture =
@@ -88,6 +97,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || arguments.contains("--offline-chat-performance-live-autoscroll")
             || includesChatMediaPerformanceFixture
             || arguments.contains("--offline-chat-voice-performance-autoscroll")
+            || arguments.contains("--offline-chat-files-performance-autoscroll")
             || runsAuthenticatedAutoScroll
         runsChatLiveArrivalStress =
             arguments.contains("--offline-chat-performance-live-autoscroll")
@@ -104,6 +114,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || arguments.contains("--offline-chat-performance-live-autoscroll")
             || includesChatMediaPerformanceFixture
             || includesChatVoicePerformanceFixture
+            || includesChatFilesPerformanceFixture
             || arguments.contains("--offline-chat-performance")
             || includesPinsPerformanceFixture
         let testingFlags: Set = [
@@ -113,6 +124,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             "--offline-chat-performance-live-autoscroll",
             "--offline-chat-media-performance-autoscroll",
             "--offline-chat-voice-performance", "--offline-chat-voice-performance-autoscroll",
+            "--offline-chat-files-performance", "--offline-chat-files-performance-autoscroll",
+            "--offline-chat-files-performance-open",
             "--offline-pins-performance-autoscroll",
             "--offline-incoming-private-call", "--offline-friends-performance",
         ]
@@ -121,6 +134,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
 
     var runsAnyReadOnlyPerformanceBenchmark: Bool {
         runsChatPerformanceAutoScroll
+            || runsChannelOpenBenchmark
             || runsForumPerformanceAutoScroll
             || runsPinsPerformanceAutoScroll
             || runsFriendsPerformanceBenchmark

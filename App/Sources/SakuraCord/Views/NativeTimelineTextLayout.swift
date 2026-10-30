@@ -387,7 +387,7 @@ nonisolated enum NativeTimelineCoreText {
                 inlineAttributes[.discordMentionToken] =
                     presentation.rawToken
                 inlineAttributes[.nativeTimelineMention] =
-                    NativeTimelineMentionBox(presentation)
+                    NativeTimelineMentionBox(presentation, fontSize: baseFont.pointSize)
                 replacement = inlineRun(
                     width: metrics.width,
                     height: metrics.height,
@@ -1578,9 +1578,12 @@ extension NSAttributedString.Key {
 
 nonisolated final class NativeTimelineMentionBox: NSObject {
     let presentation: MentionPresentation
+    /// The label's point size, which sized the pill.
+    let fontSize: CGFloat
 
-    init(_ presentation: MentionPresentation) {
+    init(_ presentation: MentionPresentation, fontSize: CGFloat) {
         self.presentation = presentation
+        self.fontSize = fontSize
     }
 }
 

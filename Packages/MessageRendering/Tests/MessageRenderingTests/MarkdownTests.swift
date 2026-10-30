@@ -558,6 +558,8 @@ import Testing
     #expect(DiscordAttachmentLink.needsRefresh(try url("?ex=6a000e10&is=1&hm=2&"), now: now))
     #expect(!DiscordAttachmentLink.needsRefresh(try url("?ex=6a000e11&is=1&hm=2&"), now: now))
     #expect(DiscordAttachmentLink.matches(try url("?ex=6a000e11&is=1&hm=2&")))
+    let encodedName = "https://cdn.discordapp.com/attachments/1/2/my%20notes%E2%9C%93.txt?ex=1"
+    #expect(DiscordAttachmentLink.matches(try #require(URL(string: encodedName))))
     #expect(!DiscordAttachmentLink.matches(try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/a.png#x"))))
 }
 

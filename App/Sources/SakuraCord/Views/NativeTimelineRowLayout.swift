@@ -192,9 +192,32 @@ struct NativeTimelineRowLayout {
     var forwardedBarFrame: CGRect?
     var forwardedSourceRegion: ForwardedSourceRegion?
     var linkedImageRegions: [LinkedImageRegion] = []
+    /// One region per attachment, in message order: a gallery tile or a file card.
     var attachmentRegions: [AttachmentRegion] = []
     var uploadRegions: [UploadRegion] = []
+
+    var audioFilePlayers: [NativeTimelineVoiceMessageRegion] = []
+
+    /// File and audio cards.
+    var fileCards: [NativeTimelineFileCard] {
+        attachmentRegions.compactMap { region in
+            let attachment = region.attachment
+            guard !attachment.mediaKind.isVisual else { return nil }
+            return NativeTimelineFileCard(
+                frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil,
+                isAudio: attachment.mediaKind == .audio, opensInViewer: attachment.textPreviewLanguage != nil
+            )
+        }
+    }
+
+    var mediaGalleryItemCount: Int {
+        attachmentRegions.count { $0.attachment.mediaKind.isVisual }
+    }
     var voiceMessageRegion: NativeTimelineVoiceMessageRegion?
+    /// Every voice message and audio file player in the row.
+    var audioPlayers: [NativeTimelineVoiceMessageRegion] {
+        (voiceMessageRegion.map { [$0] } ?? []) + audioFilePlayers
+    }
     var embedFrames: [CGRect] = []
     var embedRegions: [EmbedRegion] = []
     var sakuraCordDeepLinkRegions: [SakuraCordDeepLinkRegion] = []
@@ -496,5 +519,12 @@ struct NativeTimelineSearchPrefixLayout {
             ),
             height: sectionFrame.maxY + 4
         )
+    }
+}
+
+extension NativeTimelineRowLayout {
+    func matchesAuthorPrimaryGuild(for item: NativeMessageTimelineItem, source: AppModel) -> Bool {
+        guard authorFrame != nil, let row = item.messageRow else { return true }
+        return authorPrimaryGuild == source.authorPresentation(for: row.message).user.primaryGuild
     }
 }

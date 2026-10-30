@@ -9,6 +9,10 @@ nonisolated enum MediaSaveDestination: Sendable {
 
 @MainActor
 enum MediaViewerActionService {
+    /// Re-signs an expiring Discord attachment link before the viewer reads
+    /// or saves it.
+    @MainActor static var resolveRemoteURL: (@MainActor (URL) async -> URL)?
+
     static func copyText(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
@@ -60,7 +64,8 @@ enum MediaViewerActionService {
         }
 
         guard let destination else { return nil }
-        try await copyMedia(from: item.url, to: destination)
+        let source = await resolveRemoteURL?(item.url) ?? item.url
+        try await copyMedia(from: source, to: destination)
         if settings.revealsCompletedDownloads {
             NSWorkspace.shared.activateFileViewerSelecting([destination])
         }
@@ -69,7 +74,9 @@ enum MediaViewerActionService {
 
     nonisolated static func availableDestination(
         for proposedURL: URL,
-        fileExists: (String) -> Bool = FileManager.default.fileExists(atPath:)
+        // A link counts as taken even when it points nowhere, since writing
+        // over it fails.
+        fileExists: (String) -> Bool = { (try? FileManager.default.attributesOfItem(atPath: $0)) != nil }
     ) -> URL? {
         guard fileExists(proposedURL.path) else { return proposedURL }
         let stem = proposedURL.deletingPathExtension().lastPathComponent
@@ -216,6 +223,8 @@ nonisolated enum MediaViewerDetails {
             "Audio"
         case .file:
             "File"
+        case .text:
+            "Text file"
         }
     }
 }

@@ -480,6 +480,7 @@ final class AppModel {
     var canRetryThreadLoad: Bool { threadErrorScope.map { $0 != .action } ?? false }
     @ObservationIgnored let composer: MessageComposerState
     @ObservationIgnored let voiceMessagePlayback = VoiceMessagePlaybackStore()
+    @ObservationIgnored let attachmentDownloads = AttachmentDownloadStore()
     @ObservationIgnored let attachmentUploads = AttachmentUploadProgressStore()
     @ObservationIgnored let channelVoiceMessageComposer = VoiceMessageComposerState(destination: .channel)
     @ObservationIgnored let threadVoiceMessageComposer = VoiceMessageComposerState(destination: .thread)
@@ -1353,7 +1354,7 @@ final class AppModel {
                 await self?.installMediaDeviceSnapshot(snapshot)
             }
         }
-        configureVoiceMessagePlayback()
+        configureAttachmentMedia()
     }
 }
 

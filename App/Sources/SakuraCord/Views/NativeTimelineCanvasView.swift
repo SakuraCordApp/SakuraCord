@@ -89,7 +89,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         /// Whether the row paints nothing beneath this overlay once it is live.
         var replacesPoster: Bool {
             switch self {
-            case .sticker, .reaction: true
+            case .sticker, .reaction, .componentButton: true
             default: false
             }
         }
@@ -134,6 +134,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
+            case fileCard(NativeTimelineFileCard)
 
             var isDisabled: Bool {
                 switch self {
@@ -143,6 +144,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                     false
                 case let .invite(card, expands):
                     !expands && card.isDisabled
+                case .fileCard:
+                    false
                 }
             }
         }
@@ -331,8 +334,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
-    var voiceMessageActiveMessageID: MessageID?
-    var voiceMessageSpeed: Float = 1
+    /// A hovered audio file's seek bar while another player is active.
+    var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
+    var voiceMessageActiveID: VoiceMessagePlaybackID?
+    var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?
     var hoveredVoiceMessage: VoiceMessageHover?
     struct ActivityIndicatorKey: Hashable {
@@ -410,6 +415,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                                        name: NSMenu.didEndTrackingNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(voiceMessagePlaybackDidChange(_:)),
                                        name: VoiceMessagePlaybackStore.didChange, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(attachmentDownloadsDidChange(_:)),
+                                       name: AttachmentDownloadStore.didChange, object: nil)
         notificationCenter.addObserver(self, selector: #selector(attachmentUploadsDidChange(_:)),
                                        name: AttachmentUploadProgressStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(

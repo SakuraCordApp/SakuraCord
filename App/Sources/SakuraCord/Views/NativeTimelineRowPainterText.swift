@@ -668,7 +668,7 @@ extension NativeTimelineRowPainter {
     enum InlineAttachmentDraw {
         case image(NSImage, CGRect, selectionFrame: CGRect?)
         case mention(
-            MentionPresentation,
+            NativeTimelineMentionBox,
             CGRect,
             characterIndex: Int,
             selectionFrame: CGRect?
@@ -774,11 +774,11 @@ extension NativeTimelineRowPainter {
         let selectionRange = context.selectionRange
         let range = CTRunGetStringRange(run)
         guard range.location >= 0, range.location < attributedText.length else { return nil }
-        let mention = (attributedText.attribute(
+        let mention = attributedText.attribute(
             .nativeTimelineMention,
             at: range.location,
             effectiveRange: nil
-        ) as? NativeTimelineMentionBox)?.presentation
+        ) as? NativeTimelineMentionBox
         let emojiToken = attributedText.attribute(
             .discordEmojiToken,
             at: range.location,
@@ -847,9 +847,10 @@ extension NativeTimelineRowPainter {
         switch draw {
         case let .image(image, frame, _):
             drawImage(image, in: frame, cornerRadius: 0, fillsFrame: false)
-        case let .mention(presentation, frame, characterIndex, _):
+        case let .mention(mention, frame, characterIndex, _):
             drawMention(
-                presentation,
+                mention.presentation,
+                fontSize: mention.fontSize,
                 in: frame,
                 isHovered: hoveredMentionCharacterIndex == characterIndex,
                 isOutgoingBubble: isOutgoingBubble
@@ -879,6 +880,7 @@ extension NativeTimelineRowPainter {
 
     static func drawMention(
         _ presentation: MentionPresentation,
+        fontSize: CGFloat,
         in frame: CGRect,
         isHovered: Bool,
         isOutgoingBubble: Bool = false
@@ -966,7 +968,7 @@ extension NativeTimelineRowPainter {
                 width: max(1, frame.maxX - labelX - metrics.horizontalPadding),
                 height: frame.height
             ),
-            font: .interfaceSystemFont(ofSize: 15, weight: .semibold),
+            font: .systemFont(ofSize: fontSize, weight: .semibold),
             color: color
         )
     }
