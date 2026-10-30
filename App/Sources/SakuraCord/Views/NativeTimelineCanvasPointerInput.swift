@@ -105,9 +105,7 @@ extension NativeTimelineCanvasView {
                     addCursorRect(region.pillFrame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                 }
                 for frame in [layouts[index].ephemeralRegion?.dismissFrame].compactMap(\.self)
-                    + layouts[index].deliveryActions(
-                        uploads: model?.attachmentUploads, nonce: items[index].messageRow?.message.nonce
-                    ).map(\.frame)
+                    + layouts[index].deliveryActions.map(\.frame)
                 {
                     addCursorRect(
                         frame.offsetBy(dx: 0, dy: rowOrigin),
@@ -510,9 +508,7 @@ extension NativeTimelineCanvasView {
         if layouts[index].translationRegion?.actionFrame?.contains(local) == true {
             return .init(messageID: messageID, kind: .translation)
         }
-        return layouts[index].deliveryAction(
-            at: local, uploads: model?.attachmentUploads, nonce: items[index].messageRow?.message.nonce
-        ).map { .init(messageID: messageID, kind: $0) }
+        return layouts[index].deliveryAction(at: local).map { .init(messageID: messageID, kind: $0) }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -736,10 +732,7 @@ extension NativeTimelineCanvasView {
             model?.performMessageTranslationCaptionAction(row.message)
             return true
         }
-        switch layout.deliveryAction(at: point, uploads: model?.attachmentUploads, nonce: row.message.nonce) {
-        case let .cancelUpload(attachmentID):
-            model?.cancelAttachmentUpload(attachmentID, of: row.message)
-            return true
+        switch layout.deliveryAction(at: point) {
         case .retrySend:
             actions?.retry(row.message)
             return true
@@ -1606,7 +1599,7 @@ extension NativeTimelineCanvasView {
         if layout.translationRegion?.actionFrame?.contains(point) == true {
             return .translationAction(message.id)
         }
-        if let kind = layout.deliveryAction(at: point, uploads: model?.attachmentUploads, nonce: message.nonce) {
+        if let kind = layout.deliveryAction(at: point) {
             return .deliveryAction(message.id, kind)
         }
         if let tag = layout.serverTagRegion, tag.frame.contains(point),

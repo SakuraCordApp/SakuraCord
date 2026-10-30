@@ -44,7 +44,8 @@ extension NativeTimelineRowLayout {
 /// A file's upload over its row: the dim over an image or video and the
 /// ring, with a cancel mark under the pointer, or Retry once it failed.
 /// Progress moves only the ring's stroke. It sits above the row's animated
-/// media, which the row's own painting would sit beneath.
+/// media and spoiler cover, which the row's own painting would sit
+/// beneath, so its control takes its own clicks.
 final class NativeTimelineUploadRingView: NSView {
     private let dimsMedia: Bool
     private let dim = CALayer()
@@ -57,15 +58,19 @@ final class NativeTimelineUploadRingView: NSView {
         set { ring.fraction = newValue }
     }
 
-    var isCancelHovered = false {
-        didSet { cancelMark.opacity = isCancelHovered && !isFailed ? 1 : 0 }
+    private var isHovered = false {
+        didSet { cancelMark.opacity = isHovered && !isFailed ? 1 : 0 }
     }
+
+    /// Cancels the file, or retries its failed send.
+    var activate: (() -> Void)?
 
     var isFailed = false {
         didSet {
             ring.isHidden = isFailed
-            retry.isHidden = !isFailed
-            cancelMark.opacity = isCancelHovered && !isFailed ? 1 : 0
+            // A file card paints a failed upload's Retry in its own button.
+            retry.isHidden = !isFailed || !dimsMedia
+            cancelMark.opacity = isHovered && !isFailed ? 1 : 0
         }
     }
 
@@ -111,7 +116,42 @@ final class NativeTimelineUploadRingView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    /// The ring's control: centred over media, or the file card's button.
+    private var controlFrame: CGRect {
+        guard dimsMedia else { return bounds }
+        let side = AttachmentUploadRing.diameter + InterfaceScale.metric(8)
+        return CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let superview else { return nil }
+        return controlFrame.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        guard controlFrame.contains(convert(event.locationInWindow, from: nil)) else { return }
+        activate?()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(controlFrame, cursor: .pointingHand)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: controlFrame, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+
+    override func mouseExited(with event: NSEvent) { isHovered = false }
 
     override func layout() {
         super.layout()
@@ -154,13 +194,18 @@ extension NativeTimelineCanvasView {
             let layout = layouts[index]
             guard !layout.uploadRings.isEmpty,
                   !hidesRowForSendTransition(items[index].identifier),
-                  let nonce = items[index].messageRow?.message.nonce
+                  let message = items[index].messageRow?.message,
+                  let nonce = message.nonce
             else { return }
             let origin = displayedRowOrigin(at: index)
-            // A file card shows a failed upload's Retry in its own button.
-            for ring in layout.uploadRings where ring.isFailed
-                ? ring.mediaFrame != nil
-                : uploads.isUploading(nonce: nonce, attachmentID: ring.attachmentID) {
+            for ring in layout.uploadRings
+            where ring.isFailed || uploads.isUploading(nonce: nonce, attachmentID: ring.attachmentID) {
+                // A spoiler still hides its file card's button, but not the
+                // cover over an image.
+                if ring.mediaFrame == nil, let attachment = message.attachments.first(where: { $0.id == ring.attachmentID }),
+                   isConcealedSpoiler(attachment, in: message.id) {
+                    continue
+                }
                 let key = UploadRingKey(row: items[index].identifier, attachmentID: ring.attachmentID)
                 shown.insert(key)
                 let view = uploadRings[key] ?? {
@@ -172,7 +217,13 @@ extension NativeTimelineCanvasView {
                 view.frame = (ring.mediaFrame ?? ring.frame).offsetBy(dx: 0, dy: origin)
                 view.setColor(Self.uploadRingColor(ring, isOutgoing: layout.bubbleRegion?.isOutgoing == true))
                 view.isFailed = ring.isFailed
-                view.isCancelHovered = hoveredFooterAction?.kind == .cancelUpload(attachmentID: ring.attachmentID)
+                view.activate = { [weak self] in
+                    if ring.isFailed {
+                        self?.actions?.retry(message)
+                    } else {
+                        self?.model?.cancelAttachmentUpload(ring.attachmentID, of: message)
+                    }
+                }
                 view.fraction = uploads.fraction(nonce: nonce, attachmentID: ring.attachmentID)
             }
         }
