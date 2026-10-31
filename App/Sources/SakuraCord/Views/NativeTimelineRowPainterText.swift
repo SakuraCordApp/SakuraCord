@@ -445,6 +445,7 @@ extension NativeTimelineRowPainter {
         var quotes: [CGRect] = []
         var inlineCode: [CGRect] = []
         var spoilers: [(CGRect, Bool)] = []
+        var autoModerationMatches: [CGRect] = []
         var listMarkers: [CGRect] = []
     }
 
@@ -468,6 +469,11 @@ extension NativeTimelineRowPainter {
         )
         drawInlineCodeDecorations(decorations.inlineCode)
         drawSpoilerDecorations(decorations.spoilers)
+        // Discord's search-highlight yellow at 30%.
+        NSColor(srgbRed: 253 / 255, green: 184 / 255, blue: 51 / 255, alpha: 0.3).setFill()
+        for rect in decorations.autoModerationMatches {
+            NSBezierPath(concentricRoundedRect: rect, cornerRadius: InterfaceScale.metric(3)).fill()
+        }
         drawCodeBlockDecorations(codeBlocks)
         drawListMarkerDecorations(decorations.listMarkers)
         drawQuoteDecorations(decorations.quotes, outerFrame: outerFrame)
@@ -495,6 +501,12 @@ extension NativeTimelineRowPainter {
                         outerFrame: outerFrame,
                         range: range
                 )
+            )
+        }
+        attributedText.enumerateAttribute(.autoModerationMatch, in: fullRange) { value, range, _ in
+            guard value != nil else { return }
+            result.autoModerationMatches += NativeTimelineTextSelectionGeometry.rects(
+                in: textFrame, outerFrame: outerFrame, range: range
             )
         }
         for range in NativeTimelineTextSpoilers.ranges(in: attributedText) {

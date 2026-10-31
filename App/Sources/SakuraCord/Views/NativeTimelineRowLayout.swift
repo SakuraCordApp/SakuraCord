@@ -219,6 +219,7 @@ struct NativeTimelineRowLayout {
     var pinnedAtFrame: CGRect?
     var pollLayout: NativeTimelinePollLayout?
     var pollResultFrame: CGRect?
+    var autoModAlert: NativeTimelineAutoModAlertLayout?
     var inviteRegions: [NativeTimelineInviteLayout] = []
     var translationRegion: TranslationRegion?
 

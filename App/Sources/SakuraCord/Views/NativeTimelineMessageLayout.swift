@@ -355,8 +355,9 @@ extension NativeTimelineRowLayout {
         }
 
         private mutating func appendAuthorHeader() {
-            let presentation = source?.authorPresentation(for: message)
-            let author = presentation?.user ?? message.author
+            // AutoMod heads its alerts; the member it caught is named in the card.
+            let presentation = message.type == .autoModerationAction ? nil : source?.authorPresentation(for: message)
+            let author = message.type == .autoModerationAction ? .autoMod : presentation?.user ?? message.author
             result.authorPrimaryGuild = author.primaryGuild
             let authorFont = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: metrics.authorFont)
             let showsRoleIndicator = source?.roleColorDisplay == .nextToNames
@@ -370,9 +371,10 @@ extension NativeTimelineRowLayout {
             // Keep the adjacent controls visible while long decorative names
             // truncate. At narrow widths the tag is omitted before the name.
             let timestampReserve = min(timestampWidth, availableWidth / 3) + 7
-            let botText = author.isBot ? NativeIdentityTextPresentation(
-                "APP", font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
-            ) : nil
+            let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
+            let botText = badge.map { NativeIdentityTextPresentation(
+                $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
+            ) }
             let naturalBotWidth = botText.map { $0.width + ServerTagAppearance.horizontalPadding * 2 } ?? 0
             let botWidth = availableWidth >= naturalBotWidth + 7 + 12 ? naturalBotWidth : 0
             let botReserve = botWidth > 0 ? botWidth + 7 : 0
@@ -441,6 +443,28 @@ extension NativeTimelineRowLayout {
             }
         }
 
+        /// The row's author frames move to the member in the card, so the
+        /// profile, menu and hover of the avatar and name are that member's.
+        private mutating func appendAutoModAlert(_ alert: AutoModerationAlert) {
+            let sender = source?.authorPresentation(for: message).user ?? message.author
+            let header: NativeTimelineAutoModAlertLayout.Header? =
+                if let avatar = result.avatarFrame, let frame = result.authorFrame, let name = result.authorText {
+                    .init(avatarFrame: avatar, nameFrame: frame, name: name)
+                } else { nil }
+            let card = NativeTimelineAutoModAlertLayout(
+                alert: alert, message: message, sender: sender, header: header,
+                origin: CGPoint(x: contentX, y: verticalOffset), width: contentWidth,
+                source: source, authorFont: metrics.authorFont
+            )
+            result.autoModAlert = card
+            result.avatarFrame = card.avatarFrame
+            result.authorFrame = card.authorFrame
+            result.authorText = card.authorText
+            result.authorPrimaryGuild = sender.primaryGuild
+            result.serverTagRegion = card.serverTag
+            verticalOffset = card.cardFrame.maxY
+        }
+
         private mutating func appendTextAndPoll() {
             bubbleStartY = verticalOffset
             if usesBubbles {
@@ -502,6 +526,11 @@ extension NativeTimelineRowLayout {
                 hasRichContent = true
             }
 
+            if let alert = message.autoModerationAlert {
+                if hasRichContent { verticalOffset += InterfaceScale.metric(8) }
+                appendAutoModAlert(alert)
+                hasRichContent = true
+            }
             if message.pollResultSummary != nil {
                 if hasRichContent { verticalOffset += InterfaceScale.metric(8) }
                 result.pollResultFrame = CGRect(x: contentX, y: verticalOffset, width: min(InterfaceScale.metric(440), contentWidth), height: InterfaceScale.metric(66))

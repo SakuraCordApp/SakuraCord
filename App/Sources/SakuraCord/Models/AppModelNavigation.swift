@@ -481,10 +481,13 @@ extension AppModel {
         )
     }
 
+    /// `nearest` lands on the last message before `messageID` when that
+    /// message is not in the channel, as for a time an AutoMod alert marks.
     func navigate(
         to guildID: GuildID?,
         channelID: ChannelID,
-        messageID: MessageID
+        messageID: MessageID,
+        nearest: Bool = false
     ) {
         let target = ConversationNavigationTarget.message(
             channelID, messageID, fullWidthThread: false
@@ -535,10 +538,10 @@ extension AppModel {
                 ) else { return }
             }
 
-            guard isCurrentAccountSession(session),
-                  messages.contains(where: { $0.id == messageID })
-            else {
-                guard isCurrentAccountSession(session) else { return }
+            guard isCurrentAccountSession(session) else { return }
+            let landingID = messages.contains(where: { $0.id == messageID }) ? messageID
+                : nearest ? (messages.last(where: { $0.id < messageID }) ?? messages.first)?.id : nil
+            guard let landingID else {
                 errorMessage = "That message could not be found in the linked channel."
                 return
             }
@@ -546,7 +549,7 @@ extension AppModel {
             messageNavigationRequest = MessageNavigationRequest(
                 requestID: messageNavigationRequestID,
                 channelID: channel.id,
-                messageID: messageID,
+                messageID: landingID,
                 glides: wasShowingMessage
             )
         }

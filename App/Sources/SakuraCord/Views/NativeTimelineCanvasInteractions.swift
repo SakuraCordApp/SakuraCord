@@ -892,6 +892,12 @@ extension NativeTimelineCanvasView {
                 characterIndex: characterIndex,
                 rawToken: rawToken
             )
+        case let .autoModAlert(textIndex):
+            guard let regions = layout.autoModAlert?.textRegions, regions.indices.contains(textIndex) else { return nil }
+            let text = regions[textIndex]
+            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
+                box: text.text, frame: text.frame, characterIndex: characterIndex, rawToken: rawToken
+            )
         }
         return localFrame?.offsetBy(
             dx: 0,
