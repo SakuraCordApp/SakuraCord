@@ -228,7 +228,7 @@ nonisolated struct LinkedImagePresentation: Sendable {
         }
         // Discord leaves an image or emoji link inside a spoiler as a
         // spoilered link, so it never shows before its reveal.
-        if !references.isEmpty {
+        if !references.isEmpty, content.contains("||") {
             let spoilered = Self.spoileredMatchLocations(matches, in: content)
             references.removeAll { spoilered.contains($0.0.location) }
         }

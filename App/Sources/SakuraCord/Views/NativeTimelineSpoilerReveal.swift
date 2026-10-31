@@ -228,7 +228,6 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         in message: Message,
         store: NativeTimelineSpoilerRevealStore
     ) -> [String: NativeTimelineComponentRevealKey] {
-        guard !message.embeds.isEmpty, message.content.contains("||") else { return [:] }
         let spoileredURLs = spoileredEmbedURLs(in: message)
         var result: [String: NativeTimelineComponentRevealKey] = [:]
         var occurrences: [URL: Int] = [:]
@@ -251,6 +250,7 @@ enum NativeTimelineSpoilerConcealmentPolicy {
     /// are all spoilered; when only some are and several previews compete,
     /// any pairing is a guess, so the preview stays as is.
     nonisolated static func spoileredEmbedURLs(in message: Message) -> Set<URL> {
+        guard !message.embeds.isEmpty, message.content.contains("||") else { return [] }
         let links = DiscordMarkdown.linkOccurrences(message.content)
         var result = Set(links.filter(\.isSpoiler).map(\.url))
         guard !result.isEmpty else { return [] }

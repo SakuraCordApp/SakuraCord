@@ -50,11 +50,7 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
         // A preview from a spoilered link stays covered, as in the timeline.
         let spoileredURLs = NativeTimelineSpoilerConcealmentPolicy.spoileredEmbedURLs(in: message)
         let embedMedia = MessageEmbedPresentation.visibleEmbeds(for: message).compactMap { embed in
-            Self.media(for: embed).map { media in
-                var media = media
-                media.isSpoiler = embed.url.map(spoileredURLs.contains) ?? false
-                return media
-            }
+            Self.media(for: embed, isSpoiler: embed.url.map(spoileredURLs.contains) ?? false)
         }
         let componentMedia = message.components.flatMap(Self.media(in:))
         let allMedia = directMedia + embedMedia + componentMedia
@@ -114,12 +110,12 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
         "\(count) \(singular)\(count == 1 ? "" : "s")"
     }
 
-    private static func media(for embed: MessageEmbed) -> ForwardPreviewMedia? {
+    private static func media(for embed: MessageEmbed, isSpoiler: Bool) -> ForwardPreviewMedia? {
         if let video = embed.video {
             if let thumbnail = embed.thumbnail {
                 let url = thumbnail.proxyURL ?? thumbnail.url
                 let animated = url?.pathExtension.lowercased() == "gif"
-                return ForwardPreviewMedia(url: url, kind: .image(animated: animated))
+                return ForwardPreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: isSpoiler)
             }
             return ForwardPreviewMedia(
                 url: DiscordVideoPosterURL.url(
@@ -128,14 +124,15 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
                     height: video.height,
                     maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
                 ),
-                kind: .video
+                kind: .video,
+                isSpoiler: isSpoiler
             )
         }
         guard let image = embed.image ?? embed.thumbnail else { return nil }
         let url = image.proxyURL ?? image.url
         let animated = embed.type?.lowercased() == "gifv"
             || url?.pathExtension.lowercased() == "gif"
-        return ForwardPreviewMedia(url: url, kind: .image(animated: animated))
+        return ForwardPreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: isSpoiler)
     }
 
     private static func media(in component: MessageComponent) -> [ForwardPreviewMedia] {

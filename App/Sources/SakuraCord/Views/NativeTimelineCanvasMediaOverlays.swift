@@ -393,7 +393,7 @@ extension NativeTimelineCanvasView {
         for region in layout.attachmentRegions
         where region.attachment.mediaKind == .animatedImage
             && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                messageID: row.message.id, contentID: "attachment:\(region.attachment.id)",
+                messageID: row.message.id, contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
                 isSpoiler: region.attachment.isSpoiler, store: spoilerRevealStore
             ) {
             accumulator.append(

@@ -468,7 +468,7 @@ extension NativeTimelineRowPainter {
                 spoilerRevealStore.map {
                     NativeTimelineSpoilerConcealmentPolicy.isConcealed(
                         messageID: message.id,
-                        contentID: "attachment:\(region.attachment.id)",
+                        contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
                         isSpoiler: region.attachment.isSpoiler,
                         store: $0
                     )
