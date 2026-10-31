@@ -119,8 +119,9 @@ extension NativeTimelineRowLayout {
         var bottom = origin.y + InterfaceScale.metric(15)
         if let attributed = presentation.text?.attributedContent, let framesetter = presentation.text?.framesetter {
             let height = measuredTextHeight(framesetter, value: attributed, length: attributed.length, width: width)
-            textFrame = CGRect(x: origin.x, y: bottom + 2, width: width, height: height)
-            bottom += 2 + height
+            bottom += 2 + NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributed)
+            textFrame = CGRect(x: origin.x, y: bottom, width: width, height: height)
+            bottom += height
         }
         return TranslationRegion(
             messageID: messageID,

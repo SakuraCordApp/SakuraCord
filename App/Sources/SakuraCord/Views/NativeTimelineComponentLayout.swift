@@ -199,7 +199,7 @@ struct NativeTimelineComponentLayout {
             let height = NodeBuilder.measuredHeight(errorBox, width: maximumWidth)
             nodes.append(
                 Node(
-                    size: CGSize(width: min(maximumWidth, NodeBuilder.idealWidth(errorBox)), height: height),
+                    size: CGSize(width: min(maximumWidth, NativeTimelineEmbedLayout.idealWidth(errorBox)), height: height),
                     textRegions: [
                         .init(
                             frame: CGRect(x: 0, y: 0, width: maximumWidth, height: height),
@@ -600,15 +600,20 @@ private enum NodeBuilder {
             emojiSize: 18 * scale,
             bodyScale: scale
         )
-        let width = min(maximumWidth, max(1, idealWidth(box)))
+        let width = min(maximumWidth, max(1, NativeTimelineEmbedLayout.idealWidth(box)))
+        // Discord's text display drops its first child's top margin, so a
+        // leading heading or list sits at the top; a leading code block or
+        // quote keeps the inset that clears its own chrome.
+        let leadsWithChrome = box.value.length > 0 && box.value.attribute(.discordMarkdownBlock, at: 0, effectiveRange: nil) != nil
+        let inset = leadsWithChrome ? NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value) : 0
         let height = measuredHeight(box, width: width)
         return Node(
-            size: CGSize(width: width, height: height),
+            size: CGSize(width: width, height: inset + height),
             textRegions: [
                 .init(
                     frame: CGRect(
                         x: 0,
-                        y: 0,
+                        y: inset,
                         width: width,
                         height: height
                     ),
@@ -1114,19 +1119,6 @@ private enum NodeBuilder {
         )
     }
 
-    static func idealWidth(
-        _ box: NativeTimelineAttributedTextBox
-    ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
-            box.framesetter,
-            CFRange(location: 0, length: box.value.length),
-            nil,
-            CGSize(width: 10_000, height: 10_000),
-            nil
-        )
-        return max(1, ceil(size.width))
-    }
-
     static func measuredHeight(
         _ box: NativeTimelineAttributedTextBox,
         width: CGFloat
@@ -1138,9 +1130,12 @@ private enum NodeBuilder {
             CGSize(width: max(1, width), height: 10_000),
             nil
         )
+        // A text display ending in a code block keeps the block's bottom
+        // padding, as message and embed text do.
         return max(
             1,
             ceil(size.height) - box.layoutHeightAdjustment
+                + NativeTimelineMarkdownChromeMetrics.trailingVisualOverflow(in: box.value)
         )
     }
 

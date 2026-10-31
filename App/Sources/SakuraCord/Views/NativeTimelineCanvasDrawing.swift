@@ -398,15 +398,7 @@ extension NativeTimelineCanvasView {
         {
             setNeedsDisplay(rowFrame(at: oldTextSpoilerIndex))
         }
-        if let oldCodeBlock = clearedTargets.codeBlock,
-           let oldCodeBlockIndex = items.firstIndex(where: {
-               $0.identifier == oldCodeBlock.itemIdentifier
-           }),
-           oldCodeBlockIndex != clearedTargets.row,
-           oldCodeBlockIndex != clearedTargets.compactTimestampRow
-        {
-            setNeedsDisplay(rowFrame(at: oldCodeBlockIndex))
-        }
+        updateCodeCopyControl()
         if let oldComponentButton = clearedTargets.componentButton {
             invalidateComponentButton(oldComponentButton)
         }
@@ -485,6 +477,7 @@ extension NativeTimelineCanvasView {
             closeServerTagPopover()
             closeMentionPopover()
             closeComponentChoiceOverlay()
+            updateCodeCopyControl()
         }
         if isBlocked, mediaViewerHighlightedMessageID == nil {
             removeActionCapsule()
@@ -608,6 +601,7 @@ extension NativeTimelineCanvasView {
             removeAccessibilityProxies()
             removeActionCapsule()
             endEditing(commit: nil)
+            updateCodeCopyControl()
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -871,9 +865,6 @@ extension NativeTimelineCanvasView {
                 preparedMediaKeys: preparedMediaKeys, revealState: revealState
             )
         }
-        if let hoveredCodeBlock, hoveredCodeBlock.itemIdentifier == item.identifier {
-            drawCodeBlockCopyControl(hoveredCodeBlock)
-        }
         clearSendTransitionBubble(for: item, layout: layouts[index], rowFrame: rowFrame)
         if !unreadDividerFades.isEmpty {
             clearHeldUnreadDivider(for: item, layout: layouts[index], rowFrame: rowFrame)
@@ -1058,58 +1049,6 @@ extension NativeTimelineCanvasView {
             )
             scheduleAnimatedMediaReconciliation()
         }
-    }
-
-    func drawCodeBlockCopyControl(
-        _ target: NativeTimelineCodeBlockPointerTarget
-    ) {
-        let buttonFrame = target.copyButtonFrame
-        let point = currentMouseLocationInCanvas()
-        let isButtonHovered = buttonFrame.contains(point)
-        if isButtonHovered
-            || pressedCodeBlockCopyButton?.itemIdentifier
-                == target.itemIdentifier
-                && pressedCodeBlockCopyButton?.region == target.region
-                && pressedCodeBlockCopyButton?.rangeLocation
-                    == target.rangeLocation
-        {
-            NSColor.labelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(
-                concentricRoundedRect: buttonFrame,
-                cornerRadius: InterfaceScale.metric(4)
-            ).fill()
-        }
-        guard let symbol = NSImage(
-            systemSymbolName: "doc.on.doc.fill",
-            accessibilityDescription: "Copy code"
-        )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(
-                pointSize: 16,
-                weight: .regular
-            )
-            .applying(
-                NSImage.SymbolConfiguration(
-                    paletteColors: [
-                        NSColor.labelColor.withAlphaComponent(
-                            isButtonHovered ? 1 : 0.88
-                        ),
-                    ]
-                )
-            )
-        ) else { return }
-        let iconFrame = NativeTimelineSymbolGeometry.opticallyFitted(
-            sourceSize: symbol.size,
-            alignmentRect: symbol.alignmentRect,
-            in: buttonFrame.insetBy(dx: InterfaceScale.metric(6), dy: InterfaceScale.metric(6))
-        )
-        symbol.draw(
-            in: iconFrame,
-            from: .zero,
-            operation: .sourceOver,
-            fraction: isButtonHovered ? 1 : 0.88,
-            respectFlipped: true,
-            hints: nil
-        )
     }
 
     func textSpoilerRevealState(
