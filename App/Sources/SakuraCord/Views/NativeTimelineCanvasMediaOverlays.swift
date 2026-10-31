@@ -962,11 +962,12 @@ extension NativeTimelineCanvasView {
         removeInlinePlayers()
     }
 
-    /// Plays a video in place over its tile, as Discord does. `openInViewer`
-    /// receives the row's current index when the player's menu asks for it.
+    /// Plays a video in place over its tile, as Discord does. When the
+    /// player's menu asks for the viewer, `openInViewer` receives the row as it
+    /// is then: an edit may have changed the message's other media.
     func playInline(
         _ url: URL, mediaID: String, frame: CGRect, rowIndex: Int,
-        openInViewer: @escaping (_ rowIndex: Int) -> Void
+        openInViewer: @escaping (_ rowIndex: Int, _ layout: NativeTimelineRowLayout, _ message: Message) -> Void
     ) {
         let key = NativeTimelineInlinePlayer.Key(row: items[rowIndex].identifier, mediaID: mediaID)
         guard inlinePlayers[key] == nil else { return }
@@ -974,8 +975,10 @@ extension NativeTimelineCanvasView {
             url: url,
             frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
         ) { [weak self] in
-            guard let index = self?.items.firstIndex(where: { $0.identifier == key.row }) else { return }
-            openInViewer(index)
+            guard let self, let index = self.rowIndex(forIdentifier: key.row), layouts.indices.contains(index),
+                  let message = items[index].messageRow?.message
+            else { return }
+            openInViewer(index, layouts[index], message)
         }
         addSubview(player, positioned: .below, relativeTo: mediaViewerHost)
         inlinePlayers[key] = player
@@ -988,7 +991,7 @@ extension NativeTimelineCanvasView {
         guard !inlinePlayers.isEmpty else { return }
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
         for (key, player) in inlinePlayers {
-            guard let index = items.firstIndex(where: { $0.identifier == key.row }),
+            guard let index = rowIndex(forIdentifier: key.row),
                   layouts.indices.contains(index),
                   editingMessageID == nil || items[index].messageID != editingMessageID,
                   let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index])

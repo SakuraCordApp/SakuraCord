@@ -12,6 +12,7 @@ final class NativeTimelineInlinePlayer: NSView {
         let mediaID: String
     }
 
+    /// The video playing, which identifies it against its tile's media.
     let url: URL
     private let playerView = AVPlayerView()
     private let openInViewer: () -> Void
@@ -74,7 +75,7 @@ final class NativeTimelineInlinePlayer: NSView {
     }
 
     func stop() {
-        playerView.player?.pause()
+        pause()
         playerView.player = nil
     }
 }

@@ -862,12 +862,9 @@ extension NativeTimelineCanvasView {
                 playInline(
                     attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
                     frame: attachmentRegion.frame, rowIndex: rowIndex
-                ) { [weak self] index in
-                    // The message as it is now: an edit may have changed its other media.
-                    guard let self, layouts.indices.contains(index), let message = items[index].messageRow?.message,
-                          let region = layouts[index].attachmentRegions.first(where: { $0.attachment.id == attachment.id })
-                    else { return }
-                    _ = openAttachmentInViewer(region, message: message, layout: layouts[index], rowIndex: index)
+                ) { [weak self, attachmentID = attachment.id] index, layout, message in
+                    guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
+                    _ = self?.openAttachmentInViewer(region, message: message, layout: layout, rowIndex: index)
                 }
             } else if !openAttachmentInViewer(attachmentRegion, message: row.message, layout: layout, rowIndex: rowIndex) {
                 NSWorkspace.shared.open(attachment.url)
