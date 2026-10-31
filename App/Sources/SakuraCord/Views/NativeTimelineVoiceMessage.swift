@@ -509,6 +509,8 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
                 let now = ProcessInfo.processInfo.systemUptime
                 let current = playHoverFade?.progress(at: now) ?? (oldValue.isPlayHovered ? 1 : 0)
                 playHoverFade = .init(from: current, to: state.isPlayHovered ? 1 : 0, start: now)
+                // A hover change can reach an idle overlay, whose display link is off.
+                updateAnimation()
             }
         }
     }
