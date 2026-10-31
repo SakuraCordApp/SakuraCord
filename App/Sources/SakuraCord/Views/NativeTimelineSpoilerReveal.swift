@@ -8,7 +8,6 @@ nonisolated enum NativeTimelineTextRegion: Hashable {
     case translation(UUID)
     case embed(embedID: String, textIndex: Int)
     case component(layoutIndex: Int, textIndex: Int)
-    case autoModAlert(textIndex: Int)
 }
 
 nonisolated struct NativeTimelineTextSpoilerRevealState: Equatable {

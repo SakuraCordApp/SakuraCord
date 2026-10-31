@@ -49,6 +49,8 @@ struct NativeTimelineRowLayout {
             case bareMedia
             case bubbleIntegratedCard
             case card
+            /// Text another card frames, such as an AutoMod alert's.
+            case unframed
         }
 
         struct TextRegion {

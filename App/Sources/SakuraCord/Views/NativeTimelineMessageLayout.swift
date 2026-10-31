@@ -462,6 +462,7 @@ extension NativeTimelineRowLayout {
             result.authorText = card.authorText
             result.authorPrimaryGuild = sender.primaryGuild
             result.serverTagRegion = card.serverTag
+            result.embedRegions.append(card.text)
             verticalOffset = card.cardFrame.maxY
         }
 

@@ -1168,7 +1168,7 @@ extension NativeTimelineCanvasView {
             let embed = message.embeds.first { $0.id == region.embedID }
             let group = accessibilityElement(
                 role: .group,
-                label: embed?.title ?? "Embed",
+                label: embed?.title ?? (region.kind == .unframed ? "Caught message" : "Embed"),
                 frame: accessibilityChildFrame(
                     region.frame,
                     rowIndex: rowIndex

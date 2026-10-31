@@ -689,14 +689,6 @@ extension NativeTimelineCanvasView {
                 ))
             }
         }
-        for (textIndex, textRegion) in (layout.autoModAlert?.textRegions ?? []).enumerated() {
-            var frame = textRegion.frame
-            frame.size.height += textRegion.text.layoutHeightAdjustment
-            result.append(SelectableTextRegion(
-                region: .autoModAlert(textIndex: textIndex), frame: frame, interactionFrame: textRegion.frame,
-                value: textRegion.text.value, framesetter: textRegion.text.framesetter
-            ))
-        }
         for (layoutIndex, component) in
             layout.componentLayouts.enumerated()
         {

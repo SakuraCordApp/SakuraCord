@@ -355,6 +355,7 @@ extension AppModel {
         messageID: MessageID?,
         initialMessages: [Message],
         fullWidth: Bool,
+        nearest: Bool = false,
         session: AppModelAccountSession
     ) async {
         let post: ForumPost
@@ -408,6 +409,7 @@ extension AppModel {
             initialMessages: initialMessages,
             messageID: messageID,
             fullWidth: fullWidth,
+            nearest: nearest,
             session: session
         )
     }
@@ -428,6 +430,7 @@ extension AppModel {
         initialMessages: [Message],
         messageID: MessageID?,
         fullWidth: Bool,
+        nearest: Bool = false,
         session: AppModelAccountSession
     ) async {
         let wasShowingMessage = openThread?.id == post.id
@@ -468,7 +471,7 @@ extension AppModel {
             // message instead of being joined to unrelated history.
             guard await loadThreadWindow(around: messageID, session: session) else { return }
         }
-        guard threadMessages.contains(where: { $0.id == messageID }) else {
+        guard let landingID = Self.landingID(for: messageID, in: threadMessages, nearest: nearest) else {
             errorMessage = "That message could not be found in the linked thread."
             return
         }
@@ -476,13 +479,20 @@ extension AppModel {
         messageNavigationRequest = MessageNavigationRequest(
             requestID: messageNavigationRequestID,
             channelID: post.id,
-            messageID: messageID,
+            messageID: landingID,
             glides: wasShowingMessage
         )
     }
 
-    /// `nearest` lands on the last message before `messageID` when that
-    /// message is not in the channel, as for a time an AutoMod alert marks.
+    /// The message a jump lands on: the target, or with `nearest` the last
+    /// one before it when it is not in the conversation, as for the moment
+    /// an AutoMod alert marks.
+    private static func landingID(for messageID: MessageID, in messages: [Message], nearest: Bool) -> MessageID? {
+        if messages.contains(where: { $0.id == messageID }) { return messageID }
+        guard nearest else { return nil }
+        return (messages.last { $0.id < messageID } ?? messages.first)?.id
+    }
+
     func navigate(
         to guildID: GuildID?,
         channelID: ChannelID,
@@ -512,6 +522,7 @@ extension AppModel {
                     messageID: messageID,
                     initialMessages: [],
                     fullWidth: false,
+                    nearest: nearest,
                     session: session
                 )
                 return
@@ -539,9 +550,7 @@ extension AppModel {
             }
 
             guard isCurrentAccountSession(session) else { return }
-            let landingID = messages.contains(where: { $0.id == messageID }) ? messageID
-                : nearest ? (messages.last(where: { $0.id < messageID }) ?? messages.first)?.id : nil
-            guard let landingID else {
+            guard let landingID = Self.landingID(for: messageID, in: messages, nearest: nearest) else {
                 errorMessage = "That message could not be found in the linked channel."
                 return
             }

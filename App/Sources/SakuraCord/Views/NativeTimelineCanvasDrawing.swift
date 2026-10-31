@@ -1202,8 +1202,6 @@ extension NativeTimelineCanvasView {
             return "translation:\(id)"
         case let .embed(embedID, textIndex):
             return "embed:\(embedID):\(textIndex)"
-        case let .autoModAlert(textIndex):
-            return "automod:\(textIndex)"
         case let .component(layoutIndex, textIndex):
             guard layout.componentLayouts.indices.contains(layoutIndex),
                   layout.componentLayouts[layoutIndex]

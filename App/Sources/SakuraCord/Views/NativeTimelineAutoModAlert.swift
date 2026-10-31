@@ -54,8 +54,10 @@ struct NativeTimelineAutoModAlertLayout {
     let authorFrame: CGRect
     let authorText: NativeIdentityTextPresentation
     let serverTag: NativeTimelineRowLayout.ServerTagRegion?
-    /// The caught message, then the keyword and rule.
-    let textRegions: [NativeTimelineRowLayout.EmbedRegion.TextRegion]
+    /// The caught message, then the keyword and rule, as an unframed embed
+    /// region so links, spoilers, emoji, selection and accessibility work
+    /// as they do in any embed's text.
+    let text: NativeTimelineRowLayout.EmbedRegion
     let buttons: [Button]
 
     static var cornerRadius: CGFloat { NativeTimelinePollLayout.cornerRadius }
@@ -92,7 +94,9 @@ struct NativeTimelineAutoModAlertLayout {
 
         var cursor = authorFrame.maxY + InterfaceScale.metric(2)
         var regions: [NativeTimelineRowLayout.EmbedRegion.TextRegion] = []
-        for box in [Self.content(alert, message: message, source: source), Self.details(alert)].compactMap({ $0 }) {
+        let embed = message.embeds.first { $0.type == "auto_moderation_message" }
+        let content = embed.flatMap { Self.content(alert, embed: $0, message: message, source: source) }
+        for box in [content, Self.details(alert)].compactMap({ $0 }) {
             if !regions.isEmpty { cursor += InterfaceScale.metric(4) }
             let height = NativeTimelineRowLayout.measuredTextHeight(
                 box.framesetter, value: box.value, length: box.value.length, width: textWidth
@@ -101,7 +105,14 @@ struct NativeTimelineAutoModAlertLayout {
                                  text: box, isSelectable: true))
             cursor += height
         }
-        textRegions = regions
+        let textTop = authorFrame.maxY
+        text = .init(
+            embedID: embed?.id ?? "", kind: .unframed,
+            frame: CGRect(x: textX, y: textTop, width: textWidth, height: max(0, cursor - textTop)),
+            textRegions: regions, imageRegions: [], mediaFrame: nil, mediaURL: nil, mediaPreviewURL: nil,
+            mediaPlaceholder: nil, mediaIsVideo: false, mediaAutoplaysInline: false,
+            mediaPosterFillsFrame: false, accentColor: nil, drawsTopSeparator: false
+        )
 
         let buttonY = max(cursor, avatarFrame.maxY) + InterfaceScale.metric(12)
         var buttonX = origin.x + inset
@@ -123,17 +134,16 @@ struct NativeTimelineAutoModAlertLayout {
         buttons.first { $0.frame.contains(point) }
     }
 
-    /// The caught message renders like a message, with each match marked.
+    /// The caught message renders as the alert embed's description, at
+    /// message size, with each match marked.
     private static func content(
-        _ alert: AutoModerationAlert, message: Message, source: AppModel?
+        _ alert: AutoModerationAlert, embed: MessageEmbed, message: Message, source: AppModel?
     ) -> NativeTimelineAttributedTextBox? {
-        var caught = message
-        caught.type = .default
-        caught.content = alert.content
-        caught.embeds = []
-        guard let rendered = NativeTimelineTextPresentation.make(
-            message: caught, plan: NativeTimelineTextPlan.make(for: caught), source: source
-        ).attributedContent else { return nil }
+        guard !alert.content.isEmpty else { return nil }
+        let rendered = NativeTimelineEmbedLayout.resolvedTextBox(
+            prepared: RichMessageAttributedText.prepare(source: alert.content), scope: "automod",
+            emojiSize: 22, embed: embed, message: message, source: source
+        ).value
         let value = NSMutableAttributedString(attributedString: rendered)
         if let match = alert.matchedContent {
             let text = value.string as NSString
@@ -180,24 +190,6 @@ extension NativeTimelineRowPainter {
             }
         }
         pollSurface(in: alert.cardFrame, cornerRadius: NativeTimelineAutoModAlertLayout.cornerRadius)
-        let itemIdentifier = NativeMessageTimelineItem.Identifier.message(input.row.identity)
-        for (index, region) in alert.textRegions.enumerated() {
-            let regionID = NativeTimelineTextRegion.autoModAlert(textIndex: index)
-            func local<T>(_ value: T?, _ item: NativeMessageTimelineItem.Identifier?, _ region: NativeTimelineTextRegion?) -> T? {
-                item == itemIdentifier && region == regionID ? value : nil
-            }
-            attributedText(
-                region.text, in: region.frame, model: input.model,
-                selectionRange: local(input.textSelection?.range, input.textSelection?.itemIdentifier, input.textSelection?.region),
-                hoveredMentionCharacterIndex: local(input.hoveredMention?.characterIndex,
-                                                    input.hoveredMention?.itemIdentifier, input.hoveredMention?.region),
-                hoveredLinkCharacterIndex: local(input.hoveredTextLink?.characterIndex,
-                                                 input.hoveredTextLink?.itemIdentifier, input.hoveredTextLink?.region),
-                hoveredSpoilerRangeLocation: local(input.hoveredTextSpoiler?.rangeLocation,
-                                                   input.hoveredTextSpoiler?.itemIdentifier, input.hoveredTextSpoiler?.region),
-                revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: regionID)
-            )
-        }
         for button in alert.buttons {
             let target = NativeTimelineComponentButtonTarget(messageID: input.row.message.id, componentID: button.action.rawValue)
             sakuraCordButton(
@@ -242,7 +234,7 @@ extension NativeTimelineCanvasView {
         guard let alert = layout.autoModAlert else { return }
         let group = accessibilityElement(
             role: .group,
-            label: alert.textRegions.map(\.text.value.string).joined(separator: ", "),
+            label: "AutoMod alert actions",
             frame: accessibilityChildFrame(alert.cardFrame, rowIndex: rowIndex),
             parent: parent
         )

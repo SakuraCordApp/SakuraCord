@@ -34,7 +34,9 @@ enum NativeTimelineBubbleLayout {
         for message: Message,
         source: AppModel?
     ) -> Context {
-        source?.bubbleContext(for: message)
+        // An AutoMod alert's card holds its member's avatar, which a bubble
+        // would move to its own bottom edge.
+        (message.type == .autoModerationAction ? nil : source?.bubbleContext(for: message))
             ?? Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
     }
 

@@ -1128,7 +1128,7 @@ enum NativeTimelineEmbedLayout {
         ).region
     }
 
-    private static func resolvedTextBox(
+    static func resolvedTextBox(
         prepared: RichMessageAttributedText.Prepared,
         scope: String,
         emojiSize: CGFloat,
