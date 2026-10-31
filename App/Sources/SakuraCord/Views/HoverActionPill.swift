@@ -139,11 +139,9 @@ struct HoverActionControlLabel<Content: View>: View {
     }
 
     private var backgroundColor: Color {
-        if isHovering {
-            return role == .destructive ? .red.opacity(0.18) : .primary.opacity(0.14)
-        }
-        return isSelected == true
-            ? SakuraCordAccentColor.color.opacity(0.16)
-            : .clear
+        // A selected toggle shows in its accent glyph alone, so it can't be
+        // mistaken for the control under the pointer.
+        guard isHovering else { return .clear }
+        return role == .destructive ? .red.opacity(0.18) : .primary.opacity(0.14)
     }
 }

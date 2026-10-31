@@ -26,6 +26,8 @@ struct NativeTimelineMessageDrawInput {
     let componentButtonPressProgress: CGFloat
     /// How far each file card part's hover has eased in.
     let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
+    /// How far each just-finished download's button has crossfaded.
+    let fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat]
     let isForwardedSourceHovered: Bool
     let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
@@ -512,6 +514,7 @@ extension NativeTimelineRowPainter {
                     bubbleRegion: layout.bubbleRegion,
                     state: input.model?.attachmentDownloads.states[attachment.id],
                     upload: uploadState(of: attachment, in: input),
+                    finishProgress: input.fileCardFinishProgress,
                     pointer: .init(
                         hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
                         pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
@@ -688,6 +691,7 @@ extension NativeTimelineRowPainter {
                 componentButtonPressProgress:
                     componentButtonPressProgress,
                 fileCardHoverProgress: input.fileCardHoverProgress,
+                fileCardFinishProgress: input.fileCardFinishProgress,
                 animatedOverlayRoles: input.animatedOverlayRoles
             ))
         }
