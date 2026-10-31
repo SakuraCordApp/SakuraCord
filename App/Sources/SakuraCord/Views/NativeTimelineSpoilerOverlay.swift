@@ -151,10 +151,6 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     var isHovered = false {
         didSet { updatePillVisibility() }
     }
-    /// A cover too small for the row to draw a pill on has none to darken.
-    private var pillScale: CGFloat? {
-        didSet { updatePillVisibility() }
-    }
     var isPressed = false
     var didActivate = false
 
@@ -194,25 +190,21 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
 
     override func layout() {
         super.layout()
-        // The same pill the row draws under this view, sized to the cover.
-        pillScale = NativeTimelineSpoilerAppearance.pillScale(forTileWidth: bounds.width)
-        let scale = pillScale ?? 1
-        pillLabel.attributedStringValue = NativeTimelineSpoilerAppearance.pillLabel(isHovered: true, scale: scale)
-        let labelSize = pillLabel.attributedStringValue.size()
-        pillView.frame = NativeTimelineSpoilerAppearance.pillFrame(
-            in: bounds,
-            measuredLabelWidth: labelSize.width,
-            scale: scale
-        )
-        pillView.layer?.cornerRadius = pillView.frame.height / 2
+        updatePillVisibility()
+        // The same pill the row draws under this view.
+        guard let pill = NativeTimelineSpoilerCover.pill(in: bounds, isHovered: true) else { return }
+        pillLabel.attributedStringValue = pill.label
+        pillView.frame = pill.frame
+        pillView.layer?.cornerRadius = pill.frame.height / 2
         pillLabel.frame = NativeTimelineSpoilerAppearance.labelFrame(
             in: pillView.bounds,
-            measuredLabelHeight: labelSize.height
+            measuredLabelHeight: pill.label.size().height
         )
     }
 
     private func updatePillVisibility() {
-        pillView.isHidden = !isHovered || pillScale == nil
+        // A cover too small for the row to draw a pill on has none to darken.
+        pillView.isHidden = !isHovered || NativeTimelineSpoilerAppearance.pillScale(forTileWidth: bounds.width) == nil
     }
 
     override func updateTrackingAreas() {

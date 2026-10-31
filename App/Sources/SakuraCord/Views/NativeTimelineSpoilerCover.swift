@@ -84,9 +84,9 @@ enum NativeTimelineSpoilerCover {
 
     /// The pill on a cover, sized to it; nil when the cover is too small to
     /// carry one.
-    static func pill(in frame: CGRect) -> (frame: CGRect, label: NSAttributedString)? {
+    static func pill(in frame: CGRect, isHovered: Bool = false) -> (frame: CGRect, label: NSAttributedString)? {
         guard let scale = NativeTimelineSpoilerAppearance.pillScale(forTileWidth: frame.width) else { return nil }
-        let label = NativeTimelineSpoilerAppearance.pillLabel(isHovered: false, scale: scale)
+        let label = NativeTimelineSpoilerAppearance.pillLabel(isHovered: isHovered, scale: scale)
         let pill = NativeTimelineSpoilerAppearance.pillFrame(
             in: frame, measuredLabelWidth: label.size().width, scale: scale
         )
@@ -157,7 +157,7 @@ extension NativeTimelineCanvasView {
               let snapshot = bitmapImageRepForCachingDisplay(in: bounds)
         else { return }
         cacheDisplay(in: bounds, to: snapshot)
-        if dropsPill, let pill = frames.first.flatMap(NativeTimelineSpoilerCover.pill(in:)) {
+        if dropsPill, let pill = frames.first.flatMap({ NativeTimelineSpoilerCover.pill(in: $0) }) {
             Self.fillFromEdges(
                 pill.frame.offsetBy(dx: -bounds.minX, dy: -bounds.minY),
                 in: snapshot,
