@@ -95,9 +95,11 @@ private final class MediaViewerWindowAnimationState {
     }
 
     func dismiss(interactively: Bool) -> TimeInterval {
+        // A pinch follows the fingers, so only a file closed outright eases.
+        let easesFile = zoomsFile && !interactively
         let duration = if reducesMotion {
             0.12
-        } else if zoomsFile, !interactively {
+        } else if easesFile {
             0.3
         } else if hasTransitionSource {
             interactively
@@ -111,7 +113,7 @@ private final class MediaViewerWindowAnimationState {
         withAnimation(
             reducesMotion
                 ? .easeIn(duration: duration)
-                : zoomsFile && !interactively
+                : easesFile
                     ? .smooth(duration: duration)
                     : hasTransitionSource
                     ? interactively

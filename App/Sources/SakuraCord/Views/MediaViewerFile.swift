@@ -44,9 +44,7 @@ struct MediaViewerFile: View {
                     .modifier(MediaViewerDocumentFrame())
             case let .richText(text):
                 MediaViewerTextContent(text: text)
-                    .frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
-                    .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
-                    .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
+                    .mediaViewerTextPage()
             case let .quickLook(url):
                 MediaViewerQuickLook(url: url)
                     .modifier(MediaViewerDocumentFrame())
