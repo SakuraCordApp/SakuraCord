@@ -291,6 +291,7 @@ struct NativeTimelineEditingMessageContent: View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
             InlineMessageEditor(
                 model: model,
+                message: message,
                 text: $editText,
                 canEdit: model.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil,
                 save: {
@@ -874,6 +875,8 @@ struct InlineMessageEditorComposerActions {
 
 private struct InlineMessageEditor: View {
     let model: AppModel
+    /// The message being edited, whose mentioned users resolve its mentions.
+    let message: Message
     @Binding var text: String
     let canEdit: Bool
     let save: () -> Void
@@ -882,6 +885,13 @@ private struct InlineMessageEditor: View {
     @State private var isFocused = true
     @State private var autocompleteIndex = 0
     @State private var isAutocompleteDismissed = false
+
+    /// Game names and people resolve as they do in the message, and update
+    /// as games load.
+    private var mentionPresentations: [String: MentionPresentation] {
+        _ = model.timelinePresentationRevision
+        return MessageMentionResolver(model: model, message: message).presentations(in: text)
+    }
 
     private var composerActions: InlineMessageEditorComposerActions {
         InlineMessageEditorComposerActions(
@@ -905,8 +915,7 @@ private struct InlineMessageEditor: View {
                 placeholder: "Edit message",
                 sendWithReturn: MessageEditInputPolicy.sendsWithReturn,
                 generalInputSettings: model.generalInputSettings,
-                // Game names and people resolve as they do in the message.
-                mentionPresentations: MessageMentionResolver(model: model).presentations(in: text),
+                mentionPresentations: mentionPresentations,
                 onTextChange: { text = $0 },
                 onSubmit: composerActions.onSubmit,
                 onEscape: composerActions.onEscape,
