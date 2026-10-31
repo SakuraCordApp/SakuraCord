@@ -735,6 +735,9 @@ extension NativeTimelineCanvasView {
         case play
         case waveform
         case speed
+        /// An audio card's player row between its controls, which belongs
+        /// to the player rather than previewing the file, and does nothing.
+        case gap
     }
 
     struct VoiceMessagePointerHit {
@@ -768,6 +771,8 @@ extension NativeTimelineCanvasView {
                 control = .speed
             } else if region.waveformFrame.insetBy(dx: -4 * slop, dy: -6 * slop).contains(local) {
                 control = .waveform
+            } else if region.style == .audioFile {
+                control = .gap
             } else {
                 continue
             }
@@ -838,6 +843,8 @@ extension NativeTimelineCanvasView {
             refreshVoiceMessageOverlay()
         case .speed:
             if press.isReleased(on: released) { playback.cycleSpeed() }
+        case .gap:
+            break
         }
         return true
     }
