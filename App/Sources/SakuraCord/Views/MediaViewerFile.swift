@@ -209,7 +209,10 @@ private final class FittingPDFView: PDFView {
         guard let document, document !== fittedDocument || bounds.width != fittedWidth,
               let page = document.page(at: 0)
         else { return }
-        let width = page.bounds(for: displayBox).width + pageBreakMargins.left + pageBreakMargins.right
+        // A page turned on its side shows its height across.
+        let box = page.bounds(for: displayBox)
+        let pageWidth = page.rotation % 180 == 0 ? box.width : box.height
+        let width = pageWidth + pageBreakMargins.left + pageBreakMargins.right
         guard width > 0, bounds.width > 0 else { return }
         scaleFactor = bounds.width / width
         fittedDocument = document

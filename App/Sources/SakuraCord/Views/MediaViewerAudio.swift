@@ -82,11 +82,12 @@ struct MediaViewerAudio: View {
                 .font(.interfaceSystem(size: 30, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: InterfaceScale.metric(60), height: InterfaceScale.metric(60))
-                // Interactive glass keeps its tint and depth while pressed,
-                // where the prominent button style flattens to a pale fill.
-                .glassEffect(.regular.tint(SakuraCordAccentColor.color).interactive(), in: .circle)
+                // Pressed, the prominent glass style and interactive glass
+                // both wash out to a flat, paler disc; this glass keeps its
+                // rim and hue and dips like the skip buttons.
+                .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: .circle)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MediaViewerAudioPressStyle())
         .keyboardShortcut(.space, modifiers: [])
         .help(isPlaying ? "Pause" : "Play")
         .accessibilityLabel(isPlaying ? "Pause" : "Play")
