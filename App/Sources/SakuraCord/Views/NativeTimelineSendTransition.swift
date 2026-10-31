@@ -292,12 +292,15 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         var card: Card?
     }
 
+    /// A file's card, or the spoiler cover over a tile, which the flying
+    /// tile becomes.
     struct Card {
-        /// The card as the row draws it, faded in as the tile becomes it.
+        /// The card or cover as the row draws it, faded in as the tile
+        /// becomes it.
         let image: NSImage
         /// Where the tile's icon lands and fades into the card's: its icon,
-        /// or an audio card's play button.
-        let iconFrame: CGRect
+        /// or an audio card's play button. A covered tile flies no icon.
+        let iconFrame: CGRect?
     }
 
     struct UploadRing {
@@ -634,8 +637,8 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         surface.opacity = 0
         add(surface, "opacity", from: 1, to: 0, duration: Timing.duration - handoff, delay: delay + handoff)
         // The icon moves within the surface, so it lands relative to it.
-        guard let icon = pieceIconLayers[piece.index] else { return }
-        let target = card.iconFrame.offsetBy(dx: -piece.frame.minX, dy: -piece.frame.minY)
+        guard let icon = pieceIconLayers[piece.index], let iconFrame = card.iconFrame else { return }
+        let target = iconFrame.offsetBy(dx: -piece.frame.minX, dy: -piece.frame.minY)
         // The type label shrinks with its icon and gives way to the card's
         // own name and size, which fade in after it.
         if let label = pieceLabelLayers[piece.index] {
@@ -959,6 +962,10 @@ extension NativeTimelineCanvasView {
         let fadingAttachments = flyingAttachments.filter {
             layout.attachmentRegions[$0].previewKey == nil && cards[$0] == nil
         }
+        let covers = sendTransitionCovers(
+            for: flyingAttachments.subtracting(fadingAttachments).filter { cards[$0] == nil },
+            item: items[index], layout: layout, rowFrame: rowFrame
+        )
         guard let content = sendTransitionContent(
             item: items[index],
             layout: layout,
@@ -1000,7 +1007,7 @@ extension NativeTimelineCanvasView {
                         color: color, dimsFile: ring.mediaFrame != nil
                     )
                 },
-                card: card?.morph
+                card: card?.morph ?? covers[attachmentIndex]
             )
         }
         let bubble = layout.bubbleRegion.map { region in
@@ -1036,9 +1043,15 @@ extension NativeTimelineCanvasView {
         of message: Message,
         layout: NativeTimelineRowLayout
     ) -> NativeTimelineRowLayout.UploadRing? {
-        guard model?.attachmentUploads.isUploading(nonce: message.nonce, attachmentID: attachmentID) == true
+        guard model?.attachmentUploads.isUploading(nonce: message.nonce, attachmentID: attachmentID) == true,
+              let ring = layout.uploadRings.first(where: { $0.attachmentID == attachmentID && !$0.isFailed })
         else { return nil }
-        return layout.uploadRings.first { $0.attachmentID == attachmentID && !$0.isFailed }
+        // A spoiler hides its file card's ring, so the flying one fades.
+        if ring.mediaFrame == nil, let attachment = message.attachments.first(where: { $0.id == attachmentID }),
+           isConcealedSpoiler(attachment, in: message.id) {
+            return nil
+        }
+        return ring
     }
 
     /// Keeps in-flight bubbles aimed at their rows after a later timeline
@@ -1367,6 +1380,26 @@ extension NativeTimelineCanvasView {
             ))
         }
         return cards
+    }
+
+    /// The spoiler covers the row draws over images and videos, which their
+    /// covered tiles land in.
+    private func sendTransitionCovers(
+        for attachmentIndexes: Set<Int>,
+        item: NativeMessageTimelineItem,
+        layout: NativeTimelineRowLayout,
+        rowFrame: CGRect
+    ) -> [Int: NativeTimelineSendTransitionOverlay.Card] {
+        guard let messageID = item.messageID else { return [:] }
+        var covers: [Int: NativeTimelineSendTransitionOverlay.Card] = [:]
+        for attachmentIndex in attachmentIndexes {
+            let region = layout.attachmentRegions[attachmentIndex]
+            guard isConcealedSpoiler(region.attachment, in: messageID),
+                  let image = sendTransitionImage(of: region.frame, item: item, layout: layout, rowFrame: rowFrame)
+            else { continue }
+            covers[attachmentIndex] = .init(image: image, iconFrame: nil)
+        }
+        return covers
     }
 
     /// A part of the row as it draws it, such as a file's card.

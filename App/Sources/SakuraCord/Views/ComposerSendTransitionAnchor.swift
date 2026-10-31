@@ -111,17 +111,18 @@ final class ComposerSendTransitionAnchor {
         return preview
     }
 
-    /// A staged attachment's tile in flight, with its upload ring. Spoilers
-    /// never fly uncovered.
+    /// A staged attachment's tile in flight, with its upload ring. A file's
+    /// icon flies on its own, except under a spoiler, which flies covered
+    /// as its tile shows it.
     private func attachmentSnapshot(
         _ attachment: ForumPostAttachment,
         uploadFraction: Double?
     ) -> NativeTimelineSendTransitionSource.Attachment? {
-        guard !attachment.isSpoiler,
-              let view = attachmentPreviews[attachment.id]?.view,
+        let flysIcon = !attachment.isVisualMedia && !attachment.isSpoiler
+        guard let view = attachmentPreviews[attachment.id]?.view,
               view.window === textView?.window,
               view.visibleRect.contains(view.bounds),
-              let image = tileImage(for: attachment, isLabelOnly: !attachment.isVisualMedia)
+              let image = tileImage(for: attachment, isLabelOnly: flysIcon)
         else { return nil }
         var snapshot = NativeTimelineSendTransitionSource.Attachment(
             image: image,
@@ -130,7 +131,7 @@ final class ComposerSendTransitionAnchor {
             uploadFraction: uploadFraction,
             ringScale: ComposerAttachmentTray.ringScale
         )
-        if !attachment.isVisualMedia {
+        if flysIcon {
             var iconFrame = ComposerAttachmentFileFace.iconFrame(in: view.bounds.size, url: attachment.url)
             if !view.isFlipped { iconFrame.origin.y = view.bounds.height - iconFrame.maxY }
             var surfaceColor = CGColor.clear
@@ -147,23 +148,35 @@ final class ComposerSendTransitionAnchor {
     }
 
     /// What a staged attachment's tile shows: an image or video thumbnail,
-    /// or another file's icon and type.
+    /// or another file's icon and type, under its spoiler cover if it has one.
     private func tileImage(for attachment: ForumPostAttachment, isLabelOnly: Bool = false) -> NSImage? {
         guard let preview = attachmentPreviews[attachment.id],
               let view = preview.view,
               let window = view.window
         else { return nil }
         let image: NSImage?
-        if attachment.isVisualMedia {
+        if attachment.isVisualMedia, !attachment.isSpoiler || preview.thumbnail == nil {
             image = preview.thumbnail
         } else {
+            let size = view.bounds.size
             let renderer = ImageRenderer(
-                content: ComposerAttachmentFileFace(url: attachment.url, isLabelOnly: isLabelOnly)
-                    .frame(width: view.bounds.width, height: view.bounds.height)
-                    .environment(
-                        \.colorScheme,
-                        view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
-                    )
+                content: Group {
+                    if attachment.isVisualMedia, let thumbnail = preview.thumbnail {
+                        Image(nsImage: thumbnail).resizable().scaledToFill()
+                    } else {
+                        ComposerAttachmentFileFace(url: attachment.url, isLabelOnly: isLabelOnly)
+                    }
+                }
+                .frame(width: size.width, height: size.height)
+                .clipped()
+                .spoilerCover(
+                    attachment.isSpoiler,
+                    pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: size.width)
+                )
+                .environment(
+                    \.colorScheme,
+                    view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+                )
             )
             renderer.scale = window.backingScaleFactor
             image = renderer.nsImage
