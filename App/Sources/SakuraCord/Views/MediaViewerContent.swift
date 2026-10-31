@@ -125,11 +125,11 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
         let isZooming = source != nil && destination != nil
         let progress = isZooming ? min(max(progress, 0), 1) : 1
         let end = destination ?? .zero
-        let box = Self.interpolate(from: source?.frameInWindow ?? end, to: end, progress: progress)
+        let box = (source?.frameInWindow ?? end).interpolated(to: end, progress: progress)
         // A card partly scrolled out starts cut to the viewport, in the
         // stage's space, which offsetting the content doesn't move.
         let viewport = progress < 1
-            ? Self.interpolate(from: source?.visibleFrameInWindow ?? end, to: end, progress: progress)
+            ? (source?.visibleFrameInWindow ?? end).interpolated(to: end, progress: progress)
                 .offsetBy(dx: -end.minX, dy: -end.minY)
             : .infinite
         // The box in the content's own space, centred on it as it moves.
@@ -154,15 +154,6 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
             .clipShape(MediaViewerZoomClip(rect: clip, cornerRadius: radius))
             .offset(x: box.midX - end.midX, y: box.midY - end.midY)
             .clipShape(MediaViewerZoomClip(rect: viewport, cornerRadius: 0))
-    }
-
-    private static func interpolate(from start: CGRect, to end: CGRect, progress: CGFloat) -> CGRect {
-        CGRect(
-            x: start.minX + (end.minX - start.minX) * progress,
-            y: start.minY + (end.minY - start.minY) * progress,
-            width: start.width + (end.width - start.width) * progress,
-            height: start.height + (end.height - start.height) * progress
-        )
     }
 
     private static func smoothstep(_ value: CGFloat, from lower: CGFloat, to upper: CGFloat) -> CGFloat {
@@ -435,11 +426,7 @@ private struct MediaViewerTransitionImage: View {
         let progress = min(1, max(0, presentationProgress))
         let sourceProgress = 1 - progress
         let remoteImageOpacity = remoteImageOpacity(for: progress)
-        let clipFrame = interpolatedFrame(
-            from: source.visibleFrameInWindow,
-            to: destinationFrame,
-            progress: progress
-        )
+        let clipFrame = source.visibleFrameInWindow.interpolated(to: destinationFrame, progress: progress)
         let sourceImageFrame = MediaViewerLayoutPolicy.imageFrame(
             imageSize: source.image.size,
             in: source.frameInWindow,
@@ -450,11 +437,7 @@ private struct MediaViewerTransitionImage: View {
             in: destinationFrame,
             fillsFrame: false
         )
-        let imageFrame = interpolatedFrame(
-            from: sourceImageFrame,
-            to: destinationImageFrame,
-            progress: progress
-        )
+        let imageFrame = sourceImageFrame.interpolated(to: destinationImageFrame, progress: progress)
         let cornerRadii = RectangleCornerRadii(
             topLeading: sharesEdge(\.minX) && sharesEdge(\.minY)
                 ? source.cornerRadius * sourceProgress
@@ -522,43 +505,6 @@ private struct MediaViewerTransitionImage: View {
             source.frameInWindow[keyPath: edge]
                 - source.visibleFrameInWindow[keyPath: edge]
         ) < 0.5
-    }
-
-    private func interpolatedFrame(
-        from source: CGRect,
-        to destination: CGRect,
-        progress: CGFloat
-    ) -> CGRect {
-        CGRect(
-            x: interpolatedValue(
-                from: source.minX,
-                to: destination.minX,
-                progress: progress
-            ),
-            y: interpolatedValue(
-                from: source.minY,
-                to: destination.minY,
-                progress: progress
-            ),
-            width: interpolatedValue(
-                from: source.width,
-                to: destination.width,
-                progress: progress
-            ),
-            height: interpolatedValue(
-                from: source.height,
-                to: destination.height,
-                progress: progress
-            )
-        )
-    }
-
-    private func interpolatedValue(
-        from source: CGFloat,
-        to destination: CGFloat,
-        progress: CGFloat
-    ) -> CGFloat {
-        source + (destination - source) * progress
     }
 
     private func remoteImageOpacity(for progress: CGFloat) -> CGFloat {
@@ -755,5 +701,17 @@ struct ViewerAVPlayer: NSViewRepresentable {
     final class Coordinator {
         var url: URL?
         var player: AVPlayer?
+    }
+}
+
+private extension CGRect {
+    /// This frame moved and resized `progress` of the way to `target`.
+    func interpolated(to target: CGRect, progress: CGFloat) -> CGRect {
+        CGRect(
+            x: minX + (target.minX - minX) * progress,
+            y: minY + (target.minY - minY) * progress,
+            width: width + (target.width - width) * progress,
+            height: height + (target.height - height) * progress
+        )
     }
 }
