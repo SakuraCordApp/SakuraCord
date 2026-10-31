@@ -500,6 +500,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             guard !uploads.isUploading(nonce: uploadNonce, attachmentID: id) else { continue }
             ringAttachmentIDs[index] = nil
             let layers = [ringLayers[index], pieceDimLayers[index]] + (pieceCardLayers[index]?.sublayers ?? [])
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
             for layer in layers.compactMap(\.self) {
                 let opacity = layer.presentation()?.opacity ?? layer.opacity
                 layer.opacity = 0
