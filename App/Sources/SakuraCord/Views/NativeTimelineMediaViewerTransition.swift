@@ -155,7 +155,8 @@ extension NativeTimelineCanvasView {
                     ),
                     frame: region.frame,
                     cornerRadius: region.cornerRadius,
-                    fillsFrame: false
+                    // The row crops a thumbnail to fill its square.
+                    fillsFrame: true
                 )
             }
             for region in component.media where !region.isVideo {
@@ -268,7 +269,7 @@ extension NativeTimelineCanvasView {
                         maximumPixelDimension: region.maximumPixelDimension
                     ),
                     cornerRadius: region.cornerRadius,
-                    fillsFrame: false
+                    fillsFrame: true
                 )
             }
             if let region = layout.media.first(where: {
