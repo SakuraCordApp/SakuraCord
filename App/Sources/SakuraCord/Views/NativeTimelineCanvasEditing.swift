@@ -137,12 +137,16 @@ extension NativeTimelineCanvasView {
             while let self, !Task.isCancelled {
                 let now = ProcessInfo.processInfo.systemUptime
                 // Work that holds the main thread, such as saving a finished
-                // download, pauses the fades instead of skipping them.
-                let stall = now - previous - 1.0 / 30
+                // download, pauses the fades still running instead of skipping
+                // them, each from the later of the stall's start and its own.
+                let stallStart = previous + 1.0 / 30
                 previous = now
-                if stall > 0 {
-                    componentButtonHoverFades = componentButtonHoverFades.mapValues { $0.delayed(by: stall) }
-                    fileCardFinishFades = fileCardFinishFades.mapValues { $0.delayed(by: stall) }
+                if now > stallStart {
+                    let resume = { (fade: NativeTimelineHoverFade) in
+                        fade.isSettled(at: stallStart) ? fade : fade.delayed(by: now - max(stallStart, fade.start))
+                    }
+                    componentButtonHoverFades = componentButtonHoverFades.mapValues(resume)
+                    fileCardFinishFades = fileCardFinishFades.mapValues(resume)
                 }
                 for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
                 for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
