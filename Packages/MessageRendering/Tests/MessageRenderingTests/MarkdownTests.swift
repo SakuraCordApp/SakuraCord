@@ -697,11 +697,14 @@ private func spoilerOutline(_ source: String) -> String {
     #expect(slashDate.count == 1)
 
     let tenForty = DiscordNaturalLanguageTimeParser.candidates(for: "10:40", now: now)
-    #expect(tenForty.count == 2)
+    #expect(tenForty.count == 3)
     #expect(tenForty[0].options.contains { $0.style == "t" })
+    #expect(tenForty[0].options[0].badgeText == "Time only")
 
     let twelveOct = DiscordNaturalLanguageTimeParser.candidates(for: "12 oct", now: now)
     #expect(twelveOct.count == 2)
     #expect(twelveOct[0].date > now)
     #expect(twelveOct[1].date < now)
+    #expect(twelveOct[0].options[0].badgeText == "Next year")
+    #expect(twelveOct[1].options[0].badgeText == "This year")
 }

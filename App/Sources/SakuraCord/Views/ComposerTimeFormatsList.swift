@@ -29,8 +29,8 @@ struct TimeFormatsAutocompleteList: View {
     let selectedIndex: Int
     let highlight: (Int) -> Void
     let select: (DiscordParsedTimeCandidate.Option) -> Void
-    let cornerRadius: CGFloat
-    let keyboardSelectionRevision: Int
+    var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius
+    var keyboardSelectionRevision: Int = 0
 
     private var allFlattenedOptions: [FlattenedOption] {
         var items: [FlattenedOption] = []
@@ -45,78 +45,79 @@ struct TimeFormatsAutocompleteList: View {
         return items
     }
 
-    private var contentHeight: CGFloat {
-        let totalItems = allFlattenedOptions.count
-        guard totalItems > 0 else { return InterfaceScale.metric(60) }
-        let dividers = max(0, candidates.count - 1)
-        let rawHeight = CGFloat(totalItems) * InterfaceScale.metric(36)
-            + CGFloat(dividers) * InterfaceScale.metric(12)
-            + InterfaceScale.metric(8)
-        return min(InterfaceScale.metric(280), max(InterfaceScale.metric(80), rawHeight))
+    var body: some View {
+        let options = allFlattenedOptions
+        let selectedID = options.indices.contains(selectedIndex) ? options[selectedIndex].id : nil
+        ComposerAutocompletePanel(heading: heading.uppercased(), cornerRadius: cornerRadius) {
+            ComposerSuggestionList(
+                rows: options,
+                selectedID: selectedID,
+                keyboardSelectionRevision: keyboardSelectionRevision,
+                maximumHeight: InterfaceScale.metric(360),
+                rowHeight: { item in
+                    item.hasDividerBefore ? InterfaceScale.metric(46) : InterfaceScale.metric(36)
+                },
+                highlight: { item in
+                    if item.index != selectedIndex { highlight(item.index) }
+                },
+                activate: { item in
+                    select(item.option)
+                },
+                content: { item in
+                    VStack(spacing: 0) {
+                        if item.hasDividerBefore {
+                            Divider()
+                                .padding(.horizontal, InterfaceScale.metric(8))
+                                .frame(height: InterfaceScale.metric(10))
+                        }
+                        TimeFormatAutocompleteRow(
+                            item: item,
+                            isSelected: options.indices.contains(selectedIndex) && options[selectedIndex].id == item.id,
+                            select: { select(item.option) },
+                            cornerRadius: max(0, cornerRadius - 6)
+                        )
+                    }
+                }
+            )
+        }
     }
+}
+
+private struct TimeFormatAutocompleteRow: View {
+    let item: FlattenedOption
+    let isSelected: Bool
+    let select: () -> Void
+    var cornerRadius: CGFloat = 6
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(heading.uppercased())
-                .font(.interfaceSystem(size: 11, weight: .bold))
-                .foregroundStyle(Color.secondary)
-                .padding(.horizontal, InterfaceScale.metric(14))
-                .padding(.top, InterfaceScale.metric(10))
-                .padding(.bottom, InterfaceScale.metric(6))
+        HStack(spacing: InterfaceScale.metric(8)) {
+            Text(item.option.displayText)
+                .font(.interfaceSystem(size: 14))
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, InterfaceScale.metric(8))
+                .padding(.vertical, InterfaceScale.metric(4))
+                .background(
+                    Color.primary.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
+                )
 
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
-                        ForEach(allFlattenedOptions) { item in
-                            if item.hasDividerBefore {
-                                Divider()
-                                    .padding(.vertical, InterfaceScale.metric(4))
-                                    .padding(.horizontal, InterfaceScale.metric(10))
-                            }
+            Spacer()
 
-                            let isSelected = item.index == selectedIndex
-                            Button {
-                                select(item.option)
-                            } label: {
-                                HStack {
-                                    Text(item.option.displayText)
-                                        .font(.interfaceSystem(size: 14))
-                                        .foregroundStyle(Color.primary)
-                                        .padding(.horizontal, InterfaceScale.metric(8))
-                                        .padding(.vertical, InterfaceScale.metric(4))
-                                        .background(
-                                            Color.primary.opacity(0.10),
-                                            in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
-                                        )
-                                    Spacer()
-                                }
-                                .padding(.horizontal, InterfaceScale.metric(10))
-                                .padding(.vertical, InterfaceScale.metric(4))
-                                .contentShape(Rectangle())
-                                .background(
-                                    isSelected
-                                        ? Color.accentColor.opacity(0.18)
-                                        : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .id(item.index)
-                            .onHover { hovering in
-                                if hovering { highlight(item.index) }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, InterfaceScale.metric(6))
-                    .padding(.bottom, InterfaceScale.metric(6))
-                }
-                .frame(height: contentHeight)
-                .onChange(of: keyboardSelectionRevision) { _, _ in
-                    proxy.scrollTo(selectedIndex)
-                }
+            if let badge = item.option.badgeText {
+                Text(badge)
+                    .font(.interfaceSystem(size: 12))
+                    .foregroundStyle(Color.secondary)
             }
         }
-        .commandPanelSurface(cornerRadius: cornerRadius)
+        .padding(.horizontal, InterfaceScale.metric(10))
+        .frame(height: InterfaceScale.metric(36))
+        .contentShape(Rectangle())
+        .background(
+            isSelected
+                ? Color.accentColor.opacity(0.18)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
     }
 }
 
@@ -126,24 +127,17 @@ struct TimeMentionHelpStrip: View {
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
             Text("@time")
-                .font(.interfaceSystem(size: 13, weight: .bold))
-                .foregroundStyle(Color.primary)
+                .font(.interfaceSystem(size: 12, weight: .bold))
+                .foregroundStyle(Color.secondary)
 
             Text("Refer to a time dynamically in the viewer's time zone")
                 .font(.interfaceSystem(size: 12))
                 .foregroundStyle(Color.secondary)
 
             Spacer()
-
-            Button(action: cancel) {
-                Image(systemName: "xmark")
-                    .font(.interfaceSystem(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.secondary)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, InterfaceScale.metric(14))
-        .padding(.vertical, InterfaceScale.metric(8))
+        .padding(.vertical, InterfaceScale.metric(7))
     }
 }
 
@@ -188,12 +182,36 @@ struct TimeMentionNSTextFieldView: View {
 
 final class TimeMentionNSTextField: NSTextField {
     var onCancel: (() -> Void)?
+    var onAccept: (() -> Void)?
+    var onCommand: ((ComposerAutocompleteCommand) -> Bool)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
             window?.makeFirstResponder(self)
         }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 126 { // Up arrow
+            if onCommand?(.previous) == true { return }
+        }
+        if event.keyCode == 125 { // Down arrow
+            if onCommand?(.next) == true { return }
+        }
+        if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 48 { // Return or Tab
+            onAccept?()
+            return
+        }
+        if event.keyCode == 53 { // Escape
+            onCancel?()
+            return
+        }
+        if event.keyCode == 51 || event.keyCode == 117, stringValue.isEmpty { // Backspace
+            onCancel?()
+            return
+        }
+        super.keyDown(with: event)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -225,6 +243,8 @@ struct TimeMentionFieldRepresentable: NSViewRepresentable {
         field.placeholderString = "Type a date or time (e.g. 24 October, in 2 hours)..."
         field.delegate = context.coordinator
         field.onCancel = onCancel
+        field.onAccept = onAccept
+        field.onCommand = onCommand
         DispatchQueue.main.async {
             field.window?.makeFirstResponder(field)
         }
@@ -236,6 +256,8 @@ struct TimeMentionFieldRepresentable: NSViewRepresentable {
             nsView.stringValue = text
         }
         nsView.onCancel = onCancel
+        nsView.onAccept = onAccept
+        nsView.onCommand = onCommand
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {

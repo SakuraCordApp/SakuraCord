@@ -44,6 +44,7 @@ struct ComposerView: View {
     /// composer collapses at once rather than animating.
     @State private var isClearingForSend = false
     @State private var activeTimeEntry: TimeMentionEntry?
+    @State private var timeReferenceDate: Date?
     @State private var timeTickerDate = Date.now
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -551,7 +552,13 @@ struct ComposerView: View {
             }
         }
         .task(id: timeMentionContext != nil) {
-            guard timeMentionContext != nil else { return }
+            guard timeMentionContext != nil else {
+                timeReferenceDate = nil
+                return
+            }
+            if timeReferenceDate == nil {
+                timeReferenceDate = Date.now
+            }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 timeTickerDate = Date.now
@@ -1565,7 +1572,11 @@ private extension ComposerView {
 
     private var timeCandidates: [DiscordParsedTimeCandidate] {
         guard let context = timeMentionContext else { return [] }
-        return DiscordNaturalLanguageTimeParser.candidates(for: context.query, now: timeTickerDate)
+        return DiscordNaturalLanguageTimeParser.candidates(
+            for: context.query,
+            referenceDate: timeReferenceDate,
+            now: timeTickerDate
+        )
     }
 
     private var allTimeOptions: [DiscordParsedTimeCandidate.Option] {
