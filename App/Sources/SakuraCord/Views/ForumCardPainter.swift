@@ -599,14 +599,23 @@ enum ForumCardPainter {
     ) {
         let cornerRadius = style.cornerRadius
         let isCompact = style.isCompact
-        canvas.fill(frame, cornerRadius: cornerRadius, color: NSColor.labelColor.withAlphaComponent(0.06))
+        // Only a tile without its image gets a backing: one under an image
+        // shows around its antialiased corners.
+        let image: NSImage? = switch media {
+        case let .image(key): NativeTimelineRowPainter.mediaImage(for: key)
+        case let .video(poster?, _): NativeTimelineRowPainter.mediaImage(for: poster)
+        default: nil
+        }
+        if image == nil {
+            canvas.fill(frame, cornerRadius: cornerRadius, color: NSColor.labelColor.withAlphaComponent(0.06))
+        }
         switch media {
-        case let .image(key):
-            if let image = NativeTimelineRowPainter.mediaImage(for: key) {
+        case .image:
+            if let image {
                 canvas.image(image, in: frame, cornerRadius: cornerRadius, fillsFrame: true)
             }
         case let .video(poster, filename):
-            if let poster, let image = NativeTimelineRowPainter.mediaImage(for: poster) {
+            if let image {
                 canvas.image(image, in: frame, cornerRadius: cornerRadius, fillsFrame: true)
                 let badge = InterfaceScale.metric(34)
                 let badgeFrame = CGRect(x: frame.midX - badge / 2, y: frame.midY - badge / 2, width: badge, height: badge)
@@ -638,7 +647,6 @@ enum ForumCardPainter {
                 lineBreakMode: .byClipping
             )
         }
-        canvas.stroke(frame.insetBy(dx: 0.5, dy: 0.5), cornerRadius: cornerRadius, color: NSColor.separatorColor.withAlphaComponent(0.6))
     }
 
     private static func drawFileTile(
