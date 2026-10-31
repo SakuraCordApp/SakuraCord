@@ -546,7 +546,14 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
-        for (textIndex, textRegion) in component.textRegions.enumerated() {
+        // A hidden container's cover blurs its emoji; none may animate over it.
+        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+            in: component, messageID: messageID, store: spoilerRevealStore
+        )
+        for (textIndex, textRegion) in component.textRegions.enumerated()
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            textRegion.frame, hiddenContainerFrames: hiddenContainerFrames
+        ) {
             var drawingFrame = textRegion.frame
             drawingFrame.size.height += textRegion.text.layoutHeightAdjustment
             let textRegionID = NativeTimelineTextRegion.component(
@@ -571,7 +578,10 @@ extension NativeTimelineCanvasView {
                 )
             )
         }
-        for button in component.buttons {
+        for button in component.buttons
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            button.frame, hiddenContainerFrames: hiddenContainerFrames
+        ) {
             guard let emoji = button.emoji,
                   emoji.isAnimated,
                   let url = emoji.imageURL(size: 32)
