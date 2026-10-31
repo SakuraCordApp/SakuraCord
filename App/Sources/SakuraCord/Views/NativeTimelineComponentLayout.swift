@@ -3,19 +3,21 @@ import CoreText
 import SakuraCordModels
 
 enum NativeTimelineComponentButtonMetrics {
-    static var height: CGFloat { InterfaceScale.metric(32) }
-    static var minimumWidth: CGFloat { InterfaceScale.metric(60) }
-    static var cornerRadius: CGFloat { InterfaceScale.metric(8) }
+    static var height: CGFloat { DiscordRichMessageMetrics.px(32) }
+    static var minimumWidth: CGFloat { DiscordRichMessageMetrics.px(60) }
+    static var cornerRadius: CGFloat { DiscordRichMessageMetrics.px(8) }
     /// Shared by measurement, painting and the animated-emoji overlay.
-    static var horizontalPadding: CGFloat { InterfaceScale.metric(12) }
-    static var leadingGlyphAdvance: CGFloat { DiscordComponentEmojiMetrics.buttonSize + InterfaceScale.metric(4) }
-    /// The launch icon and its 8-point gap after a link button's label.
-    static var linkIconSize: CGFloat { InterfaceScale.metric(16) }
-    static var linkIconAdvance: CGFloat { InterfaceScale.metric(8) + linkIconSize }
+    static var horizontalPadding: CGFloat { DiscordRichMessageMetrics.px(12) }
+    static var leadingGlyphAdvance: CGFloat { DiscordComponentEmojiMetrics.buttonSize + DiscordRichMessageMetrics.px(4) }
+    /// The launch icon and its 8-pixel gap after a link button's label.
+    static var linkIconSize: CGFloat { DiscordRichMessageMetrics.px(16) }
+    static var linkIconAdvance: CGFloat { DiscordRichMessageMetrics.px(8) + linkIconSize }
 
     /// Discord's 14-pixel medium label, on the scale that draws its 16-pixel
     /// message text at `messageTextSize`.
-    static var font: NSFont { .interfaceSystemFont(ofSize: 13, weight: .medium) }
+    static var font: NSFont {
+        .interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize * 14 / 16, weight: .medium)
+    }
 }
 
 enum NativeTimelineComponentSelectPolicy {
@@ -478,7 +480,7 @@ private enum NodeBuilder {
                     maximumWidth: maximumWidth
                 )
             }
-            let size = min(InterfaceScale.metric(85), maximumWidth)
+            let size = min(DiscordRichMessageMetrics.px(85), maximumWidth)
             return Node(
                 size: CGSize(width: size, height: size),
                 images: [
@@ -495,7 +497,7 @@ private enum NodeBuilder {
                         description:
                             item.description ?? item.title,
                         isSpoiler: item.isSpoiler,
-                        cornerRadius: InterfaceScale.metric(8),
+                        cornerRadius: DiscordRichMessageMetrics.px(8),
                         maximumPixelDimension: 256,
                         placeholder: item.placeholder
                     )
@@ -588,7 +590,7 @@ private enum NodeBuilder {
         inContainer: Bool
     ) -> Node {
         // Discord sets a container's text at 14 pixels against the
-        // message's 16.
+        // message's 16, but keeps its headings at their message size.
         let scale: CGFloat = inContainer ? 14 / 16 : 1
         let box = richText(
             content,
@@ -596,7 +598,7 @@ private enum NodeBuilder {
             message: message,
             source: source,
             emojiSize: 18 * scale,
-            fontScale: scale
+            bodyScale: scale
         )
         let width = min(maximumWidth, max(1, idealWidth(box)))
         // Discord's text display drops its first child's top margin, so a
@@ -692,8 +694,8 @@ private enum NodeBuilder {
             channelTypes
         ):
             let placeholder = rawPlaceholder ?? "Make a selection"
-            // Discord's select is 400 points wide whatever its placeholder.
-            let width = inBubble ? maximumWidth : min(maximumWidth, InterfaceScale.metric(400))
+            // Discord's select is 400 pixels wide whatever its placeholder.
+            let width = inBubble ? maximumWidth : min(maximumWidth, DiscordRichMessageMetrics.px(400))
             let selectedOptions = source?.componentSelection(
                 messageID: message.id,
                 customID: customID
@@ -769,7 +771,7 @@ private enum NodeBuilder {
                             inContainer: inContainer
                         )
                     },
-                    spacing: InterfaceScale.metric(4)
+                    spacing: DiscordRichMessageMetrics.px(4)
                 )
             }
             guard let accessory else { return text(width: maximumWidth) }
@@ -780,7 +782,7 @@ private enum NodeBuilder {
                 maximumWidth: min(InterfaceScale.metric(180), maximumWidth),
                 inBubble: inBubble
             )
-            let accessoryGap = InterfaceScale.metric(12)
+            let accessoryGap = DiscordRichMessageMetrics.px(12)
             let left = text(width: max(1, maximumWidth - accessoryNode.size.width - accessoryGap))
             let height = max(left.size.height, accessoryNode.size.height)
             // The accessory sits at the trailing edge of the space offered,
@@ -928,7 +930,7 @@ private enum NodeBuilder {
                 intrinsicSizes: resolved.map {
                     intrinsicSize(width: $0.1.width, height: $0.1.height)
                 },
-                spacing: InterfaceScale.metric(4)
+                spacing: DiscordRichMessageMetrics.px(4)
             )
             return Node(
                 size: CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0),
@@ -1005,11 +1007,10 @@ private enum NodeBuilder {
     ) -> Node {
         switch component {
         case let .separator(_, divider, spacing):
-            // Discord's separator adds 8 or 24 points between the stack's
-            // 8-point gaps, with the 1-point divider centred in it.
-            let height = InterfaceScale.metric(
-                (spacing == 2 ? 16 : 0) + (divider ? 1 : 0)
-            )
+            // Discord's separator adds 0 or 16 pixels between the stack's
+            // 8-pixel gaps, with the 1-point divider centred in it.
+            let height = (spacing == 2 ? DiscordRichMessageMetrics.px(16) : 0)
+                + (divider ? InterfaceScale.metric(1) : 0)
             return Node(
                 // SwiftUI Divider has no intrinsic horizontal width. It
                 // stretches only after the container has chosen its fitting
@@ -1078,7 +1079,7 @@ private enum NodeBuilder {
 
     /// The gap Discord leaves between a stack's components and a row's
     /// controls.
-    static var componentSpacing: CGFloat { InterfaceScale.metric(8) }
+    static var componentSpacing: CGFloat { DiscordRichMessageMetrics.px(8) }
 
     static func vertical(_ children: [Node], spacing: CGFloat) -> Node {
         var result = Node()
@@ -1154,9 +1155,13 @@ private enum NodeBuilder {
         message: Message,
         source: AppModel?,
         emojiSize: CGFloat,
-        fontScale: CGFloat
+        bodyScale: CGFloat
     ) -> NativeTimelineAttributedTextBox {
-        let prepared = RichMessageAttributedText.prepare(source: content)
+        // Discord's markdown reads CRLF and CR as line feeds, which also
+        // keeps the body scaling's lines paired with the plan's.
+        let prepared = RichMessageAttributedText.prepare(
+            source: content.utf8.contains(13) ? content.replacing(/\r\n?/, with: "\n") : content
+        )
         let resolver = source.map {
             MessageMentionResolver(model: $0, message: message)
         }
@@ -1168,14 +1173,14 @@ private enum NodeBuilder {
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
-        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize * fontScale)
+        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
         let emojiSize = InterfaceScale.metric(emojiSize)
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
             scope: "component:\(componentID)",
             prepared: prepared,
             emojiSize: emojiSize,
-            baseFontSize: baseFontSize,
+            baseFontSize: baseFontSize * bodyScale,
 
             mentions: mentions.values.sorted {
                 $0.rawToken < $1.rawToken
@@ -1183,16 +1188,44 @@ private enum NodeBuilder {
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
             NativeTimelineAttributedTextBox(
-                NativeTimelineCoreText.make(
+                discordLineHeights(NativeTimelineCoreText.make(
                     prepared: prepared,
                     emojiSize: emojiSize,
                     baseFontSize: baseFontSize,
-
+                    bodyScale: bodyScale,
                     mentionPresentations: mentions
-                ),
+                )),
                 layoutHeightAdjustment: 1
             )
         }
+    }
+
+    /// Discord's 1.375 line height at each line's own size. Code keeps its
+    /// fixed lines, and spoilers their natural ones.
+    private static func discordLineHeights(_ text: NSAttributedString) -> NSAttributedString {
+        let output = NSMutableAttributedString(attributedString: text)
+        let source = output.string as NSString
+        var location = 0
+        while location < output.length {
+            let range = source.paragraphRange(for: NSRange(location: location, length: 0))
+            location = NSMaxRange(range)
+            var fontSize: CGFloat = 0
+            var isExempt = false
+            output.enumerateAttributes(in: range) { attributes, _, _ in
+                if attributes[.discordMarkdownBlock] as? String == "code" || attributes[.discordMarkdownSpoiler] != nil {
+                    isExempt = true
+                }
+                fontSize = max(fontSize, (attributes[.font] as? NSFont)?.pointSize ?? 0)
+            }
+            guard !isExempt, fontSize > 0 else { continue }
+            let existing = output.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle
+            let style = existing?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+            let lineHeight = fontSize * 1.375
+            style.minimumLineHeight = lineHeight
+            if style.maximumLineHeight > 0 { style.maximumLineHeight = max(style.maximumLineHeight, lineHeight) }
+            output.addAttribute(.paragraphStyle, value: style, range: range)
+        }
+        return output
     }
 
     private static func unsupportedNode(

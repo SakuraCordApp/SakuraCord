@@ -53,12 +53,15 @@ nonisolated extension InterfaceScale {
         return (value * factor * 2).rounded() / 2
     }
 
-    /// Scales a font point size. Reduced sizes keep a 9 pt legibility floor.
+    /// Reduced text stays at least this large, unless it started smaller.
+    static let legibilityFloor: CGFloat = 9
+
+    /// Scales a font point size. Reduced sizes keep the legibility floor.
     static func fontSize(_ value: CGFloat) -> CGFloat {
         let factor = factor
         guard factor != 1 else { return value }
         let scaled = (value * factor * 2).rounded() / 2
-        return factor < 1 ? max(scaled, min(value, 9)) : scaled
+        return factor < 1 ? max(scaled, min(value, legibilityFloor)) : scaled
     }
 
     /// A scaled minimum length for window content that keeps the whole window,
@@ -210,13 +213,16 @@ extension View {
 
 nonisolated extension NSAttributedString {
     /// A copy with fonts and dimensional typography (paragraph metrics,
-    /// baseline offsets and kerning) resized by `ratio`.
-    func scalingTypography(by ratio: CGFloat) -> NSAttributedString {
+    /// baseline offsets and kerning) resized by `ratio`. Fonts reduced with
+    /// `keepingLegibility` stop at the legibility floor.
+    func scalingTypography(by ratio: CGFloat, keepingLegibility: Bool = false) -> NSAttributedString {
         guard ratio != 1, length > 0 else { return self }
         let scaled = NSMutableAttributedString(attributedString: self)
         enumerateAttributes(in: NSRange(location: 0, length: length)) { attributes, range, _ in
             if let font = attributes[.font] as? NSFont {
-                scaled.addAttribute(.font, value: font.withSize(font.pointSize * ratio), range: range)
+                let size = font.pointSize * ratio
+                let floor = keepingLegibility ? min(font.pointSize, InterfaceScale.legibilityFloor) : 0
+                scaled.addAttribute(.font, value: font.withSize(max(size, floor)), range: range)
             }
             if let style = attributes[.paragraphStyle] as? NSParagraphStyle {
                 scaled.addAttribute(.paragraphStyle, value: style.scaled(by: ratio), range: range)

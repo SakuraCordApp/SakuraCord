@@ -349,10 +349,13 @@ nonisolated enum NativeTimelineCoreText {
             .scalingTypography(by: baseFontSize / unscaledBaseFontSize)
     }
 
+    /// `bodyScale` shrinks every line but headings, and the mentions and
+    /// emoji in them; its source must use line feeds alone.
     static func make(
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
+        bodyScale: CGFloat = 1,
         mentionPresentations: [String: MentionPresentation],
         usesMessageLineHeight: Bool = false
     ) -> NSAttributedString {
@@ -360,7 +363,8 @@ nonisolated enum NativeTimelineCoreText {
             prepared.isEmojiOnly
                 ? emojiSize
                 : baseFontSize ?? InterfaceScale.fontSize(15)
-        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize)
+        let bodyScale = prepared.isEmojiOnly ? 1 : bodyScale
+        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize * bodyScale)
         let output = NSMutableAttributedString(
             attributedString: scaledMarkdown(
                 prepared.markdownPlan,
@@ -368,6 +372,24 @@ nonisolated enum NativeTimelineCoreText {
                 usesMessageLineHeight: usesMessageLineHeight && !prepared.isEmojiOnly
             )
         )
+        if bodyScale != 1 {
+            var location = 0
+            // The markdown output joins its plan's lines with line feeds,
+            // which pair up when the source has no carriage returns.
+            let texts = output.string.split(separator: "\n", omittingEmptySubsequences: false)
+            for (line, text) in zip(prepared.markdownPlan.lines, texts) {
+                let range = NSRange(
+                    location: location,
+                    length: min(text.utf16.count + 1, output.length - location)
+                )
+                location = NSMaxRange(range)
+                guard !line.isHeading else { continue }
+                output.replaceCharacters(
+                    in: range,
+                    with: output.attributedSubstring(from: range).scalingTypography(by: bodyScale, keepingLegibility: true)
+                )
+            }
+        }
         let fullRange = NSRange(location: 0, length: output.length)
         let placeholderRanges = ranges(of: "\u{FFFC}", in: output.string)
         for (range, token) in zip(
