@@ -54,8 +54,12 @@ struct MediaViewerAudio: View {
         .onReceive(NotificationCenter.default.publisher(for: VoiceMessagePlaybackStore.didChange, object: playback)) { _ in
             revision += 1
         }
-        // Leaving the file pauses it where it is.
-        .onDisappear { if isPlaying { playback.toggle(playbackID, source: source, duration: duration) } }
+        // Leaving the file pauses it where it is, or stops it starting.
+        .onDisappear {
+            if playback.phase(of: playbackID) != .paused, playback.isActive(playbackID) {
+                playback.toggle(playbackID, source: source, duration: duration)
+            }
+        }
     }
 
     private var transport: some View {
@@ -181,7 +185,7 @@ private struct MediaViewerAudioSeekBar: View {
                     .scaleEffect(isActive ? 1 : 0.3)
                     .opacity(isActive ? 1 : 0)
             }
-            .overlay(alignment: .topLeading) {
+            .overlay {
                 if let pointer = scrubFraction.map({ $0 * width }) ?? hoverX, duration > 0 {
                     Text(Self.time(Double(pointer / max(width, 1)) * duration))
                         .font(.interface(.caption).monospacedDigit().weight(.semibold))
@@ -190,8 +194,7 @@ private struct MediaViewerAudioSeekBar: View {
                         .padding(.vertical, InterfaceScale.metric(3))
                         .background(SakuraCordAccentColor.color, in: Capsule())
                         .fixedSize()
-                        .alignmentGuide(.leading) { $0.width / 2 - pointer }
-                        .offset(y: -InterfaceScale.metric(30))
+                        .position(x: pointer, y: -InterfaceScale.metric(16))
                         .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .bottom)))
                         .allowsHitTesting(false)
                 }

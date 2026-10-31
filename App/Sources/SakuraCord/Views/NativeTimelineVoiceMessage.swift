@@ -316,6 +316,18 @@ enum NativeTimelineVoiceMessagePainter {
         }
     }
 
+    /// Play's triangle split down the middle, and pause's two bars, in a
+    /// 32-unit button around its centre; corner for corner, so either morphs
+    /// into the other.
+    private static let playGlyph: [[CGPoint]] = [
+        [CGPoint(x: -4.5, y: -7), CGPoint(x: 1.5, y: -3.5), CGPoint(x: 1.5, y: 3.5), CGPoint(x: -4.5, y: 7)],
+        [CGPoint(x: 1.5, y: -3.5), CGPoint(x: 7.5, y: 0), CGPoint(x: 7.5, y: 0), CGPoint(x: 1.5, y: 3.5)],
+    ]
+    private static let pauseGlyph: [[CGPoint]] = [-4.0, 4.0].map { offset in
+        [CGPoint(x: offset - 1.15, y: -5.9), CGPoint(x: offset + 1.15, y: -5.9),
+         CGPoint(x: offset + 1.15, y: 5.9), CGPoint(x: offset - 1.15, y: 5.9)]
+    }
+
     static func drawPlayButton(
         _ region: NativeTimelineVoiceMessageRegion,
         state: NativeTimelineVoiceMessageDrawState,
@@ -334,26 +346,15 @@ enum NativeTimelineVoiceMessagePainter {
             // keeps moving while the main thread is busy starting playback.
             return
         }
-        // Play's triangle, split down the middle, and pause's two bars share
-        // their corners, so either glyph morphs into the other.
         let pause = state.pauseMorph ?? (state.isPlaying ? 1 : 0)
-        let play: [[CGPoint]] = [
-            [CGPoint(x: -4.5, y: -7), CGPoint(x: 1.5, y: -3.5), CGPoint(x: 1.5, y: 3.5), CGPoint(x: -4.5, y: 7)],
-            [CGPoint(x: 1.5, y: -3.5), CGPoint(x: 7.5, y: 0), CGPoint(x: 7.5, y: 0), CGPoint(x: 1.5, y: 3.5)],
-        ]
-        let bars: [[CGPoint]] = [-4.0, 4.0].map { offset in
-            [CGPoint(x: offset - 1.15, y: -5.9), CGPoint(x: offset + 1.15, y: -5.9),
-             CGPoint(x: offset + 1.15, y: 5.9), CGPoint(x: offset - 1.15, y: 5.9)]
-        }
         let path = CGMutablePath()
-        for (from, to) in zip(play, bars) {
-            let points = zip(from, to).map { start, end in
+        for (from, to) in zip(Self.playGlyph, Self.pauseGlyph) {
+            path.addLines(between: zip(from, to).map { start, end in
                 CGPoint(
                     x: frame.midX + (start.x + (end.x - start.x) * pause) * unit,
                     y: frame.midY + (start.y + (end.y - start.y) * pause) * unit
                 )
-            }
-            path.addLines(between: points)
+            })
             path.closeSubpath()
         }
         context.addPath(path)

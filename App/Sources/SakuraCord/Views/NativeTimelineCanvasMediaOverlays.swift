@@ -504,7 +504,8 @@ extension NativeTimelineCanvasView {
                 ),
                 frame: image.frame,
                 cornerRadius: image.cornerRadius,
-                isLooping: false
+                isLooping: false,
+                fillsFrame: true
             )
         }
         for media in component.media
@@ -514,8 +515,9 @@ extension NativeTimelineCanvasView {
                 role: .componentMedia(componentIndex, media.componentID),
                 media: .media(media.displayURL),
                 frame: media.frame,
-                cornerRadius: InterfaceScale.metric(8),
-                isLooping: true
+                cornerRadius: DiscordRichMessageMetrics.px(8),
+                isLooping: true,
+                fillsFrame: true
             )
         }
     }
