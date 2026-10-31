@@ -862,13 +862,14 @@ extension NativeTimelineCanvasView {
             playback.toggle(region.playbackID, source: region.source, duration: region.knownDuration(in: playback))
             return true
         }
-        element.setAccessibilityCustomActions([
-            NSAccessibilityCustomAction(name: isAudioFile ? "Mute or Unmute" : "Change Playback Speed") { [weak self] in
+        let speed = isAudioFile ? [] : [
+            NSAccessibilityCustomAction(name: "Change Playback Speed") { [weak self] in
                 guard let playback = self?.model?.voiceMessagePlayback else { return false }
-                if isAudioFile { playback.toggleAudioFileMute() } else { playback.cycleSpeed() }
+                playback.cycleSpeed()
                 return true
             },
-        ] + [-10.0, 10.0].map { offset in
+        ]
+        element.setAccessibilityCustomActions(speed + [-10.0, 10.0].map { offset in
             NSAccessibilityCustomAction(name: offset < 0 ? "Skip Back 10 Seconds" : "Skip Forward 10 Seconds") { [weak self] in
                 guard let playback = self?.model?.voiceMessagePlayback else { return false }
                 let duration = playback.duration(of: region.playbackID) ?? region.knownDuration(in: playback) ?? 0

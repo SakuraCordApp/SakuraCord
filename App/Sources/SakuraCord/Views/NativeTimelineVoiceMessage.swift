@@ -103,56 +103,27 @@ struct NativeTimelineVoiceMessageRegion {
         )
     }
 
-    /// An audio file card's player: its badge plays, and the seek row under
-    /// it holds the elapsed time, seek bar, remaining time, and mute, with
-    /// the times and bar in `waveformFrame` and mute in `speedFrame`.
+    /// An audio file card's mini player: a play glyph under the card's
+    /// icon, then Discord's seek bar from the name's edge to the download
+    /// button's, in `waveformFrame`. It has no times or controls beyond those.
     static func audioFile(in card: NativeTimelineFileCard, messageID: MessageID, surface: Style) -> Self {
         let row = card.playerRowFrame
-        let mute = InterfaceScale.metric(24)
-        let muteFrame = CGRect(
-            x: card.buttonFrame.midX - mute / 2, y: row.midY - mute / 2, width: mute, height: mute
-        )
-        let duration = card.attachment.durationSeconds ?? 0
-        let span = CGRect(
-            x: row.minX, y: row.minY, width: max(1, muteFrame.minX - InterfaceScale.metric(8) - row.minX), height: row.height
-        )
+        let side = row.height
+        let playFrame = CGRect(x: card.iconFrame.midX - side / 2, y: row.minY, width: side, height: side)
+        let barX = card.nameFrame.minX
         return Self(
-            frame: card.playFrame.union(row),
-            playFrame: card.playFrame,
-            waveformFrame: span,
-            timeFrame: CGRect(x: span.minX, y: span.minY, width: audioFileTimeWidth(duration), height: span.height),
-            speedFrame: muteFrame,
+            // Wide enough for the grabber at either end of the bar.
+            frame: row.insetBy(dx: -DiscordRichMessageMetrics.px(10) / 2, dy: 0),
+            playFrame: playFrame,
+            waveformFrame: CGRect(x: barX, y: row.minY, width: max(1, row.maxX - barX), height: row.height),
+            timeFrame: .null,
+            speedFrame: .null,
             messageID: messageID,
             attachment: card.attachment,
-            duration: duration,
+            duration: card.attachment.durationSeconds ?? 0,
             bars: [],
             style: .audioFile,
             surface: surface
-        )
-    }
-
-    /// The width of an audio file's elapsed and remaining times, which fit
-    /// "-" and its length. Only a few lengths' digit counts occur, so
-    /// drawing frames measure from a cache.
-    private static func audioFileTimeWidth(_ duration: TimeInterval) -> CGFloat {
-        let length = VoiceMessageDurationFormat.string(duration)
-        let font = NativeTimelineVoiceMessagePainter.timeFont
-        let key = "\(font.pointSize)|\(length)"
-        if let width = audioFileTimeWidths[key] { return width }
-        let width = ceil(("-" + length as NSString).size(withAttributes: [.font: font]).width)
-        audioFileTimeWidths[key] = width
-        return width
-    }
-
-    private static var audioFileTimeWidths: [String: CGFloat] = [:]
-
-    /// An audio file's seek bar, between its times, which a length learned
-    /// after layout can widen.
-    func seekBarFrame(for duration: TimeInterval?) -> CGRect {
-        let inset = Self.audioFileTimeWidth(duration ?? 0) + InterfaceScale.metric(10)
-        return CGRect(
-            x: waveformFrame.minX + inset, y: waveformFrame.minY,
-            width: max(1, waveformFrame.width - inset * 2), height: waveformFrame.height
         )
     }
 
@@ -182,14 +153,12 @@ struct NativeTimelineVoiceMessageRegion {
 /// What resting players in cached rows show beyond their own message.
 struct VoiceMessageRestingPresentation: Equatable {
     var speed: Float = 1
-    var isAudioFileMuted = false
     var knownDurationsRevision = 0
 
     init() {}
 
     init(_ playback: VoiceMessagePlaybackStore) {
         speed = playback.speed
-        isAudioFileMuted = playback.isAudioFileMuted
         knownDurationsRevision = playback.knownDurationsRevision
     }
 }
@@ -211,17 +180,27 @@ struct NativeTimelineVoiceMessageDrawState {
     /// Reduce Motion keeps progress moving but stills the waveform ripple.
     var reducesMotion = false
     var isPlayHovered = false
-    /// How far the play button's hover has eased in, while it eases.
-    var playHover: CGFloat?
+    var isPlayPressed = false
     var isSpeedHovered = false
     /// An audio file's length, once known.
     var duration: TimeInterval?
     /// Where the pointer rests on an audio file's seek bar.
     var hoverFraction: CGFloat?
-    var isMuted = false
-    /// The row already draws this resting audio file, so its hover overlay
+    /// How far the play control's hover and press, and an audio file's
+    /// grabber, have eased in, while they animate.
+    var playHover: CGFloat?
+    var playPress: CGFloat?
+    var grabberScale: CGFloat?
+    /// The row already draws this resting player, so its hover overlay
     /// adds only what the pointer changes.
     var isResting = false
+
+    /// Where the pause morph, the play control's hover and press, and an
+    /// audio file's grabber settle.
+    var pauseTarget: CGFloat { isPlaying ? 1 : 0 }
+    var playHoverTarget: CGFloat { isPlayHovered ? 1 : 0 }
+    var playPressTarget: CGFloat { isPlayPressed ? 1 : 0 }
+    var grabberTarget: CGFloat { hoverFraction == nil ? 0 : 1 }
 }
 
 enum NativeTimelineVoiceMessagePainter {
@@ -229,7 +208,6 @@ enum NativeTimelineVoiceMessagePainter {
         let factor: CGFloat
         let time: NSFont
         let speed: NSFont
-        let bubble: NSFont
     }
 
     private static var fonts: Fonts?
@@ -240,8 +218,7 @@ enum NativeTimelineVoiceMessagePainter {
         let created = Fonts(
             factor: InterfaceScale.factor,
             time: .interfaceMonospacedDigitSystemFont(ofSize: 12, weight: .medium),
-            speed: .interfaceSystemFont(ofSize: 11, weight: .semibold),
-            bubble: .interfaceSystemFont(ofSize: 12, weight: .semibold)
+            speed: .interfaceSystemFont(ofSize: 11, weight: .semibold)
         )
         fonts = created
         return created
@@ -249,7 +226,6 @@ enum NativeTimelineVoiceMessagePainter {
 
     static var timeFont: NSFont { scaledFonts.time }
     static var speedFont: NSFont { scaledFonts.speed }
-    static var audioFileBubbleFont: NSFont { scaledFonts.bubble }
 
     /// The capsule behind a plain-style player. Bubble styles draw on the bubble.
     static func drawBackground(_ region: NativeTimelineVoiceMessageRegion) {
@@ -268,15 +244,20 @@ enum NativeTimelineVoiceMessagePainter {
             drawAudioFilePlayer(region, state: state, palette: Palette(style: region.paletteStyle), context: context)
             return
         }
+        // A hover overlay above a resting player adds only its play button,
+        // which at rest is the row's own.
+        guard !state.isResting || playButtonScale(state) != 1 else { return }
         let palette = Palette(style: region.style)
         drawPlayButton(region, state: state, palette: palette, context: context)
+        if state.isResting { return }
         drawBars(region, state: state, palette: palette, context: context)
         drawTime(region, state: state, palette: palette)
         drawSpeed(region, state: state, palette: palette)
     }
 
-    static func spinnerColor(for style: NativeTimelineVoiceMessageRegion.Style) -> NSColor {
-        Palette(style: style).glyph
+    static func spinnerColor(for region: NativeTimelineVoiceMessageRegion) -> NSColor {
+        let palette = Palette(style: region.paletteStyle)
+        return region.style == .audioFile ? palette.symbol : palette.glyph
     }
 
     struct Palette {
@@ -288,8 +269,8 @@ enum NativeTimelineVoiceMessagePainter {
         let chipFill: NSColor
         let chipHoverFill: NSColor
         let chipText: NSColor
-        /// The mute toggle's glyph, matching the file card's download chip.
-        let chipSymbol: NSColor
+        /// An audio file's play glyph, which has no button behind it.
+        let symbol: NSColor
 
         init(style: NativeTimelineVoiceMessageRegion.Style) {
             let accent = NSColor.sakuraCordAccentColor
@@ -303,7 +284,7 @@ enum NativeTimelineVoiceMessagePainter {
                 chipFill = NSColor.white.withAlphaComponent(0.2)
                 chipHoverFill = NSColor.white.withAlphaComponent(0.32)
                 chipText = .white
-                chipSymbol = .white
+                symbol = .white
             case .plain, .incomingBubble, .audioFile:
                 buttonFill = accent
                 glyph = .white
@@ -313,7 +294,7 @@ enum NativeTimelineVoiceMessagePainter {
                 chipFill = NSColor.labelColor.withAlphaComponent(0.09)
                 chipHoverFill = NSColor.labelColor.withAlphaComponent(0.16)
                 chipText = .secondaryLabelColor
-                chipSymbol = .labelColor
+                symbol = .labelColor
             }
         }
     }
@@ -337,34 +318,59 @@ enum NativeTimelineVoiceMessagePainter {
         context: CGContext
     ) {
         let frame = region.playFrame
-        let scale = 1 + 0.06 * (state.playHover ?? (state.isPlayHovered ? 1 : 0))
-        let button = frame.insetBy(dx: frame.width * (1 - scale) / 2, dy: frame.height * (1 - scale) / 2)
-        context.setFillColor(palette.buttonFill.cgColor)
-        context.fillEllipse(in: button)
-        context.setFillColor(palette.glyph.cgColor)
-        let unit = frame.width / 32
-        if state.isLoading {
+        NativeTimelineRowPainter.drawingRoundButton(frame, scale: playButtonScale(state)) {
+            context.setFillColor(palette.buttonFill.cgColor)
+            context.fillEllipse(in: frame)
             // The overlay's spinner layer turns on the render server, so it
             // keeps moving while the main thread is busy starting playback.
-            return
+            guard !state.isLoading else { return }
+            drawPlayGlyph(
+                at: CGPoint(x: frame.midX, y: frame.midY), unit: frame.width / 32,
+                pause: state.pauseMorph ?? state.pauseTarget, color: palette.glyph, context: context
+            )
         }
-        let pause = state.pauseMorph ?? (state.isPlaying ? 1 : 0)
+    }
+
+    /// The round buttons' shared hover and press, eased by the overlay; an
+    /// audio file's bare glyph grows more.
+    static func playButtonScale(_ state: NativeTimelineVoiceMessageDrawState, growth: CGFloat = 0.06) -> CGFloat {
+        NativeTimelineComponentButtonVisualState.roundButtonScale(
+            hover: state.playHover ?? state.playHoverTarget, press: state.playPress ?? state.playPressTarget, growth: growth
+        )
+    }
+
+    /// The play glyph morphing into pause by `pause`, at `unit` points per
+    /// glyph unit around `center`.
+    static func drawPlayGlyph(at center: CGPoint, unit: CGFloat, pause: CGFloat, color: NSColor, context: CGContext) {
         let path = CGMutablePath()
         for (from, to) in zip(Self.playGlyph, Self.pauseGlyph) {
             path.addLines(between: zip(from, to).map { start, end in
                 CGPoint(
-                    x: frame.midX + (start.x + (end.x - start.x) * pause) * unit,
-                    y: frame.midY + (start.y + (end.y - start.y) * pause) * unit
+                    x: center.x + (start.x + (end.x - start.x) * pause) * unit,
+                    y: center.y + (start.y + (end.y - start.y) * pause) * unit
                 )
             })
             path.closeSubpath()
+        }
+        // A translucent colour applies to the glyph as a whole, so its
+        // stroke doesn't darken where it overlaps the fill.
+        let resolved = color.cgColor
+        let isTranslucent = resolved.alpha < 1
+        let opaque = resolved.copy(alpha: 1) ?? resolved
+        context.saveGState()
+        if isTranslucent {
+            context.setAlpha(resolved.alpha)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
         }
         context.addPath(path)
         context.setLineJoin(.round)
         // Pause's rounding comes from a thinner stroke than play's.
         context.setLineWidth((2 - 0.8 * pause) * unit)
-        context.setStrokeColor(palette.glyph.cgColor)
+        context.setFillColor(opaque)
+        context.setStrokeColor(opaque)
         context.drawPath(using: .fillStroke)
+        if isTranslucent { context.endTransparencyLayer() }
+        context.restoreGState()
     }
 
     private static func drawBars(
@@ -441,7 +447,6 @@ enum NativeTimelineVoiceMessagePainter {
         var state = NativeTimelineVoiceMessageDrawState(displayedTime: region.duration, speedLabel: playback?.speedLabel ?? "1×")
         if region.style == .audioFile {
             state.duration = region.knownDuration(in: playback)
-            state.isMuted = playback?.isAudioFileMuted == true
             // An audio file left partway shows where it will resume.
             if let duration = state.duration, duration > 0, let position = playback?.position(of: region.playbackID) {
                 state.progress = CGFloat(min(max(position / duration, 0), 1))
@@ -501,56 +506,61 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         didSet {
             needsDisplay = true
             if state.isLoading != oldValue.isLoading { updateSpinner() }
-            if state.isPlaying != oldValue.isPlaying, !state.reducesMotion {
-                pauseMorph = (from: pauseAmount(at: ProcessInfo.processInfo.systemUptime, isPlaying: oldValue.isPlaying),
-                              start: ProcessInfo.processInfo.systemUptime)
-            }
-            if state.isPlayHovered != oldValue.isPlayHovered, !state.reducesMotion {
-                let now = ProcessInfo.processInfo.systemUptime
-                let current = playHoverFade?.progress(at: now) ?? (oldValue.isPlayHovered ? 1 : 0)
-                playHoverFade = .init(from: current, to: state.isPlayHovered ? 1 : 0, start: now)
-                // A hover change can reach an idle overlay, whose display link is off.
-                updateAnimation()
-            }
+            if state.hoverFraction != nil { lastHoverFraction = state.hoverFraction }
+            transition(from: oldValue)
         }
     }
 
-    /// The play button's hover easing in or out, as file card buttons' do.
-    private var playHoverFade: NativeTimelineHoverFade?
-    /// Removes a hover overlay once its play button has eased back.
-    private var removalAfterHover: (() -> Void)?
+    /// A value easing from where it was toward a new target: out, or in
+    /// and out as Discord's grabber does.
+    private struct Transition {
+        let from: CGFloat
+        let to: CGFloat
+        let start: TimeInterval
+        let duration: TimeInterval
+        let easesInOut: Bool
 
-    /// Eases the hovered play button back before the overlay goes; false
-    /// when there is nothing to ease.
-    func easeOutHover(then remove: @escaping () -> Void) -> Bool {
-        guard state.isPlayHovered || playHoverFade != nil, !state.reducesMotion else { return false }
-        var resting = state
-        resting.isPlayHovered = false
-        resting.isSpeedHovered = false
-        resting.hoverFraction = nil
-        state = resting
-        removalAfterHover = remove
+        func value(at time: TimeInterval) -> CGFloat {
+            let elapsed = min(max((time - start) / duration, 0), 1)
+            let eased = easesInOut
+                ? (elapsed < 0.5 ? 4 * pow(elapsed, 3) : 1 - pow(2 - 2 * elapsed, 3) / 2)
+                : NativeTimelineComponentButtonVisualState.easeOut(elapsed)
+            return from + (to - from) * eased
+        }
+    }
+
+    /// Play turning into pause, the play control's hover and press, and an
+    /// audio file's grabber appearing on the seek bar.
+    private var pauseMorph: Transition?
+    private var playHover: Transition?
+    private var playPress: Transition?
+    private var grabber: Transition?
+    /// Where the pointer last was on the seek bar, so the hover preview
+    /// fades out where it was.
+    private var lastHoverFraction: CGFloat?
+    /// Easing back to rest before it goes, deaf to the live state.
+    private(set) var isDeparting = false
+
+    private var isTransitioning: Bool { pauseMorph != nil || playHover != nil || playPress != nil || grabber != nil }
+
+    /// Eases toward the state's targets from wherever each value is now.
+    private func transition(from old: NativeTimelineVoiceMessageDrawState) {
+        guard !state.reducesMotion else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        func retarget(
+            _ transition: inout Transition?, _ target: KeyPath<NativeTimelineVoiceMessageDrawState, CGFloat>,
+            duration: TimeInterval, easesInOut: Bool = false
+        ) {
+            let to = state[keyPath: target]
+            let from = transition?.value(at: now) ?? old[keyPath: target]
+            guard to != (transition?.to ?? old[keyPath: target]) else { return }
+            transition = Transition(from: from, to: to, start: now, duration: duration, easesInOut: easesInOut)
+        }
+        retarget(&pauseMorph, \.pauseTarget, duration: 0.2)
+        retarget(&playHover, \.playHoverTarget, duration: NativeTimelineComponentButtonVisualState.hoverAnimationDuration)
+        retarget(&playPress, \.playPressTarget, duration: NativeTimelineComponentButtonVisualState.pressAnimationDuration)
+        retarget(&grabber, \.grabberTarget, duration: 0.25, easesInOut: true)
         updateAnimation()
-        return true
-    }
-
-    /// Keeps the overlay when the pointer returns while it eases out.
-    func cancelHoverEaseOut() {
-        removalAfterHover = nil
-    }
-
-    /// Play and pause morph into each other over this long.
-    private static let morphDuration: TimeInterval = 0.2
-    /// Where a play and pause morph started, and when.
-    private var pauseMorph: (from: CGFloat, start: TimeInterval)?
-
-    /// How far the glyph is from play to pause.
-    private func pauseAmount(at time: TimeInterval, isPlaying: Bool) -> CGFloat {
-        let target: CGFloat = isPlaying ? 1 : 0
-        guard let pauseMorph else { return target }
-        let elapsed = min(max((time - pauseMorph.start) / Self.morphDuration, 0), 1)
-        let eased = 1 - pow(1 - elapsed, 3)
-        return pauseMorph.from + (target - pauseMorph.from) * eased
     }
 
     private let spinner = CAShapeLayer()
@@ -566,7 +576,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     init(region: NativeTimelineVoiceMessageRegion, state: NativeTimelineVoiceMessageDrawState) {
         self.region = region
         self.state = state
-        super.init(frame: region.frame)
+        super.init(frame: Self.frame(of: region))
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         spinner.fillColor = nil
@@ -575,17 +585,21 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         layer?.addSublayer(spinner)
         layoutSpinner()
         updateSpinner()
-        // An overlay made for a hovered play button eases its hover in too.
-        if state.isPlayHovered, !state.reducesMotion {
-            playHoverFade = .init(from: 0, to: 1, start: ProcessInfo.processInfo.systemUptime)
-        }
+        // An overlay placed for the pointer eases in from the resting row.
+        var resting = state
+        resting.isPlayHovered = false
+        resting.isPlayPressed = false
+        resting.hoverFraction = nil
+        lastHoverFraction = state.hoverFraction
+        transition(from: resting)
     }
 
     private func layoutSpinner() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        let button = region.playFrame.offsetBy(dx: -region.frame.minX, dy: -region.frame.minY)
+        let origin = Self.frame(of: region).origin
+        let button = region.playFrame.offsetBy(dx: -origin.x, dy: -origin.y)
         let unit = button.width / 32
         spinner.frame = button
         spinner.path = CGPath(
@@ -594,7 +608,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         )
         spinner.lineWidth = 2.4 * unit
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            spinner.strokeColor = NativeTimelineVoiceMessagePainter.spinnerColor(for: region.paletteStyle).cgColor
+            spinner.strokeColor = NativeTimelineVoiceMessagePainter.spinnerColor(for: region).cgColor
         }
     }
 
@@ -629,6 +643,12 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    /// Where an overlay draws: its player, with room for a play button
+    /// grown under the pointer.
+    static func frame(of region: NativeTimelineVoiceMessageRegion) -> CGRect {
+        region.frame.insetBy(dx: -InterfaceScale.metric(4), dy: -InterfaceScale.metric(4))
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateAnimation()
@@ -636,8 +656,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     /// Runs a display link only while something moves.
     func updateAnimation() {
-        let animates = window != nil
-            && (state.isPlaying || state.isLoading || state.isFetching || pauseMorph != nil || playHoverFade != nil)
+        let animates = window != nil && (state.isPlaying || state.isLoading || state.isFetching || isTransitioning)
         if animates, ticker.displayLink == nil {
             ticker.start(on: self) { [weak self] in self?.tick() }
         } else if !animates, ticker.displayLink != nil {
@@ -646,19 +665,25 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     }
 
     private func tick() {
-        guard var next = refresh?() else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        next.clock = now - clockOrigin
-        state = next
-        if let pauseMorph, now - pauseMorph.start >= Self.morphDuration {
-            self.pauseMorph = nil
-            updateAnimation()
+        if !isDeparting, var next = refresh?() {
+            next.clock = now - clockOrigin
+            state = next
+        } else {
+            needsDisplay = true
         }
-        if let playHoverFade, playHoverFade.isSettled(at: now) {
-            self.playHoverFade = nil
-            updateAnimation()
-            removalAfterHover?()
-            removalAfterHover = nil
+        func settle(_ transition: inout Transition?) {
+            if let current = transition, now - current.start >= current.duration { transition = nil }
+        }
+        settle(&pauseMorph)
+        settle(&playHover)
+        settle(&playPress)
+        settle(&grabber)
+        guard !isTransitioning else { return }
+        updateAnimation()
+        if isDeparting {
+            stop()
+            removeFromSuperview()
         }
     }
 
@@ -666,16 +691,41 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         ticker.stop()
     }
 
+    /// Eases a resting player's hover back to its row, then removes the
+    /// overlay; anything else goes at once.
+    func dismiss() {
+        let eases = state.isResting && window != nil
+        if eases {
+            state.isPlayHovered = false
+            state.isPlayPressed = false
+            state.hoverFraction = nil
+        }
+        guard eases, isTransitioning else {
+            stop()
+            removeFromSuperview()
+            return
+        }
+        isDeparting = true
+    }
+
+    /// Keeps a departing overlay for a pointer that returns before it goes.
+    func cancelDismissal() {
+        isDeparting = false
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
-        // The overlay's bounds are the region's frame.
-        context.translateBy(x: -region.frame.minX, y: -region.frame.minY)
+        // The overlay's bounds are its frame around the region.
+        let origin = Self.frame(of: region).origin
+        context.translateBy(x: -origin.x, y: -origin.y)
+        let now = ProcessInfo.processInfo.systemUptime
         var state = state
-        if pauseMorph != nil {
-            state.pauseMorph = pauseAmount(at: ProcessInfo.processInfo.systemUptime, isPlaying: state.isPlaying)
-        }
-        state.playHover = playHoverFade?.progress(at: ProcessInfo.processInfo.systemUptime)
+        state.pauseMorph = pauseMorph?.value(at: now)
+        state.playHover = playHover?.value(at: now)
+        state.playPress = playPress?.value(at: now)
+        state.grabberScale = grabber?.value(at: now)
+        if grabber != nil { state.hoverFraction = state.hoverFraction ?? lastHoverFraction }
         NativeTimelineVoiceMessagePainter.drawContent(region, state: state)
         context.restoreGState()
     }
@@ -686,6 +736,9 @@ extension NativeTimelineCanvasView {
         case play
         case waveform
         case speed
+        /// An audio card's player row between its controls, which belongs
+        /// to the player rather than previewing the file, and does nothing.
+        case gap
     }
 
     struct VoiceMessagePointerHit {
@@ -712,18 +765,15 @@ extension NativeTimelineCanvasView {
         let local = CGPoint(x: point.x, y: point.y - origin)
         for region in layouts[index].audioPlayers where region.frame.contains(local) && !isConcealedSpoiler(region.attachment, in: region.messageID) {
             let slop: CGFloat = region.style == .audioFile ? 0 : 1
-            // An audio file's bar starts after its time label, which a length
-            // learned after layout can widen.
-            let seekFrame = region.style == .audioFile
-                ? region.seekBarFrame(for: region.knownDuration(in: model?.voiceMessagePlayback))
-                : region.waveformFrame
             let control: VoiceMessageControl
             if region.playFrame.insetBy(dx: -4 * slop, dy: -4 * slop).contains(local) {
                 control = .play
             } else if region.speedFrame.insetBy(dx: -3 * slop, dy: -6 * slop).contains(local) {
                 control = .speed
-            } else if seekFrame.insetBy(dx: -4 * slop, dy: -6 * slop).contains(local) {
+            } else if region.waveformFrame.insetBy(dx: -4 * slop, dy: -6 * slop).contains(local) {
                 control = .waveform
+            } else if region.style == .audioFile {
+                control = .gap
             } else {
                 continue
             }
@@ -754,15 +804,21 @@ extension NativeTimelineCanvasView {
         if hit.control == .waveform {
             playback.beginScrub(hit.region.playbackID, source: hit.region.source, duration: hit.region.knownDuration(in: playback))
             scrubVoiceMessage(hit, to: point)
+        } else if hit.control == .play {
+            refreshVoiceMessageOverlay()
         }
         return true
     }
 
     func dragVoiceMessagePress(to point: CGPoint) -> Bool {
         guard let press = voiceMessagePress else { return false }
-        guard press.control == .waveform else { return true }
-        // A drag sends no mouse moves, so an audio file's time capsule
-        // follows the scrub here instead of staying where it was pressed.
+        // A drag sends no mouse moves, so a pressed play button learns here
+        // that the pointer left it.
+        guard press.control == .waveform else {
+            updateVoiceMessageHover(at: point, measuresDuration: false)
+            return true
+        }
+        // An audio file's grabber and wash follow the scrub here too.
         if hoveredVoiceMessage?.playbackID == press.region.playbackID, hoveredVoiceMessage?.pointerX != nil {
             hoveredVoiceMessage?.pointerX = point.x
             refreshVoiceMessageOverlay()
@@ -784,9 +840,12 @@ extension NativeTimelineCanvasView {
             if press.isReleased(on: released) {
                 playback.toggle(press.region.playbackID, source: press.region.source, duration: press.region.knownDuration(in: playback))
             }
+            updateVoiceMessageHover(at: point, measuresDuration: false)
+            refreshVoiceMessageOverlay()
         case .speed:
-            guard press.isReleased(on: released) else { break }
-            if press.region.style == .audioFile { playback.toggleAudioFileMute() } else { playback.cycleSpeed() }
+            if press.isReleased(on: released) { playback.cycleSpeed() }
+        case .gap:
+            break
         }
         return true
     }
@@ -797,9 +856,7 @@ extension NativeTimelineCanvasView {
         guard let playback = model?.voiceMessagePlayback,
               region.style != .audioFile || region.knownDuration(in: playback) != nil
         else { return }
-        let frame = region.style == .audioFile
-            ? region.seekBarFrame(for: playback.duration(of: region.playbackID) ?? region.knownDuration(in: playback))
-            : region.waveformFrame
+        let frame = region.waveformFrame
         let fraction = (point.x - frame.minX) / max(frame.width, 1)
         playback.seek(press.region.playbackID, source: press.region.source,
                       duration: press.region.knownDuration(in: playback), fraction: Double(fraction))
@@ -820,10 +877,9 @@ extension NativeTimelineCanvasView {
             model?.voiceMessagePlayback.measureDuration(of: player.source)
         }
         guard hovered != hoveredVoiceMessage else { return }
-        // Moving along a seek bar only redraws; reaching or leaving an audio
-        // file places or removes its hover overlay.
+        // Moving within a player only redraws; reaching or leaving one
+        // places or removes its hover overlay.
         let reconciles = hovered?.playbackID != hoveredVoiceMessage?.playbackID
-            && (hovered?.playbackID.isAudioFile == true || hoveredVoiceMessage?.playbackID.isAudioFile == true)
         hoveredVoiceMessage = hovered
         if reconciles { reconcileVoiceMessageOverlay() } else { refreshVoiceMessageOverlay() }
     }
@@ -856,8 +912,8 @@ extension NativeTimelineCanvasView {
             // Row bitmaps omit the active player's content; repaint both rows.
             invalidateVoiceMessageBitmaps(playbackIDs: Set([previous, playback.activeID].compactMap { $0 }))
         }
-        // Cached rows hold the speed label, mute state, and learned lengths
-        // too, including other conversations.
+        // Cached rows hold the speed label and learned lengths too,
+        // including other conversations.
         let resting = VoiceMessageRestingPresentation(playback)
         if resting != voiceMessageResting {
             voiceMessageResting = resting
@@ -899,25 +955,19 @@ extension NativeTimelineCanvasView {
     }
 
     /// Shows the live overlay while the active voice message or audio file
-    /// is on screen, and a second over a hovered audio file's seek bar.
+    /// is on screen, and a second over a hovered resting player.
     func reconcileVoiceMessageOverlay() {
         // A timeline opened mid-playback has not seen a change notification yet.
         if let playback = model?.voiceMessagePlayback { voiceMessageActiveID = playback.activeID }
-        let hoveredAudioFile = hoveredVoiceMessage.flatMap { $0.playbackID.isAudioFile ? $0.playbackID : nil }
-        placeVoiceMessageOverlay(&voiceMessageOverlay, for: voiceMessageActiveID)
-        let hoverTarget = hoveredAudioFile == voiceMessageActiveID ? nil : hoveredAudioFile
-        // A hovered play button eases back before its overlay goes, and
-        // follows its row meanwhile.
-        if hoverTarget == nil, let overlay = voiceMessageHoverOverlay,
-           overlay.easeOutHover(then: { [weak self, weak overlay] in
-               guard let self, voiceMessageHoverOverlay === overlay else { return }
-               Self.remove(&voiceMessageHoverOverlay)
-           }) {
-            placeVoiceMessageOverlay(&voiceMessageHoverOverlay, for: overlay.region.playbackID)
-            return
+        let hovered = hoveredVoiceMessage?.playbackID
+        // A hovered player that starts keeps its overlay, so its play control
+        // and grabber carry on where they were.
+        if let activeID = voiceMessageActiveID, voiceMessageHoverOverlay?.region.playbackID == activeID {
+            Self.remove(&voiceMessageOverlay)
+            swap(&voiceMessageOverlay, &voiceMessageHoverOverlay)
         }
-        voiceMessageHoverOverlay?.cancelHoverEaseOut()
-        placeVoiceMessageOverlay(&voiceMessageHoverOverlay, for: hoverTarget)
+        placeVoiceMessageOverlay(&voiceMessageOverlay, for: voiceMessageActiveID)
+        placeVoiceMessageOverlay(&voiceMessageHoverOverlay, for: hovered == voiceMessageActiveID ? nil : hovered)
     }
 
     private func placeVoiceMessageOverlay(
@@ -935,15 +985,19 @@ extension NativeTimelineCanvasView {
             }
         }
         guard let found, let playback = model?.voiceMessagePlayback else {
-            Self.remove(&overlay)
+            overlay?.dismiss()
+            overlay = nil
             return
         }
-        let frame = found.region.frame.offsetBy(dx: 0, dy: found.origin)
+        let frame = NativeTimelineVoiceMessageOverlay.frame(of: found.region).offsetBy(dx: 0, dy: found.origin)
         let state = voiceMessageDrawState(for: found.region, playback: playback)
-        // Another message's player starts fresh rather than finishing the
-        // last one's hover or play and pause animations.
+        // Another player eases its own overlay out rather than lending it,
+        // and takes back its own if the pointer left it a moment ago.
         if overlay?.region.playbackID != found.region.playbackID {
-            Self.remove(&overlay)
+            overlay?.dismiss()
+            overlay = subviews.lazy.compactMap { $0 as? NativeTimelineVoiceMessageOverlay }
+                .first { $0.isDeparting && $0.region.playbackID == found.region.playbackID }
+            overlay?.cancelDismissal()
         }
         if let overlay {
             overlay.region = found.region
@@ -1004,13 +1058,13 @@ extension NativeTimelineCanvasView {
             level: CGFloat(playback.outputLevel),
             reducesMotion: !AppMotionPolicy.animatesUncategorized,
             isPlayHovered: hover == .play,
-            isSpeedHovered: hover == .speed
+            isPlayPressed: voiceMessagePress?.region.playbackID == id && voiceMessagePress?.control == .play && hover == .play,
+            isSpeedHovered: hover == .speed,
+            isResting: !playback.isActive(id)
         )
         if region.style == .audioFile {
             state.duration = knownDuration
-            state.isMuted = playback.isAudioFileMuted
-            state.isResting = !playback.isActive(id)
-            let bar = region.seekBarFrame(for: state.duration)
+            let bar = region.waveformFrame
             state.hoverFraction = hovered?.pointerX.map { min(max(($0 - bar.minX) / max(bar.width, 1), 0), 1) }
         }
         return state

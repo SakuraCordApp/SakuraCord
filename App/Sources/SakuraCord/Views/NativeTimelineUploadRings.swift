@@ -12,8 +12,6 @@ extension NativeTimelineRowLayout {
         let frame: CGRect
         /// The image or video under the ring.
         let mediaFrame: CGRect?
-        /// An audio card's smaller chip, which rings in the accent colour.
-        var isAudio = false
         let isFailed: Bool
     }
 
@@ -28,14 +26,8 @@ extension NativeTimelineRowLayout {
         regions.map { region in
             let attachment = region.attachment
             guard attachment.mediaKind.isVisual else {
-                let card = NativeTimelineFileCard(
-                    frame: region.frame, attachment: attachment, isInBubble: isInBubble,
-                    isAudio: attachment.mediaKind == .audio
-                )
-                return UploadRing(
-                    attachmentID: attachment.id, frame: card.buttonFrame, mediaFrame: nil,
-                    isAudio: card.isAudio, isFailed: isFailed
-                )
+                let card = NativeTimelineFileCard(frame: region.frame, attachment: attachment, isInBubble: isInBubble)
+                return UploadRing(attachmentID: attachment.id, frame: card.buttonFrame, mediaFrame: nil, isFailed: isFailed)
             }
             let side = AttachmentUploadRing.diameter + InterfaceScale.metric(8)
             return UploadRing(
@@ -257,7 +249,7 @@ extension NativeTimelineCanvasView {
     /// colours invert in an outgoing bubble, as its download ring's do.
     static func uploadRingColor(_ ring: NativeTimelineRowLayout.UploadRing, isOutgoing: Bool) -> NSColor {
         guard ring.mediaFrame == nil else { return .white }
-        return ring.isAudio != isOutgoing ? .sakuraCordAccentColor : .white
+        return isOutgoing ? .sakuraCordAccentColor : .white
     }
 
     /// Retries a failed send, or cancels the file still uploading.

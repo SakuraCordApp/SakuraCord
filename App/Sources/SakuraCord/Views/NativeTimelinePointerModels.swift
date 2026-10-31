@@ -80,6 +80,12 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
         isHovered && isEnabled ? 0.14 : 0.07
     }
 
+    /// A round button, such as a file's download or a voice message's play
+    /// button, grows 6% under the pointer and returns to rest while pressed.
+    static func roundButtonScale(hover: CGFloat, press: CGFloat, growth: CGFloat = 0.06) -> CGFloat {
+        1 + growth * hover * (1 - press)
+    }
+
     static func easeOut(_ progress: CGFloat) -> CGFloat {
         let progress = min(max(progress, 0), 1)
         return 1 - pow(1 - progress, 3)
