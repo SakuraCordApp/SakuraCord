@@ -244,10 +244,10 @@ enum NativeTimelineVoiceMessagePainter {
             drawAudioFilePlayer(region, state: state, palette: Palette(style: region.paletteStyle), context: context)
             return
         }
-        let palette = Palette(style: region.style)
         // A hover overlay above a resting player adds only its play button,
         // which at rest is the row's own.
         guard !state.isResting || playButtonScale(state) != 1 else { return }
+        let palette = Palette(style: region.style)
         drawPlayButton(region, state: state, palette: palette, context: context)
         if state.isResting { return }
         drawBars(region, state: state, palette: palette, context: context)
@@ -331,10 +331,11 @@ enum NativeTimelineVoiceMessagePainter {
         }
     }
 
-    /// The round buttons' shared hover and press, eased by the overlay.
-    private static func playButtonScale(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat {
+    /// The round buttons' shared hover and press, eased by the overlay; an
+    /// audio file's bare glyph grows more.
+    static func playButtonScale(_ state: NativeTimelineVoiceMessageDrawState, growth: CGFloat = 0.06) -> CGFloat {
         NativeTimelineComponentButtonVisualState.roundButtonScale(
-            hover: state.playHover ?? state.playHoverTarget, press: state.playPress ?? state.playPressTarget
+            hover: state.playHover ?? state.playHoverTarget, press: state.playPress ?? state.playPressTarget, growth: growth
         )
     }
 
@@ -528,8 +529,8 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         }
     }
 
-    /// Play turning into pause, the play control's hover, and an audio
-    /// file's grabber appearing on the seek bar.
+    /// Play turning into pause, the play control's hover and press, and an
+    /// audio file's grabber appearing on the seek bar.
     private var pauseMorph: Transition?
     private var playHover: Transition?
     private var playPress: Transition?
@@ -690,7 +691,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         ticker.stop()
     }
 
-    /// Eases a resting audio file's hover back to its row, then removes the
+    /// Eases a resting player's hover back to its row, then removes the
     /// overlay; anything else goes at once.
     func dismiss() {
         let eases = state.isResting && window != nil
@@ -954,7 +955,7 @@ extension NativeTimelineCanvasView {
     }
 
     /// Shows the live overlay while the active voice message or audio file
-    /// is on screen, and a second over a hovered audio file's seek bar.
+    /// is on screen, and a second over a hovered resting player.
     func reconcileVoiceMessageOverlay() {
         // A timeline opened mid-playback has not seen a change notification yet.
         if let playback = model?.voiceMessagePlayback { voiceMessageActiveID = playback.activeID }
