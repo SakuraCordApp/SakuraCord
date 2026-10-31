@@ -982,13 +982,15 @@ extension NativeTimelineCanvasView {
     }
 
     /// Players follow their tiles and pause once out of view. One ends when
-    /// its row leaves the timeline or its tile no longer shows that video.
+    /// its row leaves the timeline, its tile no longer shows that video, or
+    /// its message is being edited, whose editor shows no media.
     func reconcileInlinePlayers() {
         guard !inlinePlayers.isEmpty else { return }
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
         for (key, player) in inlinePlayers {
             guard let index = items.firstIndex(where: { $0.identifier == key.row }),
                   layouts.indices.contains(index),
+                  editingMessageID == nil || items[index].messageID != editingMessageID,
                   let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index])
             else {
                 player.stop()

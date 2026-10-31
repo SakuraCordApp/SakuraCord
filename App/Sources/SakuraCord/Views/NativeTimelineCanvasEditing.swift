@@ -982,6 +982,7 @@ extension NativeTimelineCanvasView {
             by: fittedRowHeight - layout.height
         )
         rebuildAccessibilityProxy(for: items[index].identifier)
+        reconcileInlinePlayers()
         setNeedsDisplay(CGRect(
             x: 0,
             y: displayedRowOrigin(at: index),
