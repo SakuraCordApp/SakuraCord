@@ -1,4 +1,5 @@
 import AppKit
+import MessageRendering
 import SakuraCordModels
 
 nonisolated enum NativeTimelineTextRegion: Hashable {
@@ -87,46 +88,54 @@ nonisolated struct NativeTimelineTextSpoilerRevealKey: Hashable {
     let contentID: String
     let contentHash: Int
     let rangeLocation: Int
+
+    var item: NativeTimelineSpoilerRevealStore.Item {
+        .text(contentID: contentID, contentHash: contentHash, rangeLocation: rangeLocation)
+    }
 }
 
+/// Which spoilers the user has revealed: every kind of spoiler, keyed by its
+/// message and the item within it. Reveals last until the conversation
+/// changes, as Discord's do.
 @MainActor
 final class NativeTimelineSpoilerRevealStore {
-    var revealedMedia: Set<NativeTimelineComponentRevealKey> = []
-    var revealedText: Set<NativeTimelineTextSpoilerRevealKey> = []
+    nonisolated enum Item: Hashable {
+        /// An attachment, embed or component, by its reveal component ID.
+        case media(componentID: String)
+        case text(contentID: String, contentHash: Int, rangeLocation: Int)
+    }
+
+    private(set) var revealed: [MessageID: Set<Item>] = [:]
     var observers: [UUID: (MessageID) -> Void] = [:]
+
+    var hasRevealedText: Bool {
+        revealed.values.contains { $0.contains { if case .text = $0 { true } else { false } } }
+    }
 
     func isMediaRevealed(
         _ key: NativeTimelineComponentRevealKey
     ) -> Bool {
-        revealedMedia.contains(key)
+        isRevealed(.media(componentID: key.componentID), in: key.messageID)
     }
 
     @discardableResult
     func revealMedia(
         _ key: NativeTimelineComponentRevealKey
     ) -> Bool {
-        let inserted = revealedMedia.insert(key).inserted
-        if inserted {
-            notifyObservers(messageID: key.messageID)
-        }
-        return inserted
+        reveal(.media(componentID: key.componentID), in: key.messageID)
     }
 
     func isTextRevealed(
         _ key: NativeTimelineTextSpoilerRevealKey
     ) -> Bool {
-        revealedText.contains(key)
+        isRevealed(key.item, in: key.messageID)
     }
 
     @discardableResult
     func revealText(
         _ key: NativeTimelineTextSpoilerRevealKey
     ) -> Bool {
-        let inserted = revealedText.insert(key).inserted
-        if inserted {
-            notifyObservers(messageID: key.messageID)
-        }
-        return inserted
+        reveal(key.item, in: key.messageID)
     }
 
     func revealedTextLocations(
@@ -135,13 +144,12 @@ final class NativeTimelineSpoilerRevealStore {
         contentHash: Int
     ) -> Set<Int> {
         Set(
-            revealedText.lazy
-                .filter {
-                    $0.messageID == messageID
-                        && $0.contentID == contentID
-                        && $0.contentHash == contentHash
-                }
-                .map(\.rangeLocation)
+            (revealed[messageID] ?? []).compactMap {
+                guard case let .text(id, hash, location) = $0,
+                      id == contentID, hash == contentHash
+                else { return nil }
+                return location
+            }
         )
     }
 
@@ -158,14 +166,23 @@ final class NativeTimelineSpoilerRevealStore {
     }
 
     func reset() {
-        let messageIDs = Set(revealedMedia.lazy.map(\.messageID))
-            .union(revealedText.lazy.map(\.messageID))
-        guard !messageIDs.isEmpty else { return }
-        revealedMedia.removeAll(keepingCapacity: true)
-        revealedText.removeAll(keepingCapacity: true)
+        let messageIDs = Array(revealed.keys)
+        revealed.removeAll(keepingCapacity: true)
         for messageID in messageIDs {
             notifyObservers(messageID: messageID)
         }
+    }
+
+    private func isRevealed(_ item: Item, in messageID: MessageID) -> Bool {
+        revealed[messageID]?.contains(item) == true
+    }
+
+    private func reveal(_ item: Item, in messageID: MessageID) -> Bool {
+        let inserted = revealed[messageID, default: []].insert(item).inserted
+        if inserted {
+            notifyObservers(messageID: messageID)
+        }
+        return inserted
     }
 
     func observe(
@@ -202,6 +219,22 @@ enum NativeTimelineSpoilerConcealmentPolicy {
                     componentID: contentID
                 )
             )
+    }
+
+    /// The embeds still hidden because the message links them inside a
+    /// spoiler, as Discord hides them.
+    static func concealedEmbedIDs(
+        in message: Message,
+        store: NativeTimelineSpoilerRevealStore
+    ) -> Set<String> {
+        guard !message.embeds.isEmpty, message.content.contains("||") else { return [] }
+        let spoileredURLs = Set(DiscordMarkdown.linkOccurrences(message.content).filter(\.isSpoiler).map(\.url))
+        return Set(message.embeds.compactMap { embed in
+            guard let url = embed.url, spoileredURLs.contains(url),
+                  !store.isMediaRevealed(.embed(messageID: message.id, embedID: embed.id))
+            else { return nil }
+            return embed.id
+        })
     }
 
     static func hiddenContainerFrames(
@@ -241,7 +274,7 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         }
     }
 
-    static func shouldLoadOrAnimate(
+    static func shouldAnimate(
         messageID: MessageID,
         contentID: String,
         isSpoiler: Bool,

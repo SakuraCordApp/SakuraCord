@@ -187,6 +187,10 @@ struct NativeTimelineComponentRevealKey: Hashable {
     let messageID: MessageID
     let componentID: String
 
+    static func embed(messageID: MessageID, embedID: String) -> Self {
+        Self(messageID: messageID, componentID: "embed:\(embedID)")
+    }
+
     static func attachmentComponentID(_ attachmentID: String) -> String {
         "attachment:\(attachmentID)"
     }

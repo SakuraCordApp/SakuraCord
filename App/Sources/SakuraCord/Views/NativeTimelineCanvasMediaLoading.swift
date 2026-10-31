@@ -317,7 +317,7 @@ extension NativeTimelineCanvasView {
         )
         appendAuthorMediaKeys(for: row, layout: layouts[index], into: &keys)
         appendMessageTextMediaKeys(for: row, layout: layouts[index], into: &keys)
-        appendAttachmentMediaKeys(for: message, layout: layouts[index], into: &keys)
+        appendAttachmentMediaKeys(layout: layouts[index], into: &keys)
         appendEmbedMediaKeys(layouts[index].embedRegions, into: &keys)
         for card in layouts[index].inviteRegions {
             if let invite = card.invite {
@@ -328,7 +328,7 @@ extension NativeTimelineCanvasView {
                 }
             }
         }
-        appendComponentMediaKeys(for: message, layouts: layouts[index].componentLayouts, into: &keys)
+        appendComponentMediaKeys(layouts: layouts[index].componentLayouts, into: &keys)
         appendStickerAndReactionMediaKeys(for: message, layout: layouts[index], into: &keys)
         for answer in message.poll?.answers ?? [] {
             if let url = answer.emoji?.imageURL(size: 64) {
@@ -408,24 +408,11 @@ extension NativeTimelineCanvasView {
     }
 
     private func appendAttachmentMediaKeys(
-        for message: Message,
         layout: NativeTimelineRowLayout,
         into keys: inout [NativeTimelineMediaKey]
     ) {
-        for region in layout.attachmentRegions {
-            let attachment = region.attachment
-            guard NativeTimelineSpoilerConcealmentPolicy
-                .shouldLoadOrAnimate(
-                    messageID: message.id,
-                    contentID:
-                        NativeTimelineComponentRevealKey
-                            .attachmentComponentID(attachment.id),
-                    isSpoiler: attachment.isSpoiler,
-                    store: spoilerRevealStore
-                )
-            else { continue }
-            if let key = region.previewKey { keys.append(key) }
-        }
+        // A hidden spoiler still loads: its cover is the item, blurred.
+        keys += layout.attachmentRegions.compactMap(\.previewKey)
     }
 
     private func appendEmbedMediaKeys(
@@ -481,32 +468,12 @@ extension NativeTimelineCanvasView {
     }
 
     private func appendComponentMediaKeys(
-        for message: Message,
         layouts: [NativeTimelineComponentLayout],
         into keys: inout [NativeTimelineMediaKey]
     ) {
+        // Hidden spoilers load too, so their covers can blur them.
         for componentLayout in layouts {
-            let hiddenContainerFrames =
-                NativeTimelineSpoilerConcealmentPolicy
-                    .hiddenContainerFrames(
-                        in: componentLayout,
-                        messageID: message.id,
-                        store: spoilerRevealStore
-                    )
             for image in componentLayout.images {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        image.frame,
-                        hiddenContainerFrames:
-                            hiddenContainerFrames
-                    ),
-                      !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                          messageID: message.id,
-                          contentID: image.componentID,
-                          isSpoiler: image.isSpoiler,
-                          store: spoilerRevealStore
-                      )
-                else { continue }
                 keys.append(
                     .media(
                         image.displayURL,
@@ -515,46 +482,19 @@ extension NativeTimelineCanvasView {
                 )
             }
             for media in componentLayout.media {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        media.frame,
-                        hiddenContainerFrames:
-                            hiddenContainerFrames
-                    ),
-                      !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
-                          messageID: message.id,
-                          contentID: media.componentID,
-                          isSpoiler: media.isSpoiler,
-                          store: spoilerRevealStore
-                      )
-                else { continue }
                 if let previewURL = media.previewURL {
                     keys.append(.media(previewURL))
                 }
             }
             for button in componentLayout.buttons {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        button.frame,
-                        hiddenContainerFrames:
-                            hiddenContainerFrames
-                    )
-                else { continue }
                 guard let emoji = button.emoji,
                       emoji.id != nil,
                       let url = emoji.imageURL(size: 32)
                 else { continue }
                 keys.append(.media(url, maximumPixelDimension: 64))
             }
-            keys += componentLayout.selectMediaKeys(hiddenContainerFrames)
+            keys += componentLayout.selectMediaKeys
             for textRegion in componentLayout.textRegions {
-                guard !NativeTimelineSpoilerConcealmentPolicy
-                    .isInsideHiddenContainer(
-                        textRegion.frame,
-                        hiddenContainerFrames:
-                            hiddenContainerFrames
-                    )
-                else { continue }
                 appendInlineMediaKeys(
                     from: textRegion.text.value,
                     model: model,

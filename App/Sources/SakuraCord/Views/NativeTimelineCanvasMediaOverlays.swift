@@ -866,8 +866,12 @@ extension NativeTimelineCanvasView {
             if let urls = inlineVideoRows[identifier],
                layouts.indices.contains(index)
             {
+                let concealedEmbedIDs = items[index].messageRow.map {
+                    NativeTimelineSpoilerConcealmentPolicy.concealedEmbedIDs(in: $0.message, store: spoilerRevealStore)
+                } ?? []
                 for region in layouts[index].embedRegions {
                     guard region.mediaIsVideo,
+                          !concealedEmbedIDs.contains(region.embedID),
                           region.mediaAutoplaysInline,
                           let url = region.mediaURL,
                           urls.contains(url),
@@ -1067,6 +1071,18 @@ extension NativeTimelineCanvasView {
                 rowOrigin: rowOrigin,
                 into: &desired
             )
+            let concealedEmbedIDs = NativeTimelineSpoilerConcealmentPolicy.concealedEmbedIDs(
+                in: message, store: spoilerRevealStore
+            )
+            for region in layouts[index].embedRegions where concealedEmbedIDs.contains(region.embedID) {
+                appendDesiredSpoilerOverlay(
+                    .embed(messageID: message.id, embedID: region.embedID),
+                    frame: region.frame,
+                    cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
+                    rowOrigin: rowOrigin,
+                    into: &desired
+                )
+            }
             for component in layouts[index].componentLayouts {
                 appendComponentSpoilerOverlays(
                     for: component,

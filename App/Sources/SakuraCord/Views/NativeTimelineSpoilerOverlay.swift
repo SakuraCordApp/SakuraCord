@@ -5,18 +5,56 @@ struct NativeTimelineSpoilerOverlayPresentation: Hashable {
     let cornerRadius: CGFloat
 }
 
+/// Discord's one spoiler look, shared by text, media, files, embeds and
+/// components. Lengths are Discord's CSS pixels at SakuraCord's text size.
 nonisolated enum NativeTimelineSpoilerAppearance {
-    static var pillHeight: CGFloat { InterfaceScale.metric(24) }
-    static var pillHorizontalPadding: CGFloat { InterfaceScale.metric(10) }
-    static var textCornerRadius: CGFloat { InterfaceScale.metric(4) }
+    static var pillHeight: CGFloat { DiscordRichMessageMetrics.px(31) }
+    static var pillHorizontalPadding: CGFloat { DiscordRichMessageMetrics.px(12) }
+    static var textCornerRadius: CGFloat { DiscordRichMessageMetrics.px(4) }
+    /// Discord blurs hidden media by 44 pixels, past recognition.
+    static var blurRadius: CGFloat { DiscordRichMessageMetrics.px(44) }
+    static let mediaRevealDuration: CFTimeInterval = 0.1
+    static let textRevealDuration: CFTimeInterval = 0.2
 
-    static func textBackgroundAlpha(isHovered: Bool) -> CGFloat {
-        isHovered ? 0.62 : 0.46
+    /// Behind hidden media and over hidden text: Discord's midnight theme in
+    /// dark mode, which matches SakuraCord's near-black timeline, and its
+    /// light theme otherwise.
+    static let hiddenColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x59 / 255, green: 0x5A / 255, blue: 0x63 / 255, alpha: 1)
+            : NSColor(srgbRed: 0x8F / 255, green: 0x90 / 255, blue: 0x97 / 255, alpha: 1)
     }
 
+    static let hoveredTextColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x76 / 255, green: 0x77 / 255, blue: 0x80 / 255, alpha: 1)
+            : NSColor(srgbRed: 0x70 / 255, green: 0x71 / 255, blue: 0x7A / 255, alpha: 1)
+    }
+
+    /// A revealed text spoiler keeps a faint fill, so it still reads as one.
+    static let revealedTextColor = NSColor(srgbRed: 0x97 / 255, green: 0x97 / 255, blue: 0x9F / 255, alpha: 0.12)
+
+    static let pillColor = NSColor.black.withAlphaComponent(0.6)
+    /// Over the drawn pill, this darkens it to Discord's hovered 88 percent.
+    static let hoveredPillOverlayColor = NSColor.black.withAlphaComponent(0.7)
+
     static func textBackgroundColor(isHovered: Bool) -> NSColor {
-        NSColor.secondaryLabelColor.withAlphaComponent(
-            textBackgroundAlpha(isHovered: isHovered)
+        isHovered ? hoveredTextColor : hiddenColor
+    }
+
+    static func pillLabel(isHovered: Bool) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        return NSAttributedString(
+            string: "SPOILER",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: DiscordRichMessageMetrics.px(15), weight: .semibold),
+                .foregroundColor: isHovered
+                    ? NSColor.white
+                    : NSColor(srgbRed: 0xE4 / 255, green: 0xE4 / 255, blue: 0xE6 / 255, alpha: 1),
+                .kern: DiscordRichMessageMetrics.px(0.5),
+                .paragraphStyle: paragraph,
+            ]
         )
     }
 
@@ -83,10 +121,14 @@ nonisolated enum NativeTimelineSpoilerAppearance {
     }
 }
 
+/// The interactive part of a media spoiler cover. The row draws the cover
+/// itself, so the cover is never missing while this view comes and goes;
+/// this view adds hover, keyboard focus and activation.
 @MainActor
 final class NativeTimelineSpoilerOverlayHost: NSView {
     let cornerRadius: CGFloat
     let revealAction: () -> Void
+    /// Darkens the row's pill while the pointer is over the cover.
     let pillView = NSView()
     let pillLabel = NSTextField(labelWithString: "SPOILER")
     var trackingArea: NSTrackingArea?
@@ -95,7 +137,6 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     var didActivate = false
 
     override var isFlipped: Bool { true }
-    override var isOpaque: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
     init(
@@ -107,32 +148,16 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
         revealAction = reveal
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(
-            srgbRed: 0.12,
-            green: 0.125,
-            blue: 0.14,
-            alpha: 1
-        ).cgColor
-        layer?.cornerRadius = cornerRadius
-        layer?.masksToBounds = true
         pillView.wantsLayer = true
         pillView.layer?.cornerRadius =
             NativeTimelineSpoilerAppearance.pillHeight / 2
         pillView.layer?.masksToBounds = true
+        pillView.layer?.backgroundColor =
+            NativeTimelineSpoilerAppearance.hoveredPillOverlayColor.cgColor
         pillView.setAccessibilityElement(false)
         addSubview(pillView)
-
-        let labelParagraphStyle = NSMutableParagraphStyle()
-        labelParagraphStyle.alignment = .center
-        pillLabel.attributedStringValue = NSAttributedString(
-            string: "SPOILER",
-            attributes: [
-                .font: NSFont.interfaceSystemFont(ofSize: 11, weight: .bold),
-                .foregroundColor: NSColor.white,
-                .kern: 0.4,
-                .paragraphStyle: labelParagraphStyle,
-            ]
-        )
+        pillLabel.attributedStringValue =
+            NativeTimelineSpoilerAppearance.pillLabel(isHovered: true)
         pillLabel.alignment = .center
         pillLabel.lineBreakMode = .byClipping
         pillLabel.setAccessibilityElement(false)
@@ -141,9 +166,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel("Reveal spoiler")
-        setAccessibilityHelp(
-            "Reveals this media without opening it"
-        )
+        setAccessibilityHelp("Reveals the spoiler without opening it")
     }
 
     @available(*, unavailable)
@@ -268,31 +291,13 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     }
 
     func updateAppearance() {
-        layer?.backgroundColor = (
-            isHovered
-                ? NSColor(
-                    srgbRed: 0.18,
-                    green: 0.19,
-                    blue: 0.21,
-                    alpha: 1
-                )
-                : NSColor(
-                    srgbRed: 0.12,
-                    green: 0.125,
-                    blue: 0.14,
-                    alpha: 1
-                )
-        ).cgColor
-        pillView.layer?.backgroundColor = NSColor.black.withAlphaComponent(
-            isPressed ? 0.72 : (isHovered ? 0.62 : 0.52)
-        ).cgColor
+        pillView.isHidden = !isHovered
     }
 
 #if DEBUG
     var hasPersistentPillForTesting: Bool {
         pillView.superview === self
             && pillLabel.superview === pillView
-            && !pillView.isHidden
     }
 #endif
 

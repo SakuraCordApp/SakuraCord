@@ -800,13 +800,11 @@ extension NativeTimelineCanvasView {
             attachment.description
             ?? attachment.title
             ?? attachment.filename
-        let label = isHiddenSpoiler
-            ? "Reveal spoiler media"
-            : contentLabel
+        let label = isHiddenSpoiler ? "Reveal spoiler" : contentLabel
         let element = accessibilityElement(
             role: .button,
             label: label,
-            help: isHiddenSpoiler ? "Reveals this media without opening it" : "Open \(contentLabel)",
+            help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(contentLabel)",
             frame: accessibilityChildFrame(
                 region.frame,
                 rowIndex: rowIndex
@@ -1370,7 +1368,7 @@ extension NativeTimelineCanvasView {
                 children.append(accessibilityElement(
                     role: .button,
                     label: "Reveal spoiler",
-                    help: "Reveals this content without activating it",
+                    help: "Reveals the spoiler without opening it",
                     frame: accessibilityChildFrame(
                         hiddenContainer.frame,
                         rowIndex: rowIndex
