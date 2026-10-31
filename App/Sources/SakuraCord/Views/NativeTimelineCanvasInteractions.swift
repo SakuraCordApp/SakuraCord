@@ -979,6 +979,8 @@ extension NativeTimelineCanvasView {
         window?.invalidateCursorRects(for: self)
         reconcileAnimatedMedia()
         reconcileSpoilerOverlays()
+        // A reset reveal store hides a video playing in place again.
+        reconcileInlinePlayers()
         rebuildAccessibilityProxy(for: identifier)
     }
 
