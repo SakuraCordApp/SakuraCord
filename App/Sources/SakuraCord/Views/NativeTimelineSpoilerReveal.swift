@@ -247,9 +247,9 @@ enum NativeTimelineSpoilerConcealmentPolicy {
     /// The embed addresses that came from spoilered links. A link preview can
     /// carry its page's canonical address rather than the link as written, as
     /// youtu.be's does. Such a preview belongs to the links on its site, or,
-    /// when the message leaves only one link and one preview unmatched, to
-    /// that link. It hides when those links are all spoilered; any other
-    /// pairing is a guess, so the preview stays as is.
+    /// failing those, to the links no preview names. It hides when those links
+    /// are all spoilered; when only some are and several previews compete,
+    /// any pairing is a guess, so the preview stays as is.
     static func spoileredEmbedURLs(in message: Message) -> Set<URL> {
         let links = DiscordMarkdown.linkOccurrences(message.content)
         var result = Set(links.filter(\.isSpoiler).map(\.url))
@@ -274,7 +274,7 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         for url in canonicalURLs {
             let sameSite = unmatchedLinks.filter { site(of: $0.url) == site(of: url) }
             let candidates = !sameSite.isEmpty ? sameSite
-                : canonicalURLs.count == 1 && unmatchedLinks.count == 1 ? unmatchedLinks : []
+                : canonicalURLs.count == 1 || unmatchedLinks.allSatisfy(\.isSpoiler) ? unmatchedLinks : []
             // Several candidates decide only when they all agree.
             if !candidates.isEmpty, candidates.allSatisfy(\.isSpoiler) { result.insert(url) }
         }
@@ -287,18 +287,21 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         _ links: [DiscordMarkdown.LinkOccurrence],
         in content: String
     ) -> [DiscordMarkdown.LinkOccurrence] {
+        let code = codeRanges(in: content)
         var suppressed: [URL: [Bool]] = [:]
         for url in Set(links.map(\.url)) {
             let written = url.absoluteString
             var copies: [Bool] = []
             var searchRange = content.startIndex ..< content.endIndex
             while let range = content.range(of: written, range: searchRange) {
+                searchRange = range.upperBound ..< content.endIndex
+                // Code shows a link without making one.
+                guard !code.contains(where: { $0.overlaps(range) }) else { continue }
                 copies.append(
                     range.lowerBound > content.startIndex
                         && content[content.index(before: range.lowerBound)] == "<"
                         && content[range.upperBound...].first == ">"
                 )
-                searchRange = range.upperBound ..< content.endIndex
             }
             suppressed[url] = copies
         }
@@ -309,6 +312,20 @@ enum NativeTimelineSpoilerConcealmentPolicy {
             let copies = suppressed[link.url] ?? []
             return !(copies.indices.contains(index) && copies[index])
         }
+    }
+
+    /// Code blocks and inline code, whose text never renders as a link.
+    private static func codeRanges(in content: String) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var index = content.startIndex
+        while let open = content[index...].firstIndex(of: "`") {
+            let fence = content[open...].hasPrefix("```") ? "```" : "`"
+            let bodyStart = content.index(open, offsetBy: fence.count)
+            guard let close = content.range(of: fence, range: bodyStart ..< content.endIndex) else { break }
+            ranges.append(open ..< close.upperBound)
+            index = close.upperBound
+        }
+        return ranges
     }
 
     /// A host's last two labels, with the short hosts that redirect elsewhere

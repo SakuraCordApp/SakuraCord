@@ -111,3 +111,26 @@ func `a visible link's preview stays visible beside a spoilered <…> copy of it
     )
     #expect(ids.isEmpty)
 }
+
+@MainActor @Test
+func `previews of spoilered short links on other sites hide`() {
+    let ids = concealedEmbedIDs(
+        content: "||https://bit.ly/A|| ||https://bit.ly/B||",
+        embeds: [
+            MessageEmbed(id: "embed-0", type: "article", url: URL(string: "https://news.example.com/a")),
+            MessageEmbed(id: "embed-1", type: "article", url: URL(string: "https://blog.example.org/b")),
+        ]
+    )
+    #expect(ids == ["embed-0", "embed-1"])
+}
+
+@MainActor @Test
+func `a link shown in code does not count as a copy of a spoilered one`() {
+    let ids = concealedEmbedIDs(
+        content: "`<https://youtu.be/ID>` ||https://youtu.be/ID||",
+        embeds: [
+            MessageEmbed(id: "embed-0", type: "video", url: URL(string: "https://www.youtube.com/watch?v=ID")),
+        ]
+    )
+    #expect(ids == ["embed-0"])
+}
