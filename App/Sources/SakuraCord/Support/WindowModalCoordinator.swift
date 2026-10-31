@@ -114,13 +114,14 @@ final class WindowModalCoordinator {
         }
     }
 
+    // Subview order alone stacks the modals. A raised zPosition would also
+    // lift them above the layer AppKit draws a held slider's glass thumb in,
+    // so the thumb vanished while dragging inside a modal.
     private func reorderHosts() {
-        for (index, entry) in entries.enumerated() {
+        for entry in entries {
             guard let host = entry.host, let container = host.superview else { continue }
-            host.layer?.zPosition = CGFloat(100_000 + index)
             container.addSubview(host, positioned: .above, relativeTo: nil)
             for accessory in entry.accessories.allObjects {
-                accessory.layer?.zPosition = CGFloat(100_000 + index) + 0.5
                 container.addSubview(accessory, positioned: .above, relativeTo: host)
             }
         }
