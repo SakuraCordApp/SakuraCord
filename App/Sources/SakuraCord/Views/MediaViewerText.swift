@@ -32,12 +32,7 @@ struct MediaViewerText: View {
                 ProgressView()
             }
         }
-        .frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
-        // Discord's dark code fill flattened onto black, so the file reads
-        // as a dark code block over the viewer's dimmed backdrop.
-        .background(Color(red: 13 / 255, green: 14 / 255, blue: 27 / 255))
-        .environment(\.colorScheme, .dark)
-        .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
+        .mediaViewerTextPage()
         .task(id: url) {
             text = nil
             failed = false
@@ -104,26 +99,24 @@ struct MediaViewerText: View {
         let notice = bytesLeft > 0
             ? "\n\n… \(NativeTimelineFileCard.sizeText(bytesLeft)) more. Download the file to see all of it."
             : ""
+        let baseFontSize = InterfaceScale.fontSize(13)
         guard text.utf8.count <= highlightLimit else {
             return NSAttributedString(string: text + notice, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: InterfaceScale.fontSize(13), weight: .regular),
+                .font: NSFont.monospacedSystemFont(ofSize: baseFontSize, weight: .regular),
                 .foregroundColor: NSColor.white,
             ])
         }
-        // The message text size, so the file's code matches a message's code block.
         return NativeTimelineCoreText.scaledMarkdown(
-            DiscordMarkdown.appKitCodePlan(text + notice, language: language),
-            baseFontSize: InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
+            DiscordMarkdown.appKitCodePlan(text + notice, language: language), baseFontSize: baseFontSize
         )
     }
 }
 
-private struct MediaViewerTextContent: NSViewRepresentable {
+struct MediaViewerTextContent: NSViewRepresentable {
     let text: NSAttributedString
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
-        scrollView.appearance = NSAppearance(named: .darkAqua)
         scrollView.drawsBackground = false
         guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
         textView.isEditable = false
@@ -136,5 +129,15 @@ private struct MediaViewerTextContent: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView, textView.attributedString() != text else { return }
         textView.textStorage?.setAttributedString(text)
+    }
+}
+
+extension View {
+    /// The page text files and rich text read on: as wide as it reads well,
+    /// as tall as the stage, on the code block's background.
+    func mediaViewerTextPage() -> some View {
+        frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
+            .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
+            .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
     }
 }
