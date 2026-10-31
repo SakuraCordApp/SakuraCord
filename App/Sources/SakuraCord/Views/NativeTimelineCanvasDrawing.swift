@@ -472,12 +472,12 @@ extension NativeTimelineCanvasView {
             pollPopover?.close()
             reactionDetailsPopover?.close()
             pointer.clearHoverAndPressTargets()
-            updateCodeCopyControl()
             reactionHoverCoordinator.close()
             closeMessageProfilePopover()
             closeServerTagPopover()
             closeMentionPopover()
             closeComponentChoiceOverlay()
+            updateCodeCopyControl()
         }
         if isBlocked, mediaViewerHighlightedMessageID == nil {
             removeActionCapsule()
@@ -598,10 +598,10 @@ extension NativeTimelineCanvasView {
             closeMentionPopover()
             reactionPickerSource.frame = .zero
             pointer.clearHoverAndPressTargets()
-            updateCodeCopyControl()
             removeAccessibilityProxies()
             removeActionCapsule()
             endEditing(commit: nil)
+            updateCodeCopyControl()
         }
         super.viewWillMove(toWindow: newWindow)
     }

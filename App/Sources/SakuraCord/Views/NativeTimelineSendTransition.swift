@@ -916,10 +916,10 @@ extension NativeTimelineCanvasView {
     private func suppressSendTransitionInteractions() {
         // A press begun before the rows moved must not activate on release.
         pointer.clearHoverAndPressTargets()
-        updateCodeCopyControl()
         pressedPollTarget = nil
         hoveredPollTarget = nil
         textSelectionGesture = nil
+        updateCodeCopyControl()
         reactionHoverCoordinator.close()
         removeActionCapsule()
         updateTrackingAreas()
