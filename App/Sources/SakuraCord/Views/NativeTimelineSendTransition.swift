@@ -354,6 +354,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     /// Rings keep showing progress while they fly.
     private var ringAttachmentIDs: [Int: String] = [:]
     private weak var uploads: AttachmentUploadProgressStore?
+    /// When a finished upload's ring and dim have faded, which the hand-off
+    /// waits for.
+    private(set) var uploadFadeEnd: CFTimeInterval = 0
     private var uploadNonce: String?
 
     /// Covers the composer's text and attachments with identical copies so
@@ -499,9 +502,16 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             let layers = [ringLayers[index], pieceDimLayers[index]] + (pieceCardLayers[index]?.sublayers ?? [])
             for layer in layers.compactMap(\.self) {
                 let opacity = layer.presentation()?.opacity ?? layer.opacity
+                // The fade replaces any opacity still running, such as the
+                // dim's flight, which would bring it back once this ends.
+                for key in layer.animationKeys() ?? []
+                where (layer.animation(forKey: key) as? CAPropertyAnimation)?.keyPath == "opacity" {
+                    layer.removeAnimation(forKey: key)
+                }
                 layer.opacity = 0
                 add(layer, "opacity", from: CGFloat(opacity), to: 0, duration: NativeTimelineSendTransitionTiming.dismissalDuration)
             }
+            uploadFadeEnd = CACurrentMediaTime() + NativeTimelineSendTransitionTiming.dismissalDuration
         }
     }
 
@@ -1358,11 +1368,12 @@ extension NativeTimelineCanvasView {
             }
             let mediaDeadline = CACurrentMediaTime()
                 + NativeTimelineSendTransitionTiming.mediaWaitLimit
-            // Media that loads also extends the flight by its fade in.
+            // Media that loads, and an upload that ends, also extend the
+            // flight by their fades.
             while let self, let transition,
                   self.sendTransitions.contains(where: { $0 === transition }),
                   self.sendTransitionAwaitsMedia(transition) && CACurrentMediaTime() < mediaDeadline
-                      || CACurrentMediaTime() < transition.endUptime
+                      || CACurrentMediaTime() < max(transition.endUptime, transition.overlay.uploadFadeEnd)
             {
                 do {
                     try await Task.sleep(for: .milliseconds(30))
