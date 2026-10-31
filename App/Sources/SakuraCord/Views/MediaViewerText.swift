@@ -16,6 +16,9 @@ struct MediaViewerText: View {
     /// Highlighting is skipped past this, where it would hold up the viewer.
     private static let highlightLimit = 128 * 1_024
     private nonisolated static let session = URLSession(configuration: .ephemeral)
+    /// Files read this session by their link, newest last, so reopening one
+    /// doesn't fetch it again.
+    private static var loaded: [(url: URL, file: (text: String, bytesLeft: Int))] = []
 
     var body: some View {
         Group {
@@ -34,8 +37,7 @@ struct MediaViewerText: View {
         .task(id: url) {
             text = nil
             failed = false
-            let source = await MediaViewerActionService.resolveRemoteURL?(url) ?? url
-            let loaded = try? await Self.load(source)
+            let loaded = try? await Self.text(of: url)
             // A file left for another must not overwrite it.
             guard !Task.isCancelled else { return }
             guard let loaded else {
@@ -44,6 +46,20 @@ struct MediaViewerText: View {
             }
             text = Self.attributed(loaded.text, language: language, bytesLeft: loaded.bytesLeft)
         }
+    }
+
+    private static func text(of url: URL) async throws -> (text: String, bytesLeft: Int) {
+        if let index = loaded.firstIndex(where: { $0.url == url }) {
+            let entry = loaded.remove(at: index)
+            loaded.append(entry)
+            return entry.file
+        }
+        let source = await MediaViewerActionService.resolveRemoteURL?(url) ?? url
+        let file = try await load(source)
+        loaded.removeAll { $0.url == url }
+        loaded.append((url, file))
+        if loaded.count > 8 { loaded.removeFirst() }
+        return file
     }
 
     /// Reads up to the limit.

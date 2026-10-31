@@ -187,6 +187,11 @@ actor SharedMediaDataLoader {
         return data
     }
 
+    /// A remote item's file if the disk cache already holds it.
+    func storedFile(for url: URL) async -> URL? {
+        try? await remoteDiskCache?.fileURL(for: url)
+    }
+
     /// A remote item's file in the disk cache, fetched first if needed, for
     /// readers such as audio players that open files. Nil when the disk
     /// cache is unavailable or won't hold the item.
