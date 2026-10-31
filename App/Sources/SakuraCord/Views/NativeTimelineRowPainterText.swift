@@ -356,6 +356,12 @@ extension NativeTimelineRowPainter {
             attributedText: drawingValue,
             hoveredSpoilerRangeLocation: hoveredSpoilerRangeLocation
         )
+        NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
+        for range in NativeTimelineTextSpoilers.ranges(in: value) where revealedSpoilerLocations.contains(range.location) {
+            for rect in NativeTimelineTextSpoilerGeometry.rects(in: textFrame, outerFrame: frame, range: range) {
+                NSBezierPath(concentricRoundedRect: rect, cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
+            }
+        }
         drawTextSelection(
             selectionRange,
             in: textFrame,

@@ -54,6 +54,8 @@ public enum DiscordMarkdown {
             /// offset of its opening delimiter. Spoilers never nest, since each
             /// one closes at the nearest delimiter.
             fileprivate var spoilerID: Int?
+            /// A link written as <…>, which Discord never previews.
+            fileprivate var suppressesPreview = false
         }
 
         fileprivate struct InlineTraits: OptionSet, Hashable, Sendable {
@@ -703,7 +705,8 @@ public enum DiscordMarkdown {
                 ),
                 traits: traits,
                 link: url,
-                color: nil
+                color: nil,
+                suppressesPreview: true
             ),
             source.index(after: close)
         )
@@ -717,16 +720,17 @@ public enum DiscordMarkdown {
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
-        return (
-            inlineRuns(
-                source[target.label],
-                inheritedTraits: inheritedTraits,
-                inheritedLink: target.url,
-                widgetRules: widgetRules,
-                sourceCollector: sourceCollector
-            ),
-            target.end
+        var runs = inlineRuns(
+            source[target.label],
+            inheritedTraits: inheritedTraits,
+            inheritedLink: target.url,
+            widgetRules: widgetRules,
+            sourceCollector: sourceCollector
         )
+        if target.suppressesPreview {
+            for index in runs.indices where runs[index].link == target.url { runs[index].suppressesPreview = true }
+        }
+        return (runs, target.end)
     }
 
     private static func nextInlineTerminator(
@@ -758,7 +762,8 @@ public enum DiscordMarkdown {
         return MarkdownLinkTarget(
             label: source.index(after: cursor) ..< labelEnd,
             url: url,
-            end: source.index(after: closingParenthesis)
+            end: source.index(after: closingParenthesis),
+            suppressesPreview: source[source.index(after: openingParenthesis)...].first == "<"
         )
     }
 
@@ -1254,6 +1259,8 @@ private extension DiscordMarkdown {
         let label: Range<String.Index>
         let url: URL
         let end: String.Index
+        /// Written as [label](<url>), which Discord never previews.
+        var suppressesPreview = false
     }
 
     /// Per-parse lookup table: unfinished syntax must not repeatedly search the
@@ -1426,10 +1433,12 @@ public extension DiscordMarkdown {
         return result
     }
 
-    /// A rendered link and whether all of its text is inside one spoiler.
+    /// A rendered link, whether all of its text is inside one spoiler, and
+    /// whether it was written as <…>, which Discord never previews.
     struct LinkOccurrence: Hashable, Sendable {
         public let url: URL
         public let isSpoiler: Bool
+        public let suppressesPreview: Bool
     }
 
     /// The links message rendering produces, in document order, with the
@@ -1447,10 +1456,11 @@ public extension DiscordMarkdown {
                     result.append(LinkOccurrence(
                         url: link,
                         isSpoiler: last.isSpoiler && isSpoiler
-                            && run.spoilerID == previous?.spoilerID
+                            && run.spoilerID == previous?.spoilerID,
+                        suppressesPreview: last.suppressesPreview && run.suppressesPreview
                     ))
                 } else {
-                    result.append(LinkOccurrence(url: link, isSpoiler: isSpoiler))
+                    result.append(LinkOccurrence(url: link, isSpoiler: isSpoiler, suppressesPreview: run.suppressesPreview))
                 }
             }
         }

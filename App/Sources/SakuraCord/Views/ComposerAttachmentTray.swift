@@ -132,7 +132,6 @@ private struct ComposerAttachmentTile: View {
             .background {
                 ComposerSendTransitionAttachmentReader(anchor: sendTransitionAnchor, id: attachment.id, thumbnail: thumbnail)
             }
-            .animation(.smooth(duration: 0.22), value: attachment.isSpoiler)
             .animation(.smooth(duration: 0.25), value: isChecking)
             .animation(.smooth(duration: 0.25), value: uploadFraction == nil)
             .contentShape(shape)
@@ -174,9 +173,10 @@ private struct ComposerAttachmentTile: View {
     private var tile: some View {
         ZStack {
             face
-            if attachment.isSpoiler {
-                spoilerCover
-            }
+                .spoilerCover(
+                    attachment.isSpoiler,
+                    pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: tileSize)
+                )
             if isChecking || uploadFraction != nil {
                 uploadCover
             }
@@ -225,20 +225,6 @@ private struct ComposerAttachmentTile: View {
         } else {
             ComposerAttachmentFileFace(url: attachment.url)
         }
-    }
-
-    private var spoilerCover: some View {
-        ZStack {
-            Rectangle()
-                .fill(.black.opacity(0.58))
-            VStack(spacing: InterfaceScale.metric(4)) {
-                Image(systemName: "eye.slash")
-                Text("SPOILER")
-                    .font(.interface(.caption2).weight(.bold))
-            }
-            .foregroundStyle(.white)
-        }
-        .transition(.opacity)
     }
 
     /// Dims the file while it is checked or uploaded, with its progress.

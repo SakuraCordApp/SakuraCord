@@ -377,17 +377,10 @@ private struct ForumComposerAttachmentTile: View {
                 transaction.animation = nil
                 transaction.disablesAnimations = true
             }
-
-            if attachment.isSpoiler {
-                Rectangle()
-                    .fill(.black.opacity(0.5))
-                VStack(spacing: InterfaceScale.metric(4)) {
-                    Image(systemName: "eye.slash")
-                    Text("SPOILER")
-                        .font(.interface(.caption2).weight(.bold))
-                }
-                .foregroundStyle(.white)
-            }
+            .spoilerCover(
+                attachment.isSpoiler,
+                pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: size)
+            )
         }
         .frame(width: size, height: size)
         .background(.quaternary)

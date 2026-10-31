@@ -462,76 +462,89 @@ extension NativeTimelineRowPainter {
             )
         }
         for region in layout.attachmentRegions {
-            let attachment = region.attachment
             let isConcealed =
                 spoilerRevealStore.map {
                     NativeTimelineSpoilerConcealmentPolicy.isConcealed(
                         messageID: message.id,
-                        contentID: "attachment:\(attachment.id)",
-                        isSpoiler: attachment.isSpoiler,
+                        contentID: "attachment:\(region.attachment.id)",
+                        isSpoiler: region.attachment.isSpoiler,
                         store: $0
                     )
                 } ?? false
-            if isConcealed {
-                spoilerConcealedBase(
-                    in: region.frame,
-                    cornerRadius: attachmentCornerRadius
-                )
-                continue
-            }
-            if attachment.mediaKind.isVisual {
-                NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-                NSBezierPath(
-                    concentricRoundedRect: region.frame,
-                    cornerRadius: attachmentCornerRadius
-                ).fill()
-            }
-            switch attachment.mediaKind {
-            case .image, .animatedImage, .video:
-                let isVideo = attachment.mediaKind == .video
-                if let image = region.previewKey.flatMap(mediaImage(for:)) {
-                    drawImage(
-                        image,
-                        in: region.frame,
-                        cornerRadius: attachmentCornerRadius,
-                        fillsFrame: attachmentFillsFrame
-                    )
-                } else if let placeholder = region.placeholder?.image {
-                    drawImage(placeholder, in: region.frame, cornerRadius: attachmentCornerRadius, fillsFrame: true)
-                } else if isVideo {
-                    systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-                }
-                if isVideo { mediaPlayGlyph(in: region.frame) }
-            case .audio, .file:
-                fileCard(
-                    .init(
-                        frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil,
-                        isAudio: attachment.mediaKind == .audio
-                    ),
-                    messageID: message.id,
-                    bubbleRegion: layout.bubbleRegion,
-                    state: input.model?.attachmentDownloads.states[attachment.id],
-                    upload: uploadState(of: attachment, in: input),
-                    pointer: .init(
-                        hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
-                        pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
-                    )
-                )
-                if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
-                    NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)
-                }
+            NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: layout.cornerRadius(of: region)) {
+                drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
             }
         }
         if opacity < 1 { attachmentContext?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
 
+    private static func drawAttachment(
+        _ region: NativeTimelineRowLayout.AttachmentRegion,
+        fillsFrame: Bool,
+        input: NativeTimelineMessageDrawInput
+    ) {
+        let attachment = region.attachment
+        let layout = input.layout
+        let message = input.row.message
+        if attachment.mediaKind.isVisual {
+            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
+            NSBezierPath(
+                concentricRoundedRect: region.frame,
+                cornerRadius: attachmentCornerRadius
+            ).fill()
+        }
+        switch attachment.mediaKind {
+        case .image, .animatedImage, .video:
+            let isVideo = attachment.mediaKind == .video
+            if let image = region.previewKey.flatMap(mediaImage(for:)) {
+                drawImage(
+                    image,
+                    in: region.frame,
+                    cornerRadius: attachmentCornerRadius,
+                    fillsFrame: fillsFrame
+                )
+            } else if let placeholder = region.placeholder?.image {
+                drawImage(placeholder, in: region.frame, cornerRadius: attachmentCornerRadius, fillsFrame: true)
+            } else if isVideo {
+                systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
+            }
+            if isVideo { mediaPlayGlyph(in: region.frame) }
+        case .audio, .file:
+            fileCard(
+                .init(
+                    frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil,
+                    isAudio: attachment.mediaKind == .audio
+                ),
+                messageID: message.id,
+                bubbleRegion: layout.bubbleRegion,
+                state: input.model?.attachmentDownloads.states[attachment.id],
+                upload: uploadState(of: attachment, in: input),
+                pointer: .init(
+                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                )
+            )
+            if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
+                NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)
+            }
+        }
+    }
+
     private static func drawMessageEmbeds(_ input: NativeTimelineMessageDrawInput) {
         let layout = input.layout
+        let concealedEmbeds = input.spoilerRevealStore.map {
+            NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
+        } ?? [:]
         for region in layout.embedRegions {
-            drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
-            drawEmbedText(region, input: input)
-            drawEmbedMedia(region)
+            let isCovered = concealedEmbeds[region.embedID] != nil
+            NativeTimelineSpoilerCover.draw(
+                covering: isCovered, in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+            ) {
+                drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
+                drawEmbedText(region, input: input)
+                drawEmbedMedia(region, isCovered: isCovered)
+            }
         }
     }
 
@@ -583,7 +596,9 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion) {
+    /// `isCovered`: a spoiler cover blurs the embed, so it draws the poster
+    /// of a video that otherwise plays in its own view.
+    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion, isCovered: Bool) {
         for imageRegion in region.imageRegions {
             if let image = mediaImage(for: .media(
                 imageRegion.url,
@@ -608,7 +623,7 @@ extension NativeTimelineRowPainter {
         }
         guard let frame = region.mediaFrame,
               let url = region.mediaURL,
-              TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
+              isCovered || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
                   mediaIsVideo: region.mediaIsVideo,
                   autoplaysInline: region.mediaAutoplaysInline
               )

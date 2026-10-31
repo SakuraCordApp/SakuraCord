@@ -1126,7 +1126,7 @@ extension NativeTimelineCanvasView {
         // Most rows have no revealed spoilers. Avoid building selectable
         // regions (and hashing their text) on every scrolling frame in that
         // case; callers already know the row's current storage index.
-        guard !spoilerRevealStore.revealedText.isEmpty,
+        guard spoilerRevealStore.hasRevealedText,
               items.indices.contains(rowIndex),
                layouts.indices.contains(rowIndex),
            let messageID = items[rowIndex].messageID
@@ -1156,7 +1156,7 @@ extension NativeTimelineCanvasView {
         value: NSAttributedString,
         layout: NativeTimelineRowLayout
     ) -> Set<Int> {
-        guard !spoilerRevealStore.revealedText.isEmpty,
+        guard spoilerRevealStore.hasRevealedText,
               let contentID = textSpoilerContentID(
                   for: region,
                   layout: layout

@@ -148,6 +148,9 @@ extension MockMessageFixtureBuilder {
             showcaseMessage(322, content: "https://sakuracord.app/report?type=bug"),
             showcaseMessage(323, content: "https://sakuracord.app/settings/themes/AQJKz_VpjwzNszNAALhRczO9cP__yjw"),
             showcaseMessage(324, content: "https://sakuracord.app/settings/diagnostics/send"),
+            showcaseMessage(325, author: nova, content: "A link in a spoiler hides its card: ||https://example.com/article||") {
+                $0.embeds = [samples[1]]
+            },
         ]
         return result
     }

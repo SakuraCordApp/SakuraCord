@@ -13,6 +13,7 @@ nonisolated struct ForwardPreviewMedia: Equatable {
     /// frame, never the video itself.
     let url: URL?
     let kind: ForwardPreviewMediaKind
+    var isSpoiler = false
 
     static let thumbnailPixelDimension = 128
 }
@@ -36,16 +37,14 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
             case .audio: .audio
             case .file: .file
             }
-            if kind == .video, attachment.isSpoiler {
-                return ForwardPreviewMedia(url: nil, kind: kind)
-            }
             return ForwardPreviewMedia(
                 url: kind == .video
                     ? attachment.videoPosterURL(
                         maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
                     )
                     : attachment.proxyURL ?? attachment.url,
-                kind: kind
+                kind: kind,
+                isSpoiler: attachment.isSpoiler
             )
         }
         let embedMedia = MessageEmbedPresentation.visibleEmbeds(for: message)
@@ -138,10 +137,7 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
             children.flatMap(Self.media(in:))
         case .container(_, _, let spoiler, let children):
             children.flatMap(Self.media(in:)).map { item in
-                ForwardPreviewMedia(
-                    url: spoiler && item.kind == .video ? nil : item.url,
-                    kind: item.kind
-                )
+                ForwardPreviewMedia(url: item.url, kind: item.kind, isSpoiler: spoiler || item.isSpoiler)
             }
         case .section(_, let children, let accessory):
             children.flatMap(Self.media(in:)) + (accessory.map(Self.media(in:)) ?? [])
@@ -150,7 +146,7 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
         case .mediaGallery(_, let items):
             items.map { media($0.media) }
         case .file(_, let value):
-            [ForwardPreviewMedia(url: value.proxyURL ?? value.url, kind: .file)]
+            [ForwardPreviewMedia(url: value.proxyURL ?? value.url, kind: .file, isSpoiler: value.isSpoiler)]
         case .button, .select, .textDisplay, .separator, .unsupported:
             []
         }
@@ -161,18 +157,19 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
         let url = value.proxyURL ?? value.url
         if contentType.hasPrefix("video/") {
             return ForwardPreviewMedia(
-                url: value.isSpoiler ? nil : DiscordVideoPosterURL.url(
+                url: DiscordVideoPosterURL.url(
                     proxyURL: value.proxyURL,
                     width: value.width,
                     height: value.height,
                     maximumPixelDimension: ForwardPreviewMedia.thumbnailPixelDimension
                 ),
-                kind: .video
+                kind: .video,
+                isSpoiler: value.isSpoiler
             )
         }
         let animated = contentType == "image/gif"
             || url?.pathExtension.lowercased() == "gif"
-        return ForwardPreviewMedia(url: url, kind: .image(animated: animated))
+        return ForwardPreviewMedia(url: url, kind: .image(animated: animated), isSpoiler: value.isSpoiler)
     }
 
     private static func componentText(in components: [MessageComponent]) -> String {
@@ -314,7 +311,7 @@ private struct ForwardPreviewThumbnail: View {
                 if let url = media.url {
                     AnimatedRemoteImage(
                         url: url,
-                        animates: animated,
+                        animates: animated && !media.isSpoiler,
                         maximumPixelDimension: 128,
                         contentMode: .fill
                     )
@@ -341,6 +338,8 @@ private struct ForwardPreviewThumbnail: View {
             }
         }
         .frame(width: InterfaceScale.metric(56), height: InterfaceScale.metric(56))
+        // Far too small for the pill, so the blur stands alone.
+        .spoilerCover(media.isSpoiler, pillScale: nil)
         .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             if overflowCount > 0 {

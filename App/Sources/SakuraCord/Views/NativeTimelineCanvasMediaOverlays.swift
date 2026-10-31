@@ -258,7 +258,7 @@ extension NativeTimelineCanvasView {
             )
 
             appendAnimatedEmbedOverlays(
-                messageID: row.message.id,
+                message: row.message,
                 identifier: identifier,
                 layout: layout,
                 accumulator: accumulator
@@ -269,6 +269,7 @@ extension NativeTimelineCanvasView {
             {
                 appendAnimatedComponentMediaOverlays(
                     component,
+                    messageID: row.message.id,
                     componentIndex: componentIndex,
                     identifier: identifier,
                     accumulator: accumulator
@@ -426,12 +427,15 @@ extension NativeTimelineCanvasView {
     }
 
     private func appendAnimatedEmbedOverlays(
-        messageID: MessageID,
+        message: Message,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
-        for embed in layout.embedRegions {
+        let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+            in: message, store: spoilerRevealStore
+        )
+        for embed in layout.embedRegions where concealedEmbeds[embed.embedID] == nil {
             for (imageIndex, imageRegion) in embed.imageRegions.enumerated()
             where Self.isPotentiallyAnimated(imageRegion.url) {
                 accumulator.append(
@@ -477,7 +481,7 @@ extension NativeTimelineCanvasView {
                     selectionRange: textSelection?.itemIdentifier == identifier
                         && textSelection?.region == textRegionID ? textSelection?.range : nil,
                     revealedSpoilerLocations: revealedTextSpoilerLocations(
-                        messageID: messageID,
+                        messageID: message.id,
                         region: textRegionID,
                         value: textRegion.text.value,
                         layout: layout
@@ -489,12 +493,23 @@ extension NativeTimelineCanvasView {
 
     private func appendAnimatedComponentMediaOverlays(
         _ component: NativeTimelineComponentLayout,
+        messageID: MessageID,
         componentIndex: Int,
         identifier: NativeMessageTimelineItem.Identifier,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
+        // A revealed item can share its animation with one still hidden.
+        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+            in: component, messageID: messageID, store: spoilerRevealStore
+        )
+        let isHidden = { [spoilerRevealStore] (frame: CGRect, componentID: String, isSpoiler: Bool) in
+            NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(frame, hiddenContainerFrames: hiddenContainerFrames)
+                || NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    messageID: messageID, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+                )
+        }
         for image in component.images
-        where Self.isPotentiallyAnimated(image.displayURL) {
+        where Self.isPotentiallyAnimated(image.displayURL) && !isHidden(image.frame, image.componentID, image.isSpoiler) {
             accumulator.append(
                 row: identifier,
                 role: .componentImage(componentIndex, image.componentID),
@@ -509,7 +524,8 @@ extension NativeTimelineCanvasView {
             )
         }
         for media in component.media
-        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL) {
+        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL)
+            && !isHidden(media.frame, media.componentID, media.isSpoiler) {
             accumulator.append(
                 row: identifier,
                 role: .componentMedia(componentIndex, media.componentID),
@@ -530,7 +546,14 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
-        for (textIndex, textRegion) in component.textRegions.enumerated() {
+        // A hidden container's cover blurs its emoji; none may animate over it.
+        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+            in: component, messageID: messageID, store: spoilerRevealStore
+        )
+        for (textIndex, textRegion) in component.textRegions.enumerated()
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            textRegion.frame, hiddenContainerFrames: hiddenContainerFrames
+        ) {
             var drawingFrame = textRegion.frame
             drawingFrame.size.height += textRegion.text.layoutHeightAdjustment
             let textRegionID = NativeTimelineTextRegion.component(
@@ -555,7 +578,10 @@ extension NativeTimelineCanvasView {
                 )
             )
         }
-        for button in component.buttons {
+        for button in component.buttons
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            button.frame, hiddenContainerFrames: hiddenContainerFrames
+        ) {
             guard let emoji = button.emoji,
                   emoji.isAnimated,
                   let url = emoji.imageURL(size: 32)
@@ -866,8 +892,12 @@ extension NativeTimelineCanvasView {
             if let urls = inlineVideoRows[identifier],
                layouts.indices.contains(index)
             {
+                let concealedEmbeds = items[index].messageRow.map {
+                    NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: $0.message, store: spoilerRevealStore)
+                } ?? [:]
                 for region in layouts[index].embedRegions {
                     guard region.mediaIsVideo,
+                          concealedEmbeds[region.embedID] == nil,
                           region.mediaAutoplaysInline,
                           let url = region.mediaURL,
                           urls.contains(url),
@@ -1067,6 +1097,19 @@ extension NativeTimelineCanvasView {
                 rowOrigin: rowOrigin,
                 into: &desired
             )
+            let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+                in: message, store: spoilerRevealStore
+            )
+            for region in layouts[index].embedRegions {
+                guard let key = concealedEmbeds[region.embedID] else { continue }
+                appendDesiredSpoilerOverlay(
+                    key,
+                    frame: region.frame,
+                    cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
+                    rowOrigin: rowOrigin,
+                    into: &desired
+                )
+            }
             for component in layouts[index].componentLayouts {
                 appendComponentSpoilerOverlays(
                     for: component,
@@ -1090,7 +1133,7 @@ extension NativeTimelineCanvasView {
             appendDesiredSpoilerOverlay(
                 .attachment(messageID: message.id, attachmentID: region.attachment.id),
                 frame: region.frame,
-                cornerRadius: InterfaceScale.metric(8),
+                cornerRadius: layout.cornerRadius(of: region),
                 rowOrigin: rowOrigin,
                 into: &desired
             )
@@ -1197,7 +1240,7 @@ extension NativeTimelineCanvasView {
                     componentID: region.componentID
                 ),
                 frame: region.frame,
-                cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
+                cornerRadius: region.card.cornerRadius,
                 rowOrigin: rowOrigin,
                 into: &desired
             )
