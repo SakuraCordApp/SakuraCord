@@ -136,6 +136,12 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// Redraws the parts still easing their hover, so dropping their fades
+    /// leaves none on its last frame.
+    func redrawFadingFileCardHovers() {
+        for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
+    }
+
     /// The file card parts' hover in a message at this moment.
     func fileCardHoverProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
         let now = ProcessInfo.processInfo.systemUptime

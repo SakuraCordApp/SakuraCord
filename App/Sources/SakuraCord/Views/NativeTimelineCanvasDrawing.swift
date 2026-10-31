@@ -357,6 +357,7 @@ extension NativeTimelineCanvasView {
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
+        redrawFadingFileCardHovers()
         let clearedTargets = pointer.clearHoverAndPressTargets()
         reactionHoverCoordinator.close()
         closeMessageProfilePopover()
@@ -407,7 +408,7 @@ extension NativeTimelineCanvasView {
         {
             setNeedsDisplay(rowFrame(at: oldCodeBlockIndex))
         }
-        for oldComponentButton in clearedTargets.componentButtons {
+        if let oldComponentButton = clearedTargets.componentButton {
             invalidateComponentButton(oldComponentButton)
         }
         if let messageID = clearedTargets.forwardedSourceMessageID,
