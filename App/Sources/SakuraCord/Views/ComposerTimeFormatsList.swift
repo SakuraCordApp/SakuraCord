@@ -15,6 +15,14 @@ public struct TimeMentionEntry: Equatable {
     }
 }
 
+private struct FlattenedOption: Identifiable {
+    let index: Int
+    let option: DiscordParsedTimeCandidate.Option
+    let hasDividerBefore: Bool
+
+    var id: String { option.id }
+}
+
 struct TimeFormatsAutocompleteList: View {
     let heading: String
     let candidates: [DiscordParsedTimeCandidate]
@@ -23,6 +31,29 @@ struct TimeFormatsAutocompleteList: View {
     let select: (DiscordParsedTimeCandidate.Option) -> Void
     let cornerRadius: CGFloat
     let keyboardSelectionRevision: Int
+
+    private var allFlattenedOptions: [FlattenedOption] {
+        var items: [FlattenedOption] = []
+        var running = 0
+        for (candidateIndex, candidate) in candidates.enumerated() {
+            for (optionIndex, option) in candidate.options.enumerated() {
+                let showDivider = candidateIndex > 0 && optionIndex == 0
+                items.append(FlattenedOption(index: running, option: option, hasDividerBefore: showDivider))
+                running += 1
+            }
+        }
+        return items
+    }
+
+    private var contentHeight: CGFloat {
+        let totalItems = allFlattenedOptions.count
+        guard totalItems > 0 else { return InterfaceScale.metric(60) }
+        let dividers = max(0, candidates.count - 1)
+        let rawHeight = CGFloat(totalItems) * InterfaceScale.metric(36)
+            + CGFloat(dividers) * InterfaceScale.metric(12)
+            + InterfaceScale.metric(8)
+        return min(InterfaceScale.metric(280), max(InterfaceScale.metric(80), rawHeight))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,70 +67,56 @@ struct TimeFormatsAutocompleteList: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
-                        ForEach(Array(candidates.enumerated()), id: \.offset) { candidateIndex, candidate in
-                            if candidateIndex > 0 {
+                        ForEach(allFlattenedOptions) { item in
+                            if item.hasDividerBefore {
                                 Divider()
                                     .padding(.vertical, InterfaceScale.metric(4))
                                     .padding(.horizontal, InterfaceScale.metric(10))
                             }
 
-                            ForEach(candidate.options) { option in
-                                let overallIndex = overallOptionIndex(for: option)
-                                let isSelected = overallIndex == selectedIndex
-                                Button {
-                                    select(option)
-                                } label: {
-                                    HStack {
-                                        Text(option.displayText)
-                                            .font(.interfaceSystem(size: 14))
-                                            .foregroundStyle(Color.primary)
-                                            .padding(.horizontal, InterfaceScale.metric(8))
-                                            .padding(.vertical, InterfaceScale.metric(4))
-                                            .background(
-                                                Color.primary.opacity(0.10),
-                                                in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
-                                            )
-                                        Spacer()
-                                    }
-                                    .padding(.horizontal, InterfaceScale.metric(10))
-                                    .padding(.vertical, InterfaceScale.metric(4))
-                                    .contentShape(Rectangle())
-                                    .background(
-                                        isSelected
-                                            ? Color.accentColor.opacity(0.18)
-                                            : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
-                                    )
+                            let isSelected = item.index == selectedIndex
+                            Button {
+                                select(item.option)
+                            } label: {
+                                HStack {
+                                    Text(item.option.displayText)
+                                        .font(.interfaceSystem(size: 14))
+                                        .foregroundStyle(Color.primary)
+                                        .padding(.horizontal, InterfaceScale.metric(8))
+                                        .padding(.vertical, InterfaceScale.metric(4))
+                                        .background(
+                                            Color.primary.opacity(0.10),
+                                            in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
+                                        )
+                                    Spacer()
                                 }
-                                .buttonStyle(.plain)
-                                .id(overallIndex)
-                                .onHover { hovering in
-                                    if hovering { highlight(overallIndex) }
-                                }
+                                .padding(.horizontal, InterfaceScale.metric(10))
+                                .padding(.vertical, InterfaceScale.metric(4))
+                                .contentShape(Rectangle())
+                                .background(
+                                    isSelected
+                                        ? Color.accentColor.opacity(0.18)
+                                        : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .id(item.index)
+                            .onHover { hovering in
+                                if hovering { highlight(item.index) }
                             }
                         }
                     }
                     .padding(.horizontal, InterfaceScale.metric(6))
                     .padding(.bottom, InterfaceScale.metric(6))
                 }
-                .frame(maxHeight: InterfaceScale.metric(280))
+                .frame(height: contentHeight)
                 .onChange(of: keyboardSelectionRevision) { _, _ in
                     proxy.scrollTo(selectedIndex)
                 }
             }
         }
         .commandPanelSurface(cornerRadius: cornerRadius)
-    }
-
-    private func overallOptionIndex(for target: DiscordParsedTimeCandidate.Option) -> Int {
-        var running = 0
-        for candidate in candidates {
-            for option in candidate.options {
-                if option.id == target.id { return running }
-                running += 1
-            }
-        }
-        return 0
     }
 }
 
