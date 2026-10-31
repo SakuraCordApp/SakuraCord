@@ -964,11 +964,15 @@ extension NativeTimelineCanvasView {
         let frame = found.region.frame.offsetBy(dx: 0, dy: found.origin)
         let state = voiceMessageDrawState(for: found.region, playback: playback)
         // A player the pointer left a moment ago takes back its overlay,
-        // which is still easing out, rather than gaining a second.
-        if overlay == nil {
-            overlay = subviews.lazy.compactMap { $0 as? NativeTimelineVoiceMessageOverlay }
-                .first { $0.isDeparting && $0.region.playbackID == found.region.playbackID }
-            overlay?.cancelDismissal()
+        // which is still easing out, rather than gaining a second; the
+        // player the slot held eases out instead.
+        if overlay?.region.playbackID != found.region.playbackID,
+           let departing = subviews.lazy.compactMap({ $0 as? NativeTimelineVoiceMessageOverlay })
+               .first(where: { $0.isDeparting && $0.region.playbackID == found.region.playbackID })
+        {
+            overlay?.dismiss()
+            departing.cancelDismissal()
+            overlay = departing
         }
         if let overlay {
             overlay.region = found.region
