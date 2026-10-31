@@ -937,6 +937,11 @@ extension NativeTimelineCanvasView {
         }
         let frame = found.region.frame.offsetBy(dx: 0, dy: found.origin)
         let state = voiceMessageDrawState(for: found.region, playback: playback)
+        // Another message's player starts fresh rather than finishing the
+        // last one's hover or play and pause animations.
+        if overlay?.region.playbackID != found.region.playbackID {
+            Self.remove(&overlay)
+        }
         if let overlay {
             overlay.cancelHoverEaseOut()
             overlay.region = found.region

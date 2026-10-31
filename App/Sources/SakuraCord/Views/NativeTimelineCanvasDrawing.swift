@@ -407,7 +407,7 @@ extension NativeTimelineCanvasView {
         {
             setNeedsDisplay(rowFrame(at: oldCodeBlockIndex))
         }
-        if let oldComponentButton = clearedTargets.componentButton {
+        for oldComponentButton in clearedTargets.componentButtons {
             invalidateComponentButton(oldComponentButton)
         }
         if let messageID = clearedTargets.forwardedSourceMessageID,

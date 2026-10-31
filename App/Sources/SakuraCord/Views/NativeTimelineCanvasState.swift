@@ -47,7 +47,9 @@ final class NativeTimelinePointerState {
         let textLink: NativeTimelineTextLinkHover?
         let textSpoiler: NativeTimelineTextSpoilerHover?
         let codeBlock: NativeTimelineCodeBlockPointerTarget?
-        let componentButton: NativeTimelineComponentButtonTarget?
+        /// The hovered or pressed button and any part still easing its
+        /// hover, which would otherwise keep their last frame.
+        let componentButtons: Set<NativeTimelineComponentButtonTarget>
         let forwardedSourceMessageID: MessageID?
         let threadMessageID: MessageID?
         let footerAction: NativeTimelineFooterActionTarget?
@@ -98,8 +100,8 @@ final class NativeTimelinePointerState {
             textLink: hoveredTextLink,
             textSpoiler: hoveredTextSpoiler,
             codeBlock: hoveredCodeBlock,
-            componentButton:
-                visualPressedComponentButton ?? hoveredComponentButton,
+            componentButtons: Set(componentButtonHoverFades.keys)
+                .union([visualPressedComponentButton ?? hoveredComponentButton].compactMap(\.self)),
             forwardedSourceMessageID: hoveredForwardedSourceMessageID,
             threadMessageID: hoveredThreadMessageID,
             footerAction: hoveredFooterAction,
