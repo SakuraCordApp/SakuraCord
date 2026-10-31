@@ -360,13 +360,20 @@ public enum DiscordMarkdown {
 
     /// `usesMessageLineHeight` gives paragraphs and list items Discord's
     /// message line height; embeds and previews keep natural lines.
+    /// `reservesCodeCopyButton` ends a code block's first line before the
+    /// copy button the timeline shows in the block's top-trailing corner.
     public static func appKitAttributed(
         _ plan: AppKitPlan,
         baseFontSize: CGFloat = 15,
-        usesMessageLineHeight: Bool = false
+        usesMessageLineHeight: Bool = false,
+        reservesCodeCopyButton: Bool = false
     ) -> NSAttributedString {
         let output = NSMutableAttributedString()
-        let metrics = BlockMetrics(baseFontSize: baseFontSize, usesMessageLineHeight: usesMessageLineHeight)
+        let metrics = BlockMetrics(
+            baseFontSize: baseFontSize,
+            usesMessageLineHeight: usesMessageLineHeight,
+            reservesCodeCopyButton: reservesCodeCopyButton
+        )
 
         var previousParagraph: NSParagraphStyle?
         for (lineIndex, linePlan) in plan.lines.enumerated() {
@@ -1038,13 +1045,17 @@ public enum DiscordMarkdown {
         let emptyLineHeight: CGFloat
         /// Discord's 18 px code line.
         var codeLineHeight: CGFloat { px(18) }
-        /// The copy button the timeline shows in a code block's top-trailing
-        /// corner: a square filling a one-line block less a 2 px inset,
+        let reservesCodeCopyButton: Bool
+        /// Room at the end of a code block's first line for the timeline's
+        /// copy button: a square filling a one-line block less a 2 px inset,
         /// kept that inset from the block's edge.
-        var codeCopyButtonReserve: CGFloat { codeLineHeight + codeInset * 2 - px(2) }
+        var codeCopyButtonReserve: CGFloat {
+            reservesCodeCopyButton ? codeLineHeight + codeInset * 2 - px(2) : 0
+        }
 
-        init(baseFontSize: CGFloat, usesMessageLineHeight: Bool) {
+        init(baseFontSize: CGFloat, usesMessageLineHeight: Bool, reservesCodeCopyButton: Bool) {
             self.baseFontSize = baseFontSize
+            self.reservesCodeCopyButton = reservesCodeCopyButton
             let font = NSFont.systemFont(ofSize: baseFontSize)
             bodyLineHeight = usesMessageLineHeight ? baseFontSize / 16 * 22 : 0
             emptyLineHeight = usesMessageLineHeight

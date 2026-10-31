@@ -134,7 +134,8 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                     baseFontSize: prepared.isEmojiOnly
                         ? 48
                         : baseFontSize,
-                    usesMessageLineHeight: !prepared.isEmojiOnly
+                    usesMessageLineHeight: !prepared.isEmojiOnly,
+                    reservesCodeCopyButton: true
                 )
             )
         } else {

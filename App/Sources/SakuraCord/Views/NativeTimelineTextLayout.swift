@@ -334,17 +334,24 @@ nonisolated enum NativeTimelineCoreText {
     static func scaledMarkdown(
         _ plan: DiscordMarkdown.AppKitPlan,
         baseFontSize: CGFloat,
-        usesMessageLineHeight: Bool = false
+        usesMessageLineHeight: Bool = false,
+        reservesCodeCopyButton: Bool = false
     ) -> NSAttributedString {
         let factor = InterfaceScale.factor
         guard factor != 1 else {
             return DiscordMarkdown.appKitAttributed(
-                plan, baseFontSize: baseFontSize, usesMessageLineHeight: usesMessageLineHeight
+                plan,
+                baseFontSize: baseFontSize,
+                usesMessageLineHeight: usesMessageLineHeight,
+                reservesCodeCopyButton: reservesCodeCopyButton
             )
         }
         let unscaledBaseFontSize = baseFontSize / factor
         return DiscordMarkdown.appKitAttributed(
-            plan, baseFontSize: unscaledBaseFontSize, usesMessageLineHeight: usesMessageLineHeight
+            plan,
+            baseFontSize: unscaledBaseFontSize,
+            usesMessageLineHeight: usesMessageLineHeight,
+            reservesCodeCopyButton: reservesCodeCopyButton
         )
             .scalingTypography(by: baseFontSize / unscaledBaseFontSize)
     }
@@ -369,7 +376,9 @@ nonisolated enum NativeTimelineCoreText {
             attributedString: scaledMarkdown(
                 prepared.markdownPlan,
                 baseFontSize: resolvedBaseFontSize,
-                usesMessageLineHeight: usesMessageLineHeight && !prepared.isEmojiOnly
+                usesMessageLineHeight: usesMessageLineHeight && !prepared.isEmojiOnly,
+                // Every timeline text shows a code block's copy button.
+                reservesCodeCopyButton: true
             )
         )
         if bodyScale != 1 {
