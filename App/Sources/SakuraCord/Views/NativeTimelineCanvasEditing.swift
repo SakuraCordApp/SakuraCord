@@ -1258,7 +1258,6 @@ extension NativeTimelineCanvasView {
         }
         frames.append(contentsOf: layout.linkedImageRegions.map(\.frame))
         frames.append(contentsOf: layout.attachmentRegions.map(\.frame))
-        frames.append(contentsOf: layout.uploadRegions.map(\.frame))
         frames.append(contentsOf: layout.embedFrames)
         frames.append(contentsOf: layout.componentFrames)
         frames.append(contentsOf: layout.stickerFrames)

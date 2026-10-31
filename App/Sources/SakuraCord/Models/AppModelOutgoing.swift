@@ -30,7 +30,7 @@ extension AppModel {
     /// the whole message.
     func cancelAttachmentUpload(_ attachmentID: String, of message: Message) {
         guard let nonce = message.nonce,
-              attachmentUploads.canCancel(nonce: nonce, attachmentID: attachmentID),
+              attachmentUploads.isUploading(nonce: nonce, attachmentID: attachmentID),
               let id = UUID(uuidString: attachmentID)
         else { return }
         // A failed send keeps no transfer; its retry starts from the edited draft.

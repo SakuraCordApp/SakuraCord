@@ -7,7 +7,6 @@ nonisolated struct NativeTimelineFooterActionTarget: Equatable {
         case translation
         /// Keyed by the run's first message, which a revealed header shares with its first row.
         case suppressedToggle
-        case cancelUpload(attachmentID: String)
         case retrySend
     }
 

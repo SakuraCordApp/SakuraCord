@@ -8,10 +8,11 @@ struct MediaViewerWindowOverlay: View {
     @Environment(VoiceMessagePlaybackStore.self) private var playback
     let presentation: NativeTimelineMediaViewerPresentation?
     let dismiss: () -> Void
+    var selectionChanged: (String) -> Void = { _ in }
 
     var body: some View {
         WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { presentation, context in
-            MediaViewerWindowAnimatedContent(presentation: presentation, context: context)
+            MediaViewerWindowAnimatedContent(presentation: presentation, context: context, selectionChanged: selectionChanged)
                 .environment(\.profileCosmeticPolicy, cosmeticPolicy)
                 .environment(playback)
         })
@@ -132,14 +133,20 @@ private final class MediaViewerWindowAnimationState {
 private struct MediaViewerWindowAnimatedContent: View {
     let presentation: NativeTimelineMediaViewerPresentation
     let context: WindowModalContext
+    let selectionChanged: (String) -> Void
     @State private var animationState: MediaViewerWindowAnimationState
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
 
     private var reducesMotion: Bool { systemReducesMotion || !AppMotionPolicy.animates(.overlays) }
 
-    init(presentation: NativeTimelineMediaViewerPresentation, context: WindowModalContext) {
+    init(
+        presentation: NativeTimelineMediaViewerPresentation,
+        context: WindowModalContext,
+        selectionChanged: @escaping (String) -> Void
+    ) {
         self.presentation = presentation
         self.context = context
+        self.selectionChanged = selectionChanged
         _animationState = State(initialValue: MediaViewerWindowAnimationState(presentation: presentation))
     }
 
@@ -150,7 +157,10 @@ private struct MediaViewerWindowAnimatedContent: View {
             transitionSources: reducesMotion ? [:] : animationState.transitionSources,
             close: { context.dismiss() },
             closeInteractively: { context.dismiss(interactively: true) },
-            selectionChanged: { animationState.select(itemID: $0) }
+            selectionChanged: {
+                animationState.select(itemID: $0)
+                selectionChanged($0)
+            }
         )
         .background {
             MediaViewerTransitionFrameReader(presentation: presentation, animationState: animationState)
@@ -205,7 +215,8 @@ private struct MediaViewerTransitionFrameReader: NSViewRepresentable {
                                 from: nil
                             ),
                             cornerRadius: source.cornerRadius,
-                            fillsFrame: source.fillsFrame
+                            fillsFrame: source.fillsFrame,
+                            coversSource: source.coversSource
                         )
                     }
                     animationState?.setTransitionSources(resolvedSources)

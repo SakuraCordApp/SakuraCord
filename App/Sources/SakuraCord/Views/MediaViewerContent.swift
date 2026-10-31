@@ -23,6 +23,9 @@ struct MediaViewerStage: View {
     private nonisolated static let space = "MediaViewerStage"
     /// Where a file's content lays out, which its card zooms into.
     @State private var contentFrame: CGRect?
+    /// A staged file lives outside the sandbox, so the stage keeps it open
+    /// while it shows for whichever player or preview reads it.
+    @State private var openFile: URL?
 
     var body: some View {
         ZStack {
@@ -43,35 +46,10 @@ struct MediaViewerStage: View {
                     finishPinchDismissal: finishPinchDismissal,
                     contextMenuActions: imageContextMenuActions
                 )
-            case .video:
-                MediaViewerVideo(
-                    url: item.url,
-                    mediaWidth: item.width,
-                    mediaHeight: item.height
-                )
-                .padding(.horizontal, horizontalInset)
-                .padding(.top, topInset)
-                .padding(.bottom, bottomInset)
-            case let .youtube(playback):
-                GeometryReader { proxy in
-                    let fittedSize = MediaViewerLayoutPolicy.fittedSize(
-                        mediaWidth: item.width ?? 16, mediaHeight: item.height ?? 9,
-                        availableSize: proxy.size
-                    )
-                    if isVisible {
-                        YouTubePlayerView(playback: playback, openInBrowser: MediaViewerActionService.openInBrowser)
-                            .id(playback)
-                            .frame(width: fittedSize.width, height: fittedSize.height)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                .padding(.horizontal, horizontalInset)
-                .padding(.top, topInset)
-                .padding(.bottom, bottomInset)
-            case .audio, .text, .file:
+            default:
                 // Its own container keeps the content's glass under the
                 // zoom's fade and clip; the viewer's would draw it regardless.
-                GlassEffectContainer { fileContent }
+                GlassEffectContainer { content }
                     .modifier(MediaViewerContainerZoom(
                         progress: isVisible ? 1 - interaction.pinchDismissalProgress : 0,
                         source: transitionSource,
@@ -89,11 +67,40 @@ struct MediaViewerStage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .coordinateSpace(.named(Self.space))
+        .onChange(of: item.url, initial: true) { _, url in
+            openFile?.stopAccessingSecurityScopedResource()
+            openFile = url.isFileURL && url.startAccessingSecurityScopedResource() ? url : nil
+        }
+        .onDisappear {
+            openFile?.stopAccessingSecurityScopedResource()
+            openFile = nil
+        }
         .clipped()
     }
 
-    @ViewBuilder private var fileContent: some View {
+    @ViewBuilder private var content: some View {
         switch item.kind {
+        case .image:
+            EmptyView()
+        case .video:
+            MediaViewerVideo(
+                url: item.url,
+                mediaWidth: item.width,
+                mediaHeight: item.height
+            )
+        case let .youtube(playback):
+            GeometryReader { proxy in
+                let fittedSize = MediaViewerLayoutPolicy.fittedSize(
+                    mediaWidth: item.width ?? 16, mediaHeight: item.height ?? 9,
+                    availableSize: proxy.size
+                )
+                if isVisible {
+                    YouTubePlayerView(playback: playback, openInBrowser: MediaViewerActionService.openInBrowser)
+                        .id(playback)
+                        .frame(width: fittedSize.width, height: fittedSize.height)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
         case .audio:
             let playbackID: VoiceMessagePlaybackID = messageID.map { .attachment($0, attachmentID: item.id) } ?? .file(item.url)
             // Each file is its own player, which another file replaces.
@@ -101,7 +108,7 @@ struct MediaViewerStage: View {
                 .id(playbackID)
         case let .text(language):
             MediaViewerText(url: item.url, language: language)
-        default:
+        case .file:
             MediaViewerFile(item: item, download: download)
         }
     }
@@ -148,9 +155,12 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
                 if let source, progress < 1 {
                     let size = source.frameInWindow.size
                     let scale = min(box.width / max(size.width, 1), box.height / max(size.height, 1))
+                    // A staged video's thumbnail fills its square tile, cropped.
                     Image(nsImage: source.image)
                         .resizable()
+                        .aspectRatio(contentMode: source.fillsFrame ? .fill : .fit)
                         .frame(width: size.width * scale, height: size.height * scale)
+                        .clipped()
                         .position(x: clip.midX, y: clip.midY)
                         .opacity(1 - Self.smoothstep(progress, from: 0.1, to: 0.45))
                         .allowsHitTesting(false)
@@ -651,17 +661,11 @@ private struct MediaViewerVideo: View {
     let mediaWidth: Int?
     let mediaHeight: Int?
 
+    /// Laid out at the video's own frame, which a staged video's tile zooms
+    /// into; the player letterboxes a video whose size is unknown.
     var body: some View {
-        GeometryReader { proxy in
-            let fittedSize = MediaViewerLayoutPolicy.fittedSize(
-                mediaWidth: mediaWidth ?? 16,
-                mediaHeight: mediaHeight ?? 9,
-                availableSize: proxy.size
-            )
-            ViewerAVPlayer(url: url)
-                .frame(width: fittedSize.width, height: fittedSize.height)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        ViewerAVPlayer(url: url)
+            .aspectRatio(CGSize(width: mediaWidth ?? 16, height: mediaHeight ?? 9), contentMode: .fit)
     }
 }
 

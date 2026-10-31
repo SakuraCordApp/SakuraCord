@@ -346,6 +346,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     }
 
     var activityIndicators: [ActivityIndicatorKey: NSView] = [:]
+    var uploadRings: [UploadRingKey: NativeTimelineUploadRingView] = [:]
     var spoilerOverlays:
         [NativeTimelineComponentRevealKey:
             NativeTimelineSpoilerOverlayHost] = [:]
