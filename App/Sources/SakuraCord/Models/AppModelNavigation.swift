@@ -453,6 +453,7 @@ extension AppModel {
             presentOpenThreadFullWidth()
         }
         guard let messageID else { return }
+        threadWindow.nearestJumpTarget = nearest ? messageID : nil
         let generation = threadLoadGeneration
         let windowRevision = threadWindow.revision
         // Whether the thread's first window is already the target's.
@@ -487,7 +488,7 @@ extension AppModel {
     /// The message a jump lands on: the target, or with `nearest` the last
     /// one before it when it is not in the conversation, as for the moment
     /// an AutoMod alert marks.
-    private static func landingID(for messageID: MessageID, in messages: [Message], nearest: Bool) -> MessageID? {
+    static func landingID(for messageID: MessageID, in messages: [Message], nearest: Bool) -> MessageID? {
         if messages.contains(where: { $0.id == messageID }) { return messageID }
         guard nearest else { return nil }
         return (messages.last { $0.id < messageID } ?? messages.first)?.id
