@@ -556,14 +556,15 @@ extension NativeTimelineRowPainter {
                 region.displayURL,
                 maximumPixelDimension: region.maximumPixelDimension
             )) {
+                // Discord crops a thumbnail to fill its square.
                 drawImage(
                     image,
                     in: region.frame,
                     cornerRadius: region.cornerRadius,
-                    fillsFrame: false
+                    fillsFrame: true
                 )
             } else if let placeholder = region.placeholder?.image {
-                drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: false)
+                drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: true)
             } else {
                 systemSymbol("photo", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(22))
             }
@@ -584,17 +585,17 @@ extension NativeTimelineRowPainter {
                 isSpoiler: region.isSpoiler,
                 input: input
             ) {
-                spoilerConcealedBase(in: region.frame, cornerRadius: InterfaceScale.metric(8))
+                spoilerConcealedBase(in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8))
                 continue
             }
             NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: InterfaceScale.metric(8)).fill()
+            NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8)).fill()
             if let previewURL = region.previewURL,
                let image = mediaImage(for: .media(previewURL))
             {
-                drawImage(image, in: region.frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
+                drawImage(image, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
             } else if let placeholder = region.placeholder?.image {
-                drawImage(placeholder, in: region.frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
+                drawImage(placeholder, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
             } else if region.isVideo {
                 systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
             }
@@ -736,7 +737,7 @@ extension NativeTimelineRowPainter {
             CGRect(
                 x: frame.minX,
                 y: frame.minY,
-                width: InterfaceScale.metric(4),
+                width: DiscordRichMessageMetrics.px(4),
                 height: frame.height
             ).fill()
         }
