@@ -159,6 +159,7 @@ extension NativeMessageTimelineCoordinator {
                 var appearance = model.appearanceSettings
                 appearance.colorScheme = sharedTheme.appearance
                 appearance.windowOpacity = sharedTheme.windowOpacity
+                appearance.matchBackgroundToPrimaryColor = sharedTheme.usePrimaryColorInBackground
                 model.applyAppearanceSettings(appearance)
             }
         )

@@ -643,6 +643,11 @@ final class SakuraCordThemeSettingsStore {
         return migrated
     }
 
+    var usesPrimaryColorInBackground: Bool {
+        guard case let .bool(value) = preferences.value(for: .matchBackgroundToPrimaryColor) else { return true }
+        return value
+    }
+
     func save(_ theme: SakuraCordGradientTheme) {
         preferences.set(.string(theme.storageValue), for: .themeDesigner)
     }
@@ -655,8 +660,43 @@ final class SakuraCordThemeStore {
     static let randomizationDurationSeconds = 0.22
     static let randomizationDuration: Duration = .seconds(randomizationDurationSeconds)
 
-    private(set) var activeTheme: SakuraCordGradientTheme
-    private(set) var committedTheme: SakuraCordGradientTheme
+    private var authoredTheme: SakuraCordGradientTheme
+    private var committedAuthoredTheme: SakuraCordGradientTheme
+    private(set) var systemAccentColor: SakuraCordThemeColor?
+
+    private(set) var matchesBackgroundToPrimaryColor = true
+
+    private func effectiveTheme(_ theme: SakuraCordGradientTheme) -> SakuraCordGradientTheme {
+        guard let systemAccentColor else { return theme }
+        var colors = theme.colors
+        colors[0] = systemAccentColor
+        return SakuraCordGradientTheme(colors: colors, activeColorCount: theme.activeColorCount, intensity: theme.intensity, brightness: theme.brightness)
+    }
+
+    var activeTheme: SakuraCordGradientTheme { effectiveTheme(authoredTheme) }
+    var backgroundTheme: SakuraCordGradientTheme { backgroundTheme(for: activeTheme) }
+    var committedBackgroundTheme: SakuraCordGradientTheme { backgroundTheme(for: committedTheme) }
+    var editableSaturation: Double {
+        let colors = isSystemAccentActive ? authoredTheme.activeColors.dropFirst() : authoredTheme.activeColors
+        guard !colors.isEmpty else { return activeTheme.saturation }
+        return colors.reduce(0) { $0 + $1.saturation } / Double(colors.count)
+    }
+
+    private func backgroundTheme(for theme: SakuraCordGradientTheme) -> SakuraCordGradientTheme {
+        guard !matchesBackgroundToPrimaryColor, theme.activeColorCount > 1 else { return theme }
+        return SakuraCordGradientTheme(colors: Array(theme.activeColors.dropFirst()), intensity: theme.intensity, brightness: theme.brightness)
+    }
+
+    func setMatchesBackgroundToPrimaryColor(_ matches: Bool) {
+        guard matchesBackgroundToPrimaryColor != matches else { return }
+        matchesBackgroundToPrimaryColor = matches
+        AppAccentColorController.shared.apply(committedTheme, background: committedBackgroundTheme)
+        NotificationCenter.default.post(name: .sakuraCordThemeDidCommit, object: nil)
+    }
+
+    var committedTheme: SakuraCordGradientTheme { effectiveTheme(committedAuthoredTheme) }
+    var isSystemAccentActive: Bool { systemAccentColor != nil }
+    var isUsingDefaultTheme: Bool { authoredTheme == .defaultTheme }
 
     @ObservationIgnored private let persistence: SakuraCordThemeSettingsStore
     @ObservationIgnored private var deferredPersistenceTask: Task<Void, Never>?
@@ -664,9 +704,10 @@ final class SakuraCordThemeStore {
 
     init(persistence: SakuraCordThemeSettingsStore = .shared) {
         self.persistence = persistence
+        matchesBackgroundToPrimaryColor = persistence.usesPrimaryColorInBackground
         let initial = persistence.load()
-        activeTheme = initial
-        committedTheme = initial
+        authoredTheme = initial
+        committedAuthoredTheme = initial
     }
 
     isolated deinit {
@@ -677,7 +718,15 @@ final class SakuraCordThemeStore {
         activeTheme.intensity == 0
     }
 
+    func setSystemAccentColor(_ color: SakuraCordThemeColor?) {
+        guard systemAccentColor != color else { return }
+        systemAccentColor = color
+        AppAccentColorController.shared.apply(committedTheme, background: committedBackgroundTheme)
+        NotificationCenter.default.post(name: .sakuraCordThemeDidCommit, object: nil)
+    }
+
     func setHue(_ hue: Double, at index: Int) {
+        guard index != 0 || !isSystemAccentActive else { return }
         editTheme { $0.setHue(hue, at: index) }
     }
 
@@ -706,13 +755,15 @@ final class SakuraCordThemeStore {
     }
 
     func applyColor(_ color: SakuraCordThemeColor, at index: Int, reduceMotion: Bool) async {
-        var target = activeTheme
+        guard index != 0 || !isSystemAccentActive else { return }
+        var target = authoredTheme
         guard target.activeColors.indices.contains(index) else { return }
         target.setColor(color, at: index)
-        await transition(to: target, reduceMotion: reduceMotion)
+        await transition(to: preservingLockedPrimary(in: target), reduceMotion: reduceMotion)
     }
 
     func removeColor(at index: Int) {
+        guard index != 0 || !isSystemAccentActive else { return }
         editTheme { $0.removeColor(at: index) }
         commit()
     }
@@ -727,16 +778,20 @@ final class SakuraCordThemeStore {
 
     func apply(_ theme: SakuraCordGradientTheme) {
         interactionGeneration &+= 1
-        activeTheme = theme
+        authoredTheme = theme
         commit()
     }
 
     func randomizedTheme() -> SakuraCordGradientTheme {
         let brightness = activeTheme.brightness
         var colors = activeTheme.colors
-        let randomizedHues = Self.randomizedSeparatedHues(
+        var randomizedHues = Self.randomizedSeparatedHues(
             count: activeTheme.activeColorCount
         )
+        if let systemAccentColor {
+            let offset = systemAccentColor.hue - randomizedHues[0]
+            randomizedHues = randomizedHues.map { ($0 + offset + 1).truncatingRemainder(dividingBy: 1) }
+        }
         let saturation = Double.random(in: 0.60 ... 0.90)
         for index in colors.indices {
             colors[index].saturation = saturation
@@ -747,6 +802,7 @@ final class SakuraCordThemeStore {
                 saturation: saturation
             )
         }
+        if isSystemAccentActive { colors[0] = authoredTheme.colors[0] }
         return SakuraCordGradientTheme(
             colors: colors,
             activeColorCount: activeTheme.activeColorCount,
@@ -763,12 +819,12 @@ final class SakuraCordThemeStore {
         interactionGeneration &+= 1
         let generation = interactionGeneration
         if reduceMotion {
-            activeTheme = target
+            authoredTheme = target
             commit()
             return
         }
 
-        let source = activeTheme
+        let source = authoredTheme
         let clock = ContinuousClock()
         let start = clock.now
         while !Task.isCancelled, interactionGeneration == generation {
@@ -779,28 +835,13 @@ final class SakuraCordThemeStore {
             let elapsedSeconds = elapsed.secondsValue
             let linearProgress = (elapsedSeconds / durationSeconds).clamped(to: 0 ... 1)
             let easedProgress = 1 - pow(1 - linearProgress, 3)
-            activeTheme = source.interpolated(to: target, progress: easedProgress)
+            authoredTheme = source.interpolated(to: target, progress: easedProgress)
             if linearProgress >= 1 { break }
             try? await clock.sleep(for: .milliseconds(8))
         }
         guard !Task.isCancelled, interactionGeneration == generation else { return }
-        activeTheme = target
+        authoredTheme = target
         commit()
-    }
-
-    func accentNSColor() -> NSColor {
-        let theme = committedTheme
-        let accentColor = theme.activeColors.first ?? SakuraCordGradientTheme.defaultTheme.colors[0]
-        return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
-            let source = SakuraCordThemeRGB(
-                hue: accentColor.hue,
-                saturation: accentColor.saturation,
-                brightness: 0.82
-            )
-            return NSColor(theme.readableForeground(source, for: themeAppearance))
-        }
     }
 
     func roleNSColor(for colorHex: UInt32) -> NSColor {
@@ -809,7 +850,7 @@ final class SakuraCordThemeStore {
             green: Double((colorHex >> 8) & 0xFF) / 255,
             blue: Double(colorHex & 0xFF) / 255
         )
-        let theme = committedTheme
+        let theme = committedBackgroundTheme
         return NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             let themeAppearance: SakuraCordThemeAppearance = isDark ? .dark : .light
@@ -817,27 +858,18 @@ final class SakuraCordThemeStore {
         }
     }
 
-    func textSelectionNSColor() -> NSColor {
-        return NSColor(name: nil) { appearance in
-            var result = NSColor.selectedTextBackgroundColor
-            appearance.performAsCurrentDrawingAppearance {
-                let accent = self.accentNSColor().usingColorSpace(.sRGB)
-                    ?? self.accentNSColor()
-                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                result = accent.blended(
-                    withFraction: isDark ? 0.38 : 0.70,
-                    of: .windowBackgroundColor
-                ) ?? accent
-            }
-            return result
-        }
+    private func preservingLockedPrimary(in theme: SakuraCordGradientTheme) -> SakuraCordGradientTheme {
+        guard isSystemAccentActive else { return theme }
+        var colors = theme.colors
+        colors[0] = authoredTheme.colors[0]
+        return SakuraCordGradientTheme(colors: colors, activeColorCount: theme.activeColorCount, intensity: theme.intensity, brightness: theme.brightness)
     }
 
     private func editTheme(_ edit: (inout SakuraCordGradientTheme) -> Void) {
         interactionGeneration &+= 1
-        var edited = activeTheme
+        var edited = effectiveTheme(authoredTheme)
         edit(&edited)
-        activeTheme = edited
+        authoredTheme = preservingLockedPrimary(in: edited)
         schedulePersistence()
     }
 
@@ -852,13 +884,14 @@ final class SakuraCordThemeStore {
 
     private func commit() {
         deferredPersistenceTask?.cancel()
-        committedTheme = activeTheme
+        committedAuthoredTheme = authoredTheme
+        AppAccentColorController.shared.apply(committedTheme, background: committedBackgroundTheme)
         save()
         NotificationCenter.default.post(name: .sakuraCordThemeDidCommit, object: nil)
     }
 
     private func save() {
-        persistence.save(activeTheme)
+        persistence.save(authoredTheme)
     }
 
     private static func randomizedSeparatedHues(count: Int) -> [Double] {
@@ -954,7 +987,7 @@ struct SakuraCordThemeBackground: View {
                 .accessibilityHidden(true)
         } else {
             SakuraCordGradientBackground(
-                theme: themeStore.activeTheme,
+                theme: themeStore.backgroundTheme,
                 emphasizesGradient: emphasizesGradient
             )
         }

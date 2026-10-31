@@ -19,39 +19,6 @@ import Testing
 }
 
 @MainActor
-@Test func `Theme accent resolves adaptively in the destination appearance`() throws {
-    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
-    let themeStore = SakuraCordThemeStore(
-        persistence: SakuraCordThemeSettingsStore(preferences: preferences)
-    )
-    themeStore.setHue(0.04, at: 0)
-    themeStore.setHue(0.96, at: 1)
-    themeStore.setIntensity(0.72)
-    themeStore.finishInteraction()
-    let effectiveAccent = themeStore.accentNSColor()
-    var resolvedComponents: [NSColor] = []
-    for appearanceName in [
-        NSAppearance.Name.aqua,
-        .darkAqua,
-        .accessibilityHighContrastAqua,
-        .accessibilityHighContrastDarkAqua,
-    ] {
-        let appearance = try #require(NSAppearance(named: appearanceName))
-        var actual: NSColor?
-        appearance.performAsCurrentDrawingAppearance {
-            actual = effectiveAccent.usingColorSpace(.sRGB)
-        }
-        let actualComponents = try #require(actual)
-        #expect(actualComponents.alphaComponent == 1)
-        #expect(actualComponents.redComponent.isFinite)
-        #expect(actualComponents.greenComponent.isFinite)
-        #expect(actualComponents.blueComponent.isFinite)
-        resolvedComponents.append(actualComponents)
-    }
-    #expect(resolvedComponents[0].brightnessComponent < resolvedComponents[1].brightnessComponent)
-}
-
-@MainActor
 @Test func `Zero intensity uses the native system surface`() {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
@@ -155,6 +122,8 @@ func `Public beta accents migrate into native-surface single-color themes`(
     #expect(store.load() == .defaults)
 
     let selected = AppearanceSettingsSnapshot(
+        matchBackgroundToPrimaryColor: false,
+        overrideMacOSAccent: true,
         colorScheme: .light,
         composerBarAppearance: .legacy,
         directMessageAppearance: .bubbles,
@@ -166,6 +135,7 @@ func `Public beta accents migrate into native-surface single-color themes`(
 
     #expect(AppearanceSettingsStore(preferences: SettingsPreferenceStore(defaults: defaults)).load() == selected)
     let appearanceExport = preferences.export(scope: .appWide, page: .appearance)
+    #expect(appearanceExport.values[SettingsControlID.overrideMacOSAccent.rawValue] == .bool(true))
     #expect(
         appearanceExport.values[SettingsControlID.appColorScheme.rawValue]
             == .string(AppColorScheme.light.rawValue)
@@ -293,8 +263,8 @@ func `Public beta accents migrate into native-surface single-color themes`(
     )
 
     let token = try SakuraCordThemeShareCodec.token(for: sharedTheme)
-    #expect(token == "AQJKz_VpjwzNszNAALhRczO9cP__yjw")
-    #expect(token.count == 31)
+    #expect(token == "AQNKz_VpjwzNszNAALhRczO9cP__AYHR")
+    #expect(token.count == 32)
     #expect(token.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
 
     let url = try SakuraCordThemeShareCodec.shareURL(for: sharedTheme)
@@ -330,6 +300,13 @@ func `Public beta accents migrate into native-surface single-color themes`(
         }
         #expect(abs(imported.windowOpacity - opacity) <= tolerance)
         #expect(imported.theme == decoded.theme)
+        translucentTheme.usePrimaryColorInBackground = false
+        let separateToken = try SakuraCordThemeShareCodec.token(for: translucentTheme)
+        guard case let .current(separate) = SakuraCordThemeShareCodec.decode(separateToken) else {
+            Issue.record("Separate-background theme did not decode")
+            continue
+        }
+        #expect(!separate.usePrimaryColorInBackground)
     }
 
     let previousCompactToken = "AQFKz_VpjwzNszNAALhRczO9cEn9"
@@ -483,7 +460,10 @@ func `Public beta accents migrate into native-surface single-color themes`(
 }
 
 @MainActor
-@Test func `Animated Randomise publishes intermediate frames before one final commit`() async {
+@Test(arguments: [false, true])
+func `Animated Randomise publishes intermediate frames before one final commit`(
+    changesSystemAccent: Bool
+) async {
     let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
     let themeStore = SakuraCordThemeStore(
         persistence: SakuraCordThemeSettingsStore(preferences: preferences)
@@ -493,12 +473,24 @@ func `Public beta accents migrate into native-surface single-color themes`(
     let original = themeStore.activeTheme
 
     let frames = ThemeIntermediateFrameProbe()
+    if changesSystemAccent {
+        frames.onIntermediateFrame = {
+            themeStore.setSystemAccentColor(.discordBlurple)
+        }
+    }
     frames.observe(themeStore, original: original)
     await themeStore.randomize(reduceMotion: false)
+    await frames.intermediateFrameAction?.value
     #expect(frames.observedIntermediateFrame)
+    #expect(themeStore.isSystemAccentActive == changesSystemAccent)
     #expect(themeStore.activeTheme == themeStore.committedTheme)
     #expect(themeStore.activeTheme.brightness == original.brightness)
     #expect(themeStore.activeTheme.intensity >= 0.6)
+    let saved = SakuraCordThemeSettingsStore(preferences: preferences).load()
+    let displayed = themeStore.activeTheme
+    themeStore.setSystemAccentColor(nil)
+    #expect(themeStore.activeTheme == saved)
+    #expect(saved.intensity == displayed.intensity)
 }
 
 @MainActor
@@ -855,6 +847,8 @@ func `Public beta accents migrate into native-surface single-color themes`(
 @MainActor
 private final class ThemeIntermediateFrameProbe {
     private(set) var observedIntermediateFrame = false
+    var onIntermediateFrame: (@MainActor () -> Void)?
+    private(set) var intermediateFrameAction: Task<Void, Never>?
 
     func observe(_ store: SakuraCordThemeStore, original: SakuraCordGradientTheme) {
         withObservationTracking {
@@ -868,6 +862,10 @@ private final class ThemeIntermediateFrameProbe {
                    store.committedTheme == original,
                    store.activeTheme.brightness == original.brightness {
                     self.observedIntermediateFrame = true
+                    if let action = self.onIntermediateFrame {
+                        self.onIntermediateFrame = nil
+                        self.intermediateFrameAction = Task { @MainActor in action() }
+                    }
                 }
                 self.observe(store, original: original)
             }
@@ -915,4 +913,32 @@ private final class ThemeIntermediateFrameProbe {
     preferences.reset(scope: .appWide, page: .interface)
     let restored = AppearanceSettingsStore(preferences: SettingsPreferenceStore(defaults: defaults))
     #expect(restored.load() == .defaults)
+}
+
+@MainActor
+@Test func `Saved custom primary survives secondary edits while the system accent is active`() async throws {
+    let preferences = SettingsPreferenceStore(defaults: InMemoryPreferences())
+    let persistence = SakuraCordThemeSettingsStore(preferences: preferences)
+    let store = SakuraCordThemeStore(persistence: persistence)
+    let custom = SakuraCordGradientTheme(colors: [.sakuraPink], intensity: 0.3, brightness: 0.8)
+    store.apply(custom)
+    let systemColor = try #require(AppAccentColorController.systemAccentColor(for: 4))
+    store.setSystemAccentColor(systemColor)
+
+    store.addColor(.discordBlurple)
+    #expect(persistence.load().colors[0] == custom.colors[0])
+    store.setHue(0.4, at: 1)
+    store.setSaturation(0)
+    store.finishInteraction()
+    #expect(persistence.load().colors[0] == custom.colors[0])
+    #expect(persistence.load().colors[1].hue == 0.4)
+    #expect(persistence.load().colors[1].saturation == 0)
+
+    await store.applyColor(.init(hue: 0.7, saturation: 0.5), at: 1, reduceMotion: true)
+    #expect(persistence.load().colors[0] == custom.colors[0])
+    await store.randomize(reduceMotion: true)
+    #expect(persistence.load().colors[0] == custom.colors[0])
+    store.setSystemAccentColor(nil)
+    #expect(store.activeTheme.colors[0] == custom.colors[0])
+    #expect(SakuraCordThemeStore(persistence: persistence).activeTheme == store.activeTheme)
 }
