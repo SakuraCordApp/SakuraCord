@@ -971,15 +971,15 @@ extension NativeTimelineCanvasView {
         let cards = sendTransitionCards(
             for: flyingAttachments, item: items[index], layout: layout, rowFrame: rowFrame
         ) { toOverlay(toWindow($0)) }
+        // A covered image or video lands in the cover the row draws over it.
+        let covers = sendTransitionCovers(
+            for: flyingAttachments.filter { cards[$0] == nil }, item: items[index], layout: layout, rowFrame: rowFrame
+        )
         // Any other preview that fades out, such as a video with no poster
         // yet, reveals what the bubble draws there instead.
         let fadingAttachments = flyingAttachments.filter {
-            layout.attachmentRegions[$0].previewKey == nil && cards[$0] == nil
+            layout.attachmentRegions[$0].previewKey == nil && cards[$0] == nil && covers[$0] == nil
         }
-        let covers = sendTransitionCovers(
-            for: flyingAttachments.subtracting(fadingAttachments).filter { cards[$0] == nil },
-            item: items[index], layout: layout, rowFrame: rowFrame
-        )
         guard let content = sendTransitionContent(
             item: items[index],
             layout: layout,
@@ -1137,6 +1137,9 @@ extension NativeTimelineCanvasView {
                 for: transition.omittedAttachments, item: items[index], layout: layouts[index], rowFrame: rowFrame(at: index)
             )
             transition.overlay.updateContent(content.image, covers: covers.mapValues(\.image))
+            transition.endUptime = max(
+                transition.endUptime, CACurrentMediaTime() + NativeTimelineSendTransitionTiming.contentRefreshDuration
+            )
         }
     }
 
@@ -1345,10 +1348,11 @@ extension NativeTimelineCanvasView {
             }
             let mediaDeadline = CACurrentMediaTime()
                 + NativeTimelineSendTransitionTiming.mediaWaitLimit
+            // Media that loads also extends the flight by its fade in.
             while let self, let transition,
                   self.sendTransitions.contains(where: { $0 === transition }),
-                  self.sendTransitionAwaitsMedia(transition),
-                  CACurrentMediaTime() < mediaDeadline
+                  self.sendTransitionAwaitsMedia(transition) && CACurrentMediaTime() < mediaDeadline
+                      || CACurrentMediaTime() < transition.endUptime
             {
                 do {
                     try await Task.sleep(for: .milliseconds(30))
