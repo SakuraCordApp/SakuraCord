@@ -177,7 +177,7 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
 
     private static func componentText(in components: [MessageComponent]) -> String {
         components
-            .flatMap(text(in:))
+            .flatMap(\.textDisplayContents)
             .map(inlineComponentText)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
@@ -207,18 +207,6 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.first == "#" else { return content }
         return inlineComponentText(content)
-    }
-
-    private static func text(in component: MessageComponent) -> [String] {
-        switch component {
-        case .textDisplay(_, let content): [content]
-        case .actionRow(_, let children), .container(_, _, _, let children):
-            children.flatMap(Self.text(in:))
-        case .section(_, let children, let accessory):
-            children.flatMap(Self.text(in:)) + (accessory.map(Self.text(in:)) ?? [])
-        case .button, .select, .thumbnail, .mediaGallery, .file, .separator, .unsupported:
-            []
-        }
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -354,5 +342,20 @@ private struct ForwardPreviewThumbnail: View {
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+nonisolated extension MessageComponent {
+    /// The text of this component's Text Displays, including nested ones.
+    var textDisplayContents: [String] {
+        switch self {
+        case .textDisplay(_, let content): [content]
+        case .actionRow(_, let children), .container(_, _, _, let children):
+            children.flatMap(\.textDisplayContents)
+        case .section(_, let children, let accessory):
+            children.flatMap(\.textDisplayContents) + (accessory?.textDisplayContents ?? [])
+        case .button, .select, .thumbnail, .mediaGallery, .file, .separator, .unsupported:
+            []
+        }
     }
 }

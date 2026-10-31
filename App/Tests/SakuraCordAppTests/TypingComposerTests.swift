@@ -240,6 +240,22 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
 }
 
 @MainActor
+@Test func `selecting a whole draft preserves literal and active mention ranges`() {
+    let raw = "@everyone <t:1000000:R> <@$356875221078245376>"
+    for source in ["🌸 `\(raw)`", "🌸 `\(raw)` \(raw)"] {
+        let attributed = ComposerEmojiAttributedText.make(source)
+        let rawSelection = NSRange(location: 0, length: source.utf16.count)
+        let displayed = ComposerEmojiAttributedText.displayRange(forRaw: rawSelection, source: source)
+        #expect(displayed == NSRange(location: 0, length: attributed.length))
+        let textView = ComposerNSTextView()
+        textView.textStorage?.setAttributedString(attributed)
+        textView.setSelectedRange(displayed)
+        textView.insertText("replacement", replacementRange: textView.selectedRange())
+        #expect(ComposerEmojiAttributedText.serialize(textView.attributedString()) == "replacement")
+    }
+}
+
+@MainActor
 @Test func `ordinary text typed around a mention serializes one exact mention token`() throws {
     let token = "<@123>"
     let presentation = MentionPresentation(

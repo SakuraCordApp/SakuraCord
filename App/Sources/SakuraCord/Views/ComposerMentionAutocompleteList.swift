@@ -42,7 +42,7 @@ struct MentionAutocompleteList: View {
 
     private func hasDivider(before suggestion: MentionAutocompleteSuggestion) -> Bool {
         guard let index = suggestions.firstIndex(where: { $0.id == suggestion.id }), index > 0,
-              case .role = suggestion.target, case .user = suggestions[index - 1].target else { return false }
+              (suggestion.member != nil) != (suggestions[index - 1].member != nil) else { return false }
         return true
     }
 }

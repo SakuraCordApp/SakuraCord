@@ -894,7 +894,7 @@ extension NativeTimelineRowPainter {
         isOutgoingBubble: Bool = false
     ) {
         let color: NSColor = isOutgoingBubble
-            ? .white : roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
+            ? .white : presentation.isTimestamp ? .labelColor : roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
         let shape = NSBezierPath(
             concentricRoundedRect: frame,
             cornerRadius: InterfaceScale.metric(5.5)
@@ -905,7 +905,7 @@ extension NativeTimelineRowPainter {
             NSColor.black.withAlphaComponent(isHovered ? 0.65 : 0.55).setFill()
         } else {
             color.withAlphaComponent(
-                NativeTimelineMentionAppearance.backgroundAlpha(isHovered: isHovered)
+                NativeTimelineMentionAppearance.backgroundAlpha(isHovered: isHovered, isTimestamp: presentation.isTimestamp)
             ).setFill()
         }
         shape.fill()
@@ -945,7 +945,7 @@ extension NativeTimelineRowPainter {
                 )
             }
             labelX = iconFrame.maxX + metrics.leadingGap
-        } else if case .user = presentation.target {
+        } else if presentation.showsAvatar {
             let avatarSize = max(InterfaceScale.metric(10), frame.height - metrics.avatarInset)
             let avatarFrame = CGRect(
                 x: labelX,
@@ -959,17 +959,18 @@ extension NativeTimelineRowPainter {
                 drawImage(
                     image,
                     in: avatarFrame,
-                    cornerRadius: avatarSize / 2,
+                    cornerRadius: presentation.avatarCornerRadius(size: avatarSize),
                     fillsFrame: true
                 )
             } else {
                 color.withAlphaComponent(0.38).setFill()
-                NSBezierPath(ovalIn: avatarFrame).fill()
+                let radius = presentation.avatarCornerRadius(size: avatarSize)
+                NSBezierPath(roundedRect: avatarFrame, xRadius: radius, yRadius: radius).fill()
             }
             labelX = avatarFrame.maxX + metrics.leadingGap
         }
-        text(
-            presentation.label,
+        mentionLabel(
+            presentation,
             in: CGRect(
                 x: labelX,
                 y: frame.minY,
@@ -979,6 +980,13 @@ extension NativeTimelineRowPainter {
             font: .interfaceSystemFont(ofSize: 15, weight: .semibold),
             color: color
         )
+    }
+
+    /// A mention's label at `font`'s size and the mention's own weight:
+    /// Discord sets timestamps in regular text.
+    private static func mentionLabel(_ presentation: MentionPresentation, in frame: CGRect, font: NSFont, color: NSColor) {
+        text(presentation.label, in: frame, font: .systemFont(ofSize: font.pointSize, weight: presentation.labelWeight),
+             color: color)
     }
 
     static func inlineEmojiImage(

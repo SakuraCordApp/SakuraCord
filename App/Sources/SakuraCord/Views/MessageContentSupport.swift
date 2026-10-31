@@ -118,6 +118,11 @@ struct CustomEmojiRichText: View {
         switch mention.target {
         case .unresolved:
             return
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentions.gamesByID[id]
+        case let .command(id, name):
+            guard let channelID = message?.channelID ?? model.selectedChannelID else { return }
+            model.startCommandMention(id: id, name: name, in: channelID)
         case let .user(id):
             let user = model.mentionUser(id, in: message)
                 ?? model.membersByID[id]?.user
@@ -179,7 +184,7 @@ private struct AnchoredMentionPopoverLayer: View {
                     }
                 case let .role(id):
                     RoleMembersPopover(model: model, roleID: id, guildID: model.selectedGuildID)
-                case .unresolved, .guildNavigation, .channel, .linkedChannel, .message:
+                case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
                     EmptyView()
                 }
             }
@@ -193,7 +198,7 @@ private struct AnchoredMentionPopoverLayer: View {
         switch request.mention.target {
         case .user:
             .memberProfile
-        case .unresolved, .guildNavigation, .role, .channel, .linkedChannel, .message:
+        case .unresolved, .game, .command, .guildNavigation, .role, .channel, .linkedChannel, .message:
             .interactive
         }
     }

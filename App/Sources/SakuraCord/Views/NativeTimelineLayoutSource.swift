@@ -112,22 +112,40 @@ private struct AppModelMentionResolver {
         case .guildNavigation: guildNavigationPresentation(mention)
         case .user: userPresentation(mention)
         case .role: rolePresentation(mention)
+        case .game: gamePresentation(mention)
+        case .broadcast, .timestamp, .command: MentionPresentation.fallback(for: mention)
         case .channel: channelPresentation(mention)
         case .channelLink: channelLinkPresentation(mention)
         case .message: messagePresentation(mention)
         }
     }
 
-    /// Media discovery only needs the avatar carried by user mentions. Going
-    /// through the complete presentation switch for channel, role, and
-    /// message mentions performs unrelated channel/role lookups even though
-    /// those presentations can never contribute a media key.
+    /// Media discovery only needs images carried by user and game mentions.
+    /// Resolving every mention kind would perform unrelated channel and role
+    /// lookups for presentations that cannot contribute a media key.
     func avatarURL(_ mention: RenderedMention) -> URL? {
+        if mention.kind == .game {
+            return model.gameMentions.gamesByID[mention.id].flatMap(\.artworkURL)
+        }
         guard mention.kind == .user,
               let userID = UserID(mention.id)
         else { return nil }
         let member = member(userID)
         return member?.guildAvatarURL ?? user(userID)?.avatarURL
+    }
+
+    private func gamePresentation(_ mention: RenderedMention) -> MentionPresentation {
+        guard let game = model.gameMentions.gamesByID[mention.id] else {
+            model.requestGameMentionDetails(id: mention.id)
+            return MentionPresentation.fallback(for: mention)
+        }
+        return MentionPresentation(
+            rawToken: mention.rawToken,
+            label: game.name,
+            target: .game(game.id),
+            avatarURL: game.artworkURL,
+            systemImage: game.artworkURL == nil ? "gamecontroller.fill" : nil
+        )
     }
 
     private func userPresentation(_ mention: RenderedMention) -> MentionPresentation {
