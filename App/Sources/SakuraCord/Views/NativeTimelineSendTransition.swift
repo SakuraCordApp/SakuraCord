@@ -502,12 +502,6 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             let layers = [ringLayers[index], pieceDimLayers[index]] + (pieceCardLayers[index]?.sublayers ?? [])
             for layer in layers.compactMap(\.self) {
                 let opacity = layer.presentation()?.opacity ?? layer.opacity
-                // The fade replaces any opacity still running, such as the
-                // dim's flight, which would bring it back once this ends.
-                for key in layer.animationKeys() ?? []
-                where (layer.animation(forKey: key) as? CAPropertyAnimation)?.keyPath == "opacity" {
-                    layer.removeAnimation(forKey: key)
-                }
                 layer.opacity = 0
                 add(layer, "opacity", from: CGFloat(opacity), to: 0, duration: NativeTimelineSendTransitionTiming.dismissalDuration)
             }
@@ -831,7 +825,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         animation.beginTime = delay > 0 ? layer.convertTime(CACurrentMediaTime(), from: nil) + delay : 0
         animation.fillMode = .backwards
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer.add(animation, forKey: nil)
+        layer.add(animation, forKey: "opacity")
     }
 
     private func add(
@@ -855,7 +849,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             animation.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + delay
             animation.fillMode = .backwards
         }
-        layer.add(animation, forKey: nil)
+        // A later fade replaces an earlier one, such as a finished upload's
+        // dim fading while its flight still runs; moves add up.
+        layer.add(animation, forKey: keyPath == "opacity" ? keyPath : nil)
     }
 }
 
