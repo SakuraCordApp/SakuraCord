@@ -890,7 +890,10 @@ private struct InlineMessageEditor: View {
     /// as games load.
     private var mentionPresentations: [String: MentionPresentation] {
         _ = model.timelinePresentationRevision
-        return MessageMentionResolver(model: model, message: message).presentations(in: text)
+        // The message as it is now: an update while editing can bring newer
+        // details for the people it mentions.
+        let current = model.retainedMessage(channelID: message.channelID, messageID: message.id) ?? message
+        return MessageMentionResolver(model: model, message: current).presentations(in: text)
     }
 
     private var composerActions: InlineMessageEditorComposerActions {
