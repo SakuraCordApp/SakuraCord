@@ -155,7 +155,7 @@ struct NativeTimelineAutoModAlertLayout {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byCharWrapping
         return NativeTimelineAttributedTextBox(NSAttributedString(
-            string: parts.joined(separator: " · "),
+            string: parts.joined(separator: "\n"),
             attributes: [
                 .font: NSFont.interfaceSystemFont(ofSize: 12),
                 .foregroundColor: NSColor.secondaryLabelColor,
