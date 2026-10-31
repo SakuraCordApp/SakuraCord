@@ -57,9 +57,9 @@ struct NativeTimelineVoiceMessageRegion {
         else { return nil }
         let metrics = Metrics(style: style)
         let duration = max(0, attachment.durationSeconds ?? 0)
-        let fixedWidth = metrics.leadingPadding + metrics.playDiameter + metrics.gap
+        let fixedWidth = metrics.padding + metrics.playDiameter + metrics.gap
             + metrics.gap + metrics.timeWidth + metrics.speedGap + metrics.speedSize.width
-            + metrics.trailingPadding
+            + metrics.padding
         // Discord grows the waveform with duration, from 40 to 294 points.
         let nominal = duration <= 0.5 ? 40 : duration >= 45 ? 294 : 40 + (duration - 0.5) / 44.5 * 254
         let available = max(metrics.step * 4, maximumWidth - fixedWidth)
@@ -71,7 +71,7 @@ struct NativeTimelineVoiceMessageRegion {
             width: fixedWidth + waveformWidth,
             height: metrics.height
         )
-        var cursorX = frame.minX + metrics.leadingPadding
+        var cursorX = frame.minX + metrics.padding
         let playFrame = CGRect(
             x: cursorX, y: frame.midY - metrics.playDiameter / 2,
             width: metrics.playDiameter, height: metrics.playDiameter
@@ -130,8 +130,9 @@ struct NativeTimelineVoiceMessageRegion {
     struct Metrics {
         let style: Style
         var height: CGFloat { InterfaceScale.metric(style == .plain ? 48 : 36) }
-        var leadingPadding: CGFloat { style == .plain ? InterfaceScale.metric(8) : 0 }
-        var trailingPadding: CGFloat { style == .plain ? InterfaceScale.metric(12) : 0 }
+        /// The same at both ends: the play button's and the speed chip's
+        /// distance from the capsule's ends.
+        var padding: CGFloat { style == .plain ? InterfaceScale.metric(8) : 0 }
         var playDiameter: CGFloat { InterfaceScale.metric(32) }
         var gap: CGFloat { InterfaceScale.metric(10) }
         var speedGap: CGFloat { InterfaceScale.metric(6) }
@@ -523,7 +524,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         func value(at time: TimeInterval) -> CGFloat {
             let elapsed = min(max((time - start) / duration, 0), 1)
             let eased = easesInOut
-                ? (elapsed < 0.5 ? 4 * pow(elapsed, 3) : 1 - pow(2 - 2 * elapsed, 3) / 2)
+                ? NativeTimelineComponentButtonVisualState.easeInOut(elapsed)
                 : NativeTimelineComponentButtonVisualState.easeOut(elapsed)
             return from + (to - from) * eased
         }
@@ -557,7 +558,10 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
             transition = Transition(from: from, to: to, start: now, duration: duration, easesInOut: easesInOut)
         }
         retarget(&pauseMorph, \.pauseTarget, duration: 0.2)
-        retarget(&playHover, \.playHoverTarget, duration: NativeTimelineComponentButtonVisualState.hoverAnimationDuration)
+        retarget(
+            &playHover, \.playHoverTarget,
+            duration: NativeTimelineComponentButtonVisualState.hoverAnimationDuration, easesInOut: true
+        )
         retarget(&playPress, \.playPressTarget, duration: NativeTimelineComponentButtonVisualState.pressAnimationDuration)
         retarget(&grabber, \.grabberTarget, duration: 0.25, easesInOut: true)
         updateAnimation()

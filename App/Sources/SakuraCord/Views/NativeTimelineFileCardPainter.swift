@@ -20,6 +20,7 @@ extension NativeTimelineRowPainter {
         bubbleRegion: NativeTimelineBubbleRegion?,
         state: AttachmentDownloadStore.State?,
         upload: FileCardUpload? = nil,
+        finishProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
         pointer: FileCardPointer
     ) {
         // A local send's file is not downloadable until it is posted, so it
@@ -60,7 +61,8 @@ extension NativeTimelineRowPainter {
         fileCardIcon(card)
         fileCardButton(
             card, state: state, symbol: buttonSymbol(state: state, upload: upload), palette: palette,
-            hover: hover(.button), pressProgress: press(.button)
+            hover: hover(.button), pressProgress: press(.button),
+            finish: finishProgress[.fileCard(messageID: messageID, attachmentID: card.attachment.id, part: .button)]
         )
 
         text(
@@ -93,14 +95,16 @@ extension NativeTimelineRowPainter {
 
     /// The round download button, which shows the next step, takes the
     /// round buttons' shared hover and press, and rings its progress while
-    /// downloading.
+    /// downloading. A finished download's full ring and cancel fade out as
+    /// its next step grows in.
     private static func fileCardButton(
         _ card: NativeTimelineFileCard,
         state: AttachmentDownloadStore.State?,
         symbol: String?,
         palette: FileCardPalette,
         hover: CGFloat,
-        pressProgress: CGFloat
+        pressProgress: CGFloat,
+        finish: CGFloat?
     ) {
         let button = card.buttonFrame
         let scale = NativeTimelineComponentButtonVisualState.roundButtonScale(hover: hover, press: pressProgress)
@@ -108,12 +112,24 @@ extension NativeTimelineRowPainter {
             palette.button.setFill()
             NSBezierPath(ovalIn: button).fill()
             guard let symbol else { return }
-            guard case let .downloading(fraction) = state else {
+            if case let .downloading(fraction) = state {
+                downloadRing(in: button, fraction: fraction, color: palette.glyph)
+                systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
+                return
+            }
+            guard let finish, let context = NSGraphicsContext.current?.cgContext else {
                 systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
                 return
             }
-            downloadRing(in: button, fraction: fraction, color: palette.glyph)
-            systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
+            context.saveGState()
+            context.setAlpha(1 - finish)
+            downloadRing(in: button, fraction: 1, color: palette.glyph)
+            systemSymbol("xmark", in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
+            context.setAlpha(finish)
+            drawingRoundButton(button, scale: 0.8 + 0.2 * finish) {
+                systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
+            }
+            context.restoreGState()
         }
     }
 

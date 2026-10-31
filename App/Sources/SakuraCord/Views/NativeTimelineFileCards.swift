@@ -83,6 +83,11 @@ extension NativeTimelineCanvasView {
         }
         let isProgressTick = if case let .downloading(fraction)? = downloads.states[attachmentID] { fraction > 0 } else { false }
         guard isProgressTick else {
+            if case .finished = downloads.states[attachmentID] {
+                for messageID in items.filter(showsFile).compactMap(\.messageID) {
+                    fadeFileCardFinish(.fileCard(messageID: messageID, attachmentID: attachmentID, part: .button))
+                }
+            }
             setNeedsDisplay(visibleRect)
             items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
             return

@@ -120,14 +120,29 @@ extension NativeTimelineCanvasView {
         let start = AppMotionPolicy.animatesUncategorized
             ? now : now - NativeTimelineComponentButtonVisualState.hoverAnimationDuration
         componentButtonHoverFades[target] = .init(from: current, to: isHovered ? 1 : 0, start: start)
+        animateFileCardFades()
+    }
+
+    /// Crossfades a download's button from its full ring to its next step.
+    func fadeFileCardFinish(_ target: NativeTimelineComponentButtonTarget) {
+        guard AppMotionPolicy.animatesUncategorized else { return }
+        fileCardFinishFades[target] = .init(from: 0, to: 1, start: ProcessInfo.processInfo.systemUptime)
+        animateFileCardFades()
+    }
+
+    private func animateFileCardFades() {
         guard componentButtonHoverAnimationTask == nil else { return }
         componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled {
                 let now = ProcessInfo.processInfo.systemUptime
                 for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
+                for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
                 // A faded-out part is forgotten; a hovered one holds.
                 componentButtonHoverFades = componentButtonHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
-                guard componentButtonHoverFades.values.contains(where: { !$0.isSettled(at: now) }) else {
+                fileCardFinishFades = fileCardFinishFades.filter { !$0.value.isSettled(at: now) }
+                guard componentButtonHoverFades.values.contains(where: { !$0.isSettled(at: now) })
+                    || !fileCardFinishFades.isEmpty
+                else {
                     componentButtonHoverAnimationTask = nil
                     return
                 }
@@ -140,6 +155,13 @@ extension NativeTimelineCanvasView {
     /// leaves none on its last frame.
     func redrawFadingFileCardHovers() {
         for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
+        for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
+    }
+
+    /// How far each download finishing in a message has crossfaded.
+    func fileCardFinishProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
+        let now = ProcessInfo.processInfo.systemUptime
+        return fileCardFinishFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
     }
 
     /// The file card parts' hover in a message at this moment.

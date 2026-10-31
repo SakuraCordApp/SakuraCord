@@ -57,7 +57,9 @@ nonisolated struct NativeTimelineComponentSelectTarget: Hashable {
 
 nonisolated enum NativeTimelineComponentButtonVisualState {
     static let pressAnimationDuration: TimeInterval = 0.09
-    static let hoverAnimationDuration: TimeInterval = 0.15
+    /// Long enough, eased at both ends, that a round button's growth reads
+    /// as motion rather than a snap.
+    static let hoverAnimationDuration: TimeInterval = 0.2
 
     static func scale(pressProgress: CGFloat) -> CGFloat {
         1 - 0.015 * min(max(pressProgress, 0), 1)
@@ -90,6 +92,11 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
         let progress = min(max(progress, 0), 1)
         return 1 - pow(1 - progress, 3)
     }
+
+    static func easeInOut(_ progress: CGFloat) -> CGFloat {
+        let progress = min(max(progress, 0), 1)
+        return progress < 0.5 ? 4 * pow(progress, 3) : 1 - pow(2 - 2 * progress, 3) / 2
+    }
 }
 
 /// A round button's hover easing in or out from wherever it was, with the
@@ -101,7 +108,7 @@ nonisolated struct NativeTimelineHoverFade {
 
     func progress(at time: TimeInterval) -> CGFloat {
         let elapsed = (time - start) / NativeTimelineComponentButtonVisualState.hoverAnimationDuration
-        return from + (to - from) * NativeTimelineComponentButtonVisualState.easeOut(elapsed)
+        return from + (to - from) * NativeTimelineComponentButtonVisualState.easeInOut(elapsed)
     }
 
     func isSettled(at time: TimeInterval) -> Bool {
