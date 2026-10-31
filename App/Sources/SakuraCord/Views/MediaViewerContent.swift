@@ -95,11 +95,10 @@ struct MediaViewerStage: View {
     @ViewBuilder private var fileContent: some View {
         switch item.kind {
         case .audio:
-            MediaViewerAudio(
-                item: item,
-                playbackID: messageID.map { .attachment($0, attachmentID: item.id) } ?? .file(item.url),
-                download: download
-            )
+            let playbackID: VoiceMessagePlaybackID = messageID.map { .attachment($0, attachmentID: item.id) } ?? .file(item.url)
+            // Each file is its own player, which another file replaces.
+            MediaViewerAudio(item: item, playbackID: playbackID, download: download)
+                .id(playbackID)
         case let .text(language):
             MediaViewerText(url: item.url, language: language)
         default:
