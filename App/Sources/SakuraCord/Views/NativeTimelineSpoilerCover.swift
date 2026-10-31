@@ -10,6 +10,9 @@ enum NativeTimelineSpoilerCover {
     /// keeps the blur cheap; at Discord's radius the detail lost is invisible.
     private static let blurScale: CGFloat = 1 / 8
     private static let context = CIContext(options: [.cacheIntermediates: false])
+    private static let backdropColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .black : .white
+    }
 
     /// Draws the cover over `frame` in the current flipped context. `content`
     /// draws the revealed item in the same coordinates.
@@ -66,6 +69,10 @@ enum NativeTimelineSpoilerCover {
         bitmap.translateBy(x: -frame.minX, y: -frame.minY)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: bitmap, flipped: true)
+        // Over the timeline's own background, as Discord blurs an item, so a
+        // translucent card blurs as dark or as light as it reads in place.
+        backdropColor.setFill()
+        frame.fill()
         content()
         NSGraphicsContext.restoreGraphicsState()
         guard let small = bitmap.makeImage() else { return nil }
