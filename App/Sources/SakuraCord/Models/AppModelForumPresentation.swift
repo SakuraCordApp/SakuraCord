@@ -39,10 +39,12 @@ extension AppModel {
         } else {
             excerpt = post.isFirstMessageLoaded ? .deleted(author: galleryAuthor) : .pending
         }
-        let thumbnail = starter?.attachments.first.map(ForumCardPresentation.Media.init(attachment:))
+        let thumbnail = starter
+            .flatMap(ForumCardPresentation.thumbnailAttachment(of:))
+            .map(ForumCardPresentation.Media.init(attachment:))
         let hero: ForumCardPresentation.Hero =
-            if let thumbnail {
-                .media(thumbnail)
+            if let media = starter?.attachments.first.map(ForumCardPresentation.Media.init(attachment:)) {
+                .media(media)
             } else if starter == nil, post.isFirstMessageLoaded {
                 .deleted
             } else if let preview = post.mostRecentMessage ?? starter, !preview.content.isEmpty {

@@ -138,9 +138,18 @@ extension ForumCardPresentation.Excerpt {
         // A forwarded starter carries its components in the snapshot.
         if (starter.forwardedSnapshot?.flags ?? starter.flags).contains(.isComponentsV2) { return "Click to see message" }
         if !starter.stickers.isEmpty { return "Click to see sticker" }
-        switch starter.attachments.first?.mediaKind {
-        case .image, .animatedImage, .video: return nil
-        default: return "Click to see attachment"
+        return ForumCardPresentation.thumbnailAttachment(of: starter) == nil ? "Click to see attachment" : nil
+    }
+}
+
+extension ForumCardPresentation {
+    /// Discord gives a list card a thumbnail only for a starter that opens
+    /// with an image or a video; audio and other files get none.
+    static func thumbnailAttachment(of starter: Message) -> Attachment? {
+        guard let attachment = starter.attachments.first else { return nil }
+        switch attachment.mediaKind {
+        case .image, .animatedImage, .video: return attachment
+        default: return nil
         }
     }
 }
