@@ -492,6 +492,16 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         else { return }
         for (index, id) in ringAttachmentIDs {
             ringLayers[index]?.fraction = uploads.fraction(nonce: uploadNonce, attachmentID: id)
+            // A finished upload leaves the row without its ring and dim, so
+            // the flight lets them go too, including the dim over a cover.
+            guard !uploads.isUploading(nonce: uploadNonce, attachmentID: id) else { continue }
+            ringAttachmentIDs[index] = nil
+            let layers = [ringLayers[index], pieceDimLayers[index]] + (pieceCardLayers[index]?.sublayers ?? [])
+            for layer in layers.compactMap(\.self) {
+                let opacity = layer.presentation()?.opacity ?? layer.opacity
+                layer.opacity = 0
+                add(layer, "opacity", from: CGFloat(opacity), to: 0, duration: NativeTimelineSendTransitionTiming.dismissalDuration)
+            }
         }
     }
 
