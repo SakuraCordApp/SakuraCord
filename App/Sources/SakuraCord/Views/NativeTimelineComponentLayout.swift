@@ -199,7 +199,7 @@ struct NativeTimelineComponentLayout {
             let height = NodeBuilder.measuredHeight(errorBox, width: maximumWidth)
             nodes.append(
                 Node(
-                    size: CGSize(width: min(maximumWidth, NodeBuilder.idealWidth(errorBox)), height: height),
+                    size: CGSize(width: min(maximumWidth, NativeTimelineEmbedLayout.idealWidth(errorBox)), height: height),
                     textRegions: [
                         .init(
                             frame: CGRect(x: 0, y: 0, width: maximumWidth, height: height),
@@ -600,7 +600,7 @@ private enum NodeBuilder {
             emojiSize: 18 * scale,
             bodyScale: scale
         )
-        let width = min(maximumWidth, max(1, idealWidth(box)))
+        let width = min(maximumWidth, max(1, NativeTimelineEmbedLayout.idealWidth(box)))
         // Discord's text display drops its first child's top margin, so a
         // leading heading or list sits at the top; a leading code block or
         // quote keeps the inset that clears its own chrome.
@@ -1117,17 +1117,6 @@ private enum NodeBuilder {
                 ]
             )
         )
-    }
-
-    static func idealWidth(
-        _ box: NativeTimelineAttributedTextBox
-    ) -> CGFloat {
-        let width = NativeTimelineMarkdownChromeMetrics.fittedWidth(
-            box.framesetter,
-            value: box.value,
-            maximumWidth: 10_000
-        )
-        return max(1, ceil(width))
     }
 
     static func measuredHeight(

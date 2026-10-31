@@ -1405,7 +1405,7 @@ enum NativeTimelineEmbedLayout {
         return values.joined(separator: " • ")
     }
 
-    private static func idealWidth(
+    static func idealWidth(
         _ box: NativeTimelineAttributedTextBox
     ) -> CGFloat {
         let width = NativeTimelineMarkdownChromeMetrics.fittedWidth(

@@ -71,11 +71,10 @@ final class NativeTimelineCodeCopyControl: NSView {
             frame = target.copyButtonFrame
             glyphs.frame = bounds
             for glyph in [copyGlyph, copiedGlyph] { centre(glyph) }
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            plate.frame = bounds
-            plate.cornerRadius = NativeTimelineMarkdownChromeMetrics.codeCopyButtonCornerRadius
-            CATransaction.commit()
+            withoutActions {
+                plate.frame = bounds
+                plate.cornerRadius = NativeTimelineMarkdownChromeMetrics.codeCopyButtonCornerRadius
+            }
         }
         let state = State(isShown: target != nil, isHovered: isHovered, isPressed: isPressed)
         shown = target ?? shown
@@ -91,10 +90,7 @@ final class NativeTimelineCodeCopyControl: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        plate.backgroundColor = plateColor
-        CATransaction.commit()
+        withoutActions { plate.backgroundColor = plateColor }
     }
 
     /// The plate's fill for the current state, in the view's appearance.
@@ -105,6 +101,13 @@ final class NativeTimelineCodeCopyControl: NSView {
                 .withAlphaComponent(state.isPressed ? 0.16 : state.isHovered ? 0.1 : 0).cgColor
         }
         return color
+    }
+
+    private func withoutActions(_ changes: () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        changes()
+        CATransaction.commit()
     }
 
     /// Centres a symbol by its outline, its alignment rect, rather than by
@@ -137,10 +140,7 @@ final class NativeTimelineCodeCopyControl: NSView {
             animation.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + delay
             animation.fillMode = .backwards
         }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer.setValue(value, forKey: key)
-        CATransaction.commit()
+        withoutActions { layer.setValue(value, forKey: key) }
         layer.add(animation, forKey: key)
     }
 
