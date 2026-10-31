@@ -360,7 +360,7 @@ public enum DiscordMarkdown {
 
     /// `usesMessageLineHeight` gives paragraphs and list items Discord's
     /// message line height; embeds and previews keep natural lines.
-    /// `reservesCodeCopyButton` ends a code block's first line before the
+    /// `reservesCodeCopyButton` ends a code block's first lines before the
     /// copy button the timeline shows in the block's top-trailing corner.
     public static func appKitAttributed(
         _ plan: AppKitPlan,
@@ -1046,7 +1046,7 @@ public enum DiscordMarkdown {
         /// Discord's 18 px code line.
         var codeLineHeight: CGFloat { px(18) }
         let reservesCodeCopyButton: Bool
-        /// Room at the end of a code block's first line for the timeline's
+        /// Room at the end of a code block's first lines for the timeline's
         /// copy button: a square filling a one-line block less a 2 px inset,
         /// kept that inset from the block's edge.
         var codeCopyButtonReserve: CGFloat {
@@ -1238,8 +1238,10 @@ public enum DiscordMarkdown {
             paragraph.lineSpacing = 0
             paragraph.firstLineHeadIndent = metrics.codeInset
             paragraph.headIndent = metrics.codeInset
-            // A block's first line also ends before its copy button.
-            paragraph.tailIndent = -metrics.codeInset - (isFirstLine ? metrics.codeCopyButtonReserve : 0)
+            // The copy button's square reaches into a block's second line,
+            // so both of its first lines end before it.
+            let isSecondLine = if index > 0, case .code(_, true) = lines[index - 1].block { true } else { false }
+            paragraph.tailIndent = -metrics.codeInset - (isFirstLine || isSecondLine ? metrics.codeCopyButtonReserve : 0)
             // Discord sets code left to right in any script, which also keeps
             // that room at the end the button sits on.
             paragraph.baseWritingDirection = .leftToRight

@@ -363,7 +363,7 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
             )
             // The button fills a one-line block's height less its inset, so
             // it sits centred on the first line with equal room on every
-            // side, in the room the first line's tail indent leaves for it.
+            // side, in the room the first lines' tail indents leave for it.
             let buttonInset = NativeTimelineMarkdownChromeMetrics.codeCopyButtonInset
             let buttonSide = firstRect.height + (inset - buttonInset) * 2
             let buttonFrame = CGRect(
