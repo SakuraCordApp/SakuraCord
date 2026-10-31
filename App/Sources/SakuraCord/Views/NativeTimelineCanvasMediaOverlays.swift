@@ -985,16 +985,17 @@ extension NativeTimelineCanvasView {
     }
 
     /// Players follow their tiles and pause once out of view. One ends when
-    /// its row leaves the timeline, its tile no longer shows that video, or
-    /// its message is being edited, whose editor shows no media.
+    /// its row leaves the timeline, its tile no longer shows that video, an
+    /// edit hides it behind a spoiler, or its message is being edited, whose
+    /// editor shows no media.
     func reconcileInlinePlayers() {
         guard !inlinePlayers.isEmpty else { return }
         let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
         for (key, player) in inlinePlayers {
             guard let index = rowIndex(forIdentifier: key.row),
                   layouts.indices.contains(index),
-                  editingMessageID == nil || items[index].messageID != editingMessageID,
-                  let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index])
+                  let messageID = items[index].messageID, messageID != editingMessageID,
+                  let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index], messageID: messageID)
             else {
                 player.stop()
                 player.removeFromSuperview()
@@ -1006,16 +1007,37 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// The tile still showing the player's video. Signed URLs refresh their
-    /// query, so the host and path identify the media.
-    private func inlinePlayerFrame(_ mediaID: String, url: URL, in layout: NativeTimelineRowLayout) -> CGRect? {
+    /// The tile still showing the player's video, unless a spoiler now
+    /// hides it. Signed URLs refresh their query, so the host and path
+    /// identify the media.
+    private func inlinePlayerFrame(
+        _ mediaID: String, url: URL, in layout: NativeTimelineRowLayout, messageID: MessageID
+    ) -> CGRect? {
         func isSameMedia(_ other: URL) -> Bool { other.host == url.host && other.path == url.path }
+        func isConcealed(_ contentID: String, isSpoiler: Bool) -> Bool {
+            NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                messageID: messageID, contentID: contentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+            )
+        }
         if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
             let attachment = region.attachment
-            return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url) ? region.frame : nil
+            let contentID = NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id)
+            return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url)
+                && !isConcealed(contentID, isSpoiler: attachment.isSpoiler) ? region.frame : nil
         }
-        return layout.componentLayouts.lazy.flatMap(\.media)
-            .first { $0.componentID == mediaID && $0.isVideo && isSameMedia($0.displayURL) }?.frame
+        for component in layout.componentLayouts {
+            guard let media = component.media.first(where: {
+                $0.componentID == mediaID && $0.isVideo && isSameMedia($0.displayURL)
+            }) else { continue }
+            let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: component, messageID: messageID, store: spoilerRevealStore
+            )
+            let isHidden = NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                media.frame, hiddenContainerFrames: hiddenContainerFrames
+            ) || isConcealed(media.componentID, isSpoiler: media.isSpoiler)
+            return isHidden ? nil : media.frame
+        }
+        return nil
     }
 
     func removeInlinePlayers() {
