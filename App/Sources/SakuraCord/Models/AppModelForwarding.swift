@@ -480,7 +480,6 @@ extension AppModel {
     }
 }
 
-/// Which messages can be forwarded, and where.
 extension AppModel {
     /// Mirrors Discord desktop's source-side forwarding guard for the state
     /// SakuraCord has resolved locally. Private channels do not require a

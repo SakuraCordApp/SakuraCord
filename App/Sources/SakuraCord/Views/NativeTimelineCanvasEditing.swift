@@ -936,7 +936,6 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// The editor that stands in for a message's content while it is edited.
     private func makeEditingHost(
         for row: MessageRowPresentation,
         model: AppModel,
