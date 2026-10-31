@@ -624,7 +624,7 @@ extension NativeTimelineRowPainter {
             NativeTimelineSpoilerCover.draw(
                 covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
                 in: region.frame,
-                cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+                cornerRadius: region.card.cornerRadius
             ) {
                 fileCard(
                     region.card,

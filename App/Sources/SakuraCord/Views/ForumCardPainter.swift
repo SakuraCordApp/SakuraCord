@@ -631,8 +631,7 @@ enum ForumCardPainter {
         case let .spoiler(hidden):
             let cover = NativeTimelineSpoilerCover.image(
                 size: frame.size,
-                cornerRadius: cornerRadius,
-                pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: frame.width)
+                cornerRadius: cornerRadius
             ) {
                 if let image = hidden.mediaKey.flatMap(NativeTimelineRowPainter.mediaImage(for:)) {
                     NativeTimelineRowPainter.drawImage(

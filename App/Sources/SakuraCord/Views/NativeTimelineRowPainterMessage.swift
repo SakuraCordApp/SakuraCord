@@ -471,7 +471,7 @@ extension NativeTimelineRowPainter {
                         store: $0
                     )
                 } ?? false
-            NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: attachmentCornerRadius) {
+            NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: layout.cornerRadius(of: region)) {
                 drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
             }
         }

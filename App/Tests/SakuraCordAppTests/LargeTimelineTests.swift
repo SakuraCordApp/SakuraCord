@@ -200,7 +200,8 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     let bounds = CGRect(x: 0, y: 0, width: 280, height: 160)
     let pill = NativeTimelineSpoilerAppearance.pillFrame(
         in: bounds,
-        measuredLabelWidth: 47.2
+        measuredLabelWidth: 47.2,
+        scale: 1
     )
     #expect(pill.midX == bounds.midX)
     #expect(pill.midY == bounds.midY)

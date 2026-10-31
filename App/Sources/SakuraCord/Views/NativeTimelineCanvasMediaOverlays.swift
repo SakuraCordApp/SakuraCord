@@ -1133,7 +1133,7 @@ extension NativeTimelineCanvasView {
             appendDesiredSpoilerOverlay(
                 .attachment(messageID: message.id, attachmentID: region.attachment.id),
                 frame: region.frame,
-                cornerRadius: InterfaceScale.metric(8),
+                cornerRadius: layout.cornerRadius(of: region),
                 rowOrigin: rowOrigin,
                 into: &desired
             )
@@ -1240,7 +1240,7 @@ extension NativeTimelineCanvasView {
                     componentID: region.componentID
                 ),
                 frame: region.frame,
-                cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
+                cornerRadius: region.card.cornerRadius,
                 rowOrigin: rowOrigin,
                 into: &desired
             )

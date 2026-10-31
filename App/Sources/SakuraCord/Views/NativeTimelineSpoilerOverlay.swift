@@ -32,7 +32,14 @@ nonisolated enum NativeTimelineSpoilerAppearance {
     }
 
     /// A revealed text spoiler keeps a faint fill, so it still reads as one.
-    static let revealedTextColor = NSColor(srgbRed: 0x97 / 255, green: 0x97 / 255, blue: 0x9F / 255, alpha: 0.12)
+    /// The light timeline is close to the fill's gray, so it takes more of it
+    /// to show as much.
+    static let revealedTextColor = NSColor(name: nil) { appearance in
+        NSColor(
+            srgbRed: 0x97 / 255, green: 0x97 / 255, blue: 0x9F / 255,
+            alpha: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.12 : 0.24
+        )
+    }
 
     static let pillColor = NSColor.black.withAlphaComponent(0.6)
     /// Over the drawn pill, this darkens it to Discord's hovered 88 percent.
@@ -50,17 +57,17 @@ nonisolated enum NativeTimelineSpoilerAppearance {
         isHovered ? hoveredTextColor : hiddenColor
     }
 
-    static func pillLabel(isHovered: Bool) -> NSAttributedString {
+    static func pillLabel(isHovered: Bool, scale: CGFloat = 1) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         return NSAttributedString(
             string: "SPOILER",
             attributes: [
-                .font: NSFont.systemFont(ofSize: DiscordRichMessageMetrics.px(15), weight: .semibold),
+                .font: NSFont.systemFont(ofSize: DiscordRichMessageMetrics.px(15) * scale, weight: .semibold),
                 .foregroundColor: isHovered
                     ? NSColor.white
                     : NSColor(srgbRed: 0xE4 / 255, green: 0xE4 / 255, blue: 0xE6 / 255, alpha: 1),
-                .kern: DiscordRichMessageMetrics.px(0.5),
+                .kern: DiscordRichMessageMetrics.px(0.5) * scale,
                 .paragraphStyle: paragraph,
             ]
         )
@@ -84,13 +91,14 @@ nonisolated enum NativeTimelineSpoilerAppearance {
 
     static func pillFrame(
         in bounds: CGRect,
-        measuredLabelWidth: CGFloat
+        measuredLabelWidth: CGFloat,
+        scale: CGFloat
     ) -> CGRect {
         let width = min(
             max(1, bounds.width),
-            ceil(measuredLabelWidth) + pillHorizontalPadding * 2
+            ceil(measuredLabelWidth) + pillHorizontalPadding * 2 * scale
         )
-        let height = min(max(1, bounds.height), pillHeight)
+        let height = min(max(1, bounds.height), pillHeight * scale)
         return CGRect(
             x: bounds.midX - width / 2,
             y: bounds.midY - height / 2,
@@ -141,7 +149,11 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     let pillLabel = NSTextField(labelWithString: "SPOILER")
     var trackingArea: NSTrackingArea?
     var isHovered = false {
-        didSet { pillView.isHidden = !isHovered }
+        didSet { updatePillVisibility() }
+    }
+    /// A cover too small for the row to draw a pill on has none to darken.
+    private var pillScale: CGFloat? {
+        didSet { updatePillVisibility() }
     }
     var isPressed = false
     var didActivate = false
@@ -159,15 +171,11 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
         super.init(frame: frame)
         wantsLayer = true
         pillView.wantsLayer = true
-        pillView.layer?.cornerRadius =
-            NativeTimelineSpoilerAppearance.pillHeight / 2
         pillView.layer?.masksToBounds = true
         pillView.layer?.backgroundColor =
             NativeTimelineSpoilerAppearance.hoveredPillOverlayColor.cgColor
         pillView.setAccessibilityElement(false)
         addSubview(pillView)
-        pillLabel.attributedStringValue =
-            NativeTimelineSpoilerAppearance.pillLabel(isHovered: true)
         pillLabel.alignment = .center
         pillLabel.lineBreakMode = .byClipping
         pillLabel.setAccessibilityElement(false)
@@ -186,15 +194,25 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
 
     override func layout() {
         super.layout()
+        // The same pill the row draws under this view, sized to the cover.
+        pillScale = NativeTimelineSpoilerAppearance.pillScale(forTileWidth: bounds.width)
+        let scale = pillScale ?? 1
+        pillLabel.attributedStringValue = NativeTimelineSpoilerAppearance.pillLabel(isHovered: true, scale: scale)
         let labelSize = pillLabel.attributedStringValue.size()
         pillView.frame = NativeTimelineSpoilerAppearance.pillFrame(
             in: bounds,
-            measuredLabelWidth: labelSize.width
+            measuredLabelWidth: labelSize.width,
+            scale: scale
         )
+        pillView.layer?.cornerRadius = pillView.frame.height / 2
         pillLabel.frame = NativeTimelineSpoilerAppearance.labelFrame(
             in: pillView.bounds,
             measuredLabelHeight: labelSize.height
         )
+    }
+
+    private func updatePillVisibility() {
+        pillView.isHidden = !isHovered || pillScale == nil
     }
 
     override func updateTrackingAreas() {

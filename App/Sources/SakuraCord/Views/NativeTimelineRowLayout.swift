@@ -199,15 +199,22 @@ struct NativeTimelineRowLayout {
     var audioFilePlayers: [NativeTimelineVoiceMessageRegion] = []
 
     /// File and audio cards.
-    var fileCards: [NativeTimelineFileCard] {
-        attachmentRegions.compactMap { region in
-            let attachment = region.attachment
-            guard !attachment.mediaKind.isVisual else { return nil }
-            return NativeTimelineFileCard(
-                frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil,
-                isAudio: attachment.mediaKind == .audio
-            )
-        }
+    var fileCards: [NativeTimelineFileCard] { attachmentRegions.compactMap(fileCard) }
+
+    /// A file or audio region's card; a gallery tile has none.
+    func fileCard(_ region: AttachmentRegion) -> NativeTimelineFileCard? {
+        let attachment = region.attachment
+        guard !attachment.mediaKind.isVisual else { return nil }
+        return NativeTimelineFileCard(
+            frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil,
+            isAudio: attachment.mediaKind == .audio
+        )
+    }
+
+    /// A region's outline, which its spoiler cover takes: its file card's,
+    /// or a gallery tile's.
+    func cornerRadius(of region: AttachmentRegion) -> CGFloat {
+        fileCard(region)?.cornerRadius ?? NativeTimelineRowPainter.attachmentCornerRadius
     }
 
     var mediaGalleryItemCount: Int {
