@@ -194,6 +194,13 @@ struct NativeTimelineVoiceMessageDrawState {
     /// The row already draws this resting player, so its hover overlay
     /// adds only what the pointer changes.
     var isResting = false
+
+    /// Where the pause morph, the play control's hover and press, and an
+    /// audio file's grabber settle.
+    var pauseTarget: CGFloat { isPlaying ? 1 : 0 }
+    var playHoverTarget: CGFloat { isPlayHovered ? 1 : 0 }
+    var playPressTarget: CGFloat { isPlayPressed ? 1 : 0 }
+    var grabberTarget: CGFloat { hoverFraction == nil ? 0 : 1 }
 }
 
 enum NativeTimelineVoiceMessagePainter {
@@ -319,7 +326,7 @@ enum NativeTimelineVoiceMessagePainter {
             guard !state.isLoading else { return }
             drawPlayGlyph(
                 at: CGPoint(x: frame.midX, y: frame.midY), unit: frame.width / 32,
-                pause: state.pauseMorph ?? (state.isPlaying ? 1 : 0), color: palette.glyph, context: context
+                pause: state.pauseMorph ?? state.pauseTarget, color: palette.glyph, context: context
             )
         }
     }
@@ -327,8 +334,7 @@ enum NativeTimelineVoiceMessagePainter {
     /// The round buttons' shared hover and press, eased by the overlay.
     private static func playButtonScale(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat {
         NativeTimelineComponentButtonVisualState.roundButtonScale(
-            hover: state.playHover ?? (state.isPlayHovered ? 1 : 0),
-            press: state.playPress ?? (state.isPlayPressed ? 1 : 0)
+            hover: state.playHover ?? state.playHoverTarget, press: state.playPress ?? state.playPressTarget
         )
     }
 
@@ -348,10 +354,13 @@ enum NativeTimelineVoiceMessagePainter {
         // A translucent colour applies to the glyph as a whole, so its
         // stroke doesn't darken where it overlaps the fill.
         let resolved = color.cgColor
+        let isTranslucent = resolved.alpha < 1
         let opaque = resolved.copy(alpha: 1) ?? resolved
         context.saveGState()
-        context.setAlpha(resolved.alpha)
-        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        if isTranslucent {
+            context.setAlpha(resolved.alpha)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
         context.addPath(path)
         context.setLineJoin(.round)
         // Pause's rounding comes from a thinner stroke than play's.
@@ -359,7 +368,7 @@ enum NativeTimelineVoiceMessagePainter {
         context.setFillColor(opaque)
         context.setStrokeColor(opaque)
         context.drawPath(using: .fillStroke)
-        context.endTransparencyLayer()
+        if isTranslucent { context.endTransparencyLayer() }
         context.restoreGState()
     }
 
@@ -514,7 +523,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
             let elapsed = min(max((time - start) / duration, 0), 1)
             let eased = easesInOut
                 ? (elapsed < 0.5 ? 4 * pow(elapsed, 3) : 1 - pow(2 - 2 * elapsed, 3) / 2)
-                : 1 - pow(1 - elapsed, 3)
+                : NativeTimelineComponentButtonVisualState.easeOut(elapsed)
             return from + (to - from) * eased
         }
     }
@@ -528,35 +537,28 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     /// Where the pointer last was on the seek bar, so the hover preview
     /// fades out where it was.
     private var lastHoverFraction: CGFloat?
-    /// Called once a departing overlay has eased back to rest.
-    private var onSettled: (() -> Void)?
-    /// A departing overlay's live state, for a pointer that returns to it.
-    private var departedRefresh: (() -> NativeTimelineVoiceMessageDrawState?)?
+    /// Easing back to rest before it goes, deaf to the live state.
+    private(set) var isDeparting = false
 
-    var isDeparting: Bool { onSettled != nil }
-
-    private static func pauseTarget(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat { state.isPlaying ? 1 : 0 }
-    private static func grabberTarget(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat { state.hoverFraction == nil ? 0 : 1 }
-    private static func playHoverTarget(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat { state.isPlayHovered ? 1 : 0 }
-    private static func playPressTarget(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat { state.isPlayPressed ? 1 : 0 }
+    private var isTransitioning: Bool { pauseMorph != nil || playHover != nil || playPress != nil || grabber != nil }
 
     /// Eases toward the state's targets from wherever each value is now.
     private func transition(from old: NativeTimelineVoiceMessageDrawState) {
         guard !state.reducesMotion else { return }
         let now = ProcessInfo.processInfo.systemUptime
         func retarget(
-            _ transition: inout Transition?, _ target: (NativeTimelineVoiceMessageDrawState) -> CGFloat,
+            _ transition: inout Transition?, _ target: KeyPath<NativeTimelineVoiceMessageDrawState, CGFloat>,
             duration: TimeInterval, easesInOut: Bool = false
         ) {
-            let to = target(state)
-            let from = transition?.value(at: now) ?? target(old)
-            guard to != (transition?.to ?? target(old)) else { return }
+            let to = state[keyPath: target]
+            let from = transition?.value(at: now) ?? old[keyPath: target]
+            guard to != (transition?.to ?? old[keyPath: target]) else { return }
             transition = Transition(from: from, to: to, start: now, duration: duration, easesInOut: easesInOut)
         }
-        retarget(&pauseMorph, Self.pauseTarget, duration: 0.2)
-        retarget(&playHover, Self.playHoverTarget, duration: NativeTimelineComponentButtonVisualState.hoverAnimationDuration)
-        retarget(&playPress, Self.playPressTarget, duration: NativeTimelineComponentButtonVisualState.pressAnimationDuration)
-        retarget(&grabber, Self.grabberTarget, duration: 0.25, easesInOut: true)
+        retarget(&pauseMorph, \.pauseTarget, duration: 0.2)
+        retarget(&playHover, \.playHoverTarget, duration: NativeTimelineComponentButtonVisualState.hoverAnimationDuration)
+        retarget(&playPress, \.playPressTarget, duration: NativeTimelineComponentButtonVisualState.pressAnimationDuration)
+        retarget(&grabber, \.grabberTarget, duration: 0.25, easesInOut: true)
         updateAnimation()
     }
 
@@ -653,7 +655,6 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     /// Runs a display link only while something moves.
     func updateAnimation() {
-        let isTransitioning = pauseMorph != nil || playHover != nil || playPress != nil || grabber != nil
         let animates = window != nil && (state.isPlaying || state.isLoading || state.isFetching || isTransitioning)
         if animates, ticker.displayLink == nil {
             ticker.start(on: self) { [weak self] in self?.tick() }
@@ -664,22 +665,24 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     private func tick() {
         let now = ProcessInfo.processInfo.systemUptime
-        if var next = refresh?() {
+        if !isDeparting, var next = refresh?() {
             next.clock = now - clockOrigin
             state = next
         } else {
             needsDisplay = true
         }
-        let isFinished = { (transition: Transition?) in transition.map { now - $0.start >= $0.duration } ?? false }
-        guard isFinished(pauseMorph) || isFinished(playHover) || isFinished(playPress) || isFinished(grabber) else { return }
-        if isFinished(pauseMorph) { pauseMorph = nil }
-        if isFinished(playHover) { playHover = nil }
-        if isFinished(playPress) { playPress = nil }
-        if isFinished(grabber) { grabber = nil }
+        func settle(_ transition: inout Transition?) {
+            if let current = transition, now - current.start >= current.duration { transition = nil }
+        }
+        settle(&pauseMorph)
+        settle(&playHover)
+        settle(&playPress)
+        settle(&grabber)
+        guard !isTransitioning else { return }
         updateAnimation()
-        if pauseMorph == nil, playHover == nil, playPress == nil, grabber == nil, let onSettled {
-            self.onSettled = nil
-            onSettled()
+        if isDeparting {
+            stop()
+            removeFromSuperview()
         }
     }
 
@@ -696,24 +699,17 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
             state.isPlayPressed = false
             state.hoverFraction = nil
         }
-        guard eases, pauseMorph != nil || playHover != nil || playPress != nil || grabber != nil else {
+        guard eases, isTransitioning else {
             stop()
             removeFromSuperview()
             return
         }
-        departedRefresh = refresh
-        refresh = nil
-        onSettled = { [weak self] in
-            self?.stop()
-            self?.removeFromSuperview()
-        }
+        isDeparting = true
     }
 
     /// Keeps a departing overlay for a pointer that returns before it goes.
     func cancelDismissal() {
-        refresh = departedRefresh
-        departedRefresh = nil
-        onSettled = nil
+        isDeparting = false
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -982,14 +978,10 @@ extension NativeTimelineCanvasView {
         }
         let frame = NativeTimelineVoiceMessageOverlay.frame(of: found.region).offsetBy(dx: 0, dy: found.origin)
         let state = voiceMessageDrawState(for: found.region, playback: playback)
-        // Another message's player starts fresh rather than finishing the
-        // last one's hover or play and pause animations, and a player the
-        // pointer left a moment ago takes back its overlay, which is still
-        // easing out, rather than gaining a second.
+        // Another player eases its own overlay out rather than lending it,
+        // and takes back its own if the pointer left it a moment ago.
         if overlay?.region.playbackID != found.region.playbackID {
-            Self.remove(&overlay)
-        }
-        if overlay == nil {
+            overlay?.dismiss()
             overlay = subviews.lazy.compactMap { $0 as? NativeTimelineVoiceMessageOverlay }
                 .first { $0.isDeparting && $0.region.playbackID == found.region.playbackID }
             overlay?.cancelDismissal()
