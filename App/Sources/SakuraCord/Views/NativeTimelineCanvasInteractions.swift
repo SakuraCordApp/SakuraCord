@@ -553,7 +553,7 @@ extension NativeTimelineCanvasView {
         return false
     }
 
-    private func activateComponentMedia(
+    func activateComponentMedia(
         id: String,
         openURL: URL,
         isSpoiler: Bool,

@@ -372,6 +372,8 @@ struct NativeTimelineComponentsDrawInput {
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
+    let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
+    let fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat]
     let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
 }
 
@@ -628,10 +630,11 @@ extension NativeTimelineRowPainter {
                 messageID: input.messageID,
                 bubbleRegion: input.bubbleRegion,
                 state: input.model?.attachmentDownloads.states[region.attachment.id],
-                hovered: input.hoveredComponentButton,
-                pressProgress: input.pressedComponentButton == .fileCard(
-                    messageID: input.messageID, attachmentID: region.attachment.id
-                ) ? input.componentButtonPressProgress : 0
+                finishProgress: input.fileCardFinishProgress,
+                pointer: .init(
+                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                )
             )
         }
     }

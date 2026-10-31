@@ -45,6 +45,16 @@ final class AttachmentDownloadStore {
         }
     }
 
+    /// Whether activating the file starts a download, rather than cancelling
+    /// one or showing the saved file.
+    func startsDownload(_ attachment: Attachment) -> Bool {
+        switch states[attachment.id] {
+        case .downloading: false
+        case let .finished(url, folder): !Self.fileExists(at: url, in: folder)
+        case .failed, nil: true
+        }
+    }
+
     private func start(_ attachment: Attachment) {
         let id = attachment.id
         setState(.downloading(fraction: 0), for: id)

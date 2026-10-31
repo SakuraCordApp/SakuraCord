@@ -354,6 +354,8 @@ extension NativeTimelineCanvasView {
         cancelReactionCountAnimations()
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
+        // Before the pointer targets clear, which drops the fades.
+        redrawFadingFileCardHovers()
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
@@ -921,6 +923,8 @@ extension NativeTimelineCanvasView {
             || hoveredComponentButton?.messageID == item.messageID
             || activeComponentChoiceTarget?.messageID == item.messageID
             || visualPressedComponentButton?.messageID == item.messageID
+            || componentButtonHoverFades.keys.contains { $0.messageID == item.messageID }
+            || fileCardFinishFades.keys.contains { $0.messageID == item.messageID }
             || hoveredForwardedSourceMessageID == item.messageID
             || hoveredThreadMessageID == item.messageID
             || hoveredFooterAction?.messageID == item.messageID
@@ -961,6 +965,8 @@ extension NativeTimelineCanvasView {
             activeComponentChoiceTarget: activeComponentChoiceTarget?.messageID == item.messageID ? activeComponentChoiceTarget : nil,
             pressedComponentButton: visualPressedComponentButton?.messageID == item.messageID ? visualPressedComponentButton : nil,
             componentButtonPressProgress: visualPressedComponentButton?.messageID == item.messageID ? componentButtonPressProgress : 0,
+            fileCardHoverProgress: fileCardHoverProgress(in: item.messageID),
+            fileCardFinishProgress: fileCardFinishProgress(in: item.messageID),
             isForwardedSourceHovered: hoveredForwardedSourceMessageID == item.messageID,
             threadCardInteraction: threadCardInteraction(forMessageID: item.messageID),
             isEphemeralDismissHovered: hoveredFooterAction?.messageID == item.messageID && hoveredFooterAction?.kind == .ephemeralDismiss,

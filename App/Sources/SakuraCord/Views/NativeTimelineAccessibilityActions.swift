@@ -48,7 +48,7 @@ extension NativeTimelineCanvasView {
         if let file, !isHiddenSpoiler {
             element.setAccessibilityCustomActions([
                 NSAccessibilityCustomAction(name: fileCardActionDescription(file, name: label)) { [weak self] in
-                    self?.model?.attachmentDownloads.activate(file)
+                    self?.activateFileCard(file)
                     return self != nil
                 },
             ])
