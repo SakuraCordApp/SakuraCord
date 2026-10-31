@@ -371,6 +371,9 @@ extension NativeTimelineCanvasView {
         // Hover regions are cached at the rows' displaced positions.
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        // The copy button can't follow its block as rows move and clip, so
+        // it leaves until the pointer next moves over a block.
+        if !(rowDisclosure?.isFinished ?? true) || unreadDividerGap != nil { setHoveredCodeBlock(nil) }
         if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, !suppressesHoverPresentation {
             // The motion has landed: tracking areas and cursor rects follow the rows.
             updateTrackingAreas()
