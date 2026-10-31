@@ -250,7 +250,7 @@ enum NativeTimelineSpoilerConcealmentPolicy {
     /// failing those, to the links no preview names. It hides when those links
     /// are all spoilered; when only some are and several previews compete,
     /// any pairing is a guess, so the preview stays as is.
-    static func spoileredEmbedURLs(in message: Message) -> Set<URL> {
+    nonisolated static func spoileredEmbedURLs(in message: Message) -> Set<URL> {
         let links = DiscordMarkdown.linkOccurrences(message.content)
         var result = Set(links.filter(\.isSpoiler).map(\.url))
         guard !result.isEmpty else { return [] }
@@ -283,7 +283,7 @@ enum NativeTimelineSpoilerConcealmentPolicy {
 
     /// A host's last two labels, with the short hosts that redirect elsewhere
     /// mapped to their site.
-    private static func site(of url: URL) -> String? {
+    private nonisolated static func site(of url: URL) -> String? {
         guard let host = url.host()?.lowercased() else { return nil }
         return host == "youtu.be" ? "youtube.com" : host.split(separator: ".").suffix(2).joined(separator: ".")
     }

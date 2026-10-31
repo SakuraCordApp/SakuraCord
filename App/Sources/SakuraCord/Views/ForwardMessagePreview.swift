@@ -47,8 +47,15 @@ nonisolated struct ForwardMessagePreviewPlan: Equatable {
                 isSpoiler: attachment.isSpoiler
             )
         }
-        let embedMedia = MessageEmbedPresentation.visibleEmbeds(for: message)
-            .compactMap(Self.media(for:))
+        // A preview from a spoilered link stays covered, as in the timeline.
+        let spoileredURLs = NativeTimelineSpoilerConcealmentPolicy.spoileredEmbedURLs(in: message)
+        let embedMedia = MessageEmbedPresentation.visibleEmbeds(for: message).compactMap { embed in
+            Self.media(for: embed).map { media in
+                var media = media
+                media.isSpoiler = embed.url.map(spoileredURLs.contains) ?? false
+                return media
+            }
+        }
         let componentMedia = message.components.flatMap(Self.media(in:))
         let allMedia = directMedia + embedMedia + componentMedia
 
@@ -293,7 +300,7 @@ struct ForwardedMessagePreview: View {
     }
 
     private var accessibilitySummary: String {
-        [plan.content, plan.attachmentSummary]
+        [plan.content.map { MessageReplySummary.accessibilityText(content: $0) }, plan.attachmentSummary]
             .compactMap { $0 }
             .joined(separator: ", ")
     }
