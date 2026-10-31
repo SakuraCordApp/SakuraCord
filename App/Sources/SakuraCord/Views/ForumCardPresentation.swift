@@ -135,7 +135,8 @@ extension ForumCardPresentation.Excerpt {
     /// What Discord's forum card shows for a starter without text.
     static func placeholderText(for starter: Message) -> String? {
         if let poll = starter.poll { return poll.question }
-        if starter.flags.contains(.isComponentsV2) { return "Click to see message" }
+        // A forwarded starter carries its components in the snapshot.
+        if (starter.forwardedSnapshot?.flags ?? starter.flags).contains(.isComponentsV2) { return "Click to see message" }
         if !starter.stickers.isEmpty { return "Click to see sticker" }
         switch starter.attachments.first?.mediaKind {
         case .image, .animatedImage, .video: return nil
