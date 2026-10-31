@@ -1,16 +1,15 @@
 import AppKit
 
 /// The copy button over a hovered code block. The canvas owns its hover,
-/// press, and click; this view shows them like the timeline's other round
-/// controls, fades in and out with the block's hover, and confirms a copy
-/// by turning its glyph into a checkmark for a moment.
+/// press, and click; this view fades in and out with the block's hover,
+/// shows a plate under the pointer, and confirms a copy by drawing a
+/// checkmark in place of its glyph for a moment.
 @MainActor
 final class NativeTimelineCodeCopyControl: NSView {
-    private static let copySymbol = "doc.on.doc"
-    private static let copiedSymbol = "checkmark"
-    private static var glyphInset: CGFloat { InterfaceScale.metric(7) }
-
-    private let glyph = NSImageView()
+    private let plate = CALayer()
+    private let glyphs = NSView()
+    private let copyGlyph = NSImageView()
+    private let copiedGlyph = NSImageView()
     private var shown: NativeTimelineCodeBlockPointerTarget?
     private var revert: Task<Void, Never>?
     private var state = State(isShown: false, isHovered: false, isPressed: false)
@@ -26,12 +25,22 @@ final class NativeTimelineCodeCopyControl: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerCurve = .continuous
-        alphaValue = 0
+        layer?.opacity = 0
+        plate.cornerCurve = .continuous
+        layer?.addSublayer(plate)
+        glyphs.wantsLayer = true
+        glyphs.layer?.opacity = 0.7
+        addSubview(glyphs)
+        for glyph in [copyGlyph, copiedGlyph] {
+            // A symbol keeps its point size in every state instead of
+            // scaling to the view.
+            glyph.imageScaling = .scaleNone
+            glyph.wantsLayer = true
+            glyphs.addSubview(glyph)
+        }
+        hideCopiedGlyph()
         // The canvas voices the button as its own element.
         setAccessibilityHidden(true)
-        glyph.image = Self.symbol(Self.copySymbol)
-        addSubview(glyph)
     }
 
     @available(*, unavailable)
@@ -50,67 +59,141 @@ final class NativeTimelineCodeCopyControl: NSView {
                 $0.itemIdentifier != target.itemIdentifier || $0.region != target.region
                     || $0.rangeLocation != target.rangeLocation
             } ?? true
-            if isAnotherBlock { resetGlyph(animated: false) }
             // Interface Size may have changed since the button last showed.
-            layer?.cornerRadius = InterfaceScale.metric(6)
-            glyph.symbolConfiguration = .init(pointSize: InterfaceScale.fontSize(13), weight: .medium)
+            let copyImage = Self.symbol("doc.on.doc", pointSize: 13, color: .labelColor)
+            if isAnotherBlock || copyGlyph.image?.size != copyImage.size {
+                copyGlyph.image = copyImage
+                // A checkmark is a lighter shape than the copy glyph, so it
+                // is set larger to look the same size.
+                copiedGlyph.image = Self.symbol("checkmark", pointSize: 15, color: Self.copiedColor)
+                resetGlyph(animated: false)
+            }
             frame = target.copyButtonFrame
-            glyph.frame = bounds.insetBy(dx: Self.glyphInset, dy: Self.glyphInset)
+            glyphs.frame = bounds
+            for glyph in [copyGlyph, copiedGlyph] { centre(glyph) }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            plate.frame = bounds
+            plate.cornerRadius = NativeTimelineMarkdownChromeMetrics.codeCopyButtonCornerRadius
+            CATransaction.commit()
         }
         let state = State(isShown: target != nil, isHovered: isHovered, isPressed: isPressed)
         shown = target ?? shown
         guard state != self.state else { return }
-        self.state = state
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = isPressed ? 0.08 : 0.16
-            context.allowsImplicitAnimation = true
-            animator().alphaValue = target == nil ? 0 : 1
-            applyFill()
-            glyph.animator().alphaValue = isHovered ? 1 : 0.7
-            // Pressing sinks the glyph a little, as the timeline's buttons dip.
-            glyph.animator().frame = bounds.insetBy(
-                dx: Self.glyphInset + (isPressed ? 1.5 : 0), dy: Self.glyphInset + (isPressed ? 1.5 : 0)
-            )
+        let duration = isPressed ? 0.08 : 0.15
+        if state.isShown != self.state.isShown {
+            animate(layer, "opacity", to: state.isShown ? 1 : 0, duration: duration)
         }
+        self.state = state
+        animate(glyphs.layer, "opacity", to: isHovered ? 1 : 0.7, duration: duration)
+        animate(plate, "backgroundColor", to: plateColor, duration: duration)
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        applyFill()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        plate.backgroundColor = plateColor
+        CATransaction.commit()
     }
 
-    /// The button's fill for its state, in its appearance.
-    private func applyFill() {
+    /// The plate's fill for the current state, in the view's appearance.
+    private var plateColor: CGColor {
+        var color = NSColor.clear.cgColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.labelColor
+            color = NSColor.labelColor
                 .withAlphaComponent(state.isPressed ? 0.16 : state.isHovered ? 0.1 : 0).cgColor
         }
+        return color
     }
 
-    /// Turns the glyph into a checkmark, then back.
+    /// Centres a symbol by its outline, its alignment rect, rather than by
+    /// its image's padded box.
+    private func centre(_ glyph: NSImageView) {
+        guard let image = glyph.image else { return }
+        let outline = image.alignmentRect
+        glyph.frame = bounds.offsetBy(
+            dx: image.size.width / 2 - outline.midX,
+            dy: outline.midY - image.size.height / 2
+        )
+    }
+
+    /// Moves `layer`'s value to `value` from wherever it is on screen, so a
+    /// change that interrupts another continues without a jump.
+    private func animate(
+        _ layer: CALayer?,
+        _ key: String,
+        to value: Any,
+        duration: CFTimeInterval,
+        delay: CFTimeInterval = 0
+    ) {
+        guard let layer else { return }
+        let animation = CABasicAnimation(keyPath: key)
+        animation.fromValue = (layer.presentation() ?? layer).value(forKey: key)
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        if delay > 0 {
+            animation.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + delay
+            animation.fillMode = .backwards
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.setValue(value, forKey: key)
+        CATransaction.commit()
+        layer.add(animation, forKey: key)
+    }
+
+    /// Fades the copy glyph out, draws a checkmark on in its place, and
+    /// later fades back. One glyph is gone before the other shows, so the
+    /// two never overlap.
     func confirmCopy() {
-        glyph.setSymbolImage(Self.symbol(Self.copiedSymbol), contentTransition: .replace.downUp)
-        glyph.contentTintColor = .systemGreen
         revert?.cancel()
+        animate(copyGlyph.layer, "opacity", to: 0, duration: 0.12)
         revert = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.12))
+            guard !Task.isCancelled, let self else { return }
+            hideCopiedGlyph()
+            copiedGlyph.addSymbolEffect(.drawOn)
             try? await Task.sleep(for: .seconds(1.4))
             guard !Task.isCancelled else { return }
-            self?.resetGlyph(animated: true)
+            resetGlyph(animated: true)
         }
     }
 
     private func resetGlyph(animated: Bool) {
         revert?.cancel()
         revert = nil
-        glyph.contentTintColor = nil
-        if animated {
-            glyph.setSymbolImage(Self.symbol(Self.copySymbol), contentTransition: .replace.upUp)
-        } else {
-            glyph.image = Self.symbol(Self.copySymbol)
+        guard animated else {
+            copyGlyph.layer?.removeAllAnimations()
+            copyGlyph.layer?.opacity = 1
+            hideCopiedGlyph()
+            return
+        }
+        // A drawn-off checkmark lingers in fragments, so it fades instead.
+        animate(copiedGlyph.layer, "opacity", to: 0, duration: 0.12)
+        animate(copyGlyph.layer, "opacity", to: 1, duration: 0.15, delay: 0.12)
+        revert = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.12))
+            guard !Task.isCancelled else { return }
+            self?.hideCopiedGlyph()
         }
     }
 
-    private static func symbol(_ name: String) -> NSImage {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? NSImage()
+    /// Takes the checkmark off without animation, ready to draw on again.
+    private func hideCopiedGlyph() {
+        copiedGlyph.addSymbolEffect(.drawOff, animated: false)
+        copiedGlyph.layer?.removeAllAnimations()
+        copiedGlyph.layer?.opacity = 1
+    }
+
+    /// Discord's success green, as the app's other confirmations use.
+    private static let copiedColor = NSColor(srgbRed: 0x23 / 255, green: 0xA5 / 255, blue: 0x5A / 255, alpha: 1)
+
+    /// Each glyph carries its colour, so neither tints when the other shows.
+    private static func symbol(_ name: String, pointSize: CGFloat, color: NSColor) -> NSImage {
+        let configuration = NSImage.SymbolConfiguration(pointSize: InterfaceScale.fontSize(pointSize), weight: .medium)
+            .applying(.init(paletteColors: [color]))
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) ?? NSImage()
     }
 }

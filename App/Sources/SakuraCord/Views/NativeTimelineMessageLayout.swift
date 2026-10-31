@@ -91,7 +91,7 @@ extension NativeTimelineRowLayout {
             if let attributedContent = layout.attributedContent, let framesetter = layout.contentFramesetter {
                 extent = max(extent, NativeTimelineBubbleLayout.measuredTextWidth(
                     framesetter,
-                    length: attributedContent.length,
+                    value: attributedContent,
                     maximumWidth: contentWidth
                 ))
             }

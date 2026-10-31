@@ -330,12 +330,7 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
                 )
                 let lineEnd = newline.location == NSNotFound ? NSMaxRange(range) : NSMaxRange(newline)
                 let line = NSRange(location: lineStart, length: lineEnd - lineStart)
-                let paragraph = value.attribute(
-                    .paragraphStyle,
-                    at: lineStart,
-                    effectiveRange: nil
-                ) as? NSParagraphStyle
-                if let last = blocks.last, (paragraph?.paragraphSpacingBefore ?? 0) <= 0 {
+                if let last = blocks.last, !opensBlock(value, at: lineStart) {
                     blocks[blocks.count - 1] = NSUnionRange(last, line)
                 } else {
                     blocks.append(line)
@@ -361,15 +356,16 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
                 width: outerFrame.width,
                 height: union.height + inset * 2
             )
-            let buttonWidth: CGFloat = InterfaceScale.metric(28)
+            let buttonInset = NativeTimelineMarkdownChromeMetrics.codeCopyButtonInset
+            let buttonSide = copyButtonSide(lineHeight: firstRect.height, inset: inset)
             let buttonFrame = CGRect(
                 x: max(
                     backgroundFrame.minX,
-                    backgroundFrame.maxX - buttonWidth - InterfaceScale.metric(4)
+                    backgroundFrame.maxX - buttonSide - buttonInset
                 ),
-                y: backgroundFrame.minY + InterfaceScale.metric(4),
-                width: buttonWidth,
-                height: buttonWidth
+                y: backgroundFrame.minY + buttonInset,
+                width: buttonSide,
+                height: buttonSide
             )
             return NativeTimelineCodeBlockRegion(
                 range: range,
@@ -378,6 +374,20 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
                 content: source.substring(with: range)
             )
         }
+    }
+
+    /// Whether the code line at `location` starts a new block rather than
+    /// continuing the one above: a closing fence leaves spacing before the
+    /// next block's first line.
+    static func opensBlock(_ value: NSAttributedString, at location: Int) -> Bool {
+        let paragraph = value.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle
+        return (paragraph?.paragraphSpacingBefore ?? 0) > 0
+    }
+
+    /// The copy button fills a one-line block's height less its inset, so it
+    /// sits centred on the first line with equal room on every side.
+    static func copyButtonSide(lineHeight: CGFloat, inset: CGFloat) -> CGFloat {
+        lineHeight + (inset - NativeTimelineMarkdownChromeMetrics.codeCopyButtonInset) * 2
     }
 
     static func containsCodeBlock(

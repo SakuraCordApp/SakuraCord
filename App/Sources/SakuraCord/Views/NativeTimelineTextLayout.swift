@@ -1399,14 +1399,12 @@ enum NativeTimelineEmbedLayout {
     private static func idealWidth(
         _ box: NativeTimelineAttributedTextBox
     ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+        let width = NativeTimelineMarkdownChromeMetrics.fittedWidth(
             box.framesetter,
-            CFRange(location: 0, length: box.value.length),
-            nil,
-            CGSize(width: 10_000, height: 10_000),
-            nil
+            value: box.value,
+            maximumWidth: 10_000
         )
-        return max(1, ceil(size.width))
+        return max(1, ceil(width))
     }
 
     private static func measuredHeight(
@@ -1494,6 +1492,63 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
     /// Discord's 8 px code block padding, at the block's text size.
     static func codeBlockInset(in value: NSAttributedString, at location: Int) -> CGFloat {
         8 * em(in: value, at: location)
+    }
+
+    static var codeBlockCornerRadius: CGFloat { InterfaceScale.metric(4) }
+
+    /// The copy button's inset from its block's top and trailing edges. Its
+    /// corners are concentric with the block's.
+    static var codeCopyButtonInset: CGFloat { InterfaceScale.metric(2) }
+    static var codeCopyButtonCornerRadius: CGFloat { codeBlockCornerRadius - codeCopyButtonInset }
+
+    /// The width `value` needs within `maximumWidth`. CoreText's suggestion
+    /// counts a code line's leading padding, a head indent, but not its
+    /// trailing one: a tail indent only narrows lines within a set width, so
+    /// a block fitted to its text would end at its last glyph. A block's
+    /// first line also leaves room for its copy button, which would
+    /// otherwise cover the end of a short block's text.
+    static func fittedWidth(
+        _ framesetter: CTFramesetter,
+        value: NSAttributedString,
+        maximumWidth: CGFloat
+    ) -> CGFloat {
+        let range = CFRange(location: 0, length: value.length)
+        var width = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            range,
+            nil,
+            CGSize(width: max(1, maximumWidth), height: .greatestFiniteMagnitude),
+            nil
+        ).width
+        guard NativeTimelineCodeBlockGeometry.containsCodeBlock(value) else { return width }
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            range,
+            CGPath(rect: CGRect(x: 0, y: 0, width: max(1, maximumWidth), height: 1_000_000), transform: nil),
+            nil
+        )
+        guard let lines = CTFrameGetLines(frame) as? [CTLine] else { return width }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        var previousLineIsCode = false
+        for (line, origin) in zip(lines, origins) {
+            let location = CTLineGetStringRange(line).location
+            let isCode = value.attribute(.discordMarkdownBlock, at: location, effectiveRange: nil) as? String == "code"
+            defer { previousLineIsCode = isCode }
+            guard isCode else { continue }
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+                - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
+            let inset = codeBlockInset(in: value, at: location)
+            var trailing = inset
+            if !previousLineIsCode || NativeTimelineCodeBlockGeometry.opensBlock(value, at: location) {
+                trailing += NativeTimelineCodeBlockGeometry.copyButtonSide(lineHeight: ascent + descent + 1, inset: inset)
+                    + codeCopyButtonInset
+            }
+            width = max(width, origin.x + textWidth + trailing)
+        }
+        return width
     }
 
     /// One of Discord's CSS pixels at the size of the markdown block or

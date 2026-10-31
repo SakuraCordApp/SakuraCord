@@ -575,12 +575,12 @@ extension NativeTimelineRowPainter {
             discordCodeBackgroundColor.setFill()
             NSBezierPath(
                 concentricRoundedRect: backgroundFrame,
-                cornerRadius: InterfaceScale.metric(4)
+                cornerRadius: NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
             ).fill()
             discordCodeBorderColor.setStroke()
             let border = NSBezierPath(
                 concentricRoundedRect: backgroundFrame.insetBy(dx: 0.5, dy: 0.5),
-                cornerRadius: InterfaceScale.metric(4)
+                cornerRadius: NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
             )
             border.lineWidth = 1
             border.stroke()

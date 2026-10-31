@@ -1122,14 +1122,12 @@ private enum NodeBuilder {
     static func idealWidth(
         _ box: NativeTimelineAttributedTextBox
     ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+        let width = NativeTimelineMarkdownChromeMetrics.fittedWidth(
             box.framesetter,
-            CFRange(location: 0, length: box.value.length),
-            nil,
-            CGSize(width: 10_000, height: 10_000),
-            nil
+            value: box.value,
+            maximumWidth: 10_000
         )
-        return max(1, ceil(size.width))
+        return max(1, ceil(width))
     }
 
     static func measuredHeight(
