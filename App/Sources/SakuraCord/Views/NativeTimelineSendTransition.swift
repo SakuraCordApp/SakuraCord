@@ -551,11 +551,11 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         // hide the swap the two cross-fade over a little longer.
         let crossFade = geometry.bubble == nil ? Timing.plainTextCrossFadeDuration : nil
         let crossesMedia = mediaDelay > 0
-        if crossesMedia {
-            fadeIn(finalContentLayer, duration: Timing.textAfterCrossingFadeDuration, delay: mediaDelay + Timing.duration)
-        } else {
-            fadeIn(finalContentLayer, duration: crossFade ?? Timing.contentFadeDuration)
-        }
+        fadeIn(
+            finalContentLayer,
+            duration: crossesMedia ? Timing.textAfterCrossingFadeDuration : crossFade ?? Timing.contentFadeDuration,
+            delay: crossesMedia ? mediaDelay + Timing.duration : 0
+        )
         if let heldTextFrame {
             sourceTextLayer.frame = heldTextFrame.offsetBy(
                 dx: -geometry.sourceAnchor.x,
