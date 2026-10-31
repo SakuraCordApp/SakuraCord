@@ -357,9 +357,9 @@ extension NativeTimelineCanvasView {
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
-        redrawFadingFileCardHovers()
         let clearedTargets = pointer.clearHoverAndPressTargets()
         reactionHoverCoordinator.close()
+        redrawFadingFileCardHovers()
         closeMessageProfilePopover()
         closeServerTagPopover()
         removeActionCapsule()
