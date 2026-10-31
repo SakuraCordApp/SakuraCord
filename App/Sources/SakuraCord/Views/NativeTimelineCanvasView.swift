@@ -526,7 +526,7 @@ enum NativeTimelineRowPainter {
         isCommandPillHovered: Bool = false,
         hoveredMention: NativeTimelineMentionHover? = nil,
         hoveredTextLink: NativeTimelineTextLinkHover? = nil,
-        hoveredTextSpoiler: NativeTimelineTextSpoilerHover? = nil,
+        textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat] = [:],
         hoveredComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         activeComponentChoiceTarget:
@@ -615,7 +615,7 @@ enum NativeTimelineRowPainter {
                 isCommandPillHovered: isCommandPillHovered,
                 hoveredMention: hoveredMention,
                 hoveredTextLink: hoveredTextLink,
-                hoveredTextSpoiler: hoveredTextSpoiler,
+                textSpoilerHover: textSpoilerHover,
                 hoveredComponentButton: hoveredComponentButton,
                 activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,

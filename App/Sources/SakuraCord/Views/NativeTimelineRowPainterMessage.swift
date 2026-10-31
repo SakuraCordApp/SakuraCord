@@ -19,7 +19,8 @@ struct NativeTimelineMessageDrawInput {
     let isCommandPillHovered: Bool
     let hoveredMention: NativeTimelineMentionHover?
     let hoveredTextLink: NativeTimelineTextLinkHover?
-    let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
+    /// How far each text spoiler is hovered, easing in and out.
+    let textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat]
     let hoveredComponentButton: NativeTimelineComponentButtonTarget?
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
@@ -335,7 +336,7 @@ extension NativeTimelineRowPainter {
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
         let hoveredTextLink = input.hoveredTextLink
-        let hoveredTextSpoiler = input.hoveredTextSpoiler
+        let textSpoilerHover = input.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         if let frame = layout.contentFrame,
            let attributedContent = layout.attributedContent,
@@ -374,12 +375,7 @@ extension NativeTimelineRowPainter {
                         && hoveredTextLink?.region == .content
                     ? hoveredTextLink?.characterIndex
                     : nil,
-                hoveredSpoilerRangeLocation:
-                    hoveredTextSpoiler?.itemIdentifier
-                        == .message(row.identity)
-                        && hoveredTextSpoiler?.region == .content
-                    ? hoveredTextSpoiler?.rangeLocation
-                    : nil,
+                spoilerHoverProgress: textSpoilerHover.progress(in: .message(row.identity), region: .content),
                 revealedSpoilerLocations:
                     revealedTextSpoilerState.locations(in: .content)
             )
@@ -591,9 +587,7 @@ extension NativeTimelineRowPainter {
                 hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == itemIdentifier
                     && input.hoveredTextLink?.region == textRegionID
                     ? input.hoveredTextLink?.characterIndex : nil,
-                hoveredSpoilerRangeLocation: input.hoveredTextSpoiler?.itemIdentifier == itemIdentifier
-                    && input.hoveredTextSpoiler?.region == textRegionID
-                    ? input.hoveredTextSpoiler?.rangeLocation : nil,
+                spoilerHoverProgress: input.textSpoilerHover.progress(in: itemIdentifier, region: textRegionID),
                 revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: textRegionID)
             )
         }
@@ -656,7 +650,7 @@ extension NativeTimelineRowPainter {
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
         let hoveredTextLink = input.hoveredTextLink
-        let hoveredTextSpoiler = input.hoveredTextSpoiler
+        let textSpoilerHover = input.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         let spoilerRevealStore = input.spoilerRevealStore
         let hoveredComponentButton = input.hoveredComponentButton
@@ -696,7 +690,7 @@ extension NativeTimelineRowPainter {
                 textSelection: textSelection,
                 hoveredMention: hoveredMention,
                 hoveredTextLink: hoveredTextLink,
-                hoveredTextSpoiler: hoveredTextSpoiler,
+                textSpoilerHover: textSpoilerHover,
                 revealedTextSpoilerState:
                     revealedTextSpoilerState,
                 spoilerRevealStore: spoilerRevealStore,

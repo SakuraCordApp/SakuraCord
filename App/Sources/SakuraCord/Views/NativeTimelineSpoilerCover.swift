@@ -216,18 +216,30 @@ extension NativeTimelineCanvasView {
 
 extension View {
     /// The timeline's spoiler cover for SwiftUI surfaces such as staged
-    /// attachments: the view blurred over the spoiler fill, with the pill.
-    func spoilerCover(_ isHidden: Bool, pillScale: CGFloat? = 1) -> some View {
+    /// attachments: the view blurred over the spoiler fill, with the pill,
+    /// tinted and its pill darkened while hovered as the timeline's are.
+    func spoilerCover(_ isHidden: Bool, pillScale: CGFloat? = 1, isHovered: Bool = false) -> some View {
         blur(radius: isHidden ? NativeTimelineSpoilerAppearance.blurRadius : 0)
             .background {
                 if isHidden { Color(nsColor: NativeTimelineSpoilerAppearance.hiddenColor) }
             }
             .overlay {
+                if isHidden {
+                    Color(nsColor: NativeTimelineSpoilerAppearance.mediaHoverTintColor)
+                        .opacity(isHovered ? 1 : 0)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
                 if isHidden, let pillScale {
-                    Text(AttributedString(NativeTimelineSpoilerAppearance.pillLabel(isHovered: false)))
+                    Text(AttributedString(NativeTimelineSpoilerAppearance.pillLabel(isHovered: isHovered)))
                         .padding(.horizontal, NativeTimelineSpoilerAppearance.pillHorizontalPadding)
                         .frame(height: NativeTimelineSpoilerAppearance.pillHeight)
-                        .background(Capsule().fill(Color(nsColor: NativeTimelineSpoilerAppearance.pillColor)))
+                        .background {
+                            Capsule().fill(Color(nsColor: NativeTimelineSpoilerAppearance.pillColor))
+                            Capsule().fill(Color(nsColor: NativeTimelineSpoilerAppearance.hoveredPillOverlayColor))
+                                .opacity(isHovered ? 1 : 0)
+                        }
                         .scaleEffect(pillScale)
                         .transition(.opacity)
                 }

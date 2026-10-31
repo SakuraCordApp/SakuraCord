@@ -171,8 +171,7 @@ extension NativeTimelineRowPainter {
                 && input.hoveredMention?.region == region.regionID ? input.hoveredMention?.characterIndex : nil,
             hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == .message(input.row.identity)
                 && input.hoveredTextLink?.region == region.regionID ? input.hoveredTextLink?.characterIndex : nil,
-            hoveredSpoilerRangeLocation: input.hoveredTextSpoiler?.itemIdentifier == .message(input.row.identity)
-                && input.hoveredTextSpoiler?.region == region.regionID ? input.hoveredTextSpoiler?.rangeLocation : nil,
+            spoilerHoverProgress: input.textSpoilerHover.progress(in: .message(input.row.identity), region: region.regionID),
             revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: region.regionID)
         )
     }

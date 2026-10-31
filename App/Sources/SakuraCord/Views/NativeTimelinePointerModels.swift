@@ -27,10 +27,24 @@ nonisolated struct NativeTimelineTextLinkHover: Equatable {
     let characterIndex: Int
 }
 
-nonisolated struct NativeTimelineTextSpoilerHover: Equatable {
+nonisolated struct NativeTimelineTextSpoilerHover: Hashable {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion
     let rangeLocation: Int
+}
+
+extension [NativeTimelineTextSpoilerHover: CGFloat] {
+    /// How far each spoiler in one text region is hovered, by where its
+    /// range starts.
+    func progress(
+        in itemIdentifier: NativeMessageTimelineItem.Identifier,
+        region: NativeTimelineTextRegion
+    ) -> [Int: CGFloat] {
+        reduce(into: [:]) { result, entry in
+            guard entry.key.itemIdentifier == itemIdentifier, entry.key.region == region else { return }
+            result[entry.key.rangeLocation] = entry.value
+        }
+    }
 }
 
 struct NativeTimelineMentionHitRegion {

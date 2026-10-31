@@ -357,7 +357,7 @@ extension NativeTimelineCanvasView {
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
         // Before the pointer targets clear, which drops the fades.
-        redrawFadingFileCardHovers()
+        redrawFadingHovers()
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
@@ -923,6 +923,7 @@ extension NativeTimelineCanvasView {
             || hoveredMention?.itemIdentifier == item.identifier
             || hoveredTextLink?.itemIdentifier == item.identifier
             || hoveredTextSpoiler?.itemIdentifier == item.identifier
+            || textSpoilerHoverFades.keys.contains { $0.itemIdentifier == item.identifier }
             || hoveredComponentButton?.messageID == item.messageID
             || activeComponentChoiceTarget?.messageID == item.messageID
             || visualPressedComponentButton?.messageID == item.messageID
@@ -963,7 +964,7 @@ extension NativeTimelineCanvasView {
             isCommandPillHovered: hoveredCommandPillMessageID == item.messageID,
             hoveredMention: hoveredMention?.itemIdentifier == item.identifier ? hoveredMention : nil,
             hoveredTextLink: hoveredTextLink?.itemIdentifier == item.identifier ? hoveredTextLink : nil,
-            hoveredTextSpoiler: hoveredTextSpoiler?.itemIdentifier == item.identifier ? hoveredTextSpoiler : nil,
+            textSpoilerHover: textSpoilerHoverProgress(in: item.identifier),
             hoveredComponentButton: hoveredComponentButton?.messageID == item.messageID ? hoveredComponentButton : nil,
             activeComponentChoiceTarget: activeComponentChoiceTarget?.messageID == item.messageID ? activeComponentChoiceTarget : nil,
             pressedComponentButton: visualPressedComponentButton?.messageID == item.messageID ? visualPressedComponentButton : nil,
