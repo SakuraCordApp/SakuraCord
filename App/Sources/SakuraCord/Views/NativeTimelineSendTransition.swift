@@ -400,13 +400,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
                 overlay.pieceIconLayers[index] = icon
             }
             if let fraction = attachment.uploadFraction {
-                // Oversized, so the tile's clip shapes it as the tile morphs.
-                let dim = CALayer()
-                dim.backgroundColor = .black
-                dim.opacity = Float(AttachmentUploadRing.dimOpacity)
-                dim.frame = layer.bounds.insetBy(dx: -4_000, dy: -4_000)
-                layer.addSublayer(dim)
-                overlay.pieceDimLayers[index] = dim
+                overlay.addDim(index: index)
                 let ring = overlay.addRing(index: index, at: CGPoint(x: frame.midX, y: frame.midY))
                 ring.fraction = fraction
                 ring.setAffineTransform(CGAffineTransform(scaleX: attachment.ringScale, y: attachment.ringScale))
@@ -443,6 +437,19 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    @discardableResult
+    private func addDim(index: Int) -> CALayer? {
+        guard let tile = pieceLayers[index] else { return nil }
+        // Oversized, so the tile's clip shapes it as the tile morphs.
+        let dim = CALayer()
+        dim.backgroundColor = .black
+        dim.opacity = Float(AttachmentUploadRing.dimOpacity)
+        dim.frame = tile.bounds.insetBy(dx: -4_000, dy: -4_000)
+        tile.addSublayer(dim)
+        pieceDimLayers[index] = dim
+        return dim
+    }
 
     private func addRing(index: Int, at center: CGPoint) -> AttachmentUploadRingLayer {
         let ring = AttachmentUploadRingLayer()
@@ -619,10 +626,13 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     /// letting them go for one already stored.
     private func flyUploadState(of piece: Piece, from source: CGRect, delay: CFTimeInterval) {
         typealias Timing = NativeTimelineSendTransitionTiming
+        let dimsFile = piece.uploadRing?.dimsFile == true
         if let dim = pieceDimLayers[piece.index] {
-            let opacity = piece.uploadRing?.dimsFile == true ? dim.opacity : 0
+            let opacity = dimsFile ? dim.opacity : 0
             add(dim, "opacity", from: CGFloat(dim.opacity), to: CGFloat(opacity), timing: Timing.vertical, delay: delay)
             dim.opacity = opacity
+        } else if dimsFile, let dim = addDim(index: piece.index) {
+            add(dim, "opacity", from: 0, to: CGFloat(dim.opacity), timing: Timing.vertical, delay: delay)
         }
         let sourceCenter = CGPoint(x: source.midX, y: source.midY)
         guard let target = piece.uploadRing else {
