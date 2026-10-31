@@ -110,6 +110,7 @@ extension ForumBoardView {
         // Without a message, Discord shows a placeholder in its place.
         let message: Message?
         var placeholder = "Original message was deleted"
+        var isEmphasized = presentation.isEmphasized
         let lines: Int
         var prefix: ForumPostPreviewTextView.Prefix?
         if isGallery {
@@ -132,6 +133,8 @@ extension ForumBoardView {
                 message = nil
                 placeholder = text ?? ""
                 prefix = authorPrefix(author, separated: text != nil)
+                // Discord keeps these muted on an unread post too.
+                isEmphasized = false
             default: return excerptRenderers.removeValue(forKey: postID) != nil
             }
             lines = metrics.excerptLines
@@ -166,8 +169,7 @@ extension ForumBoardView {
                 fontSize: fontSize,
                 emojiSize: (fontSize * 1.375).rounded(),
                 maximumNumberOfLines: lines,
-                // Discord keeps a placeholder muted on an unread post too.
-                isEmphasized: false,
+                isEmphasized: isEmphasized,
                 underlinesLinks: presentation.underlinesLinks,
                 prefix: prefix
             ),
