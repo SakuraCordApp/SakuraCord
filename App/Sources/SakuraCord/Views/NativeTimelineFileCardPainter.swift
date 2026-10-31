@@ -121,15 +121,24 @@ extension NativeTimelineRowPainter {
                 systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
                 return
             }
-            context.saveGState()
-            context.setAlpha(1 - finish)
-            downloadRing(in: button, fraction: 1, color: palette.glyph)
-            systemSymbol("xmark", in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
-            context.setAlpha(finish)
-            drawingRoundButton(button, scale: 0.8 + 0.2 * finish) {
-                systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
+            // Symbols draw as images, which take an alpha only from a layer.
+            func faded(_ alpha: CGFloat, _ draw: () -> Void) {
+                context.saveGState()
+                context.setAlpha(alpha)
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
+                draw()
+                context.endTransparencyLayer()
+                context.restoreGState()
             }
-            context.restoreGState()
+            faded(1 - finish) {
+                downloadRing(in: button, fraction: 1, color: palette.glyph)
+                systemSymbol("xmark", in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
+            }
+            faded(finish) {
+                drawingRoundButton(button, scale: 0.8 + 0.2 * finish) {
+                    systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
+                }
+            }
         }
     }
 

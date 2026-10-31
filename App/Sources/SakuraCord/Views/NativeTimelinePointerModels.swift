@@ -114,6 +114,10 @@ nonisolated struct NativeTimelineHoverFade {
     func isSettled(at time: TimeInterval) -> Bool {
         time - start >= NativeTimelineComponentButtonVisualState.hoverAnimationDuration
     }
+
+    func delayed(by interval: TimeInterval) -> Self {
+        Self(from: from, to: to, start: start + interval)
+    }
 }
 
 nonisolated enum TimelineButtonActivationPolicy {

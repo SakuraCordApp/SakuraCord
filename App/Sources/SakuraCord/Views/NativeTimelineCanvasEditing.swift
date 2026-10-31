@@ -132,9 +132,18 @@ extension NativeTimelineCanvasView {
 
     private func animateFileCardFades() {
         guard componentButtonHoverAnimationTask == nil else { return }
+        var previous = ProcessInfo.processInfo.systemUptime
         componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled {
                 let now = ProcessInfo.processInfo.systemUptime
+                // Work that holds the main thread, such as saving a finished
+                // download, pauses the fades instead of skipping them.
+                let stall = now - previous - 1.0 / 30
+                previous = now
+                if stall > 0 {
+                    componentButtonHoverFades = componentButtonHoverFades.mapValues { $0.delayed(by: stall) }
+                    fileCardFinishFades = fileCardFinishFades.mapValues { $0.delayed(by: stall) }
+                }
                 for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
                 for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
                 // A faded-out part is forgotten; a hovered one holds.
