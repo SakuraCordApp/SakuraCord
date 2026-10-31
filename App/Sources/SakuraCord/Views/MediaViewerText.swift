@@ -32,9 +32,7 @@ struct MediaViewerText: View {
                 ProgressView()
             }
         }
-        .frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
-        .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
-        .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
+        .mediaViewerTextPage()
         .task(id: url) {
             text = nil
             failed = false
@@ -139,5 +137,15 @@ struct MediaViewerTextContent: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView, textView.attributedString() != text else { return }
         textView.textStorage?.setAttributedString(text)
+    }
+}
+
+extension View {
+    /// The page text files and rich text read on: as wide as it reads well,
+    /// as tall as the stage, on the code block's background.
+    func mediaViewerTextPage() -> some View {
+        frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
+            .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
+            .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
     }
 }

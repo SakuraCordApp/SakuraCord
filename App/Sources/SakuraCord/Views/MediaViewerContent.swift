@@ -145,11 +145,11 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
             ? CGRect(x: (end.width - box.width) / 2, y: (end.height - box.height) / 2, width: box.width, height: box.height)
             : .infinite
         let radius = (source?.cornerRadius ?? 0) * (1 - progress) + MediaViewerStage.contentCornerRadius * progress
-        let scale = progress < 1 && end.width > 0 && end.height > 0
-            ? max(box.width / end.width, box.height / end.height)
-            : 1
+        // The content fills the box as it grows, so it is never smaller
+        // than the card it leaves.
+        let contentScale = progress < 1 ? max(box.width / max(end.width, 1), box.height / max(end.height, 1)) : 1
         content
-            .scaleEffect(scale)
+            .scaleEffect(contentScale)
             .opacity(Self.smoothstep(progress, from: 0.05, to: 0.4))
             .overlay {
                 if let source, progress < 1 {

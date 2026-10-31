@@ -44,9 +44,7 @@ struct MediaViewerFile: View {
                     .modifier(MediaViewerDocumentFrame())
             case let .richText(text):
                 MediaViewerTextContent(text: text)
-                    .frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
-                    .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
-                    .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
+                    .mediaViewerTextPage()
             case let .quickLook(url):
                 MediaViewerQuickLook(url: url)
                     .modifier(MediaViewerDocumentFrame())
@@ -209,7 +207,10 @@ private final class FittingPDFView: PDFView {
         guard let document, document !== fittedDocument || bounds.width != fittedWidth,
               let page = document.page(at: 0)
         else { return }
-        let width = page.bounds(for: displayBox).width + pageBreakMargins.left + pageBreakMargins.right
+        // A page turned on its side shows its height across.
+        let box = page.bounds(for: displayBox)
+        let pageWidth = page.rotation % 180 == 0 ? box.width : box.height
+        let width = pageWidth + pageBreakMargins.left + pageBreakMargins.right
         guard width > 0, bounds.width > 0 else { return }
         scaleFactor = bounds.width / width
         fittedDocument = document
