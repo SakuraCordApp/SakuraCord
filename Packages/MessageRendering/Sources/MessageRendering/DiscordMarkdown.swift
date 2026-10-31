@@ -81,10 +81,19 @@ public enum DiscordMarkdown {
             case codeComment
         }
 
-        public let lines: [Line]
+        /// What the plan's code reads on. A message's code block is always
+        /// dark; a file shown on a light panel is not.
+        public enum CodeBackground: Hashable, Sendable {
+            case dark
+            case light
+        }
 
-        fileprivate init(lines: [Line]) {
+        public let lines: [Line]
+        fileprivate let codeBackground: CodeBackground
+
+        fileprivate init(lines: [Line], codeBackground: CodeBackground = .dark) {
             self.lines = lines
+            self.codeBackground = codeBackground
         }
     }
 
@@ -226,11 +235,13 @@ public enum DiscordMarkdown {
 
     /// A text file planned as one fenced block in `language`, so its lines are
     /// highlighted as a message's code block is, whatever fences it contains.
-    public static func appKitCodePlan(_ source: String, language: String?) -> AppKitPlan {
+    public static func appKitCodePlan(
+        _ source: String, language: String?, on background: AppKitPlan.CodeBackground
+    ) -> AppKitPlan {
         let language = language?.lowercased()
         return AppKitPlan(lines: source.split(separator: "\n", omittingEmptySubsequences: false).map {
             AppKitPlan.Line(runs: codeRuns(String($0), language: language), block: .code(language: language))
-        })
+        }, codeBackground: background)
     }
 
     public static func appKitPlan(_ source: String) -> AppKitPlan {
@@ -380,6 +391,7 @@ public enum DiscordMarkdown {
                 attributes: attributes(
                     for: run,
                     block: linePlan.block,
+                    codeBackground: plan.codeBackground,
                     baseFontSize: baseFontSize
                 )
             ))
@@ -416,13 +428,16 @@ public enum DiscordMarkdown {
     private static func attributes(
         for run: AppKitPlan.InlineRun,
         block: AppKitPlan.Block,
+        codeBackground: AppKitPlan.CodeBackground,
         baseFontSize: CGFloat
     ) -> [NSAttributedString.Key: Any] {
         var attributes: [NSAttributedString.Key: Any] = [
             .font: appKitFont(block: block, traits: run.traits, baseFontSize: baseFontSize),
-            .foregroundColor: foregroundColor(block: block, semanticColor: run.color),
+            .foregroundColor: codeBackground == .light
+                ? lightCodeColor(run.color)
+                : foregroundColor(block: block, semanticColor: run.color),
         ]
-        if case .code = block, run.color == nil {
+        if case .code = block, run.color == nil, codeBackground == .dark {
             attributes[.foregroundColor] = codeForegroundColor
         }
         if run.traits.contains(.underline) {
@@ -1106,6 +1121,26 @@ public enum DiscordMarkdown {
             } else {
                 NSColor.labelColor
             }
+        }
+    }
+
+    /// GitHub's light code colours, for code read on a light background.
+    private static func lightCodeColor(_ semanticColor: AppKitPlan.SemanticColor?) -> NSColor {
+        func color(_ hex: Int) -> NSColor {
+            NSColor(
+                srgbRed: CGFloat(hex >> 16 & 0xFF) / 255,
+                green: CGFloat(hex >> 8 & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: 1
+            )
+        }
+        return switch semanticColor {
+        case .jsonKey, .jsonNumber, .codeNumber: color(0x0550AE)
+        case .jsonString, .codeString: color(0x0A3069)
+        case .jsonKeyword, .codeKeyword, .codeOperator: color(0xCF222E)
+        case .codeTitle: color(0x8250DF)
+        case .codeComment: color(0x6E7781)
+        case nil: .labelColor
         }
     }
 

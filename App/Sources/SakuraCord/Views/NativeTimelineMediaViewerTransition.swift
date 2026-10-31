@@ -105,9 +105,13 @@ extension NativeTimelineCanvasView {
         )
     }
 
+    /// Given the sources a viewer opened with, only those come back, at
+    /// their cards' current frames and with their images if the cache let
+    /// them go.
     private func timelineMedia(
         for presentation: NativeTimelineMediaViewerPresentation,
-        rowIndex: Int
+        rowIndex: Int,
+        refreshing previousSources: [String: MediaViewerTransitionSource]? = nil
     ) -> (
         previewImages: [String: NSImage],
         transitionSources: [String: MediaViewerTransitionSource]
@@ -129,7 +133,8 @@ extension NativeTimelineCanvasView {
             fillsFrame: Bool
         ) {
             guard imageItemIDs.contains(itemID),
-                  let image = NativeTimelineRowPainter.mediaImage(for: key)
+                  previousSources.map({ $0[itemID] != nil }) ?? true,
+                  let image = NativeTimelineRowPainter.mediaImage(for: key) ?? previousSources?[itemID]?.image
             else { return }
             images[itemID] = image
             guard sources[itemID] == nil else { return }
@@ -372,10 +377,14 @@ extension NativeTimelineCanvasView {
             endMediaViewerTransition()
             return
         }
-        var sources = timelineMedia(for: transition.presentation, rowIndex: rowIndex).transitionSources
+        // A card no longer in the row, as after an edit removes it, loses
+        // its source, so nothing is left out for it and nothing zooms to it.
+        var sources = timelineMedia(
+            for: transition.presentation, rowIndex: rowIndex, refreshing: link.sources
+        ).transitionSources
         for item in transition.presentation.items where sources[item.id] == nil {
             guard let previous = link.sources[item.id] else { continue }
-            sources[item.id] = fileCardTransitionSource(for: item, rowIndex: rowIndex, reusing: previous.image) ?? previous
+            sources[item.id] = fileCardTransitionSource(for: item, rowIndex: rowIndex, reusing: previous.image)
         }
         link.sources = sources
         updateMediaViewerCoverMask()
