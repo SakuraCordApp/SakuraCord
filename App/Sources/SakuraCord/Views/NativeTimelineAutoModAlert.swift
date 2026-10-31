@@ -180,6 +180,9 @@ struct NativeTimelineAutoModAlertLayout {
 }
 
 extension NativeTimelineRowPainter {
+    /// Discord's search-highlight yellow at 30%, behind text a rule matched.
+    static let autoModerationMatchColor = NSColor(srgbRed: 253 / 255, green: 184 / 255, blue: 51 / 255, alpha: 0.3)
+
     /// Drawn before the row's identity, which paints the sender's avatar and
     /// name inside the card.
     static func drawAutoModAlert(_ input: NativeTimelineMessageDrawInput) {

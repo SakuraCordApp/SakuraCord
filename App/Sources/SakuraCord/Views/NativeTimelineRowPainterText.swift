@@ -442,10 +442,10 @@ extension NativeTimelineRowPainter {
     }
 
     private struct MarkdownDecorationRects {
+        var autoModerationMatches: [CGRect] = []
         var quotes: [CGRect] = []
         var inlineCode: [CGRect] = []
         var spoilers: [(CGRect, Bool)] = []
-        var autoModerationMatches: [CGRect] = []
         var listMarkers: [CGRect] = []
     }
 
@@ -646,9 +646,6 @@ extension NativeTimelineRowPainter {
             ).fill()
         }
     }
-
-    /// Discord's search-highlight yellow at 30%.
-    static let autoModerationMatchColor = NSColor(srgbRed: 253 / 255, green: 184 / 255, blue: 51 / 255, alpha: 0.3)
 
     static let discordCodeBackgroundColor = NSColor(
         srgbRed: 13 / 255,

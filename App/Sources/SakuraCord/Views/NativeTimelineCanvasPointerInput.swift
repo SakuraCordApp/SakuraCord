@@ -631,6 +631,8 @@ extension NativeTimelineCanvasView {
             ), let hit
             {
                 switch hit.kind {
+                case let .autoModAlert(action):
+                    activateAutoModAlertAction(action, message: hit.message, anchor: hit.frame)
                 case let .component(region):
                     _ = activateComponentButton(
                         region,
@@ -640,8 +642,6 @@ extension NativeTimelineCanvasView {
                     _ = activateSakuraCordDeepLink(action, message: hit.message)
                 case let .invite(card, expands):
                     activateInvite(card, message: hit.message, expands: expands)
-                case let .autoModAlert(action):
-                    activateAutoModAlertAction(action, message: hit.message, anchor: hit.frame)
                 }
             }
             return true
