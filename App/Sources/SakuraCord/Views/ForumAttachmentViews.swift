@@ -377,7 +377,10 @@ private struct ForumComposerAttachmentTile: View {
                 transaction.animation = nil
                 transaction.disablesAnimations = true
             }
-            .spoilerCover(attachment.isSpoiler)
+            .spoilerCover(
+                attachment.isSpoiler,
+                pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: size)
+            )
         }
         .frame(width: size, height: size)
         .background(.quaternary)

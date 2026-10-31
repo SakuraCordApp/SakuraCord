@@ -173,7 +173,10 @@ private struct ComposerAttachmentTile: View {
     private var tile: some View {
         ZStack {
             face
-                .spoilerCover(attachment.isSpoiler)
+                .spoilerCover(
+                    attachment.isSpoiler,
+                    pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: tileSize)
+                )
             if isChecking || uploadFraction != nil {
                 uploadCover
             }

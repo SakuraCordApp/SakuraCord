@@ -229,24 +229,43 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         store: NativeTimelineSpoilerRevealStore
     ) -> [String: NativeTimelineComponentRevealKey] {
         guard !message.embeds.isEmpty, message.content.contains("||") else { return [:] }
-        let links = DiscordMarkdown.linkOccurrences(message.content)
-        let spoileredURLs = Set(links.filter(\.isSpoiler).map(\.url))
-        let hasVisibleLinks = links.contains { !$0.isSpoiler }
+        let spoileredURLs = spoileredEmbedURLs(in: message)
         var result: [String: NativeTimelineComponentRevealKey] = [:]
         var occurrences: [URL: Int] = [:]
         for embed in message.embeds {
-            // A link preview can carry its page's canonical address rather
-            // than the link as written, as youtu.be does. When every link is
-            // spoilered, every preview belongs to one of them.
-            guard let url = embed.url, !spoileredURLs.isEmpty,
-                  spoileredURLs.contains(url) || (embed.type != "rich" && !hasVisibleLinks)
-            else { continue }
+            guard let url = embed.url, spoileredURLs.contains(url) else { continue }
             // One link can carry several cards, such as a post's images.
             let key = NativeTimelineComponentRevealKey.embed(
                 messageID: message.id, url: url, occurrence: occurrences[url, default: 0]
             )
             occurrences[url, default: 0] += 1
             if !store.isMediaRevealed(key) { result[embed.id] = key }
+        }
+        return result
+    }
+
+    /// The embed addresses that came from spoilered links. A link preview can
+    /// carry its page's canonical address rather than the link as written, as
+    /// youtu.be's does; such previews pair with the links no preview names, in
+    /// order, as Discord adds previews in the order of their links.
+    static func spoileredEmbedURLs(in message: Message) -> Set<URL> {
+        let links = DiscordMarkdown.linkOccurrences(message.content)
+        var result = Set(links.filter(\.isSpoiler).map(\.url))
+        guard !result.isEmpty else { return [] }
+        let embedURLs = message.embeds.compactMap(\.url)
+        var unnamedLinks: [DiscordMarkdown.LinkOccurrence] = []
+        for link in links where !embedURLs.contains(link.url)
+            && !unnamedLinks.contains(where: { $0.url == link.url }) {
+            unnamedLinks.append(link)
+        }
+        let linkURLs = Set(links.map(\.url))
+        var canonicalURLs: [URL] = []
+        for embed in message.embeds where embed.type != "rich" {
+            guard let url = embed.url, !linkURLs.contains(url), !canonicalURLs.contains(url) else { continue }
+            canonicalURLs.append(url)
+        }
+        for (url, link) in zip(canonicalURLs, unnamedLinks) where link.isSpoiler {
+            result.insert(url)
         }
         return result
     }

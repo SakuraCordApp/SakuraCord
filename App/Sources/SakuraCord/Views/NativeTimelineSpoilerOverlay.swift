@@ -38,6 +38,14 @@ nonisolated enum NativeTimelineSpoilerAppearance {
     /// Over the drawn pill, this darkens it to Discord's hovered 88 percent.
     static let hoveredPillOverlayColor = NSColor.black.withAlphaComponent(0.7)
 
+    /// Discord's pill sits on items at least as wide as its 216-pixel upload
+    /// tiles. A smaller tile, such as a staged attachment, scales the pill to
+    /// match; on a thumbnail too small to read it, the blur stands alone.
+    static func pillScale(forTileWidth width: CGFloat) -> CGFloat? {
+        let scale = min(1, width / DiscordRichMessageMetrics.px(216))
+        return scale >= 0.5 ? scale : nil
+    }
+
     static func textBackgroundColor(isHovered: Bool) -> NSColor {
         isHovered ? hoveredTextColor : hiddenColor
     }

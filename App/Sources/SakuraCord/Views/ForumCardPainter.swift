@@ -628,24 +628,21 @@ enum ForumCardPainter {
             drawFileTile(symbol: "waveform", filename: filename, in: frame, isCompact: isCompact, on: canvas)
         case let .file(filename):
             drawFileTile(symbol: "doc.fill", filename: filename, in: frame, isCompact: isCompact, on: canvas)
-        case .spoiler:
-            let size = InterfaceScale.metric(isCompact ? 20 : 26)
-            let labelHeight = ForumBoardMetrics.lineHeight(of: badgeFont)
-            let total = size + InterfaceScale.metric(6) + labelHeight
-            canvas.symbol(
-                "eye.slash.fill",
-                in: CGRect(x: frame.midX - size / 2, y: frame.midY - total / 2, width: size, height: size),
-                color: .secondaryLabelColor,
-                inset: 0
-            )
-            canvas.text(
-                "SPOILER",
-                in: CGRect(x: frame.minX, y: frame.midY - total / 2 + size + InterfaceScale.metric(6), width: frame.width, height: labelHeight),
-                font: badgeFont,
-                color: .secondaryLabelColor,
-                alignment: .center,
-                lineBreakMode: .byClipping
-            )
+        case let .spoiler(hidden):
+            let cover = NativeTimelineSpoilerCover.image(
+                size: frame.size,
+                cornerRadius: cornerRadius,
+                pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: frame.width)
+            ) {
+                if let image = hidden.mediaKey.flatMap(NativeTimelineRowPainter.mediaImage(for:)) {
+                    NativeTimelineRowPainter.drawImage(
+                        image, in: CGRect(origin: .zero, size: frame.size), cornerRadius: cornerRadius, fillsFrame: true
+                    )
+                }
+            }
+            if let cover {
+                canvas.image(cover, in: frame, cornerRadius: cornerRadius, fillsFrame: true)
+            }
         }
         canvas.stroke(frame.insetBy(dx: 0.5, dy: 0.5), cornerRadius: cornerRadius, color: NSColor.separatorColor.withAlphaComponent(0.6))
     }

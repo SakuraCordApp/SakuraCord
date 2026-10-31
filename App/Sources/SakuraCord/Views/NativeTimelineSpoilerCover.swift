@@ -22,11 +22,12 @@ enum NativeTimelineSpoilerCover {
     }
 
     /// Draws `content`, under the cover when `isCovered`, in the current
-    /// flipped context.
+    /// flipped context. `pillScale` sizes the pill; nil leaves it out.
     static func draw(
         covering isCovered: Bool,
         in frame: CGRect,
         cornerRadius: CGFloat,
+        pillScale: CGFloat? = 1,
         content: () -> Void
     ) {
         guard isCovered else { return content() }
@@ -50,7 +51,34 @@ enum NativeTimelineSpoilerCover {
             )
         }
         NSGraphicsContext.restoreGraphicsState()
-        drawPill(in: frame)
+        if let pillScale { drawPill(in: frame, scale: pillScale) }
+    }
+
+    /// The cover as an image, for surfaces that composite images rather than
+    /// draw, such as forum cards.
+    static func image(size: CGSize, cornerRadius: CGFloat, pillScale: CGFloat?, content: () -> Void) -> NSImage? {
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(ceil(size.width * 2)),
+            pixelsHigh: Int(ceil(size.height * 2)),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ), let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
+        bitmap.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: graphics.cgContext, flipped: true)
+        graphics.cgContext.translateBy(x: 0, y: size.height)
+        graphics.cgContext.scaleBy(x: 1, y: -1)
+        draw(covering: true, in: CGRect(origin: .zero, size: size), cornerRadius: cornerRadius, pillScale: pillScale, content: content)
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: size)
+        image.addRepresentation(bitmap)
+        return image
     }
 
     static func pillFrame(in frame: CGRect) -> CGRect {
@@ -60,9 +88,15 @@ enum NativeTimelineSpoilerCover {
         )
     }
 
-    private static func drawPill(in frame: CGRect) {
+    private static func drawPill(in frame: CGRect, scale: CGFloat) {
         let label = NativeTimelineSpoilerAppearance.pillLabel(isHovered: false)
         let pill = pillFrame(in: frame)
+        let context = NSGraphicsContext.current?.cgContext
+        context?.saveGState()
+        defer { context?.restoreGState() }
+        context?.translateBy(x: frame.midX, y: frame.midY)
+        context?.scaleBy(x: scale, y: scale)
+        context?.translateBy(x: -frame.midX, y: -frame.midY)
         NativeTimelineSpoilerAppearance.pillColor.setFill()
         NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         label.draw(
@@ -185,17 +219,18 @@ extension NativeTimelineCanvasView {
 extension View {
     /// The timeline's spoiler cover for SwiftUI surfaces such as staged
     /// attachments: the view blurred over the spoiler fill, with the pill.
-    func spoilerCover(_ isHidden: Bool) -> some View {
+    func spoilerCover(_ isHidden: Bool, pillScale: CGFloat? = 1) -> some View {
         blur(radius: isHidden ? NativeTimelineSpoilerAppearance.blurRadius : 0)
             .background {
                 if isHidden { Color(nsColor: NativeTimelineSpoilerAppearance.hiddenColor) }
             }
             .overlay {
-                if isHidden {
+                if isHidden, let pillScale {
                     Text(AttributedString(NativeTimelineSpoilerAppearance.pillLabel(isHovered: false)))
                         .padding(.horizontal, NativeTimelineSpoilerAppearance.pillHorizontalPadding)
                         .frame(height: NativeTimelineSpoilerAppearance.pillHeight)
                         .background(Capsule().fill(Color(nsColor: NativeTimelineSpoilerAppearance.pillColor)))
+                        .scaleEffect(pillScale)
                         .transition(.opacity)
                 }
             }

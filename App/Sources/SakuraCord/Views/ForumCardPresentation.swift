@@ -34,7 +34,8 @@ struct ForumCardPresentation: Equatable {
         case video(poster: NativeTimelineMediaKey?, filename: String)
         case audio(filename: String)
         case file(filename: String)
-        case spoiler
+        /// Drawn under the spoiler cover, like every hidden item.
+        indirect case spoiler(Media)
     }
 
     enum Hero: Equatable {
@@ -131,10 +132,6 @@ enum ForumTagEmojiPresentation: Equatable {
 
 extension ForumCardPresentation.Media {
     init(attachment: Attachment) {
-        if attachment.isSpoiler {
-            self = .spoiler
-            return
-        }
         switch attachment.mediaKind {
         case .image, .animatedImage:
             let url = attachment.proxyURL ?? attachment.url
@@ -149,6 +146,7 @@ extension ForumCardPresentation.Media {
         case .file:
             self = .file(filename: attachment.filename)
         }
+        if attachment.isSpoiler { self = .spoiler(self) }
     }
 
     var accessibilityDescription: String {
@@ -165,7 +163,8 @@ extension ForumCardPresentation.Media {
         switch self {
         case let .image(key): key
         case let .video(poster, _): poster
-        case .audio, .file, .spoiler: nil
+        case let .spoiler(media): media.mediaKey
+        case .audio, .file: nil
         }
     }
 }
