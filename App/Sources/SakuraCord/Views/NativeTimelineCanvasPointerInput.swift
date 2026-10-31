@@ -51,18 +51,18 @@ extension NativeTimelineCanvasView {
         super.updateTrackingAreas()
     }
 
-    override func view(
-        _ view: NSView,
-        stringForToolTip tag: NSView.ToolTipTag,
+    func view(
+        _: NSView,
+        stringForToolTip _: NSView.ToolTipTag,
         point: NSPoint,
-        userData: UnsafeMutableRawPointer?
-    ) -> String? {
+        userData _: UnsafeMutableRawPointer?
+    ) -> String {
         if let mention = mentionPointerHit(at: point),
            let tip = mention.toolTip,
            !tip.isEmpty {
             return tip
         }
-        return super.view(view, stringForToolTip: tag, point: point, userData: userData)
+        return ""
     }
 
     override func resetCursorRects() {
