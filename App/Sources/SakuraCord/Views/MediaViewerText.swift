@@ -19,6 +19,7 @@ struct MediaViewerText: View {
     /// Files read this session by their link, newest last, so reopening one
     /// doesn't fetch it again.
     private static var loaded: [(url: URL, file: (text: String, bytesLeft: Int))] = []
+    private static let maximumLoaded = 8
 
     var body: some View {
         Group {
@@ -58,7 +59,7 @@ struct MediaViewerText: View {
         let file = try await load(source)
         loaded.removeAll { $0.url == url }
         loaded.append((url, file))
-        if loaded.count > 8 { loaded.removeFirst() }
+        if loaded.count > maximumLoaded { loaded.removeFirst() }
         return file
     }
 
