@@ -1038,6 +1038,10 @@ public enum DiscordMarkdown {
         let emptyLineHeight: CGFloat
         /// Discord's 18 px code line.
         var codeLineHeight: CGFloat { px(18) }
+        /// The copy button the timeline shows in a code block's top-trailing
+        /// corner: a square filling a one-line block less a 2 px inset,
+        /// kept that inset from the block's edge.
+        var codeCopyButtonReserve: CGFloat { codeLineHeight + codeInset * 2 - px(2) }
 
         init(baseFontSize: CGFloat, usesMessageLineHeight: Bool) {
             self.baseFontSize = baseFontSize
@@ -1219,11 +1223,15 @@ public enum DiscordMarkdown {
             paragraph.tabStops = (isOrdered
                 ? [NSTextTab(textAlignment: .right, location: textIndent - metrics.orderedMarkerGap)]
                 : []) + [NSTextTab(textAlignment: .left, location: textIndent)]
-        case .code:
+        case let .code(_, isFirstLine):
             paragraph.lineSpacing = 0
             paragraph.firstLineHeadIndent = metrics.codeInset
             paragraph.headIndent = metrics.codeInset
-            paragraph.tailIndent = -metrics.codeInset
+            // A block's first line also ends before its copy button.
+            paragraph.tailIndent = -metrics.codeInset - (isFirstLine ? metrics.codeCopyButtonReserve : 0)
+            // Discord sets code left to right in any script, which also keeps
+            // that room at the end the button sits on.
+            paragraph.baseWritingDirection = .leftToRight
             paragraph.minimumLineHeight = metrics.codeLineHeight
             paragraph.maximumLineHeight = metrics.codeLineHeight
         case .paragraph:

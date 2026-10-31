@@ -330,7 +330,12 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
                 )
                 let lineEnd = newline.location == NSNotFound ? NSMaxRange(range) : NSMaxRange(newline)
                 let line = NSRange(location: lineStart, length: lineEnd - lineStart)
-                if let last = blocks.last, !opensBlock(value, at: lineStart) {
+                let paragraph = value.attribute(
+                    .paragraphStyle,
+                    at: lineStart,
+                    effectiveRange: nil
+                ) as? NSParagraphStyle
+                if let last = blocks.last, (paragraph?.paragraphSpacingBefore ?? 0) <= 0 {
                     blocks[blocks.count - 1] = NSUnionRange(last, line)
                 } else {
                     blocks.append(line)
@@ -356,8 +361,11 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
                 width: outerFrame.width,
                 height: union.height + inset * 2
             )
+            // The button fills a one-line block's height less its inset, so
+            // it sits centred on the first line with equal room on every
+            // side, in the room the first line's tail indent leaves for it.
             let buttonInset = NativeTimelineMarkdownChromeMetrics.codeCopyButtonInset
-            let buttonSide = copyButtonSide(lineHeight: firstRect.height, inset: inset)
+            let buttonSide = firstRect.height + (inset - buttonInset) * 2
             let buttonFrame = CGRect(
                 x: max(
                     backgroundFrame.minX,
@@ -374,20 +382,6 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
                 content: source.substring(with: range)
             )
         }
-    }
-
-    /// Whether the code line at `location` starts a new block rather than
-    /// continuing the one above: a closing fence leaves spacing before the
-    /// next block's first line.
-    static func opensBlock(_ value: NSAttributedString, at location: Int) -> Bool {
-        let paragraph = value.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle
-        return (paragraph?.paragraphSpacingBefore ?? 0) > 0
-    }
-
-    /// The copy button fills a one-line block's height less its inset, so it
-    /// sits centred on the first line with equal room on every side.
-    static func copyButtonSide(lineHeight: CGFloat, inset: CGFloat) -> CGFloat {
-        lineHeight + (inset - NativeTimelineMarkdownChromeMetrics.codeCopyButtonInset) * 2
     }
 
     static func containsCodeBlock(

@@ -1502,11 +1502,9 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
     static var codeCopyButtonCornerRadius: CGFloat { codeBlockCornerRadius - codeCopyButtonInset }
 
     /// The width `value` needs within `maximumWidth`. CoreText's suggestion
-    /// counts a code line's leading padding, a head indent, but not its
-    /// trailing one: a tail indent only narrows lines within a set width, so
-    /// a block fitted to its text would end at its last glyph. A block's
-    /// first line also leaves room for its copy button, which would
-    /// otherwise cover the end of a short block's text.
+    /// counts a code line's head indent but not its tail indent, which only
+    /// narrows lines within a set width, so a block fitted to its text would
+    /// end at its last glyph, under its copy button.
     static func fittedWidth(
         _ framesetter: CTFramesetter,
         value: NSAttributedString,
@@ -1527,28 +1525,14 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
             CGPath(rect: CGRect(x: 0, y: 0, width: max(1, maximumWidth), height: 1_000_000), transform: nil),
             nil
         )
-        guard let lines = CTFrameGetLines(frame) as? [CTLine] else { return width }
-        var previousLineIsCode = false
-        for line in lines {
+        for line in CTFrameGetLines(frame) as? [CTLine] ?? [] {
             let location = CTLineGetStringRange(line).location
-            let isCode = value.attribute(.discordMarkdownBlock, at: location, effectiveRange: nil) as? String == "code"
-            defer { previousLineIsCode = isCode }
-            guard isCode else { continue }
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+            guard value.attribute(.discordMarkdownBlock, at: location, effectiveRange: nil) as? String == "code",
+                  let paragraph = value.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle
+            else { continue }
+            let textWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
                 - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
-            let inset = codeBlockInset(in: value, at: location)
-            var trailing = inset
-            if !previousLineIsCode || NativeTimelineCodeBlockGeometry.opensBlock(value, at: location) {
-                trailing += NativeTimelineCodeBlockGeometry.copyButtonSide(lineHeight: ascent + descent + 1, inset: inset)
-                    + codeCopyButtonInset
-            }
-            // The head indent rather than the line's origin, which also holds
-            // the unused width before a right-aligned line.
-            let headIndent = (value.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle)?
-                .headIndent ?? 0
-            width = max(width, headIndent + textWidth + trailing)
+            width = max(width, paragraph.headIndent + textWidth - paragraph.tailIndent)
         }
         return width
     }
