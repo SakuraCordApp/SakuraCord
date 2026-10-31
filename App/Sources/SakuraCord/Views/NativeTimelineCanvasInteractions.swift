@@ -521,7 +521,13 @@ extension NativeTimelineCanvasView {
             where region.frame.contains(point) {
                 let revealKey = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
                 if region.isVideo, !region.isSpoiler || spoilerRevealStore.isMediaRevealed(revealKey) {
-                    playInline(region.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex)
+                    playInline(region.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex) { [weak self] index in
+                        guard let self, layouts.indices.contains(index) else { return }
+                        _ = activateComponentMedia(
+                            id: region.componentID, openURL: region.openURL, isSpoiler: region.isSpoiler,
+                            layout: layouts[index], message: message, rowIndex: index
+                        )
+                    }
                     return true
                 }
                 return activateComponentMedia(

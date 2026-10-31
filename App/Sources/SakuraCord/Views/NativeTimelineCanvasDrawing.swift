@@ -115,6 +115,7 @@ extension NativeTimelineCanvasView {
         startVisibleInlineVideosImmediately()
         scheduleAnimatedMediaReconciliation()
         positionAnimatedMediaOverlays()
+        reconcileInlinePlayers()
         reconcileVoiceMessageOverlay()
         reconcileBeginningSelectionOverlay()
         reconcileActivityIndicators()
@@ -314,6 +315,7 @@ extension NativeTimelineCanvasView {
             owner: visibleMediaPinOwner
         )
         mediaReadyConversationID = nil
+        removeInlinePlayers()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         needsDisplay = true
@@ -527,6 +529,7 @@ extension NativeTimelineCanvasView {
         }
         reconcileHistorySkeletonShimmer()
         presentRowsEnteringViewport()
+        reconcileInlinePlayers()
         // Supplementary Inbox rows are content, not hover presentation. Keep
         // them materialized as the viewport moves, including momentum ticks
         // that stay within the current overscanned backing window.

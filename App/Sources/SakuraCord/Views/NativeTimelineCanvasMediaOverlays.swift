@@ -950,7 +950,7 @@ extension NativeTimelineCanvasView {
         for key in removed {
             inlineVideoOverlays[key] = nil
         }
-        positionInlinePlayers()
+        reconcileInlinePlayers()
     }
 
     func removeInlineVideoOverlays() {
@@ -962,23 +962,34 @@ extension NativeTimelineCanvasView {
         removeInlinePlayers()
     }
 
-    /// Plays a video in place over its tile, as Discord does.
-    func playInline(_ url: URL, mediaID: String, frame: CGRect, rowIndex: Int) {
+    /// Plays a video in place over its tile, as Discord does. `openInViewer`
+    /// receives the row's current index when the player's menu asks for it.
+    func playInline(
+        _ url: URL, mediaID: String, frame: CGRect, rowIndex: Int,
+        openInViewer: @escaping (_ rowIndex: Int) -> Void
+    ) {
         let key = NativeTimelineInlinePlayer.Key(row: items[rowIndex].identifier, mediaID: mediaID)
         guard inlinePlayers[key] == nil else { return }
-        let player = NativeTimelineInlinePlayer(url: url, frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex)))
+        let player = NativeTimelineInlinePlayer(
+            url: url,
+            frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
+        ) { [weak self] in
+            guard let index = self?.items.firstIndex(where: { $0.identifier == key.row }) else { return }
+            openInViewer(index)
+        }
         addSubview(player, positioned: .below, relativeTo: mediaViewerHost)
         inlinePlayers[key] = player
     }
 
-    /// Players follow their tiles, pause once scrolled out of view, and end
-    /// when their row leaves the timeline.
-    private func positionInlinePlayers() {
+    /// Players follow their tiles and pause once out of view. One ends when
+    /// its row leaves the timeline or its tile no longer shows that video.
+    func reconcileInlinePlayers() {
+        guard !inlinePlayers.isEmpty else { return }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
         for (key, player) in inlinePlayers {
             guard let index = items.firstIndex(where: { $0.identifier == key.row }),
                   layouts.indices.contains(index),
-                  let frame = layouts[index].attachmentRegions.first(where: { $0.attachment.id == key.mediaID })?.frame
-                  ?? layouts[index].componentLayouts.lazy.flatMap(\.media).first(where: { $0.componentID == key.mediaID })?.frame
+                  let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index])
             else {
                 player.stop()
                 player.removeFromSuperview()
@@ -986,11 +997,22 @@ extension NativeTimelineCanvasView {
                 continue
             }
             player.frame = frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
-            if !player.frame.intersects(visibleRect) { player.pause() }
+            if !player.frame.intersects(viewport) { player.pause() }
         }
     }
 
-    private func removeInlinePlayers() {
+    /// The tile still showing the player's video. Signed URLs refresh their
+    /// query, so the path identifies the media.
+    private func inlinePlayerFrame(_ mediaID: String, url: URL, in layout: NativeTimelineRowLayout) -> CGRect? {
+        if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
+            let attachment = region.attachment
+            return attachment.mediaKind == .video && (attachment.proxyURL ?? attachment.url).path == url.path ? region.frame : nil
+        }
+        return layout.componentLayouts.lazy.flatMap(\.media)
+            .first { $0.componentID == mediaID && $0.isVideo && $0.displayURL.path == url.path }?.frame
+    }
+
+    func removeInlinePlayers() {
         for player in inlinePlayers.values {
             player.stop()
             player.removeFromSuperview()
