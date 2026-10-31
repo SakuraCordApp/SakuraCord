@@ -178,9 +178,13 @@ enum NativeTimelineSendTransitionTiming {
     static let tailFadeDuration: CFTimeInterval = 0.12
     static let dismissalDuration: CFTimeInterval = 0.12
     /// The composer stacks attachments above the text while a message puts
-    /// its text first, so their paths cross. The text leaves first and
-    /// passes over the media, which follows a beat behind and lands below.
+    /// its text first, so their paths cross. The text leaves first and the
+    /// media follows a beat behind and lands below.
     static let mediaStagger: CFTimeInterval = 0.06
+    /// Where the paths cross, the text would run over the media, so the
+    /// composer's text leaves with the field and the message's appears only
+    /// once the media has passed it.
+    static let textAfterCrossingDelay: CFTimeInterval = 0.25
     /// How long a landed bubble may wait for its row's media to decode, so
     /// the hand-off never shows a loading placeholder.
     static let mediaWaitLimit: TimeInterval = 0.6
@@ -546,17 +550,20 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         // Composer text and message text look alike, so without a bubble to
         // hide the swap the two cross-fade over a little longer.
         let crossFade = geometry.bubble == nil ? Timing.plainTextCrossFadeDuration : nil
-        fadeIn(finalContentLayer, duration: crossFade ?? Timing.contentFadeDuration)
+        let crossesMedia = mediaDelay > 0
+        fadeIn(
+            finalContentLayer, duration: crossFade ?? Timing.contentFadeDuration,
+            delay: crossesMedia ? Timing.textAfterCrossingDelay : 0
+        )
         if let heldTextFrame {
             sourceTextLayer.frame = heldTextFrame.offsetBy(
                 dx: -geometry.sourceAnchor.x,
                 dy: -geometry.sourceAnchor.y
             )
             sourceTextLayer.opacity = 0
-            add(
-                sourceTextLayer, "opacity", from: 1, to: 0,
-                duration: crossFade ?? Timing.sourceTextFadeDuration
-            )
+            if !crossesMedia {
+                add(sourceTextLayer, "opacity", from: 1, to: 0, duration: crossFade ?? Timing.sourceTextFadeDuration)
+            }
         }
 
         let landingIndexes = land(geometry.pieces)
