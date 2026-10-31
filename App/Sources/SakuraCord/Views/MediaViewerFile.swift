@@ -102,20 +102,29 @@ struct MediaViewerFile: View {
         if type.conforms(to: .pdf) {
             return PDFDocument(url: file).map(Phase.pdf) ?? .unavailable
         }
-        if type.conforms(to: .rtf) || type.conforms(to: .rtfd),
-           let text = try? NSMutableAttributedString(url: file, options: [:], documentAttributes: nil) {
-            // Rich text's default black reads as the page's text colour,
-            // as Quick Look shows it; chosen colours stay.
-            let range = NSRange(location: 0, length: text.length)
-            text.enumerateAttribute(.foregroundColor, in: range) { value, run, _ in
-                let color = (value as? NSColor)?.usingColorSpace(.genericGray)
-                if color == nil || color?.whiteComponent == 0 {
-                    text.addAttribute(.foregroundColor, value: NSColor.white, range: run)
-                }
-            }
-            return .richText(text)
+        if type.conforms(to: .rtf) || type.conforms(to: .rtfd) {
+            return await richText(at: file).map(Phase.richText) ?? .unavailable
         }
         return await canQuickLook(file) ? .quickLook(file) : .unavailable
+    }
+
+    /// Parses rich text away from the main actor, which a long or
+    /// image-heavy document would hold up.
+    @concurrent nonisolated private static func richText(at file: URL) async -> sending NSAttributedString? {
+        guard let text = try? NSMutableAttributedString(url: file, options: [:], documentAttributes: nil) else {
+            return nil
+        }
+        // Rich text's default black reads as the page's text colour, as
+        // Quick Look shows it; chosen colours, and text on its own
+        // background, stay.
+        text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { attributes, run, _ in
+            guard attributes[.backgroundColor] == nil else { return }
+            let color = (attributes[.foregroundColor] as? NSColor)?.usingColorSpace(.genericGray)
+            if color == nil || color?.whiteComponent == 0 {
+                text.addAttribute(.foregroundColor, value: NSColor.white, range: run)
+            }
+        }
+        return text
     }
 
     /// Quick Look draws a thumbnail for every kind of file it can preview,
@@ -187,16 +196,24 @@ private struct MediaViewerPDF: NSViewRepresentable {
     }
 }
 
-/// Fits the page width whenever the viewer lays out. PDFKit's own automatic
-/// scale settles on whatever size the view had when the document arrived,
-/// which varies between opens.
+/// Fits the page width when a document arrives or the viewer's width
+/// changes. PDFKit's own automatic scale settles on whatever size the view
+/// had when the document arrived, which varies between opens.
 private final class FittingPDFView: PDFView {
+    private weak var fittedDocument: PDFDocument?
+    private var fittedWidth: CGFloat = 0
+
     override func layout() {
         super.layout()
-        guard let page = document?.page(at: 0) else { return }
+        // Otherwise the reader's own zoom stays.
+        guard let document, document !== fittedDocument || bounds.width != fittedWidth,
+              let page = document.page(at: 0)
+        else { return }
         let width = page.bounds(for: displayBox).width + pageBreakMargins.left + pageBreakMargins.right
         guard width > 0, bounds.width > 0 else { return }
         scaleFactor = bounds.width / width
+        fittedDocument = document
+        fittedWidth = bounds.width
     }
 }
 
