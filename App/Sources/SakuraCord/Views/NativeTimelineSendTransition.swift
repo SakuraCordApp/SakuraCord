@@ -1301,10 +1301,6 @@ extension NativeTimelineCanvasView {
         let baselineInWindow: CGPoint?
     }
 
-    /// Renders what the destination bubble or plain body contains, without a
-    /// bubble's fill, so the flying copy can morph its own background
-    /// independently. Attachments that arrive as flying thumbnails are left
-    /// out.
     /// The cards that sent file tiles become, by attachment index, in the
     /// overlay's space that `toOverlay` converts row frames to.
     private func sendTransitionCards(
@@ -1354,6 +1350,10 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// Renders what the destination bubble or plain body contains, without a
+    /// bubble's fill, so the flying copy can morph its own background
+    /// independently. Attachments that arrive as flying thumbnails are left
+    /// out.
     private func sendTransitionContent(
         item: NativeMessageTimelineItem,
         layout: NativeTimelineRowLayout,
