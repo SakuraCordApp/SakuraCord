@@ -50,8 +50,6 @@ struct MediaViewerText: View {
     private nonisolated static func load(_ url: URL) async throws -> (text: String, bytesLeft: Int) {
         // A file staged in the composer is read from disk.
         if url.isFileURL {
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
             let data = try handle.read(upToCount: byteLimit) ?? Data()

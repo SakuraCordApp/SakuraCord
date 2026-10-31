@@ -23,6 +23,9 @@ struct MediaViewerStage: View {
     private nonisolated static let space = "MediaViewerStage"
     /// Where a file's content lays out, which its card zooms into.
     @State private var contentFrame: CGRect?
+    /// A staged file lives outside the sandbox, so the stage keeps it open
+    /// while it shows for whichever player or preview reads it.
+    @State private var openFile: URL?
 
     var body: some View {
         ZStack {
@@ -64,6 +67,14 @@ struct MediaViewerStage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .coordinateSpace(.named(Self.space))
+        .onChange(of: item.url, initial: true) { _, url in
+            openFile?.stopAccessingSecurityScopedResource()
+            openFile = url.isFileURL && url.startAccessingSecurityScopedResource() ? url : nil
+        }
+        .onDisappear {
+            openFile?.stopAccessingSecurityScopedResource()
+            openFile = nil
+        }
         .clipped()
     }
 
