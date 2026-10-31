@@ -25,15 +25,28 @@ private final class MediaViewerWindowAnimationState {
     private(set) var transitionSources: [String: MediaViewerTransitionSource] = [:]
     private var reducesMotion = false
     private let sourceItemIDs: Set<String>
+    /// Files zoom from a slim card into a large page, which reads only over
+    /// a longer, even curve than a photo's snappy one.
+    private let fileItemIDs: Set<String>
     private var selectedItemID: String
 
     init(presentation: NativeTimelineMediaViewerPresentation) {
         sourceItemIDs = Set(presentation.transitionSources.keys)
+        fileItemIDs = Set(presentation.items.filter {
+            switch $0.kind {
+            case .audio, .text, .file: true
+            default: false
+            }
+        }.map(\.id))
         selectedItemID = presentation.items[presentation.selection].id
     }
 
     private var hasTransitionSource: Bool {
         sourceItemIDs.contains(selectedItemID)
+    }
+
+    private var zoomsFile: Bool {
+        hasTransitionSource && fileItemIDs.contains(selectedItemID)
     }
 
     func select(itemID: String) {
@@ -62,7 +75,9 @@ private final class MediaViewerWindowAnimationState {
         withAnimation(
             reducesMotion
                 ? .easeOut(duration: 0.12)
-                : hasTransitionSource
+                : zoomsFile
+                    ? .smooth(duration: 0.34)
+                    : hasTransitionSource
                     ? .snappy(
                         duration:
                             MediaViewerTransitionTiming.presentationDuration,
@@ -82,6 +97,8 @@ private final class MediaViewerWindowAnimationState {
     func dismiss(interactively: Bool) -> TimeInterval {
         let duration = if reducesMotion {
             0.12
+        } else if zoomsFile, !interactively {
+            0.3
         } else if hasTransitionSource {
             interactively
                 ? MediaViewerTransitionTiming.interactiveDismissalDuration
@@ -94,7 +111,9 @@ private final class MediaViewerWindowAnimationState {
         withAnimation(
             reducesMotion
                 ? .easeIn(duration: duration)
-                : hasTransitionSource
+                : zoomsFile && !interactively
+                    ? .smooth(duration: duration)
+                    : hasTransitionSource
                     ? interactively
                         ? .snappy(duration: duration, extraBounce: 0.01)
                         : .snappy(duration: duration)

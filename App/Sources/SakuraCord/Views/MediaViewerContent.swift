@@ -109,8 +109,9 @@ struct MediaViewerStage: View {
 
 /// Grows a file's card into the viewer's content and shrinks it back: the
 /// card's box moves and resizes into the content's frame, rounding to the
-/// content's corners, while the card's snapshot fades into the content.
-/// It reads the progress on every frame, which a plain opacity would not.
+/// content's corners, while the content, scaled to fill the box, takes over
+/// from the card's snapshot. It reads the progress on every frame, which a
+/// plain opacity would not.
 private struct MediaViewerContainerZoom: ViewModifier, Animatable {
     var progress: CGFloat
     let source: MediaViewerTransitionSource?
@@ -137,8 +138,12 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
             ? CGRect(x: (end.width - box.width) / 2, y: (end.height - box.height) / 2, width: box.width, height: box.height)
             : .infinite
         let radius = (source?.cornerRadius ?? 0) * (1 - progress) + MediaViewerStage.contentCornerRadius * progress
+        let scale = progress < 1 && end.width > 0 && end.height > 0
+            ? max(box.width / end.width, box.height / end.height)
+            : 1
         content
-            .opacity(Self.smoothstep(progress, from: 0.1, to: 0.6))
+            .scaleEffect(scale)
+            .opacity(Self.smoothstep(progress, from: 0.05, to: 0.4))
             .overlay {
                 if let source, progress < 1 {
                     let size = source.frameInWindow.size
@@ -147,7 +152,7 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
                         .resizable()
                         .frame(width: size.width * scale, height: size.height * scale)
                         .position(x: clip.midX, y: clip.midY)
-                        .opacity(1 - Self.smoothstep(progress, from: 0, to: 0.45))
+                        .opacity(1 - Self.smoothstep(progress, from: 0.1, to: 0.45))
                         .allowsHitTesting(false)
                 }
             }
