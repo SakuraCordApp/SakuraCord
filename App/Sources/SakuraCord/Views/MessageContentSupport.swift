@@ -27,6 +27,15 @@ struct MessageMentionResolver {
     func label(_ mention: RenderedMention) -> String {
         presentation(mention).label
     }
+
+    /// Every mention a draft holds, keyed by token, as an editor shows them.
+    func presentations(in text: String) -> [String: MentionPresentation] {
+        MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
+            if case let .mention(mention) = segment {
+                values[mention.rawToken] = presentation(mention)
+            }
+        }
+    }
 }
 
 struct CustomEmojiRichText: View {

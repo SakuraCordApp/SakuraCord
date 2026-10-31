@@ -1308,12 +1308,7 @@ private extension ComposerView {
 
     private var composerMentionPresentations: [String: MentionPresentation] {
         _ = model.timelinePresentationRevision
-        let resolver = MessageMentionResolver(model: model)
-        let values = MessageDocumentCache.shared.document(for: draft).segments.reduce(into: [String: MentionPresentation]()) { values, segment in
-            if case let .mention(mention) = segment {
-                values[mention.rawToken] = resolver.presentation(mention)
-            }
-        }
+        let values = MessageMentionResolver(model: model).presentations(in: draft)
         guard draftHasRelativeTimestamp else { return values }
         return TimestampMentionPresentation.refreshed(values, source: draft, at: timestampClock.date)
     }

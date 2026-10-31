@@ -905,6 +905,8 @@ private struct InlineMessageEditor: View {
                 placeholder: "Edit message",
                 sendWithReturn: MessageEditInputPolicy.sendsWithReturn,
                 generalInputSettings: model.generalInputSettings,
+                // Game names and people resolve as they do in the message.
+                mentionPresentations: MessageMentionResolver(model: model).presentations(in: text),
                 onTextChange: { text = $0 },
                 onSubmit: composerActions.onSubmit,
                 onEscape: composerActions.onEscape,
