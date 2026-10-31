@@ -470,9 +470,8 @@ extension NativeTimelineRowPainter {
         drawInlineCodeDecorations(decorations.inlineCode)
         drawSpoilerDecorations(decorations.spoilers)
         drawCodeBlockDecorations(codeBlocks)
-        // Discord's search-highlight yellow at 30%.
-        NSColor(srgbRed: 253 / 255, green: 184 / 255, blue: 51 / 255, alpha: 0.3).setFill()
         for rect in decorations.autoModerationMatches {
+            autoModerationMatchColor.setFill()
             NSBezierPath(concentricRoundedRect: rect, cornerRadius: InterfaceScale.metric(3)).fill()
         }
         drawListMarkerDecorations(decorations.listMarkers)
@@ -647,6 +646,9 @@ extension NativeTimelineRowPainter {
             ).fill()
         }
     }
+
+    /// Discord's search-highlight yellow at 30%.
+    static let autoModerationMatchColor = NSColor(srgbRed: 253 / 255, green: 184 / 255, blue: 51 / 255, alpha: 0.3)
 
     static let discordCodeBackgroundColor = NSColor(
         srgbRed: 13 / 255,

@@ -356,8 +356,9 @@ extension NativeTimelineRowLayout {
 
         private mutating func appendAuthorHeader() {
             // AutoMod heads its alerts; the member it caught is named in the card.
-            let presentation = message.type == .autoModerationAction ? nil : source?.authorPresentation(for: message)
-            let author = message.type == .autoModerationAction ? .autoMod : presentation?.user ?? message.author
+            let isAutoModAlert = message.type == .autoModerationAction
+            let presentation = isAutoModAlert ? nil : source?.authorPresentation(for: message)
+            let author = isAutoModAlert ? .autoMod : presentation?.user ?? message.author
             result.authorPrimaryGuild = author.primaryGuild
             let authorFont = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: metrics.authorFont)
             let showsRoleIndicator = source?.roleColorDisplay == .nextToNames

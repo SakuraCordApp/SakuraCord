@@ -118,9 +118,9 @@ struct NativeTimelineAutoModAlertLayout {
         let spacing = InterfaceScale.metric(8)
         var buttonOrigin = CGPoint(x: origin.x + inset, y: max(cursor, avatarFrame.maxY) + InterfaceScale.metric(12))
         buttons = ([.moderate] + (alert.channelID == nil ? [] : [.jump])).map { (action: Action) in
-            let width = min(cardWidth - inset * 2, ceil(NSAttributedString(
-                string: action.title, attributes: [.font: NativeTimelineComponentButtonMetrics.font]
-            ).size().width) + NativeTimelineComponentButtonMetrics.horizontalPadding * 2)
+            let width = min(cardWidth - inset * 2, NativeTimelineRowLayout.measuredTextWidth(
+                action.title, font: NativeTimelineComponentButtonMetrics.font
+            ) + NativeTimelineComponentButtonMetrics.horizontalPadding * 2)
             if buttonOrigin.x > origin.x + inset, buttonOrigin.x + width > origin.x + cardWidth - inset {
                 buttonOrigin = CGPoint(x: origin.x + inset, y: buttonOrigin.y + diameter + spacing)
             }
@@ -228,9 +228,7 @@ extension NativeTimelineCanvasView {
         }
         return true
     }
-}
 
-extension NativeTimelineCanvasView {
     func appendAutoModAlertAccessibility(
         message: Message, to children: inout [Any], layout: NativeTimelineRowLayout,
         rowIndex: Int, parent: NSAccessibilityElement
