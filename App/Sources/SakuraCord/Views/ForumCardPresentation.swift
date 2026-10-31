@@ -86,6 +86,13 @@ struct ForumCardPresentation: Equatable {
         isGallery ? hero == .pending : excerpt == .pending
     }
 
+    /// The attachment the layout shows: the thumbnail in the list, the hero in the gallery.
+    func media(isGallery: Bool) -> Media? {
+        guard isGallery else { return thumbnail }
+        guard case let .media(media) = hero else { return nil }
+        return media
+    }
+
     var accessibilityLabel: String {
         var parts = [title]
         if isPinned { parts.append("Pinned") }
