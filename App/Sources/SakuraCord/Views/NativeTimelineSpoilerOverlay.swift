@@ -132,7 +132,9 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     let pillView = NSView()
     let pillLabel = NSTextField(labelWithString: "SPOILER")
     var trackingArea: NSTrackingArea?
-    var isHovered = false
+    var isHovered = false {
+        didSet { pillView.isHidden = !isHovered }
+    }
     var isPressed = false
     var didActivate = false
 
@@ -162,7 +164,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
         pillLabel.lineBreakMode = .byClipping
         pillLabel.setAccessibilityElement(false)
         pillView.addSubview(pillLabel)
-        updateAppearance()
+        pillView.isHidden = true
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel("Reveal spoiler")
@@ -218,25 +220,21 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     override func mouseEntered(with event: NSEvent) {
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         isHovered = true
-        updateAppearance()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         isPressed = false
-        updateAppearance()
     }
 
     override func mouseDown(with event: NSEvent) {
         guard event.buttonNumber == 0 else { return }
         window?.makeFirstResponder(self)
         isPressed = true
-        updateAppearance()
     }
 
     override func mouseDragged(with event: NSEvent) {
         isPressed = bounds.contains(convert(event.locationInWindow, from: nil))
-        updateAppearance()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -245,7 +243,6 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
             isPressed
             && bounds.contains(convert(event.locationInWindow, from: nil))
         isPressed = false
-        updateAppearance()
         if activates {
             activate()
         }
@@ -289,10 +286,6 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
             focus.lineWidth = 2
             focus.stroke()
         }
-    }
-
-    func updateAppearance() {
-        pillView.isHidden = !isHovered
     }
 
 #if DEBUG

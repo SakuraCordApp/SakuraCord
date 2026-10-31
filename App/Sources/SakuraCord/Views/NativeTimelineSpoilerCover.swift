@@ -21,13 +21,15 @@ enum NativeTimelineSpoilerCover {
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .black : .white
     }
 
-    /// Draws the cover over `frame` in the current flipped context. `content`
-    /// draws the revealed item in the same coordinates.
+    /// Draws `content`, under the cover when `isCovered`, in the current
+    /// flipped context.
     static func draw(
+        covering isCovered: Bool,
         in frame: CGRect,
         cornerRadius: CGFloat,
         content: () -> Void
     ) {
+        guard isCovered else { return content() }
         // Rows draw in tiles; a cover outside this one costs nothing.
         guard frame.width >= 1, frame.height >= 1,
               NSGraphicsContext.current?.cgContext.boundingBoxOfClipPath.intersects(frame) != false

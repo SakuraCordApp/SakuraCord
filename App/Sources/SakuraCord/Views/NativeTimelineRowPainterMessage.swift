@@ -471,11 +471,7 @@ extension NativeTimelineRowPainter {
                         store: $0
                     )
                 } ?? false
-            if isConcealed {
-                NativeTimelineSpoilerCover.draw(in: region.frame, cornerRadius: attachmentCornerRadius) {
-                    drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
-                }
-            } else {
+            NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: attachmentCornerRadius) {
                 drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
             }
         }
@@ -542,17 +538,12 @@ extension NativeTimelineRowPainter {
         } ?? [:]
         for region in layout.embedRegions {
             let isCovered = concealedEmbeds[region.embedID] != nil
-            let draw = {
+            NativeTimelineSpoilerCover.draw(
+                covering: isCovered, in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+            ) {
                 drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
                 drawEmbedText(region, input: input)
                 drawEmbedMedia(region, isCovered: isCovered)
-            }
-            if isCovered {
-                NativeTimelineSpoilerCover.draw(
-                    in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius, content: draw
-                )
-            } else {
-                draw()
             }
         }
     }
@@ -607,7 +598,7 @@ extension NativeTimelineRowPainter {
 
     /// `isCovered`: a spoiler cover blurs the embed, so it draws the poster
     /// of a video that otherwise plays in its own view.
-    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion, isCovered: Bool = false) {
+    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion, isCovered: Bool) {
         for imageRegion in region.imageRegions {
             if let image = mediaImage(for: .media(
                 imageRegion.url,

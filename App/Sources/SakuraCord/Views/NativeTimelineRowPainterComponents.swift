@@ -471,7 +471,7 @@ extension NativeTimelineRowPainter {
                 componentContainer(container.frame, accentColor: container.accentColor)
             }
             if isHidden {
-                NativeTimelineSpoilerCover.draw(in: container.frame, cornerRadius: container.cornerRadius) {
+                NativeTimelineSpoilerCover.draw(covering: true, in: container.frame, cornerRadius: container.cornerRadius) {
                     var revealed = input
                     revealed.spoilerRevealStore = nil
                     drawComponents(revealed)
@@ -544,15 +544,11 @@ extension NativeTimelineRowPainter {
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
-            if isConcealedComponentContent(
-                contentID: region.componentID,
-                isSpoiler: region.isSpoiler,
-                input: input
+            NativeTimelineSpoilerCover.draw(
+                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
+                in: region.frame,
+                cornerRadius: region.cornerRadius
             ) {
-                NativeTimelineSpoilerCover.draw(in: region.frame, cornerRadius: region.cornerRadius) {
-                    drawComponentImage(region)
-                }
-            } else {
                 drawComponentImage(region)
             }
         }
@@ -591,15 +587,11 @@ extension NativeTimelineRowPainter {
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
-            if isConcealedComponentContent(
-                contentID: region.componentID,
-                isSpoiler: region.isSpoiler,
-                input: input
+            NativeTimelineSpoilerCover.draw(
+                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
+                in: region.frame,
+                cornerRadius: DiscordRichMessageMetrics.px(8)
             ) {
-                NativeTimelineSpoilerCover.draw(in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8)) {
-                    drawComponentMediaItem(region)
-                }
-            } else {
                 drawComponentMediaItem(region)
             }
         }
@@ -629,7 +621,11 @@ extension NativeTimelineRowPainter {
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
-            let drawFile = {
+            NativeTimelineSpoilerCover.draw(
+                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
+                in: region.frame,
+                cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+            ) {
                 fileCard(
                     region.card,
                     messageID: input.messageID,
@@ -640,19 +636,6 @@ extension NativeTimelineRowPainter {
                         pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
                     )
                 )
-            }
-            if isConcealedComponentContent(
-                contentID: region.componentID,
-                isSpoiler: region.isSpoiler,
-                input: input
-            ) {
-                NativeTimelineSpoilerCover.draw(
-                    in: region.frame,
-                    cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
-                    content: drawFile
-                )
-            } else {
-                drawFile()
             }
         }
     }

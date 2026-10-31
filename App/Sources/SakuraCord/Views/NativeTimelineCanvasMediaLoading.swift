@@ -317,12 +317,13 @@ extension NativeTimelineCanvasView {
         )
         appendAuthorMediaKeys(for: row, layout: layouts[index], into: &keys)
         appendMessageTextMediaKeys(for: row, layout: layouts[index], into: &keys)
-        appendAttachmentMediaKeys(layout: layouts[index], into: &keys)
+        // A hidden spoiler still loads: its cover is the item, blurred.
+        keys += layouts[index].attachmentRegions.compactMap(\.previewKey)
         appendEmbedMediaKeys(
             layouts[index].embedRegions,
-            coveredEmbedIDs: Set(NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+            concealedEmbeds: NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
                 in: message, store: spoilerRevealStore
-            ).keys),
+            ),
             into: &keys
         )
         for card in layouts[index].inviteRegions {
@@ -413,17 +414,9 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private func appendAttachmentMediaKeys(
-        layout: NativeTimelineRowLayout,
-        into keys: inout [NativeTimelineMediaKey]
-    ) {
-        // A hidden spoiler still loads: its cover is the item, blurred.
-        keys += layout.attachmentRegions.compactMap(\.previewKey)
-    }
-
     private func appendEmbedMediaKeys(
         _ regions: [NativeTimelineRowLayout.EmbedRegion],
-        coveredEmbedIDs: Set<String>,
+        concealedEmbeds: [String: NativeTimelineComponentRevealKey],
         into keys: inout [NativeTimelineMediaKey]
     ) {
         for region in regions {
@@ -465,7 +458,7 @@ extension NativeTimelineCanvasView {
                 }
             }
             // A covered video's poster is what its spoiler cover blurs.
-            if coveredEmbedIDs.contains(region.embedID) || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
+            if concealedEmbeds[region.embedID] != nil || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
                 mediaIsVideo: region.mediaIsVideo,
                 autoplaysInline: region.mediaAutoplaysInline
             ), let url = region.mediaPreviewURL ?? (region.mediaIsVideo ? nil : region.mediaURL)

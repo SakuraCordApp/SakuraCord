@@ -108,9 +108,8 @@ final class NativeTimelineSpoilerRevealStore {
     private(set) var revealed: [MessageID: Set<Item>] = [:]
     var observers: [UUID: (MessageID) -> Void] = [:]
 
-    var hasRevealedText: Bool {
-        revealed.values.contains { $0.contains { if case .text = $0 { true } else { false } } }
-    }
+    /// Checked for every row on every scrolled frame, so it is kept, not found.
+    private(set) var hasRevealedText = false
 
     func isMediaRevealed(
         _ key: NativeTimelineComponentRevealKey
@@ -168,6 +167,7 @@ final class NativeTimelineSpoilerRevealStore {
     func reset() {
         let messageIDs = Array(revealed.keys)
         revealed.removeAll(keepingCapacity: true)
+        hasRevealedText = false
         for messageID in messageIDs {
             notifyObservers(messageID: messageID)
         }
@@ -180,6 +180,7 @@ final class NativeTimelineSpoilerRevealStore {
     private func reveal(_ item: Item, in messageID: MessageID) -> Bool {
         let inserted = revealed[messageID, default: []].insert(item).inserted
         if inserted {
+            if case .text = item { hasRevealedText = true }
             notifyObservers(messageID: messageID)
         }
         return inserted
