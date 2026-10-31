@@ -458,13 +458,19 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     @discardableResult
     private func addDim(index: Int) -> CALayer? {
         guard let tile = pieceLayers[index] else { return nil }
-        // Oversized, so the tile's clip shapes it as the tile morphs.
+        let dim = Self.addDim(over: tile)
+        pieceDimLayers[index] = dim
+        return dim
+    }
+
+    @discardableResult
+    private static func addDim(over layer: CALayer) -> CALayer {
+        // Oversized, so the layer's clip shapes it as the layer morphs.
         let dim = CALayer()
         dim.backgroundColor = .black
         dim.opacity = Float(AttachmentUploadRing.dimOpacity)
-        dim.frame = tile.bounds.insetBy(dx: -4_000, dy: -4_000)
-        tile.addSublayer(dim)
-        pieceDimLayers[index] = dim
+        dim.frame = layer.bounds.insetBy(dx: -4_000, dy: -4_000)
+        layer.addSublayer(dim)
         return dim
     }
 
@@ -629,6 +635,8 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         cardLayer.zPosition = 0.55
         layer?.addSublayer(cardLayer)
         pieceCardLayers[piece.index] = cardLayer
+        // The row dims an image still uploading under its cover too.
+        if piece.uploadRing?.dimsFile == true { Self.addDim(over: cardLayer) }
         let radii = (pieceSourceCornerRadii[piece.index] ?? piece.cornerRadius, piece.cornerRadius)
         morph(cardLayer, from: source, to: piece.frame, cornerRadius: radii, delay: delay)
         // The row's drawing already carries a pending message's opacity.
@@ -703,13 +711,19 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         return Timing.duration + mediaDelay + (mediaDelay > 0 ? Timing.textAfterCrossingFadeDuration : 0)
     }
 
-    /// Replaces the bubble's content after its media finishes loading.
-    func updateContent(_ image: NSImage) {
-        let transition = CATransition()
-        transition.type = .fade
-        transition.duration = NativeTimelineSendTransitionTiming.contentRefreshDuration
-        finalContentLayer.add(transition, forKey: "contents")
-        finalContentLayer.contents = image
+    /// Replaces the bubble's content, and the covers its tiles land in,
+    /// after its media finishes loading.
+    func updateContent(_ image: NSImage, covers: [Int: NSImage]) {
+        let layers = [(finalContentLayer, image)] + covers.compactMap { index, cover in
+            pieceCardLayers[index].map { ($0, cover) }
+        }
+        for (layer, contents) in layers {
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = NativeTimelineSendTransitionTiming.contentRefreshDuration
+            layer.add(transition, forKey: "contents")
+            layer.contents = contents
+        }
     }
 
     /// Moves the in-flight bubble when its destination row moves, for example
@@ -1119,7 +1133,10 @@ extension NativeTimelineCanvasView {
                       omittingAttachments: transition.omittedAttachments
                   )
             else { continue }
-            transition.overlay.updateContent(content.image)
+            let covers = sendTransitionCovers(
+                for: transition.omittedAttachments, item: items[index], layout: layouts[index], rowFrame: rowFrame(at: index)
+            )
+            transition.overlay.updateContent(content.image, covers: covers.mapValues(\.image))
         }
     }
 

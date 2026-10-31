@@ -155,14 +155,17 @@ final class ComposerSendTransitionAnchor {
               let window = view.window
         else { return nil }
         let image: NSImage?
-        if attachment.isVisualMedia, !attachment.isSpoiler || preview.thumbnail == nil {
+        if attachment.isVisualMedia, !attachment.isSpoiler {
             image = preview.thumbnail
         } else {
             let size = view.bounds.size
             let renderer = ImageRenderer(
                 content: Group {
-                    if attachment.isVisualMedia, let thumbnail = preview.thumbnail {
-                        Image(nsImage: thumbnail).resizable().scaledToFill()
+                    if attachment.isVisualMedia {
+                        // A thumbnail still decoding leaves the bare cover.
+                        if let thumbnail = preview.thumbnail {
+                            Image(nsImage: thumbnail).resizable().scaledToFill()
+                        }
                     } else {
                         ComposerAttachmentFileFace(url: attachment.url, isLabelOnly: isLabelOnly)
                     }
