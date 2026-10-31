@@ -11,7 +11,7 @@ import SwiftUI
 /// A viewless, virtualized message surface. One AppKit view owns the entire
 /// timeline; only rows intersecting the dirty rectangle are painted.
 @MainActor
-final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
+final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSViewToolTipOwner {
     struct CachedRowBitmap {
         let item: NativeMessageTimelineItem
         let width: CGFloat
@@ -334,8 +334,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
-    var voiceMessageActiveMessageID: MessageID?
-    var voiceMessageSpeed: Float = 1
+    /// A hovered audio file's seek bar while another player is active.
+    var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
+    var voiceMessageActiveID: VoiceMessagePlaybackID?
+    var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?
     var hoveredVoiceMessage: VoiceMessageHover?
     struct ActivityIndicatorKey: Hashable {

@@ -5,6 +5,7 @@ import SwiftUI
 /// Media transitions stay feature-owned; window input and lifetime use the shared host.
 struct MediaViewerWindowOverlay: View {
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
+    @Environment(VoiceMessagePlaybackStore.self) private var playback
     let presentation: NativeTimelineMediaViewerPresentation?
     let dismiss: () -> Void
 
@@ -12,6 +13,7 @@ struct MediaViewerWindowOverlay: View {
         WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { presentation, context in
             MediaViewerWindowAnimatedContent(presentation: presentation, context: context)
                 .environment(\.profileCosmeticPolicy, cosmeticPolicy)
+                .environment(playback)
         })
     }
 }
@@ -23,15 +25,28 @@ private final class MediaViewerWindowAnimationState {
     private(set) var transitionSources: [String: MediaViewerTransitionSource] = [:]
     private var reducesMotion = false
     private let sourceItemIDs: Set<String>
+    /// Files zoom from a slim card into a large page, which reads only over
+    /// a longer, even curve than a photo's snappy one.
+    private let fileItemIDs: Set<String>
     private var selectedItemID: String
 
     init(presentation: NativeTimelineMediaViewerPresentation) {
         sourceItemIDs = Set(presentation.transitionSources.keys)
+        fileItemIDs = Set(presentation.items.filter {
+            switch $0.kind {
+            case .audio, .text, .file: true
+            default: false
+            }
+        }.map(\.id))
         selectedItemID = presentation.items[presentation.selection].id
     }
 
     private var hasTransitionSource: Bool {
         sourceItemIDs.contains(selectedItemID)
+    }
+
+    private var zoomsFile: Bool {
+        hasTransitionSource && fileItemIDs.contains(selectedItemID)
     }
 
     func select(itemID: String) {
@@ -60,7 +75,9 @@ private final class MediaViewerWindowAnimationState {
         withAnimation(
             reducesMotion
                 ? .easeOut(duration: 0.12)
-                : hasTransitionSource
+                : zoomsFile
+                    ? .smooth(duration: 0.34)
+                    : hasTransitionSource
                     ? .snappy(
                         duration:
                             MediaViewerTransitionTiming.presentationDuration,
@@ -78,8 +95,12 @@ private final class MediaViewerWindowAnimationState {
     }
 
     func dismiss(interactively: Bool) -> TimeInterval {
+        // A pinch follows the fingers, so only a file closed outright eases.
+        let easesFile = zoomsFile && !interactively
         let duration = if reducesMotion {
             0.12
+        } else if easesFile {
+            0.3
         } else if hasTransitionSource {
             interactively
                 ? MediaViewerTransitionTiming.interactiveDismissalDuration
@@ -92,7 +113,9 @@ private final class MediaViewerWindowAnimationState {
         withAnimation(
             reducesMotion
                 ? .easeIn(duration: duration)
-                : hasTransitionSource
+                : easesFile
+                    ? .smooth(duration: duration)
+                    : hasTransitionSource
                     ? interactively
                         ? .snappy(duration: duration, extraBounce: 0.01)
                         : .snappy(duration: duration)

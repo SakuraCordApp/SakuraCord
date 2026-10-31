@@ -50,6 +50,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func resetCursorRects() {
+        removeAllToolTips()
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard !suppressesHoverPresentation,
               !sendTransitionBlocksInteractions,
@@ -856,8 +857,6 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
-            } else if attachment.mediaKind == .file {
-                // A revealed file card acts through its own pointer hit.
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,
@@ -1195,6 +1194,7 @@ extension NativeTimelineCanvasView {
         setHoveredThreadMessageID(nil)
         setHoveredFooterAction(nil)
         setHoveredReaction(nil)
+        updateVoiceMessageHover(at: nil)
         setHoveredRow(nil)
     }
 
@@ -1212,6 +1212,7 @@ extension NativeTimelineCanvasView {
         guard !actionCapsuleContains(point) else { return }
         synchronizeHoveredRow(at: point)
         setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
+        updateVoiceMessageHover(at: visibleRect.contains(point) ? point : nil, measuresDuration: false)
         setHoveredCompactTimestampRow(
             visibleRect.contains(point)
                 ? compactTimestampRowIndex(at: point)

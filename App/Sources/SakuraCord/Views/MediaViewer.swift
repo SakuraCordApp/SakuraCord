@@ -3,6 +3,8 @@ import SwiftUI
 
 struct MediaViewer: View {
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
+    /// The window's scheme; the viewer itself always renders dark.
+    @Environment(\.colorScheme) private var windowColorScheme
     let presentation: NativeTimelineMediaViewerPresentation
     let isVisible: Bool
     let transitionSources: [String: MediaViewerTransitionSource]
@@ -56,6 +58,8 @@ struct MediaViewer: View {
                                 y: transitionSourceVisibleFrame.midY
                             )
                             .allowsHitTesting(false)
+                            // Covers the source thumbnail in the window below.
+                            .environment(\.colorScheme, windowColorScheme)
                     }
 
                     MediaViewerBackdrop(
@@ -66,6 +70,7 @@ struct MediaViewer: View {
 
                     MediaViewerStage(
                         item: item,
+                        messageID: presentation.messageID,
                         previewImage:
                             presentation.timelinePreviewImages[item.id],
                         isVisible: isVisible,
@@ -75,9 +80,7 @@ struct MediaViewer: View {
                         bottomInset: presentation.items.count > 1 ? 82 : 14,
                         interaction: interaction,
                         finishPinchDismissal: finishPinchDismissal,
-                        open: {
-                            MediaViewerActionService.openInBrowser(item.url)
-                        },
+                        download: { save(item, to: .defaultFolder) },
                         imageContextMenuActions: MediaImageContextMenuActions(
                             copyImage: { copyImage(item) },
                             save: saveActions(for: item),
@@ -220,6 +223,8 @@ struct MediaViewer: View {
         .accessibilityLabel(
             "Media viewer, item \(interaction.selection + 1) of \(presentation.items.count)"
         )
+        // The viewer always sits on a near-black backdrop.
+        .environment(\.colorScheme, .dark)
     }
 
     private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {

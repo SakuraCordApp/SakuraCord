@@ -14,9 +14,11 @@ extension NativeTimelineCanvasView {
             previewImages: media.previewImages,
             transitionSources: media.transitionSources
         )
-        guard presentation.items.indices.contains(presentation.selection),
-              case .image = presentation.items[presentation.selection].kind
-        else { return presentation }
+        guard presentation.items.indices.contains(presentation.selection) else { return presentation }
+        guard case .image = presentation.items[presentation.selection].kind else {
+            return fileCardTransitionSource(for: presentation.items[presentation.selection], rowIndex: rowIndex)
+                .map(presentation.withTransitionSource) ?? presentation
+        }
 
         let item = presentation.items[presentation.selection]
         let performanceProbe =
@@ -153,7 +155,8 @@ extension NativeTimelineCanvasView {
                     ),
                     frame: region.frame,
                     cornerRadius: region.cornerRadius,
-                    fillsFrame: false
+                    // The row crops a thumbnail to fill its square.
+                    fillsFrame: true
                 )
             }
             for region in component.media where !region.isVideo {
@@ -210,12 +213,49 @@ extension NativeTimelineCanvasView {
         )
     }
 
+    /// A file card's snapshot, which grows into the file's preview. A video
+    /// file shows without one, as the viewer zooms only files it previews.
+    private func fileCardTransitionSource(for item: RichMediaItem, rowIndex: Int) -> MediaViewerTransitionSource? {
+        switch item.kind {
+        case .audio, .text, .file: break
+        default: return nil
+        }
+        let itemID = item.id
+        guard window != nil, layouts.indices.contains(rowIndex) else { return nil }
+        let layout = layouts[rowIndex]
+        guard let card = layout.fileCards.first(where: { $0.attachment.id == itemID })
+            ?? layout.componentLayouts.lazy.flatMap(\.files).first(where: { $0.componentID == itemID })?.card
+        else { return nil }
+        let frameInCanvas = card.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
+        let visibleFrame = frameInCanvas.intersection(visibleRect)
+        guard !visibleFrame.isNull, visibleFrame.width > 0, visibleFrame.height > 0,
+              let bitmap = bitmapImageRepForCachingDisplay(in: frameInCanvas)
+        else { return nil }
+        cacheDisplay(in: frameInCanvas, to: bitmap)
+        let image = NSImage(size: frameInCanvas.size)
+        image.addRepresentation(bitmap)
+        return MediaViewerTransitionSource(
+            itemID: itemID,
+            image: image,
+            frameInWindow: convert(frameInCanvas, to: nil),
+            visibleFrameInWindow: convert(visibleFrame, to: nil),
+            cornerRadius: card.cornerRadius,
+            fillsFrame: true
+        )
+    }
+
     func mediaViewerPresentation(
         _ presentation: NativeTimelineMediaViewerPresentation,
         componentID: String,
         rowIndex: Int
     ) -> NativeTimelineMediaViewerPresentation {
         guard layouts.indices.contains(rowIndex) else { return presentation }
+        if presentation.items.indices.contains(presentation.selection),
+           presentation.items[presentation.selection].id == componentID,
+           layouts[rowIndex].componentLayouts.contains(where: { $0.files.contains { $0.componentID == componentID } }) {
+            return fileCardTransitionSource(for: presentation.items[presentation.selection], rowIndex: rowIndex)
+                .map(presentation.withTransitionSource) ?? presentation
+        }
         for layout in layouts[rowIndex].componentLayouts {
             if let region = layout.images.first(where: {
                 $0.componentID == componentID
@@ -229,7 +269,7 @@ extension NativeTimelineCanvasView {
                         maximumPixelDimension: region.maximumPixelDimension
                     ),
                     cornerRadius: region.cornerRadius,
-                    fillsFrame: false
+                    fillsFrame: true
                 )
             }
             if let region = layout.media.first(where: {
