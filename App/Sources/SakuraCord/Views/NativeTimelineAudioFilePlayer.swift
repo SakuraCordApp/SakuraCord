@@ -11,7 +11,10 @@ extension NativeTimelineVoiceMessagePainter {
         context: CGContext
     ) {
         let track = seekTrack(in: region.waveformFrame)
-        let playScale = 1 + 0.1 * (state.playHover ?? (state.isPlayHovered && !state.isPlayPressed ? 1 : 0))
+        // The bare glyph grows more than a round button, and a press returns
+        // it to rest, as one does.
+        let hover = state.playHover ?? (state.isPlayHovered ? 1 : 0)
+        let playScale = 1 + 0.1 * hover * (1 - (state.playPress ?? (state.isPlayPressed ? 1 : 0)))
         // A hover overlay above a resting player adds only what the pointer
         // changes; at rest its glyph and track are the row's own.
         if !state.isResting || playScale != 1 {
