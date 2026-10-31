@@ -354,12 +354,13 @@ extension NativeTimelineCanvasView {
         cancelReactionCountAnimations()
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
+        // Before the pointer targets clear, which drops the fades.
+        redrawFadingFileCardHovers()
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
         let clearedTargets = pointer.clearHoverAndPressTargets()
         reactionHoverCoordinator.close()
-        redrawFadingFileCardHovers()
         closeMessageProfilePopover()
         closeServerTagPopover()
         removeActionCapsule()
