@@ -504,7 +504,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             CATransaction.setDisableActions(true)
             defer { CATransaction.commit() }
             for layer in layers.compactMap(\.self) {
-                let opacity = layer.presentation()?.opacity ?? layer.opacity
+                // A layer not yet on screen shows where its pending fade starts.
+                let pending = (layer.animation(forKey: "opacity") as? CABasicAnimation)?.fromValue as? NSNumber
+                let opacity = layer.presentation()?.opacity ?? pending?.floatValue ?? layer.opacity
                 layer.opacity = 0
                 add(layer, "opacity", from: CGFloat(opacity), to: 0, duration: NativeTimelineSendTransitionTiming.dismissalDuration)
             }
