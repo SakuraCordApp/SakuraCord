@@ -80,11 +80,13 @@ struct MediaViewerAudio: View {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .contentTransition(.symbolEffect(.replace))
                 .font(.interfaceSystem(size: 30, weight: .semibold))
+                .foregroundStyle(.white)
                 .frame(width: InterfaceScale.metric(60), height: InterfaceScale.metric(60))
+                // Interactive glass keeps its tint and depth while pressed,
+                // where the prominent button style flattens to a pale fill.
+                .glassEffect(.regular.tint(SakuraCordAccentColor.color).interactive(), in: .circle)
         }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.circle)
-        .tint(SakuraCordAccentColor.color)
+        .buttonStyle(.plain)
         .keyboardShortcut(.space, modifiers: [])
         .help(isPlaying ? "Pause" : "Play")
         .accessibilityLabel(isPlaying ? "Pause" : "Play")

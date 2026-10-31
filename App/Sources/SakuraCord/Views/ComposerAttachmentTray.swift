@@ -223,7 +223,9 @@ private struct ComposerAttachmentTile: View {
                 onImageLoaded: { thumbnail = $0 }
             )
         } else {
-            ComposerAttachmentFileFace(url: attachment.url)
+            // The name capsule shows the type on hover, over where the
+            // label sits.
+            ComposerAttachmentFileFace(url: attachment.url, hidesLabel: isHovered)
         }
     }
 
@@ -340,6 +342,7 @@ struct ComposerAttachmentFileFace: View {
     /// A sent tile's flying copy draws the icon and surface itself, so its
     /// face is only the type label.
     var isLabelOnly = false
+    var hidesLabel = false
 
     private static var iconSide: CGFloat { InterfaceScale.metric(72) }
     private static var labelHeight: CGFloat { InterfaceScale.metric(15) }
@@ -369,6 +372,7 @@ struct ComposerAttachmentFileFace: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(height: Self.labelHeight)
+                    .opacity(hidesLabel ? 0 : 1)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
