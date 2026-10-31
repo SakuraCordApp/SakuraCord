@@ -1042,7 +1042,7 @@ extension NativeTimelineCanvasView {
                         color: color, dimsFile: ring.mediaFrame != nil
                     )
                 },
-                card: card?.morph ?? covers[attachmentIndex]
+                card: card?.morph ?? covers[attachmentIndex].map { .init(image: $0, iconFrame: nil) }
             )
         }
         let bubble = layout.bubbleRegion.map { region in
@@ -1081,12 +1081,8 @@ extension NativeTimelineCanvasView {
         guard model?.attachmentUploads.isUploading(nonce: message.nonce, attachmentID: attachmentID) == true,
               let ring = layout.uploadRings.first(where: { $0.attachmentID == attachmentID && !$0.isFailed })
         else { return nil }
-        // A spoiler hides its file card's ring, so the flying one fades.
-        if ring.mediaFrame == nil, let attachment = message.attachments.first(where: { $0.id == attachmentID }),
-           isConcealedSpoiler(attachment, in: message.id) {
-            return nil
-        }
-        return ring
+        // A ring the row hides fades from the flight.
+        return hidesUploadRing(ring, of: message) ? nil : ring
     }
 
     /// Keeps in-flight bubbles aimed at their rows after a later timeline
@@ -1157,7 +1153,7 @@ extension NativeTimelineCanvasView {
             let covers = sendTransitionCovers(
                 for: transition.omittedAttachments, item: items[index], layout: layouts[index], rowFrame: rowFrame(at: index)
             )
-            transition.overlay.updateContent(content.image, covers: covers.mapValues(\.image))
+            transition.overlay.updateContent(content.image, covers: covers)
             transition.endUptime = max(
                 transition.endUptime, CACurrentMediaTime() + NativeTimelineSendTransitionTiming.contentRefreshDuration
             )
@@ -1373,7 +1369,7 @@ extension NativeTimelineCanvasView {
             // flight by their fades.
             while let self, let transition,
                   self.sendTransitions.contains(where: { $0 === transition }),
-                  self.sendTransitionAwaitsMedia(transition) && CACurrentMediaTime() < mediaDeadline
+                  (self.sendTransitionAwaitsMedia(transition) && CACurrentMediaTime() < mediaDeadline)
                       || CACurrentMediaTime() < max(transition.endUptime, transition.overlay.uploadFadeEnd)
             {
                 do {
@@ -1432,15 +1428,15 @@ extension NativeTimelineCanvasView {
         item: NativeMessageTimelineItem,
         layout: NativeTimelineRowLayout,
         rowFrame: CGRect
-    ) -> [Int: NativeTimelineSendTransitionOverlay.Card] {
+    ) -> [Int: NSImage] {
         guard let messageID = item.messageID else { return [:] }
-        var covers: [Int: NativeTimelineSendTransitionOverlay.Card] = [:]
+        var covers: [Int: NSImage] = [:]
         for attachmentIndex in attachmentIndexes {
             let region = layout.attachmentRegions[attachmentIndex]
             guard isConcealedSpoiler(region.attachment, in: messageID),
                   let image = sendTransitionImage(of: region.frame, item: item, layout: layout, rowFrame: rowFrame)
             else { continue }
-            covers[attachmentIndex] = .init(image: image, iconFrame: nil)
+            covers[attachmentIndex] = image
         }
         return covers
     }

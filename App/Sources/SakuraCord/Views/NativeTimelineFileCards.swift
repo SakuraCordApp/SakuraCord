@@ -7,6 +7,15 @@ extension NativeTimelineCanvasView {
         attachment.isSpoiler && !spoilerRevealStore.isMediaRevealed(.attachment(messageID: messageID, attachmentID: attachment.id))
     }
 
+    /// Whether a spoiler hides an upload's ring: it still hides its file
+    /// card's button, but not the cover over an image.
+    func hidesUploadRing(_ ring: NativeTimelineRowLayout.UploadRing, of message: Message) -> Bool {
+        guard ring.mediaFrame == nil,
+              let attachment = message.attachments.first(where: { $0.id == ring.attachmentID })
+        else { return false }
+        return isConcealedSpoiler(attachment, in: message.id)
+    }
+
     /// The visible file cards in a message row, attachment cards first. A
     /// message still being sent has only local files, which act through
     /// their upload rings, if any, rather than as downloads.
