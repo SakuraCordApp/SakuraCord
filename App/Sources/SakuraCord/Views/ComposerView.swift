@@ -185,8 +185,8 @@ struct ComposerView: View {
                         TimeMentionInputView(
                             query: Binding(
                                 get: { activeTimeEntry?.query ?? "" },
-                                set: {
-                                    activeTimeEntry?.query = zsh
+                                set: { value in
+                                    activeTimeEntry?.query = value
                                     autocompleteIndex = 0
                                     isAutocompleteDismissed = false
                                 }

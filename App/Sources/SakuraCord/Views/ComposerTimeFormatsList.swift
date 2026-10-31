@@ -50,7 +50,7 @@ struct TimeFormatsAutocompleteList: View {
                                     select(option)
                                 } label: {
                                     HStack {
-                                        Text(option.display)
+                                        Text(option.displayText)
                                             .font(.interfaceSystem(size: 14))
                                             .foregroundStyle(Color.primary)
                                             .padding(.horizontal, InterfaceScale.metric(8))
@@ -170,8 +170,6 @@ struct TimeMentionNSTextFieldView: View {
 }
 
 final class TimeMentionNSTextField: NSTextField {
-    var onCommand: ((ComposerAutocompleteCommand) -> Bool)?
-    var onAccept: (() -> Void)?
     var onCancel: (() -> Void)?
 
     override func viewDidMoveToWindow() {
@@ -187,28 +185,6 @@ final class TimeMentionNSTextField: NSTextField {
             return true
         }
         return super.performKeyEquivalent(with: event)
-    }
-
-    override func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        if commandSelector == #selector(NSResponder.moveUp(_:)) {
-            return onCommand?(.previous) ?? false
-        }
-        if commandSelector == #selector(NSResponder.moveDown(_:)) {
-            return onCommand?(.next) ?? false
-        }
-        if commandSelector == #selector(NSResponder.insertNewline(_:)) || commandSelector == #selector(NSResponder.insertTab(_:)) {
-            onAccept?()
-            return true
-        }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            onCancel?()
-            return true
-        }
-        if commandSelector == #selector(NSResponder.deleteBackward(_:)), string.isEmpty {
-            onCancel?()
-            return true
-        }
-        return super.textView(textView, doCommandBy: commandSelector)
     }
 }
 
@@ -231,8 +207,6 @@ struct TimeMentionFieldRepresentable: NSViewRepresentable {
         field.textColor = .labelColor
         field.placeholderString = "Type a date or time (e.g. 24 October, in 2 hours)..."
         field.delegate = context.coordinator
-        field.onCommand = onCommand
-        field.onAccept = onAccept
         field.onCancel = onCancel
         DispatchQueue.main.async {
             field.window?.makeFirstResponder(field)
@@ -244,8 +218,6 @@ struct TimeMentionFieldRepresentable: NSViewRepresentable {
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
-        nsView.onCommand = onCommand
-        nsView.onAccept = onAccept
         nsView.onCancel = onCancel
     }
 
@@ -259,6 +231,32 @@ struct TimeMentionFieldRepresentable: NSViewRepresentable {
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSTextField else { return }
             parent.text = field.stringValue
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                return parent.onCommand(.previous)
+            }
+            if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                return parent.onCommand(.next)
+            }
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) || commandSelector == #selector(NSResponder.insertTab(_:)) {
+                parent.onAccept()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                parent.onCancel()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.deleteBackward(_:)), parent.text.isEmpty {
+                parent.onCancel()
+                return true
+            }
+            return false
         }
     }
 }

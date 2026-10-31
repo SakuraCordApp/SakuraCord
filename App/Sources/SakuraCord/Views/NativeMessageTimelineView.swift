@@ -389,6 +389,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
         init(parent: NativeMessageTimelineView) {
             self.parent = parent
             actions = Self.makeActions(from: parent)
+            super.init()
             let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.parent.model.invalidateTimelinePresentation()
