@@ -1443,7 +1443,8 @@ public extension DiscordMarkdown {
 
     /// The links message rendering produces, in document order, with the
     /// spoiler state it gives them. Consecutive runs of one link are one
-    /// occurrence, so adjacent links to the same URL merge.
+    /// occurrence, so adjacent links to the same URL merge, unless one was
+    /// written as <…> and the other not: those are two links.
     static func linkOccurrences(_ source: String) -> [LinkOccurrence] {
         var result: [LinkOccurrence] = []
         for line in appKitPlan(source).lines {
@@ -1452,12 +1453,13 @@ public extension DiscordMarkdown {
                 defer { previous = run }
                 guard let link = run.link else { continue }
                 let isSpoiler = run.traits.contains(.spoiler)
-                if link == previous?.link, let last = result.popLast() {
+                if link == previous?.link, run.suppressesPreview == previous?.suppressesPreview,
+                   let last = result.popLast() {
                     result.append(LinkOccurrence(
                         url: link,
                         isSpoiler: last.isSpoiler && isSpoiler
                             && run.spoilerID == previous?.spoilerID,
-                        suppressesPreview: last.suppressesPreview && run.suppressesPreview
+                        suppressesPreview: run.suppressesPreview
                     ))
                 } else {
                     result.append(LinkOccurrence(url: link, isSpoiler: isSpoiler, suppressesPreview: run.suppressesPreview))

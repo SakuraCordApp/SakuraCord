@@ -389,8 +389,13 @@ extension NativeTimelineCanvasView {
         let fillsFrame = MediaGalleryImagePresentation.fillsFrame(
             itemCount: layout.mediaGalleryItemCount
         )
+        // A revealed attachment can share its animation with one still hidden.
         for region in layout.attachmentRegions
-        where region.attachment.mediaKind == .animatedImage {
+        where region.attachment.mediaKind == .animatedImage
+            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                messageID: row.message.id, contentID: "attachment:\(region.attachment.id)",
+                isSpoiler: region.attachment.isSpoiler, store: spoilerRevealStore
+            ) {
             accumulator.append(
                 row: identifier,
                 role: .attachment(region.attachment.id),

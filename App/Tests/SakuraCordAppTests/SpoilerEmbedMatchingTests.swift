@@ -156,3 +156,14 @@ func `a masked <…> copy of a spoilered link leaves its preview hidden`() {
     )
     #expect(ids == ["embed-0"])
 }
+
+@MainActor @Test
+func `a <…> copy right against a spoilered link leaves its preview hidden`() {
+    let ids = concealedEmbedIDs(
+        content: "<https://youtu.be/ID>||https://youtu.be/ID||",
+        embeds: [
+            MessageEmbed(id: "embed-0", type: "video", url: URL(string: "https://www.youtube.com/watch?v=ID")),
+        ]
+    )
+    #expect(ids == ["embed-0"])
+}
