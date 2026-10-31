@@ -246,28 +246,42 @@ enum NativeTimelineSpoilerConcealmentPolicy {
 
     /// The embed addresses that came from spoilered links. A link preview can
     /// carry its page's canonical address rather than the link as written, as
-    /// youtu.be's does; such previews pair with the links no preview names, in
-    /// order, as Discord adds previews in the order of their links.
+    /// youtu.be's does. Such a preview belongs to the link on its site, or,
+    /// when the message leaves only one link and one preview unmatched, to
+    /// that link; any other pairing is a guess, so the preview stays as is.
     static func spoileredEmbedURLs(in message: Message) -> Set<URL> {
         let links = DiscordMarkdown.linkOccurrences(message.content)
         var result = Set(links.filter(\.isSpoiler).map(\.url))
         guard !result.isEmpty else { return [] }
-        let embedURLs = message.embeds.compactMap(\.url)
-        var unnamedLinks: [DiscordMarkdown.LinkOccurrence] = []
-        for link in links where !embedURLs.contains(link.url)
-            && !unnamedLinks.contains(where: { $0.url == link.url }) {
-            unnamedLinks.append(link)
-        }
+        let embedURLs = Set(message.embeds.compactMap(\.url))
         let linkURLs = Set(links.map(\.url))
+        // Discord never previews a link written as <…>.
+        var unmatchedLinks: [DiscordMarkdown.LinkOccurrence] = []
+        for link in links where !embedURLs.contains(link.url)
+            && !message.content.contains("<\(link.url.absoluteString)>")
+            && !unmatchedLinks.contains(where: { $0.url == link.url }) {
+            unmatchedLinks.append(link)
+        }
         var canonicalURLs: [URL] = []
         for embed in message.embeds where embed.type != "rich" {
             guard let url = embed.url, !linkURLs.contains(url), !canonicalURLs.contains(url) else { continue }
             canonicalURLs.append(url)
         }
-        for (url, link) in zip(canonicalURLs, unnamedLinks) where link.isSpoiler {
-            result.insert(url)
+        for url in canonicalURLs {
+            let sameSite = unmatchedLinks.filter { site(of: $0.url) == site(of: url) }
+            let link = sameSite.count == 1 ? sameSite.first
+                : canonicalURLs.count == 1 && unmatchedLinks.count == 1 ? unmatchedLinks.first : nil
+            if link?.isSpoiler == true { result.insert(url) }
         }
         return result
+    }
+
+    /// A host's last two labels, with the short hosts that redirect elsewhere
+    /// mapped to their site.
+    private static func site(of url: URL) -> String? {
+        guard let host = url.host()?.lowercased() else { return nil }
+        let aliases = ["youtu.be": "youtube.com"]
+        return aliases[host] ?? host.split(separator: ".").suffix(2).joined(separator: ".")
     }
 
     static func hiddenContainerFrames(

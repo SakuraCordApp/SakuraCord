@@ -55,3 +55,14 @@ func `every card of a spoilered link hides`() {
     )
     #expect(ids == ["embed-0", "embed-1"])
 }
+
+@MainActor @Test
+func `a visible short link's preview stays visible after a suppressed spoilered link`() {
+    let ids = concealedEmbedIDs(
+        content: "||<https://example.com>|| https://youtu.be/VIDEO_ID",
+        embeds: [
+            MessageEmbed(id: "embed-0", type: "video", url: URL(string: "https://www.youtube.com/watch?v=VIDEO_ID")),
+        ]
+    )
+    #expect(ids.isEmpty)
+}
