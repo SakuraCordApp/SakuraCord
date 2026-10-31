@@ -49,6 +49,8 @@ struct NativeTimelineRowLayout {
             case bareMedia
             case bubbleIntegratedCard
             case card
+            /// Text another card frames, such as an AutoMod alert's.
+            case unframed
         }
 
         struct TextRegion {
@@ -219,6 +221,7 @@ struct NativeTimelineRowLayout {
     var pinnedAtFrame: CGRect?
     var pollLayout: NativeTimelinePollLayout?
     var pollResultFrame: CGRect?
+    var autoModAlert: NativeTimelineAutoModAlertLayout?
     var inviteRegions: [NativeTimelineInviteLayout] = []
     var translationRegion: TranslationRegion?
 

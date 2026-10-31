@@ -71,6 +71,7 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
     public static let threadStarter = Self(rawValue: 21)
     public static let guildInviteReminder = Self(rawValue: 22)
     public static let contextMenuCommand = Self(rawValue: 23)
+    public static let autoModerationAction = Self(rawValue: 24)
     public static let stageStart = Self(rawValue: 27)
     public static let stageEnd = Self(rawValue: 28)
     public static let stageSpeaker = Self(rawValue: 29)

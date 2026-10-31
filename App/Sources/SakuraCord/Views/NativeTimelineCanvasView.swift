@@ -131,6 +131,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
 
     struct ComponentButtonPointerHit {
         enum Kind {
+            case autoModAlert(NativeTimelineAutoModAlertLayout.Action)
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
@@ -139,7 +140,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                 switch self {
                 case let .component(region):
                     region.isDisabled
-                case .sakuraCordDeepLink:
+                case .sakuraCordDeepLink, .autoModAlert:
                     false
                 case let .invite(card, expands):
                     !expands && card.isDisabled
