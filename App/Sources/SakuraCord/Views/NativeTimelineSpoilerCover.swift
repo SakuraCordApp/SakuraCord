@@ -57,10 +57,11 @@ enum NativeTimelineSpoilerCover {
     /// The cover as an image, for surfaces that composite images rather than
     /// draw, such as forum cards.
     static func image(size: CGSize, cornerRadius: CGFloat, pillScale: CGFloat?, content: () -> Void) -> NSImage? {
+        let scale: CGFloat = 2
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: Int(ceil(size.width * 2)),
-            pixelsHigh: Int(ceil(size.height * 2)),
+            pixelsWide: Int(ceil(size.width * scale)),
+            pixelsHigh: Int(ceil(size.height * scale)),
             bitsPerSample: 8,
             samplesPerPixel: 4,
             hasAlpha: true,
@@ -72,6 +73,7 @@ enum NativeTimelineSpoilerCover {
         bitmap.size = size
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: graphics.cgContext, flipped: true)
+        graphics.cgContext.scaleBy(x: scale, y: scale)
         graphics.cgContext.translateBy(x: 0, y: size.height)
         graphics.cgContext.scaleBy(x: 1, y: -1)
         draw(covering: true, in: CGRect(origin: .zero, size: size), cornerRadius: cornerRadius, pillScale: pillScale, content: content)
