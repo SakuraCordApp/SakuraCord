@@ -99,9 +99,10 @@ import Testing
 }
 
 @MainActor
-@Test func `modal dismissal retains input through its transition and releases it once`() async {
+@Test func `closing modal releases input as its transition begins and dismisses once`() async {
     let window = modalTestWindow()
     var dismissals = 0
+    var removalsBeforeDismissal = 0
     await withCheckedContinuation { continuation in
         var host: WindowModalHostingView!
         host = WindowModalHostingView(presentationID: UUID(), dismiss: { dismissals += 1 }, didFinishDismissal: {
@@ -110,15 +111,20 @@ import Testing
             host = nil
             continuation.resume()
         }, behavior: .contentAnimated, content: { _ in AnyView(Color.clear) })
+        host.frame = window.contentView!.bounds
         window.contentView!.addSubview(host)
         host.present()
         host.animationState.dismissalTransition = { _ in 0 }
+        host.animationState.willRemove = { if dismissals == 0 { removalsBeforeDismissal += 1 } }
         host.requestDismissal()
         host.requestDismissal()
-        #expect(!WindowModalCoordinator.allowsInput(for: window.contentView!))
+        // What the modal covered scrolls and hovers while it animates away.
+        #expect(WindowModalCoordinator.allowsInput(for: window.contentView!))
+        #expect(host.hitTest(.zero) == nil)
+        #expect(host.isDismissing)
     }
     #expect(dismissals == 1)
-    #expect(WindowModalCoordinator.allowsInput(for: window.contentView!))
+    #expect(removalsBeforeDismissal == 1)
 }
 
 @MainActor

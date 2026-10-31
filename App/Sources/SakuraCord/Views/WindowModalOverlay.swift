@@ -170,7 +170,7 @@ where Presentation.ID: Hashable {
                 // visibly different times.
                 overlayView.updateDismissCallback(dismiss)
                 if isPresented {
-                    if !overlayView.isPresented {
+                    if !overlayView.isPresented, !overlayView.isDismissing {
                         overlayView.present()
                     }
                 } else {
@@ -239,6 +239,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     private let reducesMotion: Bool
     private var isModalPresented = false
     var isPresented: Bool { isModalPresented }
+    var isDismissing: Bool { !animationState.canBeginDismissal }
 
     var capturesEscape: Bool { behavior.capturesEscape }
     var isTopmostPresentedOverlay: Bool {
@@ -401,6 +402,9 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
             }
         }
         animationState.beginDismissal(committingPresentation: committingPresentation, interactively: interactively)
+        // A closing modal stops holding the window's input, so what it
+        // covered takes the pointer and the scroll wheel as it animates away.
+        unregisterInput()
     }
 
     func cancelPendingDismissal() {
@@ -415,6 +419,9 @@ final class WindowModalContext {
     var preventsDismissal = false
     /// Starts a feature-owned closing transition and returns its removal delay.
     var dismissalTransition: ((Bool) -> TimeInterval)?
+    /// Runs as the host leaves the window, in the same transaction, so what
+    /// the modal stood in for returns in the frame the modal leaves.
+    var willRemove: (() -> Void)?
     var escapeAction: (() -> Void)?
     fileprivate var requestDismissal: ((Bool, Bool) -> Void)?
     private(set) var isVisible = false
@@ -479,6 +486,7 @@ final class WindowModalContext {
             let delay = customDelay ?? (reduceMotion ? 0 : Double(WindowModalAnimationTiming.removalDelayMilliseconds) / 1_000)
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard !Task.isCancelled else { return }
+            willRemove?()
             if committingPresentation {
                 dismissPresentation()
             }

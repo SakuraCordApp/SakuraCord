@@ -45,23 +45,6 @@ struct MediaViewer: View {
         GlassEffectContainer(spacing: InterfaceScale.metric(12)) {
             GeometryReader { proxy in
                 ZStack {
-                    if let transitionSource {
-                        let transitionSourceVisibleFrame =
-                            transitionSource.visibleFrameInWindow
-                        Color(nsColor: .windowBackgroundColor)
-                            .frame(
-                                width: transitionSourceVisibleFrame.width,
-                                height: transitionSourceVisibleFrame.height
-                            )
-                            .position(
-                                x: transitionSourceVisibleFrame.midX,
-                                y: transitionSourceVisibleFrame.midY
-                            )
-                            .allowsHitTesting(false)
-                            // Covers the source thumbnail in the window below.
-                            .environment(\.colorScheme, windowColorScheme)
-                    }
-
                     MediaViewerBackdrop(
                         isVisible: isVisible,
                         interaction: interaction,

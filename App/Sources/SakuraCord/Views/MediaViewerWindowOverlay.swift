@@ -31,7 +31,7 @@ private final class MediaViewerWindowAnimationState {
     private var selectedItemID: String
 
     init(presentation: NativeTimelineMediaViewerPresentation) {
-        sourceItemIDs = Set(presentation.transitionSources.keys)
+        sourceItemIDs = Set(presentation.transitionLink.sources.keys)
         fileItemIDs = Set(presentation.items.filter {
             switch $0.kind {
             case .audio, .text, .file: true
@@ -49,6 +49,11 @@ private final class MediaViewerWindowAnimationState {
         hasTransitionSource && fileItemIDs.contains(selectedItemID)
     }
 
+    /// The card the zoom stands in for, which the timeline leaves out.
+    var coveredItemID: String? {
+        hasTransitionSource && !reducesMotion ? selectedItemID : nil
+    }
+
     func select(itemID: String) {
         selectedItemID = itemID
     }
@@ -64,6 +69,7 @@ private final class MediaViewerWindowAnimationState {
                 return previous.frameInWindow != source.frameInWindow
                     || previous.visibleFrameInWindow
                         != source.visibleFrameInWindow
+                    || previous.image !== source.image
             })
         else { return }
         transitionSources = sources
@@ -136,6 +142,7 @@ private struct MediaViewerWindowAnimatedContent: View {
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
 
     private var reducesMotion: Bool { systemReducesMotion || !AppMotionPolicy.animates(.overlays) }
+    private var link: MediaViewerTransitionLink { presentation.transitionLink }
 
     init(presentation: NativeTimelineMediaViewerPresentation, context: WindowModalContext) {
         self.presentation = presentation
@@ -150,33 +157,52 @@ private struct MediaViewerWindowAnimatedContent: View {
             transitionSources: reducesMotion ? [:] : animationState.transitionSources,
             close: { context.dismiss() },
             closeInteractively: { context.dismiss(interactively: true) },
-            selectionChanged: { animationState.select(itemID: $0) }
+            selectionChanged: {
+                animationState.select(itemID: $0)
+                link.cover(animationState.coveredItemID)
+            }
         )
         .background {
-            MediaViewerTransitionFrameReader(presentation: presentation, animationState: animationState)
+            MediaViewerTransitionFrameReader(link: link, animationState: animationState)
         }
         .onAppear {
             context.dismissalTransition = { [animationState] interactively in
                 animationState.dismiss(interactively: interactively)
             }
+            context.willRemove = { [link] in link.release() }
             Task { @MainActor in
                 await Task.yield()
                 guard context.isVisible else { return }
                 animationState.present(reducesMotion: reducesMotion)
+                // The zoom now draws over its card, so the card can leave.
+                link.cover(animationState.coveredItemID)
             }
         }
-        .onDisappear { context.dismissalTransition = nil }
+        .onDisappear {
+            context.dismissalTransition = nil
+            context.willRemove = nil
+        }
+    }
+}
+
+/// Follows the timeline's live sources without re-rendering the viewer.
+private struct MediaViewerTransitionFrameReader: View {
+    let link: MediaViewerTransitionLink
+    let animationState: MediaViewerWindowAnimationState
+
+    var body: some View {
+        MediaViewerTransitionFrameConverter(sources: link.sources, animationState: animationState)
     }
 }
 
 /// Convert the thumbnail source into the same full-window coordinate space used before.
-private struct MediaViewerTransitionFrameReader: NSViewRepresentable {
-    let presentation: NativeTimelineMediaViewerPresentation
+private struct MediaViewerTransitionFrameConverter: NSViewRepresentable {
+    let sources: [String: MediaViewerTransitionSource]
     let animationState: MediaViewerWindowAnimationState
 
     func makeNSView(context: Context) -> Reader { Reader() }
     func updateNSView(_ view: Reader, context: Context) {
-        view.sources = presentation.transitionSources
+        view.sources = sources
         view.animationState = animationState
         view.resolveFrames()
     }
