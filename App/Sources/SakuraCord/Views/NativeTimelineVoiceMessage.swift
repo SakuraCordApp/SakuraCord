@@ -806,9 +806,13 @@ extension NativeTimelineCanvasView {
 
     func dragVoiceMessagePress(to point: CGPoint) -> Bool {
         guard let press = voiceMessagePress else { return false }
-        guard press.control == .waveform else { return true }
-        // A drag sends no mouse moves, so an audio file's time capsule
-        // follows the scrub here instead of staying where it was pressed.
+        // A drag sends no mouse moves, so a pressed play button learns here
+        // that the pointer left it.
+        guard press.control == .waveform else {
+            updateVoiceMessageHover(at: point, measuresDuration: false)
+            return true
+        }
+        // An audio file's grabber and wash follow the scrub here too.
         if hoveredVoiceMessage?.playbackID == press.region.playbackID, hoveredVoiceMessage?.pointerX != nil {
             hoveredVoiceMessage?.pointerX = point.x
             refreshVoiceMessageOverlay()
@@ -830,6 +834,7 @@ extension NativeTimelineCanvasView {
             if press.isReleased(on: released) {
                 playback.toggle(press.region.playbackID, source: press.region.source, duration: press.region.knownDuration(in: playback))
             }
+            updateVoiceMessageHover(at: point, measuresDuration: false)
             refreshVoiceMessageOverlay()
         case .speed:
             if press.isReleased(on: released) { playback.cycleSpeed() }
