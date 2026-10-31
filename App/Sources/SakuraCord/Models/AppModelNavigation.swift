@@ -487,11 +487,12 @@ extension AppModel {
 
     /// The message a jump lands on: the target, or with `nearest` the last
     /// one before it when it is not in the conversation, as for the moment
-    /// an AutoMod alert marks.
+    /// an AutoMod alert marks. Local sends have no place in that history.
     static func landingID(for messageID: MessageID, in messages: [Message], nearest: Bool) -> MessageID? {
         if messages.contains(where: { $0.id == messageID }) { return messageID }
         guard nearest else { return nil }
-        return (messages.last { $0.id < messageID } ?? messages.first)?.id
+        let sent = messages.filter { $0.outboxState == .confirmed }
+        return (sent.last { $0.id < messageID } ?? sent.first)?.id
     }
 
     func navigate(

@@ -447,13 +447,15 @@ extension NativeTimelineRowLayout {
         /// The row's author frames move to the member in the card, so the
         /// profile, menu and hover of the avatar and name are that member's.
         private mutating func appendAutoModAlert(_ alert: AutoModerationAlert) {
-            let sender = source?.authorPresentation(for: message).user ?? message.author
+            let presentation = source?.authorPresentation(for: message)
+            let sender = presentation?.user ?? message.author
             let header: NativeTimelineAutoModAlertLayout.Header? =
                 if let avatar = result.avatarFrame, let frame = result.authorFrame, let name = result.authorText {
                     .init(avatarFrame: avatar, nameFrame: frame, name: name)
                 } else { nil }
             let card = NativeTimelineAutoModAlertLayout(
                 alert: alert, message: message, sender: sender, header: header,
+                showsRoleIndicator: source?.roleColorDisplay == .nextToNames && presentation?.roleColorHex != nil,
                 origin: CGPoint(x: contentX, y: verticalOffset), width: contentWidth,
                 source: source, authorFont: metrics.authorFont
             )

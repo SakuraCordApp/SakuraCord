@@ -62,7 +62,7 @@ struct NativeTimelineAutoModAlertLayout {
 
     static var cornerRadius: CGFloat { NativeTimelinePollLayout.cornerRadius }
 
-    init(alert: AutoModerationAlert, message: Message, sender: User, header: Header?,
+    init(alert: AutoModerationAlert, message: Message, sender: User, header: Header?, showsRoleIndicator: Bool,
          origin: CGPoint, width: CGFloat, source: AppModel?, authorFont: NSFont) {
         self.header = header
         let cardWidth = min(width, DiscordRichMessageMetrics.maximumWidth)
@@ -73,14 +73,17 @@ struct NativeTimelineAutoModAlertLayout {
         let textWidth = max(1, origin.x + cardWidth - inset - textX)
 
         let font = ProfileNameFontLoader.shared.resolvedFont(for: sender, fallback: authorFont)
+        // Room for the role dot the identity painter draws before the name,
+        // as in a message header.
+        let indicatorWidth: CGFloat = showsRoleIndicator ? InterfaceScale.metric(15) : 0
         let tag = sender.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) }?
-            .fitting(maximumWidth: textWidth - InterfaceScale.metric(39))
+            .fitting(maximumWidth: textWidth - indicatorWidth - InterfaceScale.metric(39))
         let name = NativeIdentityTextPresentation(
             sender.displayName, font: font,
-            maximumWidth: textWidth - (tag.map { $0.width + InterfaceScale.metric(7) } ?? 0)
+            maximumWidth: textWidth - indicatorWidth - (tag.map { $0.width + InterfaceScale.metric(7) } ?? 0)
         )
         let nameHeight = ceil(max(font.ascender - font.descender, tag == nil ? 0 : ServerTagAppearance.height))
-        let nameFrame = CGRect(x: textX, y: avatarFrame.minY, width: name.width, height: nameHeight)
+        let nameFrame = CGRect(x: textX + indicatorWidth, y: avatarFrame.minY, width: name.width, height: nameHeight)
         authorText = name
         authorFrame = nameFrame
         serverTag = tag.map {
