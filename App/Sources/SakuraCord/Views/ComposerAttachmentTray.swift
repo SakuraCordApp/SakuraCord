@@ -136,6 +136,8 @@ private struct ComposerAttachmentTile: View {
             .animation(.smooth(duration: 0.25), value: uploadFraction == nil)
             .contentShape(shape)
             .onTapGesture { open(attachment.id) }
+            // A spoiler takes the pointing hand, as it does in the timeline.
+            .pointerStyle(attachment.isSpoiler ? .link : nil)
             .onModalHover { hovering in
                 withAnimation(ComposerResizeMotion.hover) { isHovered = hovering }
             }
