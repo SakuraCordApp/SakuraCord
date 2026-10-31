@@ -18,8 +18,9 @@ struct MediaViewerStage: View {
     let download: () -> Void
     let imageContextMenuActions: MediaImageContextMenuActions?
 
-    /// The corner radius of a file's preview, player, or page.
-    static var contentCornerRadius: CGFloat { InterfaceScale.metric(24) }
+    /// The corner radius of a file's preview, player, or page: a window
+    /// modal's, as each sits on the modal surface.
+    static var contentCornerRadius: CGFloat { WindowModalSurface.cornerRadius }
     private nonisolated static let space = "MediaViewerStage"
     /// Where a file's content lays out, which its card zooms into.
     @State private var contentFrame: CGRect?
@@ -718,5 +719,30 @@ private extension CGRect {
             width: width + (target.width - width) * progress,
             height: height + (target.height - height) * progress
         )
+    }
+}
+
+extension EnvironmentValues {
+    /// The window's own appearance, which a file's panel keeps while the
+    /// rest of the viewer is dark.
+    @Entry var mediaViewerWindowColorScheme = ColorScheme.dark
+}
+
+extension View {
+    /// A file's preview, player, or page, on the surface window modals use
+    /// and in the window's appearance, as a modal is.
+    func mediaViewerPanel() -> some View {
+        modifier(MediaViewerPanel())
+    }
+}
+
+private struct MediaViewerPanel: ViewModifier {
+    @Environment(\.mediaViewerWindowColorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .windowModalSurface(cornerRadius: MediaViewerStage.contentCornerRadius)
+            .windowModalShadow()
+            .environment(\.colorScheme, colorScheme)
     }
 }

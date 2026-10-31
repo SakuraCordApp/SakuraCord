@@ -223,6 +223,7 @@ struct MediaViewer: View {
         .accessibilityLabel(
             "Media viewer, item \(interaction.selection + 1) of \(presentation.items.count)"
         )
+        .environment(\.mediaViewerWindowColorScheme, windowColorScheme)
         // The viewer always sits on a near-black backdrop.
         .environment(\.colorScheme, .dark)
     }
