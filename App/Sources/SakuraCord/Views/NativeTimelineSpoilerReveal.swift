@@ -246,21 +246,25 @@ enum NativeTimelineSpoilerConcealmentPolicy {
 
     /// The embed addresses that came from spoilered links. A link preview can
     /// carry its page's canonical address rather than the link as written, as
-    /// youtu.be's does. Such a preview belongs to the link on its site, or,
+    /// youtu.be's does. Such a preview belongs to the links on its site, or,
     /// when the message leaves only one link and one preview unmatched, to
-    /// that link; any other pairing is a guess, so the preview stays as is.
+    /// that link. It hides when those links are all spoilered; any other
+    /// pairing is a guess, so the preview stays as is.
     static func spoileredEmbedURLs(in message: Message) -> Set<URL> {
         let links = DiscordMarkdown.linkOccurrences(message.content)
         var result = Set(links.filter(\.isSpoiler).map(\.url))
         guard !result.isEmpty else { return [] }
         let embedURLs = Set(message.embeds.compactMap(\.url))
         let linkURLs = Set(links.map(\.url))
-        // Discord never previews a link written as <…>.
-        var unmatchedLinks: [DiscordMarkdown.LinkOccurrence] = []
-        for link in links where !embedURLs.contains(link.url)
-            && !message.content.contains("<\(link.url.absoluteString)>")
-            && !unmatchedLinks.contains(where: { $0.url == link.url }) {
-            unmatchedLinks.append(link)
+        // One entry per address no preview names, spoilered only when every
+        // copy Discord could preview is.
+        var unmatchedLinks: [(url: URL, isSpoiler: Bool)] = []
+        for link in previewableLinks(links, in: message.content) where !embedURLs.contains(link.url) {
+            if let index = unmatchedLinks.firstIndex(where: { $0.url == link.url }) {
+                unmatchedLinks[index].isSpoiler = unmatchedLinks[index].isSpoiler && link.isSpoiler
+            } else {
+                unmatchedLinks.append((link.url, link.isSpoiler))
+            }
         }
         var canonicalURLs: [URL] = []
         for embed in message.embeds where embed.type != "rich" {
@@ -269,11 +273,42 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         }
         for url in canonicalURLs {
             let sameSite = unmatchedLinks.filter { site(of: $0.url) == site(of: url) }
-            let link = sameSite.count == 1 ? sameSite.first
-                : canonicalURLs.count == 1 && unmatchedLinks.count == 1 ? unmatchedLinks.first : nil
-            if link?.isSpoiler == true { result.insert(url) }
+            let candidates = !sameSite.isEmpty ? sameSite
+                : canonicalURLs.count == 1 && unmatchedLinks.count == 1 ? unmatchedLinks : []
+            // Several candidates decide only when they all agree.
+            if !candidates.isEmpty, candidates.allSatisfy(\.isSpoiler) { result.insert(url) }
         }
         return result
+    }
+
+    /// The links Discord can preview: not those written as <…>. Each copy of
+    /// an address is matched to its place in the text, in order.
+    private static func previewableLinks(
+        _ links: [DiscordMarkdown.LinkOccurrence],
+        in content: String
+    ) -> [DiscordMarkdown.LinkOccurrence] {
+        var suppressed: [URL: [Bool]] = [:]
+        for url in Set(links.map(\.url)) {
+            let written = url.absoluteString
+            var copies: [Bool] = []
+            var searchRange = content.startIndex ..< content.endIndex
+            while let range = content.range(of: written, range: searchRange) {
+                copies.append(
+                    range.lowerBound > content.startIndex
+                        && content[content.index(before: range.lowerBound)] == "<"
+                        && content[range.upperBound...].first == ">"
+                )
+                searchRange = range.upperBound ..< content.endIndex
+            }
+            suppressed[url] = copies
+        }
+        var seen: [URL: Int] = [:]
+        return links.filter { link in
+            let index = seen[link.url, default: 0]
+            seen[link.url] = index + 1
+            let copies = suppressed[link.url] ?? []
+            return !(copies.indices.contains(index) && copies[index])
+        }
     }
 
     /// A host's last two labels, with the short hosts that redirect elsewhere
