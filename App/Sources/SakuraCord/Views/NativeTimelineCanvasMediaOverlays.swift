@@ -950,6 +950,7 @@ extension NativeTimelineCanvasView {
         for key in removed {
             inlineVideoOverlays[key] = nil
         }
+        positionInlinePlayers()
     }
 
     func removeInlineVideoOverlays() {
@@ -958,6 +959,43 @@ extension NativeTimelineCanvasView {
             overlay.removeFromSuperview()
         }
         inlineVideoOverlays.removeAll()
+        removeInlinePlayers()
+    }
+
+    /// Plays a video in place over its tile, as Discord does.
+    func playInline(_ url: URL, mediaID: String, frame: CGRect, rowIndex: Int) {
+        let key = NativeTimelineInlinePlayer.Key(row: items[rowIndex].identifier, mediaID: mediaID)
+        guard inlinePlayers[key] == nil else { return }
+        let player = NativeTimelineInlinePlayer(url: url, frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex)))
+        addSubview(player, positioned: .below, relativeTo: mediaViewerHost)
+        inlinePlayers[key] = player
+    }
+
+    /// Players follow their tiles, pause once scrolled out of view, and end
+    /// when their row leaves the timeline.
+    private func positionInlinePlayers() {
+        for (key, player) in inlinePlayers {
+            guard let index = items.firstIndex(where: { $0.identifier == key.row }),
+                  layouts.indices.contains(index),
+                  let frame = layouts[index].attachmentRegions.first(where: { $0.attachment.id == key.mediaID })?.frame
+                  ?? layouts[index].componentLayouts.lazy.flatMap(\.media).first(where: { $0.componentID == key.mediaID })?.frame
+            else {
+                player.stop()
+                player.removeFromSuperview()
+                inlinePlayers[key] = nil
+                continue
+            }
+            player.frame = frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
+            if !player.frame.intersects(visibleRect) { player.pause() }
+        }
+    }
+
+    private func removeInlinePlayers() {
+        for player in inlinePlayers.values {
+            player.stop()
+            player.removeFromSuperview()
+        }
+        inlinePlayers.removeAll()
     }
 
     struct DesiredSpoilerOverlay {

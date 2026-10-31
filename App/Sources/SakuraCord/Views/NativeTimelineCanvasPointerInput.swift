@@ -858,6 +858,8 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
+            } else if attachment.mediaKind == .video {
+                playInline(attachment.proxyURL ?? attachment.url, mediaID: attachment.id, frame: attachmentRegion.frame, rowIndex: rowIndex)
             } else if let presentation =
                 NativeTimelineMediaViewerPlan.attachments(
                     in: row.message,
