@@ -207,7 +207,8 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
+        // `point` is in the superview's coordinates.
+        frame.contains(point) ? self : nil
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {

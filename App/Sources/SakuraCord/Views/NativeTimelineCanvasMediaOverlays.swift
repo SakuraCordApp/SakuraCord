@@ -258,7 +258,7 @@ extension NativeTimelineCanvasView {
             )
 
             appendAnimatedEmbedOverlays(
-                messageID: row.message.id,
+                message: row.message,
                 identifier: identifier,
                 layout: layout,
                 accumulator: accumulator
@@ -426,12 +426,15 @@ extension NativeTimelineCanvasView {
     }
 
     private func appendAnimatedEmbedOverlays(
-        messageID: MessageID,
+        message: Message,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
-        for embed in layout.embedRegions {
+        let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+            in: message, store: spoilerRevealStore
+        )
+        for embed in layout.embedRegions where concealedEmbeds[embed.embedID] == nil {
             for (imageIndex, imageRegion) in embed.imageRegions.enumerated()
             where Self.isPotentiallyAnimated(imageRegion.url) {
                 accumulator.append(
@@ -477,7 +480,7 @@ extension NativeTimelineCanvasView {
                     selectionRange: textSelection?.itemIdentifier == identifier
                         && textSelection?.region == textRegionID ? textSelection?.range : nil,
                     revealedSpoilerLocations: revealedTextSpoilerLocations(
-                        messageID: messageID,
+                        messageID: message.id,
                         region: textRegionID,
                         value: textRegion.text.value,
                         layout: layout
@@ -866,12 +869,12 @@ extension NativeTimelineCanvasView {
             if let urls = inlineVideoRows[identifier],
                layouts.indices.contains(index)
             {
-                let concealedEmbedIDs = items[index].messageRow.map {
-                    NativeTimelineSpoilerConcealmentPolicy.concealedEmbedIDs(in: $0.message, store: spoilerRevealStore)
-                } ?? []
+                let concealedEmbeds = items[index].messageRow.map {
+                    NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: $0.message, store: spoilerRevealStore)
+                } ?? [:]
                 for region in layouts[index].embedRegions {
                     guard region.mediaIsVideo,
-                          !concealedEmbedIDs.contains(region.embedID),
+                          concealedEmbeds[region.embedID] == nil,
                           region.mediaAutoplaysInline,
                           let url = region.mediaURL,
                           urls.contains(url),
@@ -1071,12 +1074,13 @@ extension NativeTimelineCanvasView {
                 rowOrigin: rowOrigin,
                 into: &desired
             )
-            let concealedEmbedIDs = NativeTimelineSpoilerConcealmentPolicy.concealedEmbedIDs(
+            let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
                 in: message, store: spoilerRevealStore
             )
-            for region in layouts[index].embedRegions where concealedEmbedIDs.contains(region.embedID) {
+            for region in layouts[index].embedRegions {
+                guard let key = concealedEmbeds[region.embedID] else { continue }
                 appendDesiredSpoilerOverlay(
-                    .embed(messageID: message.id, embedID: region.embedID),
+                    key,
                     frame: region.frame,
                     cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
                     rowOrigin: rowOrigin,

@@ -1193,7 +1193,23 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: NSAccessibilityElement
     ) {
+        let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+            in: message, store: spoilerRevealStore
+        )
         for region in layout.embedRegions {
+            if let key = concealedEmbeds[region.embedID] {
+                children.append(accessibilityElement(
+                    role: .button,
+                    label: "Reveal spoiler",
+                    help: "Reveals the spoiler without opening it",
+                    frame: accessibilityChildFrame(region.frame, rowIndex: rowIndex),
+                    parent: parent
+                ) { [weak self] in
+                    self?.reveal(key, rowIndex: rowIndex)
+                    return self != nil
+                })
+                continue
+            }
             let embed = message.embeds.first { $0.id == region.embedID }
             let group = accessibilityElement(
                 role: .group,

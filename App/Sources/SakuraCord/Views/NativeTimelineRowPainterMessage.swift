@@ -537,16 +537,16 @@ extension NativeTimelineRowPainter {
 
     private static func drawMessageEmbeds(_ input: NativeTimelineMessageDrawInput) {
         let layout = input.layout
-        let concealedEmbedIDs = input.spoilerRevealStore.map {
-            NativeTimelineSpoilerConcealmentPolicy.concealedEmbedIDs(in: input.row.message, store: $0)
-        } ?? []
+        let concealedEmbeds = input.spoilerRevealStore.map {
+            NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
+        } ?? [:]
         for region in layout.embedRegions {
             let draw = {
                 drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
                 drawEmbedText(region, input: input)
                 drawEmbedMedia(region)
             }
-            if concealedEmbedIDs.contains(region.embedID) {
+            if concealedEmbeds[region.embedID] != nil {
                 NativeTimelineSpoilerCover.draw(
                     in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius, content: draw
                 )

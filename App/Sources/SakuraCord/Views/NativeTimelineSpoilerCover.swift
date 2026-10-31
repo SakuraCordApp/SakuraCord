@@ -10,6 +10,13 @@ enum NativeTimelineSpoilerCover {
     /// keeps the blur cheap; at Discord's radius the detail lost is invisible.
     private static let blurScale: CGFloat = 1 / 8
     private static let context = CIContext(options: [.cacheIntermediates: false])
+    /// Blurs by the reduced drawing, so a cover spanning several tiles, or
+    /// drawn again unchanged, blurs once.
+    private static let blurs: NSCache<NSNumber, CGImage> = {
+        let cache = NSCache<NSNumber, CGImage>()
+        cache.countLimit = 64
+        return cache
+    }()
     private static let backdropColor = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .black : .white
     }
@@ -21,7 +28,10 @@ enum NativeTimelineSpoilerCover {
         cornerRadius: CGFloat,
         content: () -> Void
     ) {
-        guard frame.width >= 1, frame.height >= 1 else { return }
+        // Rows draw in tiles; a cover outside this one costs nothing.
+        guard frame.width >= 1, frame.height >= 1,
+              NSGraphicsContext.current?.cgContext.boundingBoxOfClipPath.intersects(frame) != false
+        else { return }
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).addClip()
         NativeTimelineSpoilerAppearance.hiddenColor.setFill()
@@ -81,12 +91,20 @@ enum NativeTimelineSpoilerCover {
         frame.fill()
         content()
         NSGraphicsContext.restoreGraphicsState()
-        guard let small = bitmap.makeImage() else { return nil }
+        guard let pixels = bitmap.data, let small = bitmap.makeImage() else { return nil }
+        var hasher = Hasher()
+        hasher.combine(width)
+        hasher.combine(height)
+        hasher.combine(bytes: UnsafeRawBufferPointer(start: pixels, count: bitmap.bytesPerRow * height))
+        let key = NSNumber(value: hasher.finalize())
+        if let cached = blurs.object(forKey: key) { return cached }
         let extent = CGRect(x: 0, y: 0, width: width, height: height)
         let blurred = CIImage(cgImage: small)
             .applyingGaussianBlur(sigma: NativeTimelineSpoilerAppearance.blurRadius * blurScale)
             .cropped(to: extent)
-        return context.createCGImage(blurred, from: extent)
+        guard let image = context.createCGImage(blurred, from: extent) else { return nil }
+        blurs.setObject(image, forKey: key)
+        return image
     }
 }
 

@@ -222,19 +222,20 @@ enum NativeTimelineSpoilerConcealmentPolicy {
     }
 
     /// The embeds still hidden because the message links them inside a
-    /// spoiler, as Discord hides them.
-    static func concealedEmbedIDs(
+    /// spoiler, as Discord hides them, by embed ID with their reveal keys.
+    static func concealedEmbeds(
         in message: Message,
         store: NativeTimelineSpoilerRevealStore
-    ) -> Set<String> {
-        guard !message.embeds.isEmpty, message.content.contains("||") else { return [] }
+    ) -> [String: NativeTimelineComponentRevealKey] {
+        guard !message.embeds.isEmpty, message.content.contains("||") else { return [:] }
         let spoileredURLs = Set(DiscordMarkdown.linkOccurrences(message.content).filter(\.isSpoiler).map(\.url))
-        return Set(message.embeds.compactMap { embed in
-            guard let url = embed.url, spoileredURLs.contains(url),
-                  !store.isMediaRevealed(.embed(messageID: message.id, embedID: embed.id))
-            else { return nil }
-            return embed.id
-        })
+        var result: [String: NativeTimelineComponentRevealKey] = [:]
+        for embed in message.embeds {
+            guard let url = embed.url, spoileredURLs.contains(url) else { continue }
+            let key = NativeTimelineComponentRevealKey.embed(messageID: message.id, url: url)
+            if !store.isMediaRevealed(key) { result[embed.id] = key }
+        }
+        return result
     }
 
     static func hiddenContainerFrames(
