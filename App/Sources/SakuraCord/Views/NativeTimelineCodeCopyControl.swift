@@ -65,9 +65,7 @@ final class NativeTimelineCodeCopyControl: NSView {
             context.duration = isPressed ? 0.08 : 0.16
             context.allowsImplicitAnimation = true
             animator().alphaValue = target == nil ? 0 : 1
-            effectiveAppearance.performAsCurrentDrawingAppearance {
-                layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(isPressed ? 0.16 : isHovered ? 0.1 : 0).cgColor
-            }
+            applyFill()
             glyph.animator().alphaValue = isHovered ? 1 : 0.7
             // Pressing sinks the glyph a little, as the timeline's buttons dip.
             glyph.animator().frame = bounds.insetBy(
@@ -78,6 +76,11 @@ final class NativeTimelineCodeCopyControl: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        applyFill()
+    }
+
+    /// The button's fill for its state, in its appearance.
+    private func applyFill() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = NSColor.labelColor
                 .withAlphaComponent(state.isPressed ? 0.16 : state.isHovered ? 0.1 : 0).cgColor

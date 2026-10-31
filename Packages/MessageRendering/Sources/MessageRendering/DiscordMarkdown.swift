@@ -1228,9 +1228,9 @@ public enum DiscordMarkdown {
             paragraph.maximumLineHeight = metrics.codeLineHeight
         case .paragraph:
             paragraph.minimumLineHeight = metrics.bodyLineHeight
-        case let .heading(level):
+        case .heading:
             // Discord's headings keep its 1.375 line height at their own size.
-            paragraph.minimumLineHeight = metrics.baseFontSize * 1.375 * (level == 1 ? 1.5 : level == 2 ? 1.25 : 1)
+            paragraph.minimumLineHeight = appKitFont(block: line.block, traits: [], metrics: metrics).pointSize * 1.375
         }
         // Inline code that opens a line has no preceding character to pad,
         // so the line itself starts inside the code's border.
