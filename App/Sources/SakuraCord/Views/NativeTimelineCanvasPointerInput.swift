@@ -859,12 +859,12 @@ extension NativeTimelineCanvasView {
             {
                 reveal(revealKey, rowIndex: rowIndex)
             } else if attachment.mediaKind == .video {
-                let message = row.message
                 playInline(
                     attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
                     frame: attachmentRegion.frame, rowIndex: rowIndex
                 ) { [weak self] index in
-                    guard let self, layouts.indices.contains(index),
+                    // The message as it is now: an edit may have changed its other media.
+                    guard let self, layouts.indices.contains(index), let message = items[index].messageRow?.message,
                           let region = layouts[index].attachmentRegions.first(where: { $0.attachment.id == attachment.id })
                     else { return }
                     _ = openAttachmentInViewer(region, message: message, layout: layouts[index], rowIndex: index)

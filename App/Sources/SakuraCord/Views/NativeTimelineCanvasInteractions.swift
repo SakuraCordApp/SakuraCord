@@ -522,7 +522,8 @@ extension NativeTimelineCanvasView {
                 let revealKey = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
                 if region.isVideo, !region.isSpoiler || spoilerRevealStore.isMediaRevealed(revealKey) {
                     playInline(region.displayURL, mediaID: region.componentID, frame: region.frame, rowIndex: rowIndex) { [weak self] index in
-                        guard let self, layouts.indices.contains(index) else { return }
+                        guard let self, layouts.indices.contains(index),
+                              let message = items[index].messageRow?.message else { return }
                         _ = activateComponentMedia(
                             id: region.componentID, openURL: region.openURL, isSpoiler: region.isSpoiler,
                             layout: layouts[index], message: message, rowIndex: index

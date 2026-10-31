@@ -1002,14 +1002,15 @@ extension NativeTimelineCanvasView {
     }
 
     /// The tile still showing the player's video. Signed URLs refresh their
-    /// query, so the path identifies the media.
+    /// query, so the host and path identify the media.
     private func inlinePlayerFrame(_ mediaID: String, url: URL, in layout: NativeTimelineRowLayout) -> CGRect? {
+        func isSameMedia(_ other: URL) -> Bool { other.host == url.host && other.path == url.path }
         if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
             let attachment = region.attachment
-            return attachment.mediaKind == .video && (attachment.proxyURL ?? attachment.url).path == url.path ? region.frame : nil
+            return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url) ? region.frame : nil
         }
         return layout.componentLayouts.lazy.flatMap(\.media)
-            .first { $0.componentID == mediaID && $0.isVideo && $0.displayURL.path == url.path }?.frame
+            .first { $0.componentID == mediaID && $0.isVideo && isSameMedia($0.displayURL) }?.frame
     }
 
     func removeInlinePlayers() {
