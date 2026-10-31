@@ -338,10 +338,8 @@ private struct ForwardPreviewThumbnail: View {
             }
         }
         .frame(width: InterfaceScale.metric(56), height: InterfaceScale.metric(56))
-        .spoilerCover(
-            media.isSpoiler,
-            pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: InterfaceScale.metric(56))
-        )
+        // Far too small for the pill, so the blur stands alone.
+        .spoilerCover(media.isSpoiler, pillScale: nil)
         .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             if overflowCount > 0 {

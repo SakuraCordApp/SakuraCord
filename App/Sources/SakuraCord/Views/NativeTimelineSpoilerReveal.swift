@@ -332,8 +332,7 @@ enum NativeTimelineSpoilerConcealmentPolicy {
     /// mapped to their site.
     private static func site(of url: URL) -> String? {
         guard let host = url.host()?.lowercased() else { return nil }
-        let aliases = ["youtu.be": "youtube.com"]
-        return aliases[host] ?? host.split(separator: ".").suffix(2).joined(separator: ".")
+        return host == "youtu.be" ? "youtube.com" : host.split(separator: ".").suffix(2).joined(separator: ".")
     }
 
     static func hiddenContainerFrames(
