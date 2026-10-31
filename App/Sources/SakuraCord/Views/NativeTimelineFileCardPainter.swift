@@ -1,6 +1,15 @@
 import AppKit
 import SakuraCordModels
 
+/// The pointer over a message's file cards: the hovered and pressed parts,
+/// each part's eased hover, and the press animation.
+struct FileCardPointer {
+    let hovered: NativeTimelineComponentButtonTarget?
+    let hoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
+    let pressed: NativeTimelineComponentButtonTarget?
+    let pressProgress: CGFloat
+}
+
 extension NativeTimelineRowPainter {
     /// Draws a file card in its rest, hover, pressed, downloading, finished,
     /// or failed state. The card, its button, and its link each take their
@@ -11,23 +20,26 @@ extension NativeTimelineRowPainter {
         bubbleRegion: NativeTimelineBubbleRegion?,
         state: AttachmentDownloadStore.State?,
         upload: FileCardUpload? = nil,
-        hovered: NativeTimelineComponentButtonTarget?,
-        pressed: NativeTimelineComponentButtonTarget?,
-        pressProgress: CGFloat
+        pointer: FileCardPointer
     ) {
         // A local send's file is not downloadable until it is posted, so it
         // takes no hover or press.
         let state = upload == nil ? state : nil
-        let hoveredPart = upload == nil ? card.part(of: hovered, messageID: messageID) : nil
-        let pressedPart = card.part(of: pressed, messageID: messageID)
+        let hoveredPart = upload == nil ? card.part(of: pointer.hovered, messageID: messageID) : nil
+        let pressedPart = card.part(of: pointer.pressed, messageID: messageID)
         // A press shows while the pointer stays on the part it pressed.
         func press(_ part: NativeTimelineFileCard.Part) -> CGFloat {
-            hoveredPart == part && pressedPart == part ? min(max(pressProgress, 0), 1) : 0
+            hoveredPart == part && pressedPart == part ? min(max(pointer.pressProgress, 0), 1) : 0
+        }
+        // Each part's hover eases in and out.
+        func hover(_ part: NativeTimelineFileCard.Part) -> CGFloat {
+            guard upload == nil else { return 0 }
+            return pointer.hoverProgress[.fileCard(messageID: messageID, attachmentID: card.attachment.id, part: part)] ?? 0
         }
         let bubble = card.isInBubble ? bubbleRegion : nil
         let palette = FileCardPalette(bubble: bubble, isFailed: state == .failed || upload == .failed)
         // An audio card's own button takes the hover, not the whole card.
-        let highlight = card.isAudio ? 0 : 0.04 * ((hoveredPart == nil ? 0 : 1) + press(.card))
+        let highlight = card.isAudio ? 0 : 0.04 * (min(1, hover(.card) + hover(.button) + hover(.link)) + press(.card))
         if let bubble {
             if highlight > 0 {
                 let frame = card.highlightFrame
@@ -47,17 +59,16 @@ extension NativeTimelineRowPainter {
             ).fill()
         }
         let symbol = buttonSymbol(state: state, upload: upload)
-        let isButtonHovered = hoveredPart == .button
         if card.isAudio {
             fileCardDownloadButton(
                 card, state: state, symbol: symbol, palette: palette,
-                isHovered: isButtonHovered, pressProgress: press(.button)
+                hover: hover(.button), pressProgress: press(.button)
             )
         } else {
             fileCardIcon(card)
             fileCardButton(
                 card, state: state, symbol: symbol, palette: palette,
-                isHovered: isButtonHovered, pressProgress: press(.button)
+                hover: hover(.button), pressProgress: press(.button)
             )
         }
 
@@ -97,10 +108,10 @@ extension NativeTimelineRowPainter {
         state: AttachmentDownloadStore.State?,
         symbol: String?,
         palette: FileCardPalette,
-        isHovered: Bool,
+        hover: CGFloat,
         pressProgress: CGFloat
     ) {
-        let scale = isHovered ? 1.06 - 0.12 * pressProgress : 1
+        let scale = 1 + 0.06 * hover - 0.12 * pressProgress
         let base = card.buttonFrame
         let button = base.insetBy(dx: base.width * (1 - scale) / 2, dy: base.height * (1 - scale) / 2)
         palette.button.setFill()
@@ -121,12 +132,12 @@ extension NativeTimelineRowPainter {
         state: AttachmentDownloadStore.State?,
         symbol: String?,
         palette: FileCardPalette,
-        isHovered: Bool,
+        hover: CGFloat,
         pressProgress: CGFloat
     ) {
         let chip = card.buttonFrame
-        if isHovered {
-            palette.chipHover.setFill()
+        if hover > 0 {
+            palette.chipHover.withAlphaComponent(palette.chipHover.alphaComponent * hover).setFill()
             NSBezierPath(ovalIn: chip).fill()
         }
         if pressProgress > 0 {

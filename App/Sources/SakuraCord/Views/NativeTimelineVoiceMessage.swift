@@ -211,6 +211,8 @@ struct NativeTimelineVoiceMessageDrawState {
     /// Reduce Motion keeps progress moving but stills the waveform ripple.
     var reducesMotion = false
     var isPlayHovered = false
+    /// How far the play button's hover has eased in, while it eases.
+    var playHover: CGFloat?
     var isSpeedHovered = false
     /// An audio file's length, once known.
     var duration: TimeInterval?
@@ -335,7 +337,7 @@ enum NativeTimelineVoiceMessagePainter {
         context: CGContext
     ) {
         let frame = region.playFrame
-        let scale: CGFloat = state.isPlayHovered ? 1.06 : 1
+        let scale = 1 + 0.06 * (state.playHover ?? (state.isPlayHovered ? 1 : 0))
         let button = frame.insetBy(dx: frame.width * (1 - scale) / 2, dy: frame.height * (1 - scale) / 2)
         context.setFillColor(palette.buttonFill.cgColor)
         context.fillEllipse(in: button)
@@ -503,7 +505,36 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
                 pauseMorph = (from: pauseAmount(at: ProcessInfo.processInfo.systemUptime, isPlaying: oldValue.isPlaying),
                               start: ProcessInfo.processInfo.systemUptime)
             }
+            if state.isPlayHovered != oldValue.isPlayHovered, !state.reducesMotion {
+                let now = ProcessInfo.processInfo.systemUptime
+                let current = playHoverFade?.progress(at: now) ?? (oldValue.isPlayHovered ? 1 : 0)
+                playHoverFade = .init(from: current, to: state.isPlayHovered ? 1 : 0, start: now)
+            }
         }
+    }
+
+    /// The play button's hover easing in or out, as file card buttons' do.
+    private var playHoverFade: NativeTimelineHoverFade?
+    /// Removes a hover overlay once its play button has eased back.
+    private var removalAfterHover: (() -> Void)?
+
+    /// Eases the hovered play button back before the overlay goes; false
+    /// when there is nothing to ease.
+    func easeOutHover(then remove: @escaping () -> Void) -> Bool {
+        guard state.isPlayHovered || playHoverFade != nil, !state.reducesMotion else { return false }
+        var resting = state
+        resting.isPlayHovered = false
+        resting.isSpeedHovered = false
+        resting.hoverFraction = nil
+        state = resting
+        removalAfterHover = remove
+        updateAnimation()
+        return true
+    }
+
+    /// Keeps the overlay when the pointer returns while it eases out.
+    func cancelHoverEaseOut() {
+        removalAfterHover = nil
     }
 
     /// Play and pause morph into each other over this long.
@@ -542,6 +573,10 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         layer?.addSublayer(spinner)
         layoutSpinner()
         updateSpinner()
+        // An overlay made for a hovered play button eases its hover in too.
+        if state.isPlayHovered, !state.reducesMotion {
+            playHoverFade = .init(from: 0, to: 1, start: ProcessInfo.processInfo.systemUptime)
+        }
     }
 
     private func layoutSpinner() {
@@ -599,7 +634,8 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
 
     /// Runs a display link only while something moves.
     func updateAnimation() {
-        let animates = window != nil && (state.isPlaying || state.isLoading || state.isFetching || pauseMorph != nil)
+        let animates = window != nil
+            && (state.isPlaying || state.isLoading || state.isFetching || pauseMorph != nil || playHoverFade != nil)
         if animates, ticker.displayLink == nil {
             ticker.start(on: self) { [weak self] in self?.tick() }
         } else if !animates, ticker.displayLink != nil {
@@ -616,6 +652,12 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
             self.pauseMorph = nil
             updateAnimation()
         }
+        if let playHoverFade, playHoverFade.isSettled(at: now) {
+            self.playHoverFade = nil
+            updateAnimation()
+            removalAfterHover?()
+            removalAfterHover = nil
+        }
     }
 
     func stop() {
@@ -631,6 +673,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         if pauseMorph != nil {
             state.pauseMorph = pauseAmount(at: ProcessInfo.processInfo.systemUptime, isPlaying: state.isPlaying)
         }
+        state.playHover = playHoverFade?.progress(at: ProcessInfo.processInfo.systemUptime)
         NativeTimelineVoiceMessagePainter.drawContent(region, state: state)
         context.restoreGState()
     }
@@ -860,9 +903,16 @@ extension NativeTimelineCanvasView {
         if let playback = model?.voiceMessagePlayback { voiceMessageActiveID = playback.activeID }
         let hoveredAudioFile = hoveredVoiceMessage.flatMap { $0.playbackID.isAudioFile ? $0.playbackID : nil }
         placeVoiceMessageOverlay(&voiceMessageOverlay, for: voiceMessageActiveID)
-        placeVoiceMessageOverlay(
-            &voiceMessageHoverOverlay, for: hoveredAudioFile == voiceMessageActiveID ? nil : hoveredAudioFile
-        )
+        let hoverTarget = hoveredAudioFile == voiceMessageActiveID ? nil : hoveredAudioFile
+        // A hovered play button eases back before its overlay goes.
+        if hoverTarget == nil, let overlay = voiceMessageHoverOverlay,
+           overlay.easeOutHover(then: { [weak self, weak overlay] in
+               guard let self, voiceMessageHoverOverlay === overlay else { return }
+               Self.remove(&voiceMessageHoverOverlay)
+           }) {
+            return
+        }
+        placeVoiceMessageOverlay(&voiceMessageHoverOverlay, for: hoverTarget)
     }
 
     private func placeVoiceMessageOverlay(
@@ -886,6 +936,7 @@ extension NativeTimelineCanvasView {
         let frame = found.region.frame.offsetBy(dx: 0, dy: found.origin)
         let state = voiceMessageDrawState(for: found.region, playback: playback)
         if let overlay {
+            overlay.cancelHoverEaseOut()
             overlay.region = found.region
             overlay.frame = frame
             overlay.state = state

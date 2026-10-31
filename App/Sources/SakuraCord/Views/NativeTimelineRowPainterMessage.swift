@@ -24,6 +24,8 @@ struct NativeTimelineMessageDrawInput {
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
+    /// How far each file card part's hover has eased in.
+    let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
     let isForwardedSourceHovered: Bool
     let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
@@ -510,9 +512,10 @@ extension NativeTimelineRowPainter {
                     bubbleRegion: layout.bubbleRegion,
                     state: input.model?.attachmentDownloads.states[attachment.id],
                     upload: uploadState(of: attachment, in: input),
-                    hovered: input.hoveredComponentButton,
-                    pressed: input.pressedComponentButton,
-                    pressProgress: input.componentButtonPressProgress
+                    pointer: .init(
+                        hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                        pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                    )
                 )
                 if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
                     NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)
@@ -684,6 +687,7 @@ extension NativeTimelineRowPainter {
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,
+                fileCardHoverProgress: input.fileCardHoverProgress,
                 animatedOverlayRoles: input.animatedOverlayRoles
             ))
         }

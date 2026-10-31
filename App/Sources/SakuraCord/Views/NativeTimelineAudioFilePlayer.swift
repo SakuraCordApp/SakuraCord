@@ -14,7 +14,9 @@ extension NativeTimelineVoiceMessagePainter {
         // A hover overlay above a resting player adds only what the pointer
         // changes; the opaque play button covers the row's own.
         if state.isResting {
-            if state.isPlayHovered { drawPlayButton(region, state: state, palette: palette, context: context) }
+            if state.isPlayHovered || state.playHover != nil {
+                drawPlayButton(region, state: state, palette: palette, context: context)
+            }
             if state.isSpeedHovered {
                 drawMuteChip(region, isHovered: true, palette: palette, isMuted: state.isMuted, context: context)
             }

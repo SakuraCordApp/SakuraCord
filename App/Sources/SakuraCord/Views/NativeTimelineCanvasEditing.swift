@@ -106,6 +106,42 @@ extension NativeTimelineCanvasView {
         for target in [old, value].compactMap({ $0 }) {
             invalidateComponentButton(target)
         }
+        if let old { fadeFileCardHover(old, isHovered: false) }
+        if let value { fadeFileCardHover(value, isHovered: true) }
+    }
+
+    /// Eases a file card part's hover in or out from wherever it is, so the
+    /// pointer moving between parts or leaving the card never snaps.
+    private func fadeFileCardHover(_ target: NativeTimelineComponentButtonTarget, isHovered: Bool) {
+        guard target.componentID.hasPrefix("file:") else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let current = componentButtonHoverFades[target]?.progress(at: now) ?? 0
+        // Reduce Motion lands at once.
+        let start = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? now - NativeTimelineComponentButtonVisualState.hoverAnimationDuration : now
+        componentButtonHoverFades[target] = .init(from: current, to: isHovered ? 1 : 0, start: start)
+        guard componentButtonHoverAnimationTask == nil else { return }
+        componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
+            while let self, !Task.isCancelled {
+                let now = ProcessInfo.processInfo.systemUptime
+                for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
+                // A faded-out part is forgotten; a hovered one holds.
+                componentButtonHoverFades = componentButtonHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
+                guard componentButtonHoverFades.values.contains(where: { !$0.isSettled(at: now) }) else {
+                    componentButtonHoverAnimationTask = nil
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+        }
+    }
+
+    /// The file card parts' hover in a message at this moment.
+    func fileCardHoverProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
+        let now = ProcessInfo.processInfo.systemUptime
+        return componentButtonHoverFades.reduce(into: [:]) { result, fade in
+            if fade.key.messageID == messageID { result[fade.key] = fade.value.progress(at: now) }
+        }
     }
 
     func setHoveredForwardedSourceMessageID(_ value: MessageID?) {

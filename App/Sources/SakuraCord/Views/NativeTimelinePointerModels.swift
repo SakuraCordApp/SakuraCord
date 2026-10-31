@@ -57,6 +57,7 @@ nonisolated struct NativeTimelineComponentSelectTarget: Hashable {
 
 nonisolated enum NativeTimelineComponentButtonVisualState {
     static let pressAnimationDuration: TimeInterval = 0.09
+    static let hoverAnimationDuration: TimeInterval = 0.15
 
     static func scale(pressProgress: CGFloat) -> CGFloat {
         1 - 0.015 * min(max(pressProgress, 0), 1)
@@ -82,6 +83,23 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
     static func easeOut(_ progress: CGFloat) -> CGFloat {
         let progress = min(max(progress, 0), 1)
         return 1 - pow(1 - progress, 3)
+    }
+}
+
+/// A file card part's hover easing in or out from wherever it was, with the
+/// press animation's curve.
+nonisolated struct NativeTimelineHoverFade {
+    let from: CGFloat
+    let to: CGFloat
+    let start: TimeInterval
+
+    func progress(at time: TimeInterval) -> CGFloat {
+        let elapsed = (time - start) / NativeTimelineComponentButtonVisualState.hoverAnimationDuration
+        return from + (to - from) * NativeTimelineComponentButtonVisualState.easeOut(elapsed)
+    }
+
+    func isSettled(at time: TimeInterval) -> Bool {
+        time - start >= NativeTimelineComponentButtonVisualState.hoverAnimationDuration
     }
 }
 
