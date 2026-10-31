@@ -228,11 +228,18 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         store: NativeTimelineSpoilerRevealStore
     ) -> [String: NativeTimelineComponentRevealKey] {
         guard !message.embeds.isEmpty, message.content.contains("||") else { return [:] }
-        let spoileredURLs = Set(DiscordMarkdown.linkOccurrences(message.content).filter(\.isSpoiler).map(\.url))
+        let links = DiscordMarkdown.linkOccurrences(message.content)
+        let spoileredURLs = Set(links.filter(\.isSpoiler).map(\.url))
+        let hasVisibleLinks = links.contains { !$0.isSpoiler }
         var result: [String: NativeTimelineComponentRevealKey] = [:]
         var occurrences: [URL: Int] = [:]
         for embed in message.embeds {
-            guard let url = embed.url, spoileredURLs.contains(url) else { continue }
+            // A link preview can carry its page's canonical address rather
+            // than the link as written, as youtu.be does. When every link is
+            // spoilered, every preview belongs to one of them.
+            guard let url = embed.url, !spoileredURLs.isEmpty,
+                  spoileredURLs.contains(url) || (embed.type != "rich" && !hasVisibleLinks)
+            else { continue }
             // One link can carry several cards, such as a post's images.
             let key = NativeTimelineComponentRevealKey.embed(
                 messageID: message.id, url: url, occurrence: occurrences[url, default: 0]
