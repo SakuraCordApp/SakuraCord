@@ -139,9 +139,10 @@ extension NativeTimelineCanvasView {
                 // Work that holds the main thread, such as saving a finished
                 // download, pauses the fades still running instead of skipping
                 // them, each from the later of the stall's start and its own.
+                // Under Reduce Motion every fade lands at once.
                 let stallStart = previous + 1.0 / 30
                 previous = now
-                if now > stallStart {
+                if now > stallStart, AppMotionPolicy.animatesUncategorized {
                     let resume = { (fade: NativeTimelineHoverFade) in
                         fade.isSettled(at: stallStart) ? fade : fade.delayed(by: now - max(stallStart, fade.start))
                     }
