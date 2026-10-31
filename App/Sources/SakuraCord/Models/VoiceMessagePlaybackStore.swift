@@ -29,7 +29,7 @@ nonisolated enum VoiceMessagePlaybackID: Hashable, Sendable {
 ///
 /// Like Discord, one voice message or audio file plays at a time; starting
 /// another pauses the first. Speed is device-local and shared by every voice
-/// message player; audio files play at normal speed and can be muted.
+/// message player; audio files play at normal speed, at the media viewer's volume.
 @MainActor
 @Observable
 final class VoiceMessagePlaybackStore {
@@ -65,10 +65,6 @@ final class VoiceMessagePlaybackStore {
     private(set) var activeID: VoiceMessagePlaybackID?
     private(set) var phase: Phase = .paused
     private(set) var speed: Float {
-        didSet { applyOutput() }
-    }
-    /// Discord's audio file mute, which voice messages ignore.
-    private(set) var isAudioFileMuted = false {
         didSet { applyOutput() }
     }
     /// The media viewer's audio file volume, 0–1, which voice messages ignore.
@@ -201,14 +197,8 @@ final class VoiceMessagePlaybackStore {
         play()
     }
 
-    func toggleAudioFileMute() {
-        isAudioFileMuted.toggle()
-        notify()
-    }
-
     func setAudioFileVolume(_ volume: Float) {
         audioFileVolume = min(max(volume, 0), 1)
-        if audioFileVolume > 0 { isAudioFileMuted = false }
         notify()
     }
 
@@ -349,11 +339,11 @@ final class VoiceMessagePlaybackStore {
     }
 
     /// Voice messages take the chosen speed; audio files play at normal
-    /// speed and follow the mute.
+    /// speed, at the viewer's volume.
     private func applyOutput() {
         let isAudioFile = activeID?.isAudioFile == true
         player?.rate = isAudioFile ? 1 : speed
-        player?.volume = isAudioFile ? (isAudioFileMuted ? 0 : audioFileVolume) : 1
+        player?.volume = isAudioFile ? audioFileVolume : 1
     }
 
     private func pause() {
@@ -485,8 +475,8 @@ final class VoiceMessagePlaybackStore {
 }
 
 private extension VoiceMessagePlaybackStore {
-    /// The length of an audio file from its header; a remote file is read
-    /// only as far as AVFoundation needs.
+    /// The length of an audio file from its header; a remote file not yet
+    /// cached is read only as far as AVFoundation needs.
     static func measuredDuration(
         of source: Source,
         resolve: (@MainActor (URL) async -> URL)?
@@ -498,7 +488,13 @@ private extension VoiceMessagePlaybackStore {
                 return Double(file.length) / file.processingFormat.sampleRate
             }.value
         case let .remote(url):
-            let duration = try await AVURLAsset(url: await resolve?(url) ?? url).load(.duration).seconds
+            let resolved = await resolve?(url) ?? url
+            // A file played before is read from the media cache, not fetched.
+            if let file = await SharedMediaDataLoader.shared.storedFile(for: resolved),
+               let duration = try? await measuredDuration(of: .local(file), resolve: nil) {
+                return duration
+            }
+            let duration = try await AVURLAsset(url: resolved).load(.duration).seconds
             guard duration.isFinite, duration > 0 else { throw CocoaError(.fileReadCorruptFile) }
             return duration
         }

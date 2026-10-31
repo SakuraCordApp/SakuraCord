@@ -1,14 +1,12 @@
 import SwiftUI
 
-/// An audio file in the media viewer: a player card with the file's name and
-/// size, a seek bar that names the time under the pointer, and transport,
-/// volume, and download controls. It plays through the app's voice message
-/// and audio file playback, so a message's file keeps one position with its
-/// timeline card.
+/// An audio file in the media viewer: the file's icon, name, and size over a
+/// seek bar, skip and Liquid Glass play buttons, and volume. It plays through
+/// the app's voice message and audio file playback, so a message's file
+/// keeps one position with its timeline card.
 struct MediaViewerAudio: View {
     let item: RichMediaItem
     let playbackID: VoiceMessagePlaybackID
-    let download: () -> Void
     @Environment(VoiceMessagePlaybackStore.self) private var playback
     /// Follows the playback's change notifications, which also cover what
     /// it keeps out of Observation, such as a newly learned length.
@@ -26,16 +24,21 @@ struct MediaViewerAudio: View {
     private var isPlaying: Bool { playback.phase(of: playbackID) == .playing }
 
     var body: some View {
-        VStack(spacing: InterfaceScale.metric(18)) {
-            MediaViewerAudioArtwork(isPlaying: isPlaying)
-            VStack(spacing: InterfaceScale.metric(3)) {
-                Text(item.title)
-                    .font(.interface(.title3).weight(.semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(MediaViewerDetails.fileDetail(item))
-                    .font(.interface(.callout).monospacedDigit())
-                    .foregroundStyle(.secondary)
+        VStack(spacing: InterfaceScale.metric(24)) {
+            VStack(spacing: InterfaceScale.metric(14)) {
+                Image(nsImage: MediaViewerFile.icon(for: item))
+                    .resizable()
+                    .frame(width: InterfaceScale.metric(128), height: InterfaceScale.metric(128))
+                    .accessibilityHidden(true)
+                VStack(spacing: InterfaceScale.metric(4)) {
+                    Text(item.title)
+                        .font(.interface(.title2).weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(MediaViewerDetails.fileDetail(item))
+                        .font(.interface(.body).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
             MediaViewerAudioSeekBar(
                 duration: duration ?? 0,
@@ -45,10 +48,18 @@ struct MediaViewerAudio: View {
                 seek: { playback.seek(playbackID, source: source, duration: duration, fraction: $0) },
                 endScrub: { playback.endScrub(playbackID) }
             )
-            transport
+            HStack(spacing: InterfaceScale.metric(28)) {
+                skipButton(by: -10)
+                playButton
+                skipButton(by: 10)
+            }
+            MediaViewerAudioVolume()
         }
-        .padding(InterfaceScale.metric(26))
-        .frame(width: InterfaceScale.metric(460))
+        .padding(InterfaceScale.metric(36))
+        // The file icon's artwork sits inside its frame; this evens the
+        // space above it with the space below the volume.
+        .padding(.bottom, InterfaceScale.metric(10))
+        .frame(width: InterfaceScale.metric(540))
         .glassEffect(.regular, in: .rect(cornerRadius: MediaViewerStage.contentCornerRadius))
         .onAppear { playback.measureDuration(of: source) }
         .onReceive(NotificationCenter.default.publisher(for: VoiceMessagePlaybackStore.didChange, object: playback)) { _ in
@@ -62,76 +73,57 @@ struct MediaViewerAudio: View {
         }
     }
 
-    private var transport: some View {
-        HStack(spacing: 0) {
-            MediaViewerAudioVolume()
-                .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: InterfaceScale.metric(14)) {
-                skipButton(by: -15)
-                Button {
-                    playback.toggle(playbackID, source: source, duration: duration)
-                } label: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .contentTransition(.symbolEffect(.replace.offUp))
-                        .font(.interfaceSystem(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: InterfaceScale.metric(56), height: InterfaceScale.metric(56))
-                        .background(SakuraCordAccentColor.color, in: Circle())
-                }
-                .buttonStyle(MediaViewerAudioPressStyle(hoverScale: 1.05))
-                .keyboardShortcut(.space, modifiers: [])
-                .help(isPlaying ? "Pause" : "Play")
-                .accessibilityLabel(isPlaying ? "Pause" : "Play")
-                skipButton(by: 15)
-            }
-            Button(action: download) {
-                HoverActionControlLabel(diameter: InterfaceScale.metric(34)) {
-                    Image(systemName: "arrow.down.to.line")
-                        .font(.interface(.body).weight(.medium))
-                }
-            }
-            .buttonStyle(MediaViewerAudioPressStyle())
-            .help("Download")
-            .accessibilityLabel("Download \(item.title)")
-            .frame(maxWidth: .infinity, alignment: .trailing)
+    private var playButton: some View {
+        Button {
+            playback.toggle(playbackID, source: source, duration: duration)
+        } label: {
+            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                .contentTransition(.symbolEffect(.replace))
+                .font(.interfaceSystem(size: 30, weight: .semibold))
+                .frame(width: InterfaceScale.metric(60), height: InterfaceScale.metric(60))
         }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.circle)
+        .tint(SakuraCordAccentColor.color)
+        .keyboardShortcut(.space, modifiers: [])
+        .help(isPlaying ? "Pause" : "Play")
+        .accessibilityLabel(isPlaying ? "Pause" : "Play")
     }
 
     private func skipButton(by seconds: Double) -> some View {
-        Button {
+        MediaViewerAudioSkipButton(seconds: seconds) {
             guard let duration, duration > 0 else { return }
             let position = playback.position(of: playbackID) + seconds
             playback.seek(playbackID, source: source, duration: duration, fraction: position / duration)
-        } label: {
-            HoverActionControlLabel(diameter: InterfaceScale.metric(38)) {
-                Image(systemName: seconds < 0 ? "gobackward.15" : "goforward.15")
-                    .font(.interface(.title3).weight(.medium))
-            }
         }
-        .buttonStyle(MediaViewerAudioPressStyle())
         .disabled(duration == nil)
-        .help(seconds < 0 ? "Back 15 Seconds" : "Forward 15 Seconds")
     }
 }
 
-/// A rounded tile in the accent colour whose waveform ripples while the
-/// file plays.
-private struct MediaViewerAudioArtwork: View {
-    let isPlaying: Bool
+/// Skips by ten seconds, its arrow turning the way it skips.
+private struct MediaViewerAudioSkipButton: View {
+    let seconds: Double
+    let action: () -> Void
+    @State private var skips = 0
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: InterfaceScale.metric(22), style: .continuous)
-        Image(systemName: "waveform")
-            .font(.interfaceSystem(size: 46, weight: .semibold))
-            .symbolEffect(.variableColor.iterative.dimInactiveLayers.nonReversing, isActive: isPlaying)
-            .foregroundStyle(.white)
-            .frame(width: InterfaceScale.metric(112), height: InterfaceScale.metric(112))
-            .background(SakuraCordAccentColor.color.gradient, in: shape)
-            .overlay(shape.strokeBorder(.white.opacity(0.14)))
-            .shadow(color: SakuraCordAccentColor.color.opacity(isPlaying ? 0.45 : 0.25), radius: InterfaceScale.metric(18), y: 6)
-            .scaleEffect(isPlaying ? 1 : 0.94)
-            .animation(.snappy(duration: 0.3), value: isPlaying)
-            .accessibilityHidden(true)
+        Button {
+            skips += 1
+            action()
+        } label: {
+            HoverActionControlLabel(diameter: InterfaceScale.metric(52)) {
+                Image(systemName: seconds < 0 ? "gobackward.10" : "goforward.10")
+                    .font(.interfaceSystem(size: 26, weight: .medium))
+                    .symbolEffect(
+                        seconds < 0 ? .rotate.byLayer.counterClockwise : .rotate.byLayer.clockwise,
+                        options: .speed(1.6),
+                        value: skips
+                    )
+            }
+        }
+        .buttonStyle(MediaViewerAudioPressStyle())
+        .help(seconds < 0 ? "Back 10 Seconds" : "Forward 10 Seconds")
+        .accessibilityLabel(seconds < 0 ? "Back 10 Seconds" : "Forward 10 Seconds")
     }
 }
 
@@ -157,7 +149,7 @@ private struct MediaViewerAudioSeekBar: View {
                     Spacer()
                     Text("-" + Self.time(duration - fraction * duration))
                 }
-                .font(.interface(.caption).monospacedDigit().weight(.medium))
+                .font(.interface(.callout).monospacedDigit().weight(.medium))
                 .foregroundStyle(.secondary)
             }
         }
@@ -167,7 +159,7 @@ private struct MediaViewerAudioSeekBar: View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let isActive = hoverX != nil || scrubFraction != nil
-            let height = InterfaceScale.metric(isActive ? 8 : 5)
+            let height = InterfaceScale.metric(isActive ? 10 : 6)
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.16))
                 if let hoverX, scrubFraction == nil {
@@ -180,8 +172,8 @@ private struct MediaViewerAudioSeekBar: View {
                 Circle()
                     .fill(.white)
                     .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                    .frame(width: InterfaceScale.metric(14), height: InterfaceScale.metric(14))
-                    .offset(x: width * fraction - InterfaceScale.metric(7))
+                    .frame(width: InterfaceScale.metric(16), height: InterfaceScale.metric(16))
+                    .offset(x: width * fraction - InterfaceScale.metric(8))
                     .scaleEffect(isActive ? 1 : 0.3)
                     .opacity(isActive ? 1 : 0)
             }
@@ -194,7 +186,7 @@ private struct MediaViewerAudioSeekBar: View {
                         .padding(.vertical, InterfaceScale.metric(3))
                         .background(SakuraCordAccentColor.color, in: Capsule())
                         .fixedSize()
-                        .position(x: pointer, y: -InterfaceScale.metric(16))
+                        .position(x: pointer, y: -InterfaceScale.metric(18))
                         .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .bottom)))
                         .allowsHitTesting(false)
                 }
@@ -220,7 +212,7 @@ private struct MediaViewerAudioSeekBar: View {
                     }
             )
         }
-        .frame(height: InterfaceScale.metric(18))
+        .frame(height: InterfaceScale.metric(20))
         .disabled(duration <= 0)
         .accessibilityElement()
         .accessibilityLabel("Playback position")
@@ -236,48 +228,34 @@ private struct MediaViewerAudioSeekBar: View {
     }
 }
 
-/// Mute, shared with the timeline's audio files, and a volume slider.
+/// The audio file volume, between quiet and loud speakers.
 private struct MediaViewerAudioVolume: View {
     @Environment(VoiceMessagePlaybackStore.self) private var playback
 
     var body: some View {
-        let isMuted = playback.isAudioFileMuted
-        HStack(spacing: InterfaceScale.metric(4)) {
-            Button(action: playback.toggleAudioFileMute) {
-                HoverActionControlLabel(diameter: InterfaceScale.metric(34)) {
-                    Image(systemName: "speaker.wave.3.fill", variableValue: isMuted ? 0 : Double(playback.audioFileVolume))
-                        .symbolVariant(isMuted ? .slash : .none)
-                        .contentTransition(.symbolEffect(.replace))
-                        .font(.interface(.body).weight(.medium))
-                        .frame(width: InterfaceScale.metric(22))
-                }
-            }
-            .buttonStyle(MediaViewerAudioPressStyle())
-            .help(isMuted ? "Unmute" : "Mute")
-            .accessibilityLabel(isMuted ? "Unmute" : "Mute")
-            Slider(
-                value: Binding(get: { playback.audioFileVolume }, set: playback.setAudioFileVolume),
-                in: 0 ... 1
-            )
-            .controlSize(.small)
-            .tint(SakuraCordAccentColor.color)
-            .frame(width: InterfaceScale.metric(64))
-            .accessibilityLabel("Volume")
+        Slider(
+            value: Binding(get: { playback.audioFileVolume }, set: playback.setAudioFileVolume),
+            in: 0 ... 1
+        ) {
+            Text("Volume")
+        } minimumValueLabel: {
+            Image(systemName: "speaker.fill")
+        } maximumValueLabel: {
+            Image(systemName: "speaker.wave.3.fill")
         }
+        .labelsHidden()
+        .font(.interface(.body))
+        .foregroundStyle(.secondary)
+        .tint(SakuraCordAccentColor.color)
+        .frame(width: InterfaceScale.metric(260))
     }
 }
 
-/// Grows a little under the pointer and dips while pressed.
+/// Dips while pressed.
 private struct MediaViewerAudioPressStyle: ButtonStyle {
-    var hoverScale: CGFloat = 1
-    @State private var isHovering = false
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : isHovering ? hoverScale : 1)
-            .brightness(configuration.isPressed ? -0.06 : 0)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(.snappy(duration: 0.16), value: configuration.isPressed)
-            .animation(.snappy(duration: 0.2), value: isHovering)
-            .onHover { isHovering = $0 }
     }
 }
