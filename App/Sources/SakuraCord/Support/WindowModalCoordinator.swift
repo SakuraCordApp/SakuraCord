@@ -71,6 +71,13 @@ final class WindowModalCoordinator {
         reorderHosts()
     }
 
+    /// Adds a window-wide overlay that belongs to the workspace, such as a
+    /// send transition, beneath any open modal.
+    func addBelowModals(_ view: NSView, to container: NSView) {
+        let lowest = entries.lazy.compactMap(\.host).first { $0.superview === container }
+        container.addSubview(view, positioned: lowest == nil ? .above : .below, relativeTo: lowest)
+    }
+
     func unregisterAccessory(_ view: NSView) {
         for entry in entries { entry.accessories.remove(view) }
     }
