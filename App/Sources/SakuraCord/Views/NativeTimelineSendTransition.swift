@@ -182,9 +182,9 @@ enum NativeTimelineSendTransitionTiming {
     /// media follows a beat behind and lands below.
     static let mediaStagger: CFTimeInterval = 0.06
     /// Where the paths cross, the text would run over the media, so the
-    /// composer's text leaves with the field and the message's appears only
-    /// once the media has passed it.
-    static let textAfterCrossingDelay: CFTimeInterval = 0.25
+    /// composer's text leaves with the field and the message's fades in
+    /// once the media has landed.
+    static let textAfterCrossingFadeDuration: CFTimeInterval = 0.12
     /// How long a landed bubble may wait for its row's media to decode, so
     /// the hand-off never shows a loading placeholder.
     static let mediaWaitLimit: TimeInterval = 0.6
@@ -551,10 +551,11 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         // hide the swap the two cross-fade over a little longer.
         let crossFade = geometry.bubble == nil ? Timing.plainTextCrossFadeDuration : nil
         let crossesMedia = mediaDelay > 0
-        fadeIn(
-            finalContentLayer, duration: crossFade ?? Timing.contentFadeDuration,
-            delay: crossesMedia ? Timing.textAfterCrossingDelay : 0
-        )
+        if crossesMedia {
+            fadeIn(finalContentLayer, duration: Timing.textAfterCrossingFadeDuration, delay: mediaDelay + Timing.duration)
+        } else {
+            fadeIn(finalContentLayer, duration: crossFade ?? Timing.contentFadeDuration)
+        }
         if let heldTextFrame {
             sourceTextLayer.frame = heldTextFrame.offsetBy(
                 dx: -geometry.sourceAnchor.x,
@@ -690,6 +691,13 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     var mediaDelay: CFTimeInterval {
         heldTextFrame != nil && !pieceLayers.isEmpty
             ? NativeTimelineSendTransitionTiming.mediaStagger : 0
+    }
+
+    /// How long the flight lasts: until its media lands and, when the text
+    /// waited for it, the text has faded in.
+    var flightDuration: CFTimeInterval {
+        typealias Timing = NativeTimelineSendTransitionTiming
+        return Timing.duration + mediaDelay + (mediaDelay > 0 ? Timing.textAfterCrossingFadeDuration : 0)
     }
 
     /// Replaces the bubble's content after its media finishes loading.
@@ -891,8 +899,7 @@ extension NativeTimelineCanvasView {
             overlay: pending.overlay,
             omittedAttachments: Set(geometry.pieces.filter { !$0.fadesOut }.map(\.index)),
             bubbleFrameInWindow: bubbleInWindow,
-            endUptime: CACurrentMediaTime() + NativeTimelineSendTransitionTiming.duration
-                + pending.overlay.mediaDelay
+            endUptime: CACurrentMediaTime() + pending.overlay.flightDuration
         )
         // Earlier sends keep flying; each hides only its own row.
         sendTransitions.append(transition)
