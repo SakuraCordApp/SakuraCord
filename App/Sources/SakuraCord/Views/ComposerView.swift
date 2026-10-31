@@ -551,6 +551,10 @@ struct ComposerView: View {
                 await model.loadEmojis(for: guild.id)
             }
         }
+        .onChange(of: timeMentionContext?.query) { _, _ in
+            timeReferenceDate = Date.now
+            timeTickerDate = Date.now
+        }
         .task(id: timeMentionContext != nil) {
             guard timeMentionContext != nil else {
                 timeReferenceDate = nil
@@ -619,21 +623,18 @@ struct ComposerView: View {
                     .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
             }
         } else if let context = timeMentionContext {
-            VStack(spacing: 0) {
-                TimeFormatsAutocompleteList(
-                    heading: context.query.isEmpty ? "Time formats" : "Time formats for \(context.query.lowercased())",
-                    candidates: timeCandidates,
-                    selectedIndex: autocompleteIndex,
-                    highlight: { autocompleteIndex = $0 },
-                    select: { option in
-                        acceptTimeFormat(option, context: context)
-                    },
-                    cornerRadius: commandPanelCornerRadius,
-                    keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
-                )
-                TimeMentionHelpStrip(cancel: { cancelTimeMention(context: context) })
-                    .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
-            }
+            TimeFormatsAutocompleteList(
+                heading: context.query.isEmpty ? "Time formats" : "Time formats for \(context.query.lowercased())",
+                candidates: timeCandidates,
+                selectedIndex: autocompleteIndex,
+                highlight: { autocompleteIndex = $0 },
+                select: { option in
+                    acceptTimeFormat(option, context: context)
+                },
+                cancel: { cancelTimeMention(context: context) },
+                cornerRadius: commandPanelCornerRadius,
+                keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
+            )
         } else if let context = mentionAutocompleteContext {
             let suggestions = mentionAutocompleteSuggestions(for: context)
             if !suggestions.isEmpty {

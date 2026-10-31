@@ -21,6 +21,8 @@ nonisolated struct NativeTimelineMentionHover: Equatable {
     let characterIndex: Int
     let rawToken: String
     var toolTip: String?
+    var isTimestamp: Bool = false
+    var frame: CGRect = .zero
 }
 
 nonisolated struct NativeTimelineTextLinkHover: Equatable {

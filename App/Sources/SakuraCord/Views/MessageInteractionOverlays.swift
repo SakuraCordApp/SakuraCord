@@ -1080,3 +1080,17 @@ struct MessageProfilePopoverContent: View {
         }
     }
 }
+
+struct TimestampMentionTooltip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.interfaceSystem(size: 13, weight: .medium))
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, InterfaceScale.metric(12))
+            .padding(.vertical, InterfaceScale.metric(8))
+            .fixedSize()
+            .interfaceScaleRoot()
+    }
+}

@@ -20,7 +20,8 @@ private struct FlattenedOption: Identifiable {
     let option: DiscordParsedTimeCandidate.Option
     let hasDividerBefore: Bool
 
-    var id: String { option.id }
+    var id: String { "\(option.id):\(option.displayText)" }
+    var optionID: String { option.id }
 }
 
 struct TimeFormatsAutocompleteList: View {
@@ -29,6 +30,7 @@ struct TimeFormatsAutocompleteList: View {
     let selectedIndex: Int
     let highlight: (Int) -> Void
     let select: (DiscordParsedTimeCandidate.Option) -> Void
+    var cancel: (() -> Void)?
     var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius
     var keyboardSelectionRevision: Int = 0
 
@@ -49,36 +51,43 @@ struct TimeFormatsAutocompleteList: View {
         let options = allFlattenedOptions
         let selectedID = options.indices.contains(selectedIndex) ? options[selectedIndex].id : nil
         ComposerAutocompletePanel(heading: heading.uppercased(), cornerRadius: cornerRadius) {
-            ComposerSuggestionList(
-                rows: options,
-                selectedID: selectedID,
-                keyboardSelectionRevision: keyboardSelectionRevision,
-                maximumHeight: InterfaceScale.metric(360),
-                rowHeight: { item in
-                    item.hasDividerBefore ? InterfaceScale.metric(46) : InterfaceScale.metric(36)
-                },
-                highlight: { item in
-                    if item.index != selectedIndex { highlight(item.index) }
-                },
-                activate: { item in
-                    select(item.option)
-                },
-                content: { item in
-                    VStack(spacing: 0) {
-                        if item.hasDividerBefore {
-                            Divider()
-                                .padding(.horizontal, InterfaceScale.metric(8))
-                                .frame(height: InterfaceScale.metric(10))
+            VStack(spacing: 0) {
+                ComposerSuggestionList(
+                    rows: options,
+                    selectedID: selectedID,
+                    keyboardSelectionRevision: keyboardSelectionRevision,
+                    maximumHeight: InterfaceScale.metric(360),
+                    rowHeight: { item in
+                        item.hasDividerBefore ? InterfaceScale.metric(46) : InterfaceScale.metric(36)
+                    },
+                    highlight: { item in
+                        if item.index != selectedIndex { highlight(item.index) }
+                    },
+                    activate: { item in
+                        select(item.option)
+                    },
+                    content: { item in
+                        VStack(spacing: 0) {
+                            if item.hasDividerBefore {
+                                Divider()
+                                    .padding(.horizontal, InterfaceScale.metric(8))
+                                    .frame(height: InterfaceScale.metric(10))
+                            }
+                            TimeFormatAutocompleteRow(
+                                item: item,
+                                isSelected: options.indices.contains(selectedIndex) && options[selectedIndex].optionID == item.optionID,
+                                select: { select(item.option) },
+                                cornerRadius: max(0, cornerRadius - 6)
+                            )
                         }
-                        TimeFormatAutocompleteRow(
-                            item: item,
-                            isSelected: options.indices.contains(selectedIndex) && options[selectedIndex].id == item.id,
-                            select: { select(item.option) },
-                            cornerRadius: max(0, cornerRadius - 6)
-                        )
                     }
-                }
-            )
+                )
+
+                Divider()
+                    .padding(.horizontal, InterfaceScale.metric(8))
+
+                TimeMentionHelpStrip(cancel: cancel)
+            }
         }
     }
 }
@@ -122,7 +131,7 @@ private struct TimeFormatAutocompleteRow: View {
 }
 
 struct TimeMentionHelpStrip: View {
-    let cancel: () -> Void
+    var cancel: (() -> Void)?
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {

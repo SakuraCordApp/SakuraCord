@@ -47,7 +47,6 @@ extension NativeTimelineCanvasView {
         self.tracking = tracking
         installVisibleRowTrackingAreas()
         removeAllToolTips()
-        addToolTip(bounds, owner: self, userData: nil)
         super.updateTrackingAreas()
     }
 
@@ -57,11 +56,6 @@ extension NativeTimelineCanvasView {
         point: NSPoint,
         userData _: UnsafeMutableRawPointer?
     ) -> String {
-        if let mention = mentionPointerHit(at: point),
-           let tip = mention.toolTip,
-           !tip.isEmpty {
-            return tip
-        }
         return ""
     }
 
@@ -1298,7 +1292,9 @@ extension NativeTimelineCanvasView {
                 region: mention.region,
                 characterIndex: mention.characterIndex,
                 rawToken: mention.rawToken,
-                toolTip: mention.toolTip
+                toolTip: mention.toolTip,
+                isTimestamp: mention.isTimestamp,
+                frame: mention.frame
             )
         }
         return nil
@@ -1403,7 +1399,8 @@ extension NativeTimelineCanvasView {
                         dx: 0,
                         dy: rowOrigin
                     ),
-                    toolTip: mention.presentation.toolTip
+                    toolTip: mention.presentation.toolTip,
+                    isTimestamp: mention.presentation.isTimestamp
                 )
             }
         }

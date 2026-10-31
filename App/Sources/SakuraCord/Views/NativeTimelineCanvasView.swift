@@ -123,6 +123,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         let rawToken: String
         let frame: CGRect
         var toolTip: String?
+        var isTimestamp: Bool = false
     }
 
     struct TextPointerHit {
@@ -308,6 +309,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
+    let timestampHoverCoordinator =
+        StableAnchoredPopoverPresenter<TimestampMentionTooltip>.Coordinator()
+    var activeTimestampHoverAnchor: StablePopoverAnchor?
+    var relativeTimestampClockTask: Task<Void, Never>?
     var visibleReactionCounts: [ReactionCountKey: Int] = [:]
     var previouslyVisibleReactionMessageIDs: Set<MessageID> = []
     var activeReactionCountAnimations:
@@ -446,6 +451,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             NotificationCenter.default.removeObserver(self)
             NSWorkspace.shared.notificationCenter.removeObserver(self)
             pollClockTask?.cancel()
+            relativeTimestampClockTask?.cancel()
+            timestampHoverCoordinator.close()
             pollAnimationTicker.stop()
             clearDisclosure(redraws: false)
             pollPopover?.close()

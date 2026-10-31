@@ -53,7 +53,7 @@ public enum DiscordNaturalLanguageTimeParser {
             return [makeUnixCandidate(for: date, now: now, locale: locale, timeZone: timeZone, calendar: calendar)]
         }
 
-        if let relativeDate = parseRelative(query: trimmed, now: now, calendar: calendar, timeZone: timeZone) {
+        if let relativeDate = parseRelative(query: trimmed, now: referenceDate ?? now, calendar: calendar, timeZone: timeZone) {
             return [makeStandardCandidate(
                 for: relativeDate,
                 candidateIndex: 0,

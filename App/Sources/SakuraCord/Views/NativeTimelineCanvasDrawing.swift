@@ -39,6 +39,7 @@ extension NativeTimelineCanvasView {
         self.storage = storage
         self.model = model
         reconcilePollPresentations()
+        reconcileRelativeTimestamps()
         installSpoilerRevealStore(model.timelineSpoilerRevealStore)
         self.actions = actions
         baseContentOriginY = contentOriginY
@@ -359,6 +360,7 @@ extension NativeTimelineCanvasView {
         )
         let clearedTargets = pointer.clearHoverAndPressTargets()
         reactionHoverCoordinator.close()
+        timestampHoverCoordinator.close()
         closeMessageProfilePopover()
         closeServerTagPopover()
         removeActionCapsule()
@@ -1532,4 +1534,44 @@ extension NativeTimelineCanvasView {
         bitmapCost = 0
     }
 
+    func messageHasRelativeTimestamp(_ item: NativeMessageTimelineItem) -> Bool {
+        guard case let .message(row, _, _) = item else { return false }
+        return row.textPlan.preparedText?.tokens.contains(where: { token in
+            if case let .mention(mention) = token, mention.kind == .timestamp, mention.timestampStyle == "R" {
+                return true
+            }
+            return false
+        }) ?? false
+    }
+
+    func reconcileRelativeTimestamps() {
+        let hasRelativeTimestamps = storage.items.contains(where: { messageHasRelativeTimestamp($0) })
+        if !hasRelativeTimestamps {
+            relativeTimestampClockTask?.cancel()
+            relativeTimestampClockTask = nil
+            return
+        }
+        guard relativeTimestampClockTask == nil else { return }
+        relativeTimestampClockTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self else { break }
+                guard !self.storage.items.isEmpty else { break }
+                var foundAny = false
+                for (index, item) in self.storage.items.enumerated() where self.messageHasRelativeTimestamp(item) {
+                    foundAny = true
+                    self.mentionPointerRegionCache.removeValue(forKey: item.identifier)
+                    self.invalidateBitmap(item.identifier)
+                    let frame = self.rowFrame(at: index)
+                    if self.visibleRect.intersects(frame) {
+                        self.setNeedsDisplay(frame)
+                    }
+                }
+                if !foundAny {
+                    break
+                }
+            }
+            self?.relativeTimestampClockTask = nil
+        }
+    }
 }

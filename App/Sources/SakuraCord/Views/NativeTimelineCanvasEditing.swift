@@ -47,7 +47,28 @@ extension NativeTimelineCanvasView {
             }) else { continue }
             setNeedsDisplay(rowFrame(at: index))
         }
-        toolTip = value?.toolTip
+        if let value, value.isTimestamp, let tip = value.toolTip, !tip.isEmpty {
+            let targetFrame = value.frame
+            let anchor = StablePopoverAnchor(sourceView: self) { [weak self] in
+                guard let self, self.hoveredMention == value else { return nil }
+                return targetFrame
+            }
+            activeTimestampHoverAnchor = anchor
+            timestampHoverCoordinator.update(
+                anchor: anchor,
+                anchorSnapshot: nil,
+                isPresented: true,
+                configuration: .intrinsicHoverLabel,
+                onDismiss: { [weak self] in
+                    self?.activeTimestampHoverAnchor = nil
+                },
+                presentationIdentity: value.rawToken,
+                content: TimestampMentionTooltip(text: tip)
+            )
+        } else {
+            timestampHoverCoordinator.close()
+            activeTimestampHoverAnchor = nil
+        }
     }
 
     func setHoveredTextLink(
