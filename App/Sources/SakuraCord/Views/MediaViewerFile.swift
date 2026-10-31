@@ -7,9 +7,9 @@ import UniformTypeIdentifiers
 
 /// A file that is not media, text, or audio, previewed in the media viewer:
 /// a PDF in PDFKit, and anything else Quick Look can draw. A message's file
-/// is fetched into a temporary file first, never into Downloads, and removed
-/// when the viewer leaves it; a file Quick Look can't draw shows a page that
-/// offers to download it.
+/// is fetched into a temporary file first, never into Downloads, which later
+/// visits reuse; a file Quick Look can't draw shows a page that offers to
+/// download it.
 struct MediaViewerFile: View {
     let item: RichMediaItem
     let download: () -> Void
@@ -17,8 +17,6 @@ struct MediaViewerFile: View {
     /// The file the current preview is for, so a file left for another
     /// can't overwrite it.
     @State private var request: URL?
-    /// The temporary copy the current preview reads.
-    @State private var fetched: URL?
 
     enum Phase {
         case fetching(Double)
@@ -57,24 +55,14 @@ struct MediaViewerFile: View {
             }
         }
         .task(id: item.url) {
-            MediaViewerPreviewFile.discard(fetched)
-            fetched = nil
             let url = item.url
             request = url
             phase = .fetching(0)
             let preview = await Self.preview(of: item) { fraction in
                 if request == url, case .fetching = phase { phase = .fetching(fraction) }
             }
-            guard !Task.isCancelled, request == url else {
-                MediaViewerPreviewFile.discard(preview.fetched)
-                return
-            }
-            fetched = preview.fetched
-            phase = preview.phase
-        }
-        .onDisappear {
-            MediaViewerPreviewFile.discard(fetched)
-            fetched = nil
+            guard !Task.isCancelled, request == url else { return }
+            phase = preview
         }
     }
 
@@ -85,23 +73,28 @@ struct MediaViewerFile: View {
             ?? MediaViewerFilePolicy.contentType(title: item.title, sourceURL: item.url)
     }
 
+    /// The file type's Finder icon, as its timeline card shows it.
+    static func icon(for item: RichMediaItem) -> NSImage {
+        NSWorkspace.shared.icon(for: type(of: item) ?? .data)
+    }
+
     /// Fetches the file unless it is already on disk, then picks how to show
-    /// it; `fetched` is the temporary copy, if one was made.
+    /// it.
     private static func preview(
         of item: RichMediaItem,
         progress: @escaping @MainActor (Double) -> Void
-    ) async -> (phase: Phase, fetched: URL?) {
+    ) async -> Phase {
         // Archives, disk images, programs, and unknown data have no preview
         // worth fetching them for.
         guard let type = type(of: item), !type.isDynamic,
               ![.archive, .diskImage, .executable, .application].contains(where: type.conforms(to:))
-        else { return (.unavailable, nil) }
-        let fetched = item.url.isFileURL ? nil : try? await MediaViewerPreviewFile.fetch(item, progress: progress)
-        guard let file = item.url.isFileURL ? item.url : fetched, !Task.isCancelled else { return (.unavailable, fetched) }
+        else { return .unavailable }
+        let fetched = item.url.isFileURL ? nil : try? await MediaViewerPreviewFile.file(for: item, progress: progress)
+        guard let file = item.url.isFileURL ? item.url : fetched, !Task.isCancelled else { return .unavailable }
         if type.conforms(to: .pdf) {
-            return (PDFDocument(url: file).map(Phase.pdf) ?? .unavailable, fetched)
+            return PDFDocument(url: file).map(Phase.pdf) ?? .unavailable
         }
-        return (await canQuickLook(file) ? .quickLook(file) : .unavailable, fetched)
+        return await canQuickLook(file) ? .quickLook(file) : .unavailable
     }
 
     /// Quick Look draws a thumbnail for every kind of file it can preview,
@@ -121,7 +114,7 @@ struct MediaViewerFilePage<Accessory: View>: View {
 
     var body: some View {
         VStack(spacing: InterfaceScale.metric(14)) {
-            Image(nsImage: Self.icon(for: item))
+            Image(nsImage: MediaViewerFile.icon(for: item))
                 .resizable()
                 .frame(width: InterfaceScale.metric(88), height: InterfaceScale.metric(88))
                 .accessibilityHidden(true)
@@ -141,10 +134,6 @@ struct MediaViewerFilePage<Accessory: View>: View {
         .padding(InterfaceScale.metric(30))
         .frame(width: InterfaceScale.metric(400))
         .glassEffect(.regular, in: .rect(cornerRadius: MediaViewerStage.contentCornerRadius))
-    }
-
-    private static func icon(for item: RichMediaItem) -> NSImage {
-        NSWorkspace.shared.icon(for: MediaViewerFile.type(of: item) ?? .data)
     }
 }
 
@@ -197,15 +186,75 @@ private struct MediaViewerQuickLook: NSViewRepresentable {
     }
 }
 
-/// A message's file fetched to preview, in its own temporary folder under
-/// its own name, which Quick Look reads its type from.
+/// Messages' files fetched to preview, each in its own temporary folder
+/// under its own name, which Quick Look reads its type from. A file stays
+/// for the session, so reopening its preview doesn't fetch it again, until
+/// newer previews push it out; launch clears what a previous session left.
+@MainActor
 enum MediaViewerPreviewFile {
-    static func fetch(_ item: RichMediaItem, progress: @escaping @MainActor (Double) -> Void) async throws -> URL {
+    /// A file's fetch, and the previews waiting for it.
+    @MainActor
+    private final class Preview {
+        let url: URL
+        let file: Task<URL, any Error>
+        var waiters: Set<UUID> = []
+        var isFetched = false
+
+        init(url: URL, file: Task<URL, any Error>) {
+            self.url = url
+            self.file = file
+        }
+    }
+
+    /// Kept previews by the file's link, newest last.
+    private static var previews: [Preview] = []
+    private static let maximumFiles = 8
+
+    private nonisolated static var root: URL {
+        URL.temporaryDirectory.appending(path: "AttachmentPreviews", directoryHint: .isDirectory)
+    }
+
+    /// The file's temporary copy, from an earlier or ongoing fetch if there
+    /// is one. A fetch every preview left before it finished stops.
+    static func file(for item: RichMediaItem, progress: @escaping @MainActor (Double) -> Void) async throws -> URL {
+        let preview: Preview
+        if let index = previews.firstIndex(where: { $0.url == item.url }) {
+            preview = previews.remove(at: index)
+        } else {
+            preview = Preview(url: item.url, file: Task { try await fetch(item, progress: progress) })
+        }
+        previews.append(preview)
+        while previews.count > maximumFiles {
+            discard(previews.removeFirst().file)
+        }
+        let waiter = UUID()
+        preview.waiters.insert(waiter)
+        defer { preview.waiters.remove(waiter) }
+        do {
+            let file = try await withTaskCancellationHandler {
+                try await preview.file.value
+            } onCancel: {
+                Task { @MainActor in
+                    preview.waiters.remove(waiter)
+                    guard preview.waiters.isEmpty, !preview.isFetched else { return }
+                    previews.removeAll { $0 === preview }
+                    discard(preview.file)
+                }
+            }
+            preview.isFetched = true
+            return file
+        } catch {
+            previews.removeAll { $0 === preview }
+            throw error
+        }
+    }
+
+    private static func fetch(_ item: RichMediaItem, progress: @escaping @MainActor (Double) -> Void) async throws -> URL {
         let source = await MediaViewerActionService.resolveRemoteURL?(item.url) ?? item.url
         let downloaded = try await AttachmentDownloadStore.download(source) { fraction in
             Task { @MainActor in progress(fraction) }
         }
-        let folder = URL.temporaryDirectory.appending(path: "AttachmentPreviews/\(UUID().uuidString)", directoryHint: .isDirectory)
+        let folder = root.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         let destination = folder.appending(path: item.url.lastPathComponent)
         try await Task.detached(priority: .utility) {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -214,9 +263,16 @@ enum MediaViewerPreviewFile {
         return destination
     }
 
-    /// Removes a fetched copy and its folder.
-    static func discard(_ file: URL?) {
-        guard let folder = file?.deletingLastPathComponent() else { return }
-        Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: folder) }
+    /// Stops a fetch, then removes the copy it made, if any, and its folder.
+    private static func discard(_ file: Task<URL, any Error>) {
+        file.cancel()
+        Task.detached(priority: .utility) {
+            guard let folder = try? await file.value.deletingLastPathComponent() else { return }
+            try? FileManager.default.removeItem(at: folder)
+        }
+    }
+
+    nonisolated static func removeAbandonedFilesAtStartup() {
+        try? FileManager.default.removeItem(at: root)
     }
 }

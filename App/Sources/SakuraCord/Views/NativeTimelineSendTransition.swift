@@ -1319,7 +1319,7 @@ extension NativeTimelineCanvasView {
             else { continue }
             cards[attachmentIndex] = (card, .init(
                 image: image,
-                iconFrame: toOverlay(card.isAudio ? card.playFrame : card.iconFrame)
+                iconFrame: toOverlay(card.iconFrame)
             ))
         }
         return cards
