@@ -117,8 +117,8 @@ extension NativeTimelineCanvasView {
         let now = ProcessInfo.processInfo.systemUptime
         let current = componentButtonHoverFades[target]?.progress(at: now) ?? 0
         // Reduce Motion lands at once.
-        let start = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            ? now - NativeTimelineComponentButtonVisualState.hoverAnimationDuration : now
+        let start = AppMotionPolicy.animatesUncategorized
+            ? now : now - NativeTimelineComponentButtonVisualState.hoverAnimationDuration
         componentButtonHoverFades[target] = .init(from: current, to: isHovered ? 1 : 0, start: start)
         guard componentButtonHoverAnimationTask == nil else { return }
         componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
@@ -139,9 +139,7 @@ extension NativeTimelineCanvasView {
     /// The file card parts' hover in a message at this moment.
     func fileCardHoverProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
         let now = ProcessInfo.processInfo.systemUptime
-        return componentButtonHoverFades.reduce(into: [:]) { result, fade in
-            if fade.key.messageID == messageID { result[fade.key] = fade.value.progress(at: now) }
-        }
+        return componentButtonHoverFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
     }
 
     func setHoveredForwardedSourceMessageID(_ value: MessageID?) {

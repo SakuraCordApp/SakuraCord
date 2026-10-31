@@ -86,7 +86,7 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
     }
 }
 
-/// A file card part's hover easing in or out from wherever it was, with the
+/// A round button's hover easing in or out from wherever it was, with the
 /// press animation's curve.
 nonisolated struct NativeTimelineHoverFade {
     let from: CGFloat
