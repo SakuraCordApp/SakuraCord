@@ -149,8 +149,7 @@ extension NativeTimelineCanvasView {
                     componentButtonHoverFades = componentButtonHoverFades.mapValues(resume)
                     fileCardFinishFades = fileCardFinishFades.mapValues(resume)
                 }
-                for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
-                for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
+                redrawFadingFileCardHovers()
                 // A faded-out part is forgotten; a hovered one holds.
                 componentButtonHoverFades = componentButtonHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
                 fileCardFinishFades = fileCardFinishFades.filter { !$0.value.isSettled(at: now) }

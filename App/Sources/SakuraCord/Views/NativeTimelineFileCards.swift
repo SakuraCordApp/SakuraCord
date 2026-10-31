@@ -83,13 +83,14 @@ extension NativeTimelineCanvasView {
         }
         let isProgressTick = if case let .downloading(fraction)? = downloads.states[attachmentID] { fraction > 0 } else { false }
         guard isProgressTick else {
+            let fileItems = items.filter(showsFile)
             if case .finished = downloads.states[attachmentID] {
-                for messageID in items.filter(showsFile).compactMap(\.messageID) {
+                for messageID in fileItems.compactMap(\.messageID) {
                     fadeFileCardFinish(.fileCard(messageID: messageID, attachmentID: attachmentID, part: .button))
                 }
             }
             setNeedsDisplay(visibleRect)
-            items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
+            fileItems.forEach { rebuildAccessibilityProxy(for: $0.identifier) }
             return
         }
         // A progress tick changes only the button's ring and the detail line.

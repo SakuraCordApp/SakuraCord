@@ -112,9 +112,12 @@ extension NativeTimelineRowPainter {
             palette.button.setFill()
             NSBezierPath(ovalIn: button).fill()
             guard let symbol else { return }
-            if case let .downloading(fraction) = state {
+            @MainActor func ringAndCancel(_ fraction: Double) {
                 downloadRing(in: button, fraction: fraction, color: palette.glyph)
-                systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
+                systemSymbol("xmark", in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
+            }
+            if case let .downloading(fraction) = state {
+                ringAndCancel(fraction)
                 return
             }
             guard let finish, let context = NSGraphicsContext.current?.cgContext else {
@@ -130,10 +133,7 @@ extension NativeTimelineRowPainter {
                 context.endTransparencyLayer()
                 context.restoreGState()
             }
-            faded(1 - finish) {
-                downloadRing(in: button, fraction: 1, color: palette.glyph)
-                systemSymbol("xmark", in: button, color: palette.glyph, inset: button.width * 0.34, weight: .bold)
-            }
+            faded(1 - finish) { ringAndCancel(1) }
             faded(finish) {
                 drawingRoundButton(button, scale: 0.8 + 0.2 * finish) {
                     systemSymbol(symbol, in: button, color: palette.glyph, inset: button.width * 0.3, weight: .semibold)
