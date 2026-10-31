@@ -98,7 +98,7 @@ final class NativeTimelineCodeCopyControl: NSView {
         var color = NSColor.clear.cgColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
             color = NSColor.labelColor
-                .withAlphaComponent(state.isPressed ? 0.16 : state.isHovered ? 0.1 : 0).cgColor
+                .withAlphaComponent(state.isPressed ? 0.22 : state.isHovered ? 0.1 : 0).cgColor
         }
         return color
     }

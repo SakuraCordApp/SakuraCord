@@ -1047,10 +1047,10 @@ public enum DiscordMarkdown {
         var codeLineHeight: CGFloat { px(18) }
         let reservesCodeCopyButton: Bool
         /// Room at the end of a code block's first lines for the timeline's
-        /// copy button: a square filling a one-line block less a 2 px inset,
+        /// copy button: a square filling a one-line block less a 4 px inset,
         /// kept that inset from the block's edge.
         var codeCopyButtonReserve: CGFloat {
-            reservesCodeCopyButton ? codeLineHeight + codeInset * 2 - px(2) : 0
+            reservesCodeCopyButton ? codeLineHeight + codeInset * 2 - px(4) : 0
         }
 
         init(baseFontSize: CGFloat, usesMessageLineHeight: Bool, reservesCodeCopyButton: Bool) {

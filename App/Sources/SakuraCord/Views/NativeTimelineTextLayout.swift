@@ -1505,10 +1505,13 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
 
     static var codeBlockCornerRadius: CGFloat { InterfaceScale.metric(4) }
 
-    /// The copy button's inset from its block's top and trailing edges. Its
-    /// corners are concentric with the block's.
-    static var codeCopyButtonInset: CGFloat { InterfaceScale.metric(2) }
-    static var codeCopyButtonCornerRadius: CGFloat { codeBlockCornerRadius - codeCopyButtonInset }
+    /// The copy button's inset from its block's top and trailing edges:
+    /// Discord's 4 px from the trailing edge. Its corners are concentric
+    /// with the block's, kept from reaching a square.
+    static var codeCopyButtonInset: CGFloat { InterfaceScale.metric(4) }
+    static var codeCopyButtonCornerRadius: CGFloat {
+        max(codeBlockCornerRadius - codeCopyButtonInset, InterfaceScale.metric(2))
+    }
 
     /// The width `value` needs within `maximumWidth`. CoreText's suggestion
     /// counts a code line's head indent but not its tail indent, which only

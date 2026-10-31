@@ -499,10 +499,12 @@ extension NativeTimelineRowPainter {
             var rects = NativeTimelineTextSelectionGeometry.rects(
                 in: textFrame,
                 outerFrame: outerFrame,
-                range: range
+                range: range,
+                fitsGlyphs: true
             )
             // Markdown reserves the padding as kerning after the code and
-            // before it, so the trailing side is already inside the rect.
+            // before it. The code's last glyph carries its trailing side; the
+            // leading side sits before the first glyph.
             let padding = attributedText.attribute(.kern, at: NSMaxRange(range) - 1, effectiveRange: nil) as? CGFloat ?? 0
             if !rects.isEmpty {
                 rects[0].origin.x -= padding

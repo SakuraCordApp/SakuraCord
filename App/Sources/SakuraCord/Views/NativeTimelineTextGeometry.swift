@@ -203,10 +203,39 @@ nonisolated enum NativeTimelineTextSelectionGeometry {
         return result
     }
 
+    static func glyphBounds(in line: CTLine, range: NSRange) -> ClosedRange<CGFloat>? {
+        var lower = CGFloat.infinity
+        var upper = -CGFloat.infinity
+        for value in CTLineGetGlyphRuns(line) as NSArray {
+            let run = unsafeDowncast(value as AnyObject, to: CTRun.self)
+            let runRange = CTRunGetStringRange(run)
+            guard NSIntersectionRange(range, NSRange(location: runRange.location, length: runRange.length)).length > 0 else { continue }
+            let count = CTRunGetGlyphCount(run)
+            var positions = Array(repeating: CGPoint.zero, count: count)
+            var advances = Array(repeating: CGSize.zero, count: count)
+            var indices = Array(repeating: CFIndex(0), count: count)
+            CTRunGetPositions(run, CFRange(), &positions)
+            CTRunGetAdvances(run, CFRange(), &advances)
+            CTRunGetStringIndices(run, CFRange(), &indices)
+            for index in 0 ..< count where NSLocationInRange(indices[index], range) {
+                let start = positions[index].x
+                let end = start + advances[index].width
+                lower = min(lower, min(start, end))
+                upper = max(upper, max(start, end))
+            }
+        }
+        // Caret offsets split kerning adjustments at range boundaries. Glyph
+        // advances match TextKit's enclosed glyph range without changing text.
+        return lower.isFinite && upper > lower ? lower ... upper : nil
+    }
+
+    /// `fitsGlyphs` bounds each fragment by its glyphs' advances instead of
+    /// caret offsets, keeping kerning at the range's edges inside it.
     static func rects(
         in textFrame: CTFrame,
         outerFrame: CGRect,
-        range: NSRange
+        range: NSRange,
+        fitsGlyphs: Bool = false
     ) -> [CGRect] {
         guard range.length > 0 else { return [] }
         let lines = CTFrameGetLines(textFrame) as NSArray
@@ -244,20 +273,18 @@ nonisolated enum NativeTimelineTextSelectionGeometry {
                 &descent,
                 &leading
             )
-            let startOffset = CTLineGetOffsetForStringIndex(
-                line,
-                start,
-                nil
-            )
-            let endOffset = CTLineGetOffsetForStringIndex(
-                line,
-                end,
-                nil
-            )
-            let minX = outerFrame.minX
-                + origin.x
-                + min(startOffset, endOffset)
-            let width = max(1, abs(endOffset - startOffset))
+            let horizontal: ClosedRange<CGFloat>
+            if fitsGlyphs {
+                guard let bounds = glyphBounds(in: line, range: NSRange(location: start, length: end - start))
+                else { continue }
+                horizontal = bounds
+            } else {
+                let startOffset = CTLineGetOffsetForStringIndex(line, start, nil)
+                let endOffset = CTLineGetOffsetForStringIndex(line, end, nil)
+                horizontal = min(startOffset, endOffset) ... max(startOffset, endOffset)
+            }
+            let minX = outerFrame.minX + origin.x + horizontal.lowerBound
+            let width = max(1, horizontal.upperBound - horizontal.lowerBound)
             result.append(CGRect(
                 x: minX,
                 y: outerFrame.maxY - origin.y - ascent - 0.5,
