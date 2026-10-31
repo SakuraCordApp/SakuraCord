@@ -192,8 +192,22 @@ private struct MediaViewerQuickLook: NSViewRepresentable {
 /// newer previews push it out; launch clears what a previous session left.
 @MainActor
 enum MediaViewerPreviewFile {
+    /// A file's fetch, and the previews waiting for it.
+    @MainActor
+    private final class Preview {
+        let url: URL
+        let file: Task<URL, any Error>
+        var waiters: Set<UUID> = []
+        var isFetched = false
+
+        init(url: URL, file: Task<URL, any Error>) {
+            self.url = url
+            self.file = file
+        }
+    }
+
     /// Kept previews by the file's link, newest last.
-    private static var files: [(url: URL, file: Task<URL, any Error>)] = []
+    private static var previews: [Preview] = []
     private static let maximumFiles = 8
 
     private nonisolated static var root: URL {
@@ -201,35 +215,38 @@ enum MediaViewerPreviewFile {
     }
 
     /// The file's temporary copy, from an earlier or ongoing fetch if there
-    /// is one. A fetch whose preview is left before it finishes stops.
+    /// is one. A fetch every preview left before it finished stops.
     static func file(for item: RichMediaItem, progress: @escaping @MainActor (Double) -> Void) async throws -> URL {
-        let file: Task<URL, any Error>
-        if let index = files.firstIndex(where: { $0.url == item.url }) {
-            file = files.remove(at: index).file
+        let preview: Preview
+        if let index = previews.firstIndex(where: { $0.url == item.url }) {
+            preview = previews.remove(at: index)
         } else {
-            file = Task { try await fetch(item, progress: progress) }
+            preview = Preview(url: item.url, file: Task { try await fetch(item, progress: progress) })
         }
-        files.append((item.url, file))
-        while files.count > maximumFiles {
-            discard(files.removeFirst().file)
+        previews.append(preview)
+        while previews.count > maximumFiles {
+            discard(previews.removeFirst().file)
         }
-        return try await withTaskCancellationHandler {
-            do {
-                return try await file.value
-            } catch {
-                forget(file)
-                throw error
+        let waiter = UUID()
+        preview.waiters.insert(waiter)
+        defer { preview.waiters.remove(waiter) }
+        do {
+            let file = try await withTaskCancellationHandler {
+                try await preview.file.value
+            } onCancel: {
+                Task { @MainActor in
+                    preview.waiters.remove(waiter)
+                    guard preview.waiters.isEmpty, !preview.isFetched else { return }
+                    previews.removeAll { $0 === preview }
+                    discard(preview.file)
+                }
             }
-        } onCancel: {
-            Task { @MainActor in
-                forget(file)
-                discard(file)
-            }
+            preview.isFetched = true
+            return file
+        } catch {
+            previews.removeAll { $0 === preview }
+            throw error
         }
-    }
-
-    private static func forget(_ file: Task<URL, any Error>) {
-        files.removeAll { $0.file == file }
     }
 
     private static func fetch(_ item: RichMediaItem, progress: @escaping @MainActor (Double) -> Void) async throws -> URL {

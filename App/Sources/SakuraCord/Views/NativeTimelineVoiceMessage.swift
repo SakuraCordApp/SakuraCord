@@ -490,16 +490,21 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         }
     }
 
-    /// A value easing out from where it was toward a new target.
+    /// A value easing from where it was toward a new target: out, or in
+    /// and out as Discord's grabber does.
     private struct Transition {
         let from: CGFloat
         let to: CGFloat
         let start: TimeInterval
         let duration: TimeInterval
+        let easesInOut: Bool
 
         func value(at time: TimeInterval) -> CGFloat {
             let elapsed = min(max((time - start) / duration, 0), 1)
-            return from + (to - from) * (1 - pow(1 - elapsed, 3))
+            let eased = easesInOut
+                ? (elapsed < 0.5 ? 4 * pow(elapsed, 3) : 1 - pow(2 - 2 * elapsed, 3) / 2)
+                : 1 - pow(1 - elapsed, 3)
+            return from + (to - from) * eased
         }
     }
 
@@ -513,6 +518,10 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     private var lastHoverFraction: CGFloat?
     /// Called once a departing overlay has eased back to rest.
     private var onSettled: (() -> Void)?
+    /// A departing overlay's live state, for a pointer that returns to it.
+    private var departedRefresh: (() -> NativeTimelineVoiceMessageDrawState?)?
+
+    var isDeparting: Bool { onSettled != nil }
 
     private static func pauseTarget(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat { state.isPlaying ? 1 : 0 }
     private static func grabberTarget(_ state: NativeTimelineVoiceMessageDrawState) -> CGFloat { state.hoverFraction == nil ? 0 : 1 }
@@ -525,15 +534,18 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     private func transition(from old: NativeTimelineVoiceMessageDrawState) {
         guard !state.reducesMotion else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        func retarget(_ transition: inout Transition?, _ target: (NativeTimelineVoiceMessageDrawState) -> CGFloat, duration: TimeInterval) {
+        func retarget(
+            _ transition: inout Transition?, _ target: (NativeTimelineVoiceMessageDrawState) -> CGFloat,
+            duration: TimeInterval, easesInOut: Bool = false
+        ) {
             let to = target(state)
             let from = transition?.value(at: now) ?? target(old)
             guard to != (transition?.to ?? target(old)) else { return }
-            transition = Transition(from: from, to: to, start: now, duration: duration)
+            transition = Transition(from: from, to: to, start: now, duration: duration, easesInOut: easesInOut)
         }
         retarget(&pauseMorph, Self.pauseTarget, duration: 0.2)
         retarget(&playScale, Self.playScaleTarget, duration: 0.15)
-        retarget(&grabber, Self.grabberTarget, duration: 0.25)
+        retarget(&grabber, Self.grabberTarget, duration: 0.25, easesInOut: true)
         updateAnimation()
     }
 
@@ -658,20 +670,30 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     /// Eases a resting audio file's hover back to its row, then removes the
     /// overlay; anything else goes at once.
     func dismiss() {
-        refresh = nil
-        guard state.isResting, window != nil, !state.reducesMotion else {
+        let eases = state.isResting && window != nil
+        if eases {
+            state.isPlayHovered = false
+            state.isPlayPressed = false
+            state.hoverFraction = nil
+        }
+        guard eases, pauseMorph != nil || playScale != nil || grabber != nil else {
             stop()
             removeFromSuperview()
             return
         }
+        departedRefresh = refresh
+        refresh = nil
         onSettled = { [weak self] in
             self?.stop()
             self?.removeFromSuperview()
         }
-        state.isPlayHovered = false
-        state.isPlayPressed = false
-        state.hoverFraction = nil
-        if pauseMorph == nil, playScale == nil, grabber == nil { onSettled?() }
+    }
+
+    /// Keeps a departing overlay for a pointer that returns before it goes.
+    func cancelDismissal() {
+        refresh = departedRefresh
+        departedRefresh = nil
+        onSettled = nil
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -941,6 +963,13 @@ extension NativeTimelineCanvasView {
         }
         let frame = found.region.frame.offsetBy(dx: 0, dy: found.origin)
         let state = voiceMessageDrawState(for: found.region, playback: playback)
+        // A player the pointer left a moment ago takes back its overlay,
+        // which is still easing out, rather than gaining a second.
+        if overlay == nil {
+            overlay = subviews.lazy.compactMap { $0 as? NativeTimelineVoiceMessageOverlay }
+                .first { $0.isDeparting && $0.region.playbackID == found.region.playbackID }
+            overlay?.cancelDismissal()
+        }
         if let overlay {
             overlay.region = found.region
             overlay.frame = frame
