@@ -519,6 +519,16 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.media
             where region.frame.contains(point) {
+                let revealKey = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
+                if region.isVideo, !region.isSpoiler || spoilerRevealStore.isMediaRevealed(revealKey) {
+                    let (id, openURL, isSpoiler) = (region.componentID, region.openURL, region.isSpoiler)
+                    playInline(region.displayURL, mediaID: id, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
+                        _ = self?.activateComponentMedia(
+                            id: id, openURL: openURL, isSpoiler: isSpoiler, layout: layout, message: message, rowIndex: index
+                        )
+                    }
+                    return true
+                }
                 return activateComponentMedia(
                     id: region.componentID,
                     openURL: region.openURL,

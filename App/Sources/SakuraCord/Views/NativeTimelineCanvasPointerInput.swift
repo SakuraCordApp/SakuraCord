@@ -858,31 +858,15 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
-            } else if let presentation =
-                NativeTimelineMediaViewerPlan.attachments(
-                    in: row.message,
-                    selectedAttachmentID: attachment.id,
-                    isRevealed: { [spoilerRevealStore] componentID in
-                        spoilerRevealStore.isMediaRevealed(
-                            NativeTimelineComponentRevealKey(
-                                messageID: row.id,
-                                componentID: componentID
-                            )
-                        )
-                    }
-                )
-            {
-                model?.mediaViewerPresentation = mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: attachmentRegion.frame,
-                    rowIndex: rowIndex,
-                    mediaKey: NativeTimelineMediaKey.attachment(attachment),
-                    cornerRadius: InterfaceScale.metric(8),
-                    fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                        itemCount: layout.mediaGalleryItemCount
-                    )
-                )
-            } else {
+            } else if attachment.mediaKind == .video {
+                playInline(
+                    attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
+                    frame: attachmentRegion.frame, rowIndex: rowIndex
+                ) { [weak self, attachmentID = attachment.id] index, layout, message in
+                    guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
+                    _ = self?.openAttachmentInViewer(region, message: message, layout: layout, rowIndex: index)
+                }
+            } else if !openAttachmentInViewer(attachmentRegion, message: row.message, layout: layout, rowIndex: rowIndex) {
                 NSWorkspace.shared.open(attachment.url)
             }
             return true
@@ -1755,4 +1739,34 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
+}
+
+extension NativeTimelineCanvasView {
+    /// Opens the media viewer at an attachment, zooming from its tile.
+    /// Returns false when the attachment has no viewer presentation.
+    func openAttachmentInViewer(
+        _ region: NativeTimelineRowLayout.AttachmentRegion,
+        message: Message,
+        layout: NativeTimelineRowLayout,
+        rowIndex: Int
+    ) -> Bool {
+        guard let presentation = NativeTimelineMediaViewerPlan.attachments(
+            in: message,
+            selectedAttachmentID: region.attachment.id,
+            isRevealed: { [spoilerRevealStore] componentID in
+                spoilerRevealStore.isMediaRevealed(
+                    NativeTimelineComponentRevealKey(messageID: message.id, componentID: componentID)
+                )
+            }
+        ) else { return false }
+        model?.mediaViewerPresentation = mediaViewerPresentation(
+            presentation,
+            sourceFrame: region.frame,
+            rowIndex: rowIndex,
+            mediaKey: NativeTimelineMediaKey.attachment(region.attachment),
+            cornerRadius: InterfaceScale.metric(8),
+            fillsFrame: MediaGalleryImagePresentation.fillsFrame(itemCount: layout.mediaGalleryItemCount)
+        )
+        return true
+    }
 }

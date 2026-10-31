@@ -404,6 +404,7 @@ extension NativeTimelineCanvasView {
         }
         views += animatedMediaOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += inlineVideoOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
+        views += inlinePlayers.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += activityIndicators.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += spoilerOverlays.filter { messageIDs.contains($0.key.messageID) }.map(\.value)
         for view in views {

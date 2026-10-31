@@ -950,6 +950,7 @@ extension NativeTimelineCanvasView {
         for key in removed {
             inlineVideoOverlays[key] = nil
         }
+        reconcileInlinePlayers()
     }
 
     func removeInlineVideoOverlays() {
@@ -958,6 +959,71 @@ extension NativeTimelineCanvasView {
             overlay.removeFromSuperview()
         }
         inlineVideoOverlays.removeAll()
+        removeInlinePlayers()
+    }
+
+    /// Plays a video in place over its tile, as Discord does. When the
+    /// player's menu asks for the viewer, `openInViewer` receives the row as it
+    /// is then: an edit may have changed the message's other media.
+    func playInline(
+        _ url: URL, mediaID: String, frame: CGRect, rowIndex: Int,
+        openInViewer: @escaping (_ rowIndex: Int, _ layout: NativeTimelineRowLayout, _ message: Message) -> Void
+    ) {
+        let key = NativeTimelineInlinePlayer.Key(row: items[rowIndex].identifier, mediaID: mediaID)
+        guard inlinePlayers[key] == nil else { return }
+        let player = NativeTimelineInlinePlayer(
+            url: url,
+            frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
+        ) { [weak self] in
+            guard let self, let index = self.rowIndex(forIdentifier: key.row), layouts.indices.contains(index),
+                  let message = items[index].messageRow?.message
+            else { return }
+            openInViewer(index, layouts[index], message)
+        }
+        addSubview(player, positioned: .below, relativeTo: mediaViewerHost)
+        inlinePlayers[key] = player
+    }
+
+    /// Players follow their tiles and pause once out of view. One ends when
+    /// its row leaves the timeline, its tile no longer shows that video, or
+    /// its message is being edited, whose editor shows no media.
+    func reconcileInlinePlayers() {
+        guard !inlinePlayers.isEmpty else { return }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        for (key, player) in inlinePlayers {
+            guard let index = rowIndex(forIdentifier: key.row),
+                  layouts.indices.contains(index),
+                  editingMessageID == nil || items[index].messageID != editingMessageID,
+                  let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index])
+            else {
+                player.stop()
+                player.removeFromSuperview()
+                inlinePlayers[key] = nil
+                continue
+            }
+            player.frame = frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
+            if !player.frame.intersects(viewport) { player.pause() }
+        }
+    }
+
+    /// The tile still showing the player's video. Signed URLs refresh their
+    /// query, so the host and path identify the media.
+    private func inlinePlayerFrame(_ mediaID: String, url: URL, in layout: NativeTimelineRowLayout) -> CGRect? {
+        func isSameMedia(_ other: URL) -> Bool { other.host == url.host && other.path == url.path }
+        if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
+            let attachment = region.attachment
+            return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url) ? region.frame : nil
+        }
+        return layout.componentLayouts.lazy.flatMap(\.media)
+            .first { $0.componentID == mediaID && $0.isVideo && isSameMedia($0.displayURL) }?.frame
+    }
+
+    func removeInlinePlayers() {
+        for player in inlinePlayers.values {
+            player.stop()
+            player.removeFromSuperview()
+        }
+        inlinePlayers.removeAll()
     }
 
     struct DesiredSpoilerOverlay {
