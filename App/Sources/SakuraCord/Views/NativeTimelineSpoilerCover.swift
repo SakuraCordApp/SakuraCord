@@ -41,14 +41,20 @@ enum NativeTimelineSpoilerCover {
         drawPill(in: frame)
     }
 
-    static func drawPill(in frame: CGRect) {
+    static func pillFrame(in frame: CGRect) -> CGRect {
+        NativeTimelineSpoilerAppearance.pillFrame(
+            in: frame,
+            measuredLabelWidth: NativeTimelineSpoilerAppearance.pillLabel(isHovered: false).size().width
+        )
+    }
+
+    private static func drawPill(in frame: CGRect) {
         let label = NativeTimelineSpoilerAppearance.pillLabel(isHovered: false)
-        let labelSize = label.size()
-        let pill = NativeTimelineSpoilerAppearance.pillFrame(in: frame, measuredLabelWidth: labelSize.width)
+        let pill = pillFrame(in: frame)
         NativeTimelineSpoilerAppearance.pillColor.setFill()
         NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         label.draw(
-            in: NativeTimelineSpoilerAppearance.labelFrame(in: pill, measuredLabelHeight: labelSize.height)
+            in: NativeTimelineSpoilerAppearance.labelFrame(in: pill, measuredLabelHeight: label.size().height)
         )
     }
 
@@ -86,13 +92,26 @@ enum NativeTimelineSpoilerCover {
 
 extension NativeTimelineCanvasView {
     /// Fades a spoiler's cover off what its reveal uncovers, as Discord does.
-    /// Call it before revealing, while the cover is still drawn.
-    func fadeOutSpoilerCover(_ frames: [CGRect], cornerRadius: CGFloat, duration: CFTimeInterval) {
+    /// Call it before revealing, while the cover is still drawn. A media
+    /// cover's pill leaves at once, as Discord's does, so only the blur fades.
+    func fadeOutSpoilerCover(
+        _ frames: [CGRect],
+        cornerRadius: CGFloat,
+        duration: CFTimeInterval,
+        dropsPill: Bool = false
+    ) {
         guard let bounds = frames.reduce(nil, { ($0 as CGRect?)?.union($1) ?? $1 })?.integral,
               !bounds.isEmpty,
               let snapshot = bitmapImageRepForCachingDisplay(in: bounds)
         else { return }
         cacheDisplay(in: bounds, to: snapshot)
+        if dropsPill, let frame = frames.first {
+            Self.fillFromEdges(
+                NativeTimelineSpoilerCover.pillFrame(in: frame).offsetBy(dx: -bounds.minX, dy: -bounds.minY),
+                in: snapshot,
+                pointSize: bounds.size
+            )
+        }
         let fade = NSView(frame: bounds)
         fade.wantsLayer = true
         fade.layer?.contents = snapshot.cgImage
@@ -118,6 +137,27 @@ extension NativeTimelineCanvasView {
             fade.animator().alphaValue = 0
         } completionHandler: {
             fade.removeFromSuperview()
+        }
+    }
+
+    /// Paints over `rect` with what lies just above and below it. The blur
+    /// under a pill is smooth enough that this is the cover without it.
+    private static func fillFromEdges(_ rect: CGRect, in bitmap: NSBitmapImageRep, pointSize: CGSize) {
+        let scaleX = CGFloat(bitmap.pixelsWide) / pointSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / pointSize.height
+        let minX = max(0, Int((rect.minX * scaleX).rounded(.down)))
+        let maxX = min(bitmap.pixelsWide - 1, Int((rect.maxX * scaleX).rounded(.up)))
+        let top = max(0, Int((rect.minY * scaleY).rounded(.down)) - 1)
+        let bottom = min(bitmap.pixelsHigh - 1, Int((rect.maxY * scaleY).rounded(.up)) + 1)
+        guard minX <= maxX, top < bottom else { return }
+        for column in minX ... maxX {
+            guard let above = bitmap.colorAt(x: column, y: top),
+                  let below = bitmap.colorAt(x: column, y: bottom)
+            else { continue }
+            for row in top + 1 ..< bottom {
+                let fraction = CGFloat(row - top) / CGFloat(bottom - top)
+                bitmap.setColor(above.blended(withFraction: fraction, of: below) ?? above, atX: column, y: row)
+            }
         }
     }
 }

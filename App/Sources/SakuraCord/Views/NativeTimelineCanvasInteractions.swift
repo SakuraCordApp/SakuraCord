@@ -946,7 +946,8 @@ extension NativeTimelineCanvasView {
             fadeOutSpoilerCover(
                 [cover.frame],
                 cornerRadius: cover.cornerRadius,
-                duration: NativeTimelineSpoilerAppearance.mediaRevealDuration
+                duration: NativeTimelineSpoilerAppearance.mediaRevealDuration,
+                dropsPill: true
             )
         }
         spoilerRevealStore.revealMedia(key)
