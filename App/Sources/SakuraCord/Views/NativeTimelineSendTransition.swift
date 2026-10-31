@@ -341,6 +341,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     /// A file tile's icon, inside its surface and under its dim, and the
     /// card the surface becomes.
     private var pieceIconLayers: [Int: CALayer] = [:]
+    private var pieceLabelLayers: [Int: CALayer] = [:]
     private var pieceCardLayers: [Int: CALayer] = [:]
     private var ringLayers: [Int: AttachmentUploadRingLayer] = [:]
     /// Rings keep showing progress while they fly.
@@ -387,10 +388,10 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             overlay.pieceSourceFrames[index] = frame
             overlay.pieceSourceCornerRadii[index] = attachment.cornerRadius
             if let file = attachment.file {
-                // The surface stretches into the card while the type label
-                // keeps its size, and the icon moves on its own within it.
+                // The surface stretches into the card, and the icon moves on
+                // its own within it, carrying its type label.
                 layer.backgroundColor = file.surfaceColor
-                layer.contentsGravity = .center
+                layer.contents = nil
                 let icon = CALayer()
                 icon.contents = file.icon
                 icon.contentsGravity = .resizeAspect
@@ -398,6 +399,15 @@ final class NativeTimelineSendTransitionOverlay: NSView {
                 icon.frame = overlay.convert(file.iconFrame, from: nil).offsetBy(dx: -frame.minX, dy: -frame.minY)
                 layer.addSublayer(icon)
                 overlay.pieceIconLayers[index] = icon
+                // The label is drawn across the whole tile, so it sits where
+                // the tile showed it, relative to the icon.
+                let label = CALayer()
+                label.contents = attachment.image
+                label.contentsGravity = .resizeAspect
+                label.contentsScale = window.backingScaleFactor
+                label.frame = CGRect(origin: CGPoint(x: -icon.frame.minX, y: -icon.frame.minY), size: frame.size)
+                icon.addSublayer(label)
+                overlay.pieceLabelLayers[index] = label
             }
             if let fraction = attachment.uploadFraction {
                 overlay.addDim(index: index)
@@ -618,6 +628,16 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         // The icon moves within the surface, so it lands relative to it.
         guard let icon = pieceIconLayers[piece.index] else { return }
         let target = card.iconFrame.offsetBy(dx: -piece.frame.minX, dy: -piece.frame.minY)
+        // The type label shrinks with its icon and gives way to the card's
+        // own name and size, which fade in after it.
+        if let label = pieceLabelLayers[piece.index], icon.frame.width > 0 {
+            let scale = target.width / icon.frame.width
+            let from = label.frame
+            let to = CGRect(x: from.minX * scale, y: from.minY * scale, width: from.width * scale, height: from.height * scale)
+            morph(label, from: from, to: to, cornerRadius: (0, 0), delay: delay)
+            label.opacity = 0
+            add(label, "opacity", from: 1, to: 0, duration: handoff, delay: delay)
+        }
         morph(icon, from: icon.frame, to: target, cornerRadius: (0, 0), delay: delay)
     }
 
