@@ -122,7 +122,7 @@ struct MediaViewerText: View {
     }
 }
 
-private struct MediaViewerTextContent: NSViewRepresentable {
+struct MediaViewerTextContent: NSViewRepresentable {
     let text: NSAttributedString
 
     func makeNSView(context: Context) -> NSScrollView {
