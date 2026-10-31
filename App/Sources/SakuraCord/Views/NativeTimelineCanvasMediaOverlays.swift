@@ -269,6 +269,7 @@ extension NativeTimelineCanvasView {
             {
                 appendAnimatedComponentMediaOverlays(
                     component,
+                    messageID: row.message.id,
                     componentIndex: componentIndex,
                     identifier: identifier,
                     accumulator: accumulator
@@ -492,12 +493,23 @@ extension NativeTimelineCanvasView {
 
     private func appendAnimatedComponentMediaOverlays(
         _ component: NativeTimelineComponentLayout,
+        messageID: MessageID,
         componentIndex: Int,
         identifier: NativeMessageTimelineItem.Identifier,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
+        // A revealed item can share its animation with one still hidden.
+        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+            in: component, messageID: messageID, store: spoilerRevealStore
+        )
+        let isHidden = { [spoilerRevealStore] (frame: CGRect, componentID: String, isSpoiler: Bool) in
+            NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(frame, hiddenContainerFrames: hiddenContainerFrames)
+                || NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    messageID: messageID, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+                )
+        }
         for image in component.images
-        where Self.isPotentiallyAnimated(image.displayURL) {
+        where Self.isPotentiallyAnimated(image.displayURL) && !isHidden(image.frame, image.componentID, image.isSpoiler) {
             accumulator.append(
                 row: identifier,
                 role: .componentImage(componentIndex, image.componentID),
@@ -512,7 +524,8 @@ extension NativeTimelineCanvasView {
             )
         }
         for media in component.media
-        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL) {
+        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL)
+            && !isHidden(media.frame, media.componentID, media.isSpoiler) {
             accumulator.append(
                 row: identifier,
                 role: .componentMedia(componentIndex, media.componentID),

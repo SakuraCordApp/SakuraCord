@@ -189,8 +189,8 @@ struct NativeTimelineComponentRevealKey: Hashable {
 
     /// Keyed by the link, as embed IDs are only positions: an edit that
     /// replaces the link must not inherit the old one's reveal.
-    static func embed(messageID: MessageID, url: URL) -> Self {
-        Self(messageID: messageID, componentID: "embed:\(url.absoluteString)")
+    static func embed(messageID: MessageID, url: URL, occurrence: Int) -> Self {
+        Self(messageID: messageID, componentID: "embed:\(occurrence):\(url.absoluteString)")
     }
 
     static func attachmentComponentID(_ attachmentID: String) -> String {

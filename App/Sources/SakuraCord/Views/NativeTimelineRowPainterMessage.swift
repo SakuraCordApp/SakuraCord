@@ -541,12 +541,13 @@ extension NativeTimelineRowPainter {
             NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
         } ?? [:]
         for region in layout.embedRegions {
+            let isCovered = concealedEmbeds[region.embedID] != nil
             let draw = {
                 drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
                 drawEmbedText(region, input: input)
-                drawEmbedMedia(region)
+                drawEmbedMedia(region, isCovered: isCovered)
             }
-            if concealedEmbeds[region.embedID] != nil {
+            if isCovered {
                 NativeTimelineSpoilerCover.draw(
                     in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius, content: draw
                 )
@@ -604,7 +605,9 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion) {
+    /// `isCovered`: a spoiler cover blurs the embed, so it draws the poster
+    /// of a video that otherwise plays in its own view.
+    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion, isCovered: Bool = false) {
         for imageRegion in region.imageRegions {
             if let image = mediaImage(for: .media(
                 imageRegion.url,
@@ -629,7 +632,7 @@ extension NativeTimelineRowPainter {
         }
         guard let frame = region.mediaFrame,
               let url = region.mediaURL,
-              TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
+              isCovered || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
                   mediaIsVideo: region.mediaIsVideo,
                   autoplaysInline: region.mediaAutoplaysInline
               )

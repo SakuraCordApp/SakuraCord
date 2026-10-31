@@ -230,9 +230,14 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         guard !message.embeds.isEmpty, message.content.contains("||") else { return [:] }
         let spoileredURLs = Set(DiscordMarkdown.linkOccurrences(message.content).filter(\.isSpoiler).map(\.url))
         var result: [String: NativeTimelineComponentRevealKey] = [:]
+        var occurrences: [URL: Int] = [:]
         for embed in message.embeds {
             guard let url = embed.url, spoileredURLs.contains(url) else { continue }
-            let key = NativeTimelineComponentRevealKey.embed(messageID: message.id, url: url)
+            // One link can carry several cards, such as a post's images.
+            let key = NativeTimelineComponentRevealKey.embed(
+                messageID: message.id, url: url, occurrence: occurrences[url, default: 0]
+            )
+            occurrences[url, default: 0] += 1
             if !store.isMediaRevealed(key) { result[embed.id] = key }
         }
         return result

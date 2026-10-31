@@ -318,7 +318,13 @@ extension NativeTimelineCanvasView {
         appendAuthorMediaKeys(for: row, layout: layouts[index], into: &keys)
         appendMessageTextMediaKeys(for: row, layout: layouts[index], into: &keys)
         appendAttachmentMediaKeys(layout: layouts[index], into: &keys)
-        appendEmbedMediaKeys(layouts[index].embedRegions, into: &keys)
+        appendEmbedMediaKeys(
+            layouts[index].embedRegions,
+            coveredEmbedIDs: Set(NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+                in: message, store: spoilerRevealStore
+            ).keys),
+            into: &keys
+        )
         for card in layouts[index].inviteRegions {
             if let invite = card.invite {
                 if let url = invite.iconURL { keys.append(.media(url, maximumPixelDimension: 128)) }
@@ -417,6 +423,7 @@ extension NativeTimelineCanvasView {
 
     private func appendEmbedMediaKeys(
         _ regions: [NativeTimelineRowLayout.EmbedRegion],
+        coveredEmbedIDs: Set<String>,
         into keys: inout [NativeTimelineMediaKey]
     ) {
         for region in regions {
@@ -457,7 +464,8 @@ extension NativeTimelineCanvasView {
                     keys.append(.avatar(url))
                 }
             }
-            if TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
+            // A covered video's poster is what its spoiler cover blurs.
+            if coveredEmbedIDs.contains(region.embedID) || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
                 mediaIsVideo: region.mediaIsVideo,
                 autoplaysInline: region.mediaAutoplaysInline
             ), let url = region.mediaPreviewURL ?? (region.mediaIsVideo ? nil : region.mediaURL)
