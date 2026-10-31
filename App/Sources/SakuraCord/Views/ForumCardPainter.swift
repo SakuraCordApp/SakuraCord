@@ -315,7 +315,7 @@ enum ForumCardPainter {
             let drawnLines = max(1, Int((regions.titleFrame.height / metrics.titleLineHeight).rounded()))
             drawTitle(presentation, in: regions.titleFrame, maximumLines: min(input.titleLines, drawnLines), metrics: metrics, on: canvas)
             if let excerptFrame = regions.excerptFrame {
-                drawExcerpt(presentation, in: excerptFrame, renderer: input.excerpt, metrics: metrics, on: canvas)
+                drawExcerpt(presentation, in: excerptFrame, renderer: input.excerpt, on: canvas)
             }
             if let thumbnail = presentation.thumbnail, let frame = regions.thumbnailFrame {
                 drawMedia(
@@ -528,7 +528,6 @@ enum ForumCardPainter {
         _ presentation: ForumCardPresentation,
         in frame: CGRect,
         renderer: ForumPostPreviewTextRenderer?,
-        metrics: ForumBoardMetrics,
         on canvas: ForumCardCanvas
     ) {
         switch presentation.excerpt {

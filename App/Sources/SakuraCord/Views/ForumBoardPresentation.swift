@@ -1,4 +1,5 @@
 import AppKit
+import MessageRendering
 import Observation
 import SakuraCordModels
 
@@ -131,7 +132,8 @@ extension ForumBoardView {
                 prefix = author.map { authorPrefix($0) }
             case let .placeholder(text, author):
                 message = nil
-                placeholder = text ?? ""
+                // Discord shows a poll question as typed, Markdown included.
+                placeholder = text.map(DiscordMarkdown.escaped) ?? ""
                 prefix = authorPrefix(author, separated: text != nil)
                 // Discord keeps these muted on an unread post too.
                 isEmphasized = false
