@@ -114,7 +114,8 @@ final class NativeTimelineCodeCopyControl: NSView {
         let outline = image.alignmentRect
         glyph.frame = bounds.offsetBy(
             dx: image.size.width / 2 - outline.midX,
-            dy: outline.midY - image.size.height / 2
+            // `glyphs` is unflipped, so a positive offset moves a glyph up.
+            dy: image.size.height / 2 - outline.midY
         )
     }
 

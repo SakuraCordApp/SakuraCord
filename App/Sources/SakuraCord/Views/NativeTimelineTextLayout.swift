@@ -1528,10 +1528,8 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
             nil
         )
         guard let lines = CTFrameGetLines(frame) as? [CTLine] else { return width }
-        var origins = [CGPoint](repeating: .zero, count: lines.count)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
         var previousLineIsCode = false
-        for (line, origin) in zip(lines, origins) {
+        for line in lines {
             let location = CTLineGetStringRange(line).location
             let isCode = value.attribute(.discordMarkdownBlock, at: location, effectiveRange: nil) as? String == "code"
             defer { previousLineIsCode = isCode }
@@ -1546,7 +1544,11 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
                 trailing += NativeTimelineCodeBlockGeometry.copyButtonSide(lineHeight: ascent + descent + 1, inset: inset)
                     + codeCopyButtonInset
             }
-            width = max(width, origin.x + textWidth + trailing)
+            // The head indent rather than the line's origin, which also holds
+            // the unused width before a right-aligned line.
+            let headIndent = (value.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle)?
+                .headIndent ?? 0
+            width = max(width, headIndent + textWidth + trailing)
         }
         return width
     }
