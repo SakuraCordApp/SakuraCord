@@ -114,16 +114,20 @@ struct NativeTimelineAutoModAlertLayout {
             mediaPosterFillsFrame: false, accentColor: nil, drawsTopSeparator: false
         )
 
-        let buttonY = max(cursor, avatarFrame.maxY) + InterfaceScale.metric(12)
-        var buttonX = origin.x + inset
+        // Buttons wrap to another row when a narrow timeline can't fit both.
+        let spacing = InterfaceScale.metric(8)
+        var buttonOrigin = CGPoint(x: origin.x + inset, y: max(cursor, avatarFrame.maxY) + InterfaceScale.metric(12))
         buttons = ([.moderate] + (alert.channelID == nil ? [] : [.jump])).map { (action: Action) in
-            let width = ceil(NSAttributedString(
+            let width = min(cardWidth - inset * 2, ceil(NSAttributedString(
                 string: action.title, attributes: [.font: NativeTimelineComponentButtonMetrics.font]
-            ).size().width) + NativeTimelineComponentButtonMetrics.horizontalPadding * 2
-            defer { buttonX += width + InterfaceScale.metric(8) }
-            return Button(action: action, frame: CGRect(x: buttonX, y: buttonY, width: width, height: diameter))
+            ).size().width) + NativeTimelineComponentButtonMetrics.horizontalPadding * 2)
+            if buttonOrigin.x > origin.x + inset, buttonOrigin.x + width > origin.x + cardWidth - inset {
+                buttonOrigin = CGPoint(x: origin.x + inset, y: buttonOrigin.y + diameter + spacing)
+            }
+            defer { buttonOrigin.x += width + spacing }
+            return Button(action: action, frame: CGRect(origin: buttonOrigin, size: CGSize(width: width, height: diameter)))
         }
-        cardFrame = CGRect(x: origin.x, y: origin.y, width: cardWidth, height: buttonY + diameter + inset - origin.y)
+        cardFrame = CGRect(x: origin.x, y: origin.y, width: cardWidth, height: buttonOrigin.y + diameter + inset - origin.y)
     }
 
     /// Measured heights trim Core Text's fractional leading, which would

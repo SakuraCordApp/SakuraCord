@@ -469,12 +469,12 @@ extension NativeTimelineRowPainter {
         )
         drawInlineCodeDecorations(decorations.inlineCode)
         drawSpoilerDecorations(decorations.spoilers)
+        drawCodeBlockDecorations(codeBlocks)
         // Discord's search-highlight yellow at 30%.
         NSColor(srgbRed: 253 / 255, green: 184 / 255, blue: 51 / 255, alpha: 0.3).setFill()
         for rect in decorations.autoModerationMatches {
             NSBezierPath(concentricRoundedRect: rect, cornerRadius: InterfaceScale.metric(3)).fill()
         }
-        drawCodeBlockDecorations(codeBlocks)
         drawListMarkerDecorations(decorations.listMarkers)
         drawQuoteDecorations(decorations.quotes, outerFrame: outerFrame)
     }
