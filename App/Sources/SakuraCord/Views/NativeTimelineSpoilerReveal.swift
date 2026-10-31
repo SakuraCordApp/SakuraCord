@@ -255,7 +255,8 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         var result = Set(links.filter(\.isSpoiler).map(\.url))
         guard !result.isEmpty else { return [] }
         let embedURLs = Set(message.embeds.compactMap(\.url))
-        let linkURLs = Set(links.map(\.url))
+        // A <…> link never previews, so a card at its address came from another link.
+        let linkURLs = Set(links.filter { !$0.suppressesPreview }.map(\.url))
         // One entry per address no preview names, spoilered only when every
         // copy Discord could preview is.
         var unmatchedLinks: [(url: URL, isSpoiler: Bool)] = []

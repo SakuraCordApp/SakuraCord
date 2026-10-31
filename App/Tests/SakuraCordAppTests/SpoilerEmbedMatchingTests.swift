@@ -167,3 +167,14 @@ func `a <…> copy right against a spoilered link leaves its preview hidden`() {
     )
     #expect(ids == ["embed-0"])
 }
+
+@MainActor @Test
+func `a spoilered short link hides its card even when a <…> link names the card's own address`() {
+    let ids = concealedEmbedIDs(
+        content: "||https://youtu.be/ID|| <https://www.youtube.com/watch?v=ID>",
+        embeds: [
+            MessageEmbed(id: "embed-0", type: "video", url: URL(string: "https://www.youtube.com/watch?v=ID")),
+        ]
+    )
+    #expect(ids == ["embed-0"])
+}
