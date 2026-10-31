@@ -91,7 +91,7 @@ extension ForumBoardView {
             }
         }
         switch presentation.excerpt {
-        case .message, .deleted: return true
+        case .message, .deleted, .placeholder: return true
         default: return false
         }
     }
@@ -107,8 +107,9 @@ extension ForumBoardView {
     @discardableResult
     private func configureExcerpt(for postID: ChannelID) -> Bool {
         guard let model, let presentation = presentations[postID] else { return false }
-        // `nil` is a deleted starter, which shows Discord's placeholder.
+        // Without a message, Discord shows a placeholder in its place.
         let message: Message?
+        var placeholder = "Original message was deleted"
         let lines: Int
         var prefix: ForumPostPreviewTextView.Prefix?
         if isGallery {
@@ -126,7 +127,11 @@ extension ForumBoardView {
                 prefix = authorPrefix(author)
             case let .deleted(author):
                 message = nil
-                prefix = author.map(authorPrefix)
+                prefix = author.map { authorPrefix($0) }
+            case let .placeholder(text, author):
+                message = nil
+                placeholder = text ?? ""
+                prefix = authorPrefix(author, separated: text != nil)
             default: return excerptRenderers.removeValue(forKey: postID) != nil
             }
             lines = metrics.excerptLines
@@ -156,12 +161,13 @@ extension ForumBoardView {
                 )
             } ?? ForumPostPreviewTextView.Configuration(
                 messageID: MessageID(rawValue: postID.rawValue),
-                source: "Original message was deleted",
+                source: placeholder,
                 mentionPresentations: [:],
                 fontSize: fontSize,
                 emojiSize: (fontSize * 1.375).rounded(),
                 maximumNumberOfLines: lines,
-                isEmphasized: presentation.isEmphasized,
+                // Discord keeps a placeholder muted on an unread post too.
+                isEmphasized: false,
                 underlinesLinks: presentation.underlinesLinks,
                 prefix: prefix
             ),
@@ -174,18 +180,24 @@ extension ForumBoardView {
         let author: ForumCardPresentation.Author
         let fontName: String
         let fontSize: CGFloat
+        let isSeparated: Bool
     }
 
     /// Prefixes are cached so an unchanged author keeps an identical value,
     /// letting excerpt configuration compare equal and skip a rebuild.
-    private func authorPrefix(_ author: ForumCardPresentation.Author) -> ForumPostPreviewTextView.Prefix {
+    /// `separated` follows the name with a colon, as before text; a name
+    /// standing alone has none.
+    private func authorPrefix(
+        _ author: ForumCardPresentation.Author,
+        separated: Bool = true
+    ) -> ForumPostPreviewTextView.Prefix {
         let bodySize = metrics.excerptFont.pointSize
         let fallback = NSFont.interfaceSystemFont(ofSize: bodySize, weight: .semibold)
         ProfileNameFontLoader.shared.request(id: author.fontID)
         let font = ProfileNameFontCache.font(id: author.fontID, fallback: fallback)
-        let key = AuthorPrefixKey(author: author, fontName: font.fontName, fontSize: font.pointSize)
+        let key = AuthorPrefixKey(author: author, fontName: font.fontName, fontSize: font.pointSize, isSeparated: separated)
         if let cached = authorPrefixes[key] { return cached }
-        let prefix = makeAuthorPrefix(author, font: font, bodySize: bodySize)
+        let prefix = makeAuthorPrefix(author, font: font, bodySize: bodySize, separated: separated)
         if authorPrefixes.count > 512 { authorPrefixes.removeAll(keepingCapacity: true) }
         authorPrefixes[key] = prefix
         return prefix
@@ -194,7 +206,8 @@ extension ForumBoardView {
     private func makeAuthorPrefix(
         _ author: ForumCardPresentation.Author,
         font: NSFont,
-        bodySize: CGFloat
+        bodySize: CGFloat,
+        separated: Bool
     ) -> ForumPostPreviewTextView.Prefix {
         let value = NSMutableAttributedString()
         if let dotColor = author.roleDotColor,
@@ -217,6 +230,9 @@ extension ForumBoardView {
                 .foregroundColor: author.color ?? NSColor.labelColor,
             ]
         ))
+        guard separated else {
+            return ForumPostPreviewTextView.Prefix(value: value, accessibilityText: author.name)
+        }
         value.append(NSAttributedString(
             string: ": ",
             attributes: [.font: NSFont.interfaceSystemFont(ofSize: bodySize), .foregroundColor: NSColor.secondaryLabelColor]

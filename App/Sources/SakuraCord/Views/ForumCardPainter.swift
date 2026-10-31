@@ -534,15 +534,7 @@ enum ForumCardPainter {
         switch presentation.excerpt {
         case .pending:
             return
-        case .empty:
-            let text = presentation.thumbnail == nil ? "No message" : "Attachment"
-            canvas.text(
-                text,
-                in: CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: metrics.excerptLineHeight),
-                font: metrics.excerptFont,
-                color: .tertiaryLabelColor
-            )
-        case .deleted, .message:
+        case .deleted, .placeholder, .message:
             // Markdown lines can be taller than body text; the slot clips.
             drawExcerptText(renderer, at: frame.origin, clip: frame, on: canvas)
         }

@@ -21,8 +21,10 @@ struct ForumCardPresentation: Equatable {
     enum Excerpt: Equatable {
         /// The starter message has not loaded yet.
         case pending
-        /// The post has no displayable starter text.
-        case empty
+        /// Discord's muted text in place of a starter without text, after
+        /// its author's name. An image or video starter has none: its
+        /// media is the card's thumbnail, so the name stands alone.
+        case placeholder(String?, author: Author)
         /// Discord answered without the starter: it was deleted. Discord
         /// still names the post's author before its placeholder.
         case deleted(author: Author?)
@@ -126,6 +128,19 @@ enum ForumTagEmojiPresentation: Equatable {
     var mediaKey: NativeTimelineMediaKey? {
         guard case let .custom(url) = self else { return nil }
         return .media(url, maximumPixelDimension: 64)
+    }
+}
+
+extension ForumCardPresentation.Excerpt {
+    /// What Discord's forum card shows for a starter without text.
+    static func placeholderText(for starter: Message) -> String? {
+        if let poll = starter.poll { return poll.question }
+        if starter.flags.contains(.isComponentsV2) { return "Click to see message" }
+        if !starter.stickers.isEmpty { return "Click to see sticker" }
+        switch starter.attachments.first?.mediaKind {
+        case .image, .animatedImage, .video: return nil
+        default: return "Click to see attachment"
+        }
     }
 }
 

@@ -32,7 +32,10 @@ extension AppModel {
             }
         let excerpt: ForumCardPresentation.Excerpt
         if let starter {
-            excerpt = starter.content.isEmpty ? .empty : .message(starter, author: forumCardAuthor(for: starter))
+            let author = forumCardAuthor(for: starter)
+            excerpt = starter.content.isEmpty
+                ? .placeholder(ForumCardPresentation.Excerpt.placeholderText(for: starter), author: author)
+                : .message(starter, author: author)
         } else {
             excerpt = post.isFirstMessageLoaded ? .deleted(author: galleryAuthor) : .pending
         }
