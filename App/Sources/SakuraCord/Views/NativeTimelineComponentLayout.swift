@@ -1130,9 +1130,12 @@ private enum NodeBuilder {
             CGSize(width: max(1, width), height: 10_000),
             nil
         )
+        // A text display ending in a code block keeps the block's bottom
+        // padding, as message and embed text do.
         return max(
             1,
             ceil(size.height) - box.layoutHeightAdjustment
+                + NativeTimelineMarkdownChromeMetrics.trailingVisualOverflow(in: box.value)
         )
     }
 
