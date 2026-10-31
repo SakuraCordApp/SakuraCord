@@ -720,16 +720,17 @@ public enum DiscordMarkdown {
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
-        return (
-            inlineRuns(
-                source[target.label],
-                inheritedTraits: inheritedTraits,
-                inheritedLink: target.url,
-                widgetRules: widgetRules,
-                sourceCollector: sourceCollector
-            ),
-            target.end
+        var runs = inlineRuns(
+            source[target.label],
+            inheritedTraits: inheritedTraits,
+            inheritedLink: target.url,
+            widgetRules: widgetRules,
+            sourceCollector: sourceCollector
         )
+        if target.suppressesPreview {
+            for index in runs.indices where runs[index].link == target.url { runs[index].suppressesPreview = true }
+        }
+        return (runs, target.end)
     }
 
     private static func nextInlineTerminator(
@@ -761,7 +762,8 @@ public enum DiscordMarkdown {
         return MarkdownLinkTarget(
             label: source.index(after: cursor) ..< labelEnd,
             url: url,
-            end: source.index(after: closingParenthesis)
+            end: source.index(after: closingParenthesis),
+            suppressesPreview: source[source.index(after: openingParenthesis)...].first == "<"
         )
     }
 
@@ -1257,6 +1259,8 @@ private extension DiscordMarkdown {
         let label: Range<String.Index>
         let url: URL
         let end: String.Index
+        /// Written as [label](<url>), which Discord never previews.
+        var suppressesPreview = false
     }
 
     /// Per-parse lookup table: unfinished syntax must not repeatedly search the
