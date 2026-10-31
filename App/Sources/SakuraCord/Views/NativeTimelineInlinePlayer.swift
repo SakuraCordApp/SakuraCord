@@ -54,9 +54,11 @@ final class NativeTimelineInlinePlayer: NSView {
         scrollMonitor = nil
         guard window != nil else { return }
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            // Only wheel input that would reach this player: a modal or a
-            // viewer above it keeps its own scrolling.
+            // Only wheel input that would reach this player: a dialog, which
+            // sits beside the content view, or a viewer above it keeps its
+            // own scrolling.
             guard let self, let window, event.window === window,
+                  WindowModalCoordinator.allowsInput(for: self),
                   window.contentView?.hitTest(event.locationInWindow)?.isDescendant(of: self) == true,
                   let superview
             else { return event }
