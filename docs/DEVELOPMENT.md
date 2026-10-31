@@ -50,7 +50,7 @@ distribution contract and rollout prerequisites.
 Both launch scripts stop and wait for every running `SakuraCord Debug`, from
 any checkout or worktree, immediately before launching, including when another
 launcher reopened one during a build. They abort if one will not exit and avoid
-forcing a second instance. They never stop release or Nightly apps. Wait for the
+forcing a second instance. Debug launches never stop release or Nightly apps. Wait for the
 script to finish before using Computer Use, which can launch an app on its own.
 
 The focused offline scenes exercise larger or specialized UI states without
