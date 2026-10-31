@@ -89,8 +89,8 @@ struct MediaViewerFile: View {
         guard let type = type(of: item), !type.isDynamic,
               ![.archive, .diskImage, .executable, .application].contains(where: type.conforms(to:))
         else { return .unavailable }
-        let fetched = item.url.isFileURL ? nil : try? await MediaViewerPreviewFile.file(for: item, progress: progress)
-        guard let file = item.url.isFileURL ? item.url : fetched, !Task.isCancelled else { return .unavailable }
+        let file = item.url.isFileURL ? item.url : try? await MediaViewerPreviewFile.file(for: item, progress: progress)
+        guard let file, !Task.isCancelled else { return .unavailable }
         if type.conforms(to: .pdf) {
             return PDFDocument(url: file).map(Phase.pdf) ?? .unavailable
         }
@@ -192,17 +192,19 @@ private struct MediaViewerQuickLook: NSViewRepresentable {
 /// newer previews push it out; launch clears what a previous session left.
 @MainActor
 enum MediaViewerPreviewFile {
-    /// A file's fetch, and the previews waiting for it.
+    /// A file's fetch, and the previews waiting for it, the latest of
+    /// which shows its progress.
     @MainActor
     private final class Preview {
         let url: URL
-        let file: Task<URL, any Error>
+        var file: Task<URL, any Error>!
         var waiters: Set<UUID> = []
         var isFetched = false
+        var progress: @MainActor (Double) -> Void
 
-        init(url: URL, file: Task<URL, any Error>) {
+        init(url: URL, progress: @escaping @MainActor (Double) -> Void) {
             self.url = url
-            self.file = file
+            self.progress = progress
         }
     }
 
@@ -220,8 +222,10 @@ enum MediaViewerPreviewFile {
         let preview: Preview
         if let index = previews.firstIndex(where: { $0.url == item.url }) {
             preview = previews.remove(at: index)
+            preview.progress = progress
         } else {
-            preview = Preview(url: item.url, file: Task { try await fetch(item, progress: progress) })
+            preview = Preview(url: item.url, progress: progress)
+            preview.file = Task { try await fetch(item) { preview.progress($0) } }
         }
         previews.append(preview)
         while previews.count > maximumFiles {

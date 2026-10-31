@@ -201,7 +201,7 @@ actor SharedMediaDataLoader {
     ) async throws -> URL? {
         precondition(!url.isFileURL)
         guard let remoteDiskCache else { return nil }
-        if let file = try? await remoteDiskCache.fileURL(for: url) { return file }
+        if let file = await storedFile(for: url) { return file }
         let data = try await data(for: url, priority: priority)
         // The load stores into the disk cache in the background; store now so
         // the file exists when this returns.
