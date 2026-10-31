@@ -226,12 +226,11 @@ nonisolated struct LinkedImagePresentation: Sendable {
                 )
             )
         }
-        // Discord leaves an emoji link inside a spoiler as a spoilered link.
-        if references.contains(where: { $0.1.linkedEmoji != nil }) {
+        // Discord leaves an image or emoji link inside a spoiler as a
+        // spoilered link, so it never shows before its reveal.
+        if !references.isEmpty {
             let spoilered = Self.spoileredMatchLocations(matches, in: content)
-            references.removeAll {
-                $0.1.linkedEmoji != nil && spoilered.contains($0.0.location)
-            }
+            references.removeAll { spoilered.contains($0.0.location) }
         }
         matchedEmojiURLs = Set(
             references.compactMap { reference in
