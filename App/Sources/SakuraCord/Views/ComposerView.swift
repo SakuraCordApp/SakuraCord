@@ -43,6 +43,8 @@ struct ComposerView: View {
     /// A send clears the composer under the message leaving it, so the
     /// composer collapses at once rather than animating.
     @State private var isClearingForSend = false
+    @State private var activeTimeEntry: TimeMentionEntry?
+    @State private var timeTickerDate = Date.now
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -178,6 +180,31 @@ struct ComposerView: View {
                                 get: { hasActiveCommand && isFocused },
                                 set: { if hasActiveCommand { isFocused = $0 } }
                             )
+                        )
+                    } else if let timeEntry = activeTimeEntry {
+                        TimeMentionInputView(
+                            query: Binding(
+                                get: { activeTimeEntry?.query ?? "" },
+                                set: {
+                                    activeTimeEntry?.query = zsh
+                                    autocompleteIndex = 0
+                                    isAutocompleteDismissed = false
+                                }
+                            ),
+                            prefix: timeEntry.prefix,
+                            suffix: timeEntry.suffix,
+                            onAccept: {
+                                acceptActiveTimeEntry()
+                            },
+                            onCancel: {
+                                cancelTimeEntry()
+                            },
+                            onCommand: { command in
+                                if let context = timeMentionContext {
+                                    return handleTimeAutocomplete(command, context: context)
+                                }
+                                return false
+                            }
                         )
                     } else {
                         ZStack(alignment: .bottomTrailing) {
@@ -444,6 +471,17 @@ struct ComposerView: View {
             if completeClosedEmojiName(in: value) {
                 return
             }
+            if activeTimeEntry == nil,
+               let rawContext = TimeMentionContext(text: value, selection: draftSelection) {
+                let nsDraft = value as NSString
+                let prefix = nsDraft.substring(to: rawContext.range.location)
+                let suffix = nsDraft.substring(from: rawContext.range.location + rawContext.range.length)
+                activeTimeEntry = TimeMentionEntry(prefix: prefix, query: rawContext.rawQuery, suffix: suffix)
+                updateDraft(prefix + suffix)
+                autocompleteIndex = 0
+                isAutocompleteDismissed = false
+                return
+            }
             isAutocompleteDismissed = false
             autocompleteIndex = 0
             updateSlashPicker(for: value)
@@ -479,6 +517,7 @@ struct ComposerView: View {
             voiceMessage.clearError()
         }
         .task(id: composerPresentationID) {
+            activeTimeEntry = nil
             if !voiceMessage.restoreAfterGuildTimeout(in: activeConversationID) {
                 voiceMessage.discard(playback: model.voiceMessagePlayback)
             }
@@ -511,6 +550,13 @@ struct ComposerView: View {
                 await model.loadEmojis(for: guild.id)
             }
         }
+        .task(id: timeMentionContext != nil) {
+            guard timeMentionContext != nil else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                timeTickerDate = Date.now
+            }
+        }
     }
 
     private var composerPresentationID: String {
@@ -527,7 +573,7 @@ struct ComposerView: View {
     /// when the editor loses focus or the window becomes inactive, and return
     /// unchanged with focus.
     private var isInputActive: Bool {
-        isFocused && appearsActive
+        (isFocused || activeTimeEntry != nil) && appearsActive
     }
 
     @ViewBuilder
@@ -1030,9 +1076,17 @@ struct ComposerView: View {
             if !allTimeOptions.isEmpty {
                 return handleTimeAutocomplete(command, context: context)
             } else if command == .accept {
+                if activeTimeEntry != nil {
+                    acceptActiveTimeEntry()
+                    return true
+                }
                 return true
             } else if command == .dismiss {
-                isAutocompleteDismissed = true
+                if activeTimeEntry != nil {
+                    cancelTimeEntry()
+                } else {
+                    isAutocompleteDismissed = true
+                }
                 return true
             }
         }
@@ -1498,13 +1552,20 @@ private extension ComposerView {
     }
 
     private var timeMentionContext: TimeMentionContext? {
+        if let entry = activeTimeEntry {
+            return TimeMentionContext(
+                range: NSRange(location: entry.prefix.utf16.count, length: 0),
+                query: entry.query.trimmingCharacters(in: .whitespacesAndNewlines),
+                rawQuery: entry.query
+            )
+        }
         guard !isAutocompleteDismissed else { return nil }
         return TimeMentionContext(text: draft, selection: draftSelection)
     }
 
     private var timeCandidates: [DiscordParsedTimeCandidate] {
         guard let context = timeMentionContext else { return [] }
-        return DiscordNaturalLanguageTimeParser.candidates(for: context.query)
+        return DiscordNaturalLanguageTimeParser.candidates(for: context.query, now: timeTickerDate)
     }
 
     private var allTimeOptions: [DiscordParsedTimeCandidate.Option] {
@@ -1651,26 +1712,68 @@ private extension ComposerView {
             )
             return true
         case .dismiss:
-            isAutocompleteDismissed = true
+            if activeTimeEntry != nil {
+                cancelTimeEntry()
+            } else {
+                isAutocompleteDismissed = true
+            }
             return true
         default:
             return false
         }
     }
 
+    private func acceptActiveTimeEntry() {
+        let options = allTimeOptions
+        if !options.isEmpty {
+            let option = options[min(autocompleteIndex, options.count - 1)]
+            acceptTimeFormat(option)
+        } else if let entry = activeTimeEntry {
+            let text = entry.prefix + "@time " + entry.query + entry.suffix
+            activeTimeEntry = nil
+            updateDraft(text)
+            restoreComposerFocus(selection: NSRange(location: text.utf16.count, length: 0))
+        }
+    }
+
     private func acceptTimeFormat(
         _ option: DiscordParsedTimeCandidate.Option,
-        context: TimeMentionContext
+        context: TimeMentionContext? = nil
     ) {
-        draftSelection = insertInDraft(option.markdownToken + " ", replacing: context.range)
+        if let entry = activeTimeEntry {
+            let inserted = "\(entry.prefix)\(option.markdownToken) \(entry.suffix)"
+            activeTimeEntry = nil
+            autocompleteIndex = 0
+            isAutocompleteDismissed = true
+            updateDraft(inserted)
+            let newCursor = (entry.prefix + option.markdownToken + " ").utf16.count
+            restoreComposerFocus(selection: NSRange(location: newCursor, length: 0))
+        } else if let context {
+            draftSelection = insertInDraft(option.markdownToken + " ", replacing: context.range)
+            autocompleteIndex = 0
+            isAutocompleteDismissed = true
+        }
+    }
+
+    private func cancelTimeEntry() {
+        guard let entry = activeTimeEntry else { return }
+        let restored = entry.prefix + entry.suffix
+        activeTimeEntry = nil
         autocompleteIndex = 0
         isAutocompleteDismissed = true
+        updateDraft(restored)
+        let newCursor = entry.prefix.utf16.count
+        restoreComposerFocus(selection: NSRange(location: newCursor, length: 0))
     }
 
     private func cancelTimeMention(context: TimeMentionContext) {
-        draftSelection = insertInDraft("", replacing: context.range)
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
+        if activeTimeEntry != nil {
+            cancelTimeEntry()
+        } else {
+            draftSelection = insertInDraft("", replacing: context.range)
+            autocompleteIndex = 0
+            isAutocompleteDismissed = true
+        }
     }
 
     private func acceptMentionAutocomplete(
@@ -1678,10 +1781,13 @@ private extension ComposerView {
         context: MentionAutocompleteContext
     ) {
         if suggestion.id == "special:time" {
-            draftSelection = insertInDraft("@time ", replacing: context.range)
+            let nsDraft = draft as NSString
+            let prefix = nsDraft.substring(to: context.range.location)
+            let suffix = nsDraft.substring(from: context.range.location + context.range.length)
+            activeTimeEntry = TimeMentionEntry(prefix: prefix, query: "", suffix: suffix)
+            updateDraft(prefix + suffix)
             autocompleteIndex = 0
             isAutocompleteDismissed = false
-            isFocused = true
             return
         }
         if let member = suggestion.member { model.rememberMentionMember(member) }

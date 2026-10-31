@@ -47,6 +47,7 @@ extension NativeTimelineCanvasView {
             }) else { continue }
             setNeedsDisplay(rowFrame(at: index))
         }
+        toolTip = value?.toolTip
     }
 
     func setHoveredTextLink(

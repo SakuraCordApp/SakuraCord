@@ -1,72 +1,18 @@
+import AppKit
 import MessageRendering
+import SakuraCordModels
 import SwiftUI
 
-struct TimeMentionHelpStrip: View {
-    let cancel: () -> Void
+public struct TimeMentionEntry: Equatable {
+    public var prefix: String
+    public var query: String
+    public var suffix: String
 
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: InterfaceScale.metric(7)) {
-            Text("@time")
-                .font(.interface(.callout).weight(.semibold))
-                .lineLimit(1)
-                .layoutPriority(1)
-            Text("Refer to a time dynamically in the viewer's time zone")
-                .font(.interface(.callout))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: InterfaceScale.metric(8))
-            HoverActionButton(
-                systemImage: "xmark",
-                help: "Cancel time picker",
-                diameter: InterfaceScale.metric(22),
-                action: cancel
-            )
-            .foregroundStyle(.secondary)
-            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
-        }
-        .padding(.leading, InterfaceScale.metric(15))
-        .padding(.trailing, InterfaceScale.metric(8))
-        .padding(.top, InterfaceScale.metric(8))
-        .padding(.bottom, InterfaceScale.metric(6))
-        .accessibilityElement(children: .combine)
+    public init(prefix: String = "", query: String = "", suffix: String = "") {
+        self.prefix = prefix
+        self.query = query
+        self.suffix = suffix
     }
-}
-
-struct TimeFormatRow: View {
-    let option: DiscordParsedTimeCandidate.Option
-    let isSelected: Bool
-    let select: () -> Void
-
-    var body: some View {
-        HStack {
-            Text(option.displayText)
-                .font(.interfaceSystem(size: 13.5, weight: .regular))
-                .foregroundStyle(Color.primary)
-                .padding(.horizontal, InterfaceScale.metric(8))
-                .padding(.vertical, InterfaceScale.metric(4))
-                .background(
-                    Color.primary.opacity(isSelected ? 0.22 : 0.08),
-                    in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
-                )
-            Spacer()
-        }
-        .padding(.horizontal, InterfaceScale.metric(8))
-        .frame(height: InterfaceScale.metric(34))
-        .background(
-            isSelected ? Color.primary.opacity(0.08) : Color.clear,
-            in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
-        )
-        .contentShape(Rectangle())
-    }
-}
-
-private struct FlatTimeOption: Identifiable {
-    let id: String
-    let candidateIndex: Int
-    let option: DiscordParsedTimeCandidate.Option
-    let flatIndex: Int
-    let hasDividerBefore: Bool
 }
 
 struct TimeFormatsAutocompleteList: View {
@@ -75,66 +21,301 @@ struct TimeFormatsAutocompleteList: View {
     let selectedIndex: Int
     let highlight: (Int) -> Void
     let select: (DiscordParsedTimeCandidate.Option) -> Void
-
-    var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius
-    var keyboardSelectionRevision = 0
-
-    private var allOptions: [FlatTimeOption] {
-        var result: [FlatTimeOption] = []
-        var flat = 0
-        for (cIndex, candidate) in candidates.enumerated() {
-            for (oIndex, option) in candidate.options.enumerated() {
-                result.append(
-                    FlatTimeOption(
-                        id: option.id,
-                        candidateIndex: cIndex,
-                        option: option,
-                        flatIndex: flat,
-                        hasDividerBefore: cIndex > 0 && oIndex == 0
-                    )
-                )
-                flat += 1
-            }
-        }
-        return result
-    }
+    let cornerRadius: CGFloat
+    let keyboardSelectionRevision: Int
 
     var body: some View {
-        ComposerAutocompletePanel(heading: heading, cornerRadius: cornerRadius) {
-            if candidates.isEmpty {
-                HStack {
-                    Text("No matching time formats")
-                        .font(.interfaceSystem(size: 13, weight: .regular))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            Text(heading.uppercased())
+                .font(.interfaceSystem(size: 11, weight: .bold))
+                .foregroundStyle(Color.secondary)
                 .padding(.horizontal, InterfaceScale.metric(14))
-                .padding(.vertical, InterfaceScale.metric(10))
-            } else {
-                ComposerSuggestionList(
-                    rows: allOptions,
-                    selectedID: allOptions.indices.contains(selectedIndex) ? allOptions[selectedIndex].id : nil,
-                    keyboardSelectionRevision: keyboardSelectionRevision,
-                    maximumHeight: InterfaceScale.metric(260),
-                    rowHeight: { $0.hasDividerBefore ? InterfaceScale.metric(44) : InterfaceScale.metric(34) },
-                    highlight: { highlight($0.flatIndex) },
-                    activate: { select($0.option) },
-                    content: { row in
-                        VStack(spacing: 0) {
-                            if row.hasDividerBefore {
+                .padding(.top, InterfaceScale.metric(10))
+                .padding(.bottom, InterfaceScale.metric(6))
+
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                        ForEach(Array(candidates.enumerated()), id: \.offset) { candidateIndex, candidate in
+                            if candidateIndex > 0 {
                                 Divider()
+                                    .padding(.vertical, InterfaceScale.metric(4))
+                                    .padding(.horizontal, InterfaceScale.metric(10))
+                            }
+
+                            ForEach(candidate.options) { option in
+                                let overallIndex = overallOptionIndex(for: option)
+                                let isSelected = overallIndex == selectedIndex
+                                Button {
+                                    select(option)
+                                } label: {
+                                    HStack {
+                                        Text(option.display)
+                                            .font(.interfaceSystem(size: 14))
+                                            .foregroundStyle(Color.primary)
+                                            .padding(.horizontal, InterfaceScale.metric(8))
+                                            .padding(.vertical, InterfaceScale.metric(4))
+                                            .background(
+                                                Color.primary.opacity(0.10),
+                                                in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
+                                            )
+                                        Spacer()
+                                    }
                                     .padding(.horizontal, InterfaceScale.metric(10))
                                     .padding(.vertical, InterfaceScale.metric(4))
+                                    .contentShape(Rectangle())
+                                    .background(
+                                        isSelected
+                                            ? Color.accentColor.opacity(0.18)
+                                            : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .id(overallIndex)
+                                .onHover { hovering in
+                                    if hovering { highlight(overallIndex) }
+                                }
                             }
-                            TimeFormatRow(
-                                option: row.option,
-                                isSelected: selectedIndex == row.flatIndex,
-                                select: { select(row.option) }
-                            )
                         }
                     }
-                )
+                    .padding(.horizontal, InterfaceScale.metric(6))
+                    .padding(.bottom, InterfaceScale.metric(6))
+                }
+                .frame(maxHeight: InterfaceScale.metric(280))
+                .onChange(of: keyboardSelectionRevision) { _, _ in
+                    proxy.scrollTo(selectedIndex)
+                }
             }
         }
+        .commandPanelSurface(cornerRadius: cornerRadius)
+    }
+
+    private func overallOptionIndex(for target: DiscordParsedTimeCandidate.Option) -> Int {
+        var running = 0
+        for candidate in candidates {
+            for option in candidate.options {
+                if option.id == target.id { return running }
+                running += 1
+            }
+        }
+        return 0
+    }
+}
+
+struct TimeMentionHelpStrip: View {
+    let cancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(8)) {
+            Text("@time")
+                .font(.interfaceSystem(size: 13, weight: .bold))
+                .foregroundStyle(Color.primary)
+
+            Text("Refer to a time dynamically in the viewer's time zone")
+                .font(.interfaceSystem(size: 12))
+                .foregroundStyle(Color.secondary)
+
+            Spacer()
+
+            Button(action: cancel) {
+                Image(systemName: "xmark")
+                    .font(.interfaceSystem(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, InterfaceScale.metric(14))
+        .padding(.vertical, InterfaceScale.metric(8))
+    }
+}
+
+struct TimeMentionNSTextFieldView: View {
+    @Binding var query: String
+    let onCommit: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(6)) {
+            HStack(spacing: InterfaceScale.metric(4)) {
+                Image(systemName: "clock")
+                    .font(.interfaceSystem(size: 12, weight: .semibold))
+                Text("@time")
+                    .font(.interfaceSystem(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, InterfaceScale.metric(6))
+            .padding(.vertical, InterfaceScale.metric(3))
+            .background(
+                Color.primary.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
+            )
+
+            TextField("Type a date or time...", text: $query)
+                .textFieldStyle(.plain)
+                .font(.interfaceSystem(size: 14))
+                .onSubmit(onCommit)
+                .onExitCommand(perform: onCancel)
+        }
+        .padding(InterfaceScale.metric(6))
+        .background(
+            RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .overlay {
+                    RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                }
+        )
+    }
+}
+
+final class TimeMentionNSTextField: NSTextField {
+    var onCommand: ((ComposerAutocompleteCommand) -> Bool)?
+    var onAccept: (() -> Void)?
+    var onCancel: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            window?.makeFirstResponder(self)
+        }
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.keyCode == 53 {
+            onCancel?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.moveUp(_:)) {
+            return onCommand?(.previous) ?? false
+        }
+        if commandSelector == #selector(NSResponder.moveDown(_:)) {
+            return onCommand?(.next) ?? false
+        }
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) || commandSelector == #selector(NSResponder.insertTab(_:)) {
+            onAccept?()
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            onCancel?()
+            return true
+        }
+        if commandSelector == #selector(NSResponder.deleteBackward(_:)), string.isEmpty {
+            onCancel?()
+            return true
+        }
+        return super.textView(textView, doCommandBy: commandSelector)
+    }
+}
+
+struct TimeMentionFieldRepresentable: NSViewRepresentable {
+    @Binding var text: String
+    let onCommand: (ComposerAutocompleteCommand) -> Bool
+    let onAccept: () -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> TimeMentionNSTextField {
+        let field = TimeMentionNSTextField()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .interfaceSystemFont(ofSize: 15)
+        field.textColor = .labelColor
+        field.placeholderString = "Type a date or time (e.g. 24 October, in 2 hours)..."
+        field.delegate = context.coordinator
+        field.onCommand = onCommand
+        field.onAccept = onAccept
+        field.onCancel = onCancel
+        DispatchQueue.main.async {
+            field.window?.makeFirstResponder(field)
+        }
+        return field
+    }
+
+    func updateNSView(_ nsView: TimeMentionNSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.onCommand = onCommand
+        nsView.onAccept = onAccept
+        nsView.onCancel = onCancel
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: TimeMentionFieldRepresentable
+
+        init(_ parent: TimeMentionFieldRepresentable) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+    }
+}
+
+struct TimeMentionInputView: View {
+    @Binding var query: String
+    var prefix: String = ""
+    var suffix: String = ""
+    let onAccept: () -> Void
+    let onCancel: () -> Void
+    let onCommand: (ComposerAutocompleteCommand) -> Bool
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(6)) {
+            if !prefix.isEmpty {
+                Text(prefix)
+                    .font(.interfaceSystem(size: 15))
+                    .foregroundStyle(Color.primary)
+            }
+            HStack(spacing: InterfaceScale.metric(6)) {
+                HStack(spacing: InterfaceScale.metric(4)) {
+                    Text("@time")
+                        .font(.interfaceSystem(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, InterfaceScale.metric(6))
+                .padding(.vertical, InterfaceScale.metric(2.5))
+                .background(
+                    Color.primary.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
+                )
+
+                TimeMentionFieldRepresentable(
+                    text: $query,
+                    onCommand: onCommand,
+                    onAccept: onAccept,
+                    onCancel: onCancel
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, InterfaceScale.metric(6))
+            .padding(.vertical, InterfaceScale.metric(3))
+            .background(
+                RoundedRectangle(cornerRadius: InterfaceScale.metric(5), style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: InterfaceScale.metric(5), style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.35))
+                    )
+            )
+
+            if !suffix.isEmpty {
+                Text(suffix)
+                    .font(.interfaceSystem(size: 15))
+                    .foregroundStyle(Color.primary)
+            }
+        }
+        .frame(minHeight: ChatChromeMetrics.composerControlHeight)
     }
 }

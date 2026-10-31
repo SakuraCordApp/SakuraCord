@@ -122,6 +122,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         let characterIndex: Int
         let rawToken: String
         let frame: CGRect
+        var toolTip: String?
     }
 
     struct TextPointerHit {

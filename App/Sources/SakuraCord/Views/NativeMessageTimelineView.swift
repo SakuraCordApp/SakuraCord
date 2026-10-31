@@ -337,6 +337,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
         weak var documentView: NativeTimelineDocumentView?
         weak var scrollView: NSScrollView?
         var observations: [NSObjectProtocol] = []
+        var relativeTimestampTimer: Timer?
         var lastScrollRequestID: UUID?
         var lastEditRequestID: UUID?
         var lastReportedState: TimelineScrollState?
@@ -388,6 +389,13 @@ final class NativeMessageTimelineCoordinator: NSObject {
         init(parent: NativeMessageTimelineView) {
             self.parent = parent
             actions = Self.makeActions(from: parent)
+            let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.parent.model.invalidateTimelinePresentation()
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            relativeTimestampTimer = timer
         }
 }
 
@@ -1073,6 +1081,8 @@ extension NativeMessageTimelineCoordinator {
             for observation in observations {
                 NotificationCenter.default.removeObserver(observation)
             }
+            relativeTimestampTimer?.invalidate()
+            relativeTimestampTimer = nil
             observations.removeAll()
         }
 

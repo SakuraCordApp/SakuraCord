@@ -98,6 +98,12 @@ struct TimeMentionContext: Equatable {
             query = ""
         }
     }
+
+    init(range: NSRange, query: String, rawQuery: String) {
+        self.range = range
+        self.query = query
+        self.rawQuery = rawQuery
+    }
 }
 
 struct MentionAutocompleteSuggestion: Identifiable {

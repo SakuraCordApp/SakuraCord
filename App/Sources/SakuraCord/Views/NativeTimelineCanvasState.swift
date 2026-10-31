@@ -109,6 +109,7 @@ final class NativeTimelinePointerState {
         hoveredServerTagMessageID = nil
         hoveredCommandPillMessageID = nil
         hoveredMention = nil
+        toolTip = nil
         hoveredTextLink = nil
         hoveredTextSpoiler = nil
         hoveredCodeBlock = nil

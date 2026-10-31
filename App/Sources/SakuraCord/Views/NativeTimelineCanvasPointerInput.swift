@@ -1281,7 +1281,8 @@ extension NativeTimelineCanvasView {
                 itemIdentifier: items[index].identifier,
                 region: mention.region,
                 characterIndex: mention.characterIndex,
-                rawToken: mention.rawToken
+                rawToken: mention.rawToken,
+                toolTip: mention.toolTip
             )
         }
         return nil
@@ -1377,7 +1378,7 @@ extension NativeTimelineCanvasView {
                 value: selectable.value,
                 framesetter: selectable.framesetter,
                 frame: selectable.frame
-            ).filter { $0.presentation.isInteractive }.map { mention in
+            ).filter { $0.presentation.isInteractive || $0.presentation.isTimestamp }.map { mention in
                 MentionPointerRegion(
                     region: selectable.region,
                     characterIndex: mention.characterIndex,
@@ -1385,7 +1386,8 @@ extension NativeTimelineCanvasView {
                     frame: mention.frame.offsetBy(
                         dx: 0,
                         dy: rowOrigin
-                    )
+                    ),
+                    toolTip: mention.presentation.toolTip
                 )
             }
         }

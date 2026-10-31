@@ -20,6 +20,7 @@ nonisolated struct NativeTimelineMentionHover: Equatable {
     let region: NativeTimelineTextRegion
     let characterIndex: Int
     let rawToken: String
+    var toolTip: String?
 }
 
 nonisolated struct NativeTimelineTextLinkHover: Equatable {
