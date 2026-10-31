@@ -78,10 +78,13 @@ struct MediaViewerAudio: View {
             playback.toggle(playbackID, source: source, duration: duration)
         } label: {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(.symbolEffect(.replace, options: .speed(2)))
                 .font(.interfaceSystem(size: 30, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: InterfaceScale.metric(60), height: InterfaceScale.metric(60))
+                // The whole circle, not just the glyph, takes the pointer, so
+                // the glass responds anywhere on the button.
+                .contentShape(.circle)
                 // Interactive glass keeps its tint and depth while pressed,
                 // where the prominent button style flattens to a pale fill.
                 .glassEffect(.regular.tint(SakuraCordAccentColor.color).interactive(), in: .circle)
@@ -118,7 +121,7 @@ private struct MediaViewerAudioSkipButton: View {
                     .font(.interfaceSystem(size: 26, weight: .medium))
                     .symbolEffect(
                         seconds < 0 ? .rotate.byLayer.counterClockwise : .rotate.byLayer.clockwise,
-                        options: .speed(1.6),
+                        options: .speed(3),
                         value: skips
                     )
             }
