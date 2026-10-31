@@ -906,14 +906,17 @@ extension NativeTimelineCanvasView {
         let hoveredAudioFile = hoveredVoiceMessage.flatMap { $0.playbackID.isAudioFile ? $0.playbackID : nil }
         placeVoiceMessageOverlay(&voiceMessageOverlay, for: voiceMessageActiveID)
         let hoverTarget = hoveredAudioFile == voiceMessageActiveID ? nil : hoveredAudioFile
-        // A hovered play button eases back before its overlay goes.
+        // A hovered play button eases back before its overlay goes, and
+        // follows its row meanwhile.
         if hoverTarget == nil, let overlay = voiceMessageHoverOverlay,
            overlay.easeOutHover(then: { [weak self, weak overlay] in
                guard let self, voiceMessageHoverOverlay === overlay else { return }
                Self.remove(&voiceMessageHoverOverlay)
            }) {
+            placeVoiceMessageOverlay(&voiceMessageHoverOverlay, for: overlay.region.playbackID)
             return
         }
+        voiceMessageHoverOverlay?.cancelHoverEaseOut()
         placeVoiceMessageOverlay(&voiceMessageHoverOverlay, for: hoverTarget)
     }
 
@@ -943,7 +946,6 @@ extension NativeTimelineCanvasView {
             Self.remove(&overlay)
         }
         if let overlay {
-            overlay.cancelHoverEaseOut()
             overlay.region = found.region
             overlay.frame = frame
             overlay.state = state
@@ -1000,7 +1002,7 @@ extension NativeTimelineCanvasView {
             displayedTime: phase == nil ? region.duration : max(0, duration - position),
             speedLabel: playback.speedLabel,
             level: CGFloat(playback.outputLevel),
-            reducesMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            reducesMotion: !AppMotionPolicy.animatesUncategorized,
             isPlayHovered: hover == .play,
             isSpeedHovered: hover == .speed
         )
