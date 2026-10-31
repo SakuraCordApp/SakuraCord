@@ -118,13 +118,36 @@ import Testing
         host.animationState.willRemove = { if dismissals == 0 { removalsBeforeDismissal += 1 } }
         host.requestDismissal()
         host.requestDismissal()
-        // What the modal covered scrolls and hovers while it animates away.
+        // What the modal covered scrolls and hovers while it animates away,
+        // while the modal still swallows clicks.
         #expect(WindowModalCoordinator.allowsInput(for: window.contentView!))
-        #expect(host.hitTest(.zero) == nil)
-        #expect(host.isDismissing)
+        #expect(host.hitTest(.zero) === host)
     }
     #expect(dismissals == 1)
     #expect(removalsBeforeDismissal == 1)
+}
+
+@MainActor
+@Test func `one escape closes only the top of stacked modals and its clicks stay with it`() throws {
+    let window = modalTestWindow()
+    let coordinator = WindowModalCoordinator.coordinator(for: window)
+    let parent = modalTestHost(in: window)
+    let child = modalTestHost(in: window)
+    var parentEscapes = 0
+    parent.animationState.escapeAction = { parentEscapes += 1 }
+    parent.present()
+    child.present()
+    child.animationState.dismissalTransition = { _ in 60 }
+    defer {
+        for host in [child, parent] { host.cancelPendingDismissal(); host.unregisterInput(); host.removeFromSuperview() }
+    }
+    let escape = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+    #expect(coordinator.filter(escape) == nil)
+    #expect(child.isDismissing && parentEscapes == 0)
+    #expect(coordinator.topmost === parent)
+    #expect(child.hitTest(.zero) === child)
+    // Removing the closing modal from input leaves it above the parent.
+    #expect(window.contentView!.subviews.last === child)
 }
 
 @MainActor

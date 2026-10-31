@@ -330,7 +330,13 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard isTopmostPresentedOverlay, bounds.contains(point) else { return nil }
+        guard bounds.contains(point) else { return nil }
+        if isDismissing {
+            // What a closing modal uncovers scrolls at once, but a second
+            // click meant for the modal must not act on what lies below.
+            return NSApp.currentEvent?.type == .scrollWheel ? nil : self
+        }
+        guard isTopmostPresentedOverlay else { return nil }
         return super.hitTest(point) ?? self
     }
 

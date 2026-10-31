@@ -98,7 +98,8 @@ final class WindowModalCoordinator {
         for accessory in entries[index].accessories.allObjects { accessory.removeFromSuperview() }
         entries.remove(at: index)
         host.animationState.isInputActive = false
-        reorderHosts()
+        // The rest keep their order; reordering would raise them over a
+        // modal still animating away.
         updateInputOwnership()
         if wasTopmost, let window {
             if let view = previous as? NSView, view.window === window,
