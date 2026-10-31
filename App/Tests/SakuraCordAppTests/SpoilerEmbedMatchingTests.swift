@@ -134,3 +134,14 @@ func `a link shown in code does not count as a copy of a spoilered one`() {
     )
     #expect(ids == ["embed-0"])
 }
+
+@MainActor @Test
+func `escaped backticks around a <…> copy still leave the spoilered link's preview hidden`() {
+    let ids = concealedEmbedIDs(
+        content: #"\`<https://youtu.be/ID>\` ||https://youtu.be/ID||"#,
+        embeds: [
+            MessageEmbed(id: "embed-0", type: "video", url: URL(string: "https://www.youtube.com/watch?v=ID")),
+        ]
+    )
+    #expect(ids == ["embed-0"])
+}

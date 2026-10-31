@@ -259,7 +259,7 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         // One entry per address no preview names, spoilered only when every
         // copy Discord could preview is.
         var unmatchedLinks: [(url: URL, isSpoiler: Bool)] = []
-        for link in previewableLinks(links, in: message.content) where !embedURLs.contains(link.url) {
+        for link in links where !link.suppressesPreview && !embedURLs.contains(link.url) {
             if let index = unmatchedLinks.firstIndex(where: { $0.url == link.url }) {
                 unmatchedLinks[index].isSpoiler = unmatchedLinks[index].isSpoiler && link.isSpoiler
             } else {
@@ -279,53 +279,6 @@ enum NativeTimelineSpoilerConcealmentPolicy {
             if !candidates.isEmpty, candidates.allSatisfy(\.isSpoiler) { result.insert(url) }
         }
         return result
-    }
-
-    /// The links Discord can preview: not those written as <…>. Each copy of
-    /// an address is matched to its place in the text, in order.
-    private static func previewableLinks(
-        _ links: [DiscordMarkdown.LinkOccurrence],
-        in content: String
-    ) -> [DiscordMarkdown.LinkOccurrence] {
-        let code = codeRanges(in: content)
-        var suppressed: [URL: [Bool]] = [:]
-        for url in Set(links.map(\.url)) {
-            let written = url.absoluteString
-            var copies: [Bool] = []
-            var searchRange = content.startIndex ..< content.endIndex
-            while let range = content.range(of: written, range: searchRange) {
-                searchRange = range.upperBound ..< content.endIndex
-                // Code shows a link without making one.
-                guard !code.contains(where: { $0.overlaps(range) }) else { continue }
-                copies.append(
-                    range.lowerBound > content.startIndex
-                        && content[content.index(before: range.lowerBound)] == "<"
-                        && content[range.upperBound...].first == ">"
-                )
-            }
-            suppressed[url] = copies
-        }
-        var seen: [URL: Int] = [:]
-        return links.filter { link in
-            let index = seen[link.url, default: 0]
-            seen[link.url] = index + 1
-            let copies = suppressed[link.url] ?? []
-            return !(copies.indices.contains(index) && copies[index])
-        }
-    }
-
-    /// Code blocks and inline code, whose text never renders as a link.
-    private static func codeRanges(in content: String) -> [Range<String.Index>] {
-        var ranges: [Range<String.Index>] = []
-        var index = content.startIndex
-        while let open = content[index...].firstIndex(of: "`") {
-            let fence = content[open...].hasPrefix("```") ? "```" : "`"
-            let bodyStart = content.index(open, offsetBy: fence.count)
-            guard let close = content.range(of: fence, range: bodyStart ..< content.endIndex) else { break }
-            ranges.append(open ..< close.upperBound)
-            index = close.upperBound
-        }
-        return ranges
     }
 
     /// A host's last two labels, with the short hosts that redirect elsewhere
