@@ -221,11 +221,20 @@ extension NativeTimelineCanvasView {
         let guildID = model.messagePresentationGuildID(for: message)
         switch action {
         case .moderate:
-            UserContextMenu.make(
+            let menu = UserContextMenu.make(
                 for: message.author,
                 context: .init(guildID: guildID, channelID: message.channelID, isLocalIdentity: false),
                 model: model
-            ).popUp(positioning: nil, at: NSPoint(x: anchor.minX, y: anchor.maxY + InterfaceScale.metric(4)), in: self)
+            )
+            // Below the button, or above it where the screen ends: AppKit
+            // would otherwise slide the menu up under the pointer, arming
+            // whichever item lands there.
+            let gap = InterfaceScale.metric(4)
+            let below = NSPoint(x: anchor.minX, y: anchor.maxY + gap)
+            let screenBottom = window?.screen?.visibleFrame.minY ?? 0
+            let menuBottom = window.map { $0.convertPoint(toScreen: convert(below, to: nil)).y - menu.size.height } ?? 0
+            menu.popUp(positioning: nil, at: menuBottom >= screenBottom ? below
+                : NSPoint(x: anchor.minX, y: anchor.minY - gap - menu.size.height), in: self)
         case .jump:
             // The alert was posted as the message was caught, so its ID
             // opens the channel at that moment.
