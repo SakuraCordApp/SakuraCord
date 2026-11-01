@@ -253,6 +253,10 @@ extension DiscordRESTProvider {
                 "A message can include at most \(SendMessageDraft.maximumAttachmentCount) attachments."
             )
         }
+        // Every send path ends here, so no command can answer a request first.
+        guard privateChannel(id: draft.channelID)?.messageRequest == nil else {
+            throw ChatProviderError.invalidRequest("Accept this message request before replying.")
+        }
         let key = "\(draft.channelID):\(draft.nonce)"
         if let task = messageSendTasks[key] {
             let message = try await task.value

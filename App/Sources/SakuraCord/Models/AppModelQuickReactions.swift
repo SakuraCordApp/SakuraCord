@@ -2,10 +2,12 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
-    /// Timeout disables both adding and removing existing reactions, even
-    /// though joining an existing reaction normally needs no ADD_REACTIONS.
+    /// Timeout, or a message request not yet accepted, disables both adding
+    /// and removing existing reactions, even though joining an existing
+    /// reaction normally needs no ADD_REACTIONS.
     func canUpdateReactions(on message: Message) -> Bool {
         guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
+            && knownRootChannel(message.channelID)?.messageRequest == nil
     }
 
     /// Whether new reactions can be created on this message.
@@ -46,7 +48,7 @@ extension AppModel {
         else { return nil }
         let channel = context.channel
         guard let guildID = channel.guildID else {
-            return channel.isOfficialSystemDirectMessage ? nil : (channel, permissions)
+            return channel.isOfficialSystemDirectMessage || channel.messageRequest != nil ? nil : (channel, permissions)
         }
         guard !requiresOnboarding(in: guildID), onboardingMember(in: guildID)?.isPending != true,
               permissions & DiscordPermissionBits.viewChannel != 0,

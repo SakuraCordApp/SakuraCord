@@ -27,8 +27,11 @@ struct MessageRequestContractTests {
         await provider.disconnect()
     }
 
-    @Test func `accept sends one consent PUT and moves the request into the conversation list`() async throws {
+    @Test func `a reply waits for one consent PUT, which moves the request into the conversation list`() async throws {
         let provider = await makeProvider()
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.send(SendMessageDraft(channelID: requestID, content: "hi"))
+        }
         try await provider.acceptMessageRequest(requestID)
         #expect(await provider.privateChannel(id: requestID)?.messageRequest == nil)
         let requests = fixture.requests.withLock { $0 }
