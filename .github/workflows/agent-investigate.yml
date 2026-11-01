@@ -26,8 +26,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
+      AGENT_MODEL: ${{ vars.AGENT_INVESTIGATE_MODEL || 'claude-sonnet-5-5' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: nightly
           fetch-depth: 0
@@ -35,7 +36,7 @@ jobs:
       - name: Record source commit
         run: echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       # The default-branch copy of the agent files is trusted; nightly may differ.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: .agent-control
@@ -43,21 +44,32 @@ jobs:
           persist-credentials: false
       - name: Build prompt
         run: node .agent-control/.github/agents/issue-context.mjs .agent-control/.github/agents/investigate.md "$RUNNER_TEMP/prompt.md" --triage
-      - name: Investigate with Codex
+      - name: Install Claude Code
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat
+          npm install -g @anthropic-ai/claude-code@2.1.316
+      # Shell commands run sandboxed with no network and cannot write the checkout or
+      # runner files, so the trusted post step and later step environment stay intact.
+      - name: Investigate with Claude
         env:
           GH_TOKEN: ""
-        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1.12
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: ${{ runner.temp }}/prompt.md
-          output-schema-file: .agent-control/.github/agents/investigation.schema.json
-          output-file: ${{ runner.temp }}/investigation.json
-          model: ${{ vars.AGENT_INVESTIGATE_MODEL || 'gpt-6-luna' }}
-          effort: ${{ vars.AGENT_INVESTIGATE_EFFORT || 'high' }}
-          permission-profile: ":read-only"
-          allow-bot-users: ${{ vars.SAKURACORD_BOT_SLUG }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EFFORT: ${{ vars.AGENT_INVESTIGATE_EFFORT || 'high' }}
+        run: |
+          settings=$(jq -n --arg workspace "$GITHUB_WORKSPACE" --arg temp "$RUNNER_TEMP" '{sandbox: {
+            enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false,
+            network: {allowedDomains: []}, filesystem: {denyWrite: [$workspace, $temp]},
+            credentials: {envVars: [{name: "ANTHROPIC_API_KEY", mode: "deny"}]}}}')
+          claude -p --model "$AGENT_MODEL" --effort "$EFFORT" --max-budget-usd 5 \
+            --output-format json --no-session-persistence --strict-mcp-config \
+            --tools "Bash,Read,Grep,Glob" --allowedTools Bash Read Grep Glob \
+            --permission-mode dontAsk --add-dir "$RUNNER_TEMP" --settings "$settings" \
+            --json-schema "$(cat .agent-control/.github/agents/investigation.schema.json)" \
+            < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/claude.json"
+          jq -r '"Claude cost: $\(.total_cost_usd)"' "$RUNNER_TEMP/claude.json" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.structured_output' "$RUNNER_TEMP/claude.json" > "$RUNNER_TEMP/investigation.json"
       - name: Post findings
         env:
           RESULT_PATH: ${{ runner.temp }}/investigation.json
-          AGENT_MODEL: ${{ vars.AGENT_INVESTIGATE_MODEL || 'gpt-6-luna' }}
         run: node .agent-control/.github/agents/post-investigation.mjs

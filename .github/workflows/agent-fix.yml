@@ -3,7 +3,7 @@ run-name: >-
   ${{ github.event.label.name == 'agent: fix' && format('Agent · Fix · #{0}', github.event.issue.number) || 'Agent · Skipped' }}
 
 # The separate implementation stage of the SakuraCord issue pipeline. Only people with write access (or the
-# hub, on a maintainer's request from Discord) can add `agent: fix`. Codex works
+# hub, on a maintainer's request from Discord) can add `agent: fix`. Claude works
 # offline in the checkout, and a draft pull request is opened for human review.
 # Nothing is ever merged automatically.
 
@@ -29,12 +29,12 @@ jobs:
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       BRANCH: agent/issue-${{ github.event.issue.number }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: nightly
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: .agent-control
@@ -43,7 +43,7 @@ jobs:
       - name: Install Metal toolchain
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Cache SwiftPM dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .codex-runtime/swiftpm-cache
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-27-${{ hashFiles('App/Package.resolved', 'App/Package.swift', 'Packages/**/Package.swift') }}
@@ -59,19 +59,44 @@ jobs:
       - name: Build prompt
         run: |
           node .agent-control/.github/agents/issue-context.mjs .agent-control/.github/agents/fix.md "$RUNNER_TEMP/prompt.md"
-      - name: Fix with Codex
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.316
+      # SwiftPM cannot start its own sandbox inside the agent's sandbox.
+      - name: Add sandbox-compatible swift
+        run: |
+          mkdir -p "$RUNNER_TEMP/agent-bin"
+          cat > "$RUNNER_TEMP/agent-bin/swift" <<'EOF'
+          #!/bin/bash
+          case "$1" in
+            build|test|run|package) sub="$1"; shift; exec /usr/bin/swift "$sub" --disable-sandbox "$@" ;;
+            *) exec /usr/bin/swift "$@" ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/agent-bin/swift"
+      # Shell commands run sandboxed with no network and can write only the working tree
+      # and Darwin's per-user temp and cache folders, which Swift Build saves through.
+      # Git metadata stays read-only so later steps restore automation from the real HEAD.
+      # Trust-service access lets Swift Build verify signed binary xcframeworks.
+      - name: Fix with Claude
         env:
           GH_TOKEN: ""
-        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1.12
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: ${{ runner.temp }}/prompt.md
-          output-schema-file: .agent-control/.github/agents/fix.schema.json
-          output-file: ${{ runner.temp }}/fix.json
-          model: ${{ vars.AGENT_FIX_MODEL || 'gpt-6-luna' }}
-          effort: ${{ vars.AGENT_FIX_EFFORT || 'high' }}
-          permission-profile: ":workspace"
-          allow-bot-users: ${{ vars.SAKURACORD_BOT_SLUG }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODEL: ${{ vars.AGENT_FIX_MODEL || 'claude-sonnet-5-5' }}
+          EFFORT: ${{ vars.AGENT_FIX_EFFORT || 'high' }}
+        run: |
+          settings=$(jq -n --arg git "$GITHUB_WORKSPACE/.git" --arg temp "$(getconf DARWIN_USER_TEMP_DIR)" --arg cache "$(getconf DARWIN_USER_CACHE_DIR)" '{sandbox: {
+            enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, enableWeakerNetworkIsolation: true,
+            network: {allowedDomains: []}, filesystem: {allowWrite: [$temp, $cache], denyWrite: [$git]},
+            credentials: {envVars: [{name: "ANTHROPIC_API_KEY", mode: "deny"}]}}}')
+          PATH="$RUNNER_TEMP/agent-bin:$PATH" claude -p --model "$MODEL" --effort "$EFFORT" --max-budget-usd 20 \
+            --output-format json --no-session-persistence --strict-mcp-config \
+            --tools "Bash,Read,Edit,Write,Grep,Glob" --allowedTools Bash Read "Edit(/**)" "Write(/**)" Grep Glob \
+            --disallowedTools "Edit(/.git/**)" "Write(/.git/**)" \
+            --permission-mode dontAsk --settings "$settings" \
+            --json-schema "$(cat .agent-control/.github/agents/fix.schema.json)" \
+            < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/claude.json"
+          jq -r '"Claude cost: $\(.total_cost_usd)"' "$RUNNER_TEMP/claude.json" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.structured_output' "$RUNNER_TEMP/claude.json" > "$RUNNER_TEMP/fix.json"
       - name: Check changes
         id: changes
         run: |
@@ -94,7 +119,7 @@ jobs:
         id: app
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.SAKURACORD_BOT_APP_ID }}
+          client-id: ${{ vars.SAKURACORD_BOT_CLIENT_ID }}
           private-key: ${{ secrets.SAKURACORD_BOT_PRIVATE_KEY }}
       - name: Open draft pull request
         if: steps.changes.outputs.changed == 'true'
