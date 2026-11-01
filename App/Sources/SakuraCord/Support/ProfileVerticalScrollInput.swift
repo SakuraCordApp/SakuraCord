@@ -18,7 +18,7 @@ struct ProfileVerticalScrollInput: NSViewRepresentable {
             super.viewDidMoveToWindow()
             stopMonitoring()
             guard window != nil else { return }
-            monitor = NSEvent.addAppLocalMonitor(matching: .scrollWheel) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
                 guard let self, let window = self.window, event.window === window,
                       self.bounds.contains(self.convert(event.locationInWindow, from: nil)),
                       WindowModalCoordinator.allowsInput(for: self)

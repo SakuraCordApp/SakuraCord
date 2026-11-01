@@ -7,6 +7,8 @@ import SwiftUI
 struct MediaViewerAudio: View {
     let item: RichMediaItem
     let playbackID: VoiceMessagePlaybackID
+    /// False from the moment the viewer starts closing.
+    let isVisible: Bool
     @Environment(VoiceMessagePlaybackStore.self) private var playback
     /// Follows the playback's change notifications, which also cover what
     /// it keeps out of Observation, such as a newly learned length.
@@ -65,11 +67,20 @@ struct MediaViewerAudio: View {
         .onReceive(NotificationCenter.default.publisher(for: VoiceMessagePlaybackStore.didChange, object: playback)) { _ in
             revision += 1
         }
-        // Leaving the file pauses it where it is, or stops it starting.
+        // Leaving the file pauses it where it is, or stops it starting. A
+        // closing viewer does so as it starts to close: the timeline takes
+        // input then and may play the same file before the viewer is gone.
+        .onChange(of: isVisible) { _, isVisible in
+            if !isVisible { pause() }
+        }
         .onDisappear {
-            if playback.phase(of: playbackID) != .paused, playback.isActive(playbackID) {
-                playback.toggle(playbackID, source: source, duration: duration)
-            }
+            if isVisible { pause() }
+        }
+    }
+
+    private func pause() {
+        if playback.phase(of: playbackID) != .paused, playback.isActive(playbackID) {
+            playback.toggle(playbackID, source: source, duration: duration)
         }
     }
 

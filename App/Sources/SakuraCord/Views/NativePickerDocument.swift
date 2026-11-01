@@ -121,7 +121,7 @@ final class NativePickerScrollView: NSScrollView {
         guard pointerMonitor == nil else { return }
         // The composer overlay extends beyond its parent's AppKit hit-test bounds.
         // Route only pointer events inside this scroll view; keyboard focus stays in the editor.
-        pointerMonitor = NSEvent.addAppLocalMonitor(matching: [.mouseMoved, .mouseEntered, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .scrollWheel]) { [weak self] event in
+        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseEntered, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .scrollWheel]) { [weak self] event in
             let consumed = MainActor.assumeIsolated {
                 guard let self, event.window === self.window, !self.isHiddenOrHasHiddenAncestor,
                       WindowModalCoordinator.allowsInput(for: self) else { return false }
