@@ -129,6 +129,7 @@ extension NativeTimelineCanvasView {
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
                 installFileCardCursors(at: index, rowOrigin: rowOrigin)
+                installAudioFileCursors(at: index, rowOrigin: rowOrigin)
                 installComponentCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }

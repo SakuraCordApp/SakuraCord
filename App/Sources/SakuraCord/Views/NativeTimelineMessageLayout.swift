@@ -662,8 +662,7 @@ extension NativeTimelineRowLayout {
                     )
                 ),
                 attachment: attachment,
-                isInBubble: usesBubbles,
-                isAudio: isAudio
+                isInBubble: usesBubbles
             )
             if isAudio {
                 result.audioFilePlayers.append(.audioFile(
