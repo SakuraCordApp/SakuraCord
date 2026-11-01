@@ -213,6 +213,12 @@ extension NativeTimelineRowPainter {
 }
 
 extension NativeTimelineCanvasView {
+    func installAutoModAlertCursors(at index: Int, rowOrigin: CGFloat) {
+        for button in layouts[index].autoModAlert?.buttons ?? [] {
+            addCursorRect(button.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+        }
+    }
+
     @discardableResult
     func activateAutoModAlertAction(
         _ action: NativeTimelineAutoModAlertLayout.Action, message: Message, anchor: CGRect
