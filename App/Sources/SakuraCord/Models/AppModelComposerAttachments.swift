@@ -304,6 +304,10 @@ extension AppModel {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
               validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
         else { return false }
+        // A thread still being created has no upload destination yet.
+        if destination == .thread, openThread == nil {
+            return await addComposerAttachments(attachments.map(\.url), to: .thread)
+        }
         // The files go where they were dropped, read while the message waits.
         let session = accountSession()
         let channelID = selectedChannelID
@@ -323,10 +327,7 @@ extension AppModel {
                 clearsComposer: false
             )
         case .thread:
-            guard let thread else {
-                // A thread still being created has no upload destination yet.
-                return await addComposerAttachments(attachments.map(\.url), to: .thread)
-            }
+            guard let thread else { return false }
             return await sendThreadMessage(
                 content: "",
                 attachments: attachments,
