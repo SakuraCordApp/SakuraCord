@@ -589,16 +589,19 @@ final class WorkspaceColumnsView: NSView {
             let minX = bounds.maxX - (island.column.isDeparting ? covered : shown)
             setFrame(of: island.view, CGRect(x: minX, y: 0, width: width, height: bounds.height))
         }
-        // Columns are translucent, so a column that leaves beneath one that
-        // arrives shows only where the arriving one has not covered it yet,
-        // as the conversation does. A pane that left this way can come back
-        // at full width, uncovered.
+        // Columns are translucent, so a column that leaves beneath others
+        // shows only where none of them has covered it yet, as the
+        // conversation does. A pane that left this way can come back at full
+        // width, uncovered.
         var coverMinX = CGFloat.infinity
         for island in islands.reversed() {
-            let isPane = !island.column.isFullWidth
-            let leaves = isPane && island.column.isDeparting
-            island.view.showLeading(leaves ? coverMinX - island.view.frame.minX : nil)
-            if isPane, !leaves { coverMinX = min(coverMinX, island.view.frame.minX) }
+            guard !island.column.isFullWidth else {
+                island.view.showLeading(nil)
+                continue
+            }
+            let minX = island.view.frame.minX
+            island.view.showLeading(island.column.isDeparting ? coverMinX - minX : nil)
+            coverMinX = min(coverMinX, minX)
         }
         // How far a widening side chat has covered the conversation.
         var recede: CGFloat = 0
