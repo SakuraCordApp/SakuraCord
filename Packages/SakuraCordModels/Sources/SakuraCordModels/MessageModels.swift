@@ -18,6 +18,9 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
     public var flags: AttachmentFlags
     public var isSpoiler: Bool
     public var isAnimated: Bool
+    /// A preview on this Mac, such as a sent video's own file, kept ahead of
+    /// the server's until it is gone. It is never encoded.
+    public var localPreviewURL: URL?
 
     public var mediaKind: AttachmentMediaKind {
         let type = mediaType?.lowercased() ?? ""

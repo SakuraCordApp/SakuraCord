@@ -225,7 +225,7 @@ nonisolated enum OptimisticAttachmentPresentation {
         // ImageIO can't read a video; its size was read as it was staged.
         let videoSize = LocalVideo.preparedSize(of: url)
         let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
-        return Attachment(
+        var attachment = Attachment(
             id: id ?? "pending-\(index)",
             filename: url.lastPathComponent,
             url: url,
@@ -234,6 +234,8 @@ nonisolated enum OptimisticAttachmentPresentation {
             height: (swapsDimensions ? width : height) ?? videoSize.map { Int($0.height) },
             size: resourceValues?.fileSize ?? 0
         )
+        if LocalVideo.isVideo(url) { attachment.localPreviewURL = url }
+        return attachment
     }
 }
 

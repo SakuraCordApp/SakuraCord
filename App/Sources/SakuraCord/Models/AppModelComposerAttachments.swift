@@ -136,13 +136,16 @@ extension AppModel {
         let staged = urls.map { ForumPostAttachment(url: $0) }
         let stagedIDs = Set(staged.map(\.id))
         setComposerAttachments(composerAttachments(for: destination) + staged, for: destination)
-        Task { await LocalVideo.prepare(urls) }
         composer.checkingAttachmentIDs.formUnion(stagedIDs)
         defer { composer.checkingAttachmentIDs.subtract(stagedIDs) }
+        // A sent message shows at once, so its videos are read while the
+        // tiles hold sending back.
+        async let videosPrepared: Void = LocalVideo.prepare(urls)
         let acceptedURLs = Set(await attachmentURLsWithinDiscordLimit(
             urls,
             offeringExternalUploadFor: destination
         ))
+        await videosPrepared
         let rejectedIDs = Set(staged.filter { !acceptedURLs.contains($0.url) }.map(\.id))
         let current = composerAttachments(for: destination)
         if current.contains(where: { rejectedIDs.contains($0.id) }) {
@@ -294,11 +297,14 @@ extension AppModel {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
               validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
         else { return false }
-        // The message shows at once, so its videos' sizes are read first.
+        // The files go where they were dropped, read while the message waits.
+        let channelID = selectedChannelID
+        let thread = openThread
+        // The message shows at once, so its videos are read first.
         await LocalVideo.prepare(attachments.map(\.url))
         switch destination {
         case .channel:
-            guard let channelID = selectedChannelID else { return false }
+            guard let channelID else { return false }
             return await sendChannelMessage(
                 channelID: channelID,
                 content: "",
@@ -308,7 +314,7 @@ extension AppModel {
                 clearsComposer: false
             )
         case .thread:
-            guard let thread = openThread else {
+            guard let thread else {
                 // A thread still being created has no upload destination yet.
                 return await addComposerAttachments(attachments.map(\.url), to: .thread)
             }

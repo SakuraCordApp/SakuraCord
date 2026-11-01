@@ -17,14 +17,23 @@ nonisolated enum LocalVideo {
         sizes.withLock { $0[url.standardizedFileURL] }
     }
 
-    /// Reads each video's size for the message that will carry it. A
-    /// message is built at once when sent, so this runs as files are staged.
+    /// Reads each video's size, and draws its poster for the timeline, for
+    /// the message that will carry it. A message is built at once when sent,
+    /// so this runs as files are staged.
     static func prepare(_ urls: [URL]) async {
         await withTaskGroup { group in
             for url in urls where isVideo(url) && preparedSize(of: url) == nil {
                 group.addTask {
                     guard let size = await size(of: url) else { return }
                     sizes.withLock { $0[url.standardizedFileURL] = size }
+                }
+                group.addTask {
+                    _ = await SharedDecodedImageLoader.shared.image(
+                        for: url,
+                        maximumPixelDimension: NativeTimelineMediaKey.videoPosterPixelDimension,
+                        priority: .prefetch,
+                        preparesForTimeline: true
+                    )
                 }
             }
         }

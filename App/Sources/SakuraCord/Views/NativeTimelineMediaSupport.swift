@@ -77,8 +77,15 @@ struct NativeTimelineMediaKey: Hashable {
         }
     }
 
+    static let videoPosterPixelDimension = 1_024
+
+    /// A video this Mac sent keeps its own first frame, so its poster stays
+    /// as the server's attachment replaces it; the server's poster stands
+    /// in once the file is gone.
     static func videoPoster(_ attachment: Attachment) -> Self? {
-        attachment.videoPosterURL(maximumPixelDimension: 1_024).map { .media($0) }
+        let remote = attachment.videoPosterURL(maximumPixelDimension: videoPosterPixelDimension)
+        guard let local = attachment.localPreviewURL else { return remote.map { .media($0) } }
+        return .media(local, fallbackURL: remote, maximumPixelDimension: videoPosterPixelDimension)
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
