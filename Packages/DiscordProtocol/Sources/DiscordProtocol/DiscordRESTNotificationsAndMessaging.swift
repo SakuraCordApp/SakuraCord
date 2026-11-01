@@ -634,9 +634,10 @@ extension DiscordRESTProvider {
         -> Message
     {
         try requireGuildCommunication(in: channelID)
+        var body: [String: JSONValue] = ["content": .string(content)]
+        body["allowed_mentions"] = cachedMessages[messageID]?.editAllowedMentionsPayload
         let dto: MessageDTO = try await request(
-            "/channels/\(channelID)/messages/\(messageID)", method: "PATCH",
-            body: ["content": .string(content)]
+            "/channels/\(channelID)/messages/\(messageID)", method: "PATCH", body: body
         )
         let message = try dto.domain()
         cachedMessages[message.id] = message
