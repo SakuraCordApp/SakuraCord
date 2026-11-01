@@ -22,7 +22,6 @@ struct NativeTimelineFileCard {
     let frame: CGRect
     let attachment: Attachment
     let isInBubble: Bool
-    var isAudio = false
 
     /// The name row's height; an audio card adds its player row below.
     static func height(isInBubble: Bool, isAudio: Bool = false) -> CGFloat {
