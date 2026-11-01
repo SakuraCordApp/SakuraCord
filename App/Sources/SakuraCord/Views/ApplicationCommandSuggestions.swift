@@ -335,37 +335,91 @@ struct ApplicationCommandSuggestionPanel: View {
     var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius
     var keyboardSelectionRevision = 0
 
+    var body: some View {
+        ComposerOptionPanel(
+            title: content.title,
+            rows: content.suggestions,
+            selectedIndex: selectedIndex,
+            status: content.status,
+            cornerRadius: cornerRadius,
+            keyboardSelectionRevision: keyboardSelectionRevision,
+            select: select,
+            highlight: highlight,
+            accessibilityLabel: { [$0.title, $0.detail].compactMap { $0 }.joined(separator: ", ") },
+            label: { suggestion in
+                if suggestion.leadingVisual != .none {
+                    ApplicationCommandSuggestionIcon(visual: suggestion.leadingVisual)
+                        .frame(width: InterfaceScale.metric(22), height: InterfaceScale.metric(22))
+                }
+                Text(suggestion.title)
+                    .foregroundStyle(
+                        suggestion.isRole
+                            ? SakuraCordAccentColor.color(forRoleColorHex: suggestion.titleColorHex)
+                            : .primary
+                    )
+                    .lineLimit(1)
+                Spacer(minLength: InterfaceScale.metric(12))
+                if let detail = suggestion.detail, !detail.isEmpty {
+                    ComposerOptionDetail(detail)
+                }
+            }
+        )
+    }
+}
+
+/// The composer's option menu: a section title, then rows with an inset
+/// highlight concentric with the panel, navigated by the keyboard with room
+/// to spare at the edges. Command arguments and emoji share it.
+struct ComposerOptionPanel<Row: Identifiable, Label: View>: View where Row.ID == String {
+    let title: String
+    let rows: [Row]
+    let selectedIndex: Int?
+    var status: ApplicationCommandSuggestionContent.Status = .ready
+    var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius
+    var keyboardSelectionRevision = 0
+    let select: (Row) -> Void
+    let highlight: (Int) -> Void
+    let accessibilityLabel: (Row) -> String
+    @ViewBuilder let label: (Row) -> Label
+
     private static var rowHeight: CGFloat { InterfaceScale.metric(34) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(content.title.uppercased())
+            Text(title.uppercased())
                 .font(.interface(.caption).weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, InterfaceScale.metric(14))
                 .padding(.top, InterfaceScale.metric(10))
                 .padding(.bottom, InterfaceScale.metric(5))
-            if !content.suggestions.isEmpty {
+            if !rows.isEmpty {
                 ComposerSuggestionList(
-                    rows: content.suggestions,
-                    selectedID: selectedIndex.flatMap { content.suggestions.indices.contains($0) ? content.suggestions[$0].id : nil },
+                    rows: rows,
+                    selectedID: selectedIndex.flatMap { rows.indices.contains($0) ? rows[$0].id : nil },
                     keyboardSelectionRevision: keyboardSelectionRevision,
                     maximumHeight: 320,
                     rowHeight: { _ in Self.rowHeight },
-                    highlight: { suggestion in
-                        if let index = content.suggestions.firstIndex(where: { $0.id == suggestion.id }), index != selectedIndex { highlight(index) }
+                    highlight: { row in
+                        if let index = rows.firstIndex(where: { $0.id == row.id }), index != selectedIndex { highlight(index) }
                     },
                     activate: select,
-                    content: { suggestion in
-                        let index = content.suggestions.firstIndex(where: { $0.id == suggestion.id })
-                        ApplicationCommandSuggestionRow(
-                            suggestion: suggestion,
-                            height: Self.rowHeight,
-                            cornerRadius: max(0, cornerRadius - 6),
-                            isSelected: index == selectedIndex,
-                            select: { select(suggestion) }
-                        )
+                    content: { row in
+                        let isSelected = rows.firstIndex(where: { $0.id == row.id }) == selectedIndex
+                        Button { select(row) } label: {
+                            HStack(spacing: InterfaceScale.metric(8)) { label(row) }
+                                .padding(.horizontal, InterfaceScale.metric(8))
+                                .frame(height: Self.rowHeight)
+                                .background(
+                                    isSelected ? Color.primary.opacity(0.10) : .clear,
+                                    in: RoundedRectangle(cornerRadius: max(0, cornerRadius - 6), style: .continuous)
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .accessibilityLabel(accessibilityLabel(row))
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
                 )
                 .padding(.bottom, InterfaceScale.metric(6))
@@ -375,12 +429,12 @@ struct ApplicationCommandSuggestionPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .commandPanelSurface(cornerRadius: cornerRadius)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(content.title)
+        .accessibilityLabel(title)
     }
 
     @ViewBuilder
     private var statusView: some View {
-        switch content.status {
+        switch status {
         case .ready:
             EmptyView()
         case .loading:
@@ -402,49 +456,19 @@ struct ApplicationCommandSuggestionPanel: View {
     }
 }
 
-private struct ApplicationCommandSuggestionRow: View {
-    let suggestion: ApplicationCommandSuggestion
-    let height: CGFloat
-    let cornerRadius: CGFloat
-    let isSelected: Bool
-    let select: () -> Void
+/// A row's trailing, secondary text.
+struct ComposerOptionDetail: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
 
     var body: some View {
-        Button(action: select) {
-            HStack(spacing: InterfaceScale.metric(8)) {
-                if suggestion.leadingVisual != .none {
-                    ApplicationCommandSuggestionIcon(visual: suggestion.leadingVisual)
-                        .frame(width: InterfaceScale.metric(22), height: InterfaceScale.metric(22))
-                }
-                Text(suggestion.title)
-                    .foregroundStyle(
-                        suggestion.isRole
-                            ? SakuraCordAccentColor.color(forRoleColorHex: suggestion.titleColorHex)
-                            : .primary
-                    )
-                    .lineLimit(1)
-                Spacer(minLength: InterfaceScale.metric(12))
-                if let detail = suggestion.detail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.interface(.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: InterfaceScale.metric(320), alignment: .trailing)
-                }
-            }
-            .padding(.horizontal, InterfaceScale.metric(8))
-            .frame(height: height)
-            .background(
-                isSelected ? Color.primary.opacity(0.10) : .clear,
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .accessibilityLabel([suggestion.title, suggestion.detail].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        Text(text)
+            .font(.interface(.caption))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: InterfaceScale.metric(320), alignment: .trailing)
     }
 }
 

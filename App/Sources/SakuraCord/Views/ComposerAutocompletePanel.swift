@@ -3,6 +3,7 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The emoji matching a `:` query, in the composer's option menu.
 struct EmojiAutocompleteList: View {
     let suggestions: [ColonAutocompleteSuggestion]
     let selectedIndex: Int
@@ -13,26 +14,33 @@ struct EmojiAutocompleteList: View {
     var keyboardSelectionRevision = 0
 
     var body: some View {
-        ComposerAutocompletePanel(heading: "EMOJIS", cornerRadius: cornerRadius) {
-            ComposerSuggestionList(
-                rows: suggestions,
-                selectedID: suggestions.indices.contains(selectedIndex) ? suggestions[selectedIndex].id : nil,
-                keyboardSelectionRevision: keyboardSelectionRevision,
-                rowHeight: { _ in 42 },
-                highlight: { row in
-                    if let index = suggestions.firstIndex(where: { $0.id == row.id }), index != selectedIndex { highlight(index) }
-                },
-                activate: select,
-                content: { suggestion in
-                    EmojiAutocompleteRow(
-                        suggestion: suggestion,
-                        isSelected: suggestions.indices.contains(selectedIndex) && suggestions[selectedIndex].id == suggestion.id,
-                        select: { select(suggestion) },
-                        cornerRadius: max(0, cornerRadius - 6)
-                    )
+        ComposerOptionPanel(
+            title: "Emojis",
+            rows: suggestions,
+            selectedIndex: selectedIndex,
+            cornerRadius: cornerRadius,
+            keyboardSelectionRevision: keyboardSelectionRevision,
+            select: select,
+            highlight: highlight,
+            accessibilityLabel: { [$0.detail, $0.source].compactMap { $0 }.joined(separator: ", ") },
+            label: { suggestion in
+                Group {
+                    if let url = suggestion.imageURL {
+                        AnimatedRemoteImage(url: url)
+                    } else {
+                        Text(suggestion.value).font(.interfaceSystem(size: 17))
+                    }
                 }
-            )
-        }
+                .frame(width: InterfaceScale.metric(22), height: InterfaceScale.metric(22))
+                Text(suggestion.detail)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: InterfaceScale.metric(12))
+                if let source = suggestion.source {
+                    ComposerOptionDetail(source)
+                }
+            }
+        )
     }
 }
 
