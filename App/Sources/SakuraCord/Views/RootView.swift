@@ -310,6 +310,7 @@ private struct ChatRootView: View {
                 // item may be narrower than the title while it lays out.
                 if let title = conversationToolbarPresentation, model.guildWorkspacePage == .channelsAndRoles {
                     ConversationToolbarTitle(presentation: title)
+                        .buttonStyle(.plain)
                         .fixedSize()
                         .hidden()
                         .accessibilityHidden(true)
@@ -338,6 +339,7 @@ private struct ChatRootView: View {
             if model.onboardingEntryGuildID != nil {
                 ToolbarItem(placement: .navigation) {
                     ConversationToolbarTitle(presentation: .init(title: "Server Onboarding", systemImage: "sparkles"))
+                        .buttonStyle(.plain)
                 }
             } else {
                 conversationToolbar
@@ -647,6 +649,7 @@ private struct ChatRootView: View {
                 }
             } else if let title = conversationToolbarPresentation {
                 ConversationToolbarTitle(presentation: title)
+                    .buttonStyle(.plain)
                     // Remeasure changed text without replacing the toolbar item.
                     .id(title.title)
                     .transition(.identity)
@@ -692,8 +695,7 @@ private struct ChatRootView: View {
                 id: WorkspaceTitlebar.conversationID,
                 title: AnyView(
                     ConversationToolbarTitle(presentation: title)
-                        .frame(minHeight: 36)
-                        .glassEffect(.regular, in: Capsule())
+                        .buttonStyle(TitlebarGlassButtonStyle(isTitle: true))
                 ),
                 actions: AnyView(conversationTitlebarActions(presentsPanels: !isCovered))
             ))
@@ -1798,7 +1800,6 @@ private struct ConversationToolbarTitle: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
         }
-        .buttonStyle(.plain)
         .allowsHitTesting(presentation.topic != nil)
         .accessibilityRemoveTraits(presentation.topic == nil ? .isButton : [])
         .accessibilityAddTraits(presentation.topic == nil ? .isStaticText : [])
