@@ -4,7 +4,7 @@ import SakuraCordModels
 extension DiscordRESTProvider {
     /// Refuses content, reactions, poll votes and interactions where the
     /// account may not communicate: a guild timeout, or a message request not
-    /// yet accepted.
+    /// yet accepted, which also takes no call rings.
     func requireCommunicationForRequest(path: String, method: String, body: [String: JSONValue]?) throws {
         let parts = path.split(separator: "/")
         if parts.count >= 3, parts[0] == "channels", let channelID = ChannelID(String(parts[1])) {
@@ -18,7 +18,8 @@ extension DiscordRESTProvider {
                 && parts[2] == "messages" && body?["content"] != nil
             let setsPollVote = method == "PUT" && parts.count == 6
                 && parts[2] == "polls" && parts[4] == "answers" && parts[5] == "@me"
-            if createsContent || changesReaction || editsContent || setsPollVote {
+            let ringsCall = method == "POST" && parts.count == 4 && parts[2] == "call" && parts[3] == "ring"
+            if createsContent || changesReaction || editsContent || setsPollVote || ringsCall {
                 try requireAcceptedMessageRequest(in: channelID)
             }
             // A timeout still lets a member withdraw a vote.

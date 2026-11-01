@@ -259,8 +259,8 @@ unrelated updates but yields to a re-created or re-flagged DM.
 
 Until accepted, a request is read-only. The delivery boundary that enforces
 guild timeouts also refuses its messages, forwards, typing, reactions, edits,
-poll votes and interactions, and the app offers no composer, reactions, votes,
-components, pins, calls or profile quick message there. Opening a request shows
+poll votes, interactions and call rings, and the app offers no composer,
+reactions, votes, components, pins, calls or profile quick message there. Opening a request shows
 its messages with Accept DM and Ignore in place of the composer.
 
 Not implemented: Report Spam and the not-spam report (their report endpoint was

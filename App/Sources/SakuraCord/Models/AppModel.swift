@@ -729,8 +729,9 @@ final class AppModel {
                 || channel.kind == .directMessage
                 || channel.kind == .groupDirectMessage
         else { return false }
-        // A message request takes no calls until it is accepted.
-        return channel.messageRequest == nil && conversationAccess(for: channel).isReadable
+        // A message request takes no calls until it is accepted; call setup
+        // can hold an older channel value, so read the current state.
+        return !awaitsMessageRequestDecision(in: channel.id) && conversationAccess(for: channel).isReadable
     }
 
     var conversationNavigationHistory = ConversationNavigationHistory()
