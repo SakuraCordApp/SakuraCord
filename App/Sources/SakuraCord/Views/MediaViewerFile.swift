@@ -41,13 +41,13 @@ struct MediaViewerFile: View {
                 }
             case let .pdf(document):
                 MediaViewerPDF(document: document)
-                    .modifier(MediaViewerDocumentFrame())
+                    .mediaViewerTextPage()
             case let .richText(text):
                 MediaViewerTextContent(text: text)
                     .mediaViewerTextPage()
             case let .quickLook(url):
                 MediaViewerQuickLook(url: url)
-                    .modifier(MediaViewerDocumentFrame())
+                    .mediaViewerTextPage()
             case .unavailable:
                 MediaViewerFilePage(item: item) {
                     Text("No preview available")
@@ -162,16 +162,6 @@ struct MediaViewerFilePage<Accessory: View>: View {
         .padding(InterfaceScale.metric(30))
         .frame(width: InterfaceScale.metric(400))
         .mediaViewerPanel()
-    }
-}
-
-/// A document laid out like the viewer's text files: as wide as it reads
-/// well and as tall as the stage.
-private struct MediaViewerDocumentFrame: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
-            .mediaViewerPanel()
     }
 }
 

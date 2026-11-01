@@ -170,7 +170,7 @@ where Presentation.ID: Hashable {
                 // visibly different times.
                 overlayView.updateDismissCallback(dismiss)
                 if isPresented {
-                    if !overlayView.isPresented, !overlayView.isDismissing {
+                    if !overlayView.isPresented {
                         overlayView.present()
                     }
                 } else {
@@ -349,7 +349,8 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     }
 
     func present() {
-        guard !isModalPresented else { return }
+        // A closing modal has let go of input, but it is not reopened.
+        guard !isModalPresented, !isDismissing else { return }
         isModalPresented = true
         isHidden = false
         setAccessibilityHidden(false)

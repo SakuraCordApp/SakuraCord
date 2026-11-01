@@ -431,15 +431,15 @@ public enum DiscordMarkdown {
         codeBackground: AppKitPlan.CodeBackground,
         baseFontSize: CGFloat
     ) -> [NSAttributedString.Key: Any] {
+        let isPlainCode = if case .code = block { run.color == nil } else { false }
+        let color: NSColor = switch codeBackground {
+        case .light: lightCodeColor(run.color)
+        case .dark: isPlainCode ? codeForegroundColor : foregroundColor(block: block, semanticColor: run.color)
+        }
         var attributes: [NSAttributedString.Key: Any] = [
             .font: appKitFont(block: block, traits: run.traits, baseFontSize: baseFontSize),
-            .foregroundColor: codeBackground == .light
-                ? lightCodeColor(run.color)
-                : foregroundColor(block: block, semanticColor: run.color),
+            .foregroundColor: color,
         ]
-        if case .code = block, run.color == nil, codeBackground == .dark {
-            attributes[.foregroundColor] = codeForegroundColor
-        }
         if run.traits.contains(.underline) {
             attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }

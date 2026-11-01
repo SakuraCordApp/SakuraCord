@@ -185,7 +185,8 @@ private struct MediaViewerWindowAnimatedContent: View {
     }
 }
 
-/// Follows the timeline's live sources without re-rendering the viewer.
+/// Reads the timeline's live sources here, so a refresh that moves nothing
+/// doesn't re-render the viewer.
 private struct MediaViewerTransitionFrameReader: View {
     let link: MediaViewerTransitionLink
     let animationState: MediaViewerWindowAnimationState

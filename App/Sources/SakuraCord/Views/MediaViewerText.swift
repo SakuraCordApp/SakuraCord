@@ -145,8 +145,8 @@ struct MediaViewerTextContent: NSViewRepresentable {
 }
 
 extension View {
-    /// The page text files and rich text read on: as wide as it reads well
-    /// and as tall as the stage.
+    /// The page text files, rich text and documents read on: as wide as it
+    /// reads well and as tall as the stage.
     func mediaViewerTextPage() -> some View {
         frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
             .mediaViewerPanel()
