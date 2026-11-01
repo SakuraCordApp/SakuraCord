@@ -630,18 +630,17 @@ extension DiscordRESTProvider {
         else { return nil }
         return url
     }
-    public func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
-        -> Message
-    {
-        try requireGuildCommunication(in: channelID)
+    public func edit(_ message: Message, content: String) async throws -> Message {
+        try requireGuildCommunication(in: message.channelID)
+        var body: [String: JSONValue] = ["content": .string(content)]
+        body["allowed_mentions"] = message.editAllowedMentionsPayload
         let dto: MessageDTO = try await request(
-            "/channels/\(channelID)/messages/\(messageID)", method: "PATCH",
-            body: ["content": .string(content)]
+            "/channels/\(message.channelID)/messages/\(message.id)", method: "PATCH", body: body
         )
-        let message = try dto.domain()
-        cachedMessages[message.id] = message
-        continuation?.yield(.messageUpdated(message))
-        return message
+        let updated = try dto.domain()
+        cachedMessages[updated.id] = updated
+        continuation?.yield(.messageUpdated(updated))
+        return updated
     }
 
     public func delete(messageID: MessageID, channelID: ChannelID) async throws {

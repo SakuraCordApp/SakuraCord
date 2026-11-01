@@ -812,7 +812,11 @@ extension GatewayLifecycleEventTests {
             try await provider.setReaction("👍", reacted: false, messageID: .init(rawValue: 300), channelID: textChannelID)
         }
         await #expect(throws: ChatProviderError.self) {
-            _ = try await provider.edit(messageID: .init(rawValue: 300), channelID: textChannelID, content: "blocked")
+            let message = Message(
+                id: .init(rawValue: 300), channelID: textChannelID,
+                author: User(id: .init(rawValue: 1), username: "me", displayName: "Me"), content: "original"
+            )
+            _ = try await provider.edit(message, content: "blocked")
         }
         await #expect(throws: ChatProviderError.self) {
             try await provider.requireGuildCommunicationForRequest(

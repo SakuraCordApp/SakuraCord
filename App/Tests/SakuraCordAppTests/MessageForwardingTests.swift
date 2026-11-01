@@ -1518,7 +1518,7 @@ private actor ForwardSettingsFailureProvider: ChatProvider {
     func send(_ draft: SendMessageDraft) async throws -> Message {
         throw ChatProviderError.invalidRequest("unused")
     }
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
+    func edit(_ message: Message, content: String) async throws
         -> Message
     {
         throw ChatProviderError.invalidRequest("unused")
