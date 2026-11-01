@@ -20,6 +20,8 @@ final class WorkspaceColumnsGeometry {
         let reveal: CGFloat
         /// Whether the column is leaving the workspace.
         let isDeparting: Bool
+
+        var isThread: Bool { id.hasPrefix("side-thread") }
     }
 
     static let shared = WorkspaceColumnsGeometry()
@@ -272,7 +274,7 @@ final class WorkspaceTitlebarView: NSView {
         // wherever the window goes next.
         if newWindow !== window {
             fadeSearch(1)
-            searchItemView?.showLeading(nil)
+            coverSearch(at: nil)
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -325,7 +327,6 @@ final class WorkspaceTitlebarView: NSView {
         let searchCover = handOff == nil ? searchCoverMinX(geometry) : nil
         let searchAlpha = handOff.map { max(0, 2 * $0.progress - 1) }
             ?? searchVisibility(geometry, coverMinX: searchCover)
-        let leavingPaneAlpha = max(0, 1 - 2 * (handOff?.progress ?? 0))
         _ = searchItemView
         // Items stop before the field while it shows, or will once a pane
         // leaves; they never pass it to come back.
@@ -373,7 +374,8 @@ final class WorkspaceTitlebarView: NSView {
             if id == WorkspaceTitlebar.conversationID { maxX -= searchInset }
             let clipX = minX.rounded(.down)
             views.clip.frame = CGRect(x: clipX, y: 0, width: max(0, visibleMaxX - clipX), height: bounds.height)
-            views.clip.alphaValue = handOff?.paneIDs.contains(id) == true ? leavingPaneAlpha : 1
+            let alpha = handOff.flatMap { $0.paneIDs.contains(id) ? max(0, 1 - 2 * $0.progress) : nil } ?? 1
+            if views.clip.alphaValue != alpha { views.clip.alphaValue = alpha }
             place(
                 views,
                 width: maxX - clipX,
@@ -393,7 +395,7 @@ final class WorkspaceTitlebarView: NSView {
     private func searchCoverMinX(_ geometry: WorkspaceColumnsGeometry) -> CGFloat? {
         guard AppMotionPolicy.animates(.overlays) else { return nil }
         let paneMinX = geometry.columns.lazy
-            .filter { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }.map(\.minX).min()
+            .filter { $0.isThread && !$0.isFullWidth }.map(\.minX).min()
         return paneMinX.map { $0 - ChatChromeMetrics.toolbarItemEdgeInset }
     }
 
@@ -407,16 +409,16 @@ final class WorkspaceTitlebarView: NSView {
     ) -> (paneIDs: Set<String>, progress: CGFloat)? {
         guard AppMotionPolicy.animates(.overlays), showsSearch else { return nil }
         let columns = geometry.columns
-        let isThreadPane = { (column: WorkspaceColumnsGeometry.Column) in
-            column.id.hasPrefix("side-thread") && !column.isFullWidth
-        }
+        let isThreadPane = { (column: WorkspaceColumnsGeometry.Column) in column.isThread && !column.isFullWidth }
         // A thread widening to full width sets the field's visibility itself.
-        guard !columns.contains(where: { $0.id.hasPrefix("side-thread") && $0.isFullWidth }),
+        guard !columns.contains(where: { $0.isThread && $0.isFullWidth }),
               let frontIndex = columns.lastIndex(where: { !$0.isFullWidth && !$0.isDeparting && !isThreadPane($0) }),
               !columns[(frontIndex + 1)...].contains(where: isThreadPane)
         else { return nil }
         let paneIDs = Set(columns[..<frontIndex].filter(isThreadPane).map(\.id))
-        return paneIDs.isEmpty ? nil : (paneIDs, min(max(columns[frontIndex].reveal, 0), 1))
+        guard !paneIDs.isEmpty else { return nil }
+        // The reveal's spring overshoots.
+        return (paneIDs, min(max(columns[frontIndex].reveal, 0), 1))
     }
 
     /// Whether a thread pane covers the whole search field.
@@ -442,13 +444,13 @@ final class WorkspaceTitlebarView: NSView {
         guard showsSearch || WorkspaceLayoutMotion.isMoving else { return 0 }
         guard AppMotionPolicy.animates(.overlays) else {
             let hidden = geometry.columns.contains {
-                $0.id.hasPrefix("side-thread") && !$0.isFullWidth && presentedGroupIDs.contains($0.id)
+                $0.isThread && !$0.isFullWidth && presentedGroupIDs.contains($0.id)
             }
             return hidden ? 0 : 1
         }
         if coversSearch(at: coverMinX) { return 0 }
         var covered: CGFloat = 0
-        for column in geometry.columns where column.id.hasPrefix("side-thread") && column.isFullWidth {
+        for column in geometry.columns where column.isThread && column.isFullWidth {
             covered = max(covered, 1 - column.widening)
         }
         return 1 - covered
