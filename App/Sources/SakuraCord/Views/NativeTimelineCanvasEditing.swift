@@ -178,6 +178,8 @@ extension NativeTimelineCanvasView {
                 self.componentButtonPressProgress =
                     start + (destination - start) * progress
                 self.invalidateComponentButton(target)
+                // A live button emoji follows the dip.
+                self.positionAnimatedMediaOverlays()
                 if linear >= 1 {
                     self.componentButtonPressProgress = destination
                     self.componentButtonPressAnimationDestination = nil
@@ -188,6 +190,7 @@ extension NativeTimelineCanvasView {
                         self.visualPressedComponentButton = nil
                     }
                     self.invalidateComponentButton(target)
+                    self.positionAnimatedMediaOverlays()
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(8))
