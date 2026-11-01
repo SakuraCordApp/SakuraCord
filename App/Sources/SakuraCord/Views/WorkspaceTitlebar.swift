@@ -410,7 +410,9 @@ final class WorkspaceTitlebarView: NSView {
         let isThreadPane = { (column: WorkspaceColumnsGeometry.Column) in
             column.id.hasPrefix("side-thread") && !column.isFullWidth
         }
-        guard let frontIndex = columns.lastIndex(where: { !$0.isFullWidth && !$0.isDeparting && !isThreadPane($0) }),
+        // A thread widening to full width sets the field's visibility itself.
+        guard !columns.contains(where: { $0.id.hasPrefix("side-thread") && $0.isFullWidth }),
+              let frontIndex = columns.lastIndex(where: { !$0.isFullWidth && !$0.isDeparting && !isThreadPane($0) }),
               !columns[(frontIndex + 1)...].contains(where: isThreadPane)
         else { return nil }
         let paneIDs = Set(columns[..<frontIndex].filter(isThreadPane).map(\.id))
