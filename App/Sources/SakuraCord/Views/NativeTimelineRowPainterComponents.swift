@@ -1102,6 +1102,15 @@ extension NativeTimelineRowPainter {
         }
 
         NSGraphicsContext.saveGraphicsState()
+        // A press also dips the button about its centre, as before.
+        let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: pressProgress)
+        if abs(scale - 1) > 0.0001 {
+            let transform = NSAffineTransform()
+            transform.translateX(by: region.frame.midX, yBy: region.frame.midY)
+            transform.scaleX(by: scale, yBy: scale)
+            transform.translateX(by: -region.frame.midX, yBy: -region.frame.midY)
+            transform.concat()
+        }
         let context = NSGraphicsContext.current?.cgContext
         if isDimmed {
             context?.setAlpha(region.opacity)

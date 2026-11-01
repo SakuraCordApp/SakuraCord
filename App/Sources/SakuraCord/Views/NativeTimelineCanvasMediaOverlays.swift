@@ -599,11 +599,24 @@ extension NativeTimelineCanvasView {
                 height: size
             )
             let opticalInset = (size - DiscordComponentEmojiMetrics.opticalSize(for: size)) / 2
+            var frame = box.insetBy(dx: opticalInset, dy: opticalInset)
+            // The emoji dips with its pressed button, about the same centre.
+            if button.opacity >= 1, visualPressedComponentButton == NativeTimelineComponentButtonTarget(
+                messageID: messageID, componentID: button.componentID
+            ) {
+                let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: componentButtonPressProgress)
+                frame = CGRect(
+                    x: button.frame.midX + (frame.minX - button.frame.midX) * scale,
+                    y: button.frame.midY + (frame.minY - button.frame.midY) * scale,
+                    width: frame.width * scale,
+                    height: frame.height * scale
+                )
+            }
             accumulator.append(
                 row: identifier,
                 role: .componentButton(componentIndex, button.componentID),
                 media: .media(url, maximumPixelDimension: 64),
-                frame: box.insetBy(dx: opticalInset, dy: opticalInset),
+                frame: frame,
                 cornerRadius: InterfaceScale.metric(3),
                 isLooping: true,
                 opacity: button.opacity
