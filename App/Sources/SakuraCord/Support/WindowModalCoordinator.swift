@@ -61,16 +61,21 @@ final class WindowModalCoordinator {
 
     var topmost: WindowModalHostingView? { entries.reversed().compactMap(\.host).first }
 
-    /// Whether a modal animating away still holds `window`'s Escape, which
-    /// other key monitors leave to it whichever sees the press first.
-    static func closingModalOwnsEscape(in window: NSWindow) -> Bool {
-        coordinators.object(forKey: window)?.closingHosts.allObjects.contains { $0.capturesEscape } == true
-    }
+    /// What a modal animating away keeps: clicks, keys and gestures. Only
+    /// the wheel and pointer movement reach what it uncovers.
+    private static let heldWhileClosing: Set<NSEvent.EventType> = [
+        .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+        .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+        .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+        .keyDown, .keyUp,
+        .magnify, .rotate, .swipe, .smartMagnify, .beginGesture, .endGesture, .pressure,
+    ]
 
-    /// Whether a modal animating away still holds `window`'s clicks, which
-    /// mouse monitors that act on a click leave to it, as its hit test does.
-    static func closingModalOwnsClicks(in window: NSWindow) -> Bool {
-        coordinators.object(forKey: window)?.closingHosts.allObjects.isEmpty == false
+    /// Whether a closing modal in the event's window keeps `event` from the
+    /// app's monitors and the views beneath it.
+    static func closingModalHolds(_ event: NSEvent) -> Bool {
+        guard heldWhileClosing.contains(event.type), let window = event.window ?? NSApp.keyWindow else { return false }
+        return coordinators.object(forKey: window)?.closingHosts.allObjects.isEmpty == false
     }
 
     func allowsInput(to view: NSView) -> Bool {
@@ -174,9 +179,13 @@ final class WindowModalCoordinator {
 
     private func installMonitor() {
         guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.keyDown, .scrollWheel, .mouseEntered, .mouseExited, .cursorUpdate]
-        ) { [weak self] event in
+        let mask = Self.heldWhileClosing.reduce(into: NSEvent.EventTypeMask([.scrollWheel, .mouseEntered, .mouseExited, .cursorUpdate])) {
+            $0.insert(NSEvent.EventTypeMask(rawValue: 1 << UInt64($1.rawValue)))
+        }
+        // The one raw monitor: it consumes what a closing modal holds, while
+        // every other monitor is gated by `addAppLocalMonitor`.
+        // swiftlint:disable:next app_local_event_monitor
+        monitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             guard let self else { return event }
             return filter(event)
         }
@@ -187,11 +196,11 @@ final class WindowModalCoordinator {
         guard let window,
               event.window === window || event.window == nil && NSApp.keyWindow === window
         else { return event }
+        if Self.closingModalHolds(event) { return nil }
         if event.type == .keyDown {
             guard KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags, characters: event.charactersIgnoringModifiers) else { return event }
             if window.attachedSheet != nil { return event }
             if PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window) { return nil }
-            if Self.closingModalOwnsEscape(in: window) { return nil }
             guard let topmost, topmost.capturesEscape else { return event }
             topmost.animationState.handleEscape()
             return nil
@@ -200,7 +209,9 @@ final class WindowModalCoordinator {
         if event.type == .scrollWheel {
             return allowsScroll(phase: event.phase, momentumPhase: event.momentumPhase) ? event : nil
         }
-        if let owner = event.trackingArea?.owner as? NSView, !allowsInput(to: owner) {
+        // Only tracking events carry an area; reading it from others raises.
+        if [.mouseEntered, .mouseExited, .cursorUpdate].contains(event.type),
+           let owner = event.trackingArea?.owner as? NSView, !allowsInput(to: owner) {
             return nil
         }
         return event
@@ -216,6 +227,22 @@ final class WindowModalCoordinator {
 
     isolated deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
+    }
+}
+
+extension NSEvent {
+    /// The app's local event monitors. While a modal in the event's window
+    /// animates away, only the wheel and pointer movement reach `handler`;
+    /// the closing modal keeps clicks, keys and gestures, whichever monitor
+    /// sees them first.
+    static func addAppLocalMonitor(
+        matching mask: EventTypeMask,
+        handler: @escaping (NSEvent) -> NSEvent?
+    ) -> Any? {
+        // swiftlint:disable:next app_local_event_monitor
+        addLocalMonitorForEvents(matching: mask) { event in
+            WindowModalCoordinator.closingModalHolds(event) ? event : handler(event)
+        }
     }
 }
 

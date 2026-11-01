@@ -474,7 +474,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
             }
             observe(NSMenu.didBeginTrackingNotification, object: nil)
             observe(NSMenu.didEndTrackingNotification, object: nil)
-            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            keyMonitor = NSEvent.addAppLocalMonitor(matching: .keyDown) { [weak self] event in
                 let eventObject = SendableNotificationObject(event)
                 let handled = MainActor.assumeIsolated {
                     guard let event = eventObject.value as? NSEvent else { return false }
@@ -483,7 +483,7 @@ struct ToolbarSearchFieldGeometryReader: NSViewRepresentable {
                 }
                 return handled ? nil : event
             }
-            mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            mouseMonitor = NSEvent.addAppLocalMonitor(matching: .leftMouseDown) { [weak self] event in
                 let eventObject = SendableNotificationObject(event)
                 MainActor.assumeIsolated {
                     guard let self,

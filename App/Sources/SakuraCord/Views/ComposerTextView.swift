@@ -1239,7 +1239,7 @@ final class ComposerUnfocusedTypingMonitor {
             return
         }
         guard eventMonitor == nil else { return }
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        eventMonitor = NSEvent.addAppLocalMonitor(matching: .keyDown) { [weak self] event in
             guard let self,
                   let textView = self.textView,
                   WindowModalCoordinator.allowsInput(for: textView),
@@ -1258,9 +1258,10 @@ final class ComposerUnfocusedTypingMonitor {
 
             // Popovers can leave the main window key. Its composer monitor may
             // receive Escape first, so honor popover dismissal before composer actions.
-            if KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags) {
-                if PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window) { return nil }
-                if WindowModalCoordinator.closingModalOwnsEscape(in: window) { return event }
+            if KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags),
+               PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window)
+            {
+                return nil
             }
 
             if Self.handlePaste(

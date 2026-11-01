@@ -121,18 +121,10 @@ final class NativePickerScrollView: NSScrollView {
         guard pointerMonitor == nil else { return }
         // The composer overlay extends beyond its parent's AppKit hit-test bounds.
         // Route only pointer events inside this scroll view; keyboard focus stays in the editor.
-        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseEntered, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .scrollWheel]) { [weak self] event in
+        pointerMonitor = NSEvent.addAppLocalMonitor(matching: [.mouseMoved, .mouseEntered, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .scrollWheel]) { [weak self] event in
             let consumed = MainActor.assumeIsolated {
                 guard let self, event.window === self.window, !self.isHiddenOrHasHiddenAncestor,
                       WindowModalCoordinator.allowsInput(for: self) else { return false }
-                // A closing modal over the picker still holds clicks, as its
-                // hit test does; hover and scrolling go through.
-                if ![.mouseMoved, .mouseEntered, .scrollWheel].contains(event.type),
-                   let window = self.window, WindowModalCoordinator.closingModalOwnsClicks(in: window) {
-                    self.pressedRowID = nil
-                    self.pressedView = nil
-                    return false
-                }
                 let inside = self.bounds.contains(self.convert(event.locationInWindow, from: nil))
                 let viewport = self.documentView as? any NativePickerViewport
                 if event.type == .leftMouseUp, self.releasePress(event, inside: inside) { return true }

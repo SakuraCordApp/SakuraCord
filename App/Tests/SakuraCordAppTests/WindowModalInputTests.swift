@@ -128,7 +128,7 @@ import Testing
 }
 
 @MainActor
-@Test func `one escape closes only the top of stacked modals and its clicks stay with it`() throws {
+@Test func `a closing modal keeps clicks, keys and Escape while the wheel and pointer reach below`() throws {
     let window = modalTestWindow()
     let coordinator = WindowModalCoordinator.coordinator(for: window)
     let parent = modalTestHost(in: window)
@@ -148,17 +148,23 @@ import Testing
     #expect(child.hitTest(.zero) === child)
     // Removing the closing modal from input leaves it above the parent.
     #expect(window.contentView!.subviews.last === child)
-    // A repeated press while the child animates away acts on nothing,
-    // including through other key monitors that see it first.
-    #expect(coordinator.filter(escape) == nil)
+    // While the child animates away, every app monitor and the views below
+    // see only the wheel and pointer movement; clicks and keys stay with it.
+    let click = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    let move = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+    let typing = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
+    let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 4, wheel2: 0, wheel3: 0).flatMap(NSEvent.init(cgEvent:)))
+    for held in [click, typing, escape] {
+        #expect(WindowModalCoordinator.closingModalHolds(held))
+        #expect(coordinator.filter(held) == nil)
+    }
+    #expect(!WindowModalCoordinator.closingModalHolds(move))
+    #expect(!WindowModalCoordinator.closingModalHolds(wheel))
     #expect(parentEscapes == 0)
-    #expect(WindowModalCoordinator.closingModalOwnsEscape(in: window))
-    #expect(WindowModalCoordinator.closingModalOwnsClicks(in: window))
     child.cancelPendingDismissal()
     child.unregisterInput()
     child.removeFromSuperview()
-    #expect(!WindowModalCoordinator.closingModalOwnsEscape(in: window))
-    #expect(!WindowModalCoordinator.closingModalOwnsClicks(in: window))
+    #expect(!WindowModalCoordinator.closingModalHolds(click))
     #expect(coordinator.filter(escape) == nil)
     #expect(parentEscapes == 1)
 }
