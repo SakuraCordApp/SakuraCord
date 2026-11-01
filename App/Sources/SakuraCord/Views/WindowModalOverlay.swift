@@ -315,6 +315,8 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // A closing modal's shortcuts must not act on what it uncovers.
+        guard isPresented else { return false }
         if behavior.capturesEscape,
            isTopmostPresentedOverlay,
            event.type == .keyDown,
