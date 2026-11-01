@@ -27,6 +27,10 @@ extension AppModel {
         isFriendsPresented && friends.messageRequestsTab != nil
     }
 
+    nonisolated static func messageRequestStates(_ channels: [Channel]) -> [ChannelID: MessageRequestStatus] {
+        Dictionary(channels.compactMap { channel in channel.messageRequest.map { (channel.id, $0) } }) { first, _ in first }
+    }
+
     func openMessageRequests() {
         openFriends()
         friends.messageRequestsTab = .pending

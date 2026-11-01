@@ -16,11 +16,14 @@ extension DiscordRESTProvider {
                 && parts[2] == "messages" && parts[4] == "reactions"
             let editsContent = method == "PATCH" && parts.count == 4
                 && parts[2] == "messages" && body?["content"] != nil
-            let changesPollVote = method == "PUT" && parts.count == 6
+            let setsPollVote = method == "PUT" && parts.count == 6
                 && parts[2] == "polls" && parts[4] == "answers" && parts[5] == "@me"
-                && body?["answer_ids"] != .array([])
-            if createsContent || changesReaction || editsContent || changesPollVote {
+            if createsContent || changesReaction || editsContent || setsPollVote {
                 try requireAcceptedMessageRequest(in: channelID)
+            }
+            // A timeout still lets a member withdraw a vote.
+            if createsContent || changesReaction || editsContent
+                || (setsPollVote && body?["answer_ids"] != .array([])) {
                 try requireGuildCommunication(in: channelID)
             }
         } else if path == "/interactions", method == "POST",

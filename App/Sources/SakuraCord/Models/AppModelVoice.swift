@@ -219,9 +219,7 @@ extension AppModel {
     }
 
     func joinPrivateCall(in channel: Channel, withVideo: Bool = false) async {
-        guard channel.kind == .directMessage || channel.kind == .groupDirectMessage,
-              !channel.isOfficialSystemDirectMessage
-        else { return }
+        guard channel.isListedDirectMessage, !channel.isOfficialSystemDirectMessage else { return }
 
         await performPrivateCallAction(in: channel.id) { generation in
             await self.joinPrivateCall(
@@ -272,7 +270,8 @@ extension AppModel {
 
     func acceptPrivateCall(_ call: PrivateCall) async {
         guard let channel = snapshot?.channels.first(where: { $0.id == call.channelID })
-                ?? visibleChannels.first(where: { $0.id == call.channelID })
+                ?? visibleChannels.first(where: { $0.id == call.channelID }),
+              channel.messageRequest == nil
         else { return }
 
         await performPrivateCallAction(in: call.channelID) { generation in

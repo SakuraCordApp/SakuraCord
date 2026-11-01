@@ -729,10 +729,7 @@ extension AppModel {
             visibleChannels = channels
             if let selectedChannelID {
                 if let updated = channels.first(where: { $0.id == selectedChannelID }) {
-                    // Accepting a request enables controls its timeline drew disabled.
-                    let requestChanged = updated.messageRequest != selectedChannel?.messageRequest
                     selectedChannel = updated
-                    if requestChanged { invalidateTimelinePresentation() }
                 } else if guildID == nil, selectedChannelIsGone(fromScopeChannels: channels) {
                     self.selectedChannelID = channels.first(where: \.isListedDirectMessage)?.id
                 } else if guildID != nil,
@@ -745,6 +742,12 @@ extension AppModel {
                     )
                 }
             }
+        }
+        // Timeline layouts, including retained ones for conversations no
+        // longer open, draw a request's controls disabled until it is decided.
+        if guildID == nil, Self.messageRequestStates(previousChannels.filter { $0.guildID == nil })
+            != Self.messageRequestStates(channels) {
+            invalidateTimelinePresentation()
         }
         readState.replaceChannels(in: guildID, with: channels)
         refreshUnreadAccessAfterChannelsChanged(

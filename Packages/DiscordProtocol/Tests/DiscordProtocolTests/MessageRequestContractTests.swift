@@ -37,6 +37,12 @@ struct MessageRequestContractTests {
                 path: "/interactions", method: "POST", body: ["type": .number(3), "channel_id": .string("501")]
             )
         }
+        // Withdrawing a poll vote is refused too, although a timeout allows it.
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.requireCommunicationForRequest(
+                path: "/channels/501/polls/9/answers/@me", method: "PUT", body: ["answer_ids": .array([])]
+            )
+        }
         #expect(fixture.requests.withLock { $0.isEmpty })
         await provider.disconnect()
     }

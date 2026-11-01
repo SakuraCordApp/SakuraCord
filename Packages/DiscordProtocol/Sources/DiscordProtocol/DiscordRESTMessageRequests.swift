@@ -9,9 +9,10 @@ public extension DiscordRESTProvider {
     /// re-created or re-flagged conversation keeps Discord's newer state.
     func acceptMessageRequest(_ channelID: ChannelID) async throws {
         let requestRevision = messageRequestRevisions[channelID, default: 0]
+        let status = privateChannel(id: channelID)?.messageRequest
         guard try await requestMessageRequestChange(channelID, method: "PUT", body: ["consent_status": .number(2)]) != nil,
               messageRequestRevisions[channelID, default: 0] == requestRevision,
-              var channel = privateChannel(id: channelID)
+              var channel = privateChannel(id: channelID), channel.messageRequest == status
         else { return }
         channel.isMessageRequest = false
         channel.isSpam = false
