@@ -239,6 +239,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     private let reducesMotion: Bool
     private var isModalPresented = false
     var isPresented: Bool { isModalPresented }
+    var isDismissing: Bool { !animationState.canBeginDismissal }
 
     var capturesEscape: Bool { behavior.capturesEscape }
     var isTopmostPresentedOverlay: Bool {
@@ -329,7 +330,13 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard isTopmostPresentedOverlay, bounds.contains(point) else { return nil }
+        guard bounds.contains(point) else { return nil }
+        if isDismissing {
+            // What a closing modal uncovers scrolls at once, but a second
+            // click meant for the modal must not act on what lies below.
+            return NSApp.currentEvent?.type == .scrollWheel ? nil : self
+        }
+        guard isTopmostPresentedOverlay else { return nil }
         return super.hitTest(point) ?? self
     }
 
@@ -342,7 +349,8 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     }
 
     func present() {
-        guard !isModalPresented else { return }
+        // A closing modal has let go of input, but it is not reopened.
+        guard !isModalPresented, !isDismissing else { return }
         isModalPresented = true
         isHidden = false
         setAccessibilityHidden(false)
@@ -401,6 +409,10 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
             }
         }
         animationState.beginDismissal(committingPresentation: committingPresentation, interactively: interactively)
+        // A closing modal stops holding the window's input, so what it
+        // covered takes the pointer and the scroll wheel as it animates away.
+        isModalPresented = false
+        if let window { WindowModalCoordinator.coordinator(for: window).beginClosing(self) }
     }
 
     func cancelPendingDismissal() {
@@ -415,6 +427,9 @@ final class WindowModalContext {
     var preventsDismissal = false
     /// Starts a feature-owned closing transition and returns its removal delay.
     var dismissalTransition: ((Bool) -> TimeInterval)?
+    /// Runs as the host leaves the window, in the same transaction, so what
+    /// the modal stood in for returns in the frame the modal leaves.
+    var willRemove: (() -> Void)?
     var escapeAction: (() -> Void)?
     fileprivate var requestDismissal: ((Bool, Bool) -> Void)?
     private(set) var isVisible = false
@@ -479,6 +494,7 @@ final class WindowModalContext {
             let delay = customDelay ?? (reduceMotion ? 0 : Double(WindowModalAnimationTiming.removalDelayMilliseconds) / 1_000)
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard !Task.isCancelled else { return }
+            willRemove?()
             if committingPresentation {
                 dismissPresentation()
             }

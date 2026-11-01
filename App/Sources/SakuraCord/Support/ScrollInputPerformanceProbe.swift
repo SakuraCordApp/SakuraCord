@@ -227,7 +227,7 @@ final class ScrollInputPerformanceProbe {
         invalidate()
         self.scrollView = scrollView
         installLiveScrollObservers(on: scrollView)
-        eventMonitor = NSEvent.addLocalMonitorForEvents(
+        eventMonitor = NSEvent.addAppLocalMonitor(
             matching: .scrollWheel
         ) { [weak self] event in
             MainActor.assumeIsolated {

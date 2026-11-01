@@ -79,7 +79,7 @@ struct LoginTextEditorBridge: NSViewRepresentable {
                 return
             }
             guard mouseMonitor == nil else { return }
-            mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            mouseMonitor = NSEvent.addAppLocalMonitor(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 self?.dismissIfOutside(event)
                 return event
             }
