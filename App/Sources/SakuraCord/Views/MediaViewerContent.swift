@@ -399,7 +399,7 @@ private struct MediaViewerZoomableImage: View {
     }
 }
 
-private struct MediaViewerTransitionImage: View {
+private struct MediaViewerTransitionImage: View, Animatable {
     private static let remoteImageHandoffStartProgress: CGFloat = 0.86
     private static let remoteImageHandoffEndProgress: CGFloat = 0.58
 
@@ -407,9 +407,16 @@ private struct MediaViewerTransitionImage: View {
     let isAnimated: Bool
     let source: MediaViewerTransitionSource
     let destinationFrame: CGRect
-    let presentationProgress: CGFloat
+    var presentationProgress: CGFloat
     let isPresented: Bool
     @State private var presentsRemoteImage: Bool
+
+    /// Its frames come from the progress on every frame, so a source that
+    /// moves as the timeline scrolls is followed mid-zoom, not snapped to.
+    var animatableData: CGFloat {
+        get { presentationProgress }
+        set { presentationProgress = newValue }
+    }
 
     init(
         url: URL,
