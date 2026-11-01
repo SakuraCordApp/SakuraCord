@@ -192,6 +192,14 @@ final class NativePickerCanvas<Row: Identifiable>: NSView, NativePickerViewport 
         pointerRefreshTask?.cancel()
         pendingDestinationID = request.id
         let row = CGRect(x: 0, y: geometry.origins[index], width: bounds.width, height: geometry.heights[index])
+        // The edge room extends the scroll range past the first and last rows
+        // only while a keyboard reveal asks for it, so those rows stop short
+        // of the edges too; any other request takes it away again.
+        let inset = request.anchor == nil ? request.edgeInset : 0
+        if scroll.contentInsets.top != inset {
+            scroll.automaticallyAdjustsContentInsets = false
+            scroll.contentInsets = NSEdgeInsets(top: inset, left: 0, bottom: inset, right: 0)
+        }
         if let anchor = request.anchor {
             let maximum = max(0, frame.height - scroll.contentSize.height)
             let originY = min(maximum, max(0, row.minY - (scroll.contentSize.height - row.height) * anchor.y))
@@ -202,7 +210,6 @@ final class NativePickerCanvas<Row: Identifiable>: NSView, NativePickerViewport 
             let headerHeight = headerIndices.last(where: { $0 <= index }).map { geometry.heights[$0] } ?? 0
             let viewport = scroll.documentVisibleRect
             let originY: CGFloat
-            let inset = request.edgeInset
             if row.minY - headerHeight - inset < viewport.minY {
                 originY = row.minY - headerHeight - inset
             } else if row.maxY + inset > viewport.maxY {
@@ -210,8 +217,8 @@ final class NativePickerCanvas<Row: Identifiable>: NSView, NativePickerViewport 
             } else {
                 originY = viewport.minY
             }
-            let maximum = max(0, frame.height - scroll.contentSize.height)
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(maximum, max(0, originY))))
+            let maximum = max(0, frame.height - scroll.contentView.bounds.height) + inset
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(maximum, max(-inset, originY))))
             scroll.reflectScrolledClipView(scroll.contentView)
         }
         reconcile(refresh: false)
