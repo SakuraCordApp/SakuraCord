@@ -152,8 +152,11 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
         content
             .scaleEffect(contentScale)
             .opacity(Self.smoothstep(progress, from: 0.05, to: 0.4))
-            .overlay {
-                if let source, progress < 1 {
+            // The card's snapshot stays whole under the content until the
+            // content is opaque, so nothing behind them shows through, and
+            // the zoom's last frame is the card as the window shows it.
+            .background {
+                if let source, progress < 0.4 {
                     let size = source.frameInWindow.size
                     let scale = min(box.width / max(size.width, 1), box.height / max(size.height, 1))
                     // A staged video's thumbnail fills its square tile, cropped.
@@ -163,7 +166,6 @@ private struct MediaViewerContainerZoom: ViewModifier, Animatable {
                         .frame(width: size.width * scale, height: size.height * scale)
                         .clipped()
                         .position(x: clip.midX, y: clip.midY)
-                        .opacity(1 - Self.smoothstep(progress, from: 0.1, to: 0.45))
                         .allowsHitTesting(false)
                 }
             }
