@@ -602,8 +602,9 @@ final class WorkspaceColumnsView: NSView {
             let frame = island.view.frame
             let visible = coveredSpans.reduce([frame.minX ..< frame.maxX]) { spans, cover in
                 spans.flatMap { span in
-                    [span.lowerBound ..< min(span.upperBound, cover.lowerBound),
-                     max(span.lowerBound, cover.upperBound) ..< span.upperBound].filter { !$0.isEmpty }
+                    [(span.lowerBound, min(span.upperBound, cover.lowerBound)),
+                     (max(span.lowerBound, cover.upperBound), span.upperBound)]
+                        .filter { $0.0 < $0.1 }.map { $0.0 ..< $0.1 }
                 }
             }
             island.view.showSpans(island.column.isDeparting
@@ -808,7 +809,7 @@ extension NSView {
     /// mask of its own.
     @discardableResult
     func showLeading(_ width: CGFloat?) -> Bool {
-        showSpans(width.map { [0 ..< $0] })
+        showSpans(width.map { [0 ..< max(0, $0)] })
     }
 
     /// Shows only `spans` of its width, as `showLeading` does.
