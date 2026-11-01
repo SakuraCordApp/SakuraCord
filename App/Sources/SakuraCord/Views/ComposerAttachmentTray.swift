@@ -20,6 +20,7 @@ struct ComposerAttachmentTray: View {
     /// Read here rather than by the composer, which would otherwise redraw
     /// as the viewer opens.
     var mediaViewerSourceID: () -> String? = { nil }
+    var scrolled: () -> Void = {}
     let open: (UUID) -> Void
     let toggleSpoiler: (UUID) -> Void
     let update: (ForumPostAttachment) -> Void
@@ -55,6 +56,7 @@ struct ComposerAttachmentTray: View {
                 .animation(reduceMotion ? .smooth(duration: 0.2) : ComposerResizeMotion.tile, value: attachments.map(\.id))
             }
             .scrollIndicators(.hidden)
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }, action: { _, _ in scrolled() })
             .onChange(of: attachments.map(\.id)) { previous, current in
                 // Bring a newly added file into view as it arrives.
                 guard let added = current.last(where: { !previous.contains($0) }) else { return }

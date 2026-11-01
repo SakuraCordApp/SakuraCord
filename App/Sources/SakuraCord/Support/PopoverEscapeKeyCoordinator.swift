@@ -88,7 +88,7 @@ final class PopoverEscapeKeyCoordinator {
         if let eventMonitor {
             NSEvent.removeMonitor(eventMonitor)
         }
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        eventMonitor = NSEvent.addAppLocalMonitor(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             return self.handle(event)
         }

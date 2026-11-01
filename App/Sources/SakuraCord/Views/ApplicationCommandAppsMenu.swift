@@ -48,7 +48,7 @@ final class ApplicationCommandAppsMenuPopulator: NSObject, NSMenuDelegate, NSSea
     func menuWillOpen(_ menu: NSMenu) {
         isOpen = true
         if editingMonitor == nil {
-            editingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            editingMonitor = NSEvent.addAppLocalMonitor(matching: .keyDown) { [weak self] event in
                 self?.handleEditingShortcut(event) == true ? nil : event
             }
         }
