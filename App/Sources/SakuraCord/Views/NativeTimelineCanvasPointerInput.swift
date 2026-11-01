@@ -1683,14 +1683,14 @@ extension NativeTimelineCanvasView {
     func installComponentCursors(at index: Int, rowOrigin: CGFloat) {
         guard let messageID = items[index].messageID else { return }
         for layout in layouts[index].componentLayouts {
-            let hiddenFrames = layout.containers.filter { container in
-                container.isSpoiler && !spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(messageID: messageID, componentID: container.componentID)
-                )
-            }.map(\.frame)
+            let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: layout, messageID: messageID, store: spoilerRevealStore
+            )
             let frames = layout.buttons.filter { !$0.isDisabled && !$0.isLoading }.map(\.frame)
                 + layout.selects.filter { !$0.isDisabled && !$0.isLoading }.map(\.frame)
-            for frame in frames where !hiddenFrames.contains(where: { $0.intersects(frame) }) {
+            for frame in frames where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                frame, hiddenContainerFrames: hiddenContainers
+            ) {
                 addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
             }
         }
