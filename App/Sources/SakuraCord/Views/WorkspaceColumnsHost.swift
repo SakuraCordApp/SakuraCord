@@ -171,10 +171,9 @@ final class WorkspaceColumnsView: NSView {
     /// The columns the workspace last listed; others are leaving.
     private var listedColumnIDs: Set<String> = []
     private var supplementaryPaneFrameChanged: (CGRect) -> Void = { _ in }
-    /// What the columns were last given. Their hosting views take the
-    /// environment whole, colour scheme included, and a theme change
-    /// reaches this view's appearance without updating it here.
-    private var applied: (spec: WorkspaceColumnsHost, environment: EnvironmentValues)?
+    /// The workspace's environment and conversation, as last given.
+    private var environment = EnvironmentValues()
+    private var conversationContent: AnyView?
     private var reportedPaneFrame = CGRect.zero
     private var displayLink: CADisplayLink?
 
@@ -297,16 +296,32 @@ final class WorkspaceColumnsView: NSView {
         if isAnimating(at: now) { startMotion() }
     }
 
+    /// A theme change reaches this view's appearance without updating the
+    /// environment its hosting views were given, so they take it again,
+    /// in the new colour scheme, leaving the columns and their motion be.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        guard let applied else { return }
-        apply(applied.spec, environment: applied.environment, animates: false)
+        if let conversation, let conversationContent { conversation.rootView = hosted(conversationContent) }
+        for island in islands {
+            island.host.setContent(hosted(island.column), isLeaving: island.host.isLeaving)
+        }
+    }
+
+    /// Content for one of the columns' own hosting views, which take the
+    /// workspace's environment whole, in the colour scheme of this view.
+    private func hosted(_ content: AnyView) -> AnyView {
+        var environment = environment
+        environment.colorScheme = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+        return AnyView(content.environment(\.self, environment))
+    }
+
+    private func hosted(_ column: WorkspaceColumnsHost.Column) -> AnyView {
+        AnyView(hosted(column.content).coordinateSpace(.named(WorkspaceColumnsHost.columnSpace)))
     }
 
     func apply(_ spec: WorkspaceColumnsHost, environment: EnvironmentValues, animates: Bool) {
-        applied = (spec, environment)
-        var environment = environment
-        environment.colorScheme = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+        self.environment = environment
+        conversationContent = spec.conversation
         let now = CACurrentMediaTime()
         supplementaryPaneFrameChanged = spec.supplementaryPaneFrameChanged
 
@@ -314,7 +329,7 @@ final class WorkspaceColumnsView: NSView {
             measuredScale = InterfaceScale.factor
             needsMeasurement = true
         }
-        let conversationRoot = AnyView(spec.conversation.environment(\.self, environment))
+        let conversationRoot = hosted(spec.conversation)
         if let conversation {
             conversation.rootView = conversationRoot
         } else {
@@ -348,11 +363,7 @@ final class WorkspaceColumnsView: NSView {
         islands.removeAll { !ids.contains($0.column.id) && !heldIDs.contains($0.column.id) }
         listedColumnIDs = ids
         for column in spec.columns {
-            let root = AnyView(
-                column.content
-                    .environment(\.self, environment)
-                    .coordinateSpace(.named(WorkspaceColumnsHost.columnSpace))
-            )
+            let root = hosted(column)
             if var island = islands.first(where: { $0.column.id == column.id }) {
                 // A column marked leaving before the change stays so until
                 // it comes back in or the motion settles: updates within the
