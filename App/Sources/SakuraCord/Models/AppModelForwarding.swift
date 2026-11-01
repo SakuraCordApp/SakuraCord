@@ -479,3 +479,176 @@ extension AppModel {
         }
     }
 }
+
+extension AppModel {
+    /// Mirrors Discord desktop's source-side forwarding guard for the state
+    /// SakuraCord has resolved locally. Private channels do not require a
+    /// guild permission check; guild messages require message-history access.
+    func canForward(_ message: Message) -> Bool {
+        guard supportedCapabilities.contains(.messageForwarding),
+              message.isForwardable
+        else { return false }
+        guard let channel = messagePresentationChannelsByID[message.channelID]
+                ?? visibleChannels.first(where: { $0.id == message.channelID })
+        else { return true }
+        guard let guildID = channel.guildID else { return true }
+        guard let guild = serverRailGuildsByID[guildID],
+              !guild.features.contains("FORWARDING_DISABLED"),
+              let permissions = effectiveMessagePermissions(in: channel)
+        else { return false }
+        return permissions & DiscordPermissionBits.readMessageHistory != 0
+    }
+
+    /// Discord's global search admits guild text candidates with VIEW_CHANNEL
+    /// and vocal candidates with VIEW_CHANNEL plus CONNECT. The forwarding
+    /// filter runs only after that category has been truncated.
+    func canSearchForwardDestination(_ channel: Channel) -> Bool {
+        canSearchForwardDestination(
+            channel,
+            permissions: forwardDestinationPermissions(channel)
+        )
+    }
+
+    func canSearchForwardDestination(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        ForwardDestinationPermissionPolicy.canSearchChannel(
+            channel,
+            permissions: permissions
+        )
+    }
+
+    /// Discord applies the actual forwarding filter after the raw per-category
+    /// limit. Guild destinations require VIEW_CHANNEL and SEND_MESSAGES; vocal
+    /// destinations have already passed the search-stage CONNECT check.
+    func canUseForwardDestination(_ channel: Channel) -> Bool {
+        canUseForwardDestination(
+            channel,
+            permissions: forwardDestinationPermissions(channel)
+        )
+    }
+
+    func canUseForwardDestination(
+        _ channel: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        ForwardDestinationPermissionPolicy.canUseChannel(
+            channel,
+            permissions: permissions
+        )
+    }
+
+    /// Active joined threads remain valid targets even when their parent is a
+    /// forum, which is not itself a forward destination in Discord's picker.
+    func canSearchForwardThreadDestination(parent: Channel) -> Bool {
+        canSearchForwardThreadDestination(
+            parent: parent,
+            permissions: forwardDestinationPermissions(parent)
+        )
+    }
+
+    func canSearchForwardThreadDestination(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        ForwardDestinationPermissionPolicy.canSearchThread(
+            parent: parent,
+            permissions: permissions
+        )
+    }
+
+    func canUseForwardThreadDestination(parent: Channel) -> Bool {
+        canUseForwardThreadDestination(
+            parent: parent,
+            permissions: forwardDestinationPermissions(parent)
+        )
+    }
+
+    func canUseForwardThreadDestination(
+        parent: Channel,
+        permissions: UInt64?
+    ) -> Bool {
+        ForwardDestinationPermissionPolicy.canUseThread(
+            parent: parent,
+            permissions: permissions
+        )
+    }
+
+    private func forwardDestinationPermissions(_ channel: Channel) -> UInt64? {
+        guard let guildID = channel.guildID else {
+            return nil
+        }
+        return forwardDestinationPermissions(
+            channel,
+            permissionBasis: conversationPermissionBasis(for: guildID)
+        )
+    }
+
+    func forwardDestinationPermissions(
+        _ channel: Channel,
+        permissionBasis: ConversationPermissionBasis?
+    ) -> UInt64? {
+        guard let permissionBasis else { return nil }
+        return ConversationPermissionResolver.effectivePermissions(
+            guild: permissionBasis.guild,
+            channel: channel,
+            resolvedBasePermissions: permissionBasis.resolvedBasePermissions,
+            overwritePrincipals: permissionBasis.overwritePrincipals,
+            hasCurrentRoleIdentity: permissionBasis.hasCurrentRoleIdentity,
+            communicationDisabledUntil: permissionBasis.currentUserCommunicationDisabledUntil
+        )
+    }
+
+    func forwardUnavailableReason(
+        for message: Message,
+        destination channel: Channel
+    ) -> String? {
+        guard let guildID = channel.guildID else { return nil }
+        guard let guild = serverRailGuildsByID[guildID],
+              let currentUserID = currentUser?.id
+        else { return "Destination permissions are unavailable." }
+        let member = onboardingMember(in: guildID)
+        let roles =
+            guildRolesByGuildID[guildID]
+            ?? (guildID == selectedGuildID ? guildRoles : [])
+        guard let permissions = ConversationPermissionResolver.effectivePermissions(
+            guild: guild,
+            channel: channel,
+            currentUserID: currentUserID,
+            currentMember: member,
+            roles: roles,
+            currentRoleIDs: currentUserRoleIDsByGuild[guildID]
+        ) else {
+            return channel.permissionOverwrites?.isEmpty != false
+                ? nil
+                : "Destination permissions are unavailable."
+        }
+        if !message.attachments.isEmpty,
+           permissions & DiscordPermissionBits.attachFiles == 0
+        {
+            return "You cannot attach files in this conversation."
+        }
+        if !message.embeds.isEmpty,
+           permissions & DiscordPermissionBits.embedLinks == 0
+        {
+            return "You cannot embed links in this conversation."
+        }
+        if message.stickers.contains(where: { $0.guildID != nil && $0.guildID != guildID }),
+           permissions & DiscordPermissionBits.useExternalStickers == 0
+        {
+            return "You cannot use external stickers in this conversation."
+        }
+        if message.flags.contains(.voiceMessage),
+           permissions & DiscordPermissionBits.sendVoiceMessages == 0
+        {
+            return "You cannot send voice messages in this conversation."
+        }
+        return nil
+    }
+
+    func shouldSendForwardContext(to channelID: ChannelID) -> Bool {
+        let configuration = slowmodeConfiguration(in: channelID)
+        return configuration.interval == 0 || configuration.immune
+    }
+}

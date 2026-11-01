@@ -887,30 +887,7 @@ extension NativeTimelineCanvasView {
 
         let layout = layouts[index]
         let (contentOrigin, width) = editingPlacement(in: layout)
-        let root = NativeTimelineEditingMessageContent(
-            model: model,
-            message: row.message,
-            save: { [weak self] value in
-                self?.endEditing(commit: value)
-            },
-            cancel: { [weak self] in
-                self?.endEditing(commit: nil)
-            },
-            react: { emoji in
-                actions.react(emoji, row.message)
-            }
-        )
-        .frame(width: width, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        let host = NativeTimelineEditingHost(rootView: AnyView(root))
-        host.setAccessibilityIdentifier("message-editing-row-\(row.id)")
-        host.fittingHeightDidChange = { [weak self, weak host] height in
-            guard let host else { return }
-            self?.updateEditingRowHeight(
-                to: height,
-                for: host
-            )
-        }
+        let host = makeEditingHost(for: row, model: model, actions: actions, width: width)
         host.frame = CGRect(
             x: contentOrigin.x,
             y: displayedRowOrigin(at: index) + contentOrigin.y,
@@ -958,6 +935,39 @@ extension NativeTimelineCanvasView {
             else { return }
             self.focusEditingTextView(in: host)
         }
+    }
+
+    private func makeEditingHost(
+        for row: MessageRowPresentation,
+        model: AppModel,
+        actions: NativeTimelineRowActions,
+        width: CGFloat
+    ) -> NativeTimelineEditingHost {
+        let root = NativeTimelineEditingMessageContent(
+            model: model,
+            message: row.message,
+            save: { [weak self] value in
+                self?.endEditing(commit: value)
+            },
+            cancel: { [weak self] in
+                self?.endEditing(commit: nil)
+            },
+            react: { emoji in
+                actions.react(emoji, row.message)
+            }
+        )
+        .frame(width: width, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        let host = NativeTimelineEditingHost(rootView: AnyView(root))
+        host.setAccessibilityIdentifier("message-editing-row-\(row.id)")
+        host.fittingHeightDidChange = { [weak self, weak host] height in
+            guard let host else { return }
+            self?.updateEditingRowHeight(
+                to: height,
+                for: host
+            )
+        }
+        return host
     }
 
     @discardableResult
