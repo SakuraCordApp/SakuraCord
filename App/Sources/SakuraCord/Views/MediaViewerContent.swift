@@ -599,7 +599,7 @@ private struct MediaViewerTrackpadPanBridge: NSViewRepresentable {
             removeEventMonitor()
             observedWindow = window
             guard window != nil else { return }
-            eventMonitor = NSEvent.addAppLocalMonitor(
+            eventMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: .scrollWheel
             ) { [weak self] event in
                 guard let self else { return event }

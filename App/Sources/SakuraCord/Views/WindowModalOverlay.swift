@@ -330,13 +330,7 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
-        if isDismissing {
-            // What a closing modal uncovers scrolls at once, but a second
-            // click meant for the modal must not act on what lies below.
-            return NSApp.currentEvent?.type == .scrollWheel ? nil : self
-        }
-        guard isTopmostPresentedOverlay else { return nil }
+        guard isTopmostPresentedOverlay, bounds.contains(point) else { return nil }
         return super.hitTest(point) ?? self
     }
 
@@ -409,10 +403,10 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
             }
         }
         animationState.beginDismissal(committingPresentation: committingPresentation, interactively: interactively)
-        // A closing modal stops holding the window's input, so what it
-        // covered takes the pointer and the scroll wheel as it animates away.
+        // A closing modal gives up the window's input at once, so what it
+        // covered takes every click, key and gesture as it animates away.
         isModalPresented = false
-        if let window { WindowModalCoordinator.coordinator(for: window).beginClosing(self) }
+        if let window { WindowModalCoordinator.coordinator(for: window).remove(self) }
     }
 
     func cancelPendingDismissal() {
