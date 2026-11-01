@@ -60,7 +60,7 @@ struct MediaViewerAudio: View {
         // space above it with the space below the volume.
         .padding(.bottom, InterfaceScale.metric(10))
         .frame(width: InterfaceScale.metric(540))
-        .glassEffect(.regular, in: .rect(cornerRadius: MediaViewerStage.contentCornerRadius))
+        .mediaViewerPanel()
         .onAppear { playback.measureDuration(of: source) }
         .onReceive(NotificationCenter.default.publisher(for: VoiceMessagePlaybackStore.didChange, object: playback)) { _ in
             revision += 1
@@ -166,9 +166,9 @@ private struct MediaViewerAudioSeekBar: View {
             let isActive = hoverX != nil || scrubFraction != nil
             let height = InterfaceScale.metric(isActive ? 10 : 6)
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.16))
+                Capsule().fill(.primary.opacity(0.16))
                 if let hoverX, scrubFraction == nil {
-                    Capsule().fill(.white.opacity(0.14)).frame(width: max(height, hoverX))
+                    Capsule().fill(.primary.opacity(0.14)).frame(width: max(height, hoverX))
                 }
                 Capsule().fill(SakuraCordAccentColor.color).frame(width: max(height, width * fraction))
             }

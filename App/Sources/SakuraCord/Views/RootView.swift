@@ -405,6 +405,7 @@ private struct ChatRootView: View {
         .background {
             MediaViewerWindowOverlay(
                 presentation: model.mediaViewerPresentation,
+                animatesOverlays: { model.animates(.overlays) },
                 dismiss: { model.mediaViewerPresentation = nil },
                 selectionChanged: { model.mediaViewerSelectedItemID = $0 }
             )

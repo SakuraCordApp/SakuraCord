@@ -459,7 +459,7 @@ extension NativeTimelineCanvasView {
     /// does nothing.
     func installActionCapsuleModifierMonitor() {
         guard actionCapsuleModifierMonitor == nil else { return }
-        actionCapsuleModifierMonitor = NSEvent.addLocalMonitorForEvents(
+        actionCapsuleModifierMonitor = NSEvent.addAppLocalMonitor(
             matching: .flagsChanged
         ) { [weak self] event in
             self?.setActionCapsuleShiftHeld(

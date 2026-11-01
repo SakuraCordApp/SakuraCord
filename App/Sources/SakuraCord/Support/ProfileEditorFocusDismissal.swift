@@ -18,7 +18,7 @@ struct ProfileEditorFocusDismissal: NSViewRepresentable {
             super.viewDidMoveToWindow()
             stopMonitoring()
             guard window != nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            monitor = NSEvent.addAppLocalMonitor(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
                 guard let self, WindowModalCoordinator.allowsInput(for: self) else { return event }
                 if event.type == .leftMouseUp {
                     let text = self.textToBlur

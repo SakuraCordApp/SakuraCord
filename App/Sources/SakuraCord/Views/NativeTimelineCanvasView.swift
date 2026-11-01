@@ -272,6 +272,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var presentedConversationID: ChannelID?
     var mediaReadyConversationID: ChannelID?
     var mediaViewerHighlightedMessageID: MessageID?
+    var mediaViewerTransition: NativeTimelineMediaViewerTransition?
     var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?

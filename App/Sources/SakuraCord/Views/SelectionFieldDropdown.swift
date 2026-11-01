@@ -133,7 +133,7 @@ struct SelectionFieldDropdown<Content: View>: NSViewRepresentable {
         }
 
         private func installObservers() {
-            mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            mouseMonitor = NSEvent.addAppLocalMonitor(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 guard let self, presented, event.window === window,
                       WindowModalCoordinator.allowsInput(for: self) else { return event }
                 if bounds.contains(convert(event.locationInWindow, from: nil)) { return event }
