@@ -28,9 +28,20 @@ struct MessageRequestContractTests {
     }
 
     @Test func `a reply waits for one consent PUT, which moves the request into the conversation list`() async throws {
-        let provider = await makeProvider()
+        let credentials = NicknameInterleavingCredentials()
+        let provider = await makeProvider(credentials: credentials)
         await #expect(throws: ChatProviderError.self) {
             try await provider.send(SendMessageDraft(channelID: requestID, content: "hi"))
+        }
+        // Components and other interactions wait for Accept DM as well.
+        await #expect(throws: ChatProviderError.self) {
+            try await provider.requireCommunicationForRequest(
+                path: "/interactions", method: "POST", body: ["type": .number(3), "channel_id": .string("501")]
+            )
+        }
+        // An unrelated update racing the PUT must not undo the consent.
+        await credentials.interleave {
+            await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: dm("501", fields: ["last_message_id": .string("900")]))
         }
         try await provider.acceptMessageRequest(requestID)
         #expect(await provider.privateChannel(id: requestID)?.messageRequest == nil)
@@ -61,10 +72,10 @@ struct MessageRequestContractTests {
         ]) { _, base in base })
     }
 
-    private func makeProvider() async -> DiscordRESTProvider {
+    private func makeProvider(credentials: any CredentialStore = TestCredentialStore()) async -> DiscordRESTProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MessageRequestURLProtocol.self]
-        let provider = DiscordRESTProvider(credentials: TestCredentialStore(),
+        let provider = DiscordRESTProvider(credentials: credentials,
                                            handle: CredentialHandle(accountID: "message-requests"),
                                            session: URLSession(configuration: configuration, delegate: fixture, delegateQueue: nil))
         await provider.seedMessageRequest()

@@ -7,7 +7,7 @@ extension AppModel {
     /// reaction normally needs no ADD_REACTIONS.
     func canUpdateReactions(on message: Message) -> Bool {
         guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
-            && knownRootChannel(message.channelID)?.messageRequest == nil
+            && !awaitsMessageRequestDecision(in: message.channelID)
     }
 
     /// Whether new reactions can be created on this message.

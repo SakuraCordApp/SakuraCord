@@ -10,6 +10,12 @@ extension AppModel {
             .sorted { $0.lastActivityDate > $1.lastActivityDate }
     }
 
+    /// Whether the conversation waits in Message Requests, which stays
+    /// read-only until it is accepted.
+    func awaitsMessageRequestDecision(in channelID: ChannelID) -> Bool {
+        knownRootChannel(channelID)?.messageRequest != nil
+    }
+
     /// Whether the user's DM waits in Message Requests, which takes no reply.
     func hasMessageRequest(from userID: UserID) -> Bool {
         snapshot?.channels.contains {

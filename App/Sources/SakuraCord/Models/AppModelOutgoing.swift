@@ -235,7 +235,7 @@ extension AppModel {
     ) -> Task<Bool, Never>? {
         // Every send passes here, so a message request takes no reply from any
         // entry point until it is accepted.
-        guard knownRootChannel(channelID)?.messageRequest == nil,
+        guard !awaitsMessageRequestDecision(in: channelID),
               allowSlowmodeSubmission(in: channelID)
         else { return nil }
         let outgoing = SendMessageDraft(
