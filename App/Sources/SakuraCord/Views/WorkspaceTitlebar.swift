@@ -327,6 +327,14 @@ final class WorkspaceTitlebarView: NSView {
         let searchCover = handOff == nil ? searchCoverMinX(geometry) : nil
         let searchAlpha = handOff.map { max(0, 2 * $0.progress - 1) }
             ?? searchVisibility(geometry, coverMinX: searchCover)
+        // A pane's items, once faded, stay so while it leaves, even if the
+        // column it handed over to leaves too.
+        leavingPaneAlphas = leavingPaneAlphas.filter { groups[$0.key] != nil && !presentedGroupIDs.contains($0.key) }
+        if let handOff {
+            for id in handOff.paneIDs {
+                leavingPaneAlphas[id] = min(leavingPaneAlphas[id] ?? 1, max(0, 1 - 2 * handOff.progress))
+            }
+        }
         _ = searchItemView
         // Items stop before the field while it shows, or will once a pane
         // leaves; they never pass it to come back.
@@ -374,7 +382,7 @@ final class WorkspaceTitlebarView: NSView {
             if id == WorkspaceTitlebar.conversationID { maxX -= searchInset }
             let clipX = minX.rounded(.down)
             views.clip.frame = CGRect(x: clipX, y: 0, width: max(0, visibleMaxX - clipX), height: bounds.height)
-            let alpha = handOff.flatMap { $0.paneIDs.contains(id) ? max(0, 1 - 2 * $0.progress) : nil } ?? 1
+            let alpha = leavingPaneAlphas[id] ?? 1
             if views.clip.alphaValue != alpha { views.clip.alphaValue = alpha }
             place(
                 views,
@@ -459,6 +467,9 @@ final class WorkspaceTitlebarView: NSView {
     private var showsSearch = false
     /// The groups the workspace lists now, not those still sliding away.
     private var presentedGroupIDs: Set<String> = []
+    /// The fade of each leaving thread pane's items in a hand-off to the
+    /// search field.
+    private var leavingPaneAlphas: [String: CGFloat] = [:]
     private weak var searchField: NSSearchField?
 
     /// Where the window's own leading controls end in this view: its
