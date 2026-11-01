@@ -567,7 +567,7 @@ extension AppModel {
         let wasDeafened = isVoiceDeafened
         voiceMutedByDeafen = false
         await setVoiceMuteAndDeafen(
-            muted: !isVoiceMuted && !wasDeafened,
+            muted: !isVoiceMuted,
             deafened: false,
             sound: wasDeafened ? .undeafen : (isVoiceMuted ? .unmute : .mute)
         )
@@ -575,14 +575,14 @@ extension AppModel {
 
     func toggleVoiceDeafen() async {
         let deafened = !isVoiceDeafened
-        var muted = isVoiceMuted
-        if deafened, !muted {
+        let muted: Bool
+        if deafened {
+            voiceMutedByDeafen = !isVoiceMuted
             muted = true
-            voiceMutedByDeafen = true
-        } else if !deafened, voiceMutedByDeafen {
-            muted = false
+        } else {
+            muted = isVoiceMuted && !voiceMutedByDeafen
+            voiceMutedByDeafen = false
         }
-        if !deafened { voiceMutedByDeafen = false }
         await setVoiceMuteAndDeafen(
             muted: muted,
             deafened: deafened,
