@@ -4,6 +4,7 @@ import Combine
 import CoreText
 import ImageIO
 import Lottie
+import MessageRendering
 import QuartzCore
 import SakuraCordModels
 import SwiftUI
@@ -996,8 +997,26 @@ extension NativeTimelineRowPainter {
         isHovered: Bool,
         isOutgoingBubble: Bool = false
     ) {
+        let currentLabel: String
+        if case let .timestamp(date, style) = presentation.target, style == "R" {
+            currentLabel = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
+        } else {
+            currentLabel = presentation.label
+        }
+
+        let metrics = NativeTimelineMentionMetrics.self
+        let font = NSFont.interfaceSystemFont(ofSize: 15, weight: .regular)
+        let labelSize = (currentLabel as NSString).size(withAttributes: [.font: font])
+        let neededWidth = ceil(metrics.horizontalPadding * 2 + labelSize.width)
+        let actualFrame: CGRect
+        if neededWidth > frame.width {
+            actualFrame = CGRect(x: frame.minX, y: frame.minY, width: neededWidth, height: frame.height)
+        } else {
+            actualFrame = frame
+        }
+
         let shape = NSBezierPath(
-            concentricRoundedRect: frame,
+            concentricRoundedRect: actualFrame,
             cornerRadius: InterfaceScale.metric(4.5)
         )
         if isOutgoingBubble {
@@ -1007,18 +1026,17 @@ extension NativeTimelineRowPainter {
         }
         shape.fill()
 
-        let metrics = NativeTimelineMentionMetrics.self
-        let labelX = frame.minX + metrics.horizontalPadding
+        let labelX = actualFrame.minX + metrics.horizontalPadding
         let textColor: NSColor = isOutgoingBubble ? .white : .labelColor
         text(
-            presentation.label,
+            currentLabel,
             in: CGRect(
                 x: labelX,
-                y: frame.minY,
-                width: max(1, frame.maxX - labelX - metrics.horizontalPadding),
-                height: frame.height
+                y: actualFrame.minY,
+                width: max(1, actualFrame.maxX - labelX - metrics.horizontalPadding),
+                height: actualFrame.height
             ),
-            font: .interfaceSystemFont(ofSize: 15, weight: .regular),
+            font: font,
             color: textColor
         )
     }

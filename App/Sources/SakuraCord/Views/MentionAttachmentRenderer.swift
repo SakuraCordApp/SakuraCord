@@ -1,4 +1,5 @@
 import AppKit
+import MessageRendering
 import SakuraCordModels
 
 extension NSAttributedString.Key {
@@ -8,7 +9,7 @@ extension NSAttributedString.Key {
 }
 
 nonisolated final class MentionTextAttachment: NSTextAttachment {
-    let presentation: MentionPresentation
+    var presentation: MentionPresentation
     let font: NSFont
     private(set) var normalImage: NSImage
     private(set) var hoverImage: NSImage
@@ -47,6 +48,40 @@ nonisolated final class MentionTextAttachment: NSTextAttachment {
             presentation: presentation, font: font, avatar: avatar, hovered: true
         )
         image = normalImage
+    }
+
+    @MainActor
+    func updateTimestampIfRelative() -> Bool {
+        guard case let .timestamp(date, style) = presentation.target, style == "R" else { return false }
+        let currentLabel = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
+        if currentLabel == presentation.label { return false }
+        let updatedPresentation = MentionPresentation(
+            rawToken: presentation.rawToken,
+            label: currentLabel,
+            target: presentation.target,
+            avatarURL: presentation.avatarURL,
+            colorHex: presentation.colorHex,
+            systemImage: presentation.systemImage,
+            toolTip: presentation.toolTip
+        )
+        presentation = updatedPresentation
+        normalImage = MentionAttachmentRenderer.image(
+            presentation: updatedPresentation, font: font, avatar: nil, hovered: false
+        )
+        hoverImage = MentionAttachmentRenderer.image(
+            presentation: updatedPresentation, font: font, avatar: nil, hovered: true
+        )
+        image = normalImage
+        bounds = CGRect(
+            x: 0,
+            y: ComposerEmojiAttributedText.attachmentOriginY(
+                font: font, size: normalImage.size.height
+            ),
+            width: normalImage.size.width,
+            height: normalImage.size.height
+        )
+        image?.accessibilityDescription = currentLabel
+        return true
     }
 }
 

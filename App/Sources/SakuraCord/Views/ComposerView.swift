@@ -1573,11 +1573,19 @@ private extension ComposerView {
 
     private var timeCandidates: [DiscordParsedTimeCandidate] {
         guard let context = timeMentionContext else { return [] }
-        return DiscordNaturalLanguageTimeParser.candidates(
+        let parsed = DiscordNaturalLanguageTimeParser.candidates(
             for: context.query,
             referenceDate: timeReferenceDate,
             now: timeTickerDate
         )
+        if parsed.isEmpty {
+            return DiscordNaturalLanguageTimeParser.candidates(
+                for: "",
+                referenceDate: timeReferenceDate,
+                now: timeTickerDate
+            )
+        }
+        return parsed
     }
 
     private var allTimeOptions: [DiscordParsedTimeCandidate.Option] {

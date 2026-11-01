@@ -300,8 +300,8 @@ public enum DiscordNaturalLanguageTimeParser {
         calendar: Calendar,
         timeZone: TimeZone
     ) -> Date? {
-        let lower = query.lowercased()
-        if let date = parseNamedRelativeDay(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
+        let lower = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if let date = parseNamedRelative(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
             return date
         }
         if let date = parseRelativeOffset(lower: lower, now: now, calendar: calendar) {
@@ -313,31 +313,52 @@ public enum DiscordNaturalLanguageTimeParser {
         return nil
     }
 
-    private static func parseNamedRelativeDay(
+    private static let namedRelativeDayOffsets: [String: Int] = [
+        "today": 0,
+        "tomorrow": 1,
+        "yesterday": -1,
+        "day after tomorrow": 2,
+        "day before yesterday": -2,
+        "next day": 1,
+        "last day": -1,
+        "next week": 7,
+        "last week": -7,
+        "this week": 0
+    ]
+
+    private static let namedRelativeMonthOffsets: [String: Int] = [
+        "next month": 1,
+        "last month": -1,
+        "this month": 0
+    ]
+
+    private static let namedRelativeYearOffsets: [String: Int] = [
+        "next year": 1,
+        "last year": -1,
+        "this year": 0
+    ]
+
+    private static func parseNamedRelative(
         lower: String,
         now: Date,
         calendar: Calendar,
         timeZone: TimeZone
     ) -> Date? {
-        let dayOffset: Int
-        if lower == "today" {
-            dayOffset = 0
-        } else if lower == "tomorrow" {
-            dayOffset = 1
-        } else if lower == "yesterday" {
-            dayOffset = -1
-        } else {
-            return nil
+        var target: Date?
+        if let days = namedRelativeDayOffsets[lower] {
+            target = days == 0 ? now : calendar.date(byAdding: .day, value: days, to: now)
+        } else if let months = namedRelativeMonthOffsets[lower] {
+            target = months == 0 ? now : calendar.date(byAdding: .month, value: months, to: now)
+        } else if let years = namedRelativeYearOffsets[lower] {
+            target = years == 0 ? now : calendar.date(byAdding: .year, value: years, to: now)
         }
 
-        guard let target = dayOffset == 0 ? now : calendar.date(byAdding: .day, value: dayOffset, to: now) else {
-            return nil
-        }
-        var comp = calendar.dateComponents(in: timeZone, from: target)
+        guard let resolved = target else { return nil }
+        var comp = calendar.dateComponents(in: timeZone, from: resolved)
         comp.hour = 12
         comp.minute = 0
         comp.second = 0
-        return calendar.date(from: comp) ?? target
+        return calendar.date(from: comp) ?? resolved
     }
 
     private static func parseRelativeOffset(
@@ -345,17 +366,18 @@ public enum DiscordNaturalLanguageTimeParser {
         now: Date,
         calendar: Calendar
     ) -> Date? {
-        let inPattern = #"^in\s+(?:(\d+)|(a|an))\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)$"#
-        let agoPattern = #"^(?:(\d+)|(a|an))\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago$"#
+        let inPattern = #"^in\s+(?:(\d+)|(a|an))\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)?$"#
+        let agoPattern = #"^(?:(\d+)|(a|an))\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)?\s+ago$"#
 
         if let regex = try? NSRegularExpression(pattern: inPattern, options: .caseInsensitive),
            let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)) {
             let val = match.range(at: 1).location != NSNotFound
                 ? (Range(match.range(at: 1), in: lower).flatMap { Int(lower[$0]) } ?? 1)
                 : 1
-            if let unitRange = Range(match.range(at: 3), in: lower) {
-                return resolveOffset(value: val, unit: String(lower[unitRange]), sign: 1, now: now, calendar: calendar)
-            }
+            let unit = match.range(at: 3).location != NSNotFound
+                ? Range(match.range(at: 3), in: lower).map { String(lower[$0]) } ?? "m"
+                : "m"
+            return resolveOffset(value: val, unit: unit, sign: 1, now: now, calendar: calendar)
         }
 
         if let regex = try? NSRegularExpression(pattern: agoPattern, options: .caseInsensitive),
@@ -363,9 +385,10 @@ public enum DiscordNaturalLanguageTimeParser {
             let val = match.range(at: 1).location != NSNotFound
                 ? (Range(match.range(at: 1), in: lower).flatMap { Int(lower[$0]) } ?? 1)
                 : 1
-            if let unitRange = Range(match.range(at: 3), in: lower) {
-                return resolveOffset(value: val, unit: String(lower[unitRange]), sign: -1, now: now, calendar: calendar)
-            }
+            let unit = match.range(at: 3).location != NSNotFound
+                ? Range(match.range(at: 3), in: lower).map { String(lower[$0]) } ?? "m"
+                : "m"
+            return resolveOffset(value: val, unit: unit, sign: -1, now: now, calendar: calendar)
         }
 
         return nil
@@ -449,6 +472,13 @@ public enum DiscordNaturalLanguageTimeParser {
         calendar: Calendar,
         timeZone: TimeZone
     ) -> [ParsedNaturalDate] {
+        let lower = query.lowercased()
+        if lower.starts(with: "in ") || lower.hasSuffix(" ago")
+            || lower.contains("yesterday") || lower.contains("tomorrow") || lower.contains("today")
+            || lower.contains("next") || lower.contains("last") {
+            return []
+        }
+
         var baseDate: Date?
         let hasExplicitYear = query.range(of: #"\b(19\d\d|20\d\d)\b"#, options: .regularExpression) != nil
 

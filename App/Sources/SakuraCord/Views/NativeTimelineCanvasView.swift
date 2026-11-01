@@ -124,6 +124,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         let frame: CGRect
         var toolTip: String?
         var isTimestamp: Bool = false
+        var timestampDate: Date?
+        var timestampStyle: String?
     }
 
     struct TextPointerHit {

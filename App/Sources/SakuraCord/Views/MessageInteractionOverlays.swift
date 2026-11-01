@@ -1082,15 +1082,41 @@ struct MessageProfilePopoverContent: View {
 }
 
 struct TimestampMentionTooltip: View {
-    let text: String
+    let date: Date?
+    let style: String?
+    let fallbackText: String
+    @State private var now = Date.now
+
+    init(date: Date? = nil, style: String? = nil, fallbackText: String = "") {
+        self.date = date
+        self.style = style
+        self.fallbackText = fallbackText
+    }
+
+    init(text: String) {
+        self.date = nil
+        self.style = nil
+        self.fallbackText = text
+    }
 
     var body: some View {
-        Text(text)
+        Text(currentText)
             .font(.interfaceSystem(size: 13, weight: .medium))
             .foregroundStyle(Color.primary)
             .padding(.horizontal, InterfaceScale.metric(12))
             .padding(.vertical, InterfaceScale.metric(8))
             .fixedSize()
             .interfaceScaleRoot()
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    now = Date.now
+                }
+            }
+    }
+
+    private var currentText: String {
+        guard let date else { return fallbackText }
+        return DiscordTimestampFormatter.tooltip(date: date, style: style, now: now)
     }
 }

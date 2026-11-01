@@ -20,7 +20,7 @@ private struct FlattenedOption: Identifiable {
     let option: DiscordParsedTimeCandidate.Option
     let hasDividerBefore: Bool
 
-    var id: String { "\(option.id):\(option.displayText)" }
+    var id: String { option.id }
     var optionID: String { option.id }
 }
 
@@ -261,6 +261,7 @@ struct TimeMentionFieldRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TimeMentionNSTextField, context: Context) {
+        context.coordinator.parent = self
         if nsView.stringValue != text {
             nsView.stringValue = text
         }

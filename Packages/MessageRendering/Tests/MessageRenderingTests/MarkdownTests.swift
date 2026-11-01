@@ -707,4 +707,18 @@ private func spoilerOutline(_ source: String) -> String {
     #expect(twelveOct[1].date < now)
     #expect(twelveOct[0].options[0].badgeText == "Next year")
     #expect(twelveOct[1].options[0].badgeText == "This year")
+
+    let nextYear = DiscordNaturalLanguageTimeParser.candidates(for: "next year", now: now)
+    #expect(nextYear.count == 1)
+    #expect(nextYear[0].date > now)
+    #expect(nextYear[0].options[0].badgeText == nil)
+
+    let yesterday = DiscordNaturalLanguageTimeParser.candidates(for: "yesterday", now: now)
+    #expect(yesterday.count == 1)
+    #expect(yesterday[0].date < now)
+    #expect(yesterday[0].options[0].badgeText == nil)
+
+    let inFive = DiscordNaturalLanguageTimeParser.candidates(for: "in 5", now: now)
+    #expect(inFive.count == 1)
+    #expect(Int(inFive[0].date.timeIntervalSince(now)) == 300)
 }

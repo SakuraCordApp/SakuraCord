@@ -23,6 +23,8 @@ nonisolated struct NativeTimelineMentionHover: Equatable {
     var toolTip: String?
     var isTimestamp: Bool = false
     var frame: CGRect = .zero
+    var timestampDate: Date?
+    var timestampStyle: String?
 }
 
 nonisolated struct NativeTimelineTextLinkHover: Equatable {

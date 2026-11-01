@@ -63,7 +63,11 @@ extension NativeTimelineCanvasView {
                     self?.activeTimestampHoverAnchor = nil
                 },
                 presentationIdentity: value.rawToken,
-                content: TimestampMentionTooltip(text: tip)
+                content: TimestampMentionTooltip(
+                    date: value.timestampDate,
+                    style: value.timestampStyle,
+                    fallbackText: tip
+                )
             )
         } else {
             timestampHoverCoordinator.close()

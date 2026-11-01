@@ -228,6 +228,9 @@ enum ComposerEmojiAttributedText {
             guard let token = tokenValue as? String,
                   let mention = RenderedMention(rawToken: token)
             else { return }
+            if mention.kind == .timestamp, mention.timestampStyle == "R" {
+                return
+            }
             let expected = mentionPresentations[token]
                 ?? MentionPresentation.fallback(for: mention)
             value.enumerateAttribute(.attachment, in: range) { attachment, _, attachmentStop in
@@ -523,6 +526,7 @@ struct ComposerTextView: NSViewRepresentable {
         }
         context.coordinator.loadEmojiImages(in: textView)
         context.coordinator.loadMentionAvatars(in: textView)
+        context.coordinator.reconcileRelativeTimestamps(in: textView)
 
         if let selection,
            selection.location != NSNotFound,
@@ -576,6 +580,48 @@ struct ComposerTextView: NSViewRepresentable {
         private var isNormalizing = false
         private var isMarkedTextActive = false
         private let attachmentImageLoader = InlineAttachmentImageLoader()
+        private var relativeTimestampTickerTask: Task<Void, Never>?
+
+        deinit {
+            relativeTimestampTickerTask?.cancel()
+        }
+
+        func reconcileRelativeTimestamps(in textView: NSTextView?) {
+            guard let textView else {
+                relativeTimestampTickerTask?.cancel()
+                relativeTimestampTickerTask = nil
+                return
+            }
+            let hasRelative = parent.text.contains(":R>")
+            if !hasRelative {
+                relativeTimestampTickerTask?.cancel()
+                relativeTimestampTickerTask = nil
+                return
+            }
+            guard relativeTimestampTickerTask == nil else { return }
+            relativeTimestampTickerTask = Task { @MainActor [weak self, weak textView] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard !Task.isCancelled, let self, let textView else { break }
+                    guard self.parent.text.contains(":R>") else { break }
+                    guard let textStorage = textView.textStorage else { break }
+                    var updated = false
+                    textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length)) { attachment, range, _ in
+                        if let mentionAttachment = attachment as? MentionTextAttachment {
+                            if mentionAttachment.updateTimestampIfRelative() {
+                                updated = true
+                                textView.layoutManager?.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                                textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
+                            }
+                        }
+                    }
+                    if updated {
+                        textView.setNeedsDisplay(textView.bounds)
+                    }
+                }
+                self?.relativeTimestampTickerTask = nil
+            }
+        }
 
         init(parent: ComposerTextView) {
             self.parent = parent

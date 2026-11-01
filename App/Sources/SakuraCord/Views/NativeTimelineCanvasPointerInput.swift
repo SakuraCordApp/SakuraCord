@@ -1294,7 +1294,9 @@ extension NativeTimelineCanvasView {
                 rawToken: mention.rawToken,
                 toolTip: mention.toolTip,
                 isTimestamp: mention.isTimestamp,
-                frame: mention.frame
+                frame: mention.frame,
+                timestampDate: mention.timestampDate,
+                timestampStyle: mention.timestampStyle
             )
         }
         return nil
@@ -1391,7 +1393,13 @@ extension NativeTimelineCanvasView {
                 framesetter: selectable.framesetter,
                 frame: selectable.frame
             ).filter { $0.presentation.isInteractive || $0.presentation.isTimestamp }.map { mention in
-                MentionPointerRegion(
+                var targetDate: Date?
+                var targetStyle: String?
+                if case let .timestamp(resolvedDate, resolvedStyle) = mention.presentation.target {
+                    targetDate = resolvedDate
+                    targetStyle = resolvedStyle
+                }
+                return MentionPointerRegion(
                     region: selectable.region,
                     characterIndex: mention.characterIndex,
                     rawToken: mention.presentation.rawToken,
@@ -1400,7 +1408,9 @@ extension NativeTimelineCanvasView {
                         dy: rowOrigin
                     ),
                     toolTip: mention.presentation.toolTip,
-                    isTimestamp: mention.presentation.isTimestamp
+                    isTimestamp: mention.presentation.isTimestamp,
+                    timestampDate: targetDate,
+                    timestampStyle: targetStyle
                 )
             }
         }
