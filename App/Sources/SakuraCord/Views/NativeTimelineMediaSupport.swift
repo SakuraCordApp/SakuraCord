@@ -448,8 +448,10 @@ final class NativeTimelineMediaStore {
     var visibleKeysByOwner:
         [UUID: Set<NativeTimelineMediaKey>] = [:]
     // Keep failures only while visible, so redraws cannot repeatedly fetch a
-    // broken resource. Leaving and re-entering the viewport allows a retry.
-    private var failedKeys: Set<NativeTimelineMediaKey> = []
+    // broken resource. Leaving and re-entering the viewport allows a retry,
+    // as does a fallback the key gains later: each failure keeps the URLs
+    // it tried.
+    private var failedKeys: [NativeTimelineMediaKey: [URL]] = [:]
     var loading: Set<NativeTimelineMediaKey> = []
     var loadingPriorities: [NativeTimelineMediaKey: MediaLoadPriority] = [:]
     var loadingTaskIDs: [NativeTimelineMediaKey: UUID] = [:]
@@ -643,6 +645,15 @@ final class NativeTimelineMediaStore {
         }
     }
 
+    /// Whether `key` failed with every URL it offers; one it gained since,
+    /// such as a fallback, is tried.
+    private func hasFailed(_ key: NativeTimelineMediaKey) -> Bool {
+        guard let triedURLs = failedKeys[key] else { return false }
+        if triedURLs == key.loadURLs { return true }
+        failedKeys[key] = nil
+        return false
+    }
+
     func request(
         _ key: NativeTimelineMediaKey,
         owner: UUID,
@@ -651,7 +662,7 @@ final class NativeTimelineMediaStore {
         completion: @escaping (NativeTimelineStaticMediaLoadOutcome) -> Void
     ) {
         guard image(for: key) == nil else { return }
-        guard !failedKeys.contains(key) else {
+        guard !hasFailed(key) else {
             completion(.failed)
             return
         }
@@ -709,7 +720,7 @@ final class NativeTimelineMediaStore {
             if let image {
                 cacheImage(image, for: key)
             } else if visibleKeysByOwner.values.contains(where: { $0.contains(key) }) {
-                failedKeys.insert(key)
+                failedKeys[key] = key.loadURLs
             }
             for completion in completions {
                 completion(image == nil ? .failed : .ready)
@@ -851,7 +862,7 @@ final class NativeTimelineMediaStore {
         _ image: NSImage,
         for key: NativeTimelineMediaKey
     ) {
-        failedKeys.remove(key)
+        failedKeys[key] = nil
         let cost = Self.estimatedCost(of: image)
         if let previous = cachedImages.updateValue(
             CachedImage(image: image, cost: cost),
@@ -873,7 +884,7 @@ final class NativeTimelineMediaStore {
         let visibleKeys = visibleKeysByOwner.values.reduce(
             into: Set<NativeTimelineMediaKey>()
         ) { $0.formUnion($1) }
-        failedKeys.formIntersection(visibleKeys)
+        failedKeys = failedKeys.filter { visibleKeys.contains($0.key) }
         while imageCacheCost > Self.imageCacheCostLimit
             || cachedImages.count > Self.imageCacheCountLimit
         {

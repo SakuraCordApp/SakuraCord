@@ -308,12 +308,18 @@ extension AppModel {
         if destination == .thread, openThread == nil {
             return await addComposerAttachments(attachments.map(\.url), to: .thread)
         }
-        // The files go where they were dropped, read while the message waits.
+        // The files go where they were dropped, read while the message waits
+        // and holds its place in the outbox.
         let session = accountSession()
         let channelID = selectedChannelID
         let thread = openThread
+        guard let reservation = composer.outbox.reserveSubmission() else {
+            composer.isSendQueueFullAlertPresented = true
+            return false
+        }
         // The message shows at once, so its videos are read first.
         await LocalVideo.prepare(attachments.map(\.url))
+        composer.outbox.releaseSubmission(reservation)
         guard isCurrentAccountSession(session) else { return false }
         switch destination {
         case .channel:
