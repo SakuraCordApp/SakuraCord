@@ -376,11 +376,13 @@ final class WorkspaceTitlebarView: NSView {
     }
 
     /// Where a thread pane in front of the search field begins, in window
-    /// coordinates. The field shows only before it: its glass beneath the
-    /// pane's translucent items showed through them as the pane moved.
+    /// coordinates, less an item inset. The field shows only before it: its
+    /// glass beneath the pane's translucent items showed through them as the
+    /// pane moved, and the items' glass refracts what lies just beside it.
     private func searchCoverMinX(_ geometry: WorkspaceColumnsGeometry) -> CGFloat? {
         guard AppMotionPolicy.animates(.overlays) else { return nil }
-        return geometry.columns.filter { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }.map(\.minX).min()
+        let paneMinX = geometry.columns.filter { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }.map(\.minX).min()
+        return paneMinX.map { $0 - ChatChromeMetrics.toolbarItemEdgeInset }
     }
 
     private func coverSearch(at coverMinX: CGFloat?) {

@@ -593,8 +593,11 @@ final class WorkspaceColumnsView: NSView {
         // arrives shows only where the arriving one has not covered it yet,
         // as the conversation does, rather than showing through it.
         var coverMinX = CGFloat.infinity
-        for island in islands.reversed() where !island.column.isFullWidth {
-            if island.column.isDeparting {
+        for island in islands.reversed() {
+            if island.column.isFullWidth {
+                // A pane left beneath another can come back at full width.
+                island.view.showLeading(nil)
+            } else if island.column.isDeparting {
                 island.view.showLeading(coverMinX - island.view.frame.minX)
             } else {
                 island.view.showLeading(nil)
