@@ -61,6 +61,12 @@ final class WindowModalCoordinator {
 
     var topmost: WindowModalHostingView? { entries.reversed().compactMap(\.host).first }
 
+    /// Whether a modal animating away still holds `window`'s Escape, which
+    /// other key monitors leave to it whichever sees the press first.
+    static func closingModalOwnsEscape(in window: NSWindow) -> Bool {
+        coordinators.object(forKey: window)?.closingHosts.allObjects.contains { $0.capturesEscape } == true
+    }
+
     func allowsInput(to view: NSView) -> Bool {
         guard let topmost else { return true }
         return entries.last { $0.host === topmost }?.contains(view) == true
@@ -179,7 +185,7 @@ final class WindowModalCoordinator {
             guard KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags, characters: event.charactersIgnoringModifiers) else { return event }
             if window.attachedSheet != nil { return event }
             if PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window) { return nil }
-            if closingHosts.allObjects.contains(where: { $0.capturesEscape }) { return nil }
+            if Self.closingModalOwnsEscape(in: window) { return nil }
             guard let topmost, topmost.capturesEscape else { return event }
             topmost.animationState.handleEscape()
             return nil

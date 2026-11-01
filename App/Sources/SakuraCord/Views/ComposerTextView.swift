@@ -1258,10 +1258,9 @@ final class ComposerUnfocusedTypingMonitor {
 
             // Popovers can leave the main window key. Its composer monitor may
             // receive Escape first, so honor popover dismissal before composer actions.
-            if KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags),
-               PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window)
-            {
-                return nil
+            if KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags) {
+                if PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window) { return nil }
+                if WindowModalCoordinator.closingModalOwnsEscape(in: window) { return event }
             }
 
             if Self.handlePaste(
