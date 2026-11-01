@@ -221,13 +221,6 @@ struct ChannelDTO: Decodable {
         case voiceStartTime = "voice_start_time"
     }
 
-    /// Spam outranks a plain request, as in Discord's Spam tab. Nil when the
-    /// payload carries neither flag, so an update can keep the known state.
-    var messageRequest: MessageRequestStatus? {
-        if isSpam == true { return .spam }
-        return isMessageRequest == true ? .pending : nil
-    }
-
     func domain(
         guildID fallbackGuildID: GuildID?,
         categoryName: String? = nil,
@@ -300,7 +293,8 @@ struct ChannelDTO: Decodable {
             isAgeRestricted: nsfw ?? false,
             recipients: users,
             blockedUserWarningDismissed: blockedUserWarningDismissed ?? false,
-            messageRequest: messageRequest,
+            isMessageRequest: isMessageRequest ?? false,
+            isSpam: isSpam ?? false,
             permissionOverwrites: permissionOverwrites?.map(\.domain),
             memberListID: memberListID,
             lastMessageID: lastMessageID.flatMap(MessageID.init),

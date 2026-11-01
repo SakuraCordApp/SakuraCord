@@ -121,15 +121,9 @@ nonisolated enum DirectMessageInboxPolicy {
         in channels: [Channel],
         pinnedChannelIDs: Set<ChannelID> = []
     ) -> [Channel] {
-        let conversations = channels.filter {
-            ($0.kind == .directMessage || $0.kind == .groupDirectMessage) && $0.messageRequest == nil
-        }
+        let conversations = channels.filter(\.isListedDirectMessage)
         let pinned = conversations.filter { pinnedChannelIDs.contains($0.id) }
-            .sorted { lhs, rhs in
-                let leftActivity = lhs.lastMessageID?.createdAt ?? lhs.id.createdAt
-                let rightActivity = rhs.lastMessageID?.createdAt ?? rhs.id.createdAt
-                return leftActivity > rightActivity
-            }
+            .sorted { $0.lastActivityDate > $1.lastActivityDate }
         return pinned + conversations.filter { !pinnedChannelIDs.contains($0.id) }
     }
 

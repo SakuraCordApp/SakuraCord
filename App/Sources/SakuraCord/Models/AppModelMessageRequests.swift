@@ -3,10 +3,11 @@ import SakuraCordModels
 
 extension AppModel {
     /// Direct messages from non-friends, newest first, as Discord lists them.
+    /// Read only in the Direct Messages home, where the visible channels are
+    /// the private ones.
     var messageRequestChannels: [Channel] {
-        (snapshot?.channels ?? [])
-            .filter { $0.guildID == nil && $0.messageRequest != nil }
-            .sorted { ($0.lastMessageID?.createdAt ?? $0.id.createdAt) > ($1.lastMessageID?.createdAt ?? $1.id.createdAt) }
+        visibleChannels.filter { $0.messageRequest != nil }
+            .sorted { $0.lastActivityDate > $1.lastActivityDate }
     }
 
     var isMessageRequestsPresented: Bool {
@@ -15,7 +16,7 @@ extension AppModel {
 
     func openMessageRequests() {
         openFriends()
-        friends.messageRequestsTab = .requests
+        friends.messageRequestsTab = .pending
     }
 
     func acceptMessageRequest(_ channel: Channel) {

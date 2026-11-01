@@ -659,12 +659,9 @@ final class AppModel {
     }
 
     func conversationAccess(for channel: Channel) -> ConversationAccess {
-        guard let guildID = channel.guildID else {
-            return .readable(canSend: !channel.isOfficialSystemDirectMessage)
-        }
-        return Self.resolveConversationAccess(
+        Self.resolveConversationAccess(
             for: channel,
-            permissionBasis: conversationPermissionBasis(for: guildID)
+            permissionBasis: channel.guildID.flatMap(conversationPermissionBasis(for:))
         )
     }
 

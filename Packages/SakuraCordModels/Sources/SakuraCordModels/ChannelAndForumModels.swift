@@ -91,8 +91,10 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public var isAgeRestricted: Bool
     public var recipients: [User]
     public var blockedUserWarningDismissed: Bool
-    /// Set while a DM from a non-friend waits in Message Requests.
-    public var messageRequest: MessageRequestStatus?
+    /// Discord's `is_message_request`: a non-friend's DM awaiting a decision.
+    public var isMessageRequest: Bool
+    /// Discord's `is_spam`, kept apart so a partial update can change either flag.
+    public var isSpam: Bool
     public var permissionOverwrites: [ChannelPermissionOverwrite]?
     public var memberListID: String?
     public var lastMessageID: MessageID?
@@ -128,7 +130,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         isAgeRestricted: Bool = false,
         recipients: [User] = [],
         blockedUserWarningDismissed: Bool = false,
-        messageRequest: MessageRequestStatus? = nil,
+        isMessageRequest: Bool = false,
+        isSpam: Bool = false,
         permissionOverwrites: [ChannelPermissionOverwrite]? = nil,
         memberListID: String? = nil,
         lastMessageID: MessageID? = nil,
@@ -163,7 +166,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.isAgeRestricted = isAgeRestricted
         self.recipients = recipients
         self.blockedUserWarningDismissed = blockedUserWarningDismissed
-        self.messageRequest = messageRequest
+        self.isMessageRequest = isMessageRequest
+        self.isSpam = isSpam
         self.permissionOverwrites = permissionOverwrites
         self.memberListID = memberListID
         self.lastMessageID = lastMessageID
@@ -185,13 +189,30 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         flags & (1 << 4) != 0
     }
 
+    /// Where Discord files the conversation: spam outranks a plain request.
+    public var messageRequest: MessageRequestStatus? {
+        if isSpam { return .spam }
+        return isMessageRequest ? .pending : nil
+    }
+
+    /// A DM or group in the conversation list; message requests wait on
+    /// their own page until accepted.
+    public var isListedDirectMessage: Bool {
+        (kind == .directMessage || kind == .groupDirectMessage) && messageRequest == nil
+    }
+
+    /// The latest message, or the channel's creation for one without messages.
+    public var lastActivityDate: Date {
+        lastMessageID?.createdAt ?? id.createdAt
+    }
+
     public var isOfficialSystemDirectMessage: Bool {
         kind == .directMessage && recipients.contains(where: \.isSystem)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, guildID, name, hasExplicitName, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
-        case isAgeRestricted, blockedUserWarningDismissed, messageRequest
+        case isAgeRestricted, blockedUserWarningDismissed, isMessageRequest, isSpam
         case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, memberListID, lastMessageID, lastPinTimestamp
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
@@ -219,7 +240,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         isAgeRestricted = try values.decodeIfPresent(Bool.self, forKey: .isAgeRestricted) ?? false
         recipients = try values.decodeIfPresent([User].self, forKey: .recipients) ?? []
         blockedUserWarningDismissed = try values.decodeIfPresent(Bool.self, forKey: .blockedUserWarningDismissed) ?? false
-        messageRequest = try values.decodeIfPresent(MessageRequestStatus.self, forKey: .messageRequest)
+        isMessageRequest = try values.decodeIfPresent(Bool.self, forKey: .isMessageRequest) ?? false
+        isSpam = try values.decodeIfPresent(Bool.self, forKey: .isSpam) ?? false
         permissionOverwrites = try values.decodeIfPresent(
             [ChannelPermissionOverwrite].self, forKey: .permissionOverwrites
         )

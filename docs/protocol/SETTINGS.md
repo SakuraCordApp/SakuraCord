@@ -220,6 +220,15 @@ A failure keeps the DM and appears in the workspace error alert. A new message
 makes Discord send `CHANNEL_CREATE`, which the ordinary private-channel handling
 adds back to the list.
 
+The request follows the public
+[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
+route and the first-party `closePrivateChannel` call analysed for Leave Group.
+The omitted `silent` is inferred from that analysis; the request was not
+captured from the first-party client. A live SakuraCord check on 25 October 2026
+closed the DM between the two saved test accounts, kept its history visible from
+the other account, and showed the DM back in the closer's list after the other
+account sent a message.
+
 ## Message requests
 
 Researched on 2026-11-01 from the official production web bundle (web stable
@@ -254,15 +263,6 @@ not traced), click-to-preview through
 reject, and the GB-only "Are you sure you know this person?" confirmation. Not
 verified live: the Gateway events that follow a decision, whether Ignore also
 changes the relationship, and whether opening a request acknowledges it.
-
-The request follows the public
-[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
-route and the first-party `closePrivateChannel` call analysed for Leave Group.
-The omitted `silent` is inferred from that analysis; the request was not
-captured from the first-party client. A live SakuraCord check on 25 October 2026
-closed the DM between the two saved test accounts, kept its history visible from
-the other account, and showed the DM back in the closer's list after the other
-account sent a message.
 
 ## Protobuf preservation
 

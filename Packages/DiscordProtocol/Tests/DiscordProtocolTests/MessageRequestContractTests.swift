@@ -9,12 +9,18 @@ struct MessageRequestContractTests {
     private let requestID = ChannelID(rawValue: 501)
     private let friendID = ChannelID(rawValue: 502)
 
-    @Test func `request flags survive a partial channel update and clear when Discord drops them`() async throws {
+    @Test func `each request flag survives a partial channel update and clears when Discord drops it`() async throws {
         let provider = await makeProvider()
+        let spamID = ChannelID(rawValue: 503)
         await provider.handleGatewayDispatch(name: "CHANNEL_CREATE", body: dm("503", fields: ["is_spam": .bool(true), "is_message_request": .bool(true)]))
-        #expect(await provider.privateChannel(id: ChannelID(rawValue: 503))?.messageRequest == .spam)
+        #expect(await provider.privateChannel(id: spamID)?.messageRequest == .spam)
+        // Clearing one flag must not drop the other: spam stays spam.
+        await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: dm("503", fields: ["is_message_request": .bool(false)]))
+        #expect(await provider.privateChannel(id: spamID)?.messageRequest == .spam)
 
         await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: dm("501", fields: ["last_message_id": .string("900")]))
+        #expect(await provider.privateChannel(id: requestID)?.messageRequest == .pending)
+        await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: dm("501", fields: ["is_spam": .bool(false)]))
         #expect(await provider.privateChannel(id: requestID)?.messageRequest == .pending)
         await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: dm("501", fields: ["is_message_request": .bool(false)]))
         #expect(await provider.privateChannel(id: requestID)?.messageRequest == nil)
@@ -69,7 +75,7 @@ private extension DiscordRESTProvider {
         let stranger = User(id: .init(rawValue: 2), username: "stranger", displayName: "Stranger")
         cachedChannels[nil] = [
             Channel(id: .init(rawValue: 501), guildID: nil, name: "Stranger", kind: .directMessage,
-                    recipients: [stranger], messageRequest: .pending),
+                    recipients: [stranger], isMessageRequest: true),
             Channel(id: .init(rawValue: 502), guildID: nil, name: "Stranger", kind: .directMessage,
                     recipients: [stranger]),
         ]

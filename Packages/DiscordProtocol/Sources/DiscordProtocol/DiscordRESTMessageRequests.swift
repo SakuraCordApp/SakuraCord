@@ -9,7 +9,8 @@ public extension DiscordRESTProvider {
         guard try await requestMessageRequestChange(channelID, method: "PUT", body: ["consent_status": .number(2)]),
               var channel = privateChannel(id: channelID)
         else { return }
-        channel.messageRequest = nil
+        channel.isMessageRequest = false
+        channel.isSpam = false
         upsertPrivateChannel(channel)
     }
 

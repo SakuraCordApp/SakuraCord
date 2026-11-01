@@ -145,9 +145,7 @@ final class ServerRailPresentationStore {
         unacknowledgedChannelIDs: Set<ChannelID>
     ) {
         let conversations = channels.filter {
-            ($0.kind == .directMessage || $0.kind == .groupDirectMessage)
-                && $0.messageRequest == nil
-                && unacknowledgedChannelIDs.contains($0.id)
+            $0.isListedDirectMessage && unacknowledgedChannelIDs.contains($0.id)
         }
         var nextEntries: [ServerRailDirectMessageEntry] = []
         nextEntries.reserveCapacity(conversations.count)

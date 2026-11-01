@@ -101,7 +101,7 @@ extension AppModel {
         if !unreadOnly {
             if selectedGuildID == nil {
                 return !isFriendsPresented || visibleChannels.contains { channel in
-                    (channel.kind == .directMessage || channel.kind == .groupDirectMessage)
+                    channel.isListedDirectMessage
                         && !hiddenChannelIDs.contains(channel.id)
                         && !checkingChannelIDs.contains(channel.id)
                 }

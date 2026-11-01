@@ -7,28 +7,34 @@ struct MessageRequestsView: View {
     let model: AppModel
 
     var body: some View {
-        let tab = model.friends.messageRequestsTab ?? .requests
-        let status: MessageRequestStatus = tab == .requests ? .pending : .spam
-        let channels = model.messageRequestChannels.filter { $0.messageRequest == status }
+        let tab = model.friends.messageRequestsTab ?? .pending
+        let channels = model.messageRequestChannels.filter { $0.messageRequest == tab }
 
-        List {
-            if !channels.isEmpty {
-                Section {
-                    ForEach(channels) { channel in
-                        MessageRequestRow(model: model, channel: channel)
-                    }
-                } header: {
-                    Text(tab == .requests ? "Pending Requests — \(channels.count)" : "Spam — \(channels.count)")
+        // A stack rather than a List, whose rows would flatten the buttons
+        // into one accessibility label.
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if !channels.isEmpty {
+                    Text(tab == .pending ? "Pending Requests — \(channels.count)" : "Spam — \(channels.count)")
+                        .font(.interface(.subheadline).weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, InterfaceScale.metric(4))
+                        .accessibilityAddTraits(.isHeader)
+                }
+                ForEach(channels) { channel in
+                    Divider()
+                    MessageRequestRow(model: model, channel: channel)
                 }
             }
+            .padding(.horizontal, InterfaceScale.metric(20))
+            .padding(.vertical, InterfaceScale.metric(12))
         }
-        .scrollContentBackground(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .top)
         .overlay {
             if channels.isEmpty {
                 // Official en-US empty-state copy.
                 switch tab {
-                case .requests:
+                case .pending:
                     ContentUnavailableView(
                         "No pending requests", systemImage: "envelope",
                         description: Text("There are no pending message requests. Here’s Wumpus for now.")
@@ -63,7 +69,7 @@ private struct MessageRequestRow: View {
                     }
                     .lineLimit(1)
                     Spacer(minLength: 0)
-                    Text((channel.lastMessageID?.createdAt ?? channel.id.createdAt), format: .relative(presentation: .named))
+                    Text(channel.lastActivityDate, format: .relative(presentation: .named))
                         .font(.interface(.caption))
                         .foregroundStyle(.secondary)
                 }
@@ -75,7 +81,7 @@ private struct MessageRequestRow: View {
 
             MessageRequestActions(model: model, channel: channel)
         }
-        .padding(.vertical, InterfaceScale.metric(6))
+        .padding(.vertical, InterfaceScale.metric(10))
     }
 }
 

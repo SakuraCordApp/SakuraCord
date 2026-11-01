@@ -1868,11 +1868,11 @@ private struct MessageRequestsToolbarTabs: ToolbarContent {
         ToolbarItem(id: "message-requests-tabs", placement: .principal) {
             let spamCount = model.messageRequestChannels.count { $0.messageRequest == .spam }
             Picker("Message Requests", selection: Binding(
-                get: { model.friends.messageRequestsTab ?? .requests },
+                get: { model.friends.messageRequestsTab ?? .pending },
                 set: { model.friends.messageRequestsTab = $0 }
             )) {
-                Text("Requests").tag(MessageRequestsTab.requests)
-                Text(spamCount > 0 ? "Spam (\(spamCount))" : "Spam").tag(MessageRequestsTab.spam)
+                Text("Requests").tag(MessageRequestStatus.pending)
+                Text(spamCount > 0 ? "Spam (\(spamCount))" : "Spam").tag(MessageRequestStatus.spam)
             }
             .pickerStyle(.segmented)
             .labelsHidden()

@@ -55,7 +55,8 @@ public extension MockChatProvider {
         guard let index = snapshot.channels.firstIndex(where: { $0.id == channelID && $0.messageRequest != nil }) else {
             throw ChatProviderError.invalidRequest("That demo request is unavailable.")
         }
-        snapshot.channels[index].messageRequest = nil
+        snapshot.channels[index].isMessageRequest = false
+        snapshot.channels[index].isSpam = false
         continuation?.yield(.channelsChanged(guildID: nil, channels: snapshot.channels.filter { $0.guildID == nil }))
     }
 

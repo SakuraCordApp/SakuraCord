@@ -74,9 +74,8 @@ extension DiscordRESTProvider {
                 channel.iconURL = existing.iconURL
             }
             channel.blockedUserWarningDismissed = dto.blockedUserWarningDismissed ?? existing.blockedUserWarningDismissed
-            if !fields.contains("is_message_request"), !fields.contains("is_spam") {
-                channel.messageRequest = existing.messageRequest
-            }
+            channel.isMessageRequest = dto.isMessageRequest ?? existing.isMessageRequest
+            channel.isSpam = dto.isSpam ?? existing.isSpam
             channel.lastPinTimestamp = channel.lastPinTimestamp ?? existing.lastPinTimestamp
             if dto.lastMessageID == nil {
                 channel.lastMessageID = existing.lastMessageID

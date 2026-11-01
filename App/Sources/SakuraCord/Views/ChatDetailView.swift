@@ -82,10 +82,9 @@ private struct ChatDetailFooter: View {
                 DisabledComposerView(
                     message: request == .spam ? "Discord filed this request as spam." : "Accept this request to reply.",
                     appearance: model.appearanceSettings.composerBarAppearance
-                )
-                .overlay(alignment: .trailing) {
+                ) {
                     MessageRequestActions(model: model, channel: channel)
-                        .padding(.trailing, InterfaceScale.metric(8))
+                        .controlSize(.small)
                 }
             } else {
                 composerSlot
@@ -154,10 +153,12 @@ struct ConversationComposerSlot<Composer: View>: View {
     }
 }
 
-struct DisabledComposerView: View {
+struct DisabledComposerView<Accessory: View>: View {
     let message: String
     let appearance: ComposerBarAppearance
     var timeoutUntil: Date?
+    /// Controls at the bar's trailing edge, read apart from the notice.
+    @ViewBuilder var accessory: Accessory
 
     var body: some View {
         let usesDefaultStyle = appearance == .defaultStyle
@@ -176,21 +177,25 @@ struct DisabledComposerView: View {
             ))
 
         HStack(spacing: 0) {
-            if timeoutUntil != nil {
-                Image(systemName: "clock")
-                    .foregroundStyle(.red)
-                    .padding(.trailing, InterfaceScale.metric(8))
-                    .accessibilityHidden(true)
+            HStack(spacing: 0) {
+                if timeoutUntil != nil {
+                    Image(systemName: "clock")
+                        .foregroundStyle(.red)
+                        .padding(.trailing, InterfaceScale.metric(8))
+                        .accessibilityHidden(true)
+                }
+                Text(message)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let until = timeoutUntil {
+                    Text(timerInterval: min(Date.now, until) ... until, countsDown: true, showsHours: true)
+                        .monospacedDigit()
+                        .fixedSize()
+                        .help("Timeout ends \(until.formatted(date: .abbreviated, time: .standard))")
+                }
             }
-            Text(message)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            if let until = timeoutUntil {
-                Text(timerInterval: min(Date.now, until) ... until, countsDown: true, showsHours: true)
-                    .monospacedDigit()
-                    .fixedSize()
-                    .help("Timeout ends \(until.formatted(date: .abbreviated, time: .standard))")
-            }
+            .accessibilityElement(children: .combine)
+            accessory
         }
         .font(.interfaceSystem(size: 15))
         .foregroundStyle(timeoutUntil == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.white))
@@ -203,7 +208,12 @@ struct DisabledComposerView: View {
         .glassEffect(.regular, in: shape)
         .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
         .padding(.bottom, ChatChromeMetrics.composerWindowInset)
-        .accessibilityElement(children: .combine)
+    }
+}
+
+extension DisabledComposerView where Accessory == EmptyView {
+    init(message: String, appearance: ComposerBarAppearance, timeoutUntil: Date? = nil) {
+        self.init(message: message, appearance: appearance, timeoutUntil: timeoutUntil) { EmptyView() }
     }
 }
 
