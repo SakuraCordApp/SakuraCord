@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 /// A video file on this Mac, such as one being sent: its first frame, and
 /// its size as it plays, with its rotation applied.
 nonisolated enum LocalVideo {
-    private static let sizes = Mutex<[URL: CGSize]>([:])
+    /// By file and its modification date, so a file replaced in place is read again.
+    private static let sizes = Mutex<[String: CGSize]>([:])
 
     static func isVideo(_ url: URL) -> Bool {
         url.isFileURL && UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
@@ -14,7 +15,13 @@ nonisolated enum LocalVideo {
     /// The size `prepare` read, so a message being sent lays out in the
     /// video's shape before Discord reports it.
     static func preparedSize(of url: URL) -> CGSize? {
-        sizes.withLock { $0[url.standardizedFileURL] }
+        let key = sizeKey(url)
+        return sizes.withLock { $0[key] }
+    }
+
+    private static func sizeKey(_ url: URL) -> String {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        return "\(url.standardizedFileURL.path)#\(modified?.timeIntervalSinceReferenceDate ?? 0)"
     }
 
     /// Reads each video's size, and draws its poster for the timeline, for
@@ -25,7 +32,8 @@ nonisolated enum LocalVideo {
             for url in urls where isVideo(url) && preparedSize(of: url) == nil {
                 group.addTask {
                     guard let size = await size(of: url) else { return }
-                    sizes.withLock { $0[url.standardizedFileURL] = size }
+                    let key = sizeKey(url)
+                    sizes.withLock { $0[key] = size }
                 }
                 group.addTask {
                     _ = await SharedDecodedImageLoader.shared.image(
