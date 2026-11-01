@@ -55,6 +55,12 @@ jobs:
           swift package --package-path "$SAKURACORD_PACKAGE_DIR" \
             --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
             --scratch-path "$SAKURACORD_SCRATCH_DIR" resolve
+          # script/test.sh builds each package in its own scratch directory.
+          for package in Packages/*/; do
+            swift package --package-path "$package" \
+              --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
+              --scratch-path "$package.build" resolve
+          done
           ./script/code_quality.sh check || true
       - name: Build prompt
         run: |
