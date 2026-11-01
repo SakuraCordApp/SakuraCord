@@ -945,6 +945,7 @@ private struct InlineMessageEditor: View {
                     ),
                     prefix: timeEntry.prefix,
                     suffix: timeEntry.suffix,
+                    mentionPresentations: editorMentionPresentations,
                     onAccept: {
                         acceptActiveTimeEntry()
                     },

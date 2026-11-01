@@ -316,6 +316,7 @@ struct TimeMentionInputView: View {
     @Binding var query: String
     var prefix: String = ""
     var suffix: String = ""
+    var mentionPresentations: [String: MentionPresentation] = [:]
     let onAccept: () -> Void
     let onCancel: () -> Void
     let onCommand: (ComposerAutocompleteCommand) -> Bool
@@ -323,9 +324,10 @@ struct TimeMentionInputView: View {
     var body: some View {
         HStack(spacing: InterfaceScale.metric(6)) {
             if !prefix.isEmpty {
-                Text(prefix)
-                    .font(.interfaceSystem(size: 15))
-                    .foregroundStyle(Color.primary)
+                TimeMentionSurroundingContentView(
+                    text: prefix,
+                    mentionPresentations: mentionPresentations
+                )
             }
             HStack(spacing: InterfaceScale.metric(6)) {
                 HStack(spacing: InterfaceScale.metric(4)) {
@@ -360,11 +362,106 @@ struct TimeMentionInputView: View {
             )
 
             if !suffix.isEmpty {
-                Text(suffix)
-                    .font(.interfaceSystem(size: 15))
-                    .foregroundStyle(Color.primary)
+                TimeMentionSurroundingContentView(
+                    text: suffix,
+                    mentionPresentations: mentionPresentations
+                )
             }
         }
         .frame(minHeight: ChatChromeMetrics.composerControlHeight)
+    }
+}
+
+struct TimeMentionSurroundingContentView: View {
+    let text: String
+    let mentionPresentations: [String: MentionPresentation]
+
+    private var segments: [MessageDocument.Segment] {
+        MessageDocumentCache.shared.document(for: text).segments
+    }
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(4)) {
+            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                switch segment {
+                case let .markdown(content):
+                    Text(content)
+                        .font(.interfaceSystem(size: 15))
+                        .foregroundStyle(Color.primary)
+                case let .mention(mention):
+                    let presentation = mentionPresentations[mention.rawToken]
+                        ?? MentionPresentation.fallback(for: mention)
+                    TimeMentionSurroundingPillView(presentation: presentation)
+                case let .customEmoji(emoji):
+                    if let image = ComposerEmojiImageStore.shared.cachedImage(for: emoji.rawToken) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .frame(width: InterfaceScale.metric(18), height: InterfaceScale.metric(18))
+                    } else {
+                        Text(":\(emoji.name):")
+                            .font(.interfaceSystem(size: 15))
+                            .foregroundStyle(Color.primary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct TimeMentionSurroundingPillView: View {
+    let presentation: MentionPresentation
+    @State private var now = Date.now
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(4)) {
+            if let systemImage = presentation.systemImage {
+                Image(systemName: systemImage)
+                    .font(.interfaceSystem(size: 12))
+            }
+            Text(currentLabel)
+                .font(.interfaceSystem(size: 14, weight: presentation.isTimestamp ? .regular : .medium).monospacedDigit())
+        }
+        .foregroundStyle(textColor)
+        .padding(.horizontal, InterfaceScale.metric(6))
+        .padding(.vertical, InterfaceScale.metric(2.5))
+        .background(
+            backgroundColor,
+            in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4.5), style: .continuous)
+        )
+        .task {
+            if case let .timestamp(_, style) = presentation.target, style == "R" {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    now = .now
+                }
+            }
+        }
+    }
+
+    private var currentLabel: String {
+        if case let .timestamp(date, style) = presentation.target, style == "R" {
+            return DiscordTimestampFormatter.formatted(date: date, style: "R", now: now)
+        }
+        return presentation.label
+    }
+
+    private var textColor: Color {
+        if presentation.isTimestamp {
+            return Color.primary
+        }
+        if let hex = presentation.colorHex, hex != 0 {
+            return Color(nsColor: MentionAttachmentRenderer.mentionColor(hex: hex))
+        }
+        return Color.accentColor
+    }
+
+    private var backgroundColor: Color {
+        if presentation.isTimestamp {
+            return Color.primary.opacity(0.12)
+        }
+        if let hex = presentation.colorHex, hex != 0 {
+            return Color(nsColor: MentionAttachmentRenderer.mentionColor(hex: hex)).opacity(0.16)
+        }
+        return Color.accentColor.opacity(0.16)
     }
 }

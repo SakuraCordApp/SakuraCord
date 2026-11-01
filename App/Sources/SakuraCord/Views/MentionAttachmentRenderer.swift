@@ -250,7 +250,7 @@ enum MentionAttachmentRenderer {
         return image
     }
 
-    private static func mentionColor(hex: UInt32?) -> NSColor {
+    static func mentionColor(hex: UInt32?) -> NSColor {
         guard let hex, hex != 0 else { return .sakuraCordAccentColor }
         return NSColor(
             calibratedRed: CGFloat((hex >> 16) & 0xff) / 255,

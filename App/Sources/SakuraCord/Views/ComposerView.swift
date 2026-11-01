@@ -194,6 +194,7 @@ struct ComposerView: View {
                             ),
                             prefix: timeEntry.prefix,
                             suffix: timeEntry.suffix,
+                            mentionPresentations: composerMentionPresentations,
                             onAccept: {
                                 acceptActiveTimeEntry()
                             },
