@@ -136,6 +136,7 @@ extension AppModel {
         let staged = urls.map { ForumPostAttachment(url: $0) }
         let stagedIDs = Set(staged.map(\.id))
         setComposerAttachments(composerAttachments(for: destination) + staged, for: destination)
+        Task { await LocalVideo.prepare(urls) }
         composer.checkingAttachmentIDs.formUnion(stagedIDs)
         defer { composer.checkingAttachmentIDs.subtract(stagedIDs) }
         let acceptedURLs = Set(await attachmentURLsWithinDiscordLimit(
@@ -161,6 +162,7 @@ extension AppModel {
         if attachmentBatchFits(urls.count, besides: attachments.count) {
             let added = urls.map { ForumPostAttachment(url: $0) }
             attachments.append(contentsOf: added)
+            Task { await LocalVideo.prepare(urls) }
             setComposerAttachments(attachments, for: destination)
             let addedIDs = Set(added.map(\.id))
             preuploadComposerAttachments(
@@ -292,6 +294,8 @@ extension AppModel {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
               validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
         else { return false }
+        // The message shows at once, so its videos' sizes are read first.
+        await LocalVideo.prepare(attachments.map(\.url))
         switch destination {
         case .channel:
             guard let channelID = selectedChannelID else { return false }

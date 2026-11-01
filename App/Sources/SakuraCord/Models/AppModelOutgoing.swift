@@ -97,6 +97,7 @@ extension AppModel {
                 let attachment = resolved.attachments[index]
                 guard attachment.mediaKind == .image
                         || attachment.mediaKind == .animatedImage
+                        || attachment.mediaKind == .video
                 else { continue }
                 let previous = existing.attachments.first(where: {
                     $0.id == attachment.id

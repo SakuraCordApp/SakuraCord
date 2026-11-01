@@ -39,6 +39,11 @@ nonisolated enum DiscordVideoPosterURL {
 extension Attachment {
     nonisolated func videoPosterURL(maximumPixelDimension: Int) -> URL? {
         guard mediaKind == .video else { return nil }
+        // A video still on this Mac, as one being sent, is its own poster:
+        // the timeline draws its first frame.
+        if let localURL = [proxyURL, url].compactMap(\.self).first(where: LocalVideo.isVideo) {
+            return localURL
+        }
         return DiscordVideoPosterURL.url(
             proxyURL: proxyURL,
             width: width,

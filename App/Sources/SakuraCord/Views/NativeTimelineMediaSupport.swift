@@ -226,6 +226,10 @@ actor SharedDecodedImageLoader {
             let dataLoader = self.dataLoader
             let decodeScheduler = self.decodeScheduler
             task = Task { [weak self] in
+                // A local video's poster is its first frame.
+                if LocalVideo.isVideo(url) {
+                    return await LocalVideo.frame(at: url, maximumPixelDimension: key.maximumPixelDimension)
+                }
                 do {
                     let data = try await dataLoader.data(
                         for: url,
