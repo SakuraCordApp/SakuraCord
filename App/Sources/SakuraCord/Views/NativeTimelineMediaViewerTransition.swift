@@ -253,11 +253,10 @@ extension NativeTimelineCanvasView {
 
     /// A file card's snapshot, which grows into the file's preview. A video
     /// file shows without one, as the viewer zooms only files it previews.
-    /// The snapshot is retaken once the viewer starts closing, so the zoom
-    /// lands on the card's hover and playback state as they are then; a
-    /// card scrolled out keeps its last one.
+    /// Given an earlier snapshot, it is kept unless `retakesSnapshot` and
+    /// the card shows.
     private func fileCardTransitionSource(
-        for item: RichMediaItem, rowIndex: Int, reusing previousImage: NSImage? = nil
+        for item: RichMediaItem, rowIndex: Int, reusing previousImage: NSImage? = nil, retakesSnapshot: Bool = false
     ) -> MediaViewerTransitionSource? {
         switch item.kind {
         case .audio, .text, .file: break
@@ -272,7 +271,7 @@ extension NativeTimelineCanvasView {
         let frameInCanvas = card.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
         let visibleFrame = visiblePart(of: frameInCanvas)
         let image: NSImage
-        if let previousImage, visibleFrame.isEmpty || overlayBlocksInteractions {
+        if let previousImage, !retakesSnapshot || visibleFrame.isEmpty {
             image = previousImage
         } else {
             // The cover mask doesn't reach this drawing.
@@ -367,24 +366,29 @@ extension NativeTimelineCanvasView {
     }
 
     /// Moves the zoom's sources to their cards' current frames, as the
-    /// timeline scrolls under a closing viewer or its rows change.
-    func refreshMediaViewerTransition() {
+    /// timeline scrolls under a closing viewer or its rows change. File
+    /// cards are drawn again once, as the viewer starts closing, so the
+    /// zoom lands on their hover and playback state as they are then.
+    func refreshMediaViewerTransition(retakingSnapshots: Bool = false) {
         guard let transition = mediaViewerTransition else { return }
         let link = transition.presentation.transitionLink
-        guard let rowIndex = items.firstIndex(where: { $0.identifier == transition.row }) else {
-            // The card is gone, so the viewer fades rather than zooming to it.
-            link.sources = [:]
-            endMediaViewerTransition()
-            return
-        }
-        // A card no longer in the row, as after an edit removes it, loses
-        // its source, so nothing is left out for it and nothing zooms to it.
-        var sources = timelineMedia(
-            for: transition.presentation, rowIndex: rowIndex, refreshing: link.sources
-        ).transitionSources
+        let rowIndex = items.firstIndex { $0.identifier == transition.row }
+        var sources = rowIndex.map {
+            timelineMedia(for: transition.presentation, rowIndex: $0, refreshing: link.sources).transitionSources
+        } ?? [:]
         for item in transition.presentation.items where sources[item.id] == nil {
-            guard let previous = link.sources[item.id] else { continue }
-            sources[item.id] = fileCardTransitionSource(for: item, rowIndex: rowIndex, reusing: previous.image)
+            guard var previous = link.sources[item.id] else { continue }
+            if let rowIndex, let source = fileCardTransitionSource(
+                for: item, rowIndex: rowIndex, reusing: previous.image, retakesSnapshot: retakingSnapshots
+            ) {
+                sources[item.id] = source
+            } else {
+                // The card left, as after an edit or a deletion: the zoom
+                // collapses where it was, and nothing is left out for it.
+                let visible = previous.visibleFrameInWindow
+                previous.visibleFrameInWindow = CGRect(x: visible.midX, y: visible.midY, width: 0, height: 0)
+                sources[item.id] = previous
+            }
         }
         link.sources = sources
         updateMediaViewerCoverMask()
@@ -410,7 +414,8 @@ extension NativeTimelineCanvasView {
         guard let layer else { return }
         guard let transition = mediaViewerTransition,
               let itemID = transition.coveredItemID,
-              let source = transition.presentation.transitionLink.sources[itemID]
+              let source = transition.presentation.transitionLink.sources[itemID],
+              !source.visibleFrameInWindow.isEmpty
         else {
             layer.mask = nil
             return

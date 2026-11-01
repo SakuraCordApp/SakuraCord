@@ -501,7 +501,7 @@ extension NativeTimelineCanvasView {
         // Hover was cleared while blocked; the pointer may have moved since.
         synchronizeHoverWithCurrentPointer()
         // A closing viewer zooms back to its card as the card looks now.
-        refreshMediaViewerTransition()
+        refreshMediaViewerTransition(retakingSnapshots: true)
     }
 
     func installViewportGeometry(frame: CGRect, bounds: CGRect) {

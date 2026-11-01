@@ -428,7 +428,7 @@ struct MediaViewerTransitionSource {
     let itemID: String
     let image: NSImage
     let frameInWindow: CGRect
-    let visibleFrameInWindow: CGRect
+    var visibleFrameInWindow: CGRect
     let cornerRadius: CGFloat
     let fillsFrame: Bool
 }
