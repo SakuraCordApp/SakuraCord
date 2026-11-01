@@ -1068,8 +1068,10 @@ extension NativeTimelineCanvasView {
             matching: .leftMouseDown
         ) { [weak self] event in
             guard let self,
-                  event.window === self.window,
+                  let window = event.window,
+                  window === self.window,
                   !self.overlayBlocksInteractions,
+                  !WindowModalCoordinator.closingModalOwnsClicks(in: window),
                   !self.sendTransitionBlocksInteractions,
                   self.editingMessageID == nil
             else { return event }

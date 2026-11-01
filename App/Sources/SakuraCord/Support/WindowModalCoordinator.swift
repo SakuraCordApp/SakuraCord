@@ -67,6 +67,12 @@ final class WindowModalCoordinator {
         coordinators.object(forKey: window)?.closingHosts.allObjects.contains { $0.capturesEscape } == true
     }
 
+    /// Whether a modal animating away still holds `window`'s clicks, which
+    /// mouse monitors that act on a click leave to it, as its hit test does.
+    static func closingModalOwnsClicks(in window: NSWindow) -> Bool {
+        coordinators.object(forKey: window)?.closingHosts.allObjects.isEmpty == false
+    }
+
     func allowsInput(to view: NSView) -> Bool {
         guard let topmost else { return true }
         return entries.last { $0.host === topmost }?.contains(view) == true

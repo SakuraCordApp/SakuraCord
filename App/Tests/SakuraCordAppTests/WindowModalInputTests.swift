@@ -153,10 +153,12 @@ import Testing
     #expect(coordinator.filter(escape) == nil)
     #expect(parentEscapes == 0)
     #expect(WindowModalCoordinator.closingModalOwnsEscape(in: window))
+    #expect(WindowModalCoordinator.closingModalOwnsClicks(in: window))
     child.cancelPendingDismissal()
     child.unregisterInput()
     child.removeFromSuperview()
     #expect(!WindowModalCoordinator.closingModalOwnsEscape(in: window))
+    #expect(!WindowModalCoordinator.closingModalOwnsClicks(in: window))
     #expect(coordinator.filter(escape) == nil)
     #expect(parentEscapes == 1)
 }
