@@ -38,8 +38,9 @@ extension AppModel {
         reconcilePrivateCallSounds()
         voiceSessionState = .connecting
         voiceErrorMessage = nil
-        isVoiceMuted = voiceVideoPreferences.joinsMuted
         isVoiceDeafened = voiceVideoPreferences.joinsDeafened
+        isVoiceMuted = voiceVideoPreferences.joinsMuted || isVoiceDeafened
+        voiceMutedByDeafen = isVoiceDeafened && !voiceVideoPreferences.joinsMuted
         do {
             let info = try await account.provider.joinVoice(
                 channelID: channel.id,
@@ -562,34 +563,40 @@ extension AppModel {
     }
 
     func toggleVoiceMute() async {
-        let account = accountSession()
-        let generation = voiceMigrationGeneration
-        let session = voiceSession
-        isVoiceMuted.toggle()
-        let muted = isVoiceMuted
-        await session?.setMuted(muted)
-        guard isCurrentVoiceOperation(
-            account,
-            generation: generation,
-            voiceSession: session
-        ) else { return }
-        await publishVoiceState(account: account, generation: generation)
-        guard isCurrentVoiceOperation(
-            account,
-            generation: generation,
-            voiceSession: session
-        ) else { return }
-        if activeVoiceChannel != nil, voiceVideoPreferences.playsFeedbackSounds {
-            soundPlayer.play(muted ? .mute : .unmute)
-        }
+        // Like Discord, unmuting while deafened also undeafens.
+        let wasDeafened = isVoiceDeafened
+        voiceMutedByDeafen = false
+        await setVoiceMuteAndDeafen(
+            muted: !isVoiceMuted && !wasDeafened,
+            deafened: false,
+            sound: wasDeafened ? .undeafen : (isVoiceMuted ? .unmute : .mute)
+        )
     }
 
     func toggleVoiceDeafen() async {
+        let deafened = !isVoiceDeafened
+        var muted = isVoiceMuted
+        if deafened, !muted {
+            muted = true
+            voiceMutedByDeafen = true
+        } else if !deafened, voiceMutedByDeafen {
+            muted = false
+        }
+        if !deafened { voiceMutedByDeafen = false }
+        await setVoiceMuteAndDeafen(
+            muted: muted,
+            deafened: deafened,
+            sound: deafened ? .deafen : .undeafen
+        )
+    }
+
+    private func setVoiceMuteAndDeafen(muted: Bool, deafened: Bool, sound: AppSoundEffect) async {
         let account = accountSession()
         let generation = voiceMigrationGeneration
         let session = voiceSession
-        isVoiceDeafened.toggle()
-        let deafened = isVoiceDeafened
+        isVoiceMuted = muted
+        isVoiceDeafened = deafened
+        await session?.setMuted(muted)
         await session?.setDeafened(deafened)
         guard isCurrentVoiceOperation(
             account,
@@ -603,7 +610,7 @@ extension AppModel {
             voiceSession: session
         ) else { return }
         if activeVoiceChannel != nil, voiceVideoPreferences.playsFeedbackSounds {
-            soundPlayer.play(deafened ? .deafen : .undeafen)
+            soundPlayer.play(sound)
         }
     }
 

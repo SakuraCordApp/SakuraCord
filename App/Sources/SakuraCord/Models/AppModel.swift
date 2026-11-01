@@ -602,6 +602,8 @@ final class AppModel {
             refreshVoiceSidebarPresentation()
         }
     }
+    /// Whether the current mute came from deafening, so undeafening restores it.
+    @ObservationIgnored var voiceMutedByDeafen = false
     var isCameraEnabled = false {
         didSet {
             guard oldValue != isCameraEnabled else { return }
