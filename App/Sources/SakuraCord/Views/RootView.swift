@@ -1145,9 +1145,11 @@ private struct ChatRootView: View {
         .animation(.smooth(duration: 0.24), value: model.showInspector)
     }
 
+    /// The selected DM or group whose call buttons show; a message request
+    /// offers no call until it is accepted.
     private var selectedPrivateChannel: Channel? {
         guard let channel = model.selectedChannel,
-              channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+              channel.isListedDirectMessage,
               !channel.isOfficialSystemDirectMessage
         else { return nil }
         return channel
