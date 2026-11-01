@@ -288,11 +288,13 @@ extension NativeTimelineCanvasView {
     }
 
     /// What the canvas shows in `rect`, rendered from its layer as it is on
-    /// screen. Drawing the card again, as `cacheDisplay` does, misses it
-    /// while the viewer covers it. The cover mask is lifted for the render,
-    /// which commits no frame.
+    /// screen, once pending drawing such as a cleared highlight is done.
+    /// Drawing the card again, as `cacheDisplay` does, misses it while the
+    /// viewer covers it. The cover mask is lifted for the render, which
+    /// commits no frame.
     private func cardSnapshot(of rect: CGRect) -> NSImage? {
         guard let layer, let window else { return nil }
+        displayIfNeeded()
         let scale = window.backingScaleFactor
         let width = Int((rect.width * scale).rounded(.up)), height = Int((rect.height * scale).rounded(.up))
         guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
