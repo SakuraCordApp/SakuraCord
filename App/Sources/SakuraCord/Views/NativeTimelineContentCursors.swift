@@ -23,7 +23,7 @@ extension NativeTimelineCanvasView {
         frames += layout.attachmentRegions.map(\.frame)
         frames += layout.embedRegions.compactMap(\.mediaFrame)
         for component in layout.componentLayouts {
-            frames += component.images.map(\.frame) + component.media.map(\.frame)
+            frames += component.images.map(\.frame) + component.media.map(\.frame) + component.files.map(\.frame)
         }
         frames += hiddenSpoilerContainerFrames(at: index)
         if let voice = layout.voiceMessageRegion {
