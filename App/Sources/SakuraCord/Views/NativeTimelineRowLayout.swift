@@ -204,8 +204,7 @@ struct NativeTimelineRowLayout {
             let attachment = region.attachment
             guard !attachment.mediaKind.isVisual else { return nil }
             return NativeTimelineFileCard(
-                frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil,
-                isAudio: attachment.mediaKind == .audio
+                frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil
             )
         }
     }

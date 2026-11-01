@@ -506,10 +506,7 @@ extension NativeTimelineRowPainter {
                 if isVideo { mediaPlayGlyph(in: region.frame) }
             case .audio, .file:
                 fileCard(
-                    .init(
-                        frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil,
-                        isAudio: attachment.mediaKind == .audio
-                    ),
+                    .init(frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil),
                     messageID: message.id,
                     bubbleRegion: layout.bubbleRegion,
                     state: input.model?.attachmentDownloads.states[attachment.id],
