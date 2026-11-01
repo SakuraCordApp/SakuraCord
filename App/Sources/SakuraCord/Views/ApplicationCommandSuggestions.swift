@@ -407,7 +407,10 @@ struct ComposerOptionPanel<Row: Identifiable, Label: View>: View where Row.ID ==
                     content: { row in
                         let isSelected = rows.firstIndex(where: { $0.id == row.id }) == selectedIndex
                         Button { select(row) } label: {
+                            // Every row spans the panel, whether or not its
+                            // label ends in a spacer.
                             HStack(spacing: InterfaceScale.metric(8)) { label(row) }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, InterfaceScale.metric(8))
                                 .frame(height: Self.rowHeight)
                                 .background(
