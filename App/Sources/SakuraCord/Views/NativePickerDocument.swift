@@ -125,6 +125,14 @@ final class NativePickerScrollView: NSScrollView {
             let consumed = MainActor.assumeIsolated {
                 guard let self, event.window === self.window, !self.isHiddenOrHasHiddenAncestor,
                       WindowModalCoordinator.allowsInput(for: self) else { return false }
+                // A closing modal over the picker still holds clicks, as its
+                // hit test does; hover and scrolling go through.
+                if ![.mouseMoved, .mouseEntered, .scrollWheel].contains(event.type),
+                   let window = self.window, WindowModalCoordinator.closingModalOwnsClicks(in: window) {
+                    self.pressedRowID = nil
+                    self.pressedView = nil
+                    return false
+                }
                 let inside = self.bounds.contains(self.convert(event.locationInWindow, from: nil))
                 let viewport = self.documentView as? any NativePickerViewport
                 if event.type == .leftMouseUp, self.releasePress(event, inside: inside) { return true }
