@@ -221,7 +221,7 @@ enum MentionAttachmentRenderer {
         font: NSFont,
         hovered: Bool
     ) -> NSImage {
-        let labelFont = NSFont.systemFont(ofSize: font.pointSize, weight: .regular)
+        let labelFont = NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: .regular)
         let label = presentation.label as NSString
         let attributes: [NSAttributedString.Key: Any] = [.font: labelFont]
         let labelSize = label.size(withAttributes: attributes)

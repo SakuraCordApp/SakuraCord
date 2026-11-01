@@ -1005,7 +1005,7 @@ extension NativeTimelineRowPainter {
         }
 
         let metrics = NativeTimelineMentionMetrics.self
-        let font = NSFont.interfaceSystemFont(ofSize: 15, weight: .regular)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .regular)
         let labelSize = (currentLabel as NSString).size(withAttributes: [.font: font])
         let neededWidth = ceil(metrics.horizontalPadding * 2 + labelSize.width)
         let actualFrame: CGRect

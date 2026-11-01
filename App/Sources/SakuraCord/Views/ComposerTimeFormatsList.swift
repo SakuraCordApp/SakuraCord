@@ -101,7 +101,9 @@ private struct TimeFormatAutocompleteRow: View {
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
             Text(item.option.displayText)
-                .font(.interfaceSystem(size: 14))
+                .font(.interfaceSystem(size: 14).monospacedDigit())
+                .contentTransition(.numericText())
+                .animation(.snappy(duration: 0.25), value: item.option.displayText)
                 .foregroundStyle(Color.primary)
                 .padding(.horizontal, InterfaceScale.metric(8))
                 .padding(.vertical, InterfaceScale.metric(4))
