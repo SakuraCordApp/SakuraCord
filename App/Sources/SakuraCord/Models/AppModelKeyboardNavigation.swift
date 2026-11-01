@@ -100,10 +100,12 @@ extension AppModel {
         let selectedID = shortcutThreadIsFullWidth ? openThread?.id : selectedChannelID
         if !unreadOnly {
             if selectedGuildID == nil {
+                // Message Requests is a destination beside Friends whenever a request waits.
                 return !isFriendsPresented || visibleChannels.contains { channel in
-                    channel.isListedDirectMessage
-                        && !hiddenChannelIDs.contains(channel.id)
-                        && !checkingChannelIDs.contains(channel.id)
+                    channel.messageRequest != nil
+                        || (channel.isListedDirectMessage
+                            && !hiddenChannelIDs.contains(channel.id)
+                            && !checkingChannelIDs.contains(channel.id))
                 }
             }
             let groups = selectedChannelGroups(visibleChannelGroups, guildID: selectedGuildID)

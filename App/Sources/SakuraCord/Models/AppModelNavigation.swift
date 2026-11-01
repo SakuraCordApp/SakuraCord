@@ -738,8 +738,9 @@ extension AppModel {
                 ) != .hidden
             }
         }
+        // A previewed message request opens only when chosen again.
         let restoredChannelID = rememberedChannelID.flatMap { rememberedID in
-            selectableChannels.contains(where: { $0.id == rememberedID })
+            selectableChannels.contains(where: { $0.id == rememberedID && $0.messageRequest == nil })
                 ? rememberedID
                 : nil
         }

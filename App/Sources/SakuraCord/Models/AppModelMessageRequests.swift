@@ -10,6 +10,13 @@ extension AppModel {
             .sorted { $0.lastActivityDate > $1.lastActivityDate }
     }
 
+    /// Whether the user's DM waits in Message Requests, which takes no reply.
+    func hasMessageRequest(from userID: UserID) -> Bool {
+        snapshot?.channels.contains {
+            $0.kind == .directMessage && $0.messageRequest != nil && $0.recipients.contains { $0.id == userID }
+        } == true
+    }
+
     var isMessageRequestsPresented: Bool {
         isFriendsPresented && friends.messageRequestsTab != nil
     }
