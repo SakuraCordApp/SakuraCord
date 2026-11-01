@@ -272,6 +272,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var relationshipRevisions: [UserID: UInt64] = [:]
     /// Per-group revisions keep an Edit Group response from replacing a newer Gateway update.
     var privateChannelRevisions: [ChannelID: UInt64] = [:]
+    /// Per-DM revisions of only the events that can set request state, so an
+    /// Accept DM response survives unrelated updates but not a newer request.
+    var messageRequestRevisions: [ChannelID: UInt64] = [:]
     var cachedUserRevisions: [String: UInt64] = [:]
     var relationshipUserPublicationTask: Task<Void, Never>?
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]

@@ -241,8 +241,8 @@ READY `private_channels` and channel events carry `is_message_request`,
 `is_message_request_timestamp` and `is_spam`. Discord's stores file a channel
 under Spam when `is_spam` is set, otherwise under Requests when
 `is_message_request` is set; both leave the DM list. There is no dedicated
-Gateway dispatch. A `CHANNEL_UPDATE` that omits both flags keeps the known
-state; an explicit `false` clears it.
+Gateway dispatch. A `CHANNEL_UPDATE` changes only the flags it carries; an
+explicit `false` clears that flag alone.
 
 The Direct Messages home shows **Message Requests** under Friends only while a
 request or spam conversation exists. Its badge counts requests, not spam. The
@@ -252,10 +252,16 @@ with Discord's empty-state copy. **Accept DM** sends one
 and moves the conversation into the list. **Ignore** sends one bodyless
 `DELETE /channels/{channel}/recipients/@me` and removes it without notifying
 the sender. Spam offers Accept DM only. Both share Close DM's provider path:
-never replayed, applied unless a Gateway event or session reset changed the DM
-meanwhile, and a failure keeps it and appears in the workspace error alert.
-Opening a request shows its messages with these decisions in place of the
-composer.
+never replayed, nothing applied after an account or session change, and a
+failure keeps the request and appears in the workspace error alert. Ignore
+removes the DM only if no Gateway event changed it meanwhile; Accept keeps
+unrelated updates but yields to a re-created or re-flagged DM.
+
+Until accepted, a request is read-only. The delivery boundary that enforces
+guild timeouts also refuses its messages, forwards, typing, reactions, edits,
+poll votes and interactions, and the app offers no composer, reactions, votes,
+components, pins, calls or profile quick message there. Opening a request shows
+its messages with Accept DM and Ignore in place of the composer.
 
 Not implemented: Report Spam and the not-spam report (their report endpoint was
 not traced), click-to-preview through

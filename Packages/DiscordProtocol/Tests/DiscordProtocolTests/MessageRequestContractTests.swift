@@ -27,28 +27,46 @@ struct MessageRequestContractTests {
         await provider.disconnect()
     }
 
-    @Test func `a reply waits for one consent PUT, which moves the request into the conversation list`() async throws {
-        let credentials = NicknameInterleavingCredentials()
-        let provider = await makeProvider(credentials: credentials)
+    @Test func `replies and interactions wait for Accept DM without reaching Discord`() async throws {
+        let provider = await makeProvider()
         await #expect(throws: ChatProviderError.self) {
             try await provider.send(SendMessageDraft(channelID: requestID, content: "hi"))
         }
-        // Components and other interactions wait for Accept DM as well.
         await #expect(throws: ChatProviderError.self) {
             try await provider.requireCommunicationForRequest(
                 path: "/interactions", method: "POST", body: ["type": .number(3), "channel_id": .string("501")]
             )
         }
-        // An unrelated update racing the PUT must not undo the consent.
+        #expect(fixture.requests.withLock { $0.isEmpty })
+        await provider.disconnect()
+    }
+
+    @Test func `accept sends one consent PUT and keeps an unrelated update that raced it`() async throws {
+        let credentials = NicknameInterleavingCredentials()
+        let provider = await makeProvider(credentials: credentials)
+        // Runs when the PUT fetches its credential, while consent is in flight.
         await credentials.interleave {
             await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: dm("501", fields: ["last_message_id": .string("900")]))
         }
         try await provider.acceptMessageRequest(requestID)
-        #expect(await provider.privateChannel(id: requestID)?.messageRequest == nil)
+        let channel = await provider.privateChannel(id: requestID)
+        #expect(channel?.lastMessageID == MessageID(rawValue: 900))
+        #expect(channel?.messageRequest == nil)
         let requests = fixture.requests.withLock { $0 }
         #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" }
             == ["PUT https://discord.com/api/v9/channels/501/recipients/@me"])
         #expect(fixture.bodies.withLock { $0 } == [.object(["consent_status": .number(2)])])
+        await provider.disconnect()
+    }
+
+    @Test func `accept yields to a request Discord flagged again while consent was in flight`() async throws {
+        let credentials = NicknameInterleavingCredentials()
+        let provider = await makeProvider(credentials: credentials)
+        await credentials.interleave {
+            await provider.handleGatewayDispatch(name: "CHANNEL_UPDATE", body: dm("501", fields: ["is_spam": .bool(true)]))
+        }
+        try await provider.acceptMessageRequest(requestID)
+        #expect(await provider.privateChannel(id: requestID)?.messageRequest == .spam)
         await provider.disconnect()
     }
 

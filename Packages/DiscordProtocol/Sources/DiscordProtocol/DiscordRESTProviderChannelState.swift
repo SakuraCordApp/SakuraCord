@@ -71,6 +71,7 @@ extension DiscordRESTProvider {
     func removePrivateChannel(_ channelID: ChannelID) {
         guard cachedChannels[nil]?.contains(where: { $0.id == channelID }) == true else { return }
         privateChannelRevisions[channelID, default: 0] &+= 1
+        messageRequestRevisions[channelID, default: 0] &+= 1
         cachedChannels[nil]?.removeAll { $0.id == channelID }
         lazyPrivateChannelIDs.remove(channelID)
         continuation?.yield(.channelsChanged(guildID: nil, channels: cachedChannels[nil] ?? []))

@@ -51,6 +51,9 @@ extension DiscordRESTProvider {
         if let channelID = ChannelID(dto.id) {
             lazyPrivateChannelIDs.remove(channelID)
             privateChannelRevisions[channelID, default: 0] &+= 1
+            if name == "CHANNEL_CREATE" || dto.isMessageRequest != nil || dto.isSpam != nil {
+                messageRequestRevisions[channelID, default: 0] &+= 1
+            }
         }
         cachePrivateRecipientReferences([dto])
         guard dto.type == 1 || dto.type == 3,

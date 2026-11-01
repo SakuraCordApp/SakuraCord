@@ -729,7 +729,10 @@ extension AppModel {
             visibleChannels = channels
             if let selectedChannelID {
                 if let updated = channels.first(where: { $0.id == selectedChannelID }) {
+                    // Accepting a request enables controls its timeline drew disabled.
+                    let requestChanged = updated.messageRequest != selectedChannel?.messageRequest
                     selectedChannel = updated
+                    if requestChanged { invalidateTimelinePresentation() }
                 } else if guildID == nil, selectedChannelIsGone(fromScopeChannels: channels) {
                     self.selectedChannelID = channels.first(where: \.isListedDirectMessage)?.id
                 } else if guildID != nil,
