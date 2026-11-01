@@ -80,6 +80,10 @@ struct ComposerView: View {
                             mediaViewerSourceID: {
                                 model.mediaViewerPresentation?.uncoveredSourceItemID(showing: model.mediaViewerSelectedItemID)
                             },
+                            scrolled: {
+                                guard let link = model.mediaViewerPresentation?.transitionLink else { return }
+                                sendTransitionAnchor.followMediaViewerSources(in: link)
+                            },
                             open: openComposerAttachment,
                             toggleSpoiler: {
                                 model.toggleComposerAttachmentSpoiler($0, in: conversation)

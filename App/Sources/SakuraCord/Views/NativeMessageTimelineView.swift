@@ -1008,6 +1008,7 @@ extension NativeMessageTimelineCoordinator {
                 mediaViewerHighlightedMessageID:
                     parent.model.mediaViewerPresentation?.messageID
             )
+            canvas?.mediaViewerPresentationDidChange(to: parent.model.mediaViewerPresentation?.id)
             guard !prepareLayoutsIfNeeded(parent: parent, scrollView: scrollView) else {
                 return
             }

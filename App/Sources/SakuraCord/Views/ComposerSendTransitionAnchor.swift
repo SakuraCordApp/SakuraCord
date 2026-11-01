@@ -66,6 +66,32 @@ final class ComposerSendTransitionAnchor {
         )
     }
 
+    /// Keeps an open viewer's zoom on its tiles as the tray scrolls under
+    /// it, including while it closes. A tile scrolled out collapses where it
+    /// was last seen.
+    func followMediaViewerSources(in link: MediaViewerTransitionLink) {
+        var sources = link.sources
+        for (id, source) in sources where !source.coversSource {
+            guard let view = UUID(uuidString: id).flatMap({ attachmentPreviews[$0]?.view }),
+                  view.window != nil
+            else { continue }
+            let visibleRect = view.visibleRect.intersection(view.bounds)
+            let lastVisible = source.visibleFrameInWindow
+            sources[id] = MediaViewerTransitionSource(
+                itemID: id,
+                image: source.image,
+                frameInWindow: view.convert(view.bounds, to: nil),
+                visibleFrameInWindow: visibleRect.isEmpty
+                    ? CGRect(x: lastVisible.midX, y: lastVisible.midY, width: 0, height: 0)
+                    : view.convert(visibleRect, to: nil),
+                cornerRadius: source.cornerRadius,
+                fillsFrame: source.fillsFrame,
+                coversSource: false
+            )
+        }
+        link.sources = sources
+    }
+
     /// Describes a send that did not come from the draft, such as a GIF,
     /// sticker, poll or dropped file. It leaves from the empty field.
     func fieldSource(channelID: ChannelID) -> NativeTimelineSendTransitionSource? {
