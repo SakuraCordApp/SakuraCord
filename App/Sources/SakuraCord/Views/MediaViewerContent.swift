@@ -98,7 +98,7 @@ struct MediaViewerStage: View {
         case .audio:
             let playbackID: VoiceMessagePlaybackID = messageID.map { .attachment($0, attachmentID: item.id) } ?? .file(item.url)
             // Each file is its own player, which another file replaces.
-            MediaViewerAudio(item: item, playbackID: playbackID)
+            MediaViewerAudio(item: item, playbackID: playbackID, isVisible: isVisible)
                 .id(playbackID)
         case let .text(language):
             MediaViewerText(url: item.url, language: language)
@@ -599,7 +599,7 @@ private struct MediaViewerTrackpadPanBridge: NSViewRepresentable {
             removeEventMonitor()
             observedWindow = window
             guard window != nil else { return }
-            eventMonitor = NSEvent.addAppLocalMonitor(
+            eventMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: .scrollWheel
             ) { [weak self] event in
                 guard let self else { return event }

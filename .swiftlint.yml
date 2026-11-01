@@ -29,9 +29,3 @@ nesting:
   function_level: 3
 identifier_name:
   min_length: 2
-custom_rules:
-  app_local_event_monitor:
-    name: App local event monitor
-    regex: '\baddLocalMonitorForEvents\('
-    message: "Use NSEvent.addAppLocalMonitor, which leaves a closing modal's clicks, keys and gestures to it."
-    severity: error
