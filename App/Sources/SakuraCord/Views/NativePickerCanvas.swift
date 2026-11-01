@@ -202,10 +202,11 @@ final class NativePickerCanvas<Row: Identifiable>: NSView, NativePickerViewport 
             let headerHeight = headerIndices.last(where: { $0 <= index }).map { geometry.heights[$0] } ?? 0
             let viewport = scroll.documentVisibleRect
             let originY: CGFloat
-            if row.minY - headerHeight < viewport.minY {
-                originY = row.minY - headerHeight
-            } else if row.maxY > viewport.maxY {
-                originY = row.maxY - viewport.height
+            let inset = request.edgeInset
+            if row.minY - headerHeight - inset < viewport.minY {
+                originY = row.minY - headerHeight - inset
+            } else if row.maxY + inset > viewport.maxY {
+                originY = row.maxY + inset - viewport.height
             } else {
                 originY = viewport.minY
             }
