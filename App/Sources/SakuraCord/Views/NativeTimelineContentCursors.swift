@@ -24,17 +24,24 @@ extension NativeTimelineCanvasView {
         frames += layout.embedRegions.compactMap(\.mediaFrame)
         for component in layout.componentLayouts {
             frames += component.images.map(\.frame) + component.media.map(\.frame)
-            frames += component.containers.filter {
-                $0.isSpoiler && !spoilerRevealStore.isMediaRevealed(
-                    NativeTimelineComponentRevealKey(messageID: row.id, componentID: $0.componentID)
-                )
-            }.map(\.frame)
         }
+        frames += hiddenSpoilerContainerFrames(at: index)
         if let voice = layout.voiceMessageRegion {
             frames += [voice.playHitFrame, voice.speedHitFrame, voice.waveformHitFrame]
         }
         for frame in frames {
             addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+        }
+    }
+
+    /// The row's unrevealed spoiler containers, in the row's space: a click
+    /// anywhere in one reveals it, so the text inside it can't be selected.
+    func hiddenSpoilerContainerFrames(at index: Int) -> [CGRect] {
+        guard let messageID = items[index].messageID else { return [] }
+        return layouts[index].componentLayouts.flatMap {
+            NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: $0, messageID: messageID, store: spoilerRevealStore
+            )
         }
     }
 }

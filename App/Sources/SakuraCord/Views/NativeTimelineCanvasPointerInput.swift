@@ -148,15 +148,17 @@ extension NativeTimelineCanvasView {
         let item = items[index]
         let layout = layouts[index]
         let rowOrigin = displayedRowOrigin(at: index)
+        let hiddenContainers = hiddenSpoilerContainerFrames(at: index).map { $0.offsetBy(dx: 0, dy: rowOrigin) }
         for selectable in selectableTextRegions(for: item, layout: layout) {
-            addCursorRect(
-                textSelectionInteractionFrame(
-                    region: selectable.region,
-                    frame: selectable.interactionFrame,
-                    rowIndex: index
-                ),
-                cursor: .iBeam
+            let frame = textSelectionInteractionFrame(
+                region: selectable.region,
+                frame: selectable.interactionFrame,
+                rowIndex: index
             )
+            guard !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                frame, hiddenContainerFrames: hiddenContainers
+            ) else { continue }
+            addCursorRect(frame, cursor: .iBeam)
             for spoiler in NativeTimelineTextHitTester.spoilerRegions(
                 value: selectable.value,
                 framesetter: selectable.framesetter,
