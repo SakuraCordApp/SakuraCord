@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 import SakuraCordModels
 
 nonisolated struct NativeTimelineFooterActionTarget: Equatable {
@@ -74,6 +75,8 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
     /// Long enough, eased at both ends, that a round button's growth reads
     /// as motion rather than a snap.
     static let hoverAnimationDuration: TimeInterval = 0.2
+    /// `easeInOut`'s cubic curve, for hovers Core Animation runs.
+    static var hoverTimingFunction: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1) }
 
     static func scale(pressProgress: CGFloat) -> CGFloat {
         1 - 0.015 * min(max(pressProgress, 0), 1)

@@ -32,14 +32,13 @@ nonisolated enum NativeTimelineSpoilerAppearance {
     /// #84858C, light #8F9097 → #6A6B70.
     static let hoverTint: CGFloat = 0.26
 
-    static let hoverTintColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
-    }
+    static let hoverTintColor = NSColor(name: nil, dynamicProvider: hoverTintBase)
 
     /// Over a media cover, which the hover tints by half of text's.
-    static let mediaHoverTintColor = NSColor(name: nil) { appearance in
-        (appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor.white : .black)
-            .withAlphaComponent(hoverTint / 2)
+    static let mediaHoverTintColor = NSColor(name: nil) { hoverTintBase($0).withAlphaComponent(hoverTint / 2) }
+
+    private static func hoverTintBase(_ appearance: NSAppearance) -> NSColor {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
     }
 
     /// A revealed text spoiler keeps a faint fill, so it still reads as one.
@@ -66,7 +65,8 @@ nonisolated enum NativeTimelineSpoilerAppearance {
 
     /// A hidden text spoiler's fill, `hover` of the way into its hover.
     static func textBackgroundColor(hover: CGFloat) -> NSColor {
-        hiddenColor.blended(withFraction: hoverTint * hover, of: hoverTintColor) ?? hiddenColor
+        guard hover > 0 else { return hiddenColor }
+        return hiddenColor.blended(withFraction: hoverTint * hover, of: hoverTintColor) ?? hiddenColor
     }
 
     static func pillLabel(isHovered: Bool, scale: CGFloat = 1) -> NSAttributedString {
@@ -231,7 +231,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = animated && AppMotionPolicy.animatesUncategorized
                 ? NativeTimelineComponentButtonVisualState.hoverAnimationDuration : 0
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1)
+            context.timingFunction = NativeTimelineComponentButtonVisualState.hoverTimingFunction
             tintView.animator().alphaValue = isHovered ? 1 : 0
             pillView.animator().alphaValue = isHovered && hasPill ? 1 : 0
         }
