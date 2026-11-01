@@ -411,7 +411,8 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
         animationState.beginDismissal(committingPresentation: committingPresentation, interactively: interactively)
         // A closing modal stops holding the window's input, so what it
         // covered takes the pointer and the scroll wheel as it animates away.
-        unregisterInput()
+        isModalPresented = false
+        if let window { WindowModalCoordinator.coordinator(for: window).beginClosing(self) }
     }
 
     func cancelPendingDismissal() {

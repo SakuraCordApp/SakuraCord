@@ -31,6 +31,9 @@ final class WindowModalCoordinator {
 
     private weak var window: NSWindow?
     private var entries: [Entry] = []
+    /// Modals animating away, which hold no input but Escape, so a repeated
+    /// press can't act on what they uncover before they are gone.
+    private let closingHosts = NSHashTable<WindowModalHostingView>.weakObjects()
     private var monitor: Any?
     private weak var scrollOwner: WindowModalHostingView?
 
@@ -84,8 +87,20 @@ final class WindowModalCoordinator {
         window.makeFirstResponder(host)
     }
 
+    /// Gives up the host's input as it starts closing; it keeps Escape
+    /// until `remove` takes it out of the window.
+    func beginClosing(_ host: WindowModalHostingView) {
+        remove(host)
+        closingHosts.add(host)
+        installMonitor()
+    }
+
     func remove(_ host: WindowModalHostingView) {
-        guard let index = entries.firstIndex(where: { $0.host === host }) else { return }
+        closingHosts.remove(host)
+        guard let index = entries.firstIndex(where: { $0.host === host }) else {
+            removeMonitorIfIdle()
+            return
+        }
         let wasTopmost = topmost === host
         let previous = entries[index].previousResponder
         // A covered modal can disappear before its child. Repair the focus chain.
@@ -109,10 +124,13 @@ final class WindowModalCoordinator {
                 window.makeFirstResponder(topmost ?? window.contentView)
             }
         }
-        if entries.isEmpty, let monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
+        removeMonitorIfIdle()
+    }
+
+    private func removeMonitorIfIdle() {
+        guard entries.isEmpty, closingHosts.allObjects.isEmpty, let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
     }
 
     private func reorderHosts() {
@@ -154,17 +172,19 @@ final class WindowModalCoordinator {
 
     // Internal for focused event-routing regression tests. Returning nil consumes input.
     func filter(_ event: NSEvent) -> NSEvent? {
-        guard let window, let topmost,
+        guard let window,
               event.window === window || event.window == nil && NSApp.keyWindow === window
         else { return event }
         if event.type == .keyDown {
             guard KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags, characters: event.charactersIgnoringModifiers) else { return event }
             if window.attachedSheet != nil { return event }
             if PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window) { return nil }
-            guard topmost.capturesEscape else { return event }
+            if closingHosts.allObjects.contains(where: { $0.capturesEscape }) { return nil }
+            guard let topmost, topmost.capturesEscape else { return event }
             topmost.animationState.handleEscape()
             return nil
         }
+        guard topmost != nil else { return event }
         if event.type == .scrollWheel {
             return allowsScroll(phase: event.phase, momentumPhase: event.momentumPhase) ? event : nil
         }

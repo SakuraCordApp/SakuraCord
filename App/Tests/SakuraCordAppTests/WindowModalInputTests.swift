@@ -148,6 +148,14 @@ import Testing
     #expect(child.hitTest(.zero) === child)
     // Removing the closing modal from input leaves it above the parent.
     #expect(window.contentView!.subviews.last === child)
+    // A repeated press while the child animates away acts on nothing.
+    #expect(coordinator.filter(escape) == nil)
+    #expect(parentEscapes == 0)
+    child.cancelPendingDismissal()
+    child.unregisterInput()
+    child.removeFromSuperview()
+    #expect(coordinator.filter(escape) == nil)
+    #expect(parentEscapes == 1)
 }
 
 @MainActor
