@@ -420,6 +420,8 @@ struct TimeMentionSurroundingPillView: View {
             }
             Text(currentLabel)
                 .font(.interfaceSystem(size: 14, weight: presentation.isTimestamp ? .regular : .medium).monospacedDigit())
+                .contentTransition(.numericText())
+                .animation(.snappy(duration: 0.25), value: currentLabel)
         }
         .foregroundStyle(textColor)
         .padding(.horizontal, InterfaceScale.metric(6))

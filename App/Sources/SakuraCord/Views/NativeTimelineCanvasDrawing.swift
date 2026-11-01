@@ -6,6 +6,7 @@ import ImageIO
 import Lottie
 import QuartzCore
 import SakuraCordModels
+import MessageRendering
 import SwiftUI
 
 extension NativeTimelineCanvasView {
@@ -120,6 +121,8 @@ extension NativeTimelineCanvasView {
         reconcileBeginningSelectionOverlay()
         reconcileActivityIndicators()
         reconcileSpoilerOverlays()
+        reconcileRelativeTimestamps()
+        updateRelativeTimestampAnimationOverlays()
         if !suppressesHoverPresentation {
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
@@ -220,6 +223,7 @@ extension NativeTimelineCanvasView {
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
+        updateRelativeTimestampAnimationOverlays()
         componentChoiceOverlay?.repositionWithAnchor()
         needsDisplay = true
         redrawMovedShortContentSynchronously(
@@ -548,6 +552,7 @@ extension NativeTimelineCanvasView {
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
+        updateRelativeTimestampAnimationOverlays()
     }
 
     func applyDocumentSize(_ size: NSSize) {
@@ -588,6 +593,9 @@ extension NativeTimelineCanvasView {
             clearBitmapCache(keepingCapacity: false)
             removeReactionMouseMonitor()
             cancelReactionCountAnimations()
+            cleanupRelativeTimestampAnimationOverlays()
+            relativeTimestampClockTask?.cancel()
+            relativeTimestampClockTask = nil
             reactionCountBaselineTask?.cancel()
             reactionCountBaselineTask = nil
             animatedMediaReconcileTask?.cancel()
@@ -1536,6 +1544,7 @@ extension NativeTimelineCanvasView {
 
     func messageHasRelativeTimestamp(_ item: NativeMessageTimelineItem) -> Bool {
         guard case let .message(row, _, _) = item else { return false }
+        if row.message.content.contains(":R>") { return true }
         return row.textPlan.preparedText?.tokens.contains(where: { token in
             if case let .mention(mention) = token, mention.kind == .timestamp, mention.timestampStyle == "R" {
                 return true
@@ -1549,29 +1558,117 @@ extension NativeTimelineCanvasView {
         if !hasRelativeTimestamps {
             relativeTimestampClockTask?.cancel()
             relativeTimestampClockTask = nil
+            cleanupRelativeTimestampAnimationOverlays()
             return
         }
+        updateRelativeTimestampAnimationOverlays()
         guard relativeTimestampClockTask == nil else { return }
         relativeTimestampClockTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled, let self else { break }
                 guard !self.storage.items.isEmpty else { break }
-                var foundAny = false
-                for (index, item) in self.storage.items.enumerated() where self.messageHasRelativeTimestamp(item) {
-                    foundAny = true
-                    self.mentionPointerRegionCache.removeValue(forKey: item.identifier)
-                    self.invalidateBitmap(item.identifier)
-                    let frame = self.rowFrame(at: index)
-                    if self.visibleRect.intersects(frame) {
-                        self.setNeedsDisplay(frame)
-                    }
-                }
+                let foundAny = self.checkRelativeTimestampWidthChanges()
                 if !foundAny {
                     break
                 }
+                self.updateRelativeTimestampAnimationOverlays()
             }
             self?.relativeTimestampClockTask = nil
         }
+    }
+
+    private func checkRelativeTimestampWidthChanges() -> Bool {
+        var foundAny = false
+        for (index, item) in storage.items.enumerated() where messageHasRelativeTimestamp(item) {
+            foundAny = true
+            let regions = mentionPointerRegions(at: index)
+            for region in regions where region.isTimestamp && region.timestampStyle == "R" {
+                guard let date = region.timestampDate else { continue }
+                let currentText = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
+                let oldText = region.toolTip ?? ""
+                if currentText.count != oldText.count {
+                    mentionPointerRegionCache.removeValue(forKey: item.identifier)
+                    invalidateBitmap(item.identifier)
+                    let frame = rowFrame(at: index)
+                    if visibleRect.intersects(frame) {
+                        setNeedsDisplay(frame)
+                    }
+                }
+            }
+        }
+        return foundAny
+    }
+
+    func updateRelativeTimestampAnimationOverlays() {
+        guard !storage.items.isEmpty,
+              var index = rowIndex(at: max(0, visibleRect.minY))
+        else {
+            cleanupRelativeTimestampAnimationOverlays()
+            return
+        }
+
+        var visibleKeys: Set<RelativeTimestampKey> = []
+
+        while storage.items.indices.contains(index),
+              displayedRowOrigin(at: index) < visibleRect.maxY
+        {
+            updateTimestampOverlays(for: storage.items[index], at: index, visibleKeys: &visibleKeys)
+            index += 1
+        }
+
+        for (key, host) in timestampAnimationHosts where !visibleKeys.contains(key) {
+            host.removeFromSuperview()
+            timestampAnimationHosts.removeValue(forKey: key)
+        }
+    }
+
+    private func updateTimestampOverlays(
+        for item: NativeMessageTimelineItem,
+        at index: Int,
+        visibleKeys: inout Set<RelativeTimestampKey>
+    ) {
+        guard messageHasRelativeTimestamp(item) else { return }
+        let regions = mentionPointerRegions(at: index)
+        let isOutgoing = layouts.indices.contains(index) && layouts[index].bubbleRegion?.isOutgoing == true
+        for region in regions where region.isTimestamp && region.timestampStyle == "R" {
+            guard let date = region.timestampDate else { continue }
+            let key = RelativeTimestampKey(
+                itemIdentifier: item.identifier,
+                characterIndex: region.characterIndex
+            )
+            visibleKeys.insert(key)
+            attachOrUpdateTimestampHost(key: key, frame: region.frame, date: date, isOutgoing: isOutgoing)
+        }
+    }
+
+    private func attachOrUpdateTimestampHost(
+        key: RelativeTimestampKey,
+        frame: CGRect,
+        date: Date,
+        isOutgoing: Bool
+    ) {
+        if let host = timestampAnimationHosts[key] {
+            if host.frame != frame { host.frame = frame }
+            return
+        }
+        let root = AnyView(NativeTimelineTimestampPillView(
+            date: date,
+            style: "R",
+            isOutgoingBubble: isOutgoing
+        ))
+        let host = NativeTimelinePassthroughHostingView(rootView: root)
+        host.frame = frame
+        host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.clear.cgColor
+        addSubview(host, positioned: .above, relativeTo: nil)
+        timestampAnimationHosts[key] = host
+    }
+
+    func cleanupRelativeTimestampAnimationOverlays() {
+        for host in timestampAnimationHosts.values {
+            host.removeFromSuperview()
+        }
+        timestampAnimationHosts.removeAll()
     }
 }

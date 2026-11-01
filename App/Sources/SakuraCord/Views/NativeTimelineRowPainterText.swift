@@ -998,10 +998,13 @@ extension NativeTimelineRowPainter {
         isOutgoingBubble: Bool = false
     ) {
         let currentLabel: String
+        let isRelative: Bool
         if case let .timestamp(date, style) = presentation.target, style == "R" {
             currentLabel = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
+            isRelative = true
         } else {
             currentLabel = presentation.label
+            isRelative = false
         }
 
         let metrics = NativeTimelineMentionMetrics.self
@@ -1025,6 +1028,8 @@ extension NativeTimelineRowPainter {
             NSColor.white.withAlphaComponent(isHovered ? 0.14 : 0.08).setFill()
         }
         shape.fill()
+
+        guard !isRelative else { return }
 
         let labelX = actualFrame.minX + metrics.horizontalPadding
         let textColor: NSColor = isOutgoingBubble ? .white : .labelColor

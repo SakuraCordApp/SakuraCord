@@ -581,23 +581,94 @@ struct ComposerTextView: NSViewRepresentable {
         private var isMarkedTextActive = false
         private let attachmentImageLoader = InlineAttachmentImageLoader()
         private var relativeTimestampTickerTask: Task<Void, Never>?
+        var composerTimestampHosts: [ObjectIdentifier: NativeTimelinePassthroughHostingView] = [:]
 
         deinit {
             relativeTimestampTickerTask?.cancel()
+            let hosts = composerTimestampHosts
+            DispatchQueue.main.async {
+                for host in hosts.values {
+                    host.removeFromSuperview()
+                }
+            }
+        }
+
+        func updateComposerTimestampAnimationOverlays(in textView: NSTextView?) {
+            guard let textView,
+                  let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer
+            else {
+                cleanupComposerTimestampHosts()
+                return
+            }
+
+            var visibleAttachments: Set<ObjectIdentifier> = []
+
+            textStorage.enumerateAttribute(
+                .attachment,
+                in: NSRange(location: 0, length: textStorage.length)
+            ) { attachment, range, _ in
+                guard let mentionAttachment = attachment as? MentionTextAttachment,
+                      case let .timestamp(date, style) = mentionAttachment.presentation.target,
+                      style == "R"
+                else { return }
+
+                let id = ObjectIdentifier(mentionAttachment)
+                visibleAttachments.insert(id)
+
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += textView.textContainerOrigin.x
+                rect.origin.y += textView.textContainerOrigin.y
+
+                if let host = composerTimestampHosts[id] {
+                    if host.frame != rect {
+                        host.frame = rect
+                    }
+                } else {
+                    let root = AnyView(NativeTimelineTimestampPillView(
+                        date: date,
+                        style: "R",
+                        isOutgoingBubble: false
+                    ))
+                    let host = NativeTimelinePassthroughHostingView(rootView: root)
+                    host.frame = rect
+                    host.wantsLayer = true
+                    host.layer?.backgroundColor = NSColor.clear.cgColor
+                    textView.addSubview(host, positioned: .above, relativeTo: nil)
+                    composerTimestampHosts[id] = host
+                }
+            }
+
+            for (id, host) in composerTimestampHosts where !visibleAttachments.contains(id) {
+                host.removeFromSuperview()
+                composerTimestampHosts.removeValue(forKey: id)
+            }
+        }
+
+        func cleanupComposerTimestampHosts() {
+            for host in composerTimestampHosts.values {
+                host.removeFromSuperview()
+            }
+            composerTimestampHosts.removeAll()
         }
 
         func reconcileRelativeTimestamps(in textView: NSTextView?) {
             guard let textView else {
                 relativeTimestampTickerTask?.cancel()
                 relativeTimestampTickerTask = nil
+                cleanupComposerTimestampHosts()
                 return
             }
             let hasRelative = parent.text.contains(":R>")
             if !hasRelative {
                 relativeTimestampTickerTask?.cancel()
                 relativeTimestampTickerTask = nil
+                cleanupComposerTimestampHosts()
                 return
             }
+            updateComposerTimestampAnimationOverlays(in: textView)
             guard relativeTimestampTickerTask == nil else { return }
             relativeTimestampTickerTask = Task { @MainActor [weak self, weak textView] in
                 while !Task.isCancelled {
@@ -618,7 +689,9 @@ struct ComposerTextView: NSViewRepresentable {
                     if updated {
                         textView.setNeedsDisplay(textView.bounds)
                     }
+                    self.updateComposerTimestampAnimationOverlays(in: textView)
                 }
+                self?.cleanupComposerTimestampHosts()
                 self?.relativeTimestampTickerTask = nil
             }
         }
@@ -683,6 +756,7 @@ struct ComposerTextView: NSViewRepresentable {
             // return to that value before SwiftUI refreshes it; every native
             // text change must still reach the current draft model.
             parent.onTextChange(raw)
+            updateComposerTimestampAnimationOverlays(in: textView)
             textView.invalidateIntrinsicContentSize()
             textView.enclosingScrollView?.invalidateIntrinsicContentSize()
         }

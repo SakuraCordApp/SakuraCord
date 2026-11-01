@@ -314,6 +314,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     let timestampHoverCoordinator =
         StableAnchoredPopoverPresenter<TimestampMentionTooltip>.Coordinator()
     var activeTimestampHoverAnchor: StablePopoverAnchor?
+    struct RelativeTimestampKey: Hashable {
+        let itemIdentifier: NativeMessageTimelineItem.Identifier
+        let characterIndex: Int
+    }
+    var timestampAnimationHosts: [RelativeTimestampKey: NativeTimelinePassthroughHostingView] = [:]
     var relativeTimestampClockTask: Task<Void, Never>?
     var visibleReactionCounts: [ReactionCountKey: Int] = [:]
     var previouslyVisibleReactionMessageIDs: Set<MessageID> = []
@@ -454,6 +459,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             NSWorkspace.shared.notificationCenter.removeObserver(self)
             pollClockTask?.cancel()
             relativeTimestampClockTask?.cancel()
+            cleanupRelativeTimestampAnimationOverlays()
             timestampHoverCoordinator.close()
             pollAnimationTicker.stop()
             clearDisclosure(redraws: false)
