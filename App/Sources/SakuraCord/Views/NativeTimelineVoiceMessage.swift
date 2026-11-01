@@ -500,6 +500,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         didSet {
             needsDisplay = true
             layoutSpinner()
+            window?.invalidateCursorRects(for: self)
         }
     }
 
@@ -653,6 +654,16 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
         region.frame.insetBy(dx: -InterfaceScale.metric(4), dy: -InterfaceScale.metric(4))
     }
 
+    /// The canvas's cursor rects stop at this view, so an audio file's
+    /// controls point here too, at the frames their clicks land on.
+    override func resetCursorRects() {
+        guard region.style == .audioFile else { return }
+        let origin = Self.frame(of: region).origin
+        for (_, frame) in NativeTimelineCanvasView.controlHitFrames(of: region) where !frame.isNull && !frame.isEmpty {
+            addCursorRect(frame.offsetBy(dx: -origin.x, dy: -origin.y), cursor: .pointingHand)
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateAnimation()
@@ -758,8 +769,29 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// The voice message or audio file control under `point`. An audio
-    /// file's controls fill its player row, so they take no extra margin.
+    /// Each control's click target in row coordinates. A voice message's
+    /// controls take a small margin; an audio file's fill its player row.
+    static func controlHitFrames(of region: NativeTimelineVoiceMessageRegion) -> [(VoiceMessageControl, CGRect)] {
+        let slop: CGFloat = region.style == .audioFile ? 0 : 1
+        return [
+            (.play, region.playFrame.insetBy(dx: -4 * slop, dy: -4 * slop)),
+            (.speed, region.speedFrame.insetBy(dx: -3 * slop, dy: -6 * slop)),
+            (.waveform, region.waveformFrame.insetBy(dx: -4 * slop, dy: -6 * slop)),
+        ]
+    }
+
+    /// An audio file card's play, seek and speed controls point where their
+    /// clicks land.
+    func installAudioFileCursors(at index: Int, rowOrigin: CGFloat) {
+        for region in layouts[index].audioPlayers
+        where region.style == .audioFile && !isConcealedSpoiler(region.attachment, in: region.messageID) {
+            for (_, frame) in Self.controlHitFrames(of: region) where !frame.isNull && !frame.isEmpty {
+                addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+            }
+        }
+    }
+
+    /// The voice message or audio file control under `point`.
     func voiceMessagePointerHit(at point: CGPoint) -> VoiceMessagePointerHit? {
         guard WindowModalCoordinator.allowsInput(for: self),
               let index = rowIndex(at: point.y),
@@ -768,14 +800,10 @@ extension NativeTimelineCanvasView {
         let origin = displayedRowOrigin(at: index)
         let local = CGPoint(x: point.x, y: point.y - origin)
         for region in layouts[index].audioPlayers where region.frame.contains(local) && !isConcealedSpoiler(region.attachment, in: region.messageID) {
-            let slop: CGFloat = region.style == .audioFile ? 0 : 1
+            // Between an audio card's controls lies the player's own gap.
             let control: VoiceMessageControl
-            if region.playFrame.insetBy(dx: -4 * slop, dy: -4 * slop).contains(local) {
-                control = .play
-            } else if region.speedFrame.insetBy(dx: -3 * slop, dy: -6 * slop).contains(local) {
-                control = .speed
-            } else if region.waveformFrame.insetBy(dx: -4 * slop, dy: -6 * slop).contains(local) {
-                control = .waveform
+            if let hit = Self.controlHitFrames(of: region).first(where: { $0.1.contains(local) }) {
+                control = hit.0
             } else if region.style == .audioFile {
                 control = .gap
             } else {
