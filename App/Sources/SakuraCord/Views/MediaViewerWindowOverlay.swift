@@ -23,7 +23,9 @@ struct MediaViewerWindowOverlay: View {
 private final class MediaViewerWindowAnimationState {
     private(set) var isVisible = false
     private(set) var transitionSources: [String: MediaViewerTransitionSource] = [:]
-    private var reducesMotion = false
+    /// Follows the setting while the viewer is up, so its closing curve
+    /// and the card it covers agree with the zoom the viewer shows.
+    var reducesMotion = false
     private let sourceItemIDs: Set<String>
     /// Files zoom from a slim card into a large page, which reads only over
     /// a longer, even curve than a photo's snappy one.
@@ -177,6 +179,10 @@ private struct MediaViewerWindowAnimatedContent: View {
                 // The zoom now draws over its card, so the card can leave.
                 link.cover(animationState.coveredItemID)
             }
+        }
+        .onChange(of: reducesMotion) { _, reducesMotion in
+            animationState.reducesMotion = reducesMotion
+            link.cover(animationState.coveredItemID)
         }
         .onDisappear {
             context.dismissalTransition = nil
