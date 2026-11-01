@@ -3,10 +3,10 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `@time` and `@game` open a picker that replaces their query in the draft.
-private enum ComposerMentionPicker {
-    case time(range: NSRange, seconds: Int64)
-    case game(range: NSRange)
+/// `@time` opens a picker that replaces its query in the draft.
+private struct ComposerMentionPicker {
+    let range: NSRange
+    let seconds: Int64
 }
 
 struct ComposerView: View {
@@ -43,6 +43,7 @@ struct ComposerView: View {
     @State private var emojiPickerDismissedAt: TimeInterval = -.infinity
     @State private var autocompleteIndex = 0
     @State private var autocompleteKeyboardSelectionRevision = 0
+    @State private var gameMentionSearch = ComposerGameMentionSearch()
     @State private var isAutocompleteDismissed = false
     @State private var commandAwaitingClear: ApplicationCommand?
     @State private var timestampClock = RelativeTimestampDisplayClock()
@@ -492,6 +493,9 @@ struct ComposerView: View {
             model.errorMessage = message
             voiceMessage.clearError()
         }
+        .task(id: gameMentionContext?.query) { [query = gameMentionContext?.query] in
+            await gameMentionSearch.search(query ?? "", model: model)
+        }
         .task(id: composerPresentationID) {
             if !voiceMessage.restoreAfterGuildTimeout(in: activeConversationID) {
                 voiceMessage.discard(playback: model.voiceMessagePlayback)
@@ -568,6 +572,8 @@ struct ComposerView: View {
             }
         } else if let mentionPicker {
             mentionPickerMenu(mentionPicker)
+        } else if let context = gameMentionContext {
+            gameMentionMenu(context)
         } else if let context = mentionAutocompleteContext {
             let suggestions = mentionAutocompleteSuggestions(for: context)
             if !suggestions.isEmpty {
@@ -1077,6 +1083,9 @@ struct ComposerView: View {
         if let mentionPicker {
             return handleMentionPickerCommand(command, picker: mentionPicker)
         }
+        if let context = gameMentionContext {
+            return handleGameMention(command, context: context)
+        }
         if let context = mentionAutocompleteContext, !mentionAutocompleteSuggestions.isEmpty {
             return handleMentionAutocomplete(command, context: context)
         }
@@ -1212,7 +1221,7 @@ struct ComposerView: View {
     private var capturesUnfocusedTyping: Bool {
         conversation == model.activeComposerDestination
             && model.threadCreation?.isSubmitting != true
-            && !showEmojiPicker && !showGIFPicker && !showStickerPicker && !isPickingGame
+            && !showEmojiPicker && !showGIFPicker && !showStickerPicker
             && !isVoiceMessageActive
     }
 
@@ -1300,10 +1309,10 @@ private extension ComposerView {
         }
     }
 
-    /// Composer menus belong to the active editor or game search field. They
-    /// hide when the window becomes inactive.
+    /// Composer menus belong to the active editor. They hide when the window
+    /// becomes inactive.
     private var isInputActive: Bool {
-        appearsActive && (isFocused || isPickingGame)
+        appearsActive && isFocused
     }
 
     private var composerMentionPresentations: [String: MentionPresentation] {
@@ -1318,10 +1327,6 @@ private extension ComposerView {
         draft.contains(":R>")
     }
 
-    private var isPickingGame: Bool {
-        if case .game = mentionPicker { true } else { false }
-    }
-
     private func acceptMentionAutocomplete(
         _ suggestion: MentionAutocompleteSuggestion,
         context: MentionAutocompleteContext
@@ -1330,44 +1335,27 @@ private extension ComposerView {
         isAutocompleteDismissed = true
         switch suggestion.action {
         case .chooseTimeFormat:
-            mentionPicker = .time(range: context.range, seconds: Int64(Date.now.timeIntervalSince1970))
-        case .chooseGame:
-            mentionPicker = .game(range: context.range)
-            isFocused = false
+            mentionPicker = ComposerMentionPicker(range: context.range, seconds: Int64(Date.now.timeIntervalSince1970))
         case .insert:
             if let member = suggestion.member { model.rememberMentionMember(member) }
             draftSelection = insertInDraft(suggestion.value + " ", replacing: context.range)
         }
     }
 
-    @ViewBuilder
     private func mentionPickerMenu(_ picker: ComposerMentionPicker) -> some View {
-        switch picker {
-        case let .time(range, seconds):
-            ComposerTimeFormatPicker(
-                seconds: seconds,
-                selectedIndex: autocompleteIndex,
-                select: { insertMentionPickerResult(DiscordTimestampToken(seconds: seconds, style: $0).rawToken, range: range) },
-                highlight: { autocompleteIndex = $0 }
-            )
-        case let .game(range):
-            ComposerGameMentionPicker(
-                model: model,
-                select: { game in
-                    model.rememberGameMention(game)
-                    insertMentionPickerResult("<@$\(game.id)>", range: range)
-                },
-                dismiss: dismissMentionPicker
-            )
-        }
+        ComposerTimeFormatPicker(
+            seconds: picker.seconds,
+            selectedIndex: autocompleteIndex,
+            cornerRadius: commandPanelCornerRadius,
+            keyboardSelectionRevision: autocompleteKeyboardSelectionRevision,
+            select: {
+                insertMentionPickerResult(DiscordTimestampToken(seconds: picker.seconds, style: $0).rawToken, range: picker.range)
+            },
+            highlight: { autocompleteIndex = $0 }
+        )
     }
 
     private func handleMentionPickerCommand(_ command: ComposerAutocompleteCommand, picker: ComposerMentionPicker) -> Bool {
-        guard case let .time(range, seconds) = picker else {
-            // The game picker's search field handles its own keys.
-            if case .dismiss = command { dismissMentionPicker() }
-            return true
-        }
         let styles = ComposerTimeFormatPicker.styles
         switch command {
         case .previous:
@@ -1375,14 +1363,64 @@ private extension ComposerView {
         case .next:
             autocompleteIndex = (autocompleteIndex + 1) % styles.count
         case .accept, .advance:
-            let token = DiscordTimestampToken(seconds: seconds, style: styles[autocompleteIndex])
-            insertMentionPickerResult(token.rawToken, range: range)
+            let token = DiscordTimestampToken(seconds: picker.seconds, style: styles[autocompleteIndex])
+            insertMentionPickerResult(token.rawToken, range: picker.range)
         case .dismiss:
             dismissMentionPicker()
         case .previousField, .nextField, .removeField:
             return false
         }
         return true
+    }
+
+    /// A title can contain `@`, but a mention typed after the query is
+    /// completed as one. An open slash picker keeps the keys, so the menu
+    /// waits for it to close.
+    private var gameMentionContext: GameMentionContext? {
+        guard !isAutocompleteDismissed, mentionAutocompleteContext == nil,
+              !(supportsCommands && commandComposer.isPickerPresented)
+        else { return nil }
+        return GameMentionContext(text: draft, selection: draftSelection)
+    }
+
+    private func gameMentionMenu(_ context: GameMentionContext) -> some View {
+        ComposerGameMentionPicker(
+            search: gameMentionSearch,
+            query: context.query,
+            selectedIndex: autocompleteIndex,
+            cornerRadius: commandPanelCornerRadius,
+            keyboardSelectionRevision: autocompleteKeyboardSelectionRevision,
+            select: { insertGameMention($0, context: context) },
+            highlight: { autocompleteIndex = $0 }
+        )
+    }
+
+    /// Keys while games match what is typed after `@game `.
+    private func handleGameMention(_ command: ComposerAutocompleteCommand, context: GameMentionContext) -> Bool {
+        let games = gameMentionSearch.games
+        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
+        switch command {
+        case .previous:
+            guard !games.isEmpty else { return true }
+            autocompleteIndex = (autocompleteIndex - 1 + games.count) % games.count
+        case .next:
+            guard !games.isEmpty else { return true }
+            autocompleteIndex = (autocompleteIndex + 1) % games.count
+        case .accept, .advance:
+            guard !games.isEmpty else { return true }
+            insertGameMention(games[min(autocompleteIndex, games.count - 1)], context: context)
+        case .dismiss:
+            isAutocompleteDismissed = true
+        case .previousField, .nextField, .removeField:
+            return false
+        }
+        return true
+    }
+
+    private func insertGameMention(_ game: ProfileGame, context: GameMentionContext) {
+        model.rememberGameMention(game)
+        draftSelection = insertInDraft("<@$\(game.id)> ", replacing: context.range)
+        autocompleteIndex = 0
     }
 
     private func dismissMentionPicker() {

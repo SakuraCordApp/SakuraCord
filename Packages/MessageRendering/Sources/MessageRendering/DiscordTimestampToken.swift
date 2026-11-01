@@ -1,7 +1,7 @@
 import Foundation
 
 public struct DiscordTimestampToken: Hashable, Sendable {
-    public enum Style: String, CaseIterable, Hashable, Sendable {
+    public enum Style: String, CaseIterable, Hashable, Identifiable, Sendable {
         case shortTime = "t"
         case mediumTime = "T"
         case shortDate = "d"
@@ -11,6 +11,8 @@ public struct DiscordTimestampToken: Hashable, Sendable {
         case shortDateShortTime = "s"
         case shortDateMediumTime = "S"
         case relative = "R"
+
+        public var id: String { rawValue }
     }
 
     public let seconds: Int64

@@ -67,11 +67,34 @@ struct MentionAutocompleteContext {
     }
 }
 
+/// A game search typed after the line's last `@game `, which filters the
+/// game menu as a command argument filters its options.
+struct GameMentionContext {
+    private static let expression = RegularExpressionFactory.make(
+        #"(?:^|\s)(@game ((?:(?!(?<=\s)@game )[^\v])*))\z"#
+    )
+
+    let query: String
+    let range: NSRange
+
+    init?(text: String, selection: NSRange?) {
+        let cursor = selection?.location ?? text.utf16.count
+        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
+        let prefix = (text as NSString).substring(to: cursor)
+        guard let match = Self.expression.firstMatch(
+            in: prefix,
+            range: NSRange(location: 0, length: (prefix as NSString).length)
+        ), match.range(at: 1).location != NSNotFound
+        else { return nil }
+        range = match.range(at: 1)
+        query = (prefix as NSString).substring(with: match.range(at: 2))
+    }
+}
+
 struct MentionAutocompleteSuggestion: Identifiable {
     enum Action: Equatable {
         case insert
         case chooseTimeFormat
-        case chooseGame
     }
 
     let id: String

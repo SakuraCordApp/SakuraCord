@@ -2,139 +2,16 @@ import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
 
-struct ComposerGameMentionPicker: View {
-    let model: AppModel
-    let select: (ProfileGame) -> Void
-    let dismiss: () -> Void
+/// The games matching what is typed after `@game `, searched as it changes.
+@Observable
+final class ComposerGameMentionSearch {
+    private(set) var games: [ProfileGame] = []
+    private(set) var isSearching = false
+    private(set) var errorMessage: String?
 
-    @State private var query = ""
-    @State private var games: [ProfileGame] = []
-    @State private var selectedIndex = 0
-    @State private var keyboardSelectionRevision = 0
-    @State private var isSearching = false
-    @State private var errorMessage: String?
-    @FocusState private var searchFocused: Bool
-
-    private var normalizedQuery: String {
-        DiscordProfileWidgetGameSearch.normalizedQuery(query)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("GAMES")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 5)
-            TextField("Search games", text: $query)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .onSubmit(chooseCurrent)
-                .onKeyPress(.downArrow) {
-                    moveSelection(by: 1)
-                    return .handled
-                }
-                .onKeyPress(.upArrow) {
-                    moveSelection(by: -1)
-                    return .handled
-                }
-                .onKeyPress(.escape) {
-                    dismiss()
-                    return .handled
-                }
-            Divider().padding(.horizontal, 9)
-            if !games.isEmpty {
-                ComposerSuggestionList(
-                    rows: games,
-                    selectedID: games.indices.contains(selectedIndex) ? games[selectedIndex].id : nil,
-                    keyboardSelectionRevision: keyboardSelectionRevision,
-                    rowHeight: { _ in 42 },
-                    highlight: { game in
-                        if let index = games.firstIndex(where: { $0.id == game.id }) { selectedIndex = index }
-                    },
-                    activate: select,
-                    content: { game in
-                        Button { select(game) } label: {
-                            HStack(spacing: 9) {
-                                gameIcon(for: game)
-                                Text(game.name)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 9)
-                            .frame(height: 40)
-                            .background(
-                                games.indices.contains(selectedIndex) && games[selectedIndex].id == game.id ? Color.primary.opacity(0.10) : .clear,
-                                in: ConcentricRectangle(cornerRadius: 7, style: .continuous)
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                )
-                .padding(.bottom, 5)
-            } else {
-                Group {
-                    if isSearching {
-                        ProgressView().controlSize(.small)
-                    } else if let errorMessage {
-                        Text(errorMessage).foregroundStyle(.secondary)
-                    } else {
-                        Text(normalizedQuery.isEmpty ? "Search for a game to mention." : "No games found.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 84)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .glassEffect(
-            .regular.interactive(),
-            in: ConcentricRectangle(cornerRadius: ChatChromeMetrics.composerMinimumCornerRadius)
-        )
-        .task {
-            await Task.yield()
-            searchFocused = true
-        }
-        .task(id: normalizedQuery) { await search() }
-    }
-
-    @ViewBuilder
-    private func gameIcon(for game: ProfileGame) -> some View {
-        ZStack {
-            Image(systemName: "gamecontroller.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.secondary)
-            if let url = game.artworkURL {
-                StaticRemoteImage(url: url, maximumPixelDimension: 96, contentMode: .fill)
-            }
-        }
-        .frame(width: 26, height: 26)
-        .background(.primary.opacity(0.08))
-        .clipShape(.rect(cornerRadius: 5))
-        .accessibilityHidden(true)
-    }
-
-    private func chooseCurrent() {
-        guard games.indices.contains(selectedIndex) else { return }
-        select(games[selectedIndex])
-    }
-
-    private func moveSelection(by offset: Int) {
-        guard !games.isEmpty else { return }
-        selectedIndex = (selectedIndex + offset + games.count) % games.count
-        keyboardSelectionRevision &+= 1
-    }
-
-    private func search() async {
-        let input = normalizedQuery
+    func search(_ query: String, model: AppModel) async {
+        let input = DiscordProfileWidgetGameSearch.normalizedQuery(query)
         games = []
-        selectedIndex = 0
         errorMessage = nil
         guard !input.isEmpty else { isSearching = false; return }
         isSearching = true
@@ -154,11 +31,65 @@ struct ComposerGameMentionPicker: View {
         } catch is CancellationError {
             // A fresh READY cancels only the provider's search; ask again.
             guard !Task.isCancelled else { return }
-            return await search()
+            return await search(query, model: model)
         } catch {
             DiscordAPIDiagnosticStore.shared.recordClientFailure(error)
+            // A newer query owns the menu once this one is cancelled.
+            guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
         }
         isSearching = false
+    }
+}
+
+/// The `@game` menu, in the composer's option menu.
+struct ComposerGameMentionPicker: View {
+    let search: ComposerGameMentionSearch
+    let query: String
+    let selectedIndex: Int
+    let cornerRadius: CGFloat
+    let keyboardSelectionRevision: Int
+    let select: (ProfileGame) -> Void
+    let highlight: (Int) -> Void
+
+    var body: some View {
+        ComposerOptionPanel(
+            title: "Games",
+            rows: search.games,
+            selectedIndex: selectedIndex,
+            status: status,
+            cornerRadius: cornerRadius,
+            keyboardSelectionRevision: keyboardSelectionRevision,
+            select: select,
+            highlight: highlight,
+            accessibilityLabel: \.name,
+            label: { game in
+                gameIcon(for: game)
+                Text(game.name).foregroundStyle(.primary).lineLimit(1)
+            }
+        )
+    }
+
+    private var status: ApplicationCommandSuggestionContent.Status {
+        if !search.games.isEmpty { return .ready }
+        if search.isSearching { return .loading }
+        if let errorMessage = search.errorMessage { return .message(errorMessage, isError: true) }
+        let isEmptyQuery = DiscordProfileWidgetGameSearch.normalizedQuery(query).isEmpty
+        return .message(isEmptyQuery ? "Search for a game to mention." : "No games found.", isError: false)
+    }
+
+    private func gameIcon(for game: ProfileGame) -> some View {
+        ZStack {
+            Image(systemName: "gamecontroller.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+            if let url = game.artworkURL {
+                StaticRemoteImage(url: url, maximumPixelDimension: 96, contentMode: .fill)
+            }
+        }
+        .frame(width: InterfaceScale.metric(22), height: InterfaceScale.metric(22))
+        .background(.primary.opacity(0.08))
+        .clipShape(.rect(cornerRadius: 4))
+        .accessibilityHidden(true)
     }
 }

@@ -1,6 +1,7 @@
 import MessageRendering
 import SwiftUI
 
+/// The `@time` menu: each format, previewing the current time as it counts.
 struct ComposerTimeFormatPicker: View {
     static let styles: [DiscordTimestampToken.Style] = [
         .shortDateMediumTime, .longDateShortTime, .fullDateShortTime, .relative,
@@ -10,32 +11,28 @@ struct ComposerTimeFormatPicker: View {
 
     let seconds: Int64
     let selectedIndex: Int
+    let cornerRadius: CGFloat
+    let keyboardSelectionRevision: Int
     let select: (DiscordTimestampToken.Style) -> Void
     let highlight: (Int) -> Void
 
     var body: some View {
-        ComposerAutocompletePanel(heading: "TIME FORMATS") {
-            LazyVStack(spacing: 2) {
-                ForEach(Self.styles.indices, id: \.self) { index in
-                    let style = Self.styles[index]
-                    Button { select(style) } label: {
-                        Text(DiscordTimestampToken(seconds: seconds, style: style).formatted(relativeTo: clock.date))
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 9)
-                            .frame(height: 40)
-                            .background(
-                                index == selectedIndex ? Color.primary.opacity(0.10) : .clear,
-                                in: ConcentricRectangle(cornerRadius: 7, style: .continuous)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .onModalHover { if $0 { highlight(index) } }
-                }
-            }
-        }
+        ComposerOptionPanel(
+            title: "Time formats",
+            rows: Self.styles,
+            selectedIndex: selectedIndex,
+            cornerRadius: cornerRadius,
+            keyboardSelectionRevision: keyboardSelectionRevision,
+            select: select,
+            highlight: highlight,
+            accessibilityLabel: preview,
+            label: { Text(preview($0)).foregroundStyle(.primary).lineLimit(1) }
+        )
         .onAppear { clock.start() }
         .onDisappear { clock.stop() }
+    }
+
+    private func preview(_ style: DiscordTimestampToken.Style) -> String {
+        DiscordTimestampToken(seconds: seconds, style: style).formatted(relativeTo: clock.date)
     }
 }

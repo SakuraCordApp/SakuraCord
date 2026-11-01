@@ -177,8 +177,7 @@ enum MentionAutocompleteSuggestionFactory {
                 title: "@game",
                 detail: "Mention a game",
                 value: "@game",
-                target: .unresolved,
-                action: .chooseGame
+                target: .unresolved
             ))
         }
         if "time".hasPrefix(normalizedQuery) {
