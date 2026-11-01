@@ -223,7 +223,7 @@ nonisolated enum OptimisticAttachmentPresentation {
         let orientation = (properties?[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
         let swapsDimensions = (5 ... 8).contains(orientation)
         // ImageIO can't read a video; its size was read as it was staged.
-        let videoSize = LocalVideo.preparedSize(of: url)
+        let videoSize = LocalVideo.isVideo(url) ? LocalVideo.preparedSize(of: url) : nil
         let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
         var attachment = Attachment(
             id: id ?? "pending-\(index)",

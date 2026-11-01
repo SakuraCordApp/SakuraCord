@@ -114,6 +114,6 @@ struct LocalAttachmentThumbnail: View {
     }
 
     private var isVideoFile: Bool {
-        UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+        LocalVideo.isVideo(url)
     }
 }
