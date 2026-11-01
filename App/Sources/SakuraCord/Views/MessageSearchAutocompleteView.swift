@@ -1399,7 +1399,7 @@ private struct MessageSearchAutocompleteKeyInput: NSViewRepresentable {
             super.viewDidMoveToWindow()
             stopMonitoring()
             guard window != nil else { return }
-            monitor = NSEvent.addAppLocalMonitor(matching: .keyDown) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self, let window, event.window === window, window.isKeyWindow,
                       WindowModalCoordinator.allowsInput(for: self) else { return event }
                 return handle(event) ? nil : event

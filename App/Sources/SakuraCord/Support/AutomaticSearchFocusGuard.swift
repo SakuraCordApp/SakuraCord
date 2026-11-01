@@ -21,7 +21,7 @@ final class AutomaticSearchFocusGuard {
     func arm() {
         isArmed = true
         if monitor == nil {
-            monitor = NSEvent.addAppLocalMonitor(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
                 self?.lastReaderInput = event.timestamp
                 return event
             }
