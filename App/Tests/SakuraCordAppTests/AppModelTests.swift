@@ -6460,7 +6460,7 @@ private actor ReactionMutationTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
@@ -7014,7 +7014,7 @@ private actor ChannelLoadTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         guard blocksNextEdit else {
             throw ChatProviderError.invalidRequest("Editing is not part of this test.")
         }
@@ -7211,7 +7211,7 @@ private actor LocalHistoryMemberTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
@@ -7972,7 +7972,7 @@ private actor StartupUnreadTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
@@ -8113,7 +8113,7 @@ private actor ForumVisitAcknowledgementTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
@@ -8237,7 +8237,7 @@ private actor ForumPaginationTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
@@ -8314,7 +8314,7 @@ private actor ThreadAccessRecoveryTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
@@ -8393,7 +8393,7 @@ private actor LinkedChannelNavigationTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 
@@ -8583,7 +8583,7 @@ private actor SuspendedBootstrapTestProvider: PendingCredentialChatProvider {
         )
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         guard var message = messagePage.messages.first(where: { $0.id == messageID }) else {
             throw ChatProviderError.invalidRequest("The synthetic message does not exist.")
         }
@@ -8747,7 +8747,7 @@ private actor VoiceMigrationTestProvider: ChatProvider {
         throw ChatProviderError.invalidRequest("Sending is not part of this test.")
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 

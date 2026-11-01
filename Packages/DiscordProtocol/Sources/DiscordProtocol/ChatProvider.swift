@@ -240,7 +240,7 @@ public protocol ChatProvider: Sendable {
     /// flushes pending uses. Returns what the server stored.
     func saveApplicationCommandFrecency(_ history: DiscordFrecencyHistory) async throws
         -> DiscordFrecencyHistory
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message
+    func edit(_ message: Message, content: String) async throws -> Message
     func delete(messageID: MessageID, channelID: ChannelID) async throws
     func acknowledge(
         channelID: ChannelID,

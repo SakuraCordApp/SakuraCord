@@ -17,11 +17,18 @@ extension SendMessageDraft {
 
 extension Message {
     /// An edit that omits `allowed_mentions` pings the replied user again, so a
-    /// reply that was sent without the ping keeps it off.
+    /// reply keeps the ping off unless it was sent with it. Discord lists the
+    /// replied user in `mentions` for the ping and for a mention in the text,
+    /// so only a mention without such a token shows the ping was on.
     var editAllowedMentionsPayload: JSONValue? {
-        guard replyTo != nil, let repliedAuthor = replyPreview?.author,
-              !mentionedUsers.contains(where: { $0.id == repliedAuthor.id })
-        else { return nil }
+        guard replyTo != nil else { return nil }
+        if let repliedID = replyPreview?.author.id,
+           mentionedUsers.contains(where: { $0.id == repliedID }),
+           !content.contains("<@\(repliedID.rawValue)>"),
+           !content.contains("<@!\(repliedID.rawValue)>")
+        {
+            return nil
+        }
         return .quietReplyAllowedMentions
     }
 }
