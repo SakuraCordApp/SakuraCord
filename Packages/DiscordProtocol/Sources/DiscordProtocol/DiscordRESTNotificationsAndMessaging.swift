@@ -637,10 +637,10 @@ extension DiscordRESTProvider {
         let dto: MessageDTO = try await request(
             "/channels/\(message.channelID)/messages/\(message.id)", method: "PATCH", body: body
         )
-        let message = try dto.domain()
-        cachedMessages[message.id] = message
-        continuation?.yield(.messageUpdated(message))
-        return message
+        let updated = try dto.domain()
+        cachedMessages[updated.id] = updated
+        continuation?.yield(.messageUpdated(updated))
+        return updated
     }
 
     public func delete(messageID: MessageID, channelID: ChannelID) async throws {
