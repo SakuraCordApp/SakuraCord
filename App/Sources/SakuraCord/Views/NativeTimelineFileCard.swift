@@ -22,7 +22,6 @@ struct NativeTimelineFileCard {
     let frame: CGRect
     let attachment: Attachment
     let isInBubble: Bool
-    var isAudio = false
 
     /// The name row's height; an audio card adds its player row below.
     static func height(isInBubble: Bool, isAudio: Bool = false) -> CGFloat {
@@ -98,7 +97,7 @@ struct NativeTimelineFileCard {
     /// link only its words; the rest of the card is its body.
     func part(at point: CGPoint, state: AttachmentDownloadStore.State?) -> Part? {
         // An audio card's player row belongs to its player.
-        guard frame.contains(point), !(isAudio && playerRowFrame.contains(point)) else { return nil }
+        guard frame.contains(point), !(hasPlayerRow && playerRowFrame.contains(point)) else { return nil }
         let button = buttonFrame
         if hypot(point.x - button.midX, point.y - button.midY) <= button.width / 2 { return .button }
         let detail = Self.detail(for: state, size: attachment.size)
@@ -125,6 +124,12 @@ struct NativeTimelineFileCard {
     /// An audio card's player row, under the name row and spanning the
     /// icon to the download button. It starts just under the icon, as
     /// Discord's controls follow its metadata.
+    /// Only a message's own audio card is laid out with a player row; a
+    /// component's audio file card keeps the plain card height.
+    var hasPlayerRow: Bool {
+        frame.height > Self.height(isInBubble: isInBubble) + 0.5
+    }
+
     var playerRowFrame: CGRect {
         CGRect(
             x: iconFrame.minX, y: nameRow.maxY - InterfaceScale.metric(2),

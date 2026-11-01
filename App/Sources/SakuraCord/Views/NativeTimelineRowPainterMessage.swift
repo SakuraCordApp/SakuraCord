@@ -511,8 +511,7 @@ extension NativeTimelineRowPainter {
         case .audio, .file:
             fileCard(
                 .init(
-                    frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil,
-                    isAudio: attachment.mediaKind == .audio
+                    frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil
                 ),
                 messageID: message.id,
                 bubbleRegion: layout.bubbleRegion,
