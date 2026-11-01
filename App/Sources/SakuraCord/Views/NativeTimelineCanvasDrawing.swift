@@ -357,7 +357,7 @@ extension NativeTimelineCanvasView {
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
-        let clearedTargets = pointer.clearHoverAndPressTargets()
+        let clearedTargets = clearPointerTargets()
         reactionHoverCoordinator.close()
         closeMessageProfilePopover()
         closeServerTagPopover()
@@ -474,7 +474,7 @@ extension NativeTimelineCanvasView {
             hoveredPollTarget = nil
             pollPopover?.close()
             reactionDetailsPopover?.close()
-            pointer.clearHoverAndPressTargets()
+            clearPointerTargets()
             reactionHoverCoordinator.close()
             closeMessageProfilePopover()
             closeServerTagPopover()
@@ -606,7 +606,7 @@ extension NativeTimelineCanvasView {
             closeComponentChoiceOverlay()
             closeMentionPopover()
             reactionPickerSource.frame = .zero
-            pointer.clearHoverAndPressTargets()
+            clearPointerTargets()
             removeAccessibilityProxies()
             removeActionCapsule()
             endEditing(commit: nil)

@@ -150,12 +150,14 @@ extension NativeTimelineCanvasView {
     ) {
         let destination = min(max(destination, 0), 1)
         if visualPressedComponentButton != target {
-            if let old = visualPressedComponentButton {
-                invalidateComponentButton(old)
-            }
+            let old = visualPressedComponentButton
             componentButtonPressAnimationTask?.cancel()
             componentButtonPressProgress = 0
             visualPressedComponentButton = target
+            if let old {
+                invalidateComponentButton(old)
+                positionComponentButtonEmoji(old)
+            }
         }
         if abs(componentButtonPressProgress - destination) < 0.001 {
             componentButtonPressAnimationDestination = nil
@@ -163,6 +165,7 @@ extension NativeTimelineCanvasView {
                 visualPressedComponentButton = nil
             }
             invalidateComponentButton(target)
+            positionComponentButtonEmoji(target)
             return
         }
         guard componentButtonPressAnimationDestination != destination else {
@@ -189,6 +192,7 @@ extension NativeTimelineCanvasView {
                 self.componentButtonPressProgress =
                     start + (destination - start) * progress
                 self.invalidateComponentButton(target)
+                self.positionComponentButtonEmoji(target)
                 if linear >= 1 {
                     self.componentButtonPressProgress = destination
                     self.componentButtonPressAnimationDestination = nil
@@ -199,11 +203,31 @@ extension NativeTimelineCanvasView {
                         self.visualPressedComponentButton = nil
                     }
                     self.invalidateComponentButton(target)
+                    self.positionComponentButtonEmoji(target)
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(8))
             }
         }
+    }
+
+    /// Clears hover and press state; a cancelled press also returns its
+    /// button's live emoji to rest.
+    @discardableResult
+    func clearPointerTargets() -> NativeTimelinePointerState.ClearedTargets {
+        let cleared = pointer.clearHoverAndPressTargets()
+        if let button = cleared.componentButton { positionComponentButtonEmoji(button) }
+        return cleared
+    }
+
+    /// A live button emoji follows its button's dip; other overlays stay put.
+    private func positionComponentButtonEmoji(_ target: NativeTimelineComponentButtonTarget) {
+        guard let item = items.first(where: { $0.messageID == target.messageID }),
+              animatedOverlayRoles(for: item.identifier).contains(where: { role in
+                  if case .componentButton(_, target.componentID) = role { true } else { false }
+              })
+        else { return }
+        positionAnimatedMediaOverlays()
     }
 
     func invalidateComponentButton(
