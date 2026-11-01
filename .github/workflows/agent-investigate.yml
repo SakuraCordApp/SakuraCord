@@ -44,26 +44,40 @@ jobs:
           persist-credentials: false
       - name: Build prompt
         run: node .agent-control/.github/agents/issue-context.mjs .agent-control/.github/agents/investigate.md "$RUNNER_TEMP/prompt.md" --triage
+      # Ubuntu's bubblewrap AppArmor profile and user-namespace restriction stop the
+      # sandbox from starting, which would leave the agent without a shell.
       - name: Install Claude Code
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap socat
+          sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           npm install -g @anthropic-ai/claude-code@2.1.316
+      # Sandboxed commands can read other processes' environments here, so the key
+      # stays out of every environment and is read only by Claude Code itself.
+      - name: Store the API key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mkdir -m 700 ~/.agent-secrets
+          printf '%s' "$ANTHROPIC_API_KEY" > ~/.agent-secrets/anthropic-key
       # Shell commands run sandboxed with no network and cannot write the checkout or
       # runner files, so the trusted post step and later step environment stay intact.
+      # A leading `//` marks an absolute path in permission rules.
       - name: Investigate with Claude
         env:
           GH_TOKEN: ""
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EFFORT: ${{ vars.AGENT_INVESTIGATE_EFFORT || 'high' }}
         run: |
-          settings=$(jq -n --arg workspace "$GITHUB_WORKSPACE" --arg temp "$RUNNER_TEMP" '{sandbox: {
+          secrets="$HOME/.agent-secrets"
+          settings=$(jq -n --arg workspace "$GITHUB_WORKSPACE" --arg temp "$RUNNER_TEMP" --arg secrets "$secrets" '{
+            apiKeyHelper: "cat \($secrets)/anthropic-key", sandbox: {
             enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false,
-            network: {allowedDomains: []}, filesystem: {denyWrite: [$workspace, $temp]},
-            credentials: {envVars: [{name: "ANTHROPIC_API_KEY", mode: "deny"}]}}}')
+            network: {allowedDomains: []}, filesystem: {denyWrite: [$workspace, $temp], denyRead: [$secrets]}}}')
           claude -p --model "$AGENT_MODEL" --effort "$EFFORT" --max-budget-usd 5 \
             --output-format json --no-session-persistence --strict-mcp-config \
             --tools "Bash,Read,Grep,Glob" --allowedTools Bash Read Grep Glob \
+            --disallowedTools "Read(/$secrets/**)" \
             --permission-mode dontAsk --add-dir "$RUNNER_TEMP" --settings "$settings" \
             --json-schema "$(cat .agent-control/.github/agents/investigation.schema.json)" \
             < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/claude.json"
