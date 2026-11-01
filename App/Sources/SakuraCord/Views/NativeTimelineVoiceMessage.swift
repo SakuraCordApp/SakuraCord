@@ -26,6 +26,11 @@ struct NativeTimelineVoiceMessageRegion {
 
     var playbackID: VoiceMessagePlaybackID { .message(messageID) }
 
+    /// The controls' frames as the pointer finds them, a little larger than drawn.
+    var playHitFrame: CGRect { playFrame.insetBy(dx: -4, dy: -4) }
+    var speedHitFrame: CGRect { speedFrame.insetBy(dx: -3, dy: -6) }
+    var waveformHitFrame: CGRect { waveformFrame.insetBy(dx: -4, dy: -6) }
+
     var source: VoiceMessagePlaybackStore.Source {
         attachment.url.isFileURL ? .local(attachment.url) : .remote(attachment.url)
     }
@@ -511,11 +516,11 @@ extension NativeTimelineCanvasView {
         let local = CGPoint(x: point.x, y: point.y - origin)
         guard region.frame.contains(local) else { return nil }
         let control: VoiceMessageControl
-        if region.playFrame.insetBy(dx: -4, dy: -4).contains(local) {
+        if region.playHitFrame.contains(local) {
             control = .play
-        } else if region.speedFrame.insetBy(dx: -3, dy: -6).contains(local) {
+        } else if region.speedHitFrame.contains(local) {
             control = .speed
-        } else if region.waveformFrame.insetBy(dx: -4, dy: -6).contains(local) {
+        } else if region.waveformHitFrame.contains(local) {
             control = .waveform
         } else {
             return nil

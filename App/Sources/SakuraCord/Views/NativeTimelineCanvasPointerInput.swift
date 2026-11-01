@@ -63,6 +63,7 @@ extension NativeTimelineCanvasView {
               displayedRowOrigin(at: index) < visibleRect.maxY
         {
             if layouts.indices.contains(index) {
+                installContentCursors(at: index, rowOrigin: displayedRowOrigin(at: index))
                 installTextCursorRects(at: index)
                 for codeBlock in codeBlockPointerTargets(at: index) {
                     addCursorRect(
@@ -134,12 +135,12 @@ extension NativeTimelineCanvasView {
 
     private func installReactionCursors(at index: Int, rowOrigin: CGFloat) {
         guard case let .message(row, _, _) = items[index] else { return }
-        let cursor: NSCursor = model?.canUpdateReactions(on: row.message) == true ? .arrow : .operationNotAllowed
+        let cursor: NSCursor = model?.canUpdateReactions(on: row.message) == true ? .pointingHand : .operationNotAllowed
         for region in layouts[index].reactionRegions {
             addCursorRect(region.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: cursor)
         }
         if let frame = layouts[index].addReactionFrame, model?.canCreateReactions(on: row.message) == true {
-            addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .arrow)
+            addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
         }
     }
 
