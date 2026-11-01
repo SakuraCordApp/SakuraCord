@@ -171,6 +171,10 @@ final class WorkspaceColumnsView: NSView {
     /// The columns the workspace last listed; others are leaving.
     private var listedColumnIDs: Set<String> = []
     private var supplementaryPaneFrameChanged: (CGRect) -> Void = { _ in }
+    /// What the columns were last given. Their hosting views take the
+    /// environment whole, colour scheme included, and a theme change
+    /// reaches this view's appearance without updating it here.
+    private var applied: (spec: WorkspaceColumnsHost, environment: EnvironmentValues)?
     private var reportedPaneFrame = CGRect.zero
     private var displayLink: CADisplayLink?
 
@@ -293,7 +297,16 @@ final class WorkspaceColumnsView: NSView {
         if isAnimating(at: now) { startMotion() }
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        guard let applied else { return }
+        apply(applied.spec, environment: applied.environment, animates: false)
+    }
+
     func apply(_ spec: WorkspaceColumnsHost, environment: EnvironmentValues, animates: Bool) {
+        applied = (spec, environment)
+        var environment = environment
+        environment.colorScheme = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
         let now = CACurrentMediaTime()
         supplementaryPaneFrameChanged = spec.supplementaryPaneFrameChanged
 
