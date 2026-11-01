@@ -274,11 +274,8 @@ extension NativeTimelineCanvasView {
         if let previousImage, !retakesSnapshot || visibleFrame.isEmpty {
             image = previousImage
         } else {
-            // The cover mask doesn't reach this drawing.
-            guard !visibleFrame.isEmpty, let bitmap = bitmapImageRepForCachingDisplay(in: frameInCanvas) else { return nil }
-            cacheDisplay(in: frameInCanvas, to: bitmap)
-            image = NSImage(size: frameInCanvas.size)
-            image.addRepresentation(bitmap)
+            guard !visibleFrame.isEmpty, let snapshot = cardSnapshot(of: frameInCanvas) else { return nil }
+            image = snapshot
         }
         return MediaViewerTransitionSource(
             itemID: itemID,
@@ -288,6 +285,33 @@ extension NativeTimelineCanvasView {
             cornerRadius: card.cornerRadius,
             fillsFrame: true
         )
+    }
+
+    /// What the canvas shows in `rect`, once pending drawing such as a
+    /// cleared highlight is done. Drawn from its layer: drawing the card
+    /// again misses it while the viewer covers it. The cover mask is lifted
+    /// for the render, which commits no frame.
+    private func cardSnapshot(of rect: CGRect) -> NSImage? {
+        guard let layer, let window else { return nil }
+        displayIfNeeded()
+        let scale = window.backingScaleFactor
+        let width = Int((rect.width * scale).rounded(.up)), height = Int((rect.height * scale).rounded(.up))
+        guard width > 0, height > 0, let context = ForumCardRasterizer.makeContext(
+            width: width, height: height, colorSpace: ForumCardRasterizer.defaultColorSpace
+        ) else { return nil }
+        let layerRect = convertToLayer(rect)
+        // The context's origin is at its bottom; the canvas's at its top.
+        context.scaleBy(x: scale, y: -scale)
+        context.translateBy(x: -layerRect.minX, y: -layerRect.maxY)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let mask = layer.mask
+        layer.mask = nil
+        layer.render(in: context)
+        layer.mask = mask
+        CATransaction.commit()
+        guard let image = context.makeImage() else { return nil }
+        return NSImage(cgImage: image, size: rect.size)
     }
 
     func mediaViewerPresentation(
