@@ -118,17 +118,16 @@ import Testing
         host.animationState.willRemove = { if dismissals == 0 { removalsBeforeDismissal += 1 } }
         host.requestDismissal()
         host.requestDismissal()
-        // What the modal covered scrolls and hovers while it animates away,
-        // while the modal still swallows clicks.
+        // What the modal covered takes input while it animates away.
         #expect(WindowModalCoordinator.allowsInput(for: window.contentView!))
-        #expect(host.hitTest(.zero) === host)
+        #expect(host.hitTest(.zero) == nil)
     }
     #expect(dismissals == 1)
     #expect(removalsBeforeDismissal == 1)
 }
 
 @MainActor
-@Test func `a closing modal keeps clicks, keys and Escape while the wheel and pointer reach below`() throws {
+@Test func `a closing modal passes clicks, keys and Escape to the modal it uncovers`() throws {
     let window = modalTestWindow()
     let coordinator = WindowModalCoordinator.coordinator(for: window)
     let parent = modalTestHost(in: window)
@@ -145,26 +144,12 @@ import Testing
     #expect(coordinator.filter(escape) == nil)
     #expect(child.isDismissing && parentEscapes == 0)
     #expect(coordinator.topmost === parent)
-    #expect(child.hitTest(.zero) === child)
     // Removing the closing modal from input leaves it above the parent.
     #expect(window.contentView!.subviews.last === child)
-    // While the child animates away, every app monitor and the views below
-    // see only the wheel and pointer movement; clicks and keys stay with it.
-    let click = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-    let move = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
-    let typing = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
-    let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 4, wheel2: 0, wheel3: 0).flatMap(NSEvent.init(cgEvent:)))
-    for held in [click, typing, escape] {
-        #expect(WindowModalCoordinator.closingModalHolds(held))
-        #expect(coordinator.filter(held) == nil)
-    }
-    #expect(!WindowModalCoordinator.closingModalHolds(move))
-    #expect(!WindowModalCoordinator.closingModalHolds(wheel))
-    #expect(parentEscapes == 0)
-    child.cancelPendingDismissal()
-    child.unregisterInput()
-    child.removeFromSuperview()
-    #expect(!WindowModalCoordinator.closingModalHolds(click))
+    // While the child animates away, it takes nothing: clicks reach the
+    // parent beneath it, and a second Escape goes to the parent.
+    #expect(child.hitTest(.zero) == nil)
+    #expect(parent.hitTest(.zero) != nil)
     #expect(coordinator.filter(escape) == nil)
     #expect(parentEscapes == 1)
 }

@@ -83,7 +83,7 @@ final class NativeTimelineInlinePlayer: NSView, AVPlayerViewDelegate {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         scrollMonitor = nil
         guard window != nil else { return }
-        scrollMonitor = NSEvent.addAppLocalMonitor(matching: .scrollWheel) { [weak self] event in
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             // Only wheel input that would reach this player: a dialog, which
             // sits beside the content view, or a viewer above it keeps its
             // own scrolling.
