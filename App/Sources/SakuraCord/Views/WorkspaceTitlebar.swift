@@ -16,6 +16,8 @@ final class WorkspaceColumnsGeometry {
         /// How far a full-width side chat has widened from the pane: 0 in the
         /// pane, 1 at full width.
         let widening: CGFloat
+        /// How far the column is in view: 0 out of it, 1 in place.
+        let reveal: CGFloat
     }
 
     static let shared = WorkspaceColumnsGeometry()
@@ -266,7 +268,10 @@ final class WorkspaceTitlebarView: NSView {
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         // The toolbar's search field outlives the workspace: it shows again
         // wherever the window goes next.
-        if newWindow !== window { fadeSearch(1) }
+        if newWindow !== window {
+            fadeSearch(1)
+            searchItemView?.showLeading(nil)
+        }
         super.viewWillMove(toWindow: newWindow)
     }
 
@@ -314,8 +319,11 @@ final class WorkspaceTitlebarView: NSView {
         // field does, beneath a thread pane, which covers it as it moves; a
         // full-width side chat leaves room for it, so it fades back as one
         // widens.
-        let searchCover = searchCoverMinX(geometry)
-        let searchAlpha = searchVisibility(geometry, coverMinX: searchCover)
+        let handOff = searchHandOff(geometry)
+        let searchCover = handOff == nil ? searchCoverMinX(geometry) : nil
+        let searchAlpha = handOff.map { max(0, 2 * $0.progress - 1) }
+            ?? searchVisibility(geometry, coverMinX: searchCover)
+        let leavingPaneAlpha = max(0, 1 - 2 * (handOff?.progress ?? 0))
         _ = searchItemView
         // Items stop before the field while it shows, or will once a pane
         // leaves; they never pass it to come back.
@@ -363,6 +371,7 @@ final class WorkspaceTitlebarView: NSView {
             if id == WorkspaceTitlebar.conversationID { maxX -= searchInset }
             let clipX = minX.rounded(.down)
             views.clip.frame = CGRect(x: clipX, y: 0, width: max(0, visibleMaxX - clipX), height: bounds.height)
+            views.clip.alphaValue = id == handOff?.paneID ? leavingPaneAlpha : 1
             place(
                 views,
                 width: maxX - clipX,
@@ -384,6 +393,22 @@ final class WorkspaceTitlebarView: NSView {
         let paneMinX = geometry.columns.lazy
             .filter { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }.map(\.minX).min()
         return paneMinX.map { $0 - ChatChromeMetrics.toolbarItemEdgeInset }
+    }
+
+    /// A thread pane over the search field leaving as a column slides over
+    /// it, such as the member list, which the field sits over, and how far
+    /// that column has arrived. The pane's items fade out over the first half
+    /// of its arrival and the field in over the second, so neither shows
+    /// through the other.
+    private func searchHandOff(
+        _ geometry: WorkspaceColumnsGeometry
+    ) -> (paneID: String, progress: CGFloat)? {
+        guard AppMotionPolicy.animates(.overlays), showsSearch else { return nil }
+        let columns = geometry.columns
+        guard let index = columns.firstIndex(where: { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }),
+              let front = columns[(index + 1)...].last(where: { !$0.isFullWidth && !$0.id.hasPrefix("side-thread") })
+        else { return nil }
+        return (columns[index].id, min(max(front.reveal, 0), 1))
     }
 
     /// Whether a thread pane covers the whole search field.

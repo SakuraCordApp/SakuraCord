@@ -701,7 +701,8 @@ final class WorkspaceColumnsView: NSView {
                     minX: frame.minX,
                     maxX: frame.maxX,
                     isFullWidth: island.column.isFullWidth,
-                    widening: island.column.isFullWidth ? widening : 0
+                    widening: island.column.isFullWidth ? widening : 0,
+                    reveal: island.reveal.value(at: time)
                 )
             }
         )
@@ -834,10 +835,10 @@ extension NSView {
         }()
         cover.frame = layer.bounds
         let path = CGMutablePath()
+        // In the mask's own space, which starts at the layer's bounds origin.
         for span in spans {
             path.addRect(CGRect(
-                x: layer.bounds.minX + span.lowerBound, y: layer.bounds.minY,
-                width: max(0, span.upperBound - span.lowerBound), height: layer.bounds.height
+                x: span.lowerBound, y: 0, width: max(0, span.upperBound - span.lowerBound), height: layer.bounds.height
             ))
         }
         cover.path = path
