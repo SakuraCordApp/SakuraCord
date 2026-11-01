@@ -590,18 +590,25 @@ final class WorkspaceColumnsView: NSView {
             setFrame(of: island.view, CGRect(x: minX, y: 0, width: width, height: bounds.height))
         }
         // Columns are translucent, so a column that leaves beneath others
-        // shows only where none of them has covered it yet, as the
-        // conversation does. A pane that left this way can come back at full
-        // width, uncovered.
-        var coverMinX = CGFloat.infinity
+        // shows only where none of them covers it yet, as the conversation
+        // does. A pane that left this way can come back at full width,
+        // uncovered.
+        var coveredSpans: [Range<CGFloat>] = []
         for island in islands.reversed() {
             guard !island.column.isFullWidth else {
-                island.view.showLeading(nil)
+                island.view.showSpans(nil)
                 continue
             }
-            let minX = island.view.frame.minX
-            island.view.showLeading(island.column.isDeparting ? coverMinX - minX : nil)
-            coverMinX = min(coverMinX, minX)
+            let frame = island.view.frame
+            let visible = coveredSpans.reduce([frame.minX ..< frame.maxX]) { spans, cover in
+                spans.flatMap { span in
+                    [span.lowerBound ..< min(span.upperBound, cover.lowerBound),
+                     max(span.lowerBound, cover.upperBound) ..< span.upperBound].filter { !$0.isEmpty }
+                }
+            }
+            island.view.showSpans(island.column.isDeparting
+                ? visible.map { ($0.lowerBound - frame.minX) ..< ($0.upperBound - frame.minX) } : nil)
+            coveredSpans += island.column.isDeparting ? visible : [frame.minX ..< frame.maxX]
         }
         // How far a widening side chat has covered the conversation.
         var recede: CGFloat = 0
@@ -801,9 +808,16 @@ extension NSView {
     /// mask of its own.
     @discardableResult
     func showLeading(_ width: CGFloat?) -> Bool {
+        showSpans(width.map { [0 ..< $0] })
+    }
+
+    /// Shows only `spans` of its width, as `showLeading` does.
+    @discardableResult
+    func showSpans(_ spans: [Range<CGFloat>]?) -> Bool {
         let mask = layer?.mask
         guard mask.map({ $0.name == Self.coverMaskName }) ?? true else { return false }
-        guard let width, width < bounds.width else {
+        let showsAll = spans.map { $0.count == 1 && $0[0].lowerBound <= 0 && $0[0].upperBound >= bounds.width } ?? true
+        guard let spans, !showsAll else {
             if mask != nil { layer?.mask = nil }
             return true
         }
@@ -811,14 +825,21 @@ extension NSView {
         guard let layer else { return false }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let cover = mask ?? {
-            let cover = CALayer()
+        let cover = (mask as? CAShapeLayer) ?? {
+            let cover = CAShapeLayer()
             cover.name = Self.coverMaskName
-            cover.backgroundColor = NSColor.black.cgColor
             layer.mask = cover
             return cover
         }()
-        cover.frame = CGRect(x: layer.bounds.minX, y: layer.bounds.minY, width: max(0, width), height: layer.bounds.height)
+        cover.frame = layer.bounds
+        let path = CGMutablePath()
+        for span in spans {
+            path.addRect(CGRect(
+                x: layer.bounds.minX + span.lowerBound, y: layer.bounds.minY,
+                width: max(0, span.upperBound - span.lowerBound), height: layer.bounds.height
+            ))
+        }
+        cover.path = path
         CATransaction.commit()
         return true
     }
