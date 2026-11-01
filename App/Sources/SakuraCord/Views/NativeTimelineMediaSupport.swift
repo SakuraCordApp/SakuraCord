@@ -449,9 +449,9 @@ final class NativeTimelineMediaStore {
         [UUID: Set<NativeTimelineMediaKey>] = [:]
     // Keep failures only while visible, so redraws cannot repeatedly fetch a
     // broken resource. Leaving and re-entering the viewport allows a retry,
-    // as does a fallback the key gains later: each failure keeps the URLs
-    // it tried.
-    private var failedKeys: [NativeTimelineMediaKey: [URL]] = [:]
+    // as does a URL the key offers later, such as a fallback: each key keeps
+    // every URL that failed for it.
+    private var failedKeys: [NativeTimelineMediaKey: Set<URL>] = [:]
     var loading: Set<NativeTimelineMediaKey> = []
     var loadingPriorities: [NativeTimelineMediaKey: MediaLoadPriority] = [:]
     var loadingTaskIDs: [NativeTimelineMediaKey: UUID] = [:]
@@ -645,13 +645,10 @@ final class NativeTimelineMediaStore {
         }
     }
 
-    /// Whether `key` failed with every URL it offers; one it gained since,
-    /// such as a fallback, is tried.
+    /// Whether every URL `key` offers has failed; one it gained since, such
+    /// as a fallback, is tried.
     private func hasFailed(_ key: NativeTimelineMediaKey) -> Bool {
-        guard let triedURLs = failedKeys[key] else { return false }
-        if triedURLs == key.loadURLs { return true }
-        failedKeys[key] = nil
-        return false
+        failedKeys[key].map { Set(key.loadURLs).isSubset(of: $0) } ?? false
     }
 
     func request(
@@ -720,7 +717,7 @@ final class NativeTimelineMediaStore {
             if let image {
                 cacheImage(image, for: key)
             } else if visibleKeysByOwner.values.contains(where: { $0.contains(key) }) {
-                failedKeys[key] = key.loadURLs
+                failedKeys[key, default: []].formUnion(key.loadURLs)
             }
             for completion in completions {
                 completion(image == nil ? .failed : .ready)
