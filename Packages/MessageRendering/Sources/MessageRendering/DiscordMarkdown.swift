@@ -94,10 +94,21 @@ public enum DiscordMarkdown {
             case codeComment
         }
 
-        public let lines: [Line]
+        /// What a file's code reads on when that isn't the appearance it is
+        /// drawn in, as on the media viewer's panel inside its dark chrome.
+        public enum CodeBackground: Hashable, Sendable {
+            case dark
+            case light
+        }
 
-        fileprivate init(lines: [Line]) {
+        public let lines: [Line]
+        /// Pins the code colours to that background; a message's own code
+        /// follows the appearance it is drawn in.
+        fileprivate let codeBackground: CodeBackground?
+
+        fileprivate init(lines: [Line], codeBackground: CodeBackground? = nil) {
             self.lines = lines
+            self.codeBackground = codeBackground
         }
     }
 
@@ -233,14 +244,16 @@ public enum DiscordMarkdown {
 
     /// A text file planned as one fenced block in `language`, so its lines are
     /// highlighted as a message's code block is, whatever fences it contains.
-    public static func appKitCodePlan(_ source: String, language: String?) -> AppKitPlan {
+    public static func appKitCodePlan(
+        _ source: String, language: String?, on background: AppKitPlan.CodeBackground
+    ) -> AppKitPlan {
         let language = language?.lowercased()
         return AppKitPlan(lines: source.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map {
             AppKitPlan.Line(
                 runs: codeRuns(String($1), language: language),
                 block: .code(language: language, isFirstLine: $0 == 0)
             )
-        })
+        }, codeBackground: background)
     }
 
     public static func appKitPlan(_ source: String) -> AppKitPlan {
@@ -372,7 +385,8 @@ public enum DiscordMarkdown {
         let metrics = BlockMetrics(
             baseFontSize: baseFontSize,
             usesMessageLineHeight: usesMessageLineHeight,
-            reservesCodeCopyButton: reservesCodeCopyButton
+            reservesCodeCopyButton: reservesCodeCopyButton,
+            codeAppearance: plan.codeBackground.flatMap { NSAppearance(named: $0 == .light ? .aqua : .darkAqua) }
         )
 
         var previousParagraph: NSParagraphStyle?
@@ -465,9 +479,13 @@ public enum DiscordMarkdown {
         in line: AppKitPlan.Line,
         metrics: BlockMetrics
     ) -> [NSAttributedString.Key: Any] {
+        var color = foregroundColor(for: line, semanticColor: run.color)
+        if let appearance = metrics.codeAppearance {
+            appearance.performAsCurrentDrawingAppearance { color = NSColor(cgColor: color.cgColor) ?? color }
+        }
         var attributes: [NSAttributedString.Key: Any] = [
             .font: appKitFont(block: line.block, traits: run.traits, metrics: metrics),
-            .foregroundColor: foregroundColor(for: line, semanticColor: run.color),
+            .foregroundColor: color,
         ]
         if run.traits.contains(.underline) {
             attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
@@ -1046,6 +1064,8 @@ public enum DiscordMarkdown {
         /// Discord's 18 px code line.
         var codeLineHeight: CGFloat { px(18) }
         let reservesCodeCopyButton: Bool
+        /// The appearance a pinned plan's colours resolve in.
+        let codeAppearance: NSAppearance?
         /// Room at the end of a code block's first lines for the timeline's
         /// copy button: a square filling a one-line block less a 4 px inset,
         /// kept that inset from the block's edge.
@@ -1053,9 +1073,13 @@ public enum DiscordMarkdown {
             reservesCodeCopyButton ? codeLineHeight + codeInset * 2 - px(4) : 0
         }
 
-        init(baseFontSize: CGFloat, usesMessageLineHeight: Bool, reservesCodeCopyButton: Bool) {
+        init(
+            baseFontSize: CGFloat, usesMessageLineHeight: Bool, reservesCodeCopyButton: Bool,
+            codeAppearance: NSAppearance?
+        ) {
             self.baseFontSize = baseFontSize
             self.reservesCodeCopyButton = reservesCodeCopyButton
+            self.codeAppearance = codeAppearance
             let font = NSFont.systemFont(ofSize: baseFontSize)
             bodyLineHeight = usesMessageLineHeight ? baseFontSize / 16 * 22 : 0
             emptyLineHeight = usesMessageLineHeight

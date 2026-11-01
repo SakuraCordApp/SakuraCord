@@ -428,9 +428,25 @@ struct MediaViewerTransitionSource {
     let itemID: String
     let image: NSImage
     let frameInWindow: CGRect
-    let visibleFrameInWindow: CGRect
+    var visibleFrameInWindow: CGRect
     let cornerRadius: CGFloat
     let fillsFrame: Bool
+}
+
+/// What the timeline shares with the viewer it opens: the timeline keeps the
+/// zoom's sources on its cards' live frames as it scrolls, and leaves out the
+/// card the viewer stands in for.
+@Observable
+final class MediaViewerTransitionLink {
+    var sources: [String: MediaViewerTransitionSource]
+    /// Takes the card the viewer stands in for, if any.
+    @ObservationIgnored var cover: (String?) -> Void = { _ in }
+    /// Runs in the transaction that removes the viewer.
+    @ObservationIgnored var release: () -> Void = {}
+
+    init(sources: [String: MediaViewerTransitionSource]) {
+        self.sources = sources
+    }
 }
 
 struct NativeTimelineMediaViewerPresentation: Identifiable {
@@ -444,7 +460,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
     let authorAvatarURL: URL?
     let timestamp: Date
     let timelinePreviewImages: [String: NSImage]
-    let transitionSources: [String: MediaViewerTransitionSource]
+    let transitionLink: MediaViewerTransitionLink
 
     init(
         id: UUID = UUID(),
@@ -469,7 +485,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         self.authorAvatarURL = authorAvatarURL
         self.timestamp = timestamp
         self.timelinePreviewImages = timelinePreviewImages
-        self.transitionSources = transitionSources
+        transitionLink = MediaViewerTransitionLink(sources: transitionSources)
     }
 
     func withTimelineMedia(
@@ -494,7 +510,7 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
     func withTransitionSource(
         _ transitionSource: MediaViewerTransitionSource
     ) -> Self {
-        var sources = transitionSources
+        var sources = transitionLink.sources
         sources[transitionSource.itemID] = transitionSource
         return withTimelineMedia(
             previewImages: timelinePreviewImages,

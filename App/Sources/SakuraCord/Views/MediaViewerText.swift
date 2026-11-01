@@ -8,6 +8,7 @@ import SwiftUI
 struct MediaViewerText: View {
     let url: URL
     let language: String
+    @Environment(\.mediaViewerWindowColorScheme) private var colorScheme
     @State private var text: NSAttributedString?
     @State private var failed = false
 
@@ -33,7 +34,7 @@ struct MediaViewerText: View {
             }
         }
         .mediaViewerTextPage()
-        .task(id: url) {
+        .task(id: TextKey(url: url, colorScheme: colorScheme)) {
             text = nil
             failed = false
             let loaded = try? await Self.text(of: url)
@@ -43,7 +44,10 @@ struct MediaViewerText: View {
                 failed = true
                 return
             }
-            text = Self.attributed(loaded.text, language: language, bytesLeft: loaded.bytesLeft)
+            text = Self.attributed(
+                loaded.text, language: language, bytesLeft: loaded.bytesLeft,
+                on: colorScheme == .light ? .light : .dark
+            )
         }
     }
 
@@ -95,7 +99,15 @@ struct MediaViewerText: View {
         }
     }
 
-    private static func attributed(_ text: String, language: String, bytesLeft: Int) -> NSAttributedString {
+    /// The page follows the window's appearance, so the text is redrawn when it changes.
+    private struct TextKey: Equatable {
+        let url: URL
+        let colorScheme: ColorScheme
+    }
+
+    private static func attributed(
+        _ text: String, language: String, bytesLeft: Int, on background: DiscordMarkdown.AppKitPlan.CodeBackground
+    ) -> NSAttributedString {
         let notice = bytesLeft > 0
             ? "\n\n… \(NativeTimelineFileCard.sizeText(bytesLeft)) more. Download the file to see all of it."
             : ""
@@ -103,11 +115,11 @@ struct MediaViewerText: View {
         guard text.utf8.count <= highlightLimit else {
             return NSAttributedString(string: text + notice, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: baseFontSize, weight: .regular),
-                .foregroundColor: NSColor.white,
+                .foregroundColor: NSColor.labelColor,
             ])
         }
         return NativeTimelineCoreText.scaledMarkdown(
-            DiscordMarkdown.appKitCodePlan(text + notice, language: language), baseFontSize: baseFontSize
+            DiscordMarkdown.appKitCodePlan(text + notice, language: language, on: background), baseFontSize: baseFontSize
         )
     }
 }
@@ -133,11 +145,10 @@ struct MediaViewerTextContent: NSViewRepresentable {
 }
 
 extension View {
-    /// The page text files and rich text read on: as wide as it reads well,
-    /// as tall as the stage, on the code block's background.
+    /// The page text files, rich text and documents read on: as wide as it
+    /// reads well and as tall as the stage.
     func mediaViewerTextPage() -> some View {
         frame(maxWidth: InterfaceScale.metric(960), maxHeight: .infinity)
-            .background(Color(nsColor: NativeTimelineRowPainter.discordCodeBackgroundColor))
-            .clipShape(.rect(cornerRadius: MediaViewerStage.contentCornerRadius, style: .continuous))
+            .mediaViewerPanel()
     }
 }

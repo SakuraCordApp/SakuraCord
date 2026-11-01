@@ -595,7 +595,7 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
         // immediately, without closing and recreating the popover.
         private func installOutsideClickHandling() {
             guard outsideClickHandler != nil else { return }
-            outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            outsideClickMonitor = NSEvent.addAppLocalMonitor(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 let consumed = MainActor.assumeIsolated {
                     guard let self, let popover = self.popover, popover.isShown,
                           !self.isInsidePopover(event.window, popover: popover),

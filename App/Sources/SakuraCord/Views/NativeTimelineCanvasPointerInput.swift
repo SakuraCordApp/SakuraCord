@@ -1066,7 +1066,7 @@ extension NativeTimelineCanvasView {
 
     func installReactionMouseMonitor() {
         guard pointer.reactionMouseMonitor == nil else { return }
-        pointer.reactionMouseMonitor = NSEvent.addLocalMonitorForEvents(
+        pointer.reactionMouseMonitor = NSEvent.addAppLocalMonitor(
             matching: .leftMouseDown
         ) { [weak self] event in
             guard let self,
