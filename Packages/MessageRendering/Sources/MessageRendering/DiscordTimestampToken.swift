@@ -34,13 +34,13 @@ public struct DiscordTimestampToken: Hashable, Sendable {
     }
 
     public var rawToken: String { "<t:\(seconds):\(style.rawValue)>" }
+    public var date: Date { Date(timeIntervalSince1970: TimeInterval(seconds)) }
 
     public func formatted(
         locale: Locale = .autoupdatingCurrent,
         timeZone: TimeZone = .autoupdatingCurrent,
         relativeTo now: Date = .now
     ) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(seconds))
         if style == .relative {
             let formatter = RelativeDateTimeFormatter()
             formatter.locale = locale

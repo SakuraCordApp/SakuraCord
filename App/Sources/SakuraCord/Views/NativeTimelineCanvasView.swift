@@ -121,6 +121,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         let region: NativeTimelineTextRegion
         let characterIndex: Int
         let rawToken: String
+        let isTimestamp: Bool
         let frame: CGRect
     }
 
@@ -307,6 +308,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
+    let timestampHoverCoordinator =
+        StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
+    /// A press dismisses the hovered timestamp's label until another is hovered.
+    var dismissedTimestampHover: NativeTimelineMentionHover?
     var visibleReactionCounts: [ReactionCountKey: Int] = [:]
     var previouslyVisibleReactionMessageIDs: Set<MessageID> = []
     var activeReactionCountAnimations:

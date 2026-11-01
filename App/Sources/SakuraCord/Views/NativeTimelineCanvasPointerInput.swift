@@ -173,7 +173,7 @@ extension NativeTimelineCanvasView {
                 )
             }
         }
-        for mention in mentionPointerRegions(at: index) {
+        for mention in mentionPointerRegions(at: index) where !mention.isTimestamp {
             addCursorRect(mention.frame, cursor: .pointingHand)
         }
         for selectable in linkPointerTextRegions(for: item, layout: layout) {
@@ -215,7 +215,11 @@ extension NativeTimelineCanvasView {
               ] as? Int
         else { return }
         let point = convert(event.locationInWindow, from: nil)
-        guard !actionCapsuleContains(point) else { return }
+        guard !actionCapsuleContains(point) else {
+            // The capsule covers the row's text, so its mentions stop being hovered.
+            setHoveredMention(nil)
+            return
+        }
         setHoveredRow(index)
         setHoveredPollTarget(pollPointerHit(at: point)?.target)
         setHoveredCompactTimestampRow(
@@ -262,7 +266,11 @@ extension NativeTimelineCanvasView {
             return
         }
         let point = convert(event.locationInWindow, from: nil)
-        guard !actionCapsuleContains(point) else { return }
+        guard !actionCapsuleContains(point) else {
+            // The capsule covers the row's text, so its mentions stop being hovered.
+            setHoveredMention(nil)
+            return
+        }
         setHoveredPollTarget(pollPointerHit(at: point)?.target)
         updateVoiceMessageHover(at: point)
         synchronizeHoveredRow(at: point)
@@ -398,6 +406,7 @@ extension NativeTimelineCanvasView {
         guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
+        dismissTimestampHover()
         let point = convert(event.locationInWindow, from: nil)
         pressedActivationTarget = nil
         if beginVoiceMessagePress(at: point) {
@@ -1204,7 +1213,11 @@ extension NativeTimelineCanvasView {
               window?.isKeyWindow == true
         else { return }
         let point = currentMouseLocationInCanvas()
-        guard !actionCapsuleContains(point) else { return }
+        guard !actionCapsuleContains(point) else {
+            // The capsule covers the row's text, so its mentions stop being hovered.
+            setHoveredMention(nil)
+            return
+        }
         synchronizeHoveredRow(at: point)
         setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
         setHoveredCompactTimestampRow(
@@ -1377,11 +1390,12 @@ extension NativeTimelineCanvasView {
                 value: selectable.value,
                 framesetter: selectable.framesetter,
                 frame: selectable.frame
-            ).filter { $0.presentation.isInteractive }.map { mention in
+            ).filter { $0.presentation.isInteractive || $0.presentation.isTimestamp }.map { mention in
                 MentionPointerRegion(
                     region: selectable.region,
                     characterIndex: mention.characterIndex,
                     rawToken: mention.presentation.rawToken,
+                    isTimestamp: mention.presentation.isTimestamp,
                     frame: mention.frame.offsetBy(
                         dx: 0,
                         dy: rowOrigin
