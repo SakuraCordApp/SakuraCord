@@ -311,8 +311,9 @@ final class WorkspaceTitlebarView: NSView {
         let fullWidth = geometry.columns.last(where: \.isFullWidth)
         let inset = ChatChromeMetrics.toolbarItemEdgeInset
         // Search sits at the window's trailing edge, as the toolbar's own
-        // field does. A thread pane covers it as it opens and uncovers it as
-        // it leaves; widening, it fades back.
+        // field does, beneath a thread pane, which covers it as it moves; a
+        // full-width side chat leaves room for it, so it fades back as one
+        // widens.
         let searchCover = searchCoverMinX(geometry)
         let searchAlpha = searchVisibility(geometry, coverMinX: searchCover)
         _ = searchItemView
@@ -376,13 +377,19 @@ final class WorkspaceTitlebarView: NSView {
     }
 
     /// Where a thread pane in front of the search field begins, in window
-    /// coordinates, less an item inset. The field shows only before it: its
-    /// glass beneath the pane's translucent items showed through them as the
-    /// pane moved, and the items' glass refracts what lies just beside it.
+    /// coordinates, less an item inset: the pane's items are translucent,
+    /// and their glass refracts what lies just beside it.
     private func searchCoverMinX(_ geometry: WorkspaceColumnsGeometry) -> CGFloat? {
         guard AppMotionPolicy.animates(.overlays) else { return nil }
-        let paneMinX = geometry.columns.filter { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }.map(\.minX).min()
+        let paneMinX = geometry.columns.lazy
+            .filter { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }.map(\.minX).min()
         return paneMinX.map { $0 - ChatChromeMetrics.toolbarItemEdgeInset }
+    }
+
+    /// Whether a thread pane covers the whole search field.
+    private func coversSearch(at coverMinX: CGFloat?) -> Bool {
+        guard let coverMinX, let fieldMinX = searchFieldMinX else { return false }
+        return coverMinX <= convert(CGPoint(x: fieldMinX, y: 0), to: nil).x
     }
 
     private func coverSearch(at coverMinX: CGFloat?) {
@@ -406,10 +413,7 @@ final class WorkspaceTitlebarView: NSView {
             }
             return hidden ? 0 : 1
         }
-        if let coverMinX, let fieldMinX = searchFieldMinX,
-           coverMinX <= convert(CGPoint(x: fieldMinX, y: 0), to: nil).x {
-            return 0
-        }
+        if coversSearch(at: coverMinX) { return 0 }
         var covered: CGFloat = 0
         for column in geometry.columns where column.id.hasPrefix("side-thread") && column.isFullWidth {
             covered = max(covered, 1 - column.widening)
@@ -505,8 +509,11 @@ final class WorkspaceTitlebarView: NSView {
         guard let toolbar = notification.object as? NSToolbar, toolbar === window?.toolbar else { return }
         // The re-hosted field draws in its new glass before it can be placed
         // below: keep it out of sight until then if a pane covers it.
+        // The field being replaced may already be gone, leaving its place
+        // unknown.
+        let coverMinX = searchCoverMinX(WorkspaceColumnsGeometry.shared)
         if let item = notification.userInfo?["item"] as? NSSearchToolbarItem,
-           searchCoverMinX(WorkspaceColumnsGeometry.shared) != nil {
+           coverMinX != nil, searchFieldMinX == nil || coversSearch(at: coverMinX) {
             item.searchField.alphaValue = 0
         }
         placeGroups()

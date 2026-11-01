@@ -591,18 +591,14 @@ final class WorkspaceColumnsView: NSView {
         }
         // Columns are translucent, so a column that leaves beneath one that
         // arrives shows only where the arriving one has not covered it yet,
-        // as the conversation does, rather than showing through it.
+        // as the conversation does. A pane that left this way can come back
+        // at full width, uncovered.
         var coverMinX = CGFloat.infinity
         for island in islands.reversed() {
-            if island.column.isFullWidth {
-                // A pane left beneath another can come back at full width.
-                island.view.showLeading(nil)
-            } else if island.column.isDeparting {
-                island.view.showLeading(coverMinX - island.view.frame.minX)
-            } else {
-                island.view.showLeading(nil)
-                coverMinX = min(coverMinX, island.view.frame.minX)
-            }
+            let isPane = !island.column.isFullWidth
+            let leaves = isPane && island.column.isDeparting
+            island.view.showLeading(leaves ? coverMinX - island.view.frame.minX : nil)
+            if isPane, !leaves { coverMinX = min(coverMinX, island.view.frame.minX) }
         }
         // How far a widening side chat has covered the conversation.
         var recede: CGFloat = 0
@@ -802,21 +798,24 @@ extension NSView {
     /// mask of its own.
     @discardableResult
     func showLeading(_ width: CGFloat?) -> Bool {
-        let ownsMask = layer?.mask.map { $0.name == Self.coverMaskName } ?? true
-        guard ownsMask else { return false }
+        let mask = layer?.mask
+        guard mask.map({ $0.name == Self.coverMaskName }) ?? true else { return false }
         guard let width, width < bounds.width else {
-            layer?.mask = nil
+            if mask != nil { layer?.mask = nil }
             return true
         }
-        wantsLayer = true
+        if !wantsLayer { wantsLayer = true }
         guard let layer else { return false }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let mask = layer.mask ?? CALayer()
-        mask.name = Self.coverMaskName
-        mask.backgroundColor = NSColor.black.cgColor
-        mask.frame = CGRect(x: layer.bounds.minX, y: layer.bounds.minY, width: max(0, width), height: layer.bounds.height)
-        layer.mask = mask
+        let cover = mask ?? {
+            let cover = CALayer()
+            cover.name = Self.coverMaskName
+            cover.backgroundColor = NSColor.black.cgColor
+            layer.mask = cover
+            return cover
+        }()
+        cover.frame = CGRect(x: layer.bounds.minX, y: layer.bounds.minY, width: max(0, width), height: layer.bounds.height)
         CATransaction.commit()
         return true
     }
