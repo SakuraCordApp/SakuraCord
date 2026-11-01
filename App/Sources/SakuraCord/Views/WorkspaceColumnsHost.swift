@@ -702,7 +702,8 @@ final class WorkspaceColumnsView: NSView {
                     maxX: frame.maxX,
                     isFullWidth: island.column.isFullWidth,
                     widening: island.column.isFullWidth ? widening : 0,
-                    reveal: island.reveal.value(at: time)
+                    reveal: island.reveal.value(at: time),
+                    isDeparting: island.column.isDeparting
                 )
             }
         )

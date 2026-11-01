@@ -18,6 +18,8 @@ final class WorkspaceColumnsGeometry {
         let widening: CGFloat
         /// How far the column is in view: 0 out of it, 1 in place.
         let reveal: CGFloat
+        /// Whether the column is leaving the workspace.
+        let isDeparting: Bool
     }
 
     static let shared = WorkspaceColumnsGeometry()
@@ -406,7 +408,9 @@ final class WorkspaceTitlebarView: NSView {
         guard AppMotionPolicy.animates(.overlays), showsSearch else { return nil }
         let columns = geometry.columns
         guard let index = columns.firstIndex(where: { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }),
-              let front = columns[(index + 1)...].last(where: { !$0.isFullWidth && !$0.id.hasPrefix("side-thread") })
+              let front = columns[(index + 1)...].last(where: {
+                  !$0.isFullWidth && !$0.isDeparting && !$0.id.hasPrefix("side-thread")
+              })
         else { return nil }
         return (columns[index].id, min(max(front.reveal, 0), 1))
     }
