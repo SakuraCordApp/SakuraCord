@@ -373,7 +373,7 @@ final class WorkspaceTitlebarView: NSView {
             if id == WorkspaceTitlebar.conversationID { maxX -= searchInset }
             let clipX = minX.rounded(.down)
             views.clip.frame = CGRect(x: clipX, y: 0, width: max(0, visibleMaxX - clipX), height: bounds.height)
-            views.clip.alphaValue = id == handOff?.paneID ? leavingPaneAlpha : 1
+            views.clip.alphaValue = handOff?.paneIDs.contains(id) == true ? leavingPaneAlpha : 1
             place(
                 views,
                 width: maxX - clipX,
@@ -397,22 +397,24 @@ final class WorkspaceTitlebarView: NSView {
         return paneMinX.map { $0 - ChatChromeMetrics.toolbarItemEdgeInset }
     }
 
-    /// A thread pane over the search field leaving as a column slides over
-    /// it, such as the member list, which the field sits over, and how far
-    /// that column has arrived. The pane's items fade out over the first half
+    /// The thread panes over the search field leaving as a column slides over
+    /// them, such as the member list, which the field sits over, and how far
+    /// that column has arrived. The panes' items fade out over the first half
     /// of its arrival and the field in over the second, so neither shows
     /// through the other.
     private func searchHandOff(
         _ geometry: WorkspaceColumnsGeometry
-    ) -> (paneID: String, progress: CGFloat)? {
+    ) -> (paneIDs: Set<String>, progress: CGFloat)? {
         guard AppMotionPolicy.animates(.overlays), showsSearch else { return nil }
         let columns = geometry.columns
-        guard let index = columns.firstIndex(where: { $0.id.hasPrefix("side-thread") && !$0.isFullWidth }),
-              let front = columns[(index + 1)...].last(where: {
-                  !$0.isFullWidth && !$0.isDeparting && !$0.id.hasPrefix("side-thread")
-              })
+        let isThreadPane = { (column: WorkspaceColumnsGeometry.Column) in
+            column.id.hasPrefix("side-thread") && !column.isFullWidth
+        }
+        guard let frontIndex = columns.lastIndex(where: { !$0.isFullWidth && !$0.isDeparting && !isThreadPane($0) }),
+              !columns[(frontIndex + 1)...].contains(where: isThreadPane)
         else { return nil }
-        return (columns[index].id, min(max(front.reveal, 0), 1))
+        let paneIDs = Set(columns[..<frontIndex].filter(isThreadPane).map(\.id))
+        return paneIDs.isEmpty ? nil : (paneIDs, min(max(columns[frontIndex].reveal, 0), 1))
     }
 
     /// Whether a thread pane covers the whole search field.
