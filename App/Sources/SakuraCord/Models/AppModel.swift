@@ -156,6 +156,8 @@ final class AppModel {
     private(set) var quickSwitcherGuildMemberAliases: [GuildID: [UserID: String]] = [:]
     private(set) var messagePresentationChannelsByID: [ChannelID: Channel] = [:]
     private(set) var messagePresentationChannels: [Channel] = []
+    /// Conversations waiting in Message Requests, which stay read-only.
+    private(set) var messageRequestChannelIDs: Set<ChannelID> = []
     private(set) var activeJoinedThreads: [MessageThreadSummary] = []
     private(set) var knownThreadIDs: Set<ChannelID> = []
     private(set) var guildIDsWithResourceChannels: Set<GuildID> = []
@@ -730,7 +732,7 @@ final class AppModel {
                 || channel.kind == .groupDirectMessage
         else { return false }
         // A message request takes no calls until it is accepted; call setup
-        // can hold an older channel value, so read the current state.
+        // can hold an older channel value, so read the current set.
         return !awaitsMessageRequestDecision(in: channel.id) && conversationAccess(for: channel).isReadable
     }
 
@@ -1233,6 +1235,13 @@ extension AppModel {
             messagePresentationChannels.map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
+        let requestChannelIDs = Set(messagePresentationChannels.lazy.filter { $0.messageRequest != nil }.map(\.id))
+        if requestChannelIDs != messageRequestChannelIDs {
+            messageRequestChannelIDs = requestChannelIDs
+            // Timeline layouts, including retained ones, draw a request's
+            // controls disabled until it is decided.
+            invalidateTimelinePresentation()
+        }
         activeJoinedThreads = snapshot?.activeJoinedThreads ?? []
         knownThreadIDs = Set(threads.map(\.id)).union(activeJoinedThreads.map(\.id))
         guildIDsWithResourceChannels = Set((snapshot?.channels ?? []).compactMap { channel in

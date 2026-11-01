@@ -269,10 +269,7 @@ extension AppModel {
     }
 
     func acceptPrivateCall(_ call: PrivateCall) async {
-        guard let channel = snapshot?.channels.first(where: { $0.id == call.channelID })
-                ?? visibleChannels.first(where: { $0.id == call.channelID }),
-              channel.messageRequest == nil
-        else { return }
+        guard let channel = knownRootChannel(call.channelID), channel.messageRequest == nil else { return }
 
         await performPrivateCallAction(in: call.channelID) { generation in
             if self.selectedChannelID != channel.id {

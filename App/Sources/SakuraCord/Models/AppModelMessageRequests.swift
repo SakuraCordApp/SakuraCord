@@ -13,7 +13,7 @@ extension AppModel {
     /// Whether the conversation waits in Message Requests, which stays
     /// read-only until it is accepted.
     func awaitsMessageRequestDecision(in channelID: ChannelID) -> Bool {
-        knownRootChannel(channelID)?.messageRequest != nil
+        messageRequestChannelIDs.contains(channelID)
     }
 
     /// Whether the user's DM waits in Message Requests, which takes no reply.
@@ -25,10 +25,6 @@ extension AppModel {
 
     var isMessageRequestsPresented: Bool {
         isFriendsPresented && friends.messageRequestsTab != nil
-    }
-
-    nonisolated static func messageRequestStates(_ channels: [Channel]) -> [ChannelID: MessageRequestStatus] {
-        Dictionary(channels.compactMap { channel in channel.messageRequest.map { (channel.id, $0) } }) { first, _ in first }
     }
 
     func openMessageRequests() {

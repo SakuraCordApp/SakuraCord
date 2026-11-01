@@ -19,12 +19,12 @@ extension DiscordRESTProvider {
             let setsPollVote = method == "PUT" && parts.count == 6
                 && parts[2] == "polls" && parts[4] == "answers" && parts[5] == "@me"
             let ringsCall = method == "POST" && parts.count == 4 && parts[2] == "call" && parts[3] == "ring"
-            if createsContent || changesReaction || editsContent || setsPollVote || ringsCall {
+            let communicates = createsContent || changesReaction || editsContent
+            if communicates || setsPollVote || ringsCall {
                 try requireAcceptedMessageRequest(in: channelID)
             }
             // A timeout still lets a member withdraw a vote.
-            if createsContent || changesReaction || editsContent
-                || (setsPollVote && body?["answer_ids"] != .array([])) {
+            if communicates || (setsPollVote && body?["answer_ids"] != .array([])) {
                 try requireGuildCommunication(in: channelID)
             }
         } else if path == "/interactions", method == "POST",

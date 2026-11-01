@@ -743,12 +743,6 @@ extension AppModel {
                 }
             }
         }
-        // Timeline layouts, including retained ones for conversations no
-        // longer open, draw a request's controls disabled until it is decided.
-        if guildID == nil, Self.messageRequestStates(previousChannels.filter { $0.guildID == nil })
-            != Self.messageRequestStates(channels) {
-            invalidateTimelinePresentation()
-        }
         readState.replaceChannels(in: guildID, with: channels)
         refreshUnreadAccessAfterChannelsChanged(
             guildID: guildID,
