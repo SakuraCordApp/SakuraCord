@@ -66,6 +66,12 @@ public struct ChannelPermissionOverwrite: Codable, Hashable, Sendable {
     }
 }
 
+/// Discord files a non-friend's DM under Message Requests, or under Spam
+/// when its filter flags the sender.
+public enum MessageRequestStatus: String, Codable, Hashable, Sendable {
+    case pending, spam
+}
+
 public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public let id: ChannelID
     public var guildID: GuildID?
@@ -85,6 +91,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public var isAgeRestricted: Bool
     public var recipients: [User]
     public var blockedUserWarningDismissed: Bool
+    /// Set while a DM from a non-friend waits in Message Requests.
+    public var messageRequest: MessageRequestStatus?
     public var permissionOverwrites: [ChannelPermissionOverwrite]?
     public var memberListID: String?
     public var lastMessageID: MessageID?
@@ -120,6 +128,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         isAgeRestricted: Bool = false,
         recipients: [User] = [],
         blockedUserWarningDismissed: Bool = false,
+        messageRequest: MessageRequestStatus? = nil,
         permissionOverwrites: [ChannelPermissionOverwrite]? = nil,
         memberListID: String? = nil,
         lastMessageID: MessageID? = nil,
@@ -154,6 +163,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.isAgeRestricted = isAgeRestricted
         self.recipients = recipients
         self.blockedUserWarningDismissed = blockedUserWarningDismissed
+        self.messageRequest = messageRequest
         self.permissionOverwrites = permissionOverwrites
         self.memberListID = memberListID
         self.lastMessageID = lastMessageID
@@ -181,7 +191,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, guildID, name, hasExplicitName, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
-        case isAgeRestricted, blockedUserWarningDismissed
+        case isAgeRestricted, blockedUserWarningDismissed, messageRequest
         case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, memberListID, lastMessageID, lastPinTimestamp
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
@@ -209,6 +219,7 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         isAgeRestricted = try values.decodeIfPresent(Bool.self, forKey: .isAgeRestricted) ?? false
         recipients = try values.decodeIfPresent([User].self, forKey: .recipients) ?? []
         blockedUserWarningDismissed = try values.decodeIfPresent(Bool.self, forKey: .blockedUserWarningDismissed) ?? false
+        messageRequest = try values.decodeIfPresent(MessageRequestStatus.self, forKey: .messageRequest)
         permissionOverwrites = try values.decodeIfPresent(
             [ChannelPermissionOverwrite].self, forKey: .permissionOverwrites
         )

@@ -741,7 +741,10 @@ final class AppModel {
             guard selectedChannelID != oldValue else { return }
             channelVoiceMessageComposer.discard(playback: voiceMessagePlayback)
             // Only a conversation in Direct Messages replaces its Friends home.
-            if selectedChannelID != nil, selectedGuildID == nil { friends.isPresented = false }
+            if selectedChannelID != nil, selectedGuildID == nil {
+                friends.isPresented = false
+                friends.messageRequestsTab = nil
+            }
             let keepsGuildPage = selectionChangeKeepsGuildPage
             if !keepsGuildPage {
                 onboarding.presentedGuildID = nil

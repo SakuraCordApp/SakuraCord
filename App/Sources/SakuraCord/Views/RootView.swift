@@ -664,7 +664,9 @@ private struct ChatRootView: View {
         ToolbarSpacer(.fixed, placement: .navigation)
 
         if !model.isSwitchingAccounts {
-            if model.isFriendsPresented {
+            if model.isMessageRequestsPresented {
+                MessageRequestsToolbarTabs(model: model)
+            } else if model.isFriendsPresented {
                 FriendsToolbarSections(model: model)
             }
         }
@@ -1239,6 +1241,7 @@ private struct ChatRootView: View {
             return .init(title: page == .guide ? "Server Guide" : model.customizationTitle(in: model.selectedGuildID),
                          systemImage: page == .guide ? "signpost.right" : "slider.horizontal.3")
         }
+        if model.isMessageRequestsPresented { return .init(title: "Message Requests", systemImage: "envelope.fill") }
         if model.isFriendsPresented { return .init(title: "Friends", systemImage: "person.2.fill") }
         return channelToolbarPresentation
     }
@@ -1853,6 +1856,26 @@ private struct FriendsToolbarSections: ToolbarContent {
         case .all: "All"
         case .pending: model.incomingFriendRequestCount > 0 ? "Pending (\(model.incomingFriendRequestCount))" : "Pending"
         case .addFriend: "Add Friend"
+        }
+    }
+}
+
+/// Message Requests' tabs take the Friends categories' place.
+private struct MessageRequestsToolbarTabs: ToolbarContent {
+    let model: AppModel
+
+    var body: some ToolbarContent {
+        ToolbarItem(id: "message-requests-tabs", placement: .principal) {
+            let spamCount = model.messageRequestChannels.count { $0.messageRequest == .spam }
+            Picker("Message Requests", selection: Binding(
+                get: { model.friends.messageRequestsTab ?? .requests },
+                set: { model.friends.messageRequestsTab = $0 }
+            )) {
+                Text("Requests").tag(MessageRequestsTab.requests)
+                Text(spamCount > 0 ? "Spam (\(spamCount))" : "Spam").tag(MessageRequestsTab.spam)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
     }
 }

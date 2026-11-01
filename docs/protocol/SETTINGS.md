@@ -220,6 +220,41 @@ A failure keeps the DM and appears in the workspace error alert. A new message
 makes Discord send `CHANNEL_CREATE`, which the ordinary private-channel handling
 adds back to the list.
 
+## Message requests
+
+Researched on 2026-11-01 from the official production web bundle (web stable
+**657850**) plus a live capture of both authorized accounts' READY. Neither
+account held a request, and a DM between two accounts that already share a 1:1
+channel never becomes one, so accept and ignore were not observed live. Pinned
+Paicord and pinned Swiftcord v1 (with its DiscordKit) have no equivalent.
+
+READY `private_channels` and channel events carry `is_message_request`,
+`is_message_request_timestamp` and `is_spam`. Discord's stores file a channel
+under Spam when `is_spam` is set, otherwise under Requests when
+`is_message_request` is set; both leave the DM list. There is no dedicated
+Gateway dispatch. A `CHANNEL_UPDATE` that omits both flags keeps the known
+state; an explicit `false` clears it.
+
+The Direct Messages home shows **Message Requests** under Friends only while a
+request or spam conversation exists. Its badge counts requests, not spam. The
+page has Requests and Spam (count when non-zero) tabs, newest activity first,
+with Discord's empty-state copy. **Accept DM** sends one
+`PUT /channels/{channel}/recipients/@me` with `{"consent_status":2}` (ACCEPTED)
+and moves the conversation into the list. **Ignore** sends one bodyless
+`DELETE /channels/{channel}/recipients/@me` and removes it without notifying
+the sender. Spam offers Accept DM only. Both share Close DM's provider path:
+never replayed, applied unless a Gateway event or session reset changed the DM
+meanwhile, and a failure keeps it and appears in the workspace error alert.
+Opening a request shows its messages with these decisions in place of the
+composer.
+
+Not implemented: Report Spam and the not-spam report (their report endpoint was
+not traced), click-to-preview through
+`GET /users/@me/message-requests/supplemental-data`, the staff-only batch
+reject, and the GB-only "Are you sure you know this person?" confirmation. Not
+verified live: the Gateway events that follow a decision, whether Ignore also
+changes the relationship, and whether opening a request acknowledges it.
+
 The request follows the public
 [Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
 route and the first-party `closePrivateChannel` call analysed for Leave Group.

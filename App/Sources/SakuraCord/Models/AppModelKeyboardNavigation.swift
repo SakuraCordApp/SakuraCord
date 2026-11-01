@@ -40,8 +40,11 @@ extension AppModel {
     func keyboardShortcutDirectMessageDestination(direction: Int) -> DirectMessageSidebarSelection? {
         let channels = DirectMessageInboxPolicy.conversations(in: visibleChannels, pinnedChannelIDs: pinnedDirectMessageIDs)
             .filter { !hiddenChannelIDs.contains($0.id) && !checkingChannelIDs.contains($0.id) }
-        let destinations: [DirectMessageSidebarSelection] = [.friends] + channels.map { .channel($0.id) }
-        let current: DirectMessageSidebarSelection = isFriendsPresented ? .friends
+        let destinations: [DirectMessageSidebarSelection] = [.friends]
+            + (messageRequestChannels.isEmpty ? [] : [.messageRequests])
+            + channels.map { .channel($0.id) }
+        let current: DirectMessageSidebarSelection = isMessageRequestsPresented ? .messageRequests
+            : isFriendsPresented ? .friends
             : selectedChannelID.map { .channel($0) } ?? .friends
         let start = destinations.firstIndex(of: current) ?? 0
         let destination = destinations[(start + direction + destinations.count) % destinations.count]
@@ -52,6 +55,7 @@ extension AppModel {
         if selectedGuildID == nil, !unreadOnly {
             switch keyboardShortcutDirectMessageDestination(direction: direction) {
             case .friends: openFriends()
+            case .messageRequests: openMessageRequests()
             case .channel(let channelID): navigate(to: channelID)
             case nil: break
             }

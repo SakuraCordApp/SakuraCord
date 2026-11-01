@@ -146,6 +146,7 @@ final class ServerRailPresentationStore {
     ) {
         let conversations = channels.filter {
             ($0.kind == .directMessage || $0.kind == .groupDirectMessage)
+                && $0.messageRequest == nil
                 && unacknowledgedChannelIDs.contains($0.id)
         }
         var nextEntries: [ServerRailDirectMessageEntry] = []

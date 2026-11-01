@@ -731,7 +731,7 @@ extension AppModel {
                 if let updated = channels.first(where: { $0.id == selectedChannelID }) {
                     selectedChannel = updated
                 } else if guildID == nil, selectedChannelIsGone(fromScopeChannels: channels) {
-                    self.selectedChannelID = channels.first?.id
+                    self.selectedChannelID = channels.first { $0.messageRequest == nil }?.id
                 } else if guildID != nil,
                           previousChannels.contains(where: { $0.id == selectedChannelID && $0.guildID == guildID })
                 {

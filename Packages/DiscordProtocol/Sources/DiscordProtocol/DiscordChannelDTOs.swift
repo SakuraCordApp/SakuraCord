@@ -134,6 +134,8 @@ struct ChannelDTO: Decodable {
     var position: Int?
     var recipients: [UserDTO]?
     var blockedUserWarningDismissed: Bool?
+    var isMessageRequest: Bool?
+    var isSpam: Bool?
     var recipientIDs: [String]?
     var permissionOverwrites: [PermissionOverwriteDTO]?
     var memberListID: String?
@@ -190,6 +192,8 @@ struct ChannelDTO: Decodable {
         case parentID = "parent_id"
         case position, recipients
         case blockedUserWarningDismissed = "blocked_user_warning_dismissed"
+        case isMessageRequest = "is_message_request"
+        case isSpam = "is_spam"
         case recipientIDs = "recipient_ids"
         case permissionOverwrites = "permission_overwrites"
         case memberListID = "member_list_id"
@@ -215,6 +219,13 @@ struct ChannelDTO: Decodable {
         case rateLimitPerUser = "rate_limit_per_user"
         case status
         case voiceStartTime = "voice_start_time"
+    }
+
+    /// Spam outranks a plain request, as in Discord's Spam tab. Nil when the
+    /// payload carries neither flag, so an update can keep the known state.
+    var messageRequest: MessageRequestStatus? {
+        if isSpam == true { return .spam }
+        return isMessageRequest == true ? .pending : nil
     }
 
     func domain(
@@ -289,6 +300,7 @@ struct ChannelDTO: Decodable {
             isAgeRestricted: nsfw ?? false,
             recipients: users,
             blockedUserWarningDismissed: blockedUserWarningDismissed ?? false,
+            messageRequest: messageRequest,
             permissionOverwrites: permissionOverwrites?.map(\.domain),
             memberListID: memberListID,
             lastMessageID: lastMessageID.flatMap(MessageID.init),

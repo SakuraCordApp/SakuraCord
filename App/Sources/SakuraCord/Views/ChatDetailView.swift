@@ -77,28 +77,44 @@ private struct ChatDetailFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ConversationComposerSlot(
-                access: access,
-                timeoutUntil: model.guildTimeoutUntil(in: channel.id),
-                appearance: model.appearanceSettings.composerBarAppearance,
-                checkingMessage: "Checking channel permissions…",
-                readOnlyMessage: channel.isOfficialSystemDirectMessage
-                    ? "This chat is reserved for official Discord notifications."
-                    : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
-                       ? "Complete this server’s member screening in Discord to send messages."
-                       : "You do not have permission to send messages in this channel.")
-            ) {
-                if model.messageAppearance(for: channel.id) == .bubbles {
-                    TypingBubbleIndicatorView(model: model, channel: channel)
-                } else {
-                    TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
-                }
-                ComposerView(
-                    model: model,
-                    channelName: channel.name,
-                    onEditMessage: onEditMessage
+            if let request = channel.messageRequest {
+                // Discord asks for a decision before a request can be answered.
+                DisabledComposerView(
+                    message: request == .spam ? "Discord filed this request as spam." : "Accept this request to reply.",
+                    appearance: model.appearanceSettings.composerBarAppearance
                 )
+                .overlay(alignment: .trailing) {
+                    MessageRequestActions(model: model, channel: channel)
+                        .padding(.trailing, InterfaceScale.metric(8))
+                }
+            } else {
+                composerSlot
             }
+        }
+    }
+
+    private var composerSlot: some View {
+        ConversationComposerSlot(
+            access: access,
+            timeoutUntil: model.guildTimeoutUntil(in: channel.id),
+            appearance: model.appearanceSettings.composerBarAppearance,
+            checkingMessage: "Checking channel permissions…",
+            readOnlyMessage: channel.isOfficialSystemDirectMessage
+                ? "This chat is reserved for official Discord notifications."
+                : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
+                   ? "Complete this server’s member screening in Discord to send messages."
+                   : "You do not have permission to send messages in this channel.")
+        ) {
+            if model.messageAppearance(for: channel.id) == .bubbles {
+                TypingBubbleIndicatorView(model: model, channel: channel)
+            } else {
+                TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
+            }
+            ComposerView(
+                model: model,
+                channelName: channel.name,
+                onEditMessage: onEditMessage
+            )
         }
     }
 }

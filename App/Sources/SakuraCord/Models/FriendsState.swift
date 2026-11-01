@@ -7,6 +7,10 @@ nonisolated enum FriendsSection: Hashable, Sendable, CaseIterable {
     case online, all, pending, addFriend
 }
 
+nonisolated enum MessageRequestsTab: Hashable, Sendable, CaseIterable {
+    case requests, spam
+}
+
 /// The Friends page: section, per-section search, Add Friend form, in-flight
 /// relationship actions and their confirmations. Relationship records live
 /// in the bootstrap snapshot; presences arrive with their own events.
@@ -16,6 +20,8 @@ final class FriendsState {
     var isPresented = false
     /// Nil until chosen; the page then opens on Discord's initial section.
     var selectedSection: FriendsSection?
+    /// Set while Message Requests replaces the friends list.
+    var messageRequestsTab: MessageRequestsTab?
     var presences: [UserID: UserPresence] = [:]
     var searchTextBySection: [FriendsSection: String] = [:]
     var isSearchFocused = false
@@ -112,6 +118,7 @@ final class FriendsState {
     func reset() {
         isPresented = false
         selectedSection = nil
+        messageRequestsTab = nil
         presences = [:]
         searchTextBySection = [:]
         isSearchFocused = false

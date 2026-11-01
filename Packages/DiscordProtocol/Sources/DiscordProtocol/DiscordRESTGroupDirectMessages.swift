@@ -78,16 +78,32 @@ public extension DiscordRESTProvider {
     }
 
     private func deletePrivateChannel(_ channelID: ChannelID, kind: ChannelKindValue, query: [URLQueryItem]) async throws {
+        if try await requestPrivateChannelChange(
+            channelID, path: "/channels/\(channelID)", method: "DELETE", query: query, where: { $0.kind == kind }
+        ) {
+            removePrivateChannel(channelID)
+        }
+    }
+
+    /// Sends one request about a cached DM or group. True when its result
+    /// still applies: no Gateway event or session reset changed the
+    /// conversation while the request was in flight.
+    internal func requestPrivateChannelChange(
+        _ channelID: ChannelID,
+        path: String,
+        method: String,
+        query: [URLQueryItem] = [],
+        body: [String: JSONValue]? = nil,
+        where isEligible: (Channel) -> Bool
+    ) async throws -> Bool {
         guard let user = currentUser else { throw ChatProviderError.unauthenticated }
-        guard privateChannel(id: channelID)?.kind == kind else {
+        guard let channel = privateChannel(id: channelID), isEligible(channel) else {
             throw ChatProviderError.invalidRequest("This conversation is no longer available.")
         }
         let generation = profileEditingGeneration
         let revision = privateChannelRevisions[channelID, default: 0]
-        try await requestEmpty("/channels/\(channelID)", method: "DELETE", query: query)
-        guard currentUser?.id == user.id, profileEditingGeneration == generation,
-              privateChannelRevisions[channelID, default: 0] == revision
-        else { return }
-        removePrivateChannel(channelID)
+        try await requestEmpty(path, method: method, query: query, body: body)
+        return currentUser?.id == user.id && profileEditingGeneration == generation
+            && privateChannelRevisions[channelID, default: 0] == revision
     }
 }

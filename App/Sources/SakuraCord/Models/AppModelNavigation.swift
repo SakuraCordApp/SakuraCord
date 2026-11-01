@@ -5,6 +5,7 @@ import SakuraCordModels
 /// The Direct Messages home destinations: Friends above every conversation.
 nonisolated enum DirectMessageSidebarSelection: Hashable, Sendable {
     case friends
+    case messageRequests
     case channel(ChannelID)
 }
 
@@ -792,6 +793,8 @@ extension AppModel {
     }
 
     nonisolated static func preferredInitialChannelID(in channels: [Channel]) -> ChannelID? {
+        // Message requests wait on their own page until accepted.
+        let channels = channels.filter { $0.messageRequest == nil }
         let textChannels = channels.filter { channel in
             switch channel.kind {
             case .text, .announcement, .forum, .directMessage, .groupDirectMessage:
