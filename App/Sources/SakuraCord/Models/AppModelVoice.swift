@@ -596,10 +596,10 @@ extension AppModel {
         let session = voiceSession
         isVoiceMuted = muted
         isVoiceDeafened = deafened
-        await session?.setMuted(muted)
-        // Muting can wait on a speaking update while a later toggle completes, so
-        // apply the newest deafen state rather than this toggle's.
+        // Deafen first, because muting can wait on a speaking update over the network.
+        // Read the model after each await so a newer toggle's state is never undone.
         await session?.setDeafened(isVoiceDeafened)
+        await session?.setMuted(isVoiceMuted)
         guard isCurrentVoiceOperation(
             account,
             generation: generation,
