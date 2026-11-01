@@ -287,22 +287,18 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    /// What the canvas shows in `rect`, rendered from its layer as it is on
-    /// screen, once pending drawing such as a cleared highlight is done.
-    /// Drawing the card again, as `cacheDisplay` does, misses it while the
-    /// viewer covers it. The cover mask is lifted for the render, which
-    /// commits no frame.
+    /// What the canvas shows in `rect`, once pending drawing such as a
+    /// cleared highlight is done. Drawn from its layer: drawing the card
+    /// again misses it while the viewer covers it. The cover mask is lifted
+    /// for the render, which commits no frame.
     private func cardSnapshot(of rect: CGRect) -> NSImage? {
         guard let layer, let window else { return nil }
         displayIfNeeded()
         let scale = window.backingScaleFactor
         let width = Int((rect.width * scale).rounded(.up)), height = Int((rect.height * scale).rounded(.up))
-        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(
-                  data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              )
-        else { return nil }
+        guard width > 0, height > 0, let context = ForumCardRasterizer.makeContext(
+            width: width, height: height, colorSpace: ForumCardRasterizer.defaultColorSpace
+        ) else { return nil }
         let layerRect = convertToLayer(rect)
         // The context's origin is at its bottom; the canvas's at its top.
         context.scaleBy(x: scale, y: -scale)
