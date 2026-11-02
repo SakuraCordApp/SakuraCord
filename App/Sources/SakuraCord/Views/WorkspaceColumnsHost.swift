@@ -589,13 +589,27 @@ final class WorkspaceColumnsView: NSView {
             let minX = bounds.maxX - (island.column.isDeparting ? covered : shown)
             setFrame(of: island.view, CGRect(x: minX, y: 0, width: width, height: bounds.height))
         }
-        // Columns are translucent, so a column that leaves beneath one that
-        // arrives fades as the arriving one comes in, rather than showing
-        // through it.
-        var arriving: CGFloat = 0
-        for island in islands.reversed() where !island.column.isFullWidth {
-            island.view.alphaValue = island.column.isDeparting ? 1 - arriving : 1
-            if !island.column.isDeparting { arriving = max(arriving, island.reveal.value(at: time)) }
+        // Columns are translucent, so a column that leaves beneath others
+        // shows only where none of them covers it yet, as the conversation
+        // does. A pane that left this way can come back at full width,
+        // uncovered.
+        var coveredSpans: [Range<CGFloat>] = []
+        for island in islands.reversed() {
+            guard !island.column.isFullWidth else {
+                island.view.showSpans(nil)
+                continue
+            }
+            let frame = island.view.frame
+            let visible = coveredSpans.reduce([frame.minX ..< frame.maxX]) { spans, cover in
+                spans.flatMap { span in
+                    [(span.lowerBound, min(span.upperBound, cover.lowerBound)),
+                     (max(span.lowerBound, cover.upperBound), span.upperBound)]
+                        .filter { $0.0 < $0.1 }.map { $0.0 ..< $0.1 }
+                }
+            }
+            island.view.showSpans(island.column.isDeparting
+                ? visible.map { ($0.lowerBound - frame.minX) ..< ($0.upperBound - frame.minX) } : nil)
+            coveredSpans += island.column.isDeparting ? visible : [frame.minX ..< frame.maxX]
         }
         // How far a widening side chat has covered the conversation.
         var recede: CGFloat = 0
@@ -687,7 +701,9 @@ final class WorkspaceColumnsView: NSView {
                     minX: frame.minX,
                     maxX: frame.maxX,
                     isFullWidth: island.column.isFullWidth,
-                    widening: island.column.isFullWidth ? widening : 0
+                    widening: island.column.isFullWidth ? widening : 0,
+                    reveal: island.reveal.value(at: time),
+                    isDeparting: island.column.isDeparting
                 )
             }
         )
@@ -783,6 +799,52 @@ final class MovingHostContainerView: NSView {
         for subview in subviews where subview.frame.size != newSize {
             subview.frame = CGRect(origin: .zero, size: newSize)
         }
+    }
+}
+
+extension NSView {
+    private static let coverMaskName = "SakuraCordCoverMask"
+
+    /// Shows only the leading `width` points, the rest being covered by
+    /// something in front that would let it show through; nil shows it all.
+    /// Returns false, changing nothing, for a view whose layer already has a
+    /// mask of its own.
+    @discardableResult
+    func showLeading(_ width: CGFloat?) -> Bool {
+        showSpans(width.map { [0 ..< max(0, $0)] })
+    }
+
+    /// Shows only `spans` of its width, as `showLeading` does.
+    @discardableResult
+    func showSpans(_ spans: [Range<CGFloat>]?) -> Bool {
+        let mask = layer?.mask
+        guard mask.map({ $0.name == Self.coverMaskName }) ?? true else { return false }
+        let showsAll = spans.map { $0.count == 1 && $0[0].lowerBound <= 0 && $0[0].upperBound >= bounds.width } ?? true
+        guard let spans, !showsAll else {
+            if mask != nil { layer?.mask = nil }
+            return true
+        }
+        if !wantsLayer { wantsLayer = true }
+        guard let layer else { return false }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let cover = (mask as? CAShapeLayer) ?? {
+            let cover = CAShapeLayer()
+            cover.name = Self.coverMaskName
+            layer.mask = cover
+            return cover
+        }()
+        cover.frame = layer.bounds
+        let path = CGMutablePath()
+        // In the mask's own space, which starts at the layer's bounds origin.
+        for span in spans {
+            path.addRect(CGRect(
+                x: span.lowerBound, y: 0, width: max(0, span.upperBound - span.lowerBound), height: layer.bounds.height
+            ))
+        }
+        cover.path = path
+        CATransaction.commit()
+        return true
     }
 }
 
