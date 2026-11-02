@@ -366,7 +366,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         overlay.autoresizingMask = [.width, .height]
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        container.addSubview(overlay, positioned: .above, relativeTo: nil)
+        WindowModalCoordinator.coordinator(for: window).addBelowModals(overlay, to: container)
         overlay.clipLayer.frame = overlay.bounds
         if let text = source.text {
             let frame = overlay.convert(text.frame, from: nil)
