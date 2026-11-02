@@ -3,8 +3,8 @@ import MessageRendering
 
 /// Lays a document's leaves out as paragraphs styled like Discord's message
 /// Markdown, with its lengths in Discord's pixels. Table cells draw quotes,
-/// code, rules and tables; every gap is spacing before a paragraph, or the
-/// top margin of the first table it opens, so boxes have even padding.
+/// code, rules and tables; every gap is spacing before a paragraph, or a
+/// spacer line above the boxes it opens, so boxes have even padding.
 struct MarkdownBlockLayout {
     let codeBackground: DiscordMarkdown.AppKitPlan.CodeBackground
     private let output = NSMutableAttributedString()
@@ -50,19 +50,17 @@ struct MarkdownBlockLayout {
         if openTable?.identity != tableIntent?.identity { closeTable() }
 
         var placement = placement(in: leaf.containers)
-        let isItemStart = placement.marker != nil
         let opensBox = switch leaf.kind {
         case .code, .thematicBreak: true
         case .tableCell: openTable == nil
         default: false
         }
-        var spacingBefore = spacing(before: leaf, in: placement, opensBox: opensBox, isItemStart: isItemStart)
+        let spacingBefore = spacing(before: leaf, in: placement, opensBox: opensBox)
         if opensBox, placement.marker != nil {
             // A box can't hold its list item's marker, so the marker takes the line above it.
-            emit(NSAttributedString(), placement: placement, font: MarkdownInlineStyle.font(for: .paragraph), spacingBefore: spacingBefore)
+            emit(NSAttributedString(), placement: placement, font: MarkdownInlineStyle.font(for: .paragraph), spacingBefore: 0)
             placement.marker = nil
             emitSpacer(Self.itemGap, blocks: placement.textBlocks)
-            spacingBefore = 0
         }
         let content = leaf.content
         var font = MarkdownInlineStyle.font(for: leaf.kind)
@@ -74,14 +72,14 @@ struct MarkdownBlockLayout {
         case .heading:
             break
         case let .code(language):
-            let box = block(leaf.identity) { [margin = placement.indent] in Self.codeBlock(margin: margin) }
+            let box = block(leaf.identity) { Self.codeBlock(margin: placement.indent) }
             placement.textBlocks.append(box)
             placement.indent = 0
             font = .monospacedSystemFont(ofSize: InterfaceScale.fontSize(MarkdownInlineStyle.bodySize * 14 / 16), weight: .regular)
             lineHeight = Self.px(18)
             content.setAttributedString(highlighted(content.string, language: language, font: font))
         case .thematicBreak:
-            let box = block(leaf.identity) { [margin = placement.indent] in Self.ruleBlock(margin: margin) }
+            let box = block(leaf.identity) { Self.ruleBlock(margin: placement.indent) }
             placement.textBlocks.append(box)
             placement.indent = 0
             // The rule is the box's edge, not Foundation's "⸻" text.
@@ -100,7 +98,7 @@ struct MarkdownBlockLayout {
             placement.markerIndent = placement.indent
             placement.indent += Self.markerWidth(isOrdered: true)
         }
-        MarkdownInlineStyle.padInlineCode(in: content)
+        DiscordMarkdown.padInlineCode(in: content)
 
         emit(content, placement: placement, font: font, alignment: alignment, spacingBefore: spacingBefore, lineHeight: lineHeight)
         previous = leaf
@@ -176,7 +174,7 @@ struct MarkdownBlockLayout {
     /// The gap before a leaf. Above a box that opens here, a spacer line
     /// outside it holds the gap instead: spacing inside the box would pad
     /// it, and a box's top margin also narrows it.
-    private func spacing(before leaf: MarkdownLeaf, in placement: Placement, opensBox: Bool, isItemStart: Bool) -> CGFloat {
+    private func spacing(before leaf: MarkdownLeaf, in placement: Placement, opensBox: Bool) -> CGFloat {
         guard let previous else { return 0 }
         let gap: CGFloat = switch (leaf.kind, previous.kind) {
         case (.tableCell, .tableCell) where !opensBox: 0
@@ -185,7 +183,7 @@ struct MarkdownBlockLayout {
         case (_, .heading): Self.px(8)
         case (.footnote, .footnote): Self.itemGap
         default:
-            isItemStart && previous.containers.contains { if case .listItem = $0.kind { true } else { false } }
+            placement.marker != nil && previous.containers.contains { if case .listItem = $0.kind { true } else { false } }
                 ? Self.itemGap : Self.paragraphGap
         }
         let firstOpened = placement.textBlocks.firstIndex { block in !previousBlocks.contains { $0 === block } }
@@ -378,9 +376,7 @@ nonisolated final class MarkdownCodeBox: NSTextTableBlock {
         withFrame frameRect: NSRect, in controlView: NSView?, characterRange charRange: NSRange, layoutManager: NSLayoutManager
     ) {
         // AppKit draws text on the main thread.
-        MainActor.assumeIsolated {
-            MarkdownCodeChrome.draw(in: frameRect, cornerRadius: NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius)
-        }
+        MainActor.assumeIsolated { NativeTimelineRowPainter.drawCodeChrome(in: frameRect) }
     }
 }
 
@@ -389,24 +385,8 @@ nonisolated final class MarkdownQuoteBox: NSTextTableBlock {
     override func drawBackground(
         withFrame frameRect: NSRect, in controlView: NSView?, characterRange charRange: NSRange, layoutManager: NSLayoutManager
     ) {
-        let width = DiscordRichMessageMetrics.px(4)
-        NSColor.tertiaryLabelColor.setFill()
-        NSBezierPath(
-            roundedRect: NSRect(x: frameRect.minX, y: frameRect.minY, width: width, height: frameRect.height),
-            xRadius: width / 2, yRadius: width / 2
-        ).fill()
-    }
-}
-
-/// Discord's code chrome, shared by code blocks and inline code.
-enum MarkdownCodeChrome {
-    static func draw(in rect: NSRect, cornerRadius: CGFloat) {
-        NativeTimelineRowPainter.discordCodeBackgroundColor.setFill()
-        NSBezierPath(concentricRoundedRect: rect, cornerRadius: cornerRadius).fill()
-        NativeTimelineRowPainter.discordCodeBorderColor.setStroke()
-        let border = NSBezierPath(concentricRoundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: cornerRadius)
-        border.lineWidth = 1
-        border.stroke()
+        let bar = NSRect(x: frameRect.minX, y: frameRect.minY, width: DiscordRichMessageMetrics.px(4), height: frameRect.height)
+        MainActor.assumeIsolated { NativeTimelineRowPainter.drawQuoteBar(in: bar) }
     }
 }
 
@@ -418,11 +398,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
         let rects = inlineCodeRects(forGlyphRange: glyphsToShow).map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         guard !rects.isEmpty else { return }
         // AppKit draws text on the main thread.
-        MainActor.assumeIsolated {
-            for rect in rects {
-                MarkdownCodeChrome.draw(in: rect, cornerRadius: NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius)
-            }
-        }
+        MainActor.assumeIsolated { rects.forEach(NativeTimelineRowPainter.drawCodeChrome(in:)) }
     }
 
     /// Each line's run of inline code, as tall as its font plus a point
@@ -433,7 +409,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
         textStorage.enumerateAttribute(.discordMarkdownInlineCode, in: characters) { value, range, _ in
             guard value != nil, let font = textStorage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
-            let padding = MarkdownInlineStyle.inlineCodePadding(font: font)
+            let padding = DiscordMarkdown.inlineCodePadding(font: font)
             let codeGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             enumerateLineFragments(forGlyphRange: codeGlyphs) { line, _, container, lineGlyphs, _ in
                 let glyphs = NSIntersectionRange(lineGlyphs, codeGlyphs)

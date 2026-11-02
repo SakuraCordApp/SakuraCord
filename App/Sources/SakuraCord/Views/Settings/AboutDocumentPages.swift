@@ -136,13 +136,8 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSTextView {
-        // Markdown's quotes, code blocks and tables are text table cells, which TextKit 1 lays out.
-        let textView = NSTextView(usingTextLayoutManager: false)
-        textView.textContainer?.replaceLayoutManager(MarkdownLayoutManager())
-        textView.isEditable = false
-        textView.isSelectable = true
+        let textView = MarkdownDocumentText.makeTextView()
         textView.isRichText = true
-        textView.drawsBackground = false
         textView.textContainerInset = .zero
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
@@ -150,10 +145,6 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textView.linkTextAttributes = [
-            .foregroundColor: NSColor.linkColor,
-            .underlineStyle: 0,
-        ]
         textView.applySakuraCordTextSelectionAppearance()
         textView.delegate = context.coordinator
         return textView

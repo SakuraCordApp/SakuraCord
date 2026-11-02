@@ -34,6 +34,19 @@ enum MarkdownDocumentText {
         return layout.finish()
     }
 
+    /// A read-only view for documents. Their quotes, code blocks and tables
+    /// are text table cells, which TextKit 1 lays out.
+    static func makeTextView() -> NSTextView {
+        let textView = NSTextView(usingTextLayoutManager: false)
+        textView.textContainer?.replaceLayoutManager(MarkdownLayoutManager())
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        // Discord underlines links only on hover.
+        textView.linkTextAttributes = [.foregroundColor: NSColor.linkColor, .cursor: NSCursor.pointingHand]
+        return textView
+    }
+
     /// Scrolls to an in-document target, or opens any other link as a
     /// message link would be, which ignores local files and app schemes.
     static func activate(_ link: Any, in textView: NSTextView, at index: Int) -> Bool {
@@ -201,24 +214,6 @@ enum MarkdownInlineStyle {
         if let link = link ?? html.link { attributes[.link] = link }
         guard let imageURL else { return NSAttributedString(string: text, attributes: attributes) }
         return image(alt: text, url: imageURL, attributes: attributes)
-    }
-
-    /// The room inline code's chrome takes on each side, as in the timeline.
-    nonisolated static func inlineCodePadding(font: NSFont) -> CGFloat {
-        font.pointSize * 0.2 + 1
-    }
-
-    /// Kerning after the character before inline code, and after the code,
-    /// reserves its chrome's padding, so the chrome never covers its neighbours.
-    static func padInlineCode(in content: NSMutableAttributedString) {
-        content.enumerateAttribute(.discordMarkdownInlineCode, in: NSRange(location: 0, length: content.length)) { value, range, _ in
-            guard value != nil, let font = content.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
-            let padding = inlineCodePadding(font: font)
-            for location in [range.location - 1, NSMaxRange(range) - 1] where location >= 0 {
-                let kern = content.attribute(.kern, at: location, effectiveRange: nil) as? CGFloat ?? 0
-                content.addAttribute(.kern, value: kern + padding, range: NSRange(location: location, length: 1))
-            }
-        }
     }
 
     /// Images aren't fetched, since loading a stranger's file's images would
