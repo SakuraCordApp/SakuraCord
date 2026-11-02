@@ -716,7 +716,7 @@ private enum NodeBuilder {
                     source?.supportsRemoteComponentChoices == true,
                 interactionUnavailable:
                     disabled
-                    || source?.isComponentInteractionPending(messageID: message.id) == true
+                    || source?.isComponentInteractionUnavailable(on: message) == true
             )
             return Node(
                 size: CGSize(width: width, height: height),
@@ -861,7 +861,7 @@ private enum NodeBuilder {
                 || (url == nil && (
                     customID == nil
                         || source?.supportsComponents != true
-                        || source?.isComponentInteractionPending(messageID: message.id) == true
+                        || source?.isComponentInteractionUnavailable(on: message) == true
                 ))
             return Node(
                 size: CGSize(

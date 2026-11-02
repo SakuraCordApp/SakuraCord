@@ -10,7 +10,9 @@ struct FriendsView: View {
 
     var body: some View {
         Group {
-            if model.friendsSection == .addFriend {
+            if model.isMessageRequestsPresented {
+                MessageRequestsView(model: model)
+            } else if model.friendsSection == .addFriend {
                 ScrollView {
                     AddFriendView(model: model)
                 }

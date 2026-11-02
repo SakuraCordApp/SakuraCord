@@ -340,20 +340,18 @@ public extension MockChatProvider {
         return message
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
-        -> Message
-    {
-        guard var messages = messagesByChannel[channelID],
-              let index = messages.firstIndex(where: { $0.id == messageID })
+    func edit(_ message: Message, content: String) async throws -> Message {
+        guard var messages = messagesByChannel[message.channelID],
+              let index = messages.firstIndex(where: { $0.id == message.id })
         else {
             throw ChatProviderError.messageNotFound
         }
         messages[index].content = content
         messages[index].editedTimestamp = .now
-        let message = messages[index]
-        messagesByChannel[channelID] = messages
-        continuation?.yield(.messageUpdated(message))
-        return message
+        let updated = messages[index]
+        messagesByChannel[message.channelID] = messages
+        continuation?.yield(.messageUpdated(updated))
+        return updated
     }
 
     func delete(messageID: MessageID, channelID: ChannelID) async throws {

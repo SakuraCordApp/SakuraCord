@@ -24,8 +24,8 @@ extension NativeTimelineCanvasView {
             isSpoiler && !spoilerRevealStore.isMediaRevealed(key)
         let element = accessibilityElement(
             role: .button,
-            label: isHiddenSpoiler ? (file == nil ? "Reveal spoiler media" : "Reveal spoiler file") : label,
-            help: isHiddenSpoiler ? "Reveals this media without opening it" : "Open \(label)",
+            label: isHiddenSpoiler ? "Reveal spoiler" : label,
+            help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(label)",
             frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
             parent: parent
         ) { [weak self] in
@@ -48,7 +48,7 @@ extension NativeTimelineCanvasView {
         if let file, !isHiddenSpoiler {
             element.setAccessibilityCustomActions([
                 NSAccessibilityCustomAction(name: fileCardActionDescription(file, name: label)) { [weak self] in
-                    self?.model?.attachmentDownloads.activate(file)
+                    self?.activateFileCard(file)
                     return self != nil
                 },
             ])

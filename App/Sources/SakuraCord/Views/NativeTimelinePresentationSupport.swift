@@ -187,6 +187,12 @@ struct NativeTimelineComponentRevealKey: Hashable {
     let messageID: MessageID
     let componentID: String
 
+    /// Keyed by the link, as embed IDs are only positions: an edit that
+    /// replaces the link must not inherit the old one's reveal.
+    static func embed(messageID: MessageID, url: URL, occurrence: Int) -> Self {
+        Self(messageID: messageID, componentID: "embed:\(occurrence):\(url.absoluteString)")
+    }
+
     static func attachmentComponentID(_ attachmentID: String) -> String {
         "attachment:\(attachmentID)"
     }
@@ -431,6 +437,10 @@ struct MediaViewerTransitionSource {
     var visibleFrameInWindow: CGRect
     let cornerRadius: CGFloat
     let fillsFrame: Bool
+    /// Whether the timeline leaves the source out while the viewer shows
+    /// it, through the transition link. A source elsewhere, like a
+    /// composer tile, hides itself.
+    var coversSource = true
 }
 
 /// What the timeline shares with the viewer it opens: the timeline keeps the
@@ -507,6 +517,13 @@ struct NativeTimelineMediaViewerPresentation: Identifiable {
         )
     }
 
+    /// The shown item's source when it hides itself rather than being
+    /// covered. The viewer may have paged away from its first item.
+    func uncoveredSourceItemID(showing selectedItemID: String?) -> String? {
+        let id = selectedItemID.flatMap { id in items.contains { $0.id == id } ? id : nil } ?? items[selection].id
+        return transitionLink.sources[id]?.coversSource == false ? id : nil
+    }
+
     func withTransitionSource(
         _ transitionSource: MediaViewerTransitionSource
     ) -> Self {
@@ -525,7 +542,7 @@ enum NativeTimelineMediaViewerPlan {
         selectedAttachmentID: UUID,
         author: User
     ) -> NativeTimelineMediaViewerPresentation? {
-        let items = attachments.enumerated().compactMap { index, attachment -> RichMediaItem? in
+        let items = attachments.enumerated().map { index, attachment in
             var optimistic = OptimisticAttachmentPresentation.attachment(
                 for: attachment.url,
                 index: index,
@@ -534,9 +551,6 @@ enum NativeTimelineMediaViewerPlan {
             optimistic.filename = attachment.filename
             optimistic.description = attachment.description
             optimistic.isSpoiler = attachment.isSpoiler
-            guard optimistic.mediaKind == .image
-                    || optimistic.mediaKind == .animatedImage
-            else { return nil }
             return RichMediaItem(optimistic)
         }
         guard let selection = items.firstIndex(where: {

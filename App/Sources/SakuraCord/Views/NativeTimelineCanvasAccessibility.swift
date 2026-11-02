@@ -180,8 +180,8 @@ extension NativeTimelineCanvasView {
                 },
                 isTranslationEnabled: model?.translation.settings.isEnabled == true,
                 threadPreview: item.messageRow?.message.thread.flatMap { model?.threadPreviewMessages[$0.id] },
-                isUploadCancellable: layouts[index].uploadRegions.contains {
-                    model?.attachmentUploads.canCancel(nonce: item.messageRow?.message.nonce, attachmentID: $0.attachmentID) == true
+                isUploadCancellable: layouts[index].uploadRings.contains {
+                    model?.attachmentUploads.isUploading(nonce: item.messageRow?.message.nonce, attachmentID: $0.attachmentID) == true
                 }
             )
             let frame = rowFrame(at: index)
@@ -800,13 +800,11 @@ extension NativeTimelineCanvasView {
             attachment.description
             ?? attachment.title
             ?? attachment.filename
-        let label = isHiddenSpoiler
-            ? "Reveal spoiler media"
-            : contentLabel
+        let label = isHiddenSpoiler ? "Reveal spoiler" : contentLabel
         let element = accessibilityElement(
             role: .button,
             label: label,
-            help: isHiddenSpoiler ? "Reveals this media without opening it" : "Open \(contentLabel)",
+            help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(contentLabel)",
             frame: accessibilityChildFrame(
                 region.frame,
                 rowIndex: rowIndex
@@ -819,10 +817,10 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex
             ) ?? false
         }
-        if !attachment.mediaKind.isVisual, !isHiddenSpoiler {
+        if !attachment.mediaKind.isVisual, !isHiddenSpoiler, !message.isUnconfirmedLocalSend {
             element.setAccessibilityCustomActions([
                 NSAccessibilityCustomAction(name: fileCardActionDescription(attachment, name: contentLabel)) { [weak self] in
-                    self?.model?.attachmentDownloads.activate(attachment)
+                    self?.activateFileCard(attachment)
                     return self != nil
                 },
             ])
@@ -1195,7 +1193,23 @@ extension NativeTimelineCanvasView {
         rowIndex: Int,
         parent: NSAccessibilityElement
     ) {
+        let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+            in: message, store: spoilerRevealStore
+        )
         for region in layout.embedRegions {
+            if let key = concealedEmbeds[region.embedID] {
+                children.append(accessibilityElement(
+                    role: .button,
+                    label: "Reveal spoiler",
+                    help: "Reveals the spoiler without opening it",
+                    frame: accessibilityChildFrame(region.frame, rowIndex: rowIndex),
+                    parent: parent
+                ) { [weak self] in
+                    self?.reveal(key, rowIndex: rowIndex)
+                    return self != nil
+                })
+                continue
+            }
             let embed = message.embeds.first { $0.id == region.embedID }
             let group = accessibilityElement(
                 role: .group,
@@ -1370,7 +1384,7 @@ extension NativeTimelineCanvasView {
                 children.append(accessibilityElement(
                     role: .button,
                     label: "Reveal spoiler",
-                    help: "Reveals this content without activating it",
+                    help: "Reveals the spoiler without opening it",
                     frame: accessibilityChildFrame(
                         hiddenContainer.frame,
                         rowIndex: rowIndex

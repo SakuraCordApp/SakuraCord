@@ -66,7 +66,6 @@ struct SelectionFieldDropdown<Content: View>: NSViewRepresentable {
                 let host = NSHostingView(rootView: AnyView(EmptyView()))
                 host.sizingOptions = []
                 host.wantsLayer = true
-                host.layer?.zPosition = 90_000
                 container.addSubview(host, positioned: .above, relativeTo: nil)
                 self.host = host
                 if let window {

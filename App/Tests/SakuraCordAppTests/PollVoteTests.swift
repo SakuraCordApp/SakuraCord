@@ -432,7 +432,7 @@ private actor PollVoteTestProvider: ChatProvider {
         return PinnedMessagePage(items: page.messages.map { PinnedMessage(pinnedAt: .now, message: $0) }, hasMore: false)
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.invalidRequest("Editing is not part of this test.")
     }
 

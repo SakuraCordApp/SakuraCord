@@ -84,21 +84,52 @@ struct NativeTimelineFileCard {
         isInBubble ? InterfaceScale.metric(12) : Self.height(isInBubble: false) / 2
     }
 
-    /// Where a click acts on the file: its button, and the detail line's
-    /// Show in Finder or Retry link.
-    func actionFrames(for state: AttachmentDownloadStore.State?) -> [CGRect] {
+    /// The parts of a card that take the pointer, each with its own hover
+    /// and press: the body previews the file, and the button and link act
+    /// on its download.
+    nonisolated enum Part: String, CaseIterable {
+        case card
+        case button
+        case link
+    }
+
+    /// The part under a point. The button takes only its circle, and the
+    /// link only its words; the rest of the card is its body.
+    func part(at point: CGPoint, state: AttachmentDownloadStore.State?) -> Part? {
+        // An audio card's player row belongs to its player.
+        guard frame.contains(point), !(hasPlayerRow && playerRowFrame.contains(point)) else { return nil }
+        let button = buttonFrame
+        if hypot(point.x - button.midX, point.y - button.midY) <= button.width / 2 { return .button }
         let detail = Self.detail(for: state, size: attachment.size)
-        guard detail.link != nil else { return [actionFrame] }
-        let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: Self.detailFont)
-        var link = detailFrame
-        link.origin.x += offset
-        link.size.width = max(0, link.width - offset)
-        return [actionFrame, link]
+        if let link = detail.link, linkFrame(after: detail.text, link: link).contains(point) { return .link }
+        return .card
+    }
+
+    /// The part of this card that a hover or press target names.
+    func part(of target: NativeTimelineComponentButtonTarget?, messageID: MessageID) -> Part? {
+        guard let target, target.messageID == messageID else { return nil }
+        return Part.allCases.first { target == .fileCard(messageID: messageID, attachmentID: attachment.id, part: $0) }
+    }
+
+    /// The detail line's Show in Finder or Retry link, as wide as its words.
+    func linkFrame(after text: String, link: String) -> CGRect {
+        var frame = detailFrame
+        frame.origin.x += NativeTimelineRowLayout.measuredTextWidth(text, font: Self.detailFont)
+        frame.size.width = min(
+            NativeTimelineRowLayout.measuredTextWidth(link, font: Self.linkFont), max(0, detailFrame.maxX - frame.minX)
+        )
+        return frame
     }
 
     /// An audio card's player row, under the name row and spanning the
     /// icon to the download button. It starts just under the icon, as
     /// Discord's controls follow its metadata.
+    /// Only a message's own audio card is laid out with a player row; a
+    /// component's audio file card keeps the plain card height.
+    var hasPlayerRow: Bool {
+        frame.height > Self.height(isInBubble: isInBubble) + 0.5
+    }
+
     var playerRowFrame: CGRect {
         CGRect(
             x: iconFrame.minX, y: nameRow.maxY - InterfaceScale.metric(2),
@@ -165,8 +196,10 @@ struct NativeTimelineFileCard {
 }
 
 extension NativeTimelineComponentButtonTarget {
-    /// The hover and press target of a file card.
-    nonisolated static func fileCard(messageID: MessageID, attachmentID: String) -> Self {
-        .init(messageID: messageID, componentID: "file:\(attachmentID)")
+    /// The hover and press target of a part of a file card.
+    nonisolated static func fileCard(
+        messageID: MessageID, attachmentID: String, part: NativeTimelineFileCard.Part
+    ) -> Self {
+        .init(messageID: messageID, componentID: "file:\(part.rawValue):\(attachmentID)")
     }
 }

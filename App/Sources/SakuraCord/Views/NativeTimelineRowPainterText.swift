@@ -210,7 +210,7 @@ extension NativeTimelineRowPainter {
             )
             let box = NativeTimelineTextSpoilerGeometry.coverFrame(fragment, clippedTo: frame)
             guard !box.isNull else { continue }
-            NativeTimelineSpoilerAppearance.textBackgroundColor(isHovered: false).setFill()
+            NativeTimelineSpoilerAppearance.hiddenColor.setFill()
             NSBezierPath(
                 roundedRect: box,
                 xRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
@@ -287,7 +287,7 @@ extension NativeTimelineRowPainter {
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
         hoveredLinkCharacterIndex: Int? = nil,
-        hoveredSpoilerRangeLocation: Int? = nil,
+        spoilerHoverProgress: [Int: CGFloat] = [:],
         revealedSpoilerLocations: Set<Int> = []
     ) {
         var drawingFrame = frame
@@ -302,8 +302,8 @@ extension NativeTimelineRowPainter {
                 hoveredMentionCharacterIndex,
             hoveredLinkCharacterIndex:
                 hoveredLinkCharacterIndex,
-            hoveredSpoilerRangeLocation:
-                hoveredSpoilerRangeLocation,
+            spoilerHoverProgress:
+                spoilerHoverProgress,
             revealedSpoilerLocations: revealedSpoilerLocations
         )
     }
@@ -330,7 +330,7 @@ extension NativeTimelineRowPainter {
         selectionRange: NSRange? = nil,
         hoveredMentionCharacterIndex: Int? = nil,
         hoveredLinkCharacterIndex: Int? = nil,
-        hoveredSpoilerRangeLocation: Int? = nil,
+        spoilerHoverProgress: [Int: CGFloat] = [:],
         revealedSpoilerLocations: Set<Int> = []
     ) {
         guard frame.width > 0, frame.height > 0,
@@ -354,8 +354,14 @@ extension NativeTimelineRowPainter {
             in: textFrame,
             outerFrame: frame,
             attributedText: drawingValue,
-            hoveredSpoilerRangeLocation: hoveredSpoilerRangeLocation
+            spoilerHoverProgress: spoilerHoverProgress
         )
+        NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
+        for range in NativeTimelineTextSpoilers.ranges(in: value) where revealedSpoilerLocations.contains(range.location) {
+            for rect in NativeTimelineTextSpoilerGeometry.rects(in: textFrame, outerFrame: frame, range: range) {
+                NSBezierPath(concentricRoundedRect: rect, cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
+            }
+        }
         drawTextSelection(
             selectionRange,
             in: textFrame,
@@ -444,7 +450,7 @@ extension NativeTimelineRowPainter {
     private struct MarkdownDecorationRects {
         var quotes: [CGRect] = []
         var inlineCode: [CGRect] = []
-        var spoilers: [(CGRect, Bool)] = []
+        var spoilers: [(CGRect, CGFloat)] = []
         var listMarkers: [ListMarker] = []
     }
 
@@ -460,14 +466,14 @@ extension NativeTimelineRowPainter {
         in textFrame: CTFrame,
         outerFrame: CGRect,
         attributedText: NSAttributedString,
-        hoveredSpoilerRangeLocation: Int? = nil
+        spoilerHoverProgress: [Int: CGFloat] = [:]
     ) {
         guard attributedText.length > 0 else { return }
         let decorations = markdownDecorationRects(
             in: textFrame,
             outerFrame: outerFrame,
             attributedText: attributedText,
-            hoveredSpoilerRangeLocation: hoveredSpoilerRangeLocation
+            spoilerHoverProgress: spoilerHoverProgress
         )
         let codeBlocks = NativeTimelineCodeBlockGeometry.regions(
             in: textFrame,
@@ -485,7 +491,7 @@ extension NativeTimelineRowPainter {
         in textFrame: CTFrame,
         outerFrame: CGRect,
         attributedText: NSAttributedString,
-        hoveredSpoilerRangeLocation: Int?
+        spoilerHoverProgress: [Int: CGFloat]
     ) -> MarkdownDecorationRects {
         let fullRange = NSRange(location: 0, length: attributedText.length)
         var result = MarkdownDecorationRects()
@@ -522,7 +528,7 @@ extension NativeTimelineRowPainter {
                     ).map {
                         (
                             $0,
-                            hoveredSpoilerRangeLocation == range.location
+                            spoilerHoverProgress[range.location] ?? 0
                         )
                     }
             )
@@ -589,12 +595,10 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func drawSpoilerDecorations(_ rects: [(CGRect, Bool)]) {
-        for (spoilerRect, isHovered) in rects {
+    private static func drawSpoilerDecorations(_ rects: [(CGRect, CGFloat)]) {
+        for (spoilerRect, hover) in rects {
             let backgroundFrame = spoilerRect
-            NativeTimelineSpoilerAppearance.textBackgroundColor(
-                isHovered: isHovered
-            ).setFill()
+            NativeTimelineSpoilerAppearance.textBackgroundColor(hover: hover).setFill()
             NSBezierPath(
                 concentricRoundedRect: backgroundFrame,
                 cornerRadius:

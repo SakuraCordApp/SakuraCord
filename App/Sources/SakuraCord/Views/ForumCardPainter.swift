@@ -315,7 +315,7 @@ enum ForumCardPainter {
             let drawnLines = max(1, Int((regions.titleFrame.height / metrics.titleLineHeight).rounded()))
             drawTitle(presentation, in: regions.titleFrame, maximumLines: min(input.titleLines, drawnLines), metrics: metrics, on: canvas)
             if let excerptFrame = regions.excerptFrame {
-                drawExcerpt(presentation, in: excerptFrame, renderer: input.excerpt, metrics: metrics, on: canvas)
+                drawExcerpt(presentation, in: excerptFrame, renderer: input.excerpt, on: canvas)
             }
             if let thumbnail = presentation.thumbnail, let frame = regions.thumbnailFrame {
                 drawMedia(
@@ -528,21 +528,12 @@ enum ForumCardPainter {
         _ presentation: ForumCardPresentation,
         in frame: CGRect,
         renderer: ForumPostPreviewTextRenderer?,
-        metrics: ForumBoardMetrics,
         on canvas: ForumCardCanvas
     ) {
         switch presentation.excerpt {
         case .pending:
             return
-        case .empty:
-            let text = presentation.thumbnail == nil ? "No message" : "Attachment"
-            canvas.text(
-                text,
-                in: CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: metrics.excerptLineHeight),
-                font: metrics.excerptFont,
-                color: .tertiaryLabelColor
-            )
-        case .deleted, .message:
+        case .deleted, .placeholder, .message:
             // Markdown lines can be taller than body text; the slot clips.
             drawExcerptText(renderer, at: frame.origin, clip: frame, on: canvas)
         }
@@ -608,14 +599,23 @@ enum ForumCardPainter {
     ) {
         let cornerRadius = style.cornerRadius
         let isCompact = style.isCompact
-        canvas.fill(frame, cornerRadius: cornerRadius, color: NSColor.labelColor.withAlphaComponent(0.06))
+        // Only a tile without its image gets a backing: one under an image
+        // shows around its antialiased corners.
+        let image: NSImage? = switch media {
+        case let .image(key): NativeTimelineRowPainter.mediaImage(for: key)
+        case let .video(poster?, _): NativeTimelineRowPainter.mediaImage(for: poster)
+        default: nil
+        }
+        if image == nil {
+            canvas.fill(frame, cornerRadius: cornerRadius, color: NSColor.labelColor.withAlphaComponent(0.06))
+        }
         switch media {
-        case let .image(key):
-            if let image = NativeTimelineRowPainter.mediaImage(for: key) {
+        case .image:
+            if let image {
                 canvas.image(image, in: frame, cornerRadius: cornerRadius, fillsFrame: true)
             }
         case let .video(poster, filename):
-            if let poster, let image = NativeTimelineRowPainter.mediaImage(for: poster) {
+            if let image {
                 canvas.image(image, in: frame, cornerRadius: cornerRadius, fillsFrame: true)
                 let badge = InterfaceScale.metric(34)
                 let badgeFrame = CGRect(x: frame.midX - badge / 2, y: frame.midY - badge / 2, width: badge, height: badge)
@@ -628,26 +628,21 @@ enum ForumCardPainter {
             drawFileTile(symbol: "waveform", filename: filename, in: frame, isCompact: isCompact, on: canvas)
         case let .file(filename):
             drawFileTile(symbol: "doc.fill", filename: filename, in: frame, isCompact: isCompact, on: canvas)
-        case .spoiler:
-            let size = InterfaceScale.metric(isCompact ? 20 : 26)
-            let labelHeight = ForumBoardMetrics.lineHeight(of: badgeFont)
-            let total = size + InterfaceScale.metric(6) + labelHeight
-            canvas.symbol(
-                "eye.slash.fill",
-                in: CGRect(x: frame.midX - size / 2, y: frame.midY - total / 2, width: size, height: size),
-                color: .secondaryLabelColor,
-                inset: 0
-            )
-            canvas.text(
-                "SPOILER",
-                in: CGRect(x: frame.minX, y: frame.midY - total / 2 + size + InterfaceScale.metric(6), width: frame.width, height: labelHeight),
-                font: badgeFont,
-                color: .secondaryLabelColor,
-                alignment: .center,
-                lineBreakMode: .byClipping
-            )
+        case let .spoiler(hidden):
+            let cover = NativeTimelineSpoilerCover.image(
+                size: frame.size,
+                cornerRadius: cornerRadius
+            ) {
+                if let image = hidden.mediaKey.flatMap(NativeTimelineRowPainter.mediaImage(for:)) {
+                    NativeTimelineRowPainter.drawImage(
+                        image, in: CGRect(origin: .zero, size: frame.size), cornerRadius: cornerRadius, fillsFrame: true
+                    )
+                }
+            }
+            if let cover {
+                canvas.image(cover, in: frame, cornerRadius: cornerRadius, fillsFrame: true)
+            }
         }
-        canvas.stroke(frame.insetBy(dx: 0.5, dy: 0.5), cornerRadius: cornerRadius, color: NSColor.separatorColor.withAlphaComponent(0.6))
     }
 
     private static func drawFileTile(

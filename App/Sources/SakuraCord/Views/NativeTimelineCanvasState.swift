@@ -73,6 +73,13 @@ final class NativeTimelinePointerState {
     var componentButtonPressProgress: CGFloat = 0
     var componentButtonPressAnimationTask: Task<Void, Never>?
     var componentButtonPressAnimationDestination: CGFloat?
+    /// File card parts whose hover is easing in, held, or easing out.
+    var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] = [:]
+    /// Text spoilers whose hover is easing in, held, or easing out.
+    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] = [:]
+    var componentButtonHoverAnimationTask: Task<Void, Never>?
+    /// Download buttons crossfading from their full ring to their next step.
+    var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] = [:]
     var pressedActivationTarget: NativeTimelinePointerActivationTarget?
     var hoveredReaction: NativeTimelineReactionPointerTarget?
     var suppressesHoverPresentation = false
@@ -121,6 +128,11 @@ final class NativeTimelinePointerState {
         componentButtonPressAnimationDestination = nil
         componentButtonPressAnimationTask?.cancel()
         componentButtonPressAnimationTask = nil
+        componentButtonHoverFades = [:]
+        textSpoilerHoverFades = [:]
+        fileCardFinishFades = [:]
+        componentButtonHoverAnimationTask?.cancel()
+        componentButtonHoverAnimationTask = nil
         pressedActivationTarget = nil
         hoveredReaction = nil
         return cleared
@@ -358,6 +370,26 @@ extension NativeTimelineCanvasView {
     var componentButtonPressAnimationDestination: CGFloat? {
         get { pointer.componentButtonPressAnimationDestination }
         set { pointer.componentButtonPressAnimationDestination = newValue }
+    }
+
+    var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
+        get { pointer.componentButtonHoverFades }
+        set { pointer.componentButtonHoverFades = newValue }
+    }
+
+    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] {
+        get { pointer.textSpoilerHoverFades }
+        set { pointer.textSpoilerHoverFades = newValue }
+    }
+
+    var componentButtonHoverAnimationTask: Task<Void, Never>? {
+        get { pointer.componentButtonHoverAnimationTask }
+        set { pointer.componentButtonHoverAnimationTask = newValue }
+    }
+
+    var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
+        get { pointer.fileCardFinishFades }
+        set { pointer.fileCardFinishFades = newValue }
     }
 
     var pressedActivationTarget: NativeTimelinePointerActivationTarget? {

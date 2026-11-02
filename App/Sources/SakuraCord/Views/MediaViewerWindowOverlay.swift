@@ -10,10 +10,14 @@ struct MediaViewerWindowOverlay: View {
     /// Read live by the hosted viewer, whose tree outlives this view's updates.
     let animatesOverlays: () -> Bool
     let dismiss: () -> Void
+    var selectionChanged: (String) -> Void = { _ in }
 
     var body: some View {
-        WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { [animatesOverlays] presentation, context in
-            MediaViewerWindowAnimatedContent(presentation: presentation, context: context, animatesOverlays: animatesOverlays)
+        WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { [animatesOverlays, selectionChanged] presentation, context in
+            MediaViewerWindowAnimatedContent(
+                presentation: presentation, context: context,
+                animatesOverlays: animatesOverlays, selectionChanged: selectionChanged
+            )
                 .environment(\.profileCosmeticPolicy, cosmeticPolicy)
                 .environment(playback)
         })
@@ -142,6 +146,7 @@ private final class MediaViewerWindowAnimationState {
 private struct MediaViewerWindowAnimatedContent: View {
     let presentation: NativeTimelineMediaViewerPresentation
     let context: WindowModalContext
+    let selectionChanged: (String) -> Void
     @State private var animationState: MediaViewerWindowAnimationState
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     let animatesOverlays: () -> Bool
@@ -152,11 +157,13 @@ private struct MediaViewerWindowAnimatedContent: View {
     init(
         presentation: NativeTimelineMediaViewerPresentation,
         context: WindowModalContext,
-        animatesOverlays: @escaping () -> Bool
+        animatesOverlays: @escaping () -> Bool,
+        selectionChanged: @escaping (String) -> Void
     ) {
         self.presentation = presentation
         self.context = context
         self.animatesOverlays = animatesOverlays
+        self.selectionChanged = selectionChanged
         _animationState = State(initialValue: MediaViewerWindowAnimationState(
             presentation: presentation, reducesMotion: !animatesOverlays()
         ))
@@ -171,6 +178,7 @@ private struct MediaViewerWindowAnimatedContent: View {
             closeInteractively: { context.dismiss(interactively: true) },
             selectionChanged: {
                 animationState.select(itemID: $0)
+                selectionChanged($0)
                 link.cover(animationState.coveredItemID)
             }
         )
@@ -249,7 +257,8 @@ private struct MediaViewerTransitionFrameConverter: NSViewRepresentable {
                                 from: nil
                             ),
                             cornerRadius: source.cornerRadius,
-                            fillsFrame: source.fillsFrame
+                            fillsFrame: source.fillsFrame,
+                            coversSource: source.coversSource
                         )
                     }
                     animationState?.setTransitionSources(resolvedSources)

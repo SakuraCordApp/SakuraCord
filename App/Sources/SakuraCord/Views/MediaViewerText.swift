@@ -67,6 +67,14 @@ struct MediaViewerText: View {
 
     /// Reads up to the limit.
     private nonisolated static func load(_ url: URL) async throws -> (text: String, bytesLeft: Int) {
+        // A file staged in the composer is read from disk.
+        if url.isFileURL {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            let data = try handle.read(upToCount: byteLimit) ?? Data()
+            let total = Int(try handle.seekToEnd())
+            return (decodeReplacingInvalid(data), max(0, total - data.count))
+        }
         var request = URLRequest(url: url)
         request.setValue("bytes=0-\(byteLimit - 1)", forHTTPHeaderField: "Range")
         let (bytes, response) = try await session.bytes(for: request)

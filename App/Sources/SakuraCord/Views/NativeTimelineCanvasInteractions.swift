@@ -90,7 +90,7 @@ extension NativeTimelineCanvasView {
         for attachment in message.attachments
         where attachment.mediaKind == .animatedImage {
             if NativeTimelineSpoilerConcealmentPolicy
-                .shouldLoadOrAnimate(
+                .shouldAnimate(
                     messageID: message.id,
                     contentID:
                         NativeTimelineComponentRevealKey
@@ -519,6 +519,16 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.media
             where region.frame.contains(point) {
+                let revealKey = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
+                if region.isVideo, !region.isSpoiler || spoilerRevealStore.isMediaRevealed(revealKey) {
+                    let (id, openURL, isSpoiler) = (region.componentID, region.openURL, region.isSpoiler)
+                    playInline(region.displayURL, mediaID: id, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
+                        _ = self?.activateComponentMedia(
+                            id: id, openURL: openURL, isSpoiler: isSpoiler, layout: layout, message: message, rowIndex: index
+                        )
+                    }
+                    return true
+                }
                 return activateComponentMedia(
                     id: region.componentID,
                     openURL: region.openURL,
@@ -553,7 +563,7 @@ extension NativeTimelineCanvasView {
         return false
     }
 
-    private func activateComponentMedia(
+    func activateComponentMedia(
         id: String,
         openURL: URL,
         isSpoiler: Bool,
@@ -737,7 +747,7 @@ extension NativeTimelineCanvasView {
                rangeLocation: spoilerRange.location
            ), !spoilerRevealStore.isTextRevealed(key)
         {
-            revealTextSpoiler(key)
+            revealTextSpoiler(itemIdentifier: rowIdentifier, region: region, rangeLocation: spoilerRange.location)
             return true
         }
         if let mention = hit.mention, mention.isInteractive {
@@ -783,12 +793,27 @@ extension NativeTimelineCanvasView {
             region: region,
             rangeLocation: rangeLocation
         ),
-              spoilerRevealStore.revealText(key)
+              !spoilerRevealStore.isTextRevealed(key)
         else { return }
-    }
-
-    func revealTextSpoiler(_ key: NativeTimelineTextSpoilerRevealKey) {
-        _ = spoilerRevealStore.revealText(key)
+        if let index = items.firstIndex(where: { $0.identifier == itemIdentifier }),
+           layouts.indices.contains(index),
+           let text = selectableTextRegions(for: items[index], layout: layouts[index])
+               .first(where: { $0.region == region })
+        {
+            let rowOrigin = displayedRowOrigin(at: index)
+            fadeOutSpoilerCover(
+                NativeTimelineTextHitTester.spoilerRegions(
+                    value: text.value,
+                    framesetter: text.framesetter,
+                    frame: text.frame
+                )
+                .filter { $0.range.location == rangeLocation }
+                .map { $0.frame.offsetBy(dx: 0, dy: rowOrigin) },
+                cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
+                duration: NativeTimelineSpoilerAppearance.textRevealDuration
+            )
+        }
+        spoilerRevealStore.revealText(key)
     }
 
     func activateMention(
@@ -914,9 +939,18 @@ extension NativeTimelineCanvasView {
         rowIndex: Int
     ) {
         guard items.indices.contains(rowIndex),
-              items[rowIndex].messageID == key.messageID
+              items[rowIndex].messageID == key.messageID,
+              !spoilerRevealStore.isMediaRevealed(key)
         else { return }
-        guard spoilerRevealStore.revealMedia(key) else { return }
+        if let cover = spoilerOverlays[key] {
+            fadeOutSpoilerCover(
+                [cover.frame],
+                cornerRadius: cover.cornerRadius,
+                duration: NativeTimelineSpoilerAppearance.mediaRevealDuration,
+                dropsPill: true
+            )
+        }
+        spoilerRevealStore.revealMedia(key)
     }
 
     func installSpoilerRevealStore(
@@ -945,6 +979,8 @@ extension NativeTimelineCanvasView {
         window?.invalidateCursorRects(for: self)
         reconcileAnimatedMedia()
         reconcileSpoilerOverlays()
+        // A reset reveal store hides a video playing in place again.
+        reconcileInlinePlayers()
         rebuildAccessibilityProxy(for: identifier)
     }
 

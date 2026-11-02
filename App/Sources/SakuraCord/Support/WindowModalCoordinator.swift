@@ -71,6 +71,13 @@ final class WindowModalCoordinator {
         reorderHosts()
     }
 
+    /// Adds a window-wide overlay that belongs to the workspace, such as a
+    /// send transition, beneath any open modal.
+    func addBelowModals(_ view: NSView, to container: NSView) {
+        let lowest = entries.lazy.compactMap(\.host).first { $0.superview === container }
+        container.addSubview(view, positioned: lowest == nil ? .above : .below, relativeTo: lowest)
+    }
+
     func unregisterAccessory(_ view: NSView) {
         for entry in entries { entry.accessories.remove(view) }
     }
@@ -121,13 +128,14 @@ final class WindowModalCoordinator {
         }
     }
 
+    // Subview order alone stacks the modals. A raised zPosition would also
+    // lift them above the layer AppKit draws a held slider's glass thumb in,
+    // so the thumb vanished while dragging inside a modal.
     private func reorderHosts() {
-        for (index, entry) in entries.enumerated() {
+        for entry in entries {
             guard let host = entry.host, let container = host.superview else { continue }
-            host.layer?.zPosition = CGFloat(100_000 + index)
             container.addSubview(host, positioned: .above, relativeTo: nil)
             for accessory in entry.accessories.allObjects {
-                accessory.layer?.zPosition = CGFloat(100_000 + index) + 0.5
                 container.addSubview(accessory, positioned: .above, relativeTo: host)
             }
         }

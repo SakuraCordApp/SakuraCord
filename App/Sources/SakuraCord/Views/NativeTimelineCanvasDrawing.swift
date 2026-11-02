@@ -115,6 +115,7 @@ extension NativeTimelineCanvasView {
         startVisibleInlineVideosImmediately()
         scheduleAnimatedMediaReconciliation()
         positionAnimatedMediaOverlays()
+        reconcileInlinePlayers()
         reconcileVoiceMessageOverlay()
         reconcileBeginningSelectionOverlay()
         reconcileActivityIndicators()
@@ -314,6 +315,7 @@ extension NativeTimelineCanvasView {
             owner: visibleMediaPinOwner
         )
         mediaReadyConversationID = nil
+        removeInlinePlayers()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         needsDisplay = true
@@ -354,6 +356,8 @@ extension NativeTimelineCanvasView {
         cancelReactionCountAnimations()
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
+        // Before the pointer targets clear, which drops the fades.
+        redrawFadingHovers()
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
@@ -526,6 +530,7 @@ extension NativeTimelineCanvasView {
         }
         reconcileHistorySkeletonShimmer()
         presentRowsEnteringViewport()
+        reconcileInlinePlayers()
         refreshMediaViewerTransition()
         // Supplementary Inbox rows are content, not hover presentation. Keep
         // them materialized as the viewport moves, including momentum ticks
@@ -918,9 +923,12 @@ extension NativeTimelineCanvasView {
             || hoveredMention?.itemIdentifier == item.identifier
             || hoveredTextLink?.itemIdentifier == item.identifier
             || hoveredTextSpoiler?.itemIdentifier == item.identifier
+            || textSpoilerHoverFades.keys.contains { $0.itemIdentifier == item.identifier }
             || hoveredComponentButton?.messageID == item.messageID
             || activeComponentChoiceTarget?.messageID == item.messageID
             || visualPressedComponentButton?.messageID == item.messageID
+            || componentButtonHoverFades.keys.contains { $0.messageID == item.messageID }
+            || fileCardFinishFades.keys.contains { $0.messageID == item.messageID }
             || hoveredForwardedSourceMessageID == item.messageID
             || hoveredThreadMessageID == item.messageID
             || hoveredFooterAction?.messageID == item.messageID
@@ -956,11 +964,13 @@ extension NativeTimelineCanvasView {
             isCommandPillHovered: hoveredCommandPillMessageID == item.messageID,
             hoveredMention: hoveredMention?.itemIdentifier == item.identifier ? hoveredMention : nil,
             hoveredTextLink: hoveredTextLink?.itemIdentifier == item.identifier ? hoveredTextLink : nil,
-            hoveredTextSpoiler: hoveredTextSpoiler?.itemIdentifier == item.identifier ? hoveredTextSpoiler : nil,
+            textSpoilerHover: textSpoilerHoverProgress(in: item.identifier),
             hoveredComponentButton: hoveredComponentButton?.messageID == item.messageID ? hoveredComponentButton : nil,
             activeComponentChoiceTarget: activeComponentChoiceTarget?.messageID == item.messageID ? activeComponentChoiceTarget : nil,
             pressedComponentButton: visualPressedComponentButton?.messageID == item.messageID ? visualPressedComponentButton : nil,
             componentButtonPressProgress: visualPressedComponentButton?.messageID == item.messageID ? componentButtonPressProgress : 0,
+            fileCardHoverProgress: fileCardHoverProgress(in: item.messageID),
+            fileCardFinishProgress: fileCardFinishProgress(in: item.messageID),
             isForwardedSourceHovered: hoveredForwardedSourceMessageID == item.messageID,
             threadCardInteraction: threadCardInteraction(forMessageID: item.messageID),
             isEphemeralDismissHovered: hoveredFooterAction?.messageID == item.messageID && hoveredFooterAction?.kind == .ephemeralDismiss,
@@ -1067,7 +1077,7 @@ extension NativeTimelineCanvasView {
         // Most rows have no revealed spoilers. Avoid building selectable
         // regions (and hashing their text) on every scrolling frame in that
         // case; callers already know the row's current storage index.
-        guard !spoilerRevealStore.revealedText.isEmpty,
+        guard spoilerRevealStore.hasRevealedText,
               items.indices.contains(rowIndex),
                layouts.indices.contains(rowIndex),
            let messageID = items[rowIndex].messageID
@@ -1097,7 +1107,7 @@ extension NativeTimelineCanvasView {
         value: NSAttributedString,
         layout: NativeTimelineRowLayout
     ) -> Set<Int> {
-        guard !spoilerRevealStore.revealedText.isEmpty,
+        guard spoilerRevealStore.hasRevealedText,
               let contentID = textSpoilerContentID(
                   for: region,
                   layout: layout
