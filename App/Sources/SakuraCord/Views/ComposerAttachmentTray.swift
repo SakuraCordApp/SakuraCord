@@ -73,9 +73,9 @@ struct ComposerAttachmentTray: View {
                 update(attachment)
             }
         }
-        .sheet(item: $editingTarget) { target in
+        .windowModal(item: $editingTarget, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) { target in
             if let attachment = attachments.first(where: { $0.id == target.id }) {
-                ForumAttachmentEditor(
+                AttachmentEditor(
                     attachment: attachment,
                     cancel: { editingTarget = nil },
                     save: {
