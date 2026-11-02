@@ -28,11 +28,42 @@ struct MarkdownBlockLayout {
     /// A blank line between paragraphs is one of Discord's 22 px lines.
     private static var paragraphGap: CGFloat { px(22) }
     private static var itemGap: CGFloat { px(4) }
-    /// Discord's list gutter; ordered markers get room for two digits.
-    private static func markerWidth(isOrdered: Bool) -> CGFloat { px(isOrdered ? 24 : 16) }
+    /// The largest number in each ordered list, and among the footnotes,
+    /// so every item in a list leaves its widest marker the same room.
+    private let widestOrdinals: [Int: Int]
+    private let widestFootnote: Int
 
-    init(codeBackground: DiscordMarkdown.AppKitPlan.CodeBackground) {
+    /// Discord's list gutter. Ordered markers get room for two digits, and
+    /// a list with wider numbers grows the gutter, as the timeline's does.
+    private static func gutter(widestOrdinal: Int?) -> CGFloat {
+        guard let widestOrdinal else { return px(16) }
+        let marker = ("\(widestOrdinal)." as NSString).size(withAttributes: [.font: orderedMarkerFont]).width
+        return max(px(24), ceil(marker) + px(4))
+    }
+
+    /// Tabular digits make a number's width follow its length.
+    private static var orderedMarkerFont: NSFont {
+        .interfaceMonospacedDigitSystemFont(ofSize: MarkdownInlineStyle.bodySize, weight: .regular)
+    }
+
+    init(codeBackground: DiscordMarkdown.AppKitPlan.CodeBackground, leaves: [MarkdownLeaf]) {
         self.codeBackground = codeBackground
+        var ordinals: [Int: Int] = [:]
+        var footnote = 0
+        for leaf in leaves {
+            if case let .footnote(number) = leaf.kind { footnote = max(footnote, number) }
+            var list: Int?
+            for container in leaf.containers {
+                switch container.kind {
+                case .orderedList: list = container.identity
+                case .unorderedList: list = nil
+                case let .listItem(ordinal): if let list { ordinals[list] = max(ordinals[list] ?? 0, ordinal) }
+                default: break
+                }
+            }
+        }
+        widestOrdinals = ordinals
+        widestFootnote = footnote
     }
 
     /// Where a leaf sits: the boxes its quotes open, its list indent, and
@@ -96,7 +127,7 @@ struct MarkdownBlockLayout {
         case let .footnote(number):
             placement.marker = Self.listMarker(ordinal: number, isOrdered: true, depth: 1, isQuoted: false)
             placement.markerIndent = placement.indent
-            placement.indent += Self.markerWidth(isOrdered: true)
+            placement.indent += Self.gutter(widestOrdinal: widestFootnote)
         }
         DiscordMarkdown.padInlineCode(in: content)
 
@@ -116,6 +147,12 @@ struct MarkdownBlockLayout {
         style.paragraphSpacingBefore = spacingBefore
         style.firstLineHeadIndent = placement.marker == nil ? placement.indent : placement.markerIndent
         style.headIndent = placement.indent
+        // Inline code that opens a paragraph has no preceding character to
+        // pad, so the line itself starts inside the code's border.
+        if placement.marker == nil, content.length > 0, content.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil,
+           let codeFont = content.attribute(.font, at: 0, effectiveRange: nil) as? NSFont {
+            style.firstLineHeadIndent += DiscordMarkdown.inlineCodePadding(font: codeFont)
+        }
         if placement.marker != nil {
             style.tabStops = [
                 NSTextTab(textAlignment: .right, location: placement.indent - Self.px(4)),
@@ -137,7 +174,7 @@ struct MarkdownBlockLayout {
 
     private mutating func placement(in containers: [PresentationIntent.IntentType]) -> Placement {
         var placement = Placement()
-        var isOrdered = false
+        var widestOrdinal: Int?
         var listDepth = 0
         for container in containers {
             switch container.kind {
@@ -147,13 +184,13 @@ struct MarkdownBlockLayout {
                 placement.indent = 0
                 placement.isQuoted = true
             case .orderedList, .unorderedList:
-                isOrdered = container.kind == .orderedList
+                widestOrdinal = container.kind == .orderedList ? widestOrdinals[container.identity] : nil
                 listDepth += 1
             case let .listItem(ordinal):
                 placement.markerIndent = placement.indent
-                placement.indent += Self.markerWidth(isOrdered: isOrdered)
+                placement.indent += Self.gutter(widestOrdinal: widestOrdinal)
                 placement.marker = startedItems.insert(container.identity).inserted
-                    ? Self.listMarker(ordinal: ordinal, isOrdered: isOrdered, depth: listDepth, isQuoted: placement.isQuoted)
+                    ? Self.listMarker(ordinal: ordinal, isOrdered: widestOrdinal != nil, depth: listDepth, isQuoted: placement.isQuoted)
                     : nil
             default:
                 break
@@ -316,9 +353,8 @@ struct MarkdownBlockLayout {
     /// before the item's text, hollow once nested.
     private static func listMarker(ordinal: Int, isOrdered: Bool, depth: Int, isQuoted: Bool) -> NSAttributedString {
         let color = isQuoted ? NSColor.secondaryLabelColor : .labelColor
-        let font = NSFont.interfaceMonospacedDigitSystemFont(ofSize: MarkdownInlineStyle.bodySize, weight: .regular)
         guard !isOrdered else {
-            return NSAttributedString(string: "\(ordinal).", attributes: [.font: font, .foregroundColor: color])
+            return NSAttributedString(string: "\(ordinal).", attributes: [.font: orderedMarkerFont, .foregroundColor: color])
         }
         let diameter = px(5.5)
         // The image runs from the disc to the 4 px before the text where markers end.
@@ -337,7 +373,7 @@ struct MarkdownBlockLayout {
             }
             return true
         }
-        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: (font.xHeight - diameter) / 2), size: size)
+        attachment.bounds = CGRect(origin: CGPoint(x: 0, y: (MarkdownInlineStyle.font(for: .paragraph).xHeight - diameter) / 2), size: size)
         return NSAttributedString(attachment: attachment)
     }
 

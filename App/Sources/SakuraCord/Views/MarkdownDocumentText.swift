@@ -26,7 +26,7 @@ enum MarkdownDocumentText {
     ) -> NSAttributedString {
         var leaves = MarkdownLeaf.leaves(of: document)
         let footnotes = MarkdownFootnotes.extract(from: &leaves)
-        var layout = MarkdownBlockLayout(codeBackground: codeBackground)
+        var layout = MarkdownBlockLayout(codeBackground: codeBackground, leaves: leaves + footnotes)
         for leaf in leaves {
             layout.append(leaf)
         }
