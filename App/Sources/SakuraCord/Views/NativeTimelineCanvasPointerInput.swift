@@ -127,6 +127,7 @@ extension NativeTimelineCanvasView {
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
                 installFileCardCursors(at: index, rowOrigin: rowOrigin)
+                installComponentCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -1674,6 +1675,25 @@ extension NativeTimelineCanvasView {
             return .message(message.id)
         }
         return nil
+    }
+
+    /// Enabled buttons, link buttons and selects take the pointing hand at
+    /// their drawn frame. Disabled or loading ones, and those under an
+    /// unrevealed spoiler, keep the arrow.
+    func installComponentCursors(at index: Int, rowOrigin: CGFloat) {
+        guard let messageID = items[index].messageID else { return }
+        for layout in layouts[index].componentLayouts {
+            let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: layout, messageID: messageID, store: spoilerRevealStore
+            )
+            let frames = layout.buttons.filter { !$0.isDisabled && !$0.isLoading }.map(\.frame)
+                + layout.selects.filter { !$0.isDisabled && !$0.isLoading }.map(\.frame)
+            for frame in frames where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                frame, hiddenContainerFrames: hiddenContainers
+            ) {
+                addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+            }
+        }
     }
 
     func componentButtonPointerHit(
