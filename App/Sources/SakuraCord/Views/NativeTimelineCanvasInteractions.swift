@@ -868,8 +868,16 @@ extension NativeTimelineCanvasView {
         let layout = layouts[index]
         let localFrame: CGRect?
         switch region {
-        case .beginningTitle, .beginningDescription:
+        case .beginningTitle:
             return nil
+        case .beginningDescription:
+            guard let beginning = layout.beginningLayout else { return nil }
+            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
+                box: beginning.descriptionBox,
+                frame: beginning.descriptionFrame,
+                characterIndex: characterIndex,
+                rawToken: rawToken
+            )
         case .content:
             guard let value = layout.attributedContent,
                   let framesetter = layout.contentFramesetter,
