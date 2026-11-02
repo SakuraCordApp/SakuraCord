@@ -445,7 +445,7 @@ public enum DiscordMarkdown {
             line.addAttribute(.discordMarkdownBlock, value: blockName, range: fullRange)
             line.addAttribute(.discordMarkdownEm, value: NSNumber(value: metrics.em), range: fullRange)
         }
-        padInlineCode(in: line, metrics: metrics)
+        padInlineCode(in: line)
         return line
     }
 
@@ -454,10 +454,15 @@ public enum DiscordMarkdown {
         return line.isQuoted ? "quote" : nil
     }
 
+    /// The room inline code's border takes on each side.
+    public static func inlineCodePadding(font: NSFont) -> CGFloat {
+        font.pointSize * 0.2 + 1
+    }
+
     /// Discord pads inline code inside its border. Kerning after the
     /// preceding character and after the code reserves that padding, so the
     /// painted background never covers neighbouring text.
-    private static func padInlineCode(in line: NSMutableAttributedString, metrics: BlockMetrics) {
+    public static func padInlineCode(in line: NSMutableAttributedString) {
         let source = line.string as NSString
         line.enumerateAttribute(
             .discordMarkdownInlineCode,
@@ -466,7 +471,7 @@ public enum DiscordMarkdown {
             guard value != nil, range.length > 0,
                   let font = line.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
             else { return }
-            let padding = metrics.inlineCodePadding(font: font)
+            let padding = inlineCodePadding(font: font)
             let last = source.rangeOfComposedCharacterSequence(at: NSMaxRange(range) - 1)
             line.addAttribute(.kern, value: padding, range: last)
             if range.location > 0 {
@@ -1095,10 +1100,6 @@ public enum DiscordMarkdown {
         /// longest marker in a list is also the widest.
         let orderedMarkerFont: NSFont
 
-        func inlineCodePadding(font: NSFont) -> CGFloat {
-            font.pointSize * 0.2 + 1
-        }
-
         /// CSS margins: headings 16 above (8 when first) and 8 below, lists
         /// 4 around every item, code blocks 6 above their border.
         func margins(_ line: AppKitPlan.Line, isFirst: Bool) -> (top: CGFloat, bottom: CGFloat) {
@@ -1282,7 +1283,7 @@ public enum DiscordMarkdown {
         // so the line itself starts inside the code's border.
         if line.runs.first?.traits.contains(.inlineCode) == true {
             let font = appKitFont(block: line.block, traits: .inlineCode, metrics: metrics)
-            paragraph.firstLineHeadIndent += metrics.inlineCodePadding(font: font)
+            paragraph.firstLineHeadIndent += inlineCodePadding(font: font)
         }
         return paragraph
     }

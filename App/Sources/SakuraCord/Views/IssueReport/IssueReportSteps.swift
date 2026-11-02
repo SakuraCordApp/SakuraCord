@@ -67,9 +67,7 @@ struct IssueReportDescribeStep: View {
             .onSubmit { focus = store.primaryField.map { .field($0.id) } }
             .accessibilityLabel("Title")
         }
-        .contentShape(RoundedRectangle(cornerRadius: IssueReportMetrics.rowRadius, style: .continuous))
-        .onTapGesture { focus = .title }
-        .issueReportRow(highlighted: focus == .title)
+        .issueReportRow(highlighted: focus == .title) { focus = .title }
     }
 }
 

@@ -590,19 +590,7 @@ extension NativeTimelineRowPainter {
 
     private static func drawInlineCodeDecorations(_ rects: [CGRect]) {
         for inlineRect in rects {
-            let backgroundFrame = inlineRect.insetBy(dx: 0, dy: InterfaceScale.metric(1))
-            discordCodeBackgroundColor.setFill()
-            NSBezierPath(
-                concentricRoundedRect: backgroundFrame,
-                cornerRadius: NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
-            ).fill()
-            discordCodeBorderColor.setStroke()
-            let border = NSBezierPath(
-                concentricRoundedRect: backgroundFrame.insetBy(dx: 0.5, dy: 0.5),
-                cornerRadius: NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
-            )
-            border.lineWidth = 1
-            border.stroke()
+            drawCodeChrome(in: inlineRect.insetBy(dx: 0, dy: InterfaceScale.metric(1)))
         }
     }
 
@@ -622,20 +610,19 @@ extension NativeTimelineRowPainter {
         _ codeBlocks: [NativeTimelineCodeBlockRegion]
     ) {
         for codeBlock in codeBlocks {
-            let backgroundFrame = codeBlock.backgroundFrame
-            discordCodeBackgroundColor.setFill()
-            NSBezierPath(
-                concentricRoundedRect: backgroundFrame,
-                cornerRadius: InterfaceScale.metric(4)
-            ).fill()
-            discordCodeBorderColor.setStroke()
-            let border = NSBezierPath(
-                concentricRoundedRect: backgroundFrame.insetBy(dx: 0.5, dy: 0.5),
-                cornerRadius: InterfaceScale.metric(4)
-            )
-            border.lineWidth = 1
-            border.stroke()
+            drawCodeChrome(in: codeBlock.backgroundFrame)
         }
+    }
+
+    /// Discord's code chrome, which inline code and code blocks share.
+    static func drawCodeChrome(in rect: CGRect) {
+        let radius = NativeTimelineMarkdownChromeMetrics.codeBlockCornerRadius
+        discordCodeBackgroundColor.setFill()
+        NSBezierPath(concentricRoundedRect: rect, cornerRadius: radius).fill()
+        discordCodeBorderColor.setStroke()
+        let border = NSBezierPath(concentricRoundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: radius)
+        border.lineWidth = 1
+        border.stroke()
     }
 
     /// Discord centers its 5.5 px disc 12 px before the item text, which
@@ -661,14 +648,13 @@ extension NativeTimelineRowPainter {
     }
 
     private static func drawQuoteDecorations(_ bars: [CGRect]) {
+        bars.forEach(drawQuoteBar(in:))
+    }
+
+    /// Discord's fully rounded quote bar.
+    static func drawQuoteBar(in bar: CGRect) {
         NSColor.tertiaryLabelColor.setFill()
-        for bar in bars {
-            NSBezierPath(
-                roundedRect: bar,
-                xRadius: bar.width / 2,
-                yRadius: bar.width / 2
-            ).fill()
-        }
+        NSBezierPath(roundedRect: bar, xRadius: bar.width / 2, yRadius: bar.width / 2).fill()
     }
 
     /// Discord tints code with its blurple and outlines it in a translucent
