@@ -419,8 +419,9 @@ final class WorkspaceColumnsView: NSView {
     ) {
         // Navigation can list a leaving column again, as a DM shows the
         // sidebar a server just hid; like any navigation, it appears at once
-        // rather than finishing the hiding motion.
-        let returns = island.column.isDeparting && !column.isDeparting && !columnsAreChanging
+        // rather than finishing the hiding motion. A motion that brings it
+        // back moves it instead.
+        let returns = island.column.isDeparting && !column.isDeparting && !WorkspaceLayoutMotion.isStartingMotion
         if returns {
             WorkspaceMotionPhase.shared.reveal[column.id] = nil
             island.reveal.move(to: 1, at: time, animated: false)

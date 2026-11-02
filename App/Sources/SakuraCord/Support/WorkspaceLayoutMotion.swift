@@ -147,6 +147,8 @@ enum WorkspaceLayoutMotion {
     /// Motions waiting for the frame that commits their layout
     /// (`afterCommit`), and the settling that waits for them to start.
     private static var pendingStarts = 0
+    /// Whether a motion's change is committing, before its columns move.
+    static var isStartingMotion: Bool { pendingStarts > 0 }
     private static var startWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// Keeps the running motion from settling until a spring's duration
