@@ -337,6 +337,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
+    var codeCopyControl: NativeTimelineCodeCopyControl?
     /// A hovered audio file's seek bar while another player is active.
     var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
     var voiceMessageActiveID: VoiceMessagePlaybackID?

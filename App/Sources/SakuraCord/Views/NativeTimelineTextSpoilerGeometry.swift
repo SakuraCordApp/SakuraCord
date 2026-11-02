@@ -21,32 +21,6 @@ nonisolated enum NativeTimelineTextSpoilerGeometry {
         )
     }
 
-    private static func glyphBounds(in line: CTLine, range: NSRange) -> ClosedRange<CGFloat>? {
-        var lower = CGFloat.infinity
-        var upper = -CGFloat.infinity
-        for value in CTLineGetGlyphRuns(line) as NSArray {
-            let run = unsafeDowncast(value as AnyObject, to: CTRun.self)
-            let runRange = CTRunGetStringRange(run)
-            guard NSIntersectionRange(range, NSRange(location: runRange.location, length: runRange.length)).length > 0 else { continue }
-            let count = CTRunGetGlyphCount(run)
-            var positions = Array(repeating: CGPoint.zero, count: count)
-            var advances = Array(repeating: CGSize.zero, count: count)
-            var indices = Array(repeating: CFIndex(0), count: count)
-            CTRunGetPositions(run, CFRange(), &positions)
-            CTRunGetAdvances(run, CFRange(), &advances)
-            CTRunGetStringIndices(run, CFRange(), &indices)
-            for index in 0 ..< count where NSLocationInRange(indices[index], range) {
-                let start = positions[index].x
-                let end = start + advances[index].width
-                lower = min(lower, min(start, end))
-                upper = max(upper, max(start, end))
-            }
-        }
-        // Caret offsets split kerning adjustments at range boundaries. Glyph
-        // advances match TextKit's enclosed glyph range without changing text.
-        return lower.isFinite && upper > lower ? lower ... upper : nil
-    }
-
     static func rects(in textFrame: CTFrame, outerFrame: CGRect, range: NSRange) -> [CGRect] {
         let lines = CTFrameGetLines(textFrame) as NSArray
         guard range.length > 0, lines.count > 0 else { return [] }
@@ -67,7 +41,9 @@ nonisolated enum NativeTimelineTextSpoilerGeometry {
             let start = max(range.location, lineRange.location)
             let end = min(NSMaxRange(range), lineRange.location + lineRange.length)
             guard start < end else { return nil }
-            guard let horizontal = glyphBounds(in: line, range: NSRange(location: start, length: end - start)) else { return nil }
+            let fragmentRange = NSRange(location: start, length: end - start)
+            guard let horizontal = NativeTimelineTextSelectionGeometry.glyphBounds(in: line, range: fragmentRange)
+            else { return nil }
             var fragment = lineBounds[index]
             fragment.origin.x += origins[index].x + horizontal.lowerBound
             fragment.size.width = horizontal.upperBound - horizontal.lowerBound

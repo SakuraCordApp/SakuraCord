@@ -380,6 +380,9 @@ extension NativeTimelineCanvasView {
         reconcileInboxHeaders()
         positionAnimatedMediaOverlays()
         positionInlineVideoOverlays()
+        // The copy button can't follow its block as rows move and clip, so
+        // it leaves until the pointer next moves over a block.
+        if !(rowDisclosure?.isFinished ?? true) || unreadDividerGap != nil { setHoveredCodeBlock(nil) }
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()

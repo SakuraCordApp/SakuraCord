@@ -1231,6 +1231,7 @@ extension NativeTimelineCanvasView {
         pressedPollTarget = nil
         hoveredPollTarget = nil
         textSelectionGesture = nil
+        updateCodeCopyControl()
         reactionHoverCoordinator.close()
         removeActionCapsule()
         updateTrackingAreas()

@@ -46,7 +46,6 @@ final class NativeTimelinePointerState {
         let mention: NativeTimelineMentionHover?
         let textLink: NativeTimelineTextLinkHover?
         let textSpoiler: NativeTimelineTextSpoilerHover?
-        let codeBlock: NativeTimelineCodeBlockPointerTarget?
         let componentButton: NativeTimelineComponentButtonTarget?
         let forwardedSourceMessageID: MessageID?
         let threadMessageID: MessageID?
@@ -101,7 +100,6 @@ final class NativeTimelinePointerState {
             mention: hoveredMention,
             textLink: hoveredTextLink,
             textSpoiler: hoveredTextSpoiler,
-            codeBlock: hoveredCodeBlock,
             componentButton:
                 visualPressedComponentButton ?? hoveredComponentButton,
             forwardedSourceMessageID: hoveredForwardedSourceMessageID,

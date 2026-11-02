@@ -68,7 +68,7 @@ enum NativeTimelineBubbleLayout {
                 preferredWidth,
                 measuredTextWidth(
                     content.framesetter,
-                    length: attributedContent.length,
+                    value: attributedContent,
                     maximumWidth: maximumWidth
                 )
             )
@@ -244,20 +244,15 @@ enum NativeTimelineBubbleLayout {
 
     static func measuredTextWidth(
         _ framesetter: CTFramesetter,
-        length: Int,
+        value: NSAttributedString,
         maximumWidth: CGFloat
     ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+        let width = NativeTimelineMarkdownChromeMetrics.fittedWidth(
             framesetter,
-            CFRange(location: 0, length: length),
-            nil,
-            CGSize(
-                width: max(1, maximumWidth),
-                height: .greatestFiniteMagnitude
-            ),
-            nil
+            value: value,
+            maximumWidth: maximumWidth
         )
-        return min(maximumWidth, ceil(size.width + 1))
+        return min(maximumWidth, ceil(width + 1))
     }
 }
 

@@ -1,4 +1,5 @@
 import AppKit
+import MessageRendering
 import Observation
 import SwiftUI
 import Synchronization
@@ -226,7 +227,7 @@ nonisolated extension NSAttributedString {
             if let style = attributes[.paragraphStyle] as? NSParagraphStyle {
                 scaled.addAttribute(.paragraphStyle, value: style.scaled(by: ratio), range: range)
             }
-            for key in [NSAttributedString.Key.baselineOffset, .kern] {
+            for key in [NSAttributedString.Key.baselineOffset, .kern, .discordMarkdownEm] {
                 if let value = attributes[key] as? NSNumber {
                     scaled.addAttribute(key, value: CGFloat(value.doubleValue) * ratio, range: range)
                 }
