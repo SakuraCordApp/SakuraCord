@@ -470,6 +470,17 @@ final class RateLimitURLProtocol: URLProtocol, @unchecked Sendable {
             RateLimitURLProtocol.uploadHadAuthorization = request.value(forHTTPHeaderField: "Authorization") != nil
             status = 200
             json = "{}"
+        case "/api/v9/channels/200/messages/301" where request.httpMethod == "PATCH":
+            RateLimitURLProtocol.sentMessageBody = RateLimitURLProtocol.requestBody(request)
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            status = 200
+            json = #"""
+            {"id":"301","channel_id":"200",
+            "author":{"id":"1","username":"tester","global_name":"Tester","avatar":null},
+            "content":"edited reply","timestamp":"2026-07-11T20:01:00.000Z",
+            "edited_timestamp":"2026-07-11T20:02:00.000Z","message_reference":{"message_id":"299"},
+            "attachments":[],"reactions":[]}
+            """#
         case "/api/v9/channels/200/messages":
             RateLimitURLProtocol.messageMethod = request.httpMethod
             RateLimitURLProtocol.messagePath = path

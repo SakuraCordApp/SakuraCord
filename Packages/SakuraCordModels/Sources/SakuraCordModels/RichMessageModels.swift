@@ -71,6 +71,7 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
     public static let threadStarter = Self(rawValue: 21)
     public static let guildInviteReminder = Self(rawValue: 22)
     public static let contextMenuCommand = Self(rawValue: 23)
+    public static let autoModerationAction = Self(rawValue: 24)
     public static let stageStart = Self(rawValue: 27)
     public static let stageEnd = Self(rawValue: 28)
     public static let stageSpeaker = Self(rawValue: 29)
@@ -673,7 +674,8 @@ public struct GIFPickerLanding: Codable, Hashable, Sendable {
 public enum MessageSendProgress: Equatable, Sendable {
     case preparing
     case reserving(files: Int)
-    case uploading(fileName: String, completed: Int64, total: Int64)
+    /// `fileID` is the draft attachment's ID, absent for files sent without a draft.
+    case uploading(fileID: UUID?, fileName: String, completed: Int64, total: Int64)
     case submitting
     case awaitingReconciliation(nonce: String)
     case completed(messageID: MessageID)

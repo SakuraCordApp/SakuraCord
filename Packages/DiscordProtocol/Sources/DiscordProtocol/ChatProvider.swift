@@ -26,6 +26,7 @@ public struct EmojiFrecencySaveContribution: Sendable {
 public protocol ChatProvider: Sendable {
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide
     func guildProfile(in guildID: GuildID) async throws -> GuildProfile
+    func messageInteractionData(channelID: ChannelID, messageID: MessageID) async throws -> MessageInteractionData
     func guildGuideProgress(in guildID: GuildID) async throws -> GuildGuideProgress
     func completeGuildGuideAction(in guildID: GuildID, channelID: ChannelID) async throws -> GuildGuideProgress
     func guildOnboarding(in guildID: GuildID) async throws -> GuildOnboarding
@@ -88,6 +89,10 @@ public protocol ChatProvider: Sendable {
     func leaveGroupDirectMessage(_ channelID: ChannelID, silently: Bool) async throws
     /// Closes a 1:1 DM, hiding it from the list without deleting its messages.
     func closeDirectMessage(_ channelID: ChannelID) async throws
+    /// Moves a message request into the conversation list.
+    func acceptMessageRequest(_ channelID: ChannelID) async throws
+    /// Removes a message request without notifying its sender.
+    func ignoreMessageRequest(_ channelID: ChannelID) async throws
     /// Reads every relationship at most once per Gateway connection.
     func loadRelationships() async throws
     func setUserIgnored(_ userID: UserID, ignored: Bool, location: IgnoreActionLocation) async throws
@@ -184,6 +189,19 @@ public protocol ChatProvider: Sendable {
     func send(_ draft: SendMessageDraft) async throws -> Message
     func send(_ draft: SendMessageDraft, progress: @escaping @Sendable (MessageSendProgress) -> Void)
         async throws -> Message
+    /// Stops one file of a send in progress, by its draft attachment ID. The
+    /// message goes without it, or not at all once every file is stopped.
+    /// Returns false when the file can no longer leave the message.
+    func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool
+    /// Stores a staged file before its message is sent; returns whether
+    /// storage accepted it. Its message then posts it as it is.
+    func preuploadAttachment(
+        _ attachment: ForumPostAttachment,
+        channelID: ChannelID,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async -> Bool
+    /// Drops a staged file's early upload when it will not be sent.
+    func discardPreuploadedAttachment(_ attachmentID: UUID) async
     func setPollAnswers(_ answerIDs: [Int], messageID: MessageID, channelID: ChannelID) async throws
     func pollVoters(messageID: MessageID, channelID: ChannelID, answerID: Int, after: UserID?, limit: Int) async throws -> MessagePeoplePage
     func endPoll(messageID: MessageID, channelID: ChannelID) async throws -> Message
@@ -226,7 +244,7 @@ public protocol ChatProvider: Sendable {
     /// flushes pending uses. Returns what the server stored.
     func saveApplicationCommandFrecency(_ history: DiscordFrecencyHistory) async throws
         -> DiscordFrecencyHistory
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message
+    func edit(_ message: Message, content: String) async throws -> Message
     func delete(messageID: MessageID, channelID: ChannelID) async throws
     func acknowledge(
         channelID: ChannelID,
@@ -352,6 +370,9 @@ public extension ChatProvider {
     }
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildProfile(in guildID: GuildID) async throws -> GuildProfile { throw ChatProviderError.invalidRequest("Server profile is unavailable.") }
+    func messageInteractionData(channelID: ChannelID, messageID: MessageID) async throws -> MessageInteractionData {
+        throw ChatProviderError.invalidRequest("Command details are unavailable.")
+    }
     func guildGuideProgress(in guildID: GuildID) async throws -> GuildGuideProgress { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func completeGuildGuideAction(in guildID: GuildID, channelID: ChannelID) async throws -> GuildGuideProgress { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildOnboarding(in guildID: GuildID) async throws -> GuildOnboarding {
@@ -487,6 +508,14 @@ public extension ChatProvider {
 
     func closeDirectMessage(_ channelID: ChannelID) async throws {
         throw ChatProviderError.invalidRequest("Closing direct messages is unavailable for this session.")
+    }
+
+    func acceptMessageRequest(_ channelID: ChannelID) async throws {
+        throw ChatProviderError.invalidRequest("Message requests are unavailable for this session.")
+    }
+
+    func ignoreMessageRequest(_ channelID: ChannelID) async throws {
+        throw ChatProviderError.invalidRequest("Message requests are unavailable for this session.")
     }
 
     func loadRelationships() async throws {}
@@ -744,6 +773,16 @@ public extension ChatProvider {
         progress(.completed(messageID: message.id))
         return message
     }
+
+    func cancelAttachmentUpload(_ attachmentID: UUID) async -> Bool { false }
+
+    func preuploadAttachment(
+        _ attachment: ForumPostAttachment,
+        channelID: ChannelID,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async -> Bool { false }
+
+    func discardPreuploadedAttachment(_ attachmentID: UUID) async {}
 
     func forward(_ draft: ForwardMessageDraft) async throws -> Message {
         throw ChatProviderError.capabilityDisabled(.messageForwarding)

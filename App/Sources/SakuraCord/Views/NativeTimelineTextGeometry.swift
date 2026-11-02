@@ -203,10 +203,39 @@ nonisolated enum NativeTimelineTextSelectionGeometry {
         return result
     }
 
+    static func glyphBounds(in line: CTLine, range: NSRange) -> ClosedRange<CGFloat>? {
+        var lower = CGFloat.infinity
+        var upper = -CGFloat.infinity
+        for value in CTLineGetGlyphRuns(line) as NSArray {
+            let run = unsafeDowncast(value as AnyObject, to: CTRun.self)
+            let runRange = CTRunGetStringRange(run)
+            guard NSIntersectionRange(range, NSRange(location: runRange.location, length: runRange.length)).length > 0 else { continue }
+            let count = CTRunGetGlyphCount(run)
+            var positions = Array(repeating: CGPoint.zero, count: count)
+            var advances = Array(repeating: CGSize.zero, count: count)
+            var indices = Array(repeating: CFIndex(0), count: count)
+            CTRunGetPositions(run, CFRange(), &positions)
+            CTRunGetAdvances(run, CFRange(), &advances)
+            CTRunGetStringIndices(run, CFRange(), &indices)
+            for index in 0 ..< count where NSLocationInRange(indices[index], range) {
+                let start = positions[index].x
+                let end = start + advances[index].width
+                lower = min(lower, min(start, end))
+                upper = max(upper, max(start, end))
+            }
+        }
+        // Caret offsets split kerning adjustments at range boundaries. Glyph
+        // advances match TextKit's enclosed glyph range without changing text.
+        return lower.isFinite && upper > lower ? lower ... upper : nil
+    }
+
+    /// `fitsGlyphs` bounds each fragment by its glyphs' advances instead of
+    /// caret offsets, keeping kerning at the range's edges inside it.
     static func rects(
         in textFrame: CTFrame,
         outerFrame: CGRect,
-        range: NSRange
+        range: NSRange,
+        fitsGlyphs: Bool = false
     ) -> [CGRect] {
         guard range.length > 0 else { return [] }
         let lines = CTFrameGetLines(textFrame) as NSArray
@@ -244,20 +273,18 @@ nonisolated enum NativeTimelineTextSelectionGeometry {
                 &descent,
                 &leading
             )
-            let startOffset = CTLineGetOffsetForStringIndex(
-                line,
-                start,
-                nil
-            )
-            let endOffset = CTLineGetOffsetForStringIndex(
-                line,
-                end,
-                nil
-            )
-            let minX = outerFrame.minX
-                + origin.x
-                + min(startOffset, endOffset)
-            let width = max(1, abs(endOffset - startOffset))
+            let horizontal: ClosedRange<CGFloat>
+            if fitsGlyphs {
+                guard let bounds = glyphBounds(in: line, range: NSRange(location: start, length: end - start))
+                else { continue }
+                horizontal = bounds
+            } else {
+                let startOffset = CTLineGetOffsetForStringIndex(line, start, nil)
+                let endOffset = CTLineGetOffsetForStringIndex(line, end, nil)
+                horizontal = min(startOffset, endOffset) ... max(startOffset, endOffset)
+            }
+            let minX = outerFrame.minX + origin.x + horizontal.lowerBound
+            let width = max(1, horizontal.upperBound - horizontal.lowerBound)
             result.append(CGRect(
                 x: minX,
                 y: outerFrame.maxY - origin.y - ascent - 0.5,
@@ -277,11 +304,6 @@ nonisolated struct NativeTimelineCodeBlockRegion: Equatable {
 }
 
 nonisolated enum NativeTimelineCodeBlockGeometry {
-    struct LineRange {
-        let range: NSRange
-        let startsBlock: Bool
-    }
-
     static func regions(
         value: NSAttributedString,
         framesetter: CTFramesetter,
@@ -316,7 +338,8 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
     ) -> [NativeTimelineCodeBlockRegion] {
         guard value.length > 0 else { return [] }
         let fullRange = NSRange(location: 0, length: value.length)
-        var lines: [LineRange] = []
+        let source = value.string as NSString
+        var blocks: [NSRange] = []
         value.enumerateAttribute(
             .discordMarkdownBlock,
             in: fullRange
@@ -324,68 +347,60 @@ nonisolated enum NativeTimelineCodeBlockGeometry {
             guard rawValue as? String == "code",
                   range.length > 0
             else { return }
-            let paragraph = value.attribute(
-                .paragraphStyle,
-                at: range.location,
-                effectiveRange: nil
-            ) as? NSParagraphStyle
-            lines.append(LineRange(
-                range: range,
-                startsBlock:
-                    (paragraph?.paragraphSpacingBefore ?? 0) > 0
-            ))
-        }
-        guard !lines.isEmpty else { return [] }
-
-        var groups: [[LineRange]] = []
-        for line in lines {
-            if line.startsBlock || groups.isEmpty {
-                groups.append([line])
-            } else {
-                groups[groups.count - 1].append(line)
-            }
-        }
-
-        let source = value.string as NSString
-        return groups.compactMap { group in
-            guard let first = group.first,
-                  let last = group.last
-            else { return nil }
-            let range = NSRange(
-                location: first.range.location,
-                length: NSMaxRange(last.range)
-                    - first.range.location
-            )
-            let rects = group.flatMap {
-                NativeTimelineTextSelectionGeometry.rects(
-                    in: textFrame,
-                    outerFrame: outerFrame,
-                    range: $0.range
+            // A blank code line's newline coalesces with the next line's
+            // run, which can open another block, so check each line in it.
+            var lineStart = range.location
+            while lineStart < NSMaxRange(range) {
+                let newline = source.range(
+                    of: "\n",
+                    range: NSRange(location: lineStart, length: NSMaxRange(range) - lineStart)
                 )
+                let lineEnd = newline.location == NSNotFound ? NSMaxRange(range) : NSMaxRange(newline)
+                let line = NSRange(location: lineStart, length: lineEnd - lineStart)
+                let paragraph = value.attribute(
+                    .paragraphStyle,
+                    at: lineStart,
+                    effectiveRange: nil
+                ) as? NSParagraphStyle
+                if let last = blocks.last, (paragraph?.paragraphSpacingBefore ?? 0) <= 0 {
+                    blocks[blocks.count - 1] = NSUnionRange(last, line)
+                } else {
+                    blocks.append(line)
+                }
+                lineStart = lineEnd
             }
+        }
+
+        return blocks.compactMap { range in
+            let rects = NativeTimelineTextSelectionGeometry.rects(
+                in: textFrame,
+                outerFrame: outerFrame,
+                range: range
+            )
             guard let firstRect = rects.first else { return nil }
             let union = rects.dropFirst().reduce(firstRect) {
                 $0.union($1)
             }
+            let inset = NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: value, at: range.location)
             let backgroundFrame = CGRect(
                 x: outerFrame.minX,
-                y: union.minY
-                    - NativeTimelineMarkdownChromeMetrics
-                        .codeBlockInset,
+                y: union.minY - inset,
                 width: outerFrame.width,
-                height: union.height
-                    + NativeTimelineMarkdownChromeMetrics
-                        .codeBlockInset * 2
+                height: union.height + inset * 2
             )
-            let buttonWidth: CGFloat = InterfaceScale.metric(28)
+            // The button fills a one-line block's height less its inset, so
+            // it sits centred on the first line with equal room on every
+            // side, in the room the first lines' tail indents leave for it.
+            let buttonInset = NativeTimelineMarkdownChromeMetrics.codeCopyButtonInset
+            let buttonSide = firstRect.height + (inset - buttonInset) * 2
             let buttonFrame = CGRect(
                 x: max(
                     backgroundFrame.minX,
-                    backgroundFrame.maxX - buttonWidth - InterfaceScale.metric(4)
+                    backgroundFrame.maxX - buttonSide - buttonInset
                 ),
-                y: backgroundFrame.minY + InterfaceScale.metric(4),
-                width: buttonWidth,
-                height: buttonWidth
+                y: backgroundFrame.minY + buttonInset,
+                width: buttonSide,
+                height: buttonSide
             )
             return NativeTimelineCodeBlockRegion(
                 range: range,

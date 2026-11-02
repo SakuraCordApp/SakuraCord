@@ -172,7 +172,7 @@ extension DiscordRESTProvider {
             ) { state in
                 switch state {
                 case .reserving(let files): progress(.reserving(files: files))
-                case .uploading(let fileName, let completed, let total):
+                case .uploading(_, let fileName, let completed, let total):
                     progress(.uploading(fileName: fileName, completed: completed, total: total))
                 default: break
                 }

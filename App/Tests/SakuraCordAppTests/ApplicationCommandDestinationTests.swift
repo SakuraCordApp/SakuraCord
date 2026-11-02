@@ -147,7 +147,7 @@ private actor CommandDestinationProvider: ChatProvider {
     func updateStatus(_ status: PresenceStatus) async throws {}
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage { .init(messages: [], hasMoreBefore: false) }
     func send(_ draft: SendMessageDraft) async throws -> Message { throw ChatProviderError.invalidRequest("Unexpected message send") }
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message { throw ChatProviderError.invalidRequest("Unused") }
+    func edit(_ message: Message, content: String) async throws -> Message { throw ChatProviderError.invalidRequest("Unused") }
     func delete(messageID: MessageID, channelID: ChannelID) async throws {}
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws {}
     func eventStream() async -> AsyncStream<ClientEvent> { AsyncStream { $0.finish() } }

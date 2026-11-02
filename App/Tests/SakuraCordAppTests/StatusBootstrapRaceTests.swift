@@ -104,7 +104,7 @@ actor GatedBootstrapRaceProvider: ChatProvider {
     func profile(for userID: UserID, in guildID: GuildID?) async throws -> UserProfile { try await base.profile(for: userID, in: guildID) }
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage { try await base.messages(in: channelID, before: before, limit: limit) }
     func send(_ draft: SendMessageDraft) async throws -> Message { try await base.send(draft) }
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message { try await base.edit(messageID: messageID, channelID: channelID, content: content) }
+    func edit(_ message: Message, content: String) async throws -> Message { try await base.edit(message, content: content) }
     func delete(messageID: MessageID, channelID: ChannelID) async throws { try await base.delete(messageID: messageID, channelID: channelID) }
     func toggleReaction(_ emoji: String, messageID: MessageID, channelID: ChannelID) async throws { try await base.toggleReaction(emoji, messageID: messageID, channelID: channelID) }
     func disconnect() async { releaseBootstrap(); events.continuation.finish() }

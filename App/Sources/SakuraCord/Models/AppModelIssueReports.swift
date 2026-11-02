@@ -31,6 +31,17 @@ extension AppModel {
         issueReports.present(kind)
     }
 
+    /// The community bot's "Report a bug" and "Suggest a feature" buttons open
+    /// the report window here instead of sending the bot an interaction.
+    func presentIssueReport(forComponent customID: String, on message: Message) -> Bool {
+        guard customID.hasPrefix("r:"),
+              let kind = IssueReportKind(rawValue: String(customID.dropFirst(2))),
+              componentApplicationID(of: message) == ApplicationID(Self.issueReportAuthorization.clientID)
+        else { return false }
+        presentIssueReport(kind)
+        return true
+    }
+
     func submitIssueReport() {
         let store = issueReports
         guard store.submissionTask == nil, store.missingRequirement(before: .done) == nil else {

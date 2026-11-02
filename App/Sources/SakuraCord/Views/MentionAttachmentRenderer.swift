@@ -78,11 +78,11 @@ enum MentionAttachmentRenderer {
         avatar: NSImage?,
         hovered: Bool
     ) -> NSImage {
-        let labelFont = NSFont.systemFont(ofSize: font.pointSize, weight: .semibold)
+        let labelFont = NSFont.systemFont(ofSize: font.pointSize, weight: presentation.labelWeight)
         let label = presentation.label as NSString
         let attributes: [NSAttributedString.Key: Any] = [.font: labelFont]
         let labelSize = label.size(withAttributes: attributes)
-        let showsAvatar = if case .user = presentation.target { true } else { false }
+        let showsAvatar = presentation.showsAvatar
         let showsLeadingIcon = presentation.systemImage != nil
         let height = max(21, ceil(font.pointSize + 6))
         let avatarSize = height - 6
@@ -96,16 +96,12 @@ enum MentionAttachmentRenderer {
                 + (showsLeadingIcon ? iconSize + iconGap : 0)
         )
         let size = NSSize(width: width, height: height)
-        let color = mentionColor(hex: presentation.colorHex)
-        let usesRoleAccentFallback = if case .role = presentation.target {
-            SakuraCordAccentColor.usesAccentFallback(
-                forRoleColorHex: presentation.colorHex
-            )
-        } else {
-            false
-        }
+        let color = labelColor(for: presentation)
+        let usesRoleAccentFallback = usesRoleAccentFallback(for: presentation)
         let image = NSImage(size: size, flipped: false) { bounds in
-            let background = color.withAlphaComponent(hovered ? 0.34 : 0.18)
+            let background = color.withAlphaComponent(
+                NativeTimelineMentionAppearance.backgroundAlpha(isHovered: hovered, isTimestamp: presentation.isTimestamp)
+            )
             let shape = NSBezierPath(
                 concentricRoundedRect: bounds,
                 cornerRadius: InterfaceScale.metric(5.5)
@@ -148,7 +144,7 @@ enum MentionAttachmentRenderer {
                     height: avatarSize
                 )
                 NSGraphicsContext.saveGraphicsState()
-                NSBezierPath(ovalIn: avatarRect).addClip()
+                avatarPath(in: avatarRect, for: presentation).addClip()
                 if let avatar {
                     avatar.draw(
                         in: avatarRect,
@@ -160,7 +156,7 @@ enum MentionAttachmentRenderer {
                     )
                 } else {
                     color.withAlphaComponent(0.38).setFill()
-                    NSBezierPath(ovalIn: avatarRect).fill()
+                    avatarPath(in: avatarRect, for: presentation).fill()
                 }
                 NSGraphicsContext.restoreGraphicsState()
                 textX = avatarRect.maxX + avatarGap
@@ -186,6 +182,20 @@ enum MentionAttachmentRenderer {
             blue: CGFloat(hex & 0xff) / 255,
             alpha: 1
         )
+    }
+
+    private static func labelColor(for presentation: MentionPresentation) -> NSColor {
+        presentation.isTimestamp ? .labelColor : mentionColor(hex: presentation.colorHex)
+    }
+
+    private static func usesRoleAccentFallback(for presentation: MentionPresentation) -> Bool {
+        guard case .role = presentation.target else { return false }
+        return SakuraCordAccentColor.usesAccentFallback(forRoleColorHex: presentation.colorHex)
+    }
+
+    private static func avatarPath(in rect: NSRect, for presentation: MentionPresentation) -> NSBezierPath {
+        let radius = presentation.avatarCornerRadius(size: rect.width)
+        return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
     }
 }
 

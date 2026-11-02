@@ -27,10 +27,21 @@ struct MessageMentionResolver {
     func label(_ mention: RenderedMention) -> String {
         presentation(mention).label
     }
+
+    /// Every mention a draft holds, keyed by token, as an editor shows them.
+    func presentations(in text: String) -> [String: MentionPresentation] {
+        MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
+            if case let .mention(mention) = segment {
+                values[mention.rawToken] = presentation(mention)
+            }
+        }
+    }
 }
 
 struct CustomEmojiRichText: View {
     var model: AppModel?
+    /// Resolves clicked user mentions the source message knows about.
+    var message: Message?
     let content: String
     let emojiSize: CGFloat
     var baseFontSize: CGFloat?
@@ -44,6 +55,7 @@ struct CustomEmojiRichText: View {
 
     init(
         model: AppModel? = nil,
+        message: Message? = nil,
         content: String,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
@@ -57,6 +69,7 @@ struct CustomEmojiRichText: View {
         onURLClick: @escaping (URL) -> Bool = { _ in false }
     ) {
         self.model = model
+        self.message = message
         self.content = content
         self.emojiSize = emojiSize
         self.baseFontSize = baseFontSize
@@ -114,12 +127,15 @@ struct CustomEmojiRichText: View {
         switch mention.target {
         case .unresolved:
             return
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentions.gamesByID[id]
+        case let .command(id, name):
+            guard let channelID = message?.channelID ?? model.selectedChannelID else { return }
+            model.startCommandMention(id: id, name: name, in: channelID)
         case let .user(id):
-            let user = model.membersByID[id]?.user
+            let user = model.mentionUser(id, in: message)
+                ?? model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
-                ?? model.messages.first { $0.author.id == id }?.author
-                ?? model.threadMessages.first { $0.author.id == id }?.author
-                ?? (model.currentUser?.id == id ? model.currentUser : nil)
             guard let user else { return }
             let requestID = model.showProfile(for: user)
             presentedMention = AnchoredMentionPresentation(
@@ -177,7 +193,7 @@ private struct AnchoredMentionPopoverLayer: View {
                     }
                 case let .role(id):
                     RoleMembersPopover(model: model, roleID: id, guildID: model.selectedGuildID)
-                case .unresolved, .guildNavigation, .channel, .linkedChannel, .message:
+                case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
                     EmptyView()
                 }
             }
@@ -191,7 +207,7 @@ private struct AnchoredMentionPopoverLayer: View {
         switch request.mention.target {
         case .user:
             .memberProfile
-        case .unresolved, .guildNavigation, .role, .channel, .linkedChannel, .message:
+        case .unresolved, .game, .command, .guildNavigation, .role, .channel, .linkedChannel, .message:
             .interactive
         }
     }
@@ -224,12 +240,11 @@ nonisolated struct LinkedImagePresentation: Sendable {
                 )
             )
         }
-        // Discord leaves an emoji link inside a spoiler as a spoilered link.
-        if references.contains(where: { $0.1.linkedEmoji != nil }) {
+        // Discord leaves an image or emoji link inside a spoiler as a
+        // spoilered link, so it never shows before its reveal.
+        if !references.isEmpty, content.contains("||") {
             let spoilered = Self.spoileredMatchLocations(matches, in: content)
-            references.removeAll {
-                $0.1.linkedEmoji != nil && spoilered.contains($0.0.location)
-            }
+            references.removeAll { spoilered.contains($0.0.location) }
         }
         matchedEmojiURLs = Set(
             references.compactMap { reference in

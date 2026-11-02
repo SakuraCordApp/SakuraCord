@@ -138,15 +138,23 @@ extension AppModel {
         setComposerAttachments(composerAttachments(for: destination) + staged, for: destination)
         composer.checkingAttachmentIDs.formUnion(stagedIDs)
         defer { composer.checkingAttachmentIDs.subtract(stagedIDs) }
+        // A sent message shows at once, so its videos are read while the
+        // tiles hold sending back.
+        async let videosPrepared: Void = LocalVideo.prepare(urls)
         let acceptedURLs = Set(await attachmentURLsWithinDiscordLimit(
             urls,
             offeringExternalUploadFor: destination
         ))
+        await videosPrepared
         let rejectedIDs = Set(staged.filter { !acceptedURLs.contains($0.url) }.map(\.id))
         let current = composerAttachments(for: destination)
         if current.contains(where: { rejectedIDs.contains($0.id) }) {
             setComposerAttachments(current.filter { !rejectedIDs.contains($0.id) }, for: destination)
         }
+        preuploadComposerAttachments(
+            composerAttachments(for: destination).filter { stagedIDs.contains($0.id) },
+            to: destination
+        )
         return true
     }
 
@@ -155,8 +163,22 @@ extension AppModel {
         guard isComposerDropEligible(destination), !Task.isCancelled else { return false }
         var attachments = composerAttachments(for: destination)
         if attachmentBatchFits(urls.count, besides: attachments.count) {
-            attachments.append(contentsOf: urls.map { ForumPostAttachment(url: $0) })
+            let added = urls.map { ForumPostAttachment(url: $0) }
+            attachments.append(contentsOf: added)
             setComposerAttachments(attachments, for: destination)
+            let addedIDs = Set(added.map(\.id))
+            if urls.contains(where: LocalVideo.isVideo) {
+                // The tiles hold sending back until their videos are read.
+                composer.checkingAttachmentIDs.formUnion(addedIDs)
+                Task {
+                    await LocalVideo.prepare(urls)
+                    composer.checkingAttachmentIDs.subtract(addedIDs)
+                }
+            }
+            preuploadComposerAttachments(
+                composerAttachments(for: destination).filter { addedIDs.contains($0.id) },
+                to: destination
+            )
         } else {
             pruneOwnedPromisedAttachmentFiles()
         }
@@ -170,6 +192,7 @@ extension AppModel {
         from destination: MessageComposerDestination
     ) {
         var attachments = composerAttachments(for: destination)
+        discardPreuploads([id])
         attachments.removeAll { $0.id == id }
         setComposerAttachments(attachments, for: destination)
     }
@@ -196,8 +219,43 @@ extension AppModel {
         setComposerAttachments(attachments, for: destination)
     }
 
+    /// Drops the staged files without sending them.
     func clearComposerAttachments(for destination: MessageComposerDestination) {
+        discardPreuploads(composerAttachments(for: destination).map(\.id))
         setComposerAttachments([], for: destination)
+    }
+
+    /// Like the first-party composer, starts storing checked files as soon as
+    /// they are attached, so Send has only the message left to post. A thread
+    /// still being created has no channel to store them for yet. With metadata
+    /// removal off, files wait for Send: turning it on before then must still
+    /// strip them, and a stored file cannot be prepared again.
+    func preuploadComposerAttachments(
+        _ attachments: [ForumPostAttachment],
+        to destination: MessageComposerDestination
+    ) {
+        guard privacySafetySettingsStore.load().removesMediaMetadata,
+              case let .conversation(channelID) = attachmentComposerContext(for: destination)
+        else { return }
+        let provider = accountSession().provider
+        for attachment in attachments {
+            attachmentUploads.beginPreupload(attachment.id)
+            Task { [weak self] in
+                let stored = await provider.preuploadAttachment(attachment, channelID: channelID) { progress in
+                    Task { @MainActor in self?.attachmentUploads.apply(progress) }
+                }
+                self?.attachmentUploads.endPreupload(attachment.id, stored: stored)
+            }
+        }
+    }
+
+    /// Stops the early uploads of files that will not be sent.
+    func discardPreuploads(_ attachmentIDs: [UUID]) {
+        let provider = accountSession().provider
+        for id in attachmentIDs {
+            attachmentUploads.forgetPreupload(id)
+            Task { await provider.discardPreuploadedAttachment(id) }
+        }
     }
 
     @discardableResult
@@ -219,10 +277,23 @@ extension AppModel {
         let restored = restoredAttachments.filter {
             seen.insert($0.id).inserted
         }
-        setComposerAttachments(
-            Array((restored + current).prefix(SendMessageDraft.maximumAttachmentCount)),
-            for: destination
-        )
+        let attachments = restored + current
+        setComposerAttachments(Array(attachments.prefix(SendMessageDraft.maximumAttachmentCount)), for: destination)
+        discardPreuploads(attachments.dropFirst(SendMessageDraft.maximumAttachmentCount).map(\.id))
+    }
+
+    /// Puts back the files of a send that did not take them, unless their
+    /// conversation was left meanwhile, which drops their early uploads.
+    func returnUnsentComposerAttachments(
+        _ attachments: [ForumPostAttachment],
+        to destination: MessageComposerDestination,
+        from conversationID: ChannelID?
+    ) {
+        guard attachmentComposerContext(for: destination) == conversationID.map(AttachmentComposerContext.conversation) else {
+            discardPreuploads(attachments.map(\.id))
+            return
+        }
+        restoreComposerAttachments(attachments, to: destination)
     }
 
     @discardableResult
@@ -233,9 +304,26 @@ extension AppModel {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
               validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
         else { return false }
+        // A thread still being created has no upload destination yet.
+        if destination == .thread, openThread == nil {
+            return await addComposerAttachments(attachments.map(\.url), to: .thread)
+        }
+        // The files go where they were dropped, read while the message waits
+        // and holds its place in the outbox.
+        let session = accountSession()
+        let channelID = selectedChannelID
+        let thread = openThread
+        guard let reservation = composer.outbox.reserveSubmission() else {
+            composer.isSendQueueFullAlertPresented = true
+            return false
+        }
+        // The message shows at once, so its videos are read first.
+        await LocalVideo.prepare(attachments.map(\.url))
+        composer.outbox.releaseSubmission(reservation)
+        guard isCurrentAccountSession(session) else { return false }
         switch destination {
         case .channel:
-            guard let channelID = selectedChannelID else { return false }
+            guard let channelID else { return false }
             return await sendChannelMessage(
                 channelID: channelID,
                 content: "",
@@ -245,10 +333,7 @@ extension AppModel {
                 clearsComposer: false
             )
         case .thread:
-            guard let thread = openThread else {
-                // A thread still being created has no upload destination yet.
-                return await addComposerAttachments(attachments.map(\.url), to: .thread)
-            }
+            guard let thread else { return false }
             return await sendThreadMessage(
                 content: "",
                 attachments: attachments,

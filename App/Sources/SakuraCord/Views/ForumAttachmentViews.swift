@@ -52,9 +52,9 @@ struct ForumComposerAttachmentControl: View {
                 }
             }
             .zIndex(20)
-            .sheet(item: $editingTarget) { target in
+            .windowModal(item: $editingTarget, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) { target in
                 if let attachment = attachments.first(where: { $0.url == target.id }) {
-                    ForumAttachmentEditor(
+                    AttachmentEditor(
                         attachment: attachment,
                         cancel: { editingTarget = nil },
                         save: { updated in
@@ -365,6 +365,7 @@ private struct ForumComposerAttachmentTile: View {
     let delete: () -> Void
     let thumbnailLoaded: (NSImage) -> Void
     let hoverChanged: (Bool) -> Void
+    @State private var isHovered = false
 
     var body: some View {
         ZStack {
@@ -377,17 +378,11 @@ private struct ForumComposerAttachmentTile: View {
                 transaction.animation = nil
                 transaction.disablesAnimations = true
             }
-
-            if attachment.isSpoiler {
-                Rectangle()
-                    .fill(.black.opacity(0.5))
-                VStack(spacing: InterfaceScale.metric(4)) {
-                    Image(systemName: "eye.slash")
-                    Text("SPOILER")
-                        .font(.interface(.caption2).weight(.bold))
-                }
-                .foregroundStyle(.white)
-            }
+            .spoilerCover(
+                attachment.isSpoiler,
+                pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: size),
+                isHovered: isHovered
+            )
         }
         .frame(width: size, height: size)
         .background(.quaternary)
@@ -397,7 +392,12 @@ private struct ForumComposerAttachmentTile: View {
                 .stroke(.separator, lineWidth: 1)
         }
         .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous))
-        .onModalHover(perform: hoverChanged)
+        // A spoiler takes the pointing hand, as it does in the timeline.
+        .pointerStyle(attachment.isSpoiler ? .link : nil)
+        .onModalHover { hovering in
+            withAnimation(ComposerResizeMotion.hover) { isHovered = hovering }
+            hoverChanged(hovering)
+        }
         .help(attachment.filename)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(attachment.filename)
@@ -412,120 +412,6 @@ private struct ForumComposerAttachmentTile: View {
 
 struct ForumAttachmentEditorTarget: Identifiable {
     let id: URL
-}
-
-struct ForumAttachmentEditor: View {
-    let attachment: ForumPostAttachment
-    let cancel: () -> Void
-    let save: (ForumPostAttachment) -> Void
-    @State private var filename: String
-    @State private var description: String
-    @State private var isSpoiler: Bool
-
-    init(
-        attachment: ForumPostAttachment,
-        cancel: @escaping () -> Void,
-        save: @escaping (ForumPostAttachment) -> Void
-    ) {
-        self.attachment = attachment
-        self.cancel = cancel
-        self.save = save
-        _filename = State(initialValue: attachment.filename)
-        _description = State(initialValue: attachment.description)
-        _isSpoiler = State(initialValue: attachment.isSpoiler)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(20)) {
-            HStack {
-                Text("Modify Attachment")
-                    .font(.interface(.title2).bold())
-                Spacer()
-                Button("Close", systemImage: "xmark", action: cancel)
-                    .labelStyle(.iconOnly)
-                    .font(.interface(.title3))
-                    .buttonStyle(.borderless)
-                    .keyboardShortcut(.cancelAction)
-            }
-
-            HStack(alignment: .top, spacing: InterfaceScale.metric(24)) {
-                LocalAttachmentThumbnail(url: attachment.url, maximumPixelDimension: 480)
-                    .frame(width: InterfaceScale.metric(220), height: InterfaceScale.metric(220))
-                    .background(.quaternary)
-                    .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous))
-
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(18)) {
-                    VStack(alignment: .leading, spacing: InterfaceScale.metric(7)) {
-                        Text("Filename").font(.interface(.headline))
-                        TextField("Filename", text: $filename)
-                            .tint(SakuraCordAccentColor.color)
-                            .textFieldStyle(.roundedBorder)
-                    }
-
-                    VStack(alignment: .leading, spacing: InterfaceScale.metric(7)) {
-                        HStack {
-                            Text("Description (Alt Text)").font(.interface(.headline))
-                            Spacer()
-                            Text("\(description.count)/1024")
-                                .font(.interface(.caption))
-                                .foregroundStyle(.secondary)
-                        }
-                        TextEditor(text: $description)
-                            .tint(SakuraCordAccentColor.color)
-                            .font(.interface(.body))
-                            .scrollContentBackground(.hidden)
-                            .padding(InterfaceScale.metric(7))
-                            .background(.quaternary, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(8)))
-                            .overlay {
-                                ConcentricRectangle(cornerRadius: InterfaceScale.metric(8))
-                                    .stroke(.separator, lineWidth: 1)
-                            }
-                            .frame(minHeight: InterfaceScale.metric(116))
-                            .onChange(of: description) { _, value in
-                                if value.count > 1_024 {
-                                    description = String(value.prefix(1_024))
-                                }
-                            }
-                    }
-
-                    Toggle("Mark as spoiler", isOn: $isSpoiler)
-                        .tint(SakuraCordAccentColor.color)
-                        .toggleStyle(.checkbox)
-                }
-                .frame(maxWidth: .infinity)
-            }
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: InterfaceScale.metric(10)) {
-                Spacer()
-                Button("Cancel", action: cancel)
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") {
-                    var updated = attachment
-                    let name = filename.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if name != attachment.filename { updated.rename(name) }
-                    updated.description = description
-                    updated.isSpoiler = isSpoiler
-                    save(updated)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(SakuraCordAccentColor.color)
-                .keyboardShortcut(.defaultAction)
-                .disabled(filename.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .controlSize(.large)
-        }
-        .padding(InterfaceScale.metric(24))
-        .frame(
-            minWidth: InterfaceScale.metric(560),
-            idealWidth: InterfaceScale.metric(680),
-            maxWidth: InterfaceScale.metric(760),
-            minHeight: InterfaceScale.metric(440),
-            idealHeight: InterfaceScale.metric(520),
-            maxHeight: InterfaceScale.metric(640)
-        )
-    }
 }
 
 struct ForumActionErrorBanner: View {

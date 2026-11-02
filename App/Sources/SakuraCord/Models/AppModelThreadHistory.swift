@@ -30,6 +30,9 @@ struct ThreadWindowOwnership {
     var isNewestUnverified = false
     /// The target of a jump whose first window failed to load, for Retry.
     var failedInitialTarget: MessageID?
+    /// A jump target that lands on the message before it when absent, which
+    /// Retry keeps doing.
+    var nearestJumpTarget: MessageID?
     /// The target of the initial load in flight when it reads around a
     /// message rather than the newest messages.
     var initialLoadTarget: MessageID?

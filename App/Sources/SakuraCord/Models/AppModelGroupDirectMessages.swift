@@ -83,9 +83,10 @@ extension AppModel {
         }
     }
 
-    /// Runs a Leave Group or Close DM request once per conversation. The
-    /// provider removes it from the DM list, which moves a selection on it to
-    /// the next conversation; failures use the workspace error alert and keep it.
+    /// Runs a Leave Group, Close DM or message request decision once per
+    /// conversation. The provider updates the DM list, which moves a selection
+    /// on a removed conversation to the next one; failures use the workspace
+    /// error alert and keep it.
     func exitDirectMessage(
         _ channel: Channel, verb: String, request: @escaping @MainActor (any ChatProvider) async throws -> Void
     ) {

@@ -16,6 +16,8 @@ final class FriendsState {
     var isPresented = false
     /// Nil until chosen; the page then opens on Discord's initial section.
     var selectedSection: FriendsSection?
+    /// Set while Message Requests replaces the friends list.
+    var messageRequestsTab: MessageRequestStatus?
     var presences: [UserID: UserPresence] = [:]
     var searchTextBySection: [FriendsSection: String] = [:]
     var isSearchFocused = false
@@ -112,6 +114,7 @@ final class FriendsState {
     func reset() {
         isPresented = false
         selectedSection = nil
+        messageRequestsTab = nil
         presences = [:]
         searchTextBySection = [:]
         isSearchFocused = false

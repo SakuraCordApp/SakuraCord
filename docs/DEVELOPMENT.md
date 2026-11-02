@@ -47,9 +47,10 @@ commit a local-resolution lockfile in place of that pin. See
 [PR build publication](RELEASING.md#pull-request-builds) for the
 distribution contract and rollout prerequisites.
 
-Both launch scripts stop and wait for the checkout's app immediately before
-launching, including when another launcher reopened it during a build. They
-abort if it will not exit and avoid forcing a second instance. Wait for the
+Both launch scripts stop and wait for every running `SakuraCord Debug`, from
+any checkout or worktree, immediately before launching, including when another
+launcher reopened one during a build. They abort if one will not exit and avoid
+forcing a second instance. Debug launches never stop release or Nightly apps. Wait for the
 script to finish before using Computer Use, which can launch an app on its own.
 
 The focused offline scenes exercise larger or specialized UI states without
@@ -63,9 +64,14 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-forum-performance-autoscroll` | Same forum, then a 15-second, 2,000-point/second scroll; writes frame timing and layout-jump counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` and logs a `ForumBenchmark:` line |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-chat-voice-performance` | Large native timeline where every fifth message is a voice message |
+| `./script/build_and_run.sh --offline-chat-files-performance` | Large native timeline where three messages in four upload files of every kind |
+| `./script/build_and_run.sh --offline-chat-files-performance-autoscroll` | Same timeline with the 20-second scroll benchmark |
+| `./script/build_and_run.sh --offline-chat-files-performance-open` | Same timeline opened 11 times from #welcome; writes each open's milliseconds to its first drawn frame to `SAKURACORD_PERFORMANCE_RESULT_PATH` (the first open is cold) |
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
 | `./script/build_and_run.sh --offline-friends-performance` | 1,000 friends plus 200 requests; 20-second scroll with 20 presence updates/second, then 80 category switches |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
+| `./script/build_and_run.sh --offline-chat-reaction-storm-autoscroll` | Large timeline scroll benchmark with 40 reaction adds and removals per second, mostly on the newest messages; writes frame timing, main-thread CPU and timeline update counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` |
+| `./script/build_and_run.sh --offline-chat-reaction-storm-idle` | The same reaction traffic and measurements on a still timeline pinned to the newest message |
 
 The offline sign-in fixture uses the production sign-in views and state handling
 with an in-memory authentication service. Use any nonempty email and an 8–72
@@ -303,13 +309,14 @@ databases, personal Discord data, or unsanitized protocol captures.
 
 ## Report a problem
 
-Type `/bug` or `/suggest` in a conversation's composer, or use **Help →
-Report a Bug…** or **Suggest a Feature…**. SakuraCord files the report with the
-signed-in Discord account and fills in the version and system information. Bug
-reports can also attach the sanitized Discord API log and the latest panic save
-directly. Matching reports appear while you type so you can follow one instead.
-Without a signed-in account, the Help menu opens the website form with the same
-values prefilled. Reports and discussion follow the shared
+Type `/bug` or `/suggest` in a conversation's composer, press the **Report a
+bug** or **Suggest a feature** buttons in the SakuraCord bot's posts, or use
+**Help → Report a Bug…** or **Suggest a Feature…**. SakuraCord files the report
+with the signed-in Discord account and fills in the version and system
+information. Bug reports can also attach the sanitized Discord API log and the
+latest panic save directly. Matching reports appear while you type so you can
+follow one instead. Without a signed-in account, the Help menu opens the
+website form with the same values prefilled. Reports and discussion follow the shared
 [issue-management flow](README.md#issues-and-roadmap).
 
 1. Record the steps, expected result, actual result, and approximate failure time.

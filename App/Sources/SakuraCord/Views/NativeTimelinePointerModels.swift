@@ -1,12 +1,14 @@
 import Foundation
+import QuartzCore
 import SakuraCordModels
 
 nonisolated struct NativeTimelineFooterActionTarget: Equatable {
-    enum Kind {
+    enum Kind: Hashable {
         case ephemeralDismiss
         case translation
         /// Keyed by the run's first message, which a revealed header shares with its first row.
         case suppressedToggle
+        case retrySend
     }
 
     let messageID: MessageID
@@ -26,10 +28,24 @@ nonisolated struct NativeTimelineTextLinkHover: Equatable {
     let characterIndex: Int
 }
 
-nonisolated struct NativeTimelineTextSpoilerHover: Equatable {
+nonisolated struct NativeTimelineTextSpoilerHover: Hashable {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion
     let rangeLocation: Int
+}
+
+extension [NativeTimelineTextSpoilerHover: CGFloat] {
+    /// How far each spoiler in one text region is hovered, by where its
+    /// range starts.
+    func progress(
+        in itemIdentifier: NativeMessageTimelineItem.Identifier,
+        region: NativeTimelineTextRegion
+    ) -> [Int: CGFloat] {
+        reduce(into: [:]) { result, entry in
+            guard entry.key.itemIdentifier == itemIdentifier, entry.key.region == region else { return }
+            result[entry.key.rangeLocation] = entry.value
+        }
+    }
 }
 
 struct NativeTimelineMentionHitRegion {
@@ -39,8 +55,9 @@ struct NativeTimelineMentionHitRegion {
 }
 
 enum NativeTimelineMentionAppearance {
-    static func backgroundAlpha(isHovered: Bool) -> CGFloat {
-        isHovered ? 0.34 : 0.18
+    /// A timestamp's neutral pill is fainter than a coloured mention's.
+    static func backgroundAlpha(isHovered: Bool, isTimestamp: Bool = false) -> CGFloat {
+        isTimestamp ? (isHovered ? 0.18 : 0.12) : (isHovered ? 0.34 : 0.18)
     }
 }
 
@@ -56,6 +73,11 @@ nonisolated struct NativeTimelineComponentSelectTarget: Hashable {
 
 nonisolated enum NativeTimelineComponentButtonVisualState {
     static let pressAnimationDuration: TimeInterval = 0.09
+    /// Long enough, eased at both ends, that a round button's growth reads
+    /// as motion rather than a snap.
+    static let hoverAnimationDuration: TimeInterval = 0.2
+    /// `easeInOut`'s cubic curve, for hovers Core Animation runs.
+    static var hoverTimingFunction: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1) }
 
     static func scale(pressProgress: CGFloat) -> CGFloat {
         1 - 0.015 * min(max(pressProgress, 0), 1)
@@ -78,9 +100,41 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
         isHovered && isEnabled ? 0.14 : 0.07
     }
 
+    /// A round button, such as a file's download or a voice message's play
+    /// button, grows 6% under the pointer and returns to rest while pressed.
+    static func roundButtonScale(hover: CGFloat, press: CGFloat, growth: CGFloat = 0.06) -> CGFloat {
+        1 + growth * hover * (1 - press)
+    }
+
     static func easeOut(_ progress: CGFloat) -> CGFloat {
         let progress = min(max(progress, 0), 1)
         return 1 - pow(1 - progress, 3)
+    }
+
+    static func easeInOut(_ progress: CGFloat) -> CGFloat {
+        let progress = min(max(progress, 0), 1)
+        return progress < 0.5 ? 4 * pow(progress, 3) : 1 - pow(2 - 2 * progress, 3) / 2
+    }
+}
+
+/// A round button's hover easing in or out from wherever it was, with the
+/// press animation's curve.
+nonisolated struct NativeTimelineHoverFade {
+    let from: CGFloat
+    let to: CGFloat
+    let start: TimeInterval
+
+    func progress(at time: TimeInterval) -> CGFloat {
+        let elapsed = (time - start) / NativeTimelineComponentButtonVisualState.hoverAnimationDuration
+        return from + (to - from) * NativeTimelineComponentButtonVisualState.easeInOut(elapsed)
+    }
+
+    func isSettled(at time: TimeInterval) -> Bool {
+        time - start >= NativeTimelineComponentButtonVisualState.hoverAnimationDuration
+    }
+
+    func delayed(by interval: TimeInterval) -> Self {
+        Self(from: from, to: to, start: start + interval)
     }
 }
 
@@ -123,10 +177,12 @@ nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
         rangeLocation: Int
     )
     case ephemeralDismiss(MessageID)
+    case deliveryAction(MessageID, NativeTimelineFooterActionTarget.Kind)
     case translationAction(MessageID)
     case authorProfile(MessageID)
     case serverTag(MessageID, GuildID)
     case invocationProfile(MessageID)
+    case commandPill(MessageID)
     case reply(MessageID, MessageID)
     case forwardedSource(MessageID, ChannelID, GuildID?, MessageID?)
     case linkedImage(MessageID, URL)

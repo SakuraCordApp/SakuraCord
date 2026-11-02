@@ -53,9 +53,13 @@ SAKURACORD_SWIFTPM_CACHE_DIR="$SAKURACORD_RUNTIME_DIR/swiftpm-cache"
 # Resolve helpers beside this runtime, even when targeting an older checkout.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/development_launch.sh"
 
+# Debug builds from every checkout share one bundle identifier and account
+# state, so the debug variant matches all of them to keep a single instance.
+# Other variants match only this checkout's bundle, never an installed app.
 sakuracord_scoped_pids() {
-  ps -ww -axo pid=,command= | while read -r pid command; do
-    if [[ "$command" == "$SAKURACORD_EXECUTABLE_PATH" || "$command" == "$SAKURACORD_EXECUTABLE_PATH "* ]]; then
+  ps -ww -axo pid=,comm= | while read -r pid executable; do
+    if [[ "$executable" == "$SAKURACORD_EXECUTABLE_PATH" ]] \
+      || [[ "$SAKURACORD_APP_VARIANT" == debug && "$executable" == /*"/$SAKURACORD_APP_NAME.app/Contents/MacOS/$SAKURACORD_APP_NAME" ]]; then
       printf '%s\n' "$pid"
     fi
   done
@@ -106,8 +110,9 @@ sakuracord_launch_scoped_app() {
 
   local pids
   pids="$(sakuracord_scoped_pids)"
-  if [[ -z "$pids" || "$pids" == *$'\n'* ]]; then
-    echo "Expected one SakuraCord instance after launch (PIDs: $pids)." >&2
+  if [[ -z "$pids" || "$pids" == *$'\n'* ]] \
+    || [[ "$(ps -o comm= -p "$pids")" != "$SAKURACORD_EXECUTABLE_PATH" ]]; then
+    echo "Expected one $SAKURACORD_APP_NAME instance, from this checkout, after launch (PIDs: $pids)." >&2
     return 1
   fi
 }

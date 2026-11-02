@@ -110,6 +110,41 @@ import Testing
 }
 
 @MainActor
+@Test func `Deafening mutes and undeafening restores the previous mute`() async throws {
+    let provider = MockChatProvider()
+    let preferences = VoiceVideoPreferences(defaults: InMemoryPreferences())
+    preferences.joinsDeafened = true
+    preferences.playsFeedbackSounds = false
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        voiceVideoPreferences: preferences
+    )
+    await model.start()
+    await model.joinVoice(try #require(model.visibleChannels.first { $0.kind == .voice }))
+
+    #expect(try #require(await provider.voiceJoinRequests.last).selfMute)
+    #expect(model.isVoiceDeafened && model.isVoiceMuted)
+    await model.toggleVoiceDeafen()
+    #expect(!model.isVoiceDeafened && !model.isVoiceMuted)
+
+    await model.toggleVoiceDeafen()
+    #expect(model.isVoiceDeafened && model.isVoiceMuted)
+    await model.toggleVoiceDeafen()
+    #expect(!model.isVoiceDeafened && !model.isVoiceMuted)
+
+    await model.toggleVoiceMute()
+    await model.toggleVoiceDeafen()
+    await model.toggleVoiceDeafen()
+    #expect(!model.isVoiceDeafened && model.isVoiceMuted)
+
+    await model.toggleVoiceDeafen()
+    await model.toggleVoiceMute()
+    #expect(!model.isVoiceDeafened && !model.isVoiceMuted)
+    await model.leaveVoice()
+}
+
+@MainActor
 @Test func `Camera persistence forgets its identifier without changing the active selection`() {
     let defaults = InMemoryPreferences()
     let preferences = VoiceVideoPreferences(defaults: defaults)

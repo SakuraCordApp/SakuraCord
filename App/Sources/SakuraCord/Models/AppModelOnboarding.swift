@@ -62,7 +62,8 @@ extension AppModel {
         permissionBasis: ConversationPermissionBasis?
     ) -> ConversationAccess {
         guard channel.guildID != nil else {
-            return .readable(canSend: !channel.isOfficialSystemDirectMessage)
+            // A message request takes no replies until it is accepted.
+            return .readable(canSend: !channel.isOfficialSystemDirectMessage && channel.messageRequest == nil)
         }
         guard let permissionBasis, permissionBasis.currentUserOnboardingIsKnown else { return .checking }
         let permissions = ConversationPermissionResolver.effectivePermissions(

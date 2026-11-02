@@ -44,11 +44,6 @@ struct ForumPostTextEditor: View {
     }
 
     private var mentionPresentations: [String: MentionPresentation] {
-        let resolver = MessageMentionResolver(model: model)
-        return MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
-            if case let .mention(mention) = segment {
-                values[mention.rawToken] = resolver.presentation(mention)
-            }
-        }
+        MessageMentionResolver(model: model).presentations(in: text)
     }
 }

@@ -382,6 +382,7 @@ extension AppModel {
         threadWindow.upperCursor = nil
         threadWindow.isNewestUnverified = false
         threadWindow.failedInitialTarget = nil
+        threadWindow.nearestJumpTarget = nil
         threadWindow.initialLoadTarget = nil
         threadWindow.newestReadRevision = nil
         openThreadResolutionTask?.cancel()
@@ -450,19 +451,20 @@ extension AppModel {
     /// Reloads the window around a jump target and scrolls to it, unless a
     /// later intent takes over the window first.
     private func retryThreadJump(_ thread: MessageThreadSummary, to target: MessageID) {
+        let nearest = threadWindow.nearestJumpTarget == target
         beginInitialThreadLoad(thread, around: target)
         let windowRevision = threadWindow.revision
         let load = threadLoadTask
         startAccountChildTask(account: accountSession()) { model, _ in
             await load?.value
             guard model.openThread?.id == thread.id, model.threadWindow.revision == windowRevision,
-                  model.threadMessages.contains(where: { $0.id == target })
+                  let landingID = Self.landingID(for: target, in: model.threadMessages, nearest: nearest)
             else { return }
             model.messageNavigationRequestID &+= 1
             model.messageNavigationRequest = MessageNavigationRequest(
                 requestID: model.messageNavigationRequestID,
                 channelID: thread.id,
-                messageID: target,
+                messageID: landingID,
                 glides: false
             )
         }

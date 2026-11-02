@@ -35,6 +35,9 @@ extension NativeTimelineRowLayout {
         private var message: Message { row.message }
         private var searchContext: MessageSearchRowContext? { row.searchContext }
         private var usesComponentsV2: Bool { message.flags.contains(.isComponentsV2) }
+        private var componentsMaximumWidth: CGFloat {
+            min(contentWidth, DiscordRichMessageMetrics.componentsMaximumWidth)
+        }
         private var isGenerated: Bool { message.type.hasGeneratedContent }
         private let bubbleContext: NativeTimelineBubbleLayout.Context
         private var messageSpacing: CGFloat {
@@ -44,7 +47,7 @@ extension NativeTimelineRowLayout {
         private var timestampGutterWidth: CGFloat { max(avatarWidth, metrics.timestampGutterWidth) }
         private let presentedReactions: [Reaction]
 
-        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics) {
+        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics, relativeTo date: Date = .now) {
             self.row = row
             self.isUnreadBoundary = isUnreadBoundary
             self.width = width
@@ -52,7 +55,7 @@ extension NativeTimelineRowLayout {
             self.metrics = metrics
             bubbleContext = NativeTimelineBubbleLayout.context(for: row.message, source: source)
             presentedReactions = MessageReactionPresentation.items(from: row.message.reactions)
-            contentPresentation = NativeTimelineTextPresentation.make(row: row, source: source)
+            contentPresentation = NativeTimelineTextPresentation.make(row: row, source: source, relativeTo: date)
             highlightInsets = MessageRowLayoutMetrics.highlightInsets(
                 hasReplyPreview: row.replyMessageID != nil,
                 isEditing: false,
@@ -88,7 +91,7 @@ extension NativeTimelineRowLayout {
             if let attributedContent = layout.attributedContent, let framesetter = layout.contentFramesetter {
                 extent = max(extent, NativeTimelineBubbleLayout.measuredTextWidth(
                     framesetter,
-                    length: attributedContent.length,
+                    value: attributedContent,
                     maximumWidth: contentWidth
                 ))
             }
@@ -354,8 +357,10 @@ extension NativeTimelineRowLayout {
         }
 
         private mutating func appendAuthorHeader() {
-            let presentation = source?.authorPresentation(for: message)
-            let author = presentation?.user ?? message.author
+            // AutoMod heads its alerts; the member it caught is named in the card.
+            let isAutoModAlert = message.type == .autoModerationAction
+            let presentation = isAutoModAlert ? nil : source?.authorPresentation(for: message)
+            let author = isAutoModAlert ? .autoMod : presentation?.user ?? message.author
             result.authorPrimaryGuild = author.primaryGuild
             let authorFont = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: metrics.authorFont)
             let showsRoleIndicator = source?.roleColorDisplay == .nextToNames
@@ -369,9 +374,10 @@ extension NativeTimelineRowLayout {
             // Keep the adjacent controls visible while long decorative names
             // truncate. At narrow widths the tag is omitted before the name.
             let timestampReserve = min(timestampWidth, availableWidth / 3) + 7
-            let botText = author.isBot ? NativeIdentityTextPresentation(
-                "APP", font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
-            ) : nil
+            let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
+            let botText = badge.map { NativeIdentityTextPresentation(
+                $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
+            ) }
             let naturalBotWidth = botText.map { $0.width + ServerTagAppearance.horizontalPadding * 2 } ?? 0
             let botWidth = availableWidth >= naturalBotWidth + 7 + 12 ? naturalBotWidth : 0
             let botReserve = botWidth > 0 ? botWidth + 7 : 0
@@ -440,6 +446,31 @@ extension NativeTimelineRowLayout {
             }
         }
 
+        /// The row's author frames move to the member in the card, so the
+        /// profile, menu and hover of the avatar and name are that member's.
+        private mutating func appendAutoModAlert(_ alert: AutoModerationAlert) {
+            let presentation = source?.authorPresentation(for: message)
+            let sender = presentation?.user ?? message.author
+            let header: NativeTimelineAutoModAlertLayout.Header? =
+                if let avatar = result.avatarFrame, let frame = result.authorFrame, let name = result.authorText {
+                    .init(avatarFrame: avatar, nameFrame: frame, name: name)
+                } else { nil }
+            let card = NativeTimelineAutoModAlertLayout(
+                alert: alert, message: message, sender: sender, header: header,
+                showsRoleIndicator: source?.roleColorDisplay == .nextToNames && presentation?.roleColorHex != nil,
+                origin: CGPoint(x: contentX, y: verticalOffset), width: contentWidth,
+                source: source, authorFont: metrics.authorFont
+            )
+            result.autoModAlert = card
+            result.avatarFrame = card.avatarFrame
+            result.authorFrame = card.authorFrame
+            result.authorText = card.authorText
+            result.authorPrimaryGuild = sender.primaryGuild
+            result.serverTagRegion = card.serverTag
+            result.embedRegions.append(card.text)
+            verticalOffset = card.cardFrame.maxY
+        }
+
         private mutating func appendTextAndPoll() {
             bubbleStartY = verticalOffset
             if usesBubbles {
@@ -467,6 +498,7 @@ extension NativeTimelineRowLayout {
             result.attributedContent = contentPresentation.attributedContent
             result.contentFramesetter = contentPresentation.framesetter
             if let attributedContent = contentPresentation.attributedContent {
+                verticalOffset += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributedContent)
                 let textHeight = NativeTimelineRowLayout.measuredTextHeight(
                     contentPresentation.framesetter,
                     value: attributedContent,
@@ -501,6 +533,11 @@ extension NativeTimelineRowLayout {
                 hasRichContent = true
             }
 
+            if let alert = message.autoModerationAlert {
+                if hasRichContent { verticalOffset += InterfaceScale.metric(8) }
+                appendAutoModAlert(alert)
+                hasRichContent = true
+            }
             if message.pollResultSummary != nil {
                 if hasRichContent { verticalOffset += InterfaceScale.metric(8) }
                 result.pollResultFrame = CGRect(x: contentX, y: verticalOffset, width: min(InterfaceScale.metric(440), contentWidth), height: InterfaceScale.metric(66))
@@ -544,14 +581,12 @@ extension NativeTimelineRowLayout {
 
         private mutating func appendAttachments() {
             if !usesComponentsV2, (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) {
-                let style: NativeTimelineVoiceMessageRegion.Style =
-                    usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
                 let voiceY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                 if let region = NativeTimelineVoiceMessageRegion.make(
                     message: message,
                     origin: CGPoint(x: contentX, y: voiceY),
                     maximumWidth: inlineMediaMaximumWidth,
-                    style: style
+                    style: voiceMessageStyle
                 ) {
                     result.voiceMessageRegion = region
                     verticalOffset = region.frame.maxY
@@ -559,15 +594,25 @@ extension NativeTimelineRowLayout {
                     return
                 }
             }
-            if !usesComponentsV2, !message.attachments.isEmpty {
+            guard !usesComponentsV2 else { return }
+            // Like Discord, audio and other files leave the media gallery for
+            // cards and text previews stacked below it. Regions keep the
+            // attachments' order, which the send transition matches against
+            // the composer's.
+            let (files, media) = (
+                message.attachments.filter { !$0.mediaKind.isVisual },
+                message.attachments.filter(\.mediaKind.isVisual)
+            )
+            var regions: [String: AttachmentRegion] = [:]
+            if !media.isEmpty {
                 if hasRichContent {
                     verticalOffset += InterfaceScale.metric(8)
                 }
                 let galleryWidth = min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), inlineMediaMaximumWidth))
                 let galleryFrames = MediaGalleryPlan.frames(
-                    count: message.attachments.count,
+                    count: media.count,
                     width: galleryWidth,
-                    aspectRatios: message.attachments.map {
+                    aspectRatios: media.map {
                         guard let width = $0.width,
                               let height = $0.height,
                               width > 0,
@@ -575,7 +620,7 @@ extension NativeTimelineRowLayout {
                         else { return 16 / 9 }
                         return CGFloat(width) / CGFloat(height)
                     },
-                    intrinsicSizes: message.attachments.map {
+                    intrinsicSizes: media.map {
                         guard let width = $0.width,
                               let height = $0.height,
                               width > 0,
@@ -588,11 +633,8 @@ extension NativeTimelineRowLayout {
                     },
                     spacing: InterfaceScale.metric(4)
                 )
-                result.attachmentRegions = zip(
-                    message.attachments,
-                    galleryFrames
-                ).map { attachment, frame in
-                    AttachmentRegion(
+                for (attachment, frame) in zip(media, galleryFrames) {
+                    regions[attachment.id] = AttachmentRegion(
                         frame: frame.offsetBy(dx: contentX, dy: verticalOffset),
                         attachment: attachment,
                         previewKey: attachment.mediaKind == .video
@@ -603,7 +645,56 @@ extension NativeTimelineRowLayout {
                 verticalOffset += galleryFrames.map(\.maxY).max() ?? 0
                 hasRichContent = true
             }
+            for attachment in files {
+                if hasRichContent {
+                    verticalOffset += NativeTimelineFileCard.spacing
+                }
+                let frame = appendFile(attachment)
+                regions[attachment.id] = AttachmentRegion(frame: frame, attachment: attachment, previewKey: nil)
+                verticalOffset = frame.maxY
+                hasRichContent = true
+            }
+            result.attachmentRegions = message.attachments.compactMap { regions[$0.id] }
+            if message.isUnconfirmedLocalSend, source?.attachmentUploads.tracks(nonce: message.nonce) == true {
+                result.uploadRings = NativeTimelineRowLayout.uploadRings(
+                    for: result.attachmentRegions, isInBubble: usesBubbles, isFailed: message.outboxState == .failed
+                )
+            }
+        }
 
+        /// The surface voice messages and audio files draw on.
+        private var voiceMessageStyle: NativeTimelineVoiceMessageRegion.Style {
+            usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
+        }
+
+        /// Lays out a file's card, with its player for audio. In a bubble,
+        /// which grows to fit it, a card spans the column so its hover
+        /// highlight lines up with the bubble.
+        private mutating func appendFile(_ attachment: Attachment) -> CGRect {
+            let origin = CGPoint(x: contentX, y: verticalOffset)
+            let isAudio = attachment.mediaKind == .audio
+            let card = NativeTimelineFileCard(
+                frame: CGRect(
+                    origin: origin,
+                    size: CGSize(
+                        width: usesBubbles
+                            ? contentWidth
+                            : NativeTimelineFileCard.fittedWidth(
+                                for: attachment, isInBubble: false, maximumWidth: inlineMediaMaximumWidth
+                            ),
+                        height: NativeTimelineFileCard.height(isInBubble: usesBubbles, isAudio: isAudio)
+                    )
+                ),
+                attachment: attachment,
+                isInBubble: usesBubbles
+            )
+            if isAudio {
+                result.audioFilePlayers.append(.audioFile(
+                    in: card, messageID: message.id,
+                    surface: voiceMessageStyle
+                ))
+            }
+            return card.frame
         }
 
         private mutating func appendCards() {
@@ -647,7 +738,7 @@ extension NativeTimelineRowLayout {
                             components: embed.components ?? [],
                             source: source,
                             origin: CGPoint(x: contentX, y: embedY),
-                            maximumWidth: inlineMediaMaximumWidth,
+                            maximumWidth: componentsMaximumWidth,
                             integratesWithBubble: usesBubbles,
                             drawsTopSeparator: usesBubbles && hasRichContent
                         ) {
@@ -679,7 +770,7 @@ extension NativeTimelineRowLayout {
                 message: message,
                 source: source,
                 origin: CGPoint(x: contentX, y: componentY),
-                maximumWidth: inlineMediaMaximumWidth,
+                maximumWidth: componentsMaximumWidth,
                 integratesWithBubble: usesBubbles,
                 drawsTopSeparator: usesBubbles && hasRichContent
             ) {
@@ -697,7 +788,8 @@ extension NativeTimelineRowLayout {
                         x: button.frame.midX - dots.width / 2, y: button.frame.midY - dots.height / 2,
                         width: dots.width, height: dots.height
                     ),
-                    style: .dots(.onFill)
+                    // Light dots on a solid fill, label-coloured on the translucent grey.
+                    style: .dots(DiscordComponentButtonAppearance.solidFillHexes(for: button.style) == nil ? .content : .onFill)
                 ))
             }
             for select in result.componentLayouts.flatMap(\.selects) where select.isLoading {
@@ -897,19 +989,27 @@ extension NativeTimelineRowLayout {
                 {
                     verticalOffset += InterfaceScale.metric(4)
                 }
+                let font = NSFont.interfacePreferredFont(forTextStyle: .caption2)
+                let failureText = NSAttributedString(
+                    string: MessageOutboxPresentation.failureText(for: message),
+                    attributes: [.font: font]
+                )
+                let noticeWidth = InterfaceScale.metric(16) + NativeTimelineRowLayout.measuredTextWidth(failureText.string, font: font)
+                let retryWidth = message.canRetrySending
+                    ? NativeTimelineRowLayout.measuredTextWidth(MessageOutboxPresentation.retryTitle, font: font)
+                    : 0
+                // Retry follows the notice after the icon's column and a word gap.
+                let labelsWidth = noticeWidth + (message.canRetrySending ? InterfaceScale.metric(6) + retryWidth : 0)
                 // The notice is below the bubble, so short message content
-                // must not squeeze a moderation explanation into that bubble.
-                let failureWidth = usesBubbles && message.sendFailure != nil
+                // must not squeeze it into that bubble.
+                let failureWidth = usesBubbles
                     ? max(contentWidth, min(
+                        labelsWidth,
                         NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width),
                         isOutgoingBubble ? contentX + contentWidth - horizontalInset : ordinaryContentWidth
                     ))
                     : contentWidth
                 let failureX = isOutgoingBubble ? contentX + contentWidth - failureWidth : contentX
-                let failureText = NSAttributedString(
-                    string: MessageOutboxPresentation.failureText(for: message),
-                    attributes: [.font: NSFont.interfacePreferredFont(forTextStyle: .caption2)]
-                )
                 let failureHeight = max(InterfaceScale.metric(14), ceil(failureText.boundingRect(
                     with: CGSize(width: max(1, failureWidth - InterfaceScale.metric(16)), height: .greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin, .usesFontLeading]
@@ -920,6 +1020,15 @@ extension NativeTimelineRowLayout {
                     width: failureWidth,
                     height: failureHeight
                 )
+                if message.canRetrySending {
+                    let retryX = failureX + noticeWidth + InterfaceScale.metric(6)
+                    result.failedRetryFrame = CGRect(
+                        x: retryX,
+                        y: verticalOffset,
+                        width: min(retryWidth, max(0, failureX + failureWidth - retryX)),
+                        height: failureHeight
+                    )
+                }
                 verticalOffset += failureHeight
             }
 

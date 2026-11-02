@@ -118,6 +118,7 @@ final class NativeTimelineBenchmarkStartupState {
 @MainActor
 final class NativeTimelineBenchmarkRunState {
     let startedAt = ProcessInfo.processInfo.systemUptime
+    let mainThreadCPUTimeAtStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
     let ticker = NativeTimelineDisplayLinkTicker()
     let scrollsTowardLater: Bool
     let closeMeasurement: () -> Void
@@ -1899,22 +1900,20 @@ extension NativeMessageTimelineCoordinator {
                 materializedHistoryMaximumY(
                     viewportHeight: visibleRect.height
                 ) - visibleRect.maxY < prefetchDistance(.later)
+            let contentFitsViewport = !NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
+                contentHeight: contentHeight, viewportHeight: visibleRect.height,
+                bottomInset: bottomInset, verticalPadding: ChatDetailLayoutPolicy.timelineTopPadding
+            )
             return TimelineScrollState(
-                isNearTop:
-                    visibleRect.minY - leadingHistoryReserve
-                    < prefetchDistance(.earlier),
+                // Short content rests at the reserve's edge, short of the unread distance. A
+                // failed page waits for the reader, as its loader's height can flip the fit.
+                isNearTop: contentFitsViewport && !parent.earlierHistoryLoadFailed
+                    || visibleRect.minY - leadingHistoryReserve < prefetchDistance(.earlier),
                 isNearBottom:
                     isAtDocumentBottom
                     && !parent.hasMoreLaterMessages,
                 isNearLoadedBottom: isNearLoadedBottom,
-                contentFitsViewport:
-                    !NativeMessageTimelineLayoutPolicy.showsVerticalScroller(
-                        contentHeight: contentHeight,
-                        viewportHeight: visibleRect.height,
-                        bottomInset: bottomInset,
-                        verticalPadding:
-                            ChatDetailLayoutPolicy.timelineTopPadding
-                    ),
+                contentFitsViewport: contentFitsViewport,
                 hasEstablishedInitialPosition:
                     hasEstablishedInitialPosition,
                 hasReachedNewestMessageBoundary:

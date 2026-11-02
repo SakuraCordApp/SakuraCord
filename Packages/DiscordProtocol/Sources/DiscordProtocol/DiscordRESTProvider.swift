@@ -12,11 +12,14 @@ nonisolated struct AttachmentUploadFile: Equatable, Sendable {
     let url: URL
     let name: String
     let description: String?
+    /// The draft attachment this file came from, which lets the user stop it alone.
+    let id: UUID?
 
-    init(url: URL, name: String, description: String? = nil) {
+    init(url: URL, name: String, description: String? = nil, id: UUID? = nil) {
         self.url = url
         self.name = name
         self.description = description
+        self.id = id
     }
 }
 
@@ -117,6 +120,11 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var guildChannelTasks: [GuildID: Task<[Channel], Error>] = [:]
     var privateChannelTasks: [UserID: Task<Channel, Error>] = [:]
     var messageSendTasks: [String: Task<Message, Error>] = [:]
+    var attachmentUploadDelegates: [UUID: AttachmentUploadTaskDelegate] = [:]
+    var cancelledAttachmentUploads: Set<UUID> = []
+    var postingAttachmentUploads: Set<UUID> = []
+    /// Staged files storing ahead of their message, by draft attachment ID; each yields its stored name.
+    var attachmentPreuploads: [UUID: Task<String, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
     var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
@@ -264,6 +272,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var relationshipRevisions: [UserID: UInt64] = [:]
     /// Per-group revisions keep an Edit Group response from replacing a newer Gateway update.
     var privateChannelRevisions: [ChannelID: UInt64] = [:]
+    /// Per-DM revisions of the Gateway events that re-create a DM or carry
+    /// request flags. With its status check, Accept DM keeps unrelated updates
+    /// but never clears a request Discord re-created or re-flagged meanwhile.
+    var messageRequestRevisions: [ChannelID: UInt64] = [:]
     var cachedUserRevisions: [String: UInt64] = [:]
     var relationshipUserPublicationTask: Task<Void, Never>?
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
