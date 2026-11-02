@@ -911,8 +911,7 @@ private struct InlineMessageEditor: View {
 
     private func cancelEditing() {
         if let entry = activeTimeEntry {
-            let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
-            text = "\(entry.prefix)\(raw)\(entry.suffix)"
+            text = TimeMentionCoordinator.restoredDraftText(for: entry)
             activeTimeEntry = nil
         }
         cancel()
@@ -929,7 +928,6 @@ private struct InlineMessageEditor: View {
                     select: { option in
                         acceptTimeFormat(option, context: context)
                     },
-                    cancel: { cancelTimeMention(context: context) },
                     cornerRadius: InterfaceScale.metric(8),
                     keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
                 )
@@ -1039,8 +1037,7 @@ private struct InlineMessageEditor: View {
         }
         .onDisappear {
             if let entry = activeTimeEntry {
-                let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
-                text = "\(entry.prefix)\(raw)\(entry.suffix)"
+                text = TimeMentionCoordinator.restoredDraftText(for: entry)
                 activeTimeEntry = nil
             }
         }
@@ -1064,37 +1061,23 @@ private struct InlineMessageEditor: View {
     }
 
     private var timeMentionContext: TimeMentionContext? {
-        if let entry = activeTimeEntry {
-            return TimeMentionContext(
-                range: NSRange(location: entry.prefix.utf16.count, length: 0),
-                query: entry.query.trimmingCharacters(in: .whitespacesAndNewlines),
-                rawQuery: entry.query
-            )
-        }
-        guard !isAutocompleteDismissed else { return nil }
-        return TimeMentionContext(text: text, selection: selection)
+        TimeMentionCoordinator.context(
+            entry: activeTimeEntry,
+            text: text,
+            selection: selection,
+            isDismissed: isAutocompleteDismissed
+        )
     }
 
     private var timeCandidates: [DiscordParsedTimeCandidate] {
-        guard let context = timeMentionContext else { return [] }
-        let reference = timeReferenceDate ?? .now
-        let parsed = DiscordNaturalLanguageTimeParser.candidates(
-            for: context.query,
-            referenceDate: reference,
-            now: reference
+        TimeMentionCoordinator.candidates(
+            for: timeMentionContext,
+            referenceDate: timeReferenceDate
         )
-        if parsed.isEmpty {
-            return DiscordNaturalLanguageTimeParser.candidates(
-                for: "",
-                referenceDate: reference,
-                now: reference
-            )
-        }
-        return parsed
     }
 
     private var allTimeOptions: [DiscordParsedTimeCandidate.Option] {
-        timeCandidates.flatMap(\.options)
+        TimeMentionCoordinator.allOptions(for: timeCandidates)
     }
 
     private var mentionAutocompleteContext: MentionAutocompleteContext? {
@@ -1132,18 +1115,7 @@ private struct InlineMessageEditor: View {
         for context: MentionAutocompleteContext,
         suggestions: [MentionAutocompleteSuggestion]
     ) -> String {
-        switch context.kind {
-        case .channel:
-            return "TEXT CHANNELS"
-        case .member:
-            if suggestions.allSatisfy({ $0.id == "special:time" }) {
-                return "SPECIAL MENTIONS"
-            }
-            if suggestions.first?.id == "special:time" {
-                return "MATCHING @\(context.query.uppercased())"
-            }
-            return MentionAutocompleteSuggestionFactory.memberHeading(query: context.query)
-        }
+        TimeMentionCoordinator.mentionHeading(for: context, suggestions: suggestions)
     }
 
     private var colonContext: ColonAutocompleteContext? {
@@ -1180,32 +1152,20 @@ private struct InlineMessageEditor: View {
         _ command: ComposerAutocompleteCommand,
         context: TimeMentionContext
     ) -> Bool {
-        let options = allTimeOptions
-        guard !options.isEmpty else { return false }
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            autocompleteIndex = (autocompleteIndex - 1 + options.count) % options.count
-            return true
-        case .next:
-            autocompleteIndex = (autocompleteIndex + 1) % options.count
-            return true
-        case .accept, .advance:
-            acceptTimeFormat(
-                options[min(autocompleteIndex, options.count - 1)],
-                context: context
-            )
-            return true
-        case .dismiss:
-            if activeTimeEntry != nil {
-                cancelTimeEntry()
-            } else {
-                isAutocompleteDismissed = true
+        TimeMentionCoordinator.handleAutocomplete(
+            command,
+            options: allTimeOptions,
+            currentIndex: &autocompleteIndex,
+            keyboardRevision: &autocompleteKeyboardSelectionRevision,
+            onAccept: { acceptTimeFormat($0, context: context) },
+            onDismiss: {
+                if activeTimeEntry != nil {
+                    cancelTimeEntry()
+                } else {
+                    isAutocompleteDismissed = true
+                }
             }
-            return true
-        default:
-            return false
-        }
+        )
     }
 
     private func handleMentionAutocomplete(
@@ -1264,58 +1224,43 @@ private struct InlineMessageEditor: View {
         _ option: DiscordParsedTimeCandidate.Option,
         context: TimeMentionContext? = nil
     ) {
-        if let entry = activeTimeEntry {
-            let inserted = "\(entry.prefix)\(option.markdownToken) \(entry.suffix)"
-            activeTimeEntry = nil
-            autocompleteIndex = 0
-            isAutocompleteDismissed = true
-            text = inserted
-            let newCursor = (entry.prefix + option.markdownToken + " ").utf16.count
-            selection = NSRange(location: newCursor, length: 0)
-        } else if let context {
-            let nsText = text as NSString
-            let replacement = option.markdownToken + " "
-            text = nsText.replacingCharacters(in: context.range, with: replacement)
-            let newCursor = context.range.location + replacement.utf16.count
-            selection = NSRange(location: newCursor, length: 0)
-            autocompleteIndex = 0
-            isAutocompleteDismissed = true
-        }
+        let result = TimeMentionCoordinator.accept(
+            option: option,
+            entry: activeTimeEntry,
+            context: context,
+            currentText: text
+        )
+        activeTimeEntry = nil
+        autocompleteIndex = 0
+        isAutocompleteDismissed = true
+        text = result.text
+        selection = result.selection
     }
 
     private func acceptActiveTimeEntry() {
-        let options = allTimeOptions
-        if !options.isEmpty {
-            let option = options[min(autocompleteIndex, options.count - 1)]
-            acceptTimeFormat(option)
-        } else if let entry = activeTimeEntry {
-            let restored = entry.prefix + "@time " + entry.query + entry.suffix
-            activeTimeEntry = nil
-            text = restored
-            selection = NSRange(location: restored.utf16.count, length: 0)
-        }
+        guard let entry = activeTimeEntry else { return }
+        let option = allTimeOptions.indices.contains(autocompleteIndex)
+            ? allTimeOptions[autocompleteIndex]
+            : allTimeOptions.first
+        let result = TimeMentionCoordinator.acceptActiveEntry(
+            entry: entry,
+            selectedOption: option
+        )
+        activeTimeEntry = nil
+        autocompleteIndex = 0
+        isAutocompleteDismissed = true
+        text = result.text
+        selection = result.selection
     }
 
     private func cancelTimeEntry() {
         guard let entry = activeTimeEntry else { return }
-        let restored = entry.prefix + entry.suffix
+        let result = TimeMentionCoordinator.cancelActiveEntry(entry: entry)
         activeTimeEntry = nil
         autocompleteIndex = 0
         isAutocompleteDismissed = true
-        text = restored
-        selection = NSRange(location: entry.prefix.utf16.count, length: 0)
-    }
-
-    private func cancelTimeMention(context: TimeMentionContext) {
-        if activeTimeEntry != nil {
-            cancelTimeEntry()
-        } else {
-            let nsText = text as NSString
-            text = nsText.replacingCharacters(in: context.range, with: "")
-            selection = NSRange(location: context.range.location, length: 0)
-            autocompleteIndex = 0
-            isAutocompleteDismissed = true
-        }
+        text = result.text
+        selection = result.selection
     }
 
     private func acceptMentionAutocomplete(

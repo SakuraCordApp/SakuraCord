@@ -31,7 +31,6 @@ struct TimeFormatsAutocompleteList: View {
     let selectedIndex: Int
     let highlight: (Int) -> Void
     let select: (DiscordParsedTimeCandidate.Option) -> Void
-    var cancel: (() -> Void)?
     var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius
     var keyboardSelectionRevision: Int = 0
 
@@ -77,7 +76,6 @@ struct TimeFormatsAutocompleteList: View {
                             TimeFormatAutocompleteRow(
                                 item: item,
                                 isSelected: options.indices.contains(selectedIndex) && options[selectedIndex].optionID == item.optionID,
-                                select: { select(item.option) },
                                 cornerRadius: max(0, cornerRadius - 6)
                             )
                         }
@@ -87,7 +85,7 @@ struct TimeFormatsAutocompleteList: View {
                 Divider()
                     .padding(.horizontal, InterfaceScale.metric(8))
 
-                TimeMentionHelpStrip(cancel: cancel)
+                TimeMentionHelpStrip()
             }
         }
     }
@@ -96,7 +94,6 @@ struct TimeFormatsAutocompleteList: View {
 private struct TimeFormatAutocompleteRow: View {
     let item: FlattenedOption
     let isSelected: Bool
-    let select: () -> Void
     var cornerRadius: CGFloat = 6
     @State private var clock = RelativeTimestampDisplayClock()
 
@@ -150,8 +147,6 @@ private struct TimeFormatAutocompleteRow: View {
 }
 
 struct TimeMentionHelpStrip: View {
-    var cancel: (() -> Void)?
-
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
             Text("@time")

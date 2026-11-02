@@ -545,8 +545,7 @@ struct ComposerView: View {
         }
         .task(id: composerPresentationID) {
             if let entry = activeTimeEntry {
-                let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
-                updateDraft("\(entry.prefix)\(raw)\(entry.suffix)")
+                updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
                 activeTimeEntry = nil
             }
             if !voiceMessage.restoreAfterGuildTimeout(in: activeConversationID) {
@@ -641,7 +640,6 @@ struct ComposerView: View {
                 select: { option in
                     acceptTimeFormat(option, context: context)
                 },
-                cancel: { cancelTimeMention(context: context) },
                 cornerRadius: commandPanelCornerRadius,
                 keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
             )
@@ -1571,8 +1569,7 @@ extension ComposerView {
     private func composerDidDisappear() {
         timestampClock.stop()
         if let entry = activeTimeEntry {
-            let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
-            updateDraft("\(entry.prefix)\(raw)\(entry.suffix)")
+            updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
             activeTimeEntry = nil
         }
         if let channelID = sendTransitionAnchor.channelID,

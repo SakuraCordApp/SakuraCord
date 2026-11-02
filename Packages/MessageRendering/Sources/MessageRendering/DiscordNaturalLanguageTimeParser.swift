@@ -396,10 +396,7 @@ public enum DiscordNaturalLanguageTimeParser {
         let second: Int?
     }
 
-    private static func parseDateComponents(
-        from query: String,
-        timeZone: TimeZone
-    ) -> ParsedDateComponents? {
+    private static func parseRawDate(from query: String, timeZone: TimeZone) -> Date? {
         let fallbackFormats = [
             "d MMMM yyyy", "d MMM yyyy", "MMMM d yyyy", "MMM d yyyy",
             "d MMMM", "d MMM", "MMMM d", "MMM d",
@@ -413,22 +410,26 @@ public enum DiscordNaturalLanguageTimeParser {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
-        var parsedDate: Date?
         for format in fallbackFormats {
             formatter.dateFormat = format
             if let date = formatter.date(from: query) {
-                parsedDate = date
-                break
+                return date
             }
         }
 
-        if parsedDate == nil,
-           let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) {
+        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) {
             let range = NSRange(query.startIndex..., in: query)
-            parsedDate = detector.matches(in: query, range: range).first?.date
+            return detector.matches(in: query, range: range).first?.date
         }
 
-        guard let date = parsedDate else { return nil }
+        return nil
+    }
+
+    private static func parseDateComponents(
+        from query: String,
+        timeZone: TimeZone
+    ) -> ParsedDateComponents? {
+        guard let date = parseRawDate(from: query, timeZone: timeZone) else { return nil }
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timeZone
         let comp = cal.dateComponents([.month, .day, .hour, .minute, .second], from: date)
@@ -763,34 +764,8 @@ public enum DiscordNaturalLanguageTimeParser {
             return []
         }
 
-        var baseDate: Date?
+        guard var date = parseRawDate(from: query, timeZone: timeZone) else { return [] }
         let hasExplicitYear = query.range(of: #"\b(19\d\d|20\d\d)\b"#, options: .regularExpression) != nil
-
-        let fallbackFormats = [
-            "d MMMM yyyy", "d MMM yyyy", "MMMM d yyyy", "MMM d yyyy",
-            "d MMMM", "d MMM", "MMMM d", "MMM d",
-            "d/M/yyyy HH:mm:ss", "d/M/yyyy HH:mm", "d/M/yyyy h:mm a", "d/M/yyyy",
-            "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd h:mm a", "yyyy-MM-dd",
-            "d-M-yyyy HH:mm", "d-M-yyyy", "d.M.yyyy", "yyyy/MM/dd", "M/d/yyyy", "M/d"
-        ]
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        for format in fallbackFormats {
-            formatter.dateFormat = format
-            if let parsed = formatter.date(from: query) {
-                baseDate = parsed
-                break
-            }
-        }
-
-        if baseDate == nil,
-           let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) {
-            let range = NSRange(query.startIndex..., in: query)
-            parsedDateMatches(detector: detector, query: query, range: range, outDate: &baseDate)
-        }
-
-        guard var date = baseDate else { return [] }
 
         var comp = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         comp.timeZone = timeZone
@@ -830,13 +805,4 @@ public enum DiscordNaturalLanguageTimeParser {
         }
     }
 
-    private static func parsedDateMatches(
-        detector: NSDataDetector,
-        query: String,
-        range: NSRange,
-        outDate: inout Date?
-    ) {
-        let matches = detector.matches(in: query, range: range)
-        outDate = matches.first?.date
-    }
 }
