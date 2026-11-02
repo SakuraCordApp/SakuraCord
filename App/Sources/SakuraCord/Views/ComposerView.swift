@@ -204,7 +204,10 @@ struct ComposerView: View {
                             query: Binding(
                                 get: { activeTimeEntry?.query ?? "" },
                                 set: { value in
-                                    activeTimeEntry?.query = value
+                                    guard var entry = activeTimeEntry else { return }
+                                    entry.query = value
+                                    activeTimeEntry = entry
+                                    updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
                                     autocompleteIndex = 0
                                     isAutocompleteDismissed = false
                                 }
@@ -500,8 +503,9 @@ struct ComposerView: View {
                 let nsDraft = value as NSString
                 let prefix = nsDraft.substring(to: rawContext.range.location)
                 let suffix = nsDraft.substring(from: rawContext.range.location + rawContext.range.length)
-                activeTimeEntry = TimeMentionEntry(prefix: prefix, query: rawContext.rawQuery, suffix: suffix)
-                updateDraft(prefix + suffix)
+                let entry = TimeMentionEntry(prefix: prefix, query: rawContext.rawQuery, suffix: suffix)
+                activeTimeEntry = entry
+                updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
                 autocompleteIndex = 0
                 isAutocompleteDismissed = false
                 return
@@ -984,9 +988,6 @@ private var autocompleteContext: ColonAutocompleteContext? {
         if hasActiveCommand {
             return true
         }
-        if activeTimeEntry != nil {
-            return false
-        }
         return !isSubmitting
             && !hasCheckingAttachments
             && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1114,7 +1115,10 @@ private var autocompleteContext: ColonAutocompleteContext? {
             model.presentIssueReport(kind)
             return
         }
-        guard allowsSubmission(), activeTimeEntry == nil else { return }
+        if activeTimeEntry != nil {
+            acceptActiveTimeEntry()
+        }
+        guard allowsSubmission() else { return }
         if hasActiveCommand {
             model.executeApplicationCommand(in: conversation)
         } else {
@@ -1418,8 +1422,9 @@ private extension ComposerView {
             let nsDraft = draft as NSString
             let prefix = nsDraft.substring(to: context.range.location)
             let suffix = nsDraft.substring(from: context.range.location + context.range.length)
-            activeTimeEntry = TimeMentionEntry(prefix: prefix, query: "", suffix: suffix)
-            updateDraft(prefix + suffix)
+            let entry = TimeMentionEntry(prefix: prefix, query: "", suffix: suffix)
+            activeTimeEntry = entry
+            updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
             autocompleteIndex = 0
             isAutocompleteDismissed = false
             return

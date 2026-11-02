@@ -902,7 +902,9 @@ private struct InlineMessageEditor: View {
     private var composerActions: InlineMessageEditorComposerActions {
         InlineMessageEditorComposerActions(
             onSubmit: {
-                guard activeTimeEntry == nil else { return }
+                if activeTimeEntry != nil {
+                    acceptActiveTimeEntry()
+                }
                 save()
             },
             onEscape: cancelEditing
@@ -960,7 +962,10 @@ private struct InlineMessageEditor: View {
                     query: Binding(
                         get: { activeTimeEntry?.query ?? "" },
                         set: { value in
-                            activeTimeEntry?.query = value
+                            guard var entry = activeTimeEntry else { return }
+                            entry.query = value
+                            activeTimeEntry = entry
+                            text = TimeMentionCoordinator.restoredDraftText(for: entry)
                             autocompleteIndex = 0
                             isAutocompleteDismissed = false
                         }
@@ -1013,9 +1018,11 @@ private struct InlineMessageEditor: View {
             }
 
             InlineMessageEditFooter(
-                canSave: canEdit && MessageEditInputPolicy.submission(from: text) != nil && activeTimeEntry == nil,
+                canSave: canEdit && MessageEditInputPolicy.submission(from: text) != nil,
                 save: {
-                    guard activeTimeEntry == nil else { return }
+                    if activeTimeEntry != nil {
+                        acceptActiveTimeEntry()
+                    }
                     save()
                 },
                 cancel: cancelEditing
@@ -1049,8 +1056,9 @@ private struct InlineMessageEditor: View {
             let nsText = value as NSString
             let prefix = nsText.substring(to: rawContext.range.location)
             let suffix = nsText.substring(from: rawContext.range.location + rawContext.range.length)
-            activeTimeEntry = TimeMentionEntry(prefix: prefix, query: rawContext.rawQuery, suffix: suffix)
-            text = prefix + suffix
+            let entry = TimeMentionEntry(prefix: prefix, query: rawContext.rawQuery, suffix: suffix)
+            activeTimeEntry = entry
+            text = TimeMentionCoordinator.restoredDraftText(for: entry)
             autocompleteIndex = 0
             isAutocompleteDismissed = false
             return
@@ -1271,8 +1279,9 @@ private struct InlineMessageEditor: View {
             let nsText = text as NSString
             let prefix = nsText.substring(to: context.range.location)
             let suffix = nsText.substring(from: context.range.location + context.range.length)
-            activeTimeEntry = TimeMentionEntry(prefix: prefix, query: "", suffix: suffix)
-            text = prefix + suffix
+            let entry = TimeMentionEntry(prefix: prefix, query: "", suffix: suffix)
+            activeTimeEntry = entry
+            text = TimeMentionCoordinator.restoredDraftText(for: entry)
             autocompleteIndex = 0
             isAutocompleteDismissed = false
             return

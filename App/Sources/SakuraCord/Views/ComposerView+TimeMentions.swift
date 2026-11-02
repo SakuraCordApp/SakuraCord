@@ -123,7 +123,7 @@ enum TimeMentionCoordinator {
     }
 
     static func restoredDraftText(for entry: TimeMentionEntry) -> String {
-        let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
+        let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query)"
         return "\(entry.prefix)\(raw)\(entry.suffix)"
     }
 
