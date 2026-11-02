@@ -1,39 +1,5 @@
 import CoreGraphics
 
-nonisolated struct NativeTimelineReactionCountTransition {
-    let from: Int
-    let to: Int
-    let progress: CGFloat
-}
-
-nonisolated enum NativeTimelineReactionCountBaseline {
-    static func canAnimate(
-        hasCapturedVisibleCounts: Bool,
-        hasStoredSnapshot: Bool
-    ) -> Bool {
-        hasCapturedVisibleCounts || hasStoredSnapshot
-    }
-
-    static func previousCount(
-        capturedCount: Int?,
-        storedCountBeforeUpdate: Int?,
-        messageExistedBeforeUpdate: Bool,
-        messageWasPreviouslyVisible: Bool,
-        currentCount: Int
-    ) -> Int {
-        if let capturedCount {
-            return capturedCount
-        }
-        if let storedCountBeforeUpdate {
-            return storedCountBeforeUpdate
-        }
-        if messageExistedBeforeUpdate {
-            return 0
-        }
-        return messageWasPreviouslyVisible ? 0 : currentCount
-    }
-}
-
 nonisolated enum NativeTimelineReactionAddControlGeometry {
     static func iconFrame(in frame: CGRect) -> CGRect {
         let size = InterfaceScale.metric(18)

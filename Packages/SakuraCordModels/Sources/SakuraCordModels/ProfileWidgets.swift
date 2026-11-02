@@ -153,6 +153,9 @@ public struct ProfileGame: Identifiable, Codable, Hashable, Sendable {
         self.id = id; self.name = name; self.iconURL = iconURL; self.coverURL = coverURL
         self.isAllowedInDefaultWidgetPicker = isAllowedInDefaultWidgetPicker
     }
+
+    /// The game's icon, or its cover when it has no icon.
+    public var artworkURL: URL? { iconURL ?? coverURL }
 }
 
 public struct ProfileWidgetGameSuggestions: Sendable {

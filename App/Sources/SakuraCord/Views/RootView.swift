@@ -311,6 +311,7 @@ private struct ChatRootView: View {
                 // item may be narrower than the title while it lays out.
                 if let title = conversationToolbarPresentation, model.guildWorkspacePage == .channelsAndRoles {
                     ConversationToolbarTitle(presentation: title, model: model)
+                        .buttonStyle(.plain)
                         .fixedSize()
                         .hidden()
                         .accessibilityHidden(true)
@@ -339,6 +340,7 @@ private struct ChatRootView: View {
             if model.onboardingEntryGuildID != nil {
                 ToolbarItem(placement: .navigation) {
                     ConversationToolbarTitle(presentation: .init(title: "Server Onboarding", systemImage: "sparkles"))
+                        .buttonStyle(.plain)
                 }
             } else {
                 conversationToolbar
@@ -406,8 +408,11 @@ private struct ChatRootView: View {
         .background {
             MediaViewerWindowOverlay(
                 presentation: model.mediaViewerPresentation,
-                dismiss: { model.mediaViewerPresentation = nil }
+                animatesOverlays: { model.animates(.overlays) },
+                dismiss: { model.mediaViewerPresentation = nil },
+                selectionChanged: { model.mediaViewerSelectedItemID = $0 }
             )
+            .environment(model.voiceMessagePlayback)
             .frame(width: 0, height: 0)
         }
         .modifier(ExpandedProfilePresentationModifier(model: model))
@@ -648,6 +653,7 @@ private struct ChatRootView: View {
                 }
             } else if let title = conversationToolbarPresentation {
                 ConversationToolbarTitle(presentation: title, model: model)
+                    .buttonStyle(.plain)
                     // Remeasure changed text without replacing the toolbar item.
                     .id(title.title)
                     .transition(.identity)
@@ -662,7 +668,9 @@ private struct ChatRootView: View {
         ToolbarSpacer(.fixed, placement: .navigation)
 
         if !model.isSwitchingAccounts {
-            if model.isFriendsPresented {
+            if model.isMessageRequestsPresented {
+                MessageRequestsToolbarTabs(model: model)
+            } else if model.isFriendsPresented {
                 FriendsToolbarSections(model: model)
             }
         }
@@ -693,8 +701,7 @@ private struct ChatRootView: View {
                 id: WorkspaceTitlebar.conversationID,
                 title: AnyView(
                     ConversationToolbarTitle(presentation: title, model: model)
-                        .frame(minHeight: 36)
-                        .glassEffect(.regular, in: Capsule())
+                        .buttonStyle(TitlebarGlassButtonStyle(isTitle: true))
                 ),
                 actions: AnyView(conversationTitlebarActions(presentsPanels: !isCovered))
             ))
@@ -1142,9 +1149,11 @@ private struct ChatRootView: View {
         .animation(.smooth(duration: 0.24), value: model.showInspector)
     }
 
+    /// The selected DM or group whose call buttons show; a message request
+    /// offers no call until it is accepted.
     private var selectedPrivateChannel: Channel? {
         guard let channel = model.selectedChannel,
-              channel.kind == .directMessage || channel.kind == .groupDirectMessage,
+              channel.isListedDirectMessage,
               !channel.isOfficialSystemDirectMessage
         else { return nil }
         return channel
@@ -1238,6 +1247,7 @@ private struct ChatRootView: View {
             return .init(title: page == .guide ? "Server Guide" : model.customizationTitle(in: model.selectedGuildID),
                          systemImage: page == .guide ? "signpost.right" : "slider.horizontal.3")
         }
+        if model.isMessageRequestsPresented { return .init(title: "Message Requests", systemImage: "envelope.fill") }
         if model.isFriendsPresented { return .init(title: "Friends", systemImage: "person.2.fill") }
         return channelToolbarPresentation
     }
@@ -1800,7 +1810,6 @@ private struct ConversationToolbarTitle: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
         }
-        .buttonStyle(.plain)
         .allowsHitTesting(presentation.topic != nil)
         .accessibilityRemoveTraits(presentation.topic == nil ? .isButton : [])
         .accessibilityAddTraits(presentation.topic == nil ? .isStaticText : [])
@@ -1866,6 +1875,26 @@ private struct FriendsToolbarSections: ToolbarContent {
         case .all: "All"
         case .pending: model.incomingFriendRequestCount > 0 ? "Pending (\(model.incomingFriendRequestCount))" : "Pending"
         case .addFriend: "Add Friend"
+        }
+    }
+}
+
+/// Message Requests' tabs take the Friends categories' place.
+private struct MessageRequestsToolbarTabs: ToolbarContent {
+    let model: AppModel
+
+    var body: some ToolbarContent {
+        ToolbarItem(id: "message-requests-tabs", placement: .principal) {
+            let spamCount = model.messageRequestChannels.count { $0.messageRequest == .spam }
+            Picker("Message Requests", selection: Binding(
+                get: { model.friends.messageRequestsTab ?? .pending },
+                set: { model.friends.messageRequestsTab = $0 }
+            )) {
+                Text("Requests").tag(MessageRequestStatus.pending)
+                Text(spamCount > 0 ? "Spam (\(spamCount))" : "Spam").tag(MessageRequestStatus.spam)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
     }
 }

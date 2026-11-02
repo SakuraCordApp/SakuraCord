@@ -66,7 +66,6 @@ struct SelectionFieldDropdown<Content: View>: NSViewRepresentable {
                 let host = NSHostingView(rootView: AnyView(EmptyView()))
                 host.sizingOptions = []
                 host.wantsLayer = true
-                host.layer?.zPosition = 90_000
                 container.addSubview(host, positioned: .above, relativeTo: nil)
                 self.host = host
                 if let window {
@@ -191,11 +190,11 @@ private struct SelectionFieldDropdownSurface<Content: View>: View {
 
     var body: some View {
         GlassEffectContainer(spacing: 0) { content() }
-            .clipShape(.rect(cornerRadius: InterfaceScale.metric(11)))
+            .clipShape(.rect(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius))
             .opacity(presentation.visible ? 1 : 0)
             .animation(reduceMotion ? nil : .easeOut(duration: presentation.visible ? 0.09 : 0.08), value: presentation.visible)
             .mask(alignment: presentation.opensBelow ? .top : .bottom) {
-                RoundedRectangle(cornerRadius: InterfaceScale.metric(11))
+                RoundedRectangle(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius)
                     .scaleEffect(x: 1, y: presentation.visible || reduceMotion ? 1 : 0.06, anchor: edge)
                     .animation(reveal, value: presentation.visible)
             }

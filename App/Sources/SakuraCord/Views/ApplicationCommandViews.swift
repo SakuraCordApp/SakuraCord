@@ -73,7 +73,8 @@ struct ApplicationCommandPickerView: View {
                 }
             }
             .onChange(of: composer.pickerKeyboardSelectionRevision) { _, _ in
-                if let id = composer.selectedRowID { proxy.scrollTo(id) }
+                // The highlight stops short of the edges, concentric with the panel.
+                if let id = composer.selectedRowID { proxy.scrollTo(id, edgeInset: InterfaceScale.metric(6)) }
             }
             .onChange(of: composer.pickerDocumentRevision, initial: true) { _, _ in
                 visibleSection = sections.first?.id

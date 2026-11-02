@@ -126,7 +126,8 @@ extension AppModel {
         guard let context = messagePermissionContext(for: channelID) else { return false }
         let channel = context.channel
         if channel.guildID == nil {
-            return !channel.isOfficialSystemDirectMessage
+            // A message request stays read-only until it is accepted.
+            return !channel.isOfficialSystemDirectMessage && channel.messageRequest == nil
         }
         guard context.isThread || selectedChannelSupportsPins(channel) else {
             return false

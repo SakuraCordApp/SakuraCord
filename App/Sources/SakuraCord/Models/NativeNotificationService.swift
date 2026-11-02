@@ -175,6 +175,7 @@ nonisolated struct NotificationContentPresentation: Equatable, Sendable {
         case .user:
             "@\(message.mentionedUsers.first { String($0.id.rawValue) == mention.id }?.displayName ?? "unknown-user")"
         case .role: "@unknown-role"
+        case .game, .broadcast, .command, .timestamp: MentionPresentation.fallback(for: mention).label
         case .channel, .channelLink: "#unknown-channel"
         case .message: "Message link"
         }

@@ -16,6 +16,12 @@ final class WorkspaceColumnsGeometry {
         /// How far a full-width side chat has widened from the pane: 0 in the
         /// pane, 1 at full width.
         let widening: CGFloat
+        /// How far the column is in view: 0 out of it, 1 in place.
+        let reveal: CGFloat
+        /// Whether the column is leaving the workspace.
+        let isDeparting: Bool
+
+        var isThread: Bool { id.hasPrefix("side-thread") }
     }
 
     static let shared = WorkspaceColumnsGeometry()
@@ -266,7 +272,10 @@ final class WorkspaceTitlebarView: NSView {
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         // The toolbar's search field outlives the workspace: it shows again
         // wherever the window goes next.
-        if newWindow !== window { fadeSearch(1) }
+        if newWindow !== window {
+            fadeSearch(1)
+            coverSearch(at: nil)
+        }
         super.viewWillMove(toWindow: newWindow)
     }
 
@@ -311,9 +320,21 @@ final class WorkspaceTitlebarView: NSView {
         let fullWidth = geometry.columns.last(where: \.isFullWidth)
         let inset = ChatChromeMetrics.toolbarItemEdgeInset
         // Search sits at the window's trailing edge, as the toolbar's own
-        // field does, and fades out over a thread pane as it opens and back
-        // as it leaves or widens.
-        let searchAlpha = searchVisibility(geometry)
+        // field does, beneath a thread pane, which covers it as it moves; a
+        // full-width side chat leaves room for it, so it fades back as one
+        // widens.
+        let handOff = searchHandOff(geometry)
+        let searchCover = handOff == nil ? searchCoverMinX(geometry) : nil
+        let searchAlpha = handOff.map { max(0, 2 * $0.progress - 1) }
+            ?? searchVisibility(geometry, coverMinX: searchCover)
+        // A pane's items, once faded, stay so while it leaves, even if the
+        // column it handed over to leaves too.
+        leavingPaneAlphas = leavingPaneAlphas.filter { groups[$0.key] != nil && !presentedGroupIDs.contains($0.key) }
+        if let handOff {
+            for id in handOff.paneIDs {
+                leavingPaneAlphas[id] = min(leavingPaneAlphas[id] ?? 1, max(0, 1 - 2 * handOff.progress))
+            }
+        }
         _ = searchItemView
         // Items stop before the field while it shows, or will once a pane
         // leaves; they never pass it to come back.
@@ -361,6 +382,8 @@ final class WorkspaceTitlebarView: NSView {
             if id == WorkspaceTitlebar.conversationID { maxX -= searchInset }
             let clipX = minX.rounded(.down)
             views.clip.frame = CGRect(x: clipX, y: 0, width: max(0, visibleMaxX - clipX), height: bounds.height)
+            let alpha = leavingPaneAlphas[id] ?? 1
+            if views.clip.alphaValue != alpha { views.clip.alphaValue = alpha }
             place(
                 views,
                 width: maxX - clipX,
@@ -371,28 +394,72 @@ final class WorkspaceTitlebarView: NSView {
             )
         }
         fadeSearch(searchAlpha)
+        coverSearch(at: searchCover)
     }
 
-    /// How much of the search field shows: none beside a thread pane, which
-    /// hides it, and in between while the pane moves or widens, unless the
-    /// reader turned off overlay motion: it then shows as the presentation
-    /// leaves it, whatever the columns do.
-    private func searchVisibility(_ geometry: WorkspaceColumnsGeometry) -> CGFloat {
+    /// Where a thread pane in front of the search field begins, in window
+    /// coordinates, less an item inset: the pane's items are translucent,
+    /// and their glass refracts what lies just beside it.
+    private func searchCoverMinX(_ geometry: WorkspaceColumnsGeometry) -> CGFloat? {
+        guard AppMotionPolicy.animates(.overlays) else { return nil }
+        let paneMinX = geometry.columns.lazy
+            .filter { $0.isThread && !$0.isFullWidth }.map(\.minX).min()
+        return paneMinX.map { $0 - ChatChromeMetrics.toolbarItemEdgeInset }
+    }
+
+    /// The thread panes over the search field leaving as a column slides over
+    /// them, such as the member list, which the field sits over, and how far
+    /// that column has arrived. The panes' items fade out over the first half
+    /// of its arrival and the field in over the second, so neither shows
+    /// through the other.
+    private func searchHandOff(
+        _ geometry: WorkspaceColumnsGeometry
+    ) -> (paneIDs: Set<String>, progress: CGFloat)? {
+        guard AppMotionPolicy.animates(.overlays), showsSearch else { return nil }
+        let columns = geometry.columns
+        let isThreadPane = { (column: WorkspaceColumnsGeometry.Column) in column.isThread && !column.isFullWidth }
+        // A thread widening to full width sets the field's visibility itself.
+        guard !columns.contains(where: { $0.isThread && $0.isFullWidth }),
+              let frontIndex = columns.lastIndex(where: { !$0.isFullWidth && !$0.isDeparting && !isThreadPane($0) }),
+              !columns[(frontIndex + 1)...].contains(where: isThreadPane)
+        else { return nil }
+        let paneIDs = Set(columns[..<frontIndex].filter(isThreadPane).map(\.id))
+        guard !paneIDs.isEmpty else { return nil }
+        // The reveal's spring overshoots.
+        return (paneIDs, min(max(columns[frontIndex].reveal, 0), 1))
+    }
+
+    /// Whether a thread pane covers the whole search field.
+    private func coversSearch(at coverMinX: CGFloat?) -> Bool {
+        guard let coverMinX, let fieldMinX = searchFieldMinX else { return false }
+        return coverMinX <= convert(CGPoint(x: fieldMinX, y: 0), to: nil).x
+    }
+
+    private func coverSearch(at coverMinX: CGFloat?) {
+        guard let glass = searchItemView else { return }
+        let visibleWidth = coverMinX.map { glass.convert(CGPoint(x: $0, y: 0), from: nil).x - glass.bounds.minX }
+        // Glass with a mask of its own hides as soon as the pane reaches it.
+        if !glass.showLeading(visibleWidth), let visibleWidth, visibleWidth < glass.bounds.width {
+            fadeSearch(0)
+        }
+    }
+
+    /// How much of the search field shows: none once a thread pane covers
+    /// it, and in between while a side chat widens, unless the reader turned
+    /// off overlay motion: it then shows as the presentation leaves it,
+    /// whatever the columns do.
+    private func searchVisibility(_ geometry: WorkspaceColumnsGeometry, coverMinX: CGFloat?) -> CGFloat {
         guard showsSearch || WorkspaceLayoutMotion.isMoving else { return 0 }
         guard AppMotionPolicy.animates(.overlays) else {
             let hidden = geometry.columns.contains {
-                $0.id.hasPrefix("side-thread") && !$0.isFullWidth && presentedGroupIDs.contains($0.id)
+                $0.isThread && !$0.isFullWidth && presentedGroupIDs.contains($0.id)
             }
             return hidden ? 0 : 1
         }
-        let windowMaxX = convert(CGPoint(x: bounds.maxX, y: 0), to: nil).x
+        if coversSearch(at: coverMinX) { return 0 }
         var covered: CGFloat = 0
-        for column in geometry.columns where column.id.hasPrefix("side-thread") {
-            let width = max(1, column.maxX - column.minX)
-            let shown = column.isFullWidth
-                ? 1 - column.widening
-                : min(1, max(0, (windowMaxX - column.minX) / width))
-            covered = max(covered, shown)
+        for column in geometry.columns where column.isThread && column.isFullWidth {
+            covered = max(covered, 1 - column.widening)
         }
         return 1 - covered
     }
@@ -400,6 +467,9 @@ final class WorkspaceTitlebarView: NSView {
     private var showsSearch = false
     /// The groups the workspace lists now, not those still sliding away.
     private var presentedGroupIDs: Set<String> = []
+    /// The fade of each leaving thread pane's items in a hand-off to the
+    /// search field.
+    private var leavingPaneAlphas: [String: CGFloat] = [:]
     private weak var searchField: NSSearchField?
 
     /// Where the window's own leading controls end in this view: its
@@ -483,6 +553,15 @@ final class WorkspaceTitlebarView: NSView {
 
     @objc private func toolbarItemsDidChange(_ notification: Notification) {
         guard let toolbar = notification.object as? NSToolbar, toolbar === window?.toolbar else { return }
+        // The re-hosted field draws in its new glass before it can be placed
+        // below: keep it out of sight until then if a pane covers it.
+        // The field being replaced may already be gone, leaving its place
+        // unknown.
+        let coverMinX = searchCoverMinX(WorkspaceColumnsGeometry.shared)
+        if let item = notification.userInfo?["item"] as? NSSearchToolbarItem,
+           coverMinX != nil, searchFieldMinX == nil || coversSearch(at: coverMinX) {
+            item.searchField.alphaValue = 0
+        }
         placeGroups()
         // The added item's view arrives after this notification.
         DispatchQueue.main.async { [weak self] in

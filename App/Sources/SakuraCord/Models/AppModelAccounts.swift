@@ -487,19 +487,9 @@ extension AppModel {
         memberLoadTask = nil
         memberLoadGeneration &+= 1
         cancelConversationNavigation()
-        gifSearchTask?.cancel()
-        gifSearchTask = nil
-        gifPickerLoadTask?.cancel()
-        gifPickerLoadTask = nil
-        gifPickerLoadGeneration &+= 1
-        gifResults = []
-        gifCategories = []
-        gifTrendingPreviewURL = nil
-        favoriteGIFs = []
-        isLoadingGIFs = false
-        isLoadingGIFPicker = false
-        gifFavoriteMutationURL = nil
-        gifErrorMessage = nil
+        resetGIFPicker()
+        gameMentions.loadTask?.cancel()
+        gameMentions = GameMentionState()
         attachmentCompactionGeneration &+= 1
         attachmentCompactionTask?.cancel()
         attachmentCompactionTask = nil

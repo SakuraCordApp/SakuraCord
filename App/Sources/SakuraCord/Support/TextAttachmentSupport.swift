@@ -112,8 +112,14 @@ struct SakuraCordTextInputAccentBridge: NSViewRepresentable {
 
 @MainActor
 final class InlineAttachmentImageLoader {
+    private struct MentionAvatarLoad {
+        let id: UUID
+        let url: URL
+        let task: Task<Void, Never>
+    }
+
     private var emojiTasks: [String: Task<Void, Never>] = [:]
-    private var mentionAvatarTasks: [String: Task<Void, Never>] = [:]
+    private var mentionAvatarTasks: [String: MentionAvatarLoad] = [:]
 
     isolated deinit {
         cancel()
@@ -177,14 +183,26 @@ final class InlineAttachmentImageLoader {
             values[attachment.presentation.rawToken] = url
         }
 
-        for (token, url) in values where mentionAvatarTasks[token] == nil {
-            mentionAvatarTasks[token] = Task { @MainActor [weak self, weak textView] in
+        for (token, url) in values {
+            if mentionAvatarTasks[token]?.url == url { continue }
+            mentionAvatarTasks[token]?.task.cancel()
+            let id = UUID()
+            let task = Task { @MainActor [weak self, weak textView] in
                 let image = await MentionAvatarImageStore.shared.image(for: url)
                 guard let self else { return }
-                defer { self.mentionAvatarTasks[token] = nil }
+                defer {
+                    if self.mentionAvatarTasks[token]?.id == id {
+                        self.mentionAvatarTasks[token] = nil
+                    }
+                }
                 guard !Task.isCancelled, let textView, let image else { return }
-                self.applyMentionAvatar(image, token: token, in: textView)
+                self.applyMentionAvatar(image, token: token, url: url, in: textView)
             }
+            mentionAvatarTasks[token] = MentionAvatarLoad(id: id, url: url, task: task)
+        }
+        for token in Array(mentionAvatarTasks.keys) where values[token] == nil {
+            mentionAvatarTasks[token]?.task.cancel()
+            mentionAvatarTasks[token] = nil
         }
     }
 
@@ -193,8 +211,8 @@ final class InlineAttachmentImageLoader {
             task.cancel()
         }
         emojiTasks.removeAll()
-        for task in mentionAvatarTasks.values {
-            task.cancel()
+        for load in mentionAvatarTasks.values {
+            load.task.cancel()
         }
         mentionAvatarTasks.removeAll()
     }
@@ -220,12 +238,13 @@ final class InlineAttachmentImageLoader {
         textView.needsDisplay = true
     }
 
-    private func applyMentionAvatar(_ image: NSImage, token: String, in textView: NSTextView) {
+    private func applyMentionAvatar(_ image: NSImage, token: String, url: URL, in textView: NSTextView) {
         guard let storage = textView.textStorage else { return }
         let range = NSRange(location: 0, length: storage.length)
         storage.enumerateAttribute(.attachment, in: range) { value, _, _ in
             guard let attachment = value as? MentionTextAttachment,
-                  attachment.presentation.rawToken == token
+                  attachment.presentation.rawToken == token,
+                  attachment.presentation.avatarURL == url
             else { return }
             attachment.updateImages(avatar: image)
         }

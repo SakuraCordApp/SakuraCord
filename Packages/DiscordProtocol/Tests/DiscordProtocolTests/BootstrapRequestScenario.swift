@@ -357,7 +357,7 @@ struct BootstrapRequestScenario {
         #expect(reference["channel_id"] as? String == "200")
         #expect(replyBody["allowed_mentions"] == nil)
 
-        _ = try await provider.send(SendMessageDraft(
+        let quietReply = try await provider.send(SendMessageDraft(
             channelID: ChannelID(rawValue: 200),
             content: "quiet reply",
             replyTo: MessageID(rawValue: 299),
@@ -371,6 +371,18 @@ struct BootstrapRequestScenario {
         #expect(allowedMentions["parse"] as? [String] == [
             "users", "roles", "everyone",
         ])
+
+        _ = try await provider.edit(quietReply, content: "edited reply")
+        let quietEditBody = try #require(RateLimitURLProtocol.sentMessageBody)
+        #expect(quietEditBody["content"] as? String == "edited reply")
+        let quietEditMentions = try #require(quietEditBody["allowed_mentions"] as? [String: Any])
+        #expect(quietEditMentions["replied_user"] as? Bool == false)
+        #expect(quietEditMentions["parse"] as? [String] == ["users", "roles", "everyone"])
+
+        var pingingReply = quietReply
+        pingingReply.mentionedUsers = try [#require(quietReply.replyPreview?.author)]
+        _ = try await provider.edit(pingingReply, content: "edited reply")
+        #expect(try #require(RateLimitURLProtocol.sentMessageBody)["allowed_mentions"] == nil)
 
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-upload-test.txt")
         try Data("attachment".utf8).write(to: fileURL)

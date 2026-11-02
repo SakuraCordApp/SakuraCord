@@ -8,7 +8,7 @@ extension AppModel {
     ) async {
         let key = ComponentControlKey(messageID: message.id, customID: customID)
         // One action per message at a time; siblings stay disabled meanwhile.
-        guard !componentInteractionPresentation.pendingMessages.contains(message.id) else { return }
+        guard !isComponentInteractionUnavailable(on: message) else { return }
         guard supportedCapabilities.contains(.components) else {
             updateComponentPresentation {
                 $0.errors[key] = ChatProviderError.capabilityDisabled(.components).localizedDescription
@@ -336,9 +336,11 @@ extension AppModel {
             ComponentControlKey(messageID: messageID, customID: customID))
     }
 
-    /// Discord disables a message's other controls while one action is pending.
-    func isComponentInteractionPending(messageID: MessageID) -> Bool {
-        componentInteractionPresentation.pendingMessages.contains(messageID)
+    /// Discord disables a message's other controls while one action is
+    /// pending, and an unaccepted message request's until it is accepted.
+    func isComponentInteractionUnavailable(on message: Message) -> Bool {
+        componentInteractionPresentation.pendingMessages.contains(message.id)
+            || awaitsMessageRequestDecision(in: message.channelID)
     }
 
     func componentSelection(

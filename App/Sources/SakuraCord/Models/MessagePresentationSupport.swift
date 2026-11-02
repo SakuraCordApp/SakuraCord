@@ -133,7 +133,9 @@ struct NativeTimelineTextPlan: Equatable, Sendable {
                     prepared.markdownPlan,
                     baseFontSize: prepared.isEmojiOnly
                         ? 48
-                        : baseFontSize
+                        : baseFontSize,
+                    usesMessageLineHeight: !prepared.isEmojiOnly,
+                    reservesCodeCopyButton: true
                 )
             )
         } else {
@@ -562,6 +564,7 @@ nonisolated enum MessageGrouping {
 
     private static func isGroupable(_ message: Message) -> Bool {
         !message.type.hasGeneratedContent && message.type != .chatInputCommand
+            && message.type != .autoModerationAction
     }
 
     static func appendingRow(

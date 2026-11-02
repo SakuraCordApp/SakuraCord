@@ -138,10 +138,14 @@ extension AppModel {
         setComposerAttachments(composerAttachments(for: destination) + staged, for: destination)
         composer.checkingAttachmentIDs.formUnion(stagedIDs)
         defer { composer.checkingAttachmentIDs.subtract(stagedIDs) }
+        // A sent message shows at once, so its videos are read while the
+        // tiles hold sending back.
+        async let videosPrepared: Void = LocalVideo.prepare(urls)
         let acceptedURLs = Set(await attachmentURLsWithinDiscordLimit(
             urls,
             offeringExternalUploadFor: destination
         ))
+        await videosPrepared
         let rejectedIDs = Set(staged.filter { !acceptedURLs.contains($0.url) }.map(\.id))
         let current = composerAttachments(for: destination)
         if current.contains(where: { rejectedIDs.contains($0.id) }) {
@@ -163,6 +167,14 @@ extension AppModel {
             attachments.append(contentsOf: added)
             setComposerAttachments(attachments, for: destination)
             let addedIDs = Set(added.map(\.id))
+            if urls.contains(where: LocalVideo.isVideo) {
+                // The tiles hold sending back until their videos are read.
+                composer.checkingAttachmentIDs.formUnion(addedIDs)
+                Task {
+                    await LocalVideo.prepare(urls)
+                    composer.checkingAttachmentIDs.subtract(addedIDs)
+                }
+            }
             preuploadComposerAttachments(
                 composerAttachments(for: destination).filter { addedIDs.contains($0.id) },
                 to: destination
@@ -292,9 +304,26 @@ extension AppModel {
         guard isComposerDropEligible(destination), !attachments.isEmpty,
               validateAttachmentCount(attachments), allowOutgoingQueueSubmission()
         else { return false }
+        // A thread still being created has no upload destination yet.
+        if destination == .thread, openThread == nil {
+            return await addComposerAttachments(attachments.map(\.url), to: .thread)
+        }
+        // The files go where they were dropped, read while the message waits
+        // and holds its place in the outbox.
+        let session = accountSession()
+        let channelID = selectedChannelID
+        let thread = openThread
+        guard let reservation = composer.outbox.reserveSubmission() else {
+            composer.isSendQueueFullAlertPresented = true
+            return false
+        }
+        // The message shows at once, so its videos are read first.
+        await LocalVideo.prepare(attachments.map(\.url))
+        composer.outbox.releaseSubmission(reservation)
+        guard isCurrentAccountSession(session) else { return false }
         switch destination {
         case .channel:
-            guard let channelID = selectedChannelID else { return false }
+            guard let channelID else { return false }
             return await sendChannelMessage(
                 channelID: channelID,
                 content: "",
@@ -304,10 +333,7 @@ extension AppModel {
                 clearsComposer: false
             )
         case .thread:
-            guard let thread = openThread else {
-                // A thread still being created has no upload destination yet.
-                return await addComposerAttachments(attachments.map(\.url), to: .thread)
-            }
+            guard let thread else { return false }
             return await sendThreadMessage(
                 content: "",
                 attachments: attachments,

@@ -27,6 +27,15 @@ struct MessageMentionResolver {
     func label(_ mention: RenderedMention) -> String {
         presentation(mention).label
     }
+
+    /// Every mention a draft holds, keyed by token, as an editor shows them.
+    func presentations(in text: String) -> [String: MentionPresentation] {
+        MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
+            if case let .mention(mention) = segment {
+                values[mention.rawToken] = presentation(mention)
+            }
+        }
+    }
 }
 
 struct CustomEmojiRichText: View {
@@ -126,6 +135,11 @@ struct CustomEmojiRichText: View {
         switch mention.target {
         case .unresolved:
             return
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentions.gamesByID[id]
+        case let .command(id, name):
+            guard let channelID = message?.channelID ?? model.selectedChannelID else { return }
+            model.startCommandMention(id: id, name: name, in: channelID)
         case let .user(id):
             let user = model.mentionUser(id, in: message)
                 ?? model.membersByID[id]?.user
@@ -187,7 +201,7 @@ private struct AnchoredMentionPopoverLayer: View {
                     }
                 case let .role(id):
                     RoleMembersPopover(model: model, roleID: id, guildID: model.selectedGuildID)
-                case .unresolved, .guildNavigation, .channel, .linkedChannel, .message:
+                case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
                     EmptyView()
                 }
             }
@@ -201,7 +215,7 @@ private struct AnchoredMentionPopoverLayer: View {
         switch request.mention.target {
         case .user:
             .memberProfile
-        case .unresolved, .guildNavigation, .role, .channel, .linkedChannel, .message:
+        case .unresolved, .game, .command, .guildNavigation, .role, .channel, .linkedChannel, .message:
             .interactive
         }
     }
@@ -234,12 +248,11 @@ nonisolated struct LinkedImagePresentation: Sendable {
                 )
             )
         }
-        // Discord leaves an emoji link inside a spoiler as a spoilered link.
-        if references.contains(where: { $0.1.linkedEmoji != nil }) {
+        // Discord leaves an image or emoji link inside a spoiler as a
+        // spoilered link, so it never shows before its reveal.
+        if !references.isEmpty, content.contains("||") {
             let spoilered = Self.spoileredMatchLocations(matches, in: content)
-            references.removeAll {
-                $0.1.linkedEmoji != nil && spoilered.contains($0.0.location)
-            }
+            references.removeAll { spoilered.contains($0.0.location) }
         }
         matchedEmojiURLs = Set(
             references.compactMap { reference in

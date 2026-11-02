@@ -99,9 +99,10 @@ import Testing
 }
 
 @MainActor
-@Test func `modal dismissal retains input through its transition and releases it once`() async {
+@Test func `closing modal releases input as its transition begins and dismisses once`() async {
     let window = modalTestWindow()
     var dismissals = 0
+    var removalsBeforeDismissal = 0
     await withCheckedContinuation { continuation in
         var host: WindowModalHostingView!
         host = WindowModalHostingView(presentationID: UUID(), dismiss: { dismissals += 1 }, didFinishDismissal: {
@@ -110,15 +111,47 @@ import Testing
             host = nil
             continuation.resume()
         }, behavior: .contentAnimated, content: { _ in AnyView(Color.clear) })
+        host.frame = window.contentView!.bounds
         window.contentView!.addSubview(host)
         host.present()
         host.animationState.dismissalTransition = { _ in 0 }
+        host.animationState.willRemove = { if dismissals == 0 { removalsBeforeDismissal += 1 } }
         host.requestDismissal()
         host.requestDismissal()
-        #expect(!WindowModalCoordinator.allowsInput(for: window.contentView!))
+        // What the modal covered takes input while it animates away.
+        #expect(WindowModalCoordinator.allowsInput(for: window.contentView!))
+        #expect(host.hitTest(.zero) == nil)
     }
     #expect(dismissals == 1)
-    #expect(WindowModalCoordinator.allowsInput(for: window.contentView!))
+    #expect(removalsBeforeDismissal == 1)
+}
+
+@MainActor
+@Test func `a closing modal passes clicks, keys and Escape to the modal it uncovers`() throws {
+    let window = modalTestWindow()
+    let coordinator = WindowModalCoordinator.coordinator(for: window)
+    let parent = modalTestHost(in: window)
+    let child = modalTestHost(in: window)
+    var parentEscapes = 0
+    parent.animationState.escapeAction = { parentEscapes += 1 }
+    parent.present()
+    child.present()
+    child.animationState.dismissalTransition = { _ in 60 }
+    defer {
+        for host in [child, parent] { host.cancelPendingDismissal(); host.unregisterInput(); host.removeFromSuperview() }
+    }
+    let escape = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+    #expect(coordinator.filter(escape) == nil)
+    #expect(child.isDismissing && parentEscapes == 0)
+    #expect(coordinator.topmost === parent)
+    // Removing the closing modal from input leaves it above the parent.
+    #expect(window.contentView!.subviews.last === child)
+    // While the child animates away, it takes nothing: clicks reach the
+    // parent beneath it, and a second Escape goes to the parent.
+    #expect(child.hitTest(.zero) == nil)
+    #expect(parent.hitTest(.zero) != nil)
+    #expect(coordinator.filter(escape) == nil)
+    #expect(parentEscapes == 1)
 }
 
 @MainActor
