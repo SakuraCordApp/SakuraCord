@@ -471,7 +471,11 @@ enum MarkdownFootnotes {
                 hasPendingBlank = false
                 continue
             }
-            if hasPendingBlank { lines.append("") }
+            if hasPendingBlank {
+                // A blank line and an unindented one end the footnote.
+                lines.append("")
+                isInDefinition = false
+            }
             hasPendingBlank = false
             if let opening = MarkdownFence(line) {
                 fence = (opening.marker, opening.length)
