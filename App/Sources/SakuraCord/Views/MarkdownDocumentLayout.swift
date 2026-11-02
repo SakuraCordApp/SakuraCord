@@ -438,9 +438,9 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
     }
 
     /// Each line's run of inline code, as tall as its font plus a point
-    /// above and below, and as wide as its glyphs plus their padding. Only
-    /// the line where the code starts has room reserved before it, so a
-    /// wrapped line's chrome starts at its glyphs.
+    /// above and below, and as wide as its glyphs plus their padding. Room
+    /// before the code is reserved mid-line and at a paragraph's start, but
+    /// not on a wrapped line, so there the chrome starts at its glyphs.
     private func inlineCodeRects(forGlyphRange glyphsToShow: NSRange) -> [NSRect] {
         guard let textStorage else { return [] }
         var rects: [NSRect] = []
@@ -455,8 +455,9 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
                 let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
                 let baseline = line.minY + self.location(forGlyphAt: glyphs.location).y
                 let start = self.characterIndexForGlyph(at: glyphs.location)
-                let continues = start > 0 && textStorage.attribute(.discordMarkdownInlineCode, at: start - 1, effectiveRange: nil) != nil
-                let leading = continues && glyphs.location == lineGlyphs.location ? 0 : padding
+                let isWrapped = glyphs.location == lineGlyphs.location
+                    && (textStorage.string as NSString).paragraphRange(for: NSRange(location: start, length: 0)).location != start
+                let leading = isWrapped ? 0 : padding
                 rects.append(NSRect(
                     x: bounds.minX - leading, y: baseline - font.ascender - InterfaceScale.metric(1),
                     width: bounds.width + leading, height: font.ascender - font.descender + InterfaceScale.metric(2)
