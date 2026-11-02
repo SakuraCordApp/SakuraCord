@@ -56,12 +56,13 @@ extension NativeTimelineCanvasView {
     /// The hovered timestamp's frame, unless a spoiler conceals it.
     private func visibleTimestampFrame(for hover: NativeTimelineMentionHover) -> CGRect? {
         guard let index = items.firstIndex(where: { $0.identifier == hover.itemIdentifier }),
-              let messageID = items[index].messageID,
               let frame = mentionPointerRegions(at: index).first(where: {
                   $0.region == hover.region && $0.characterIndex == hover.characterIndex
               })?.frame,
               textSpoilerPointerHit(at: CGPoint(x: frame.midX, y: frame.midY)) == nil
         else { return nil }
+        // A channel topic has no components to hide it.
+        guard let messageID = items[index].messageID else { return frame }
         let hiddenContainers = layouts[index].componentLayouts.flatMap {
             NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(in: $0, messageID: messageID, store: spoilerRevealStore)
         }

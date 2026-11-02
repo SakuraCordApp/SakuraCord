@@ -1298,7 +1298,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
               layouts.indices.contains(index),
-              case .message = items[index]
+              items[index].messageID != nil || items[index].beginning != nil
         else { return nil }
         for mention in mentionPointerRegions(at: index)
         where mention.frame.contains(point) {
