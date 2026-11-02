@@ -89,7 +89,8 @@ extension AppModel {
     }
 
     func canUpdatePollVote(on message: Message, removing: Bool = false) -> Bool {
-        removing || guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
+        guard !awaitsMessageRequestDecision(in: message.channelID) else { return false }
+        return removing || guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil
     }
 
     /// Shows the current user's selection immediately and coalesces requests.

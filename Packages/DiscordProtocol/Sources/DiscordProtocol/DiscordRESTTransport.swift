@@ -543,7 +543,7 @@ extension DiscordRESTProvider {
                 // Rate-limit reservation and authorization can suspend. Validate
                 // the immutable status payload immediately before transmission.
                 if let statusSave = context.statusSave { try validateStatusSettingsSave(statusSave) }
-                try requireGuildCommunicationForRequest(path: path, method: method, body: context.body)
+                try requireCommunicationForRequest(path: path, method: method, body: context.body)
                 // A CAPTCHA replay may have waited for a rate-limit slot. Never
                 // send a body bound to a Gateway session that has since changed.
                 if context.headers["X-Captcha-Key"] != nil, case let .string(sessionID)? = context.body?["session_id"],

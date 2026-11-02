@@ -156,6 +156,8 @@ final class AppModel {
     private(set) var quickSwitcherGuildMemberAliases: [GuildID: [UserID: String]] = [:]
     private(set) var messagePresentationChannelsByID: [ChannelID: Channel] = [:]
     private(set) var messagePresentationChannels: [Channel] = []
+    /// Conversations waiting in Message Requests, which stay read-only.
+    private(set) var messageRequestChannelIDs: Set<ChannelID> = []
     private(set) var activeJoinedThreads: [MessageThreadSummary] = []
     private(set) var knownThreadIDs: Set<ChannelID> = []
     private(set) var guildIDsWithResourceChannels: Set<GuildID> = []
@@ -664,12 +666,9 @@ final class AppModel {
     }
 
     func conversationAccess(for channel: Channel) -> ConversationAccess {
-        guard let guildID = channel.guildID else {
-            return .readable(canSend: !channel.isOfficialSystemDirectMessage)
-        }
-        return Self.resolveConversationAccess(
+        Self.resolveConversationAccess(
             for: channel,
-            permissionBasis: conversationPermissionBasis(for: guildID)
+            permissionBasis: channel.guildID.flatMap(conversationPermissionBasis(for:))
         )
     }
 
@@ -737,7 +736,9 @@ final class AppModel {
                 || channel.kind == .directMessage
                 || channel.kind == .groupDirectMessage
         else { return false }
-        return conversationAccess(for: channel).isReadable
+        // A message request takes no calls until it is accepted; call setup
+        // can hold an older channel value, so read the current set.
+        return !awaitsMessageRequestDecision(in: channel.id) && conversationAccess(for: channel).isReadable
     }
 
     var conversationNavigationHistory = ConversationNavigationHistory()
@@ -746,7 +747,10 @@ final class AppModel {
             guard selectedChannelID != oldValue else { return }
             channelVoiceMessageComposer.discard(playback: voiceMessagePlayback)
             // Only a conversation in Direct Messages replaces its Friends home.
-            if selectedChannelID != nil, selectedGuildID == nil { friends.isPresented = false }
+            if selectedChannelID != nil, selectedGuildID == nil {
+                friends.isPresented = false
+                friends.messageRequestsTab = nil
+            }
             let keepsGuildPage = selectionChangeKeepsGuildPage
             if !keepsGuildPage {
                 onboarding.presentedGuildID = nil
@@ -1236,6 +1240,13 @@ extension AppModel {
             messagePresentationChannels.map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
         )
+        let requestChannelIDs = Set(messagePresentationChannels.lazy.filter { $0.messageRequest != nil }.map(\.id))
+        if requestChannelIDs != messageRequestChannelIDs {
+            messageRequestChannelIDs = requestChannelIDs
+            // Timeline layouts, including retained ones, draw a request's
+            // controls disabled until it is decided.
+            invalidateTimelinePresentation()
+        }
         activeJoinedThreads = snapshot?.activeJoinedThreads ?? []
         knownThreadIDs = Set(threads.map(\.id)).union(activeJoinedThreads.map(\.id))
         guildIDsWithResourceChannels = Set((snapshot?.channels ?? []).compactMap { channel in

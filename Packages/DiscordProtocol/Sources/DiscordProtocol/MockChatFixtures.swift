@@ -817,6 +817,14 @@ private struct MockFixtureAssembly {
                 ownerID: nova.id,
                 kind: .groupDirectMessage,
                 recipients: [maya, theo, juniper]
+            ),
+            Channel(
+                id: ChannelID(rawValue: 403), guildID: nil, name: theo.displayName, hasExplicitName: false,
+                kind: .directMessage, recipients: [theo], isMessageRequest: true
+            ),
+            Channel(
+                id: ChannelID(rawValue: 404), guildID: nil, name: juniper.displayName, hasExplicitName: false,
+                kind: .directMessage, recipients: [juniper], isMessageRequest: true, isSpam: true
             )
         ]
         channels.append(
