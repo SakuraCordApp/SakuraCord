@@ -105,7 +105,7 @@ extension ComposerView {
 
 enum ComposerEmojiAttributedText {
     static let expression = RegularExpressionFactory.make(
-        #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern
+        #"<a?:[A-Za-z0-9_]+:[0-9]+>|"# + RenderedMention.tokenPattern + #"|(?<=^|\s)(@time)(?=\s|$)"#
     )
 
     static func make(
@@ -128,6 +128,21 @@ enum ComposerEmojiAttributedText {
                 )
             }
             let token = (source as NSString).substring(with: match.range)
+            if token == "@time" {
+                let presentation = MentionPresentation(
+                    rawToken: "@time",
+                    label: "@time",
+                    target: .unresolved
+                )
+                result.append(
+                    MentionAttachmentRenderer.attributedString(
+                        presentation: presentation,
+                        font: font
+                    )
+                )
+                cursor = NSMaxRange(match.range)
+                continue
+            }
             if let mention = RenderedMention(rawToken: token) {
                 let presentation = mentionPresentations[token]
                     ?? MentionPresentation.fallback(for: mention)
@@ -242,6 +257,9 @@ enum ComposerEmojiAttributedText {
             guard let token = tokenValue as? String,
                   let mention = RenderedMention(rawToken: token)
             else { return }
+            if mention.kind == .timestamp, mention.timestampStyle == "R" {
+                return
+            }
             let expected = mentionPresentations[token]
                 ?? MentionPresentation.fallback(for: mention)
             value.enumerateAttribute(.attachment, in: range) { attachment, _, attachmentStop in
@@ -536,6 +554,7 @@ struct ComposerTextView: NSViewRepresentable {
         }
         context.coordinator.loadEmojiImages(in: textView)
         context.coordinator.loadMentionAvatars(in: textView)
+        context.coordinator.reconcileRelativeTimestamps(in: textView)
 
         if let selection,
            selection.location != NSNotFound,
@@ -589,6 +608,124 @@ struct ComposerTextView: NSViewRepresentable {
         private var isNormalizing = false
         private var isMarkedTextActive = false
         private let attachmentImageLoader = InlineAttachmentImageLoader()
+        private var isObservingClock = false
+        var composerTimestampHosts: [ObjectIdentifier: NativeTimelinePassthroughHostingView] = [:]
+
+        deinit {
+            let hosts = composerTimestampHosts
+            let id = ObjectIdentifier(self)
+            DispatchQueue.main.async {
+                RelativeTimestampClock.shared.remove(id: id)
+                for host in hosts.values {
+                    host.removeFromSuperview()
+                }
+            }
+        }
+
+        func updateComposerTimestampAnimationOverlays(in textView: NSTextView?) {
+            guard let textView,
+                  let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer
+            else {
+                cleanupComposerTimestampHosts()
+                return
+            }
+
+            var visibleAttachments: Set<ObjectIdentifier> = []
+
+            textStorage.enumerateAttribute(
+                .attachment,
+                in: NSRange(location: 0, length: textStorage.length)
+            ) { attachment, range, _ in
+                guard let mentionAttachment = attachment as? MentionTextAttachment,
+                      case let .timestamp(date, style) = mentionAttachment.presentation.target,
+                      style == "R"
+                else { return }
+
+                let id = ObjectIdentifier(mentionAttachment)
+                visibleAttachments.insert(id)
+
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                rect.origin.x += textView.textContainerOrigin.x
+                rect.origin.y += textView.textContainerOrigin.y
+
+                if let host = composerTimestampHosts[id] {
+                    if host.frame != rect {
+                        host.frame = rect
+                    }
+                } else {
+                    let root = AnyView(NativeTimelineTimestampPillView(
+                        date: date,
+                        style: "R",
+                        isOutgoingBubble: false,
+                        showsBackground: true
+                    ))
+                    let host = NativeTimelinePassthroughHostingView(rootView: root)
+                    host.frame = rect
+                    host.wantsLayer = true
+                    host.layer?.backgroundColor = NSColor.clear.cgColor
+                    textView.addSubview(host, positioned: .above, relativeTo: nil)
+                    composerTimestampHosts[id] = host
+                }
+            }
+
+            for (id, host) in composerTimestampHosts where !visibleAttachments.contains(id) {
+                host.removeFromSuperview()
+                composerTimestampHosts.removeValue(forKey: id)
+            }
+        }
+
+        func cleanupComposerTimestampHosts() {
+            for host in composerTimestampHosts.values {
+                host.removeFromSuperview()
+            }
+            composerTimestampHosts.removeAll()
+        }
+
+        func reconcileRelativeTimestamps(in textView: NSTextView?) {
+            guard let textView else {
+                RelativeTimestampClock.shared.remove(self)
+                isObservingClock = false
+                cleanupComposerTimestampHosts()
+                return
+            }
+            let hasRelative = parent.text.contains(":R>")
+            if !hasRelative {
+                RelativeTimestampClock.shared.remove(self)
+                isObservingClock = false
+                cleanupComposerTimestampHosts()
+                return
+            }
+            updateComposerTimestampAnimationOverlays(in: textView)
+            guard !isObservingClock else { return }
+            isObservingClock = true
+            RelativeTimestampClock.shared.observe(self) { [weak self, weak textView] date in
+                guard let self, let textView else { return }
+                guard self.parent.text.contains(":R>") else {
+                    RelativeTimestampClock.shared.remove(self)
+                    self.isObservingClock = false
+                    self.cleanupComposerTimestampHosts()
+                    return
+                }
+                guard let textStorage = textView.textStorage else { return }
+                var updated = false
+                textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length)) { attachment, range, _ in
+                    if let mentionAttachment = attachment as? MentionTextAttachment {
+                        if mentionAttachment.updateTimestampIfRelative(relativeTo: date) {
+                            updated = true
+                            textView.layoutManager?.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                            textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
+                        }
+                    }
+                }
+                if updated {
+                    textView.setNeedsDisplay(textView.bounds)
+                }
+                self.updateComposerTimestampAnimationOverlays(in: textView)
+            }
+        }
 
         init(parent: ComposerTextView) {
             self.parent = parent
@@ -653,6 +790,7 @@ struct ComposerTextView: NSViewRepresentable {
             // return to that value before SwiftUI refreshes it; every native
             // text change must still reach the current draft model.
             parent.onTextChange(raw)
+            updateComposerTimestampAnimationOverlays(in: textView)
             textView.invalidateIntrinsicContentSize()
             textView.enclosingScrollView?.invalidateIntrinsicContentSize()
         }

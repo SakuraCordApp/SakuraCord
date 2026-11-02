@@ -697,3 +697,21 @@ func `server verification blocks sends without exposing hidden channels`(state: 
                     currentMember: context.currentMember)
     #expect(can(context))
 }
+
+@MainActor
+@Test func `timestamp mention presents formatted date and tooltip`() throws {
+    let token = "<t:1793160000:F>"
+    let mention = try #require(RenderedMention(rawToken: token))
+    let presentation = MentionPresentation.fallback(for: mention)
+    #expect(!presentation.label.isEmpty)
+    #expect(presentation.isTimestamp)
+    #expect(!presentation.isInteractive)
+    #expect(presentation.systemImage == nil)
+    #expect(presentation.toolTip != nil)
+    if case let .timestamp(date, style) = presentation.target {
+        #expect(date == Date(timeIntervalSince1970: 1793160000))
+        #expect(style == "F")
+    } else {
+        Issue.record("Expected .timestamp target")
+    }
+}

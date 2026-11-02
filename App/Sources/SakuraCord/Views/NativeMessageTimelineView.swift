@@ -400,6 +400,7 @@ final class NativeMessageTimelineCoordinator: NSObject {
         init(parent: NativeMessageTimelineView) {
             self.parent = parent
             actions = Self.makeActions(from: parent)
+            super.init()
         }
 }
 

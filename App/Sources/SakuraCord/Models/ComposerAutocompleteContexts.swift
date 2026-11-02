@@ -67,6 +67,45 @@ struct MentionAutocompleteContext {
     }
 }
 
+struct TimeMentionContext: Equatable {
+    private static let expression = RegularExpressionFactory.make(
+        #"(?:^|\s)(@time(?:\s+([^\n]*))?)$"#
+    )
+
+    let range: NSRange
+    let query: String
+    let rawQuery: String
+
+    init?(text: String, selection: NSRange?) {
+        let cursor = selection?.location ?? text.utf16.count
+        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
+        let prefix = (text as NSString).substring(to: cursor)
+        guard let match = Self.expression.firstMatch(
+            in: prefix,
+            range: NSRange(location: 0, length: (prefix as NSString).length)
+        ), match.range(at: 1).location != NSNotFound else { return nil }
+
+        let fullToken = (prefix as NSString).substring(with: match.range(at: 1))
+        guard fullToken == "@time" || fullToken.hasPrefix("@time ") else {
+            return nil
+        }
+        range = match.range(at: 1)
+        if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound {
+            rawQuery = (prefix as NSString).substring(with: match.range(at: 2))
+            query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            rawQuery = ""
+            query = ""
+        }
+    }
+
+    init(range: NSRange, query: String, rawQuery: String) {
+        self.range = range
+        self.query = query
+        self.rawQuery = rawQuery
+    }
+}
+
 /// A game search typed after the line's last `@game `, which filters the
 /// game menu as a command argument filters its options.
 struct GameMentionContext {

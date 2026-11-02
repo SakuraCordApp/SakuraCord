@@ -805,7 +805,7 @@ extension NativeTimelineCanvasView {
     ) {
         guard let model else { return }
         switch mention.target {
-        case .unresolved:
+        case .unresolved, .timestamp:
             break
         case let .game(id):
             model.presentedProfileGame = model.gameMentions.gamesByID[id]

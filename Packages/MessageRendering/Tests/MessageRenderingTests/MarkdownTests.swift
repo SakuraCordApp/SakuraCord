@@ -664,3 +664,160 @@ private func spoilerOutline(_ source: String) -> String {
     #expect(code.attribute(.discordMarkdownInlineCode, at: 0, effectiveRange: nil) != nil)
     #expect(code.attribute(.discordMarkdownSpoiler, at: 0, effectiveRange: nil) != nil)
 }
+
+@Test func `message document recognizes discord timestamp tokens as structured mentions`() {
+    let source = "Event is at <t:1793160000:F> or relative <t:1793205468:R> and default <t:1793160000>"
+    let document = MessageDocument(source: source)
+    let mentions = document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(value) = segment else { return nil }
+        return value
+    }
+
+    #expect(mentions.count == 3)
+    #expect(mentions[0].kind == .timestamp)
+    #expect(mentions[0].id == "1793160000")
+    #expect(mentions[0].timestampStyle == "F")
+    #expect(mentions[0].timestampDate == Date(timeIntervalSince1970: 1793160000))
+    #expect(mentions[0].rawToken == "<t:1793160000:F>")
+
+    #expect(mentions[1].kind == .timestamp)
+    #expect(mentions[1].id == "1793205468")
+    #expect(mentions[1].timestampStyle == "R")
+    #expect(mentions[1].rawToken == "<t:1793205468:R>")
+
+    #expect(mentions[2].kind == .timestamp)
+    #expect(mentions[2].id == "1793160000")
+    #expect(mentions[2].timestampStyle == nil)
+    #expect(mentions[2].rawToken == "<t:1793160000>")
+
+    #expect(!document.isEmojiOnly)
+}
+
+@Test func `discord timestamp formatter formats expected styles and tooltips`() {
+    let date = Date(timeIntervalSince1970: 1793160000)
+    let reference = Date(timeIntervalSince1970: 1793160000 + 3600)
+
+    let shortTime = DiscordTimestampFormatter.formatted(date: date, style: "t", locale: Locale(identifier: "en_US"))
+    let longDate = DiscordTimestampFormatter.formatted(date: date, style: "D", locale: Locale(identifier: "en_US"))
+    let defaultFormat = DiscordTimestampFormatter.formatted(date: date, style: nil, locale: Locale(identifier: "en_US"))
+    let fullFormat = DiscordTimestampFormatter.formatted(date: date, style: "F", locale: Locale(identifier: "en_US"))
+    let relative = DiscordTimestampFormatter.relativeText(for: date, relativeTo: reference)
+
+    #expect(!shortTime.isEmpty)
+    #expect(!longDate.isEmpty)
+    #expect(!defaultFormat.isEmpty)
+    #expect(!fullFormat.isEmpty)
+    #expect(relative.contains("hour") || relative.contains("hr"))
+
+    let tooltipForRelative = DiscordTimestampFormatter.tooltip(date: date, style: "R", now: reference, locale: Locale(identifier: "en_US"))
+    #expect(tooltipForRelative == fullFormat)
+    let tooltipForStandard = DiscordTimestampFormatter.tooltip(date: date, style: "f", now: reference, locale: Locale(identifier: "en_US"))
+    #expect(tooltipForStandard.contains("hour") || tooltipForStandard.contains("hr"))
+}
+
+@Test func `discord natural language time parser resolves relative and colloquial queries`() {
+    let now = Date(timeIntervalSince1970: 1793364600) // Oct 30, 2026
+
+    let emptyCandidates = DiscordNaturalLanguageTimeParser.candidates(for: "", now: now)
+    #expect(emptyCandidates.count == 1)
+    #expect(emptyCandidates[0].options.count == 4)
+    #expect(emptyCandidates[0].options.contains { $0.style == "R" })
+
+    let relativeFuture = DiscordNaturalLanguageTimeParser.candidates(for: "in 2 hours", now: now)
+    #expect(relativeFuture.count == 1)
+    #expect(Int(relativeFuture[0].date.timeIntervalSince(now)) == 7200)
+
+    let relativePast = DiscordNaturalLanguageTimeParser.candidates(for: "6 days ago", now: now)
+    #expect(relativePast.count == 1)
+    #expect(Int(now.timeIntervalSince(relativePast[0].date)) == 6 * 86400)
+
+    let rawTimestamp = DiscordNaturalLanguageTimeParser.candidates(for: "1793160000", now: now)
+    #expect(rawTimestamp.count == 1)
+    #expect(rawTimestamp[0].date == Date(timeIntervalSince1970: 1793160000))
+
+    let ambiguousDate = DiscordNaturalLanguageTimeParser.candidates(for: "24 October", now: now)
+    #expect(ambiguousDate.count == 2)
+    #expect(ambiguousDate[0].date > now)
+    #expect(ambiguousDate[1].date < now)
+
+    let inAYear = DiscordNaturalLanguageTimeParser.candidates(for: "in a year", now: now)
+    #expect(inAYear.count == 1)
+    #expect(inAYear[0].date > now)
+
+    let slashDate = DiscordNaturalLanguageTimeParser.candidates(for: "20/10/2026", now: now)
+    #expect(slashDate.count == 1)
+
+    let tenForty = DiscordNaturalLanguageTimeParser.candidates(for: "10:40", now: now)
+    #expect(tenForty.count == 3)
+    #expect(tenForty[0].options.contains { $0.style == "t" })
+    #expect(tenForty[0].options[0].badgeText == "Time only")
+
+    let twelveOct = DiscordNaturalLanguageTimeParser.candidates(for: "12 oct", now: now)
+    #expect(twelveOct.count == 2)
+    #expect(twelveOct[0].date > now)
+    #expect(twelveOct[1].date < now)
+    #expect(twelveOct[0].options[0].badgeText == "Next year")
+    #expect(twelveOct[1].options[0].badgeText == "This year")
+
+    let nextYear = DiscordNaturalLanguageTimeParser.candidates(for: "next year", now: now)
+    #expect(nextYear.count == 1)
+    #expect(nextYear[0].date > now)
+    #expect(nextYear[0].options[0].badgeText == nil)
+
+    let yesterday = DiscordNaturalLanguageTimeParser.candidates(for: "yesterday", now: now)
+    #expect(yesterday.count == 1)
+    #expect(yesterday[0].date < now)
+    #expect(yesterday[0].options[0].badgeText == nil)
+
+    let inFive = DiscordNaturalLanguageTimeParser.candidates(for: "in 5", now: now)
+    #expect(inFive.count == 1)
+    #expect(Int(inFive[0].date.timeIntervalSince(now)) == 300)
+
+    let nextYearDate = DiscordNaturalLanguageTimeParser.candidates(for: "next year 4 mar", now: now)
+    #expect(nextYearDate.count == 1)
+    let compNextYear = Calendar.current.dateComponents([.year, .month, .day], from: nextYearDate[0].date)
+    #expect(compNextYear.year == 2027)
+    #expect(compNextYear.month == 3)
+    #expect(compNextYear.day == 4)
+
+    let lastYearDate = DiscordNaturalLanguageTimeParser.candidates(for: "last year 3 april", now: now)
+    #expect(lastYearDate.count == 1)
+    let compLastYear = Calendar.current.dateComponents([.year, .month, .day], from: lastYearDate[0].date)
+    #expect(compLastYear.year == 2025)
+    #expect(compLastYear.month == 4)
+    #expect(compLastYear.day == 3)
+
+    let tomorrowTime = DiscordNaturalLanguageTimeParser.candidates(for: "tomorrow 10:40", now: now)
+    #expect(tomorrowTime.count == 1)
+    let compTomorrow = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: tomorrowTime[0].date)
+    #expect(compTomorrow.year == 2026)
+    #expect(compTomorrow.month == 10)
+    #expect(compTomorrow.day == 31)
+    #expect(compTomorrow.hour == 10)
+    #expect(compTomorrow.minute == 40)
+
+    let yesterdayTime = DiscordNaturalLanguageTimeParser.candidates(for: "yesterday at 5pm", now: now)
+    #expect(yesterdayTime.count == 1)
+    let compYesterday = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: yesterdayTime[0].date)
+    #expect(compYesterday.year == 2026)
+    #expect(compYesterday.month == 10)
+    #expect(compYesterday.day == 29)
+    #expect(compYesterday.hour == 17)
+    #expect(compYesterday.minute == 0)
+
+    #expect(!DiscordTimestampFormatter.relativeText(for: Date(timeIntervalSince1970: TimeInterval(-9223372036854775808))).isEmpty)
+    #expect(!DiscordTimestampFormatter.formatted(seconds: -9223372036854775808, style: "R").isEmpty)
+    #expect(DiscordNaturalLanguageTimeParser.candidates(for: "13pm", now: now).isEmpty)
+    #expect(DiscordNaturalLanguageTimeParser.candidates(for: "9:70pm", now: now).isEmpty)
+
+    // Friday 2026-10-30
+    let cal = Calendar.current
+    let fridayNow = cal.date(from: DateComponents(year: 2026, month: 10, day: 30, hour: 12))!
+    let thisFriday = DiscordNaturalLanguageTimeParser.candidates(for: "this friday 5pm", now: fridayNow)
+    #expect(thisFriday.count == 1)
+    #expect(cal.component(.day, from: thisFriday[0].date) == 30)
+
+    let nextFriday = DiscordNaturalLanguageTimeParser.candidates(for: "next friday 5pm", now: fridayNow)
+    #expect(nextFriday.count == 1)
+    #expect(cal.component(.day, from: nextFriday[0].date) == 6)
+}

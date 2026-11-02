@@ -41,8 +41,11 @@ struct MentionAutocompleteList: View {
 
     /// Roles follow the people they're listed with, below a divider.
     private func startsRoles(_ suggestion: MentionAutocompleteSuggestion) -> Bool {
-        guard let index = suggestions.firstIndex(where: { $0.id == suggestion.id }), index > 0,
-              (suggestion.member != nil) != (suggestions[index - 1].member != nil) else { return false }
-        return true
+        guard let index = suggestions.firstIndex(where: { $0.id == suggestion.id }), index > 0 else { return false }
+        let prev = suggestions[index - 1]
+        if prev.id == "special:time" { return true }
+        if (suggestion.member != nil) != (prev.member != nil) { return true }
+        if case .role = suggestion.target, case .user = prev.target { return true }
+        return false
     }
 }

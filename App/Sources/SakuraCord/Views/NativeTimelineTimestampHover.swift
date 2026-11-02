@@ -1,5 +1,6 @@
 import AppKit
 import MessageRendering
+import SwiftUI
 
 extension NativeTimelineCanvasView {
     /// A hovered timestamp shows its full date and time in the native hover
@@ -23,7 +24,12 @@ extension NativeTimelineCanvasView {
             isPresented: true,
             configuration: .intrinsicHoverLabel,
             onDismiss: {},
-            content: NativeHoverHelpLabel(title: token.date.formatted(date: .complete, time: .shortened))
+            content: NativeHoverHelpLabel(
+                title: DiscordTimestampFormatter.tooltip(
+                    date: token.date,
+                    style: token.style.rawValue
+                )
+            )
         )
     }
 

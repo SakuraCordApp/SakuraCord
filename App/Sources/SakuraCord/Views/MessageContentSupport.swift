@@ -125,7 +125,7 @@ struct CustomEmojiRichText: View {
         onMentionClick(mention, anchor)
         guard let model else { return }
         switch mention.target {
-        case .unresolved:
+        case .unresolved, .timestamp:
             return
         case let .game(id):
             model.presentedProfileGame = model.gameMentions.gamesByID[id]
@@ -193,7 +193,7 @@ private struct AnchoredMentionPopoverLayer: View {
                     }
                 case let .role(id):
                     RoleMembersPopover(model: model, roleID: id, guildID: model.selectedGuildID)
-                case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
+                case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message, .timestamp:
                     EmptyView()
                 }
             }
@@ -207,7 +207,7 @@ private struct AnchoredMentionPopoverLayer: View {
         switch request.mention.target {
         case .user:
             .memberProfile
-        case .unresolved, .game, .command, .guildNavigation, .role, .channel, .linkedChannel, .message:
+        case .unresolved, .game, .command, .guildNavigation, .role, .channel, .linkedChannel, .message, .timestamp:
             .interactive
         }
     }
