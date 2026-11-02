@@ -12,6 +12,8 @@ struct MarkdownBlockLayout {
     private var previous: MarkdownLeaf?
     private var previousBlocks: [NSTextBlock] = []
     private var openTable: OpenTable?
+    /// Whether the last paragraph was a marker line for the box that follows it.
+    private var followsMarkerLine = false
     /// Code left to highlight, past which blocks stay plain, as large text files do.
     private var highlightBudget = 128 * 1_024
 
@@ -56,15 +58,14 @@ struct MarkdownBlockLayout {
         case .heading:
             break
         case let .code(language):
-            // A marker would sit inside the box, which already shows the item's indent.
-            placement.marker = nil
+            emitMarkerLine(&placement, before: leaf)
             let box = block(leaf.identity) { [margin = placement.indent] in Self.codeBlock(margin: margin) }
             placement.textBlocks.append(box)
             placement.indent = 0
             font = .monospacedSystemFont(ofSize: InterfaceScale.fontSize(12), weight: .regular)
             content.setAttributedString(highlighted(content.string, language: language, font: font))
         case .thematicBreak:
-            placement.marker = nil
+            emitMarkerLine(&placement, before: leaf)
             let box = block(leaf.identity) { [margin = placement.indent] in Self.ruleBlock(margin: margin) }
             placement.textBlocks.append(box)
             placement.indent = 0
@@ -72,11 +73,11 @@ struct MarkdownBlockLayout {
             content.setAttributedString(NSAttributedString())
             font = .systemFont(ofSize: 1)
         case let .tableCell(row, column):
+            emitMarkerLine(&placement, before: leaf)
             guard let tableIntent, let cell = tableCell(
                 in: tableIntent, row: row, column: column, outerBlocks: placement.textBlocks, indent: placement.indent
             ) else { return }
             alignment = cell.alignment
-            placement.marker = nil
             placement.textBlocks.append(cell.block)
             placement.indent = 0
         case let .footnote(number):
@@ -86,11 +87,35 @@ struct MarkdownBlockLayout {
         }
         if placement.isQuoted { Self.mute(content) }
 
+        emit(
+            content, placement: placement, font: font, alignment: alignment,
+            spacingBefore: spacing(before: leaf, opening: placement.textBlocks, isItemStart: isItemStart),
+            lineSpacing: leaf.kind == .thematicBreak ? 0 : InterfaceScale.metric(2)
+        )
+        previous = leaf
+        followsMarkerLine = false
+    }
+
+    /// A box can't hold its list item's marker, so the marker takes the line above it.
+    private mutating func emitMarkerLine(_ placement: inout Placement, before leaf: MarkdownLeaf) {
+        guard placement.marker != nil else { return }
+        emit(
+            NSAttributedString(), placement: placement, font: MarkdownInlineStyle.font(for: .paragraph),
+            spacingBefore: spacing(before: leaf, opening: placement.textBlocks, isItemStart: true)
+        )
+        placement.marker = nil
+        followsMarkerLine = true
+    }
+
+    private mutating func emit(
+        _ content: NSAttributedString, placement: Placement, font: NSFont, alignment: NSTextAlignment = .natural,
+        spacingBefore: CGFloat, lineSpacing: CGFloat = InterfaceScale.metric(2)
+    ) {
         let style = NSMutableParagraphStyle()
         style.textBlocks = placement.textBlocks
         style.alignment = alignment
-        style.lineSpacing = leaf.kind == .thematicBreak ? 0 : InterfaceScale.metric(2)
-        style.paragraphSpacingBefore = spacing(before: leaf, opening: placement.textBlocks, isItemStart: isItemStart)
+        style.lineSpacing = lineSpacing
+        style.paragraphSpacingBefore = spacingBefore
         style.firstLineHeadIndent = placement.marker == nil ? placement.indent : placement.markerIndent
         style.headIndent = placement.indent
         if placement.marker != nil {
@@ -109,7 +134,6 @@ struct MarkdownBlockLayout {
         output.append(content)
         output.append(NSAttributedString(string: "\n", attributes: [.font: font]))
         output.addAttribute(.paragraphStyle, value: style, range: NSRange(location: start, length: output.length - start))
-        previous = leaf
         previousBlocks = placement.textBlocks
     }
 
@@ -154,6 +178,7 @@ struct MarkdownBlockLayout {
     private func spacing(before leaf: MarkdownLeaf, opening textBlocks: [NSTextBlock], isItemStart: Bool) -> CGFloat {
         guard let previous else { return 0 }
         let gap: CGFloat = switch (leaf.kind, previous.kind) {
+        case _ where followsMarkerLine: InterfaceScale.metric(2)
         case (.tableCell, .tableCell) where openTable != nil && previousBlocks.last.map(Self.table(of:)) === openTable?.table: 0
         case let (.heading(level), _): InterfaceScale.metric(level <= 2 ? 20 : 14)
         case (.footnote, .footnote): Self.itemGap
