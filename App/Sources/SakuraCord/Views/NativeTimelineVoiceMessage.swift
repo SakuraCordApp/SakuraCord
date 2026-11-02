@@ -35,6 +35,12 @@ struct NativeTimelineVoiceMessageRegion {
         style == .audioFile ? .attachment(messageID, attachmentID: attachment.id) : .message(messageID)
     }
 
+    /// The controls' frames as the pointer finds them: a little larger than
+    /// drawn, within the message's own frame.
+    var playHitFrame: CGRect { playFrame.insetBy(dx: -4, dy: -4).intersection(frame) }
+    var speedHitFrame: CGRect { speedFrame.insetBy(dx: -3, dy: -6).intersection(frame) }
+    var waveformHitFrame: CGRect { waveformFrame.insetBy(dx: -4, dy: -6).intersection(frame) }
+
     var source: VoiceMessagePlaybackStore.Source {
         attachment.url.isFileURL ? .local(attachment.url) : .remote(attachment.url)
     }

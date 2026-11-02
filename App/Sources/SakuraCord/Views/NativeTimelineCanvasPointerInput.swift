@@ -64,6 +64,7 @@ extension NativeTimelineCanvasView {
               displayedRowOrigin(at: index) < visibleRect.maxY
         {
             if layouts.indices.contains(index) {
+                installContentCursors(at: index, rowOrigin: displayedRowOrigin(at: index))
                 installTextCursorRects(at: index)
                 for codeBlock in codeBlockPointerTargets(at: index) {
                     addCursorRect(
@@ -140,12 +141,12 @@ extension NativeTimelineCanvasView {
 
     private func installReactionCursors(at index: Int, rowOrigin: CGFloat) {
         guard case let .message(row, _, _) = items[index] else { return }
-        let cursor: NSCursor = model?.canUpdateReactions(on: row.message) == true ? .arrow : .operationNotAllowed
+        let cursor: NSCursor = model?.canUpdateReactions(on: row.message) == true ? .pointingHand : .operationNotAllowed
         for region in layouts[index].reactionRegions {
             addCursorRect(region.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: cursor)
         }
         if let frame = layouts[index].addReactionFrame, model?.canCreateReactions(on: row.message) == true {
-            addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .arrow)
+            addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
         }
     }
 
@@ -153,15 +154,17 @@ extension NativeTimelineCanvasView {
         let item = items[index]
         let layout = layouts[index]
         let rowOrigin = displayedRowOrigin(at: index)
+        let hiddenContainers = hiddenSpoilerContainerFrames(at: index).map { $0.offsetBy(dx: 0, dy: rowOrigin) }
         for selectable in selectableTextRegions(for: item, layout: layout) {
-            addCursorRect(
-                textSelectionInteractionFrame(
-                    region: selectable.region,
-                    frame: selectable.interactionFrame,
-                    rowIndex: index
-                ),
-                cursor: .iBeam
+            let frame = textSelectionInteractionFrame(
+                region: selectable.region,
+                frame: selectable.interactionFrame,
+                rowIndex: index
             )
+            guard !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                frame, hiddenContainerFrames: hiddenContainers
+            ) else { continue }
+            addCursorRect(frame, cursor: .iBeam)
             for spoiler in NativeTimelineTextHitTester.spoilerRegions(
                 value: selectable.value,
                 framesetter: selectable.framesetter,
