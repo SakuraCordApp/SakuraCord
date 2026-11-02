@@ -30,25 +30,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         let frame: CGRect
     }
 
-    struct ReactionCountKey: Hashable {
-        let messageID: MessageID
-        let reactionID: String
-    }
-
     struct ReactionPreviewLoadKey: Hashable {
         let messageID: MessageID
         let reactionID: String
         let count: Int
-    }
-
-    struct ActiveReactionCountAnimation {
-        let from: Int
-        let to: Int
-    }
-
-    struct ReactionCountSnapshot {
-        let counts: [ReactionCountKey: Int]
-        let messageIDs: Set<MessageID>
     }
 
     struct InlineVideoOverlayKey: Hashable {
@@ -311,17 +296,20 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
-    var visibleReactionCounts: [ReactionCountKey: Int] = [:]
-    var previouslyVisibleReactionMessageIDs: Set<MessageID> = []
-    var activeReactionCountAnimations:
-        [ReactionCountKey: ActiveReactionCountAnimation] = [:]
-    var reactionCountAnimationHosts:
-        [ReactionCountKey: NativeTimelineReactionCountAnimationHost] = [:]
-    var reactionCountAnimationTasks:
-        [ReactionCountKey: Task<Void, Never>] = [:]
-    var reactionCountBaselineTask: Task<Void, Never>?
-    var pendingReactionCountSnapshot: ReactionCountSnapshot?
-    var hasCapturedVisibleReactionCounts = false
+    var pendingReactionBaseline: NativeTimelineReactionBaseline?
+    var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
+    var reactionRowMotions: [NativeTimelineReactionRowMotion] = []
+    /// Per-frame geometry of `reactionRowMotions`: the displacement of rows up
+    /// to the first changed one, and how much less each changed row and the
+    /// rows after it are displaced.
+    var reactionMotionShift: CGFloat = 0
+    var reactionMotionSteps: [(index: Int, cumulative: CGFloat)] = []
+    var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
+    let reactionTicker = NativeTimelineDisplayLinkTicker()
+    var reactionPictures: [ReactionPictureKey: CGImage] = [:]
+    var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
+    /// The width the running reaction motions were laid out at.
+    var reactionTransitionWidth: CGFloat = 0
     var visibleReactionPreviewLoadKeys:
         Set<ReactionPreviewLoadKey> = []
     var reactionPreviewLoadTasks:
@@ -447,9 +435,16 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         super.viewDidChangeEffectiveAppearance()
         // In-flight copies were rendered for the previous appearance.
         finishSendTransitions(reconcilesHeldMedia: true)
+        finishReactionTransitions()
         invalidatePresentationCaches()
         reconcileBeginningSelectionOverlay()
         reconcileHistorySkeletonShimmer()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        // Moving chips were drawn for the previous display's scale and colours.
+        finishReactionTransitions()
     }
 
     deinit {
@@ -466,6 +461,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
             unreadDividerGapTicker.stop()
+            reactionTicker.stop()
             for fade in unreadDividerFades.values {
                 fade.finishTask?.cancel()
                 fade.overlay.removeFromSuperview()
@@ -551,8 +547,6 @@ enum NativeTimelineRowPainter {
         revealedTextSpoilerState:
             NativeTimelineTextSpoilerRevealState = .init(),
         spoilerRevealStore: NativeTimelineSpoilerRevealStore? = nil,
-        reactionCountTransitions:
-            [String: NativeTimelineReactionCountTransition] = [:],
         pollPresentation: NativeTimelinePollPresentation = .init(),
         animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole> = []
     ) {
@@ -638,8 +632,7 @@ enum NativeTimelineRowPainter {
                     revealedTextSpoilerState,
                 spoilerRevealStore: spoilerRevealStore,
                 pollPresentation: pollPresentation,
-                animatedOverlayRoles: animatedOverlayRoles,
-                reactionCountTransitions: reactionCountTransitions
+                animatedOverlayRoles: animatedOverlayRoles
             ))
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -661,7 +654,7 @@ enum NativeTimelineRowPainter {
         ).fill()
     }
 
-    private static func drawHighlight(
+    static func drawHighlight(
         for item: NativeMessageTimelineItem,
         in frame: CGRect?,
         bubbleRegion: NativeTimelineBubbleRegion?,

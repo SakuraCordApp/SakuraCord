@@ -403,7 +403,15 @@ extension NativeTimelineCanvasView {
 
     var hoveredReaction: NativeTimelineReactionPointerTarget? {
         get { pointer.hoveredReaction }
-        set { pointer.hoveredReaction = newValue }
+        set {
+            let old = pointer.hoveredReaction
+            pointer.hoveredReaction = newValue
+            guard old != newValue else { return }
+            // Moving chips are layers the row's redraw does not recolour.
+            for target in [old, newValue].compactMap(\.self) {
+                if let index = rowIndex(for: target) { refreshReactionChipHover(at: index) }
+            }
+        }
     }
 
     var suppressesHoverPresentation: Bool {

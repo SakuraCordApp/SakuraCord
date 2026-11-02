@@ -43,7 +43,6 @@ struct NativeTimelineMessageDrawInput {
     let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
     let pollPresentation: NativeTimelinePollPresentation
     let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
-    let reactionCountTransitions: [String: NativeTimelineReactionCountTransition]
 }
 
 extension NativeTimelineRowPainter {
@@ -748,7 +747,6 @@ extension NativeTimelineRowPainter {
         let model = input.model
         let hoveredReactionID = input.hoveredReactionID
         let isAddReactionHovered = input.isAddReactionHovered
-        let reactionCountTransitions = input.reactionCountTransitions
         drawForwardedSource(input)
         if let frame = layout.threadFrame, let thread = message.thread {
             if message.type == .threadCreated, let iconFrame = layout.systemIconFrame {
@@ -779,9 +777,6 @@ extension NativeTimelineRowPainter {
                 region,
                 model: model,
                 isHovered: hoveredReactionID == region.reaction.id && model?.canUpdateReactions(on: message) != false,
-                countTransition: reactionCountTransitions[
-                    region.reaction.id
-                ],
                 hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(.reaction(region.reaction.id))
             )
         }

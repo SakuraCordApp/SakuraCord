@@ -228,15 +228,29 @@ struct SakuraCordApp: App {
                               let performanceMockProvider
                         else { return }
                         let arguments = ProcessInfo.processInfo.arguments
+                        let runsReactions = arguments.contains(
+                            "--offline-chat-performance-live-reactions-only"
+                        )
                         let runsArrivals =
-                            !arguments.contains(
+                            !runsReactions
+                            && !arguments.contains(
                                 "--offline-chat-performance-live-mutations-only"
                             )
                         let runsMutations =
-                            !arguments.contains(
+                            !runsReactions
+                            && !arguments.contains(
                                 "--offline-chat-performance-live-arrivals-only"
                             )
                         await withTaskGroup(of: Void.self) { group in
+                            if runsReactions {
+                                group.addTask {
+                                    await performanceMockProvider
+                                        .emitTimelineReactionStress(
+                                            in: ChannelID(rawValue: 210),
+                                            operationCount: 800
+                                        )
+                                }
+                            }
                             if runsArrivals {
                                 group.addTask {
                                     await performanceMockProvider

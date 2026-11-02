@@ -318,6 +318,7 @@ extension NativeTimelineCanvasView {
     /// button's live emoji to rest.
     @discardableResult
     func clearPointerTargets() -> NativeTimelinePointerState.ClearedTargets {
+        hoveredReaction = nil
         let cleared = pointer.clearHoverAndPressTargets()
         if let button = cleared.componentButton { positionComponentButtonEmoji(button) }
         return cleared
@@ -1003,6 +1004,8 @@ extension NativeTimelineCanvasView {
               model.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil,
               let actions
         else { return }
+        // The editor is placed at the row's static position.
+        finishReactionTransitions()
         removeActionCapsule()
         setTextSelection(nil)
         textSelectionGesture = nil
@@ -1328,6 +1331,7 @@ extension NativeTimelineCanvasView {
             + (index >= disclosureRange.upperBound ? disclosureShiftAfter
                 : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
             + unreadDividerGapShift(at: index)
+            + reactionMotionOffset(at: index)
             + NativeTimelineTransientRowGeometry.rowOrigin(
                 base: rowOrigins[index],
                 rowIndex: index,
@@ -1343,7 +1347,7 @@ extension NativeTimelineCanvasView {
             rowIndex: index,
             replacementIndex: editingRowIndex,
             replacementHeight: editingRowHeight
-        )
+        ) - reactionMotionRemainingHeight(at: index)
     }
 
     func resizeForEditingChange(by delta: CGFloat) {

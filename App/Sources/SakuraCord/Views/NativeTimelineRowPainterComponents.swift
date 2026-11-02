@@ -912,16 +912,22 @@ extension NativeTimelineRowPainter {
         _ region: NativeTimelineRowLayout.ReactionRegion,
         model: AppModel?,
         isHovered: Bool,
-        countTransition: NativeTimelineReactionCountTransition?,
         hasAnimatedEmojiOverlay: Bool
     ) {
         let selected = region.reaction.didCurrentUserReact
         drawReactionBackground(region.frame, selected: selected, isHovered: isHovered)
         if !hasAnimatedEmojiOverlay { drawReactionEmoji(region, model: model) }
-        drawReactionMetadata(region, selected: selected, countTransition: countTransition)
+        if let countFrame = region.countFrame {
+            reactionCount(
+                region.reaction.count,
+                in: countFrame,
+                color: selected ? .sakuraCordAccentColor : .labelColor
+            )
+        }
+        drawReactionAvatars(region)
     }
 
-    private static func drawReactionBackground(
+    static func drawReactionBackground(
         _ frame: CGRect,
         selected: Bool,
         isHovered: Bool
@@ -952,7 +958,7 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func drawReactionEmoji(
+    static func drawReactionEmoji(
         _ region: NativeTimelineRowLayout.ReactionRegion,
         model: AppModel?
     ) {
@@ -997,18 +1003,7 @@ extension NativeTimelineRowPainter {
         }
     }
 
-    private static func drawReactionMetadata(
-        _ region: NativeTimelineRowLayout.ReactionRegion,
-        selected: Bool,
-        countTransition: NativeTimelineReactionCountTransition?
-    ) {
-        if let countFrame = region.countFrame, countTransition == nil {
-            reactionCount(
-                region.reaction.count,
-                in: countFrame,
-                color: selected ? .sakuraCordAccentColor : .labelColor
-            )
-        }
+    static func drawReactionAvatars(_ region: NativeTimelineRowLayout.ReactionRegion) {
         let avatars = region.avatarRegions.map {
             (frame: $0.frame, name: $0.reactor.displayName, url: $0.reactor.avatarURL, isPlaceholder: false)
         } + region.placeholderAvatarFrames.map {

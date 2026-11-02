@@ -766,7 +766,6 @@ enum ForumCardPainter {
                     NativeTimelineRowLayout.reactionRegion(summary.reaction, frame: frame, showsReactors: false),
                     model: model,
                     isHovered: isHovered,
-                    countTransition: nil,
                     hasAnimatedEmojiOverlay: false
                 )
             }
