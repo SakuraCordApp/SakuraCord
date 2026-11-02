@@ -19,7 +19,7 @@ final class ProfileEditorState {
     private(set) var widgetResources: ProfileWidgetResources?
     private(set) var isLoading = false
     private(set) var isSaving = false
-    /// Widget images still being cropped or uploaded. Save waits for them,
+    /// Widget images still being cropped or uploaded. Saves wait for them,
     /// since a save makes the editor reject an image that lands during it.
     private(set) var preparingWidgetImages = 0
     private(set) var requiresReload = false
@@ -393,6 +393,10 @@ final class ProfileEditorState {
 
     func saveGameWidgetShortcut(gameID: String, kind: ProfileGameWidgetKind) async {
         guard scope == .main, canEditWidgets, !isResolvingScope else { return }
+        guard preparingWidgetImages == 0 else {
+            errorMessage = "Wait for the widget image to finish uploading before saving this game."
+            return
+        }
         if let widget = widgets.first(where: { if case let .games(value, _) = $0.content { value == kind } else { false } }),
            case let .games(_, games) = widget.content {
             if games.contains(where: { $0.id == gameID }) { removeWidgetGame(widgetID: widget.id, gameID: gameID) } else {
