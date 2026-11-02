@@ -3,8 +3,8 @@ import MessageRendering
 import SwiftUI
 
 /// A text or code file in the media viewer: its first half megabyte, read
-/// when shown, highlighted as a message code block, and selectable. The
-/// viewer's download saves the whole file.
+/// when shown, highlighted as a message code block, or rendered when it is
+/// Markdown, and selectable. The viewer's download saves the whole file.
 struct MediaViewerText: View {
     let url: URL
     let language: String
@@ -16,6 +16,7 @@ struct MediaViewerText: View {
     private nonisolated static let byteLimit = 512 * 1_024
     /// Highlighting is skipped past this, where it would hold up the viewer.
     private static let highlightLimit = 128 * 1_024
+    private static let markdownLanguages: Set = ["markdown", "md", "mkdown", "mkd"]
     private nonisolated static let session = URLSession(configuration: .ephemeral)
     /// Files read this session by their link, newest last, so reopening one
     /// doesn't fetch it again.
@@ -120,6 +121,15 @@ struct MediaViewerText: View {
             ? "\n\n… \(NativeTimelineFileCard.sizeText(bytesLeft)) more. Download the file to see all of it."
             : ""
         let baseFontSize = InterfaceScale.fontSize(13)
+        if markdownLanguages.contains(language) {
+            let document = NSMutableAttributedString(
+                attributedString: MarkdownDocumentText.make(MarkdownDocumentText.parse(text), codeBackground: background)
+            )
+            document.append(NSAttributedString(string: notice, attributes: [
+                .font: NSFont.interfaceSystemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+            ]))
+            return document
+        }
         guard text.utf8.count <= highlightLimit else {
             return NSAttributedString(string: text + notice, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: baseFontSize, weight: .regular),
@@ -135,13 +145,20 @@ struct MediaViewerText: View {
 struct MediaViewerTextContent: NSViewRepresentable {
     let text: NSAttributedString
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
+        let scrollView = NSScrollView()
         scrollView.drawsBackground = false
-        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        let textView = MarkdownDocumentText.makeTextView()
+        textView.autoresizingMask = .width
+        textView.isVerticallyResizable = true
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.delegate = context.coordinator
+        scrollView.documentView = textView
         textView.textContainerInset = NSSize(width: InterfaceScale.metric(16), height: InterfaceScale.metric(16))
         return scrollView
     }
@@ -149,6 +166,12 @@ struct MediaViewerTextContent: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView, textView.attributedString() != text else { return }
         textView.textStorage?.setAttributedString(text)
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            MarkdownDocumentText.activate(link, in: textView, at: charIndex)
+        }
     }
 }
 
