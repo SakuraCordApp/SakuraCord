@@ -55,8 +55,9 @@ struct NativeTimelineMentionHitRegion {
 }
 
 enum NativeTimelineMentionAppearance {
-    static func backgroundAlpha(isHovered: Bool) -> CGFloat {
-        isHovered ? 0.34 : 0.18
+    /// A timestamp's neutral pill is fainter than a coloured mention's.
+    static func backgroundAlpha(isHovered: Bool, isTimestamp: Bool = false) -> CGFloat {
+        isTimestamp ? (isHovered ? 0.18 : 0.12) : (isHovered ? 0.34 : 0.18)
     }
 }
 

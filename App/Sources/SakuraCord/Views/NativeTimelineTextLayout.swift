@@ -92,7 +92,8 @@ enum NativeTimelineTextPresentation {
 
     static func make(
         row: MessageRowPresentation,
-        source: AppModel?
+        source: AppModel?,
+        relativeTo date: Date = .now
     ) -> Value {
         let message = row.message
         guard !message.flags.contains(.isComponentsV2) else {
@@ -119,13 +120,14 @@ enum NativeTimelineTextPresentation {
         } else {
             row.textPlan
         }
-        return make(message: message, plan: plan, source: source)
+        return make(message: message, plan: plan, source: source, relativeTo: date)
     }
 
     static func make(
         message: Message,
         plan: NativeTimelineTextPlan,
-        source: AppModel?
+        source: AppModel?,
+        relativeTo date: Date = .now
     ) -> Value {
         guard plan.preparedText != nil else {
             return Value(
@@ -169,7 +171,8 @@ enum NativeTimelineTextPresentation {
             message: message,
             plan: plan,
             source: source,
-            baseFontSize: resolvedBaseFontSize
+            baseFontSize: resolvedBaseFontSize,
+            relativeTo: date
         ) else {
             return Value(
                 attributedContent: nil,
@@ -191,7 +194,8 @@ enum NativeTimelineTextPresentation {
         message: Message,
         plan: NativeTimelineTextPlan,
         source: AppModel?,
-        baseFontSize: CGFloat? = nil
+        baseFontSize: CGFloat? = nil,
+        relativeTo date: Date = .now
     ) -> Preparation? {
         let resolvedBaseFontSize = baseFontSize ?? plan.baseFontSize
         if plan.attributedText != nil,
@@ -201,12 +205,13 @@ enum NativeTimelineTextPresentation {
         }
         guard let prepared = plan.preparedText else { return nil }
         let resolver = source.map { MessageMentionResolver(model: $0, message: message) }
-        let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
+        var mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { values, token in
             guard case let .mention(mention) = token else { return }
             values[mention.rawToken] =
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
+        mentions = TimestampMentionPresentation.refreshed(mentions, source: message.content, at: date)
         let emojiSize = InterfaceScale.metric(prepared.isEmojiOnly ? 48 : 22)
         let cacheKey = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
@@ -573,7 +578,7 @@ nonisolated enum NativeTimelineCoreText {
     ) -> (width: CGFloat, height: CGFloat) {
         let labelFont = NSFont.systemFont(
             ofSize: font.pointSize,
-            weight: .semibold
+            weight: presentation.labelWeight
         )
         let labelWidth = ceil(
             (presentation.label as NSString).size(
@@ -581,7 +586,7 @@ nonisolated enum NativeTimelineCoreText {
             ).width
         )
         let height = max(InterfaceScale.metric(21), ceil(font.pointSize + InterfaceScale.metric(6)))
-        let showsAvatar = if case .user = presentation.target { true } else { false }
+        let showsAvatar = presentation.showsAvatar
         let showsLeadingIcon = presentation.systemImage != nil
         let metrics = NativeTimelineMentionMetrics.self
         let avatarSize = height - metrics.avatarInset

@@ -106,6 +106,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         let region: NativeTimelineTextRegion
         let characterIndex: Int
         let rawToken: String
+        let isTimestamp: Bool
         let frame: CGRect
     }
 
@@ -311,6 +312,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
     /// The width the running reaction motions were laid out at.
     var reactionTransitionWidth: CGFloat = 0
+    let timestampHoverCoordinator =
+        StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
+    /// A press dismisses the hovered timestamp's label until another is hovered.
+    var dismissedTimestampHover: NativeTimelineMentionHover?
     var visibleReactionPreviewLoadKeys:
         Set<ReactionPreviewLoadKey> = []
     var reactionPreviewLoadTasks:

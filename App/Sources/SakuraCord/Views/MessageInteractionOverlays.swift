@@ -291,6 +291,7 @@ struct NativeTimelineEditingMessageContent: View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
             InlineMessageEditor(
                 model: model,
+                message: message,
                 text: $editText,
                 canEdit: model.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) == nil,
                 save: {
@@ -722,6 +723,7 @@ enum MessageReplySummary {
         case .guildNavigation: GuildNavigationMention(rawValue: mention.id)?.title ?? mention.rawToken
         case .user: "@unknown-user"
         case .role: "@unknown-role"
+        case .game, .broadcast, .command, .timestamp: MentionPresentation.fallback(for: mention).label
         case .channel: "#unknown-channel"
         case .channelLink: "Channel link"
         case .message: "Message link"
@@ -873,6 +875,8 @@ struct InlineMessageEditorComposerActions {
 
 private struct InlineMessageEditor: View {
     let model: AppModel
+    /// The message being edited, whose mentioned users resolve its mentions.
+    let message: Message
     @Binding var text: String
     let canEdit: Bool
     let save: () -> Void
@@ -881,6 +885,16 @@ private struct InlineMessageEditor: View {
     @State private var isFocused = true
     @State private var autocompleteIndex = 0
     @State private var isAutocompleteDismissed = false
+
+    /// Game names and people resolve as they do in the message, and update
+    /// as games load.
+    private var mentionPresentations: [String: MentionPresentation] {
+        _ = model.timelinePresentationRevision
+        // The message as it is now: an update while editing can bring newer
+        // details for the people it mentions.
+        let current = model.retainedMessage(channelID: message.channelID, messageID: message.id) ?? message
+        return MessageMentionResolver(model: model, message: current).presentations(in: text)
+    }
 
     private var composerActions: InlineMessageEditorComposerActions {
         InlineMessageEditorComposerActions(
@@ -904,6 +918,7 @@ private struct InlineMessageEditor: View {
                 placeholder: "Edit message",
                 sendWithReturn: MessageEditInputPolicy.sendsWithReturn,
                 generalInputSettings: model.generalInputSettings,
+                mentionPresentations: mentionPresentations,
                 onTextChange: { text = $0 },
                 onSubmit: composerActions.onSubmit,
                 onEscape: composerActions.onEscape,

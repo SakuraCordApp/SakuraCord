@@ -39,6 +39,7 @@ extension NativeTimelineCanvasView {
         guard hoveredMention != value else { return }
         let oldIdentifier = hoveredMention?.itemIdentifier
         hoveredMention = value
+        presentTimestampHover(for: value)
         for identifier
             in [oldIdentifier, value?.itemIdentifier].compactMap({ $0 })
         {

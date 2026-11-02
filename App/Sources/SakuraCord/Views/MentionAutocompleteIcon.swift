@@ -12,7 +12,7 @@ struct MentionAutocompleteIcon: View {
             AvatarView(name: suggestion.title, url: suggestion.avatarURL, size: InterfaceScale.metric(22))
         case .role:
             RoleColorIndicator(colorHex: suggestion.colorHex, size: InterfaceScale.metric(12))
-        case .channel, .guildNavigation:
+        case .channel, .guildNavigation, .game, .command:
             Image(systemName: suggestion.systemImage ?? "questionmark")
                 .font(.interfaceSystem(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)

@@ -130,6 +130,22 @@ final class ApplicationCommandComposerModel {
 
     // MARK: Draft
 
+    /// A clicked `</name:id>` mention, waiting for the composer to start it.
+    var mentionedCommand: CommandMention?
+
+    struct CommandMention: Equatable {
+        let id: String
+        let name: String
+    }
+
+    /// The offered command a mention names: its root ID and full name.
+    func command(mentioned mention: CommandMention) -> ApplicationCommand? {
+        commands.first { command in
+            command.rootCommandID == mention.id
+                && ApplicationCommandPickerEngine.untranslatedName(of: command) == mention.name
+        }
+    }
+
     private(set) var draft: ApplicationCommandDraft? {
         didSet { attachmentPasteRevision &+= 1 }
     }
@@ -459,6 +475,7 @@ final class ApplicationCommandComposerModel {
 
     func resetForChannelChange() {
         conversationGeneration &+= 1
+        mentionedCommand = nil
         loadTask?.cancel()
         loadTask = nil
         autocompleteTask?.cancel()

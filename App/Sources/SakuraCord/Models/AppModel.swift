@@ -496,6 +496,7 @@ final class AppModel {
     var isLoadingGIFPicker = false
     var gifErrorMessage: String?
     var gifFavoriteMutationURL: URL?
+    @ObservationIgnored var gameMentions = GameMentionState()
     var stickerPickerState = StickerPickerPresentationState()
     /// `/gif` and `/sticker` open the composer's pickers.
     var builtInExpressionPickerRequest: BuiltInExpressionPickerRequest?

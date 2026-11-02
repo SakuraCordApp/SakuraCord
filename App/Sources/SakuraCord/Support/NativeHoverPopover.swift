@@ -39,9 +39,16 @@ private struct NativeHoverHelp: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onModalHover { isPresented = $0 }
-            .nativeHoverPopover(isPresented: $isPresented) {
-                Text(title).font(.interface(.subheadline).weight(.medium))
-                    .fixedSize().padding(.horizontal, InterfaceScale.metric(12)).padding(.vertical, InterfaceScale.metric(10))
-            }
+            .nativeHoverPopover(isPresented: $isPresented) { NativeHoverHelpLabel(title: title) }
+    }
+}
+
+/// A hover label's text, shared by SwiftUI controls and the timeline canvas.
+struct NativeHoverHelpLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title).font(.interface(.subheadline).weight(.medium))
+            .fixedSize().padding(.horizontal, InterfaceScale.metric(12)).padding(.vertical, InterfaceScale.metric(10))
     }
 }

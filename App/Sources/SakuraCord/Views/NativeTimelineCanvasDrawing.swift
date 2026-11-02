@@ -131,7 +131,7 @@ extension NativeTimelineCanvasView {
         if !suppressesHoverPresentation {
             synchronizeHoverWithCurrentPointer()
         }
-        reconcileReactionHover()
+        reconcileHoverTooltips()
         reconcileActionCapsule()
     }
 
@@ -228,7 +228,7 @@ extension NativeTimelineCanvasView {
         if !suppressesHoverPresentation {
             synchronizeHoverWithCurrentPointer()
         }
-        reconcileReactionHover()
+        reconcileHoverTooltips()
         reconcileActionCapsule()
     }
 
@@ -355,7 +355,7 @@ extension NativeTimelineCanvasView {
             owner: visibleMediaPinOwner
         )
         let clearedTargets = clearPointerTargets()
-        reactionHoverCoordinator.close()
+        closeHoverTooltips()
         closeMessageProfilePopover()
         closeServerTagPopover()
         removeActionCapsule()
@@ -472,7 +472,7 @@ extension NativeTimelineCanvasView {
             pollPopover?.close()
             reactionDetailsPopover?.close()
             clearPointerTargets()
-            reactionHoverCoordinator.close()
+            closeHoverTooltips()
             closeMessageProfilePopover()
             closeServerTagPopover()
             closeMentionPopover()
@@ -596,7 +596,7 @@ extension NativeTimelineCanvasView {
             removeActivityIndicators()
             removeSpoilerOverlays()
             reactionPickerCoordinator.close(notifyBinding: false)
-            reactionHoverCoordinator.close()
+            closeHoverTooltips()
             closeMessageProfilePopover()
             closeServerTagPopover()
             closeComponentChoiceOverlay()

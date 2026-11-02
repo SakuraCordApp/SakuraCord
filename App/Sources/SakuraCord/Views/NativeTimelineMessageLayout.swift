@@ -47,7 +47,7 @@ extension NativeTimelineRowLayout {
         private var timestampGutterWidth: CGFloat { max(avatarWidth, metrics.timestampGutterWidth) }
         private let presentedReactions: [Reaction]
 
-        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics) {
+        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics, relativeTo date: Date = .now) {
             self.row = row
             self.isUnreadBoundary = isUnreadBoundary
             self.width = width
@@ -55,7 +55,7 @@ extension NativeTimelineRowLayout {
             self.metrics = metrics
             bubbleContext = NativeTimelineBubbleLayout.context(for: row.message, source: source)
             presentedReactions = MessageReactionPresentation.items(from: row.message.reactions)
-            contentPresentation = NativeTimelineTextPresentation.make(row: row, source: source)
+            contentPresentation = NativeTimelineTextPresentation.make(row: row, source: source, relativeTo: date)
             highlightInsets = MessageRowLayoutMetrics.highlightInsets(
                 hasReplyPreview: row.replyMessageID != nil,
                 isEditing: false,

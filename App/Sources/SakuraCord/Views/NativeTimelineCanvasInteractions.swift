@@ -807,6 +807,10 @@ extension NativeTimelineCanvasView {
         switch mention.target {
         case .unresolved:
             break
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentions.gamesByID[id]
+        case let .command(id, name):
+            model.startCommandMention(id: id, name: name, in: message.channelID)
         case let .user(id):
             let resolver = MessageMentionResolver(
                 model: model,
@@ -1127,6 +1131,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        dismissTimestampHover()
         guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         guard let index = rowIndex(at: point.y),
