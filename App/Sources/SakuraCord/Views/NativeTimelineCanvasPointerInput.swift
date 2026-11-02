@@ -708,14 +708,7 @@ extension NativeTimelineCanvasView {
             return
         }
         if case .beginning = item {
-            if handleTextClick(
-                in: layout,
-                message: nil,
-                point: local,
-                rowIdentifier: item.identifier
-            ) {
-                return
-            }
+            _ = handleTextClick(in: layout, message: nil, point: local, rowIdentifier: item.identifier)
             return
         }
         guard case let .message(row, _, _) = item else { return }
@@ -1004,7 +997,7 @@ extension NativeTimelineCanvasView {
 
     func showMentionProfile(
         for user: User,
-        sourceMessage: Message? = nil,
+        sourceMessage: Message?,
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
@@ -1025,7 +1018,7 @@ extension NativeTimelineCanvasView {
 
     func showMentionRole(
         _ roleID: RoleID,
-        sourceMessage: Message? = nil,
+        sourceMessage: Message?,
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
@@ -1298,7 +1291,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
               layouts.indices.contains(index),
-              items[index].messageID != nil || items[index].beginning != nil
+              items[index].textOwnerID != nil
         else { return nil }
         for mention in mentionPointerRegions(at: index)
         where mention.frame.contains(point) {
@@ -1334,7 +1327,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
               layouts.indices.contains(index),
-              items[index].messageID != nil || items[index].beginning != nil
+              items[index].textOwnerID != nil
         else { return nil }
         let local = CGPoint(
             x: point.x,
@@ -1358,7 +1351,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
               layouts.indices.contains(index),
-              items[index].messageID != nil || items[index].beginning != nil
+              items[index].textOwnerID != nil
         else { return nil }
         let local = CGPoint(
             x: point.x,
@@ -1501,9 +1494,9 @@ extension NativeTimelineCanvasView {
             else { return nil }
             return .loader
         }
-        if case let .beginning(beginning) = item {
+        if case .beginning = item, let messageID = item.textOwnerID {
             return textActivationTarget(
-                messageID: MessageID(rawValue: beginning.id.rawValue),
+                messageID: messageID,
                 itemIdentifier: item.identifier,
                 layout: layout,
                 point: local

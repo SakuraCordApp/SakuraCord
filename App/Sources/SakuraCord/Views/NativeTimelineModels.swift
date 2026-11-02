@@ -482,6 +482,12 @@ enum NativeMessageTimelineItem: Equatable {
         return beginning
     }
 
+    /// The ID that keys this row's text state, such as revealed spoilers: its
+    /// message's, or for a channel's beginning, the channel's.
+    var textOwnerID: MessageID? {
+        messageID ?? beginning.map { MessageID(rawValue: $0.id.rawValue) }
+    }
+
     var identifier: Identifier {
         switch self {
         case let .suppressedMessages(group):

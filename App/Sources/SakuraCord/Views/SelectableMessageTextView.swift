@@ -769,7 +769,7 @@ final class RichMessageNSTextView: NSTextView {
         let point = convert(event.locationInWindow, from: nil)
         if event.modifierFlags.isDisjoint(with: [.command, .shift, .option, .control]) {
             if let spoiler = hiddenSpoiler(at: point) {
-                revealSpoiler(at: spoiler.location)
+                onRevealSpoiler(spoiler.location)
                 return
             }
             if let (index, attachment) = mentionAttachment(at: point) {
@@ -780,10 +780,6 @@ final class RichMessageNSTextView: NSTextView {
             }
         }
         super.mouseDown(with: event)
-    }
-
-    func revealSpoiler(at location: Int) {
-        onRevealSpoiler(location)
     }
 
     private func hiddenSpoiler(at point: NSPoint) -> NSRange? {

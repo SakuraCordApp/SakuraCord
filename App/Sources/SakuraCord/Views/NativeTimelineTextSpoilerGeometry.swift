@@ -110,11 +110,12 @@ enum SelectableTextSpoilerGeometry {
     static func hiddenSpoilerRange(at point: CGPoint, in view: NSTextView) -> NSRange? {
         guard let storage = view.textStorage, let manager = view.layoutManager,
               let container = view.textContainer else { return nil }
+        // Runs on every pointer move, so text without spoilers skips layout.
+        let ranges = NativeTimelineTextSpoilers.ranges(in: storage)
+        guard !ranges.isEmpty else { return nil }
         manager.ensureLayout(for: container)
         let origin = view.textContainerOrigin
         let bounds = CGRect(origin: origin, size: container.containerSize).intersection(view.bounds)
-        let ranges = NativeTimelineTextSpoilers.ranges(in: storage)
-        guard !ranges.isEmpty else { return nil }
         for range in ranges {
             let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             let frames = rects(

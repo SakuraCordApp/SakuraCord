@@ -1099,8 +1099,7 @@ extension NativeTimelineCanvasView {
         guard spoilerRevealStore.hasRevealedText,
               items.indices.contains(rowIndex),
                layouts.indices.contains(rowIndex),
-           let messageID = items[rowIndex].messageID
-               ?? items[rowIndex].beginning.map({ MessageID(rawValue: $0.id.rawValue) })
+           let messageID = items[rowIndex].textOwnerID
         else { return result }
         for selectable in selectableTextRegions(
             for: items[rowIndex],
@@ -1149,8 +1148,7 @@ extension NativeTimelineCanvasView {
             $0.identifier == itemIdentifier
         }),
            layouts.indices.contains(rowIndex),
-           let messageID = items[rowIndex].messageID
-               ?? items[rowIndex].beginning.map({ MessageID(rawValue: $0.id.rawValue) }),
+           let messageID = items[rowIndex].textOwnerID,
            let selectable = selectableTextRegions(
                for: items[rowIndex],
                layout: layouts[rowIndex]

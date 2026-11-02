@@ -7,7 +7,7 @@ extension NativeMessageTimelineCoordinator {
                 TimestampMentionPresentation.sources(in: row.message, replyContent: row.replyPreview?.content)
             } else {
                 // The beginning row shows the channel topic, which can hold timestamps too.
-                item.beginning?.topic.map { [$0] }?.filter { !TimestampMentionPresentation.tokens(in: $0).isEmpty } ?? []
+                item.beginning?.topic.flatMap { TimestampMentionPresentation.tokens(in: $0).isEmpty ? nil : [$0] } ?? []
             }
             guard !content.isEmpty else { return }
             sources[item.identifier] = content

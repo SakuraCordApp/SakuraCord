@@ -585,7 +585,7 @@ extension NativeTimelineCanvasView {
 
     func handleTextClick(
         in layout: NativeTimelineRowLayout,
-        message: Message? = nil,
+        message: Message?,
         point: CGPoint,
         rowIdentifier: NativeMessageTimelineItem.Identifier
     ) -> Bool {
@@ -728,7 +728,7 @@ extension NativeTimelineCanvasView {
 
     func activateTextHit(
         _ hit: NativeTimelineTextHit,
-        message: Message? = nil,
+        message: Message?,
         rowIdentifier: NativeMessageTimelineItem.Identifier,
         region: NativeTimelineTextRegion,
         profileAnchor: CGRect? = nil
@@ -813,7 +813,7 @@ extension NativeTimelineCanvasView {
 
     func activateMention(
         _ mention: MentionPresentation,
-        message: Message? = nil,
+        message: Message?,
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
