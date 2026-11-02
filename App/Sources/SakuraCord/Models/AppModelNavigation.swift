@@ -5,6 +5,7 @@ import SakuraCordModels
 /// The Direct Messages home destinations: Friends above every conversation.
 nonisolated enum DirectMessageSidebarSelection: Hashable, Sendable {
     case friends
+    case messageRequests
     case channel(ChannelID)
 }
 
@@ -355,6 +356,7 @@ extension AppModel {
         messageID: MessageID?,
         initialMessages: [Message],
         fullWidth: Bool,
+        nearest: Bool = false,
         session: AppModelAccountSession
     ) async {
         let post: ForumPost
@@ -408,6 +410,7 @@ extension AppModel {
             initialMessages: initialMessages,
             messageID: messageID,
             fullWidth: fullWidth,
+            nearest: nearest,
             session: session
         )
     }
@@ -428,6 +431,7 @@ extension AppModel {
         initialMessages: [Message],
         messageID: MessageID?,
         fullWidth: Bool,
+        nearest: Bool = false,
         session: AppModelAccountSession
     ) async {
         let wasShowingMessage = openThread?.id == post.id
@@ -450,6 +454,7 @@ extension AppModel {
             presentOpenThreadFullWidth()
         }
         guard let messageID else { return }
+        threadWindow.nearestJumpTarget = nearest ? messageID : nil
         let generation = threadLoadGeneration
         let windowRevision = threadWindow.revision
         // Whether the thread's first window is already the target's.
@@ -468,7 +473,7 @@ extension AppModel {
             // message instead of being joined to unrelated history.
             guard await loadThreadWindow(around: messageID, session: session) else { return }
         }
-        guard threadMessages.contains(where: { $0.id == messageID }) else {
+        guard let landingID = Self.landingID(for: messageID, in: threadMessages, nearest: nearest) else {
             errorMessage = "That message could not be found in the linked thread."
             return
         }
@@ -476,15 +481,26 @@ extension AppModel {
         messageNavigationRequest = MessageNavigationRequest(
             requestID: messageNavigationRequestID,
             channelID: post.id,
-            messageID: messageID,
+            messageID: landingID,
             glides: wasShowingMessage
         )
+    }
+
+    /// The message a jump lands on: the target, or with `nearest` the last
+    /// one before it when it is not in the conversation, as for the moment
+    /// an AutoMod alert marks. Local sends have no place in that history.
+    static func landingID(for messageID: MessageID, in messages: [Message], nearest: Bool) -> MessageID? {
+        if messages.contains(where: { $0.id == messageID }) { return messageID }
+        guard nearest else { return nil }
+        let sent = messages.filter { $0.outboxState == .confirmed }
+        return (sent.last { $0.id < messageID } ?? sent.first)?.id
     }
 
     func navigate(
         to guildID: GuildID?,
         channelID: ChannelID,
-        messageID: MessageID
+        messageID: MessageID,
+        nearest: Bool = false
     ) {
         let target = ConversationNavigationTarget.message(
             channelID, messageID, fullWidthThread: false
@@ -509,6 +525,7 @@ extension AppModel {
                     messageID: messageID,
                     initialMessages: [],
                     fullWidth: false,
+                    nearest: nearest,
                     session: session
                 )
                 return
@@ -535,10 +552,8 @@ extension AppModel {
                 ) else { return }
             }
 
-            guard isCurrentAccountSession(session),
-                  messages.contains(where: { $0.id == messageID })
-            else {
-                guard isCurrentAccountSession(session) else { return }
+            guard isCurrentAccountSession(session) else { return }
+            guard let landingID = Self.landingID(for: messageID, in: messages, nearest: nearest) else {
                 errorMessage = "That message could not be found in the linked channel."
                 return
             }
@@ -546,7 +561,7 @@ extension AppModel {
             messageNavigationRequest = MessageNavigationRequest(
                 requestID: messageNavigationRequestID,
                 channelID: channel.id,
-                messageID: messageID,
+                messageID: landingID,
                 glides: wasShowingMessage
             )
         }
@@ -737,8 +752,9 @@ extension AppModel {
                 ) != .hidden
             }
         }
+        // A previewed message request opens only when chosen again.
         let restoredChannelID = rememberedChannelID.flatMap { rememberedID in
-            selectableChannels.contains(where: { $0.id == rememberedID })
+            selectableChannels.contains(where: { $0.id == rememberedID && $0.messageRequest == nil })
                 ? rememberedID
                 : nil
         }
@@ -792,6 +808,8 @@ extension AppModel {
     }
 
     nonisolated static func preferredInitialChannelID(in channels: [Channel]) -> ChannelID? {
+        // Message requests wait on their own page until accepted.
+        let channels = channels.filter { $0.messageRequest == nil }
         let textChannels = channels.filter { channel in
             switch channel.kind {
             case .text, .announcement, .forum, .directMessage, .groupDirectMessage:

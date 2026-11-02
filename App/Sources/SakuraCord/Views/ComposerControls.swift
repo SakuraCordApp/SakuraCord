@@ -3,58 +3,6 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct EmojiAutocompleteRow: View {
-    let suggestion: ColonAutocompleteSuggestion
-    let isSelected: Bool
-    let select: () -> Void
-    var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius - 6
-
-    var body: some View {
-        Button(action: select) {
-            HStack(spacing: InterfaceScale.metric(9)) {
-                if let url = suggestion.imageURL {
-                    AnimatedRemoteImage(
-                        url: url,
-                    )
-                        .frame(width: InterfaceScale.metric(28), height: InterfaceScale.metric(28))
-                } else {
-                    Text(suggestion.value)
-                        .font(.interface(.title3))
-                        .frame(width: InterfaceScale.metric(28), height: InterfaceScale.metric(28))
-                }
-                Text(suggestion.detail)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: InterfaceScale.metric(10))
-                if let source = suggestion.source {
-                    Text(source)
-                        .font(.interface(.callout))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, InterfaceScale.metric(9))
-            .frame(height: InterfaceScale.metric(40))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .background {
-            ConcentricRectangle(
-                cornerRadius: cornerRadius,
-                style: .continuous
-            )
-            .fill(isSelected ? Color.primary.opacity(0.13) : .clear)
-        }
-        .clipShape(
-            ConcentricRectangle(
-                cornerRadius: cornerRadius,
-                style: .continuous
-            )
-        )
-    }
-}
-
 struct UploadProgressView: View {
     let progress: MessageSendProgress
     var body: some View {

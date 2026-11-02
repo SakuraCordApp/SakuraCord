@@ -77,8 +77,15 @@ struct NativeTimelineMediaKey: Hashable {
         }
     }
 
+    static let videoPosterPixelDimension = 1_024
+
+    /// A video this Mac sent keeps its own first frame, so its poster stays
+    /// as the server's attachment replaces it; the server's poster stands
+    /// in once the file is gone.
     static func videoPoster(_ attachment: Attachment) -> Self? {
-        attachment.videoPosterURL(maximumPixelDimension: 1_024).map { .media($0) }
+        let remote = attachment.videoPosterURL(maximumPixelDimension: videoPosterPixelDimension)
+        guard let local = attachment.localPreviewURL else { return remote.map { .media($0) } }
+        return .media(local, fallbackURL: remote, maximumPixelDimension: videoPosterPixelDimension)
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -226,6 +233,10 @@ actor SharedDecodedImageLoader {
             let dataLoader = self.dataLoader
             let decodeScheduler = self.decodeScheduler
             task = Task { [weak self] in
+                // A local video's poster is its first frame.
+                if LocalVideo.isVideo(url) {
+                    return await LocalVideo.frame(at: url, maximumPixelDimension: key.maximumPixelDimension)
+                }
                 do {
                     let data = try await dataLoader.data(
                         for: url,
@@ -437,8 +448,10 @@ final class NativeTimelineMediaStore {
     var visibleKeysByOwner:
         [UUID: Set<NativeTimelineMediaKey>] = [:]
     // Keep failures only while visible, so redraws cannot repeatedly fetch a
-    // broken resource. Leaving and re-entering the viewport allows a retry.
-    private var failedKeys: Set<NativeTimelineMediaKey> = []
+    // broken resource. Leaving and re-entering the viewport allows a retry,
+    // as does a URL the key offers later, such as a fallback: each key keeps
+    // every URL that failed for it.
+    private var failedKeys: [NativeTimelineMediaKey: Set<URL>] = [:]
     var loading: Set<NativeTimelineMediaKey> = []
     var loadingPriorities: [NativeTimelineMediaKey: MediaLoadPriority] = [:]
     var loadingTaskIDs: [NativeTimelineMediaKey: UUID] = [:]
@@ -632,6 +645,12 @@ final class NativeTimelineMediaStore {
         }
     }
 
+    /// Whether every URL `key` offers has failed; one it gained since, such
+    /// as a fallback, is tried.
+    private func hasFailed(_ key: NativeTimelineMediaKey) -> Bool {
+        failedKeys[key].map { Set(key.loadURLs).isSubset(of: $0) } ?? false
+    }
+
     func request(
         _ key: NativeTimelineMediaKey,
         owner: UUID,
@@ -640,7 +659,7 @@ final class NativeTimelineMediaStore {
         completion: @escaping (NativeTimelineStaticMediaLoadOutcome) -> Void
     ) {
         guard image(for: key) == nil else { return }
-        guard !failedKeys.contains(key) else {
+        guard !hasFailed(key) else {
             completion(.failed)
             return
         }
@@ -698,7 +717,7 @@ final class NativeTimelineMediaStore {
             if let image {
                 cacheImage(image, for: key)
             } else if visibleKeysByOwner.values.contains(where: { $0.contains(key) }) {
-                failedKeys.insert(key)
+                failedKeys[key, default: []].formUnion(key.loadURLs)
             }
             for completion in completions {
                 completion(image == nil ? .failed : .ready)
@@ -840,7 +859,7 @@ final class NativeTimelineMediaStore {
         _ image: NSImage,
         for key: NativeTimelineMediaKey
     ) {
-        failedKeys.remove(key)
+        failedKeys[key] = nil
         let cost = Self.estimatedCost(of: image)
         if let previous = cachedImages.updateValue(
             CachedImage(image: image, cost: cost),
@@ -862,7 +881,7 @@ final class NativeTimelineMediaStore {
         let visibleKeys = visibleKeysByOwner.values.reduce(
             into: Set<NativeTimelineMediaKey>()
         ) { $0.formUnion($1) }
-        failedKeys.formIntersection(visibleKeys)
+        failedKeys = failedKeys.filter { visibleKeys.contains($0.key) }
         while imageCacheCost > Self.imageCacheCostLimit
             || cachedImages.count > Self.imageCacheCountLimit
         {

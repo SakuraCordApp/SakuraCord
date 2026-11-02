@@ -2,7 +2,10 @@ import Foundation
 import SakuraCordModels
 
 extension DiscordRESTProvider {
-    func requireGuildCommunicationForRequest(path: String, method: String, body: [String: JSONValue]?) throws {
+    /// Refuses content, reactions, poll votes and interactions where the
+    /// account may not communicate: a guild timeout, or a message request not
+    /// yet accepted, which also takes no call rings.
+    func requireCommunicationForRequest(path: String, method: String, body: [String: JSONValue]?) throws {
         let parts = path.split(separator: "/")
         if parts.count >= 3, parts[0] == "channels", let channelID = ChannelID(String(parts[1])) {
             let createsContent = method == "POST" && (
@@ -13,15 +16,27 @@ extension DiscordRESTProvider {
                 && parts[2] == "messages" && parts[4] == "reactions"
             let editsContent = method == "PATCH" && parts.count == 4
                 && parts[2] == "messages" && body?["content"] != nil
-            let changesPollVote = method == "PUT" && parts.count == 6
+            let setsPollVote = method == "PUT" && parts.count == 6
                 && parts[2] == "polls" && parts[4] == "answers" && parts[5] == "@me"
-                && body?["answer_ids"] != .array([])
-            if createsContent || changesReaction || editsContent || changesPollVote {
+            let ringsCall = method == "POST" && parts.count == 4 && parts[2] == "call" && parts[3] == "ring"
+            let communicates = createsContent || changesReaction || editsContent
+            if communicates || setsPollVote || ringsCall {
+                try requireAcceptedMessageRequest(in: channelID)
+            }
+            // A timeout still lets a member withdraw a vote.
+            if communicates || (setsPollVote && body?["answer_ids"] != .array([])) {
                 try requireGuildCommunication(in: channelID)
             }
-        } else if path == "/interactions", method == "POST", body?["type"] == .number(2),
+        } else if path == "/interactions", method == "POST",
                   case let .string(rawID) = body?["channel_id"], let channelID = ChannelID(rawID) {
-            try requireGuildCommunication(in: channelID)
+            try requireAcceptedMessageRequest(in: channelID)
+            if body?["type"] == .number(2) { try requireGuildCommunication(in: channelID) }
+        }
+    }
+
+    private func requireAcceptedMessageRequest(in channelID: ChannelID) throws {
+        guard privateChannel(id: channelID)?.messageRequest == nil else {
+            throw ChatProviderError.invalidRequest("Accept this message request first.")
         }
     }
 

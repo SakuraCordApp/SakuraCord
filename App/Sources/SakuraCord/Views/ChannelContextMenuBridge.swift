@@ -653,6 +653,9 @@ final class ChannelContextMenuHitView: NSView {
             // Preserve native keyboard navigation, but draw a neutral selection
             // using exactly the same geometry as the hover highlight.
             tableView.selectionHighlightStyle = .none
+            // Read-only channels have no composer to take focus, so typed
+            // characters would otherwise jump to a channel with that prefix.
+            tableView.allowsTypeSelect = false
         }
         neutralSelectionView.isHidden = !isSelected
         nativeHoverView.showsHover = isHovering && !isSelected
