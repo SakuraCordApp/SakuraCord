@@ -169,7 +169,7 @@ final class ProfileEditorState {
                 await refreshIfNeeded()
                 return
             }
-            guard refreshExisting, !hasChanges, widgetDraft == nil, !isSaving, !requiresReload else { return }
+            guard refreshExisting, !hasChanges, widgetDraft == nil, !isSaving, preparingWidgetImages == 0, !requiresReload else { return }
             await load(loadingScope ?? scope, preferCached: preferCached)
             return
         }
@@ -183,7 +183,8 @@ final class ProfileEditorState {
     }
 
     func refreshIfNeeded() async {
-        guard needsExternalRefresh, loadingScope == nil, !hasChanges, widgetDraft == nil, !isSaving, !requiresReload else { return }
+        guard needsExternalRefresh, loadingScope == nil, !hasChanges, widgetDraft == nil, !isSaving, preparingWidgetImages == 0,
+              !requiresReload else { return }
         needsExternalRefresh = false
         await load(scope, preferCached: false)
     }
@@ -381,13 +382,17 @@ final class ProfileEditorState {
     func prepareWidgetImage(from url: URL, purpose: ProfileImagePurpose, aspectRatio: Double,
                             apply: @escaping (ProfileWidgetImage) -> Void) -> Task<Void, Never> {
         preparingWidgetImages += 1
+        let account = session, requestRevision = revision, generation = draftGeneration
         return Task {
             let image: ProfileWidgetImage?
             do {
                 image = try await croppedWidgetImage(from: url, purpose: purpose, aspectRatio: aspectRatio)
             } catch {
                 image = nil
-                if !(error is CancellationError) { errorMessage = error.localizedDescription }
+                // An upload the draft has moved on from fails quietly.
+                if !(error is CancellationError), let account, isCurrent(account, revision: requestRevision), draftGeneration == generation {
+                    errorMessage = error.localizedDescription
+                }
             }
             // Editing resumes before the image applies, since applying is an edit.
             preparingWidgetImages -= 1
