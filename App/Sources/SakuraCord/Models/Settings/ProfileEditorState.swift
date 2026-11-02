@@ -396,13 +396,14 @@ final class ProfileEditorState {
         let account = session, requestRevision = revision, generation = draftGeneration
         return Task {
             let image: ProfileWidgetImage?
+            var failure: String?
             do {
                 image = try await croppedWidgetImage(from: url, purpose: purpose, aspectRatio: aspectRatio)
             } catch {
                 image = nil
                 // An upload the draft has moved on from fails quietly.
                 if !(error is CancellationError), let account, isCurrent(account, revision: requestRevision), draftGeneration == generation {
-                    errorMessage = error.localizedDescription
+                    failure = error.localizedDescription
                 }
             }
             // Editing resumes before the image applies, since applying is an edit.
@@ -410,6 +411,8 @@ final class ProfileEditorState {
             if let image { apply(image) }
             // A refresh held back for the image runs now, unless it left a draft.
             if needsExternalRefresh { await refreshIfNeeded() }
+            // After the refresh, which clears the editor's error as it loads.
+            if let failure { errorMessage = failure }
         }
     }
 
