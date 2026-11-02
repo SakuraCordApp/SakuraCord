@@ -13,7 +13,7 @@ struct SakuraCordAuthenticationCard<Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let colors = SakuraCordThemeStore.shared.activeTheme.colors(for: colorScheme)
+        let colors = SakuraCordThemeStore.shared.backgroundTheme.colors(for: colorScheme)
         let firstColor = colors[0]
         let cardColors = colors.enumerated().map { index, color in
             let progress = colors.count == 1

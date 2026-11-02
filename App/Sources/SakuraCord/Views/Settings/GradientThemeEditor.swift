@@ -91,8 +91,8 @@ private struct GradientThemeEditorHeader: View {
     private var subtitle: LocalizedStringKey? {
         if themeStore.isSystemAccentActive {
             switch presentation {
-            case .settings: return "macOS controls the accent color. You can override it with the toggle below or customize only the background colour."
-            case .onboarding: return "macOS controls the accent color. You can customize the background colour or override the accent in Theme settings."
+            case .settings: return "macOS controls the accent color. You can override it with the toggle below or customize only the background color."
+            case .onboarding: return "macOS controls the accent color. You can customize the background color or override the accent in Theme settings."
             }
         }
         return switch presentation {
