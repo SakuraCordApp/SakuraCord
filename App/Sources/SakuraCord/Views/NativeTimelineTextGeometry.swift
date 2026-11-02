@@ -104,8 +104,14 @@ enum NativeTimelineBeginningText {
         _ beginning: NativeTimelineBeginning,
         source: AppModel? = nil
     ) -> NativeTimelineAttributedTextBox {
-        let baseFontSize = NSFont.interfacePreferredFont(forTextStyle: .body).pointSize
-        let prepared = RichMessageAttributedText.prepare(source: beginning.description)
+        let font = NSFont.interfacePreferredFont(forTextStyle: .body)
+        // Only a channel's own topic is Markdown; generated descriptions embed
+        // names that must render literally.
+        guard let topic = beginning.topic else {
+            return box(beginning.description, font: font, color: .secondaryLabelColor)
+        }
+        let baseFontSize = font.pointSize
+        let prepared = RichMessageAttributedText.prepare(source: topic)
         let resolver = source.map { MessageMentionResolver(model: $0, message: nil) }
         let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { result, token in
             guard case let .mention(mention) = token else { return }

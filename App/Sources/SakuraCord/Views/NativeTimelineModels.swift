@@ -363,14 +363,19 @@ enum NativeTimelineBeginning: Equatable {
         }
     }
 
+    /// The channel's own topic, if it has one.
+    var topic: String? {
+        guard case let .channel(channel, _) = self,
+              let topic = channel.topic?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !topic.isEmpty
+        else { return nil }
+        return topic
+    }
+
     var description: String {
+        if let topic { return topic }
         switch self {
         case let .channel(channel, _):
-            if let topic = channel.topic?.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ), !topic.isEmpty {
-                return topic
-            }
             switch channel.kind {
             case .directMessage, .groupDirectMessage:
                 return "This is the beginning of your direct message history."
