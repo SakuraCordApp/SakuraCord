@@ -171,13 +171,32 @@ private struct ThreadStarterMessagePreview: View {
     let model: AppModel
     let message: Message
 
+    private var authorPresentation: MessageAuthorPresentation {
+        model.authorPresentation(for: message)
+    }
+
+    private var authorGradient: LinearGradient? {
+        guard authorPresentation.hasRoleGradient,
+              let primary = authorPresentation.roleColorHex,
+              let secondary = authorPresentation.roleSecondaryColorHex else { return nil }
+        let tertiary = authorPresentation.roleTertiaryColorHex
+        let colors = [Color(hex: primary), Color(hex: secondary)] + (tertiary.map { [Color(hex: $0)] } ?? [])
+        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+    }
+
     var body: some View {
-        let author = model.authorPresentation(for: message)
+        let author = authorPresentation
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
             HStack(spacing: InterfaceScale.metric(6)) {
-                Text(author.user.displayName)
-                    .font(.interface(.callout).weight(.semibold))
-                    .foregroundStyle(author.roleColorHex.map { Color(hex: $0) } ?? .primary)
+                if let authorGradient {
+                    Text(author.user.displayName)
+                        .font(.interface(.callout).weight(.semibold))
+                        .foregroundStyle(authorGradient)
+                } else {
+                    Text(author.user.displayName)
+                        .font(.interface(.callout).weight(.semibold))
+                        .foregroundStyle(author.roleColorHex.map { Color(hex: $0) } ?? .primary)
+                }
                 if let role = author.topRoleWithIcon {
                     RoleIconView(role: role, size: InterfaceScale.metric(14))
                 }

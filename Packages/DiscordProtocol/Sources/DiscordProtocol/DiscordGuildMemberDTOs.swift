@@ -247,9 +247,13 @@ extension GuildMemberDTO {
 
 struct GuildRoleColorsDTO: Decodable {
     var primaryColor: UInt32?
+    var secondaryColor: UInt32?
+    var tertiaryColor: UInt32?
 
     enum CodingKeys: String, CodingKey {
         case primaryColor = "primary_color"
+        case secondaryColor = "secondary_color"
+        case tertiaryColor = "tertiary_color"
     }
 }
 
@@ -290,6 +294,8 @@ struct GuildRoleDTO: Decodable {
         guard let id = RoleID(id) else { return nil }
         let colorHex = colors?.primaryColor.flatMap { $0 == 0 ? nil : $0 }
             ?? color.flatMap { $0 == 0 ? nil : $0 }
+        let secondaryColorHex = colors?.secondaryColor.flatMap { $0 == 0 ? nil : $0 }
+        let tertiaryColorHex = colors?.tertiaryColor.flatMap { $0 == 0 ? nil : $0 }
         let iconURL = icon.flatMap {
             URL(string: "https://cdn.discordapp.com/role-icons/\(id)/\($0).png?size=32")
         }
@@ -298,6 +304,8 @@ struct GuildRoleDTO: Decodable {
             name: name,
             position: position,
             colorHex: colorHex,
+            secondaryColorHex: secondaryColorHex,
+            tertiaryColorHex: tertiaryColorHex,
             iconURL: iconURL,
             unicodeEmoji: unicodeEmoji,
             isMentionable: mentionable ?? false,

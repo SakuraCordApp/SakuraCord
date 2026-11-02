@@ -405,11 +405,25 @@ nonisolated enum ConversationPermissionResolver {
 nonisolated struct MessageAuthorPresentation: Equatable {
     let user: User
     let roleColorHex: UInt32?
+    let roleSecondaryColorHex: UInt32?
+    let roleTertiaryColorHex: UInt32?
     let topRoleWithIcon: GuildRole?
 
-    init(user: User, roleColorHex: UInt32?, topRoleWithIcon: GuildRole? = nil) {
+    var hasRoleGradient: Bool {
+        roleColorHex != nil && roleSecondaryColorHex != nil
+    }
+
+    init(
+        user: User,
+        roleColorHex: UInt32?,
+        roleSecondaryColorHex: UInt32? = nil,
+        roleTertiaryColorHex: UInt32? = nil,
+        topRoleWithIcon: GuildRole? = nil
+    ) {
         self.user = user
         self.roleColorHex = roleColorHex
+        self.roleSecondaryColorHex = roleSecondaryColorHex
+        self.roleTertiaryColorHex = roleTertiaryColorHex
         self.topRoleWithIcon = topRoleWithIcon
     }
 
@@ -466,10 +480,13 @@ nonisolated struct MessageAuthorPresentation: Equatable {
         if let member {
             let roleIDs = Set(member.roleIDs)
             let effectiveRoles = !member.roles.isEmpty ? member.roles : roles.filter { roleIDs.contains($0.id) }
+            let colorRole = topRoleWithColor(in: member.roles)
+                ?? topRoleWithColor(in: roles.filter { roleIDs.contains($0.id) })
             return Self(
                 user: member.user,
-                roleColorHex: topRoleColor(in: member.roles)
-                    ?? topRoleColor(in: roles.filter { roleIDs.contains($0.id) }),
+                roleColorHex: colorRole?.colorHex,
+                roleSecondaryColorHex: colorRole?.secondaryColorHex,
+                roleTertiaryColorHex: colorRole?.tertiaryColorHex,
                 topRoleWithIcon: topRoleWithIcon(in: effectiveRoles)
             )
         }
@@ -481,27 +498,41 @@ nonisolated struct MessageAuthorPresentation: Equatable {
         }
         let roleIDs = guildMember.map { Set($0.roleIDs) } ?? []
         let memberRoles = roles.filter { roleIDs.contains($0.id) }
+        let colorRole = roleColorRole(for: guildMember, roles: roles)
         return Self(
             user: user,
-            roleColorHex: roleColor(for: guildMember, roles: roles),
+            roleColorHex: colorRole?.colorHex,
+            roleSecondaryColorHex: colorRole?.secondaryColorHex,
+            roleTertiaryColorHex: colorRole?.tertiaryColorHex,
             topRoleWithIcon: topRoleWithIcon(in: memberRoles)
         )
+    }
+
+    private static func roleColorRole(
+        for guildMember: MessageGuildMember?,
+        roles: [GuildRole]
+    ) -> GuildRole? {
+        guard let guildMember else { return nil }
+        let roleIDs = Set(guildMember.roleIDs)
+        return topRoleWithColor(in: roles.filter { roleIDs.contains($0.id) })
     }
 
     private static func roleColor(
         for guildMember: MessageGuildMember?,
         roles: [GuildRole]
     ) -> UInt32? {
-        guard let guildMember else { return nil }
-        let roleIDs = Set(guildMember.roleIDs)
-        return topRoleColor(in: roles.filter { roleIDs.contains($0.id) })
+        roleColorRole(for: guildMember, roles: roles)?.colorHex
     }
 
-    static func topRoleColor(in roles: [GuildRole]) -> UInt32? {
+    static func topRoleWithColor(in roles: [GuildRole]) -> GuildRole? {
         roles.lazy.filter { $0.colorHex != nil }.max { lhs, rhs in
             if lhs.position != rhs.position { return lhs.position < rhs.position }
             return lhs.id.rawValue < rhs.id.rawValue
-        }?.colorHex
+        }
+    }
+
+    static func topRoleColor(in roles: [GuildRole]) -> UInt32? {
+        topRoleWithColor(in: roles)?.colorHex
     }
 
     static func topRoleWithIcon(in roles: [GuildRole]) -> GuildRole? {

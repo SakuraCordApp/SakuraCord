@@ -56,55 +56,42 @@ extension NativeMemberListCanvasView {
         at index: Int,
         context: CGContext
     ) {
-        let label = "\(section.title) — \(section.totalCount)"
         let font = NSFont.interfaceSystemFont(
             ofSize: InterfaceTypographyMetrics.interfaceTextSize,
             weight: .semibold
         )
-        let line = cachedSectionHeaderLine(label, font: font, color: NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7))
+        let color = NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7)
         let labelY = origins[index] + InterfaceScale.metric(16)
-        var labelX = InterfaceScale.metric(14)
+        let labelX = InterfaceScale.metric(14)
         if let role = section.role, role.hasIcon {
+            let titleLine = cachedSectionHeaderLine(section.title, font: font, color: color)
+            var titleAscent: CGFloat = 0
+            let titleWidth = ceil(CGFloat(CTLineGetTypographicBounds(titleLine, &titleAscent, nil, nil)))
+            Self.draw(line: titleLine, at: CGPoint(x: labelX, y: labelY), context: context)
+
             let iconSize = InterfaceScale.metric(14)
-            let iconY = labelY - InterfaceScale.metric(1)
-            let iconRect = CGRect(x: labelX, y: iconY, width: iconSize, height: iconSize)
-            if let iconURL = role.iconURL {
-                if let image = images[iconURL] {
-                    Self.draw(
-                        image: image,
-                        aspectFitIn: iconRect,
-                        context: context
-                    )
-                } else {
-                    requestImageIfNeeded(
-                        url: iconURL,
-                        index: index,
-                        priority: .visible,
-                        maximumPixelDimension: 32
-                    )
-                }
-            } else if let emoji = role.unicodeEmoji, !emoji.isEmpty {
-                let emojiLine = Self.line(
-                    emoji,
-                    font: .systemFont(ofSize: iconSize * 0.85),
-                    color: NSColor.secondaryLabelColor
-                )
-                Self.draw(
-                    line: emojiLine,
-                    at: CGPoint(x: labelX, y: iconY),
-                    context: context
-                )
-            }
-            labelX += iconSize + InterfaceScale.metric(6)
+            let spacing = InterfaceScale.metric(4)
+            let iconX = labelX + titleWidth + spacing
+            let iconY = labelY + (titleAscent - iconSize) / 2
+            let iconRect = CGRect(x: iconX, y: iconY, width: iconSize, height: iconSize)
+            drawMemberRoleIcon(role, in: iconRect, at: index, context: context)
+
+            let countLabel = "— \(section.totalCount)"
+            let countLine = cachedSectionHeaderLine(countLabel, font: font, color: color)
+            let countX = iconX + iconSize + spacing
+            Self.draw(line: countLine, at: CGPoint(x: countX, y: labelY), context: context)
+        } else {
+            let label = "\(section.title) — \(section.totalCount)"
+            let line = cachedSectionHeaderLine(label, font: font, color: color)
+            Self.draw(
+                line: line,
+                at: CGPoint(
+                    x: labelX,
+                    y: labelY
+                ),
+                context: context
+            )
         }
-        Self.draw(
-            line: line,
-            at: CGPoint(
-                x: labelX,
-                y: labelY
-            ),
-            context: context
-        )
     }
 
     func skeletonDrawingStyle() -> SkeletonDrawingStyle {
@@ -336,12 +323,22 @@ extension NativeMemberListCanvasView {
                 token: prepared.nameTruncationToken,
                 maximumWidth: nameLayout.nameWidth
             )
-            Self.draw(line: visibleName, at: CGPoint(x: nameX, y: nameY), context: context)
+            if presentation.roleColorDisplay == .inNames, let gradientColors = prepared.gradientColors {
+                Self.draw(
+                    line: visibleName,
+                    at: CGPoint(x: nameX, y: nameY),
+                    gradientColors: gradientColors,
+                    width: nameLayout.nameWidth,
+                    context: context
+                )
+            } else {
+                Self.draw(line: visibleName, at: CGPoint(x: nameX, y: nameY), context: context)
+            }
         }
 
         if let roleColor {
-            context.setFillColor(roleColor.cgColor)
-            context.fillEllipse(in: CGRect(x: textX, y: nameY + InterfaceScale.metric(5), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8)))
+            let ovalRect = CGRect(x: textX, y: nameY + InterfaceScale.metric(5), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8))
+            drawMemberRoleDot(ovalRect: ovalRect, roleColor: roleColor, gradientColors: prepared.gradientColors, context: context)
         }
         if let tagPresentation, let frame = geometry.serverTagFrame {
             tagPresentation.draw(
@@ -396,6 +393,35 @@ extension NativeMemberListCanvasView {
                 }
             }
         }
+    }
+
+    private func drawMemberRoleDot(
+        ovalRect: CGRect,
+        roleColor: NSColor,
+        gradientColors: [NSColor]?,
+        context: CGContext
+    ) {
+        if let gradientColors {
+            let cgColors = (gradientColors.map(\.cgColor) as [CGColor]) as CFArray
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+            let count = gradientColors.count
+            let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
+            if let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) {
+                context.saveGState()
+                context.addEllipse(in: ovalRect)
+                context.clip()
+                context.drawLinearGradient(
+                    gradient,
+                    start: CGPoint(x: ovalRect.minX, y: 0),
+                    end: CGPoint(x: ovalRect.maxX, y: 0),
+                    options: []
+                )
+                context.restoreGState()
+                return
+            }
+        }
+        context.setFillColor(roleColor.cgColor)
+        context.fillEllipse(in: ovalRect)
     }
 
     func drawMemberAvatar(

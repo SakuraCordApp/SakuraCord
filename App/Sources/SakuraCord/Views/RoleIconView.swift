@@ -29,9 +29,15 @@ struct RoleIconPopoverView: View {
     var body: some View {
         HStack(spacing: InterfaceScale.metric(6)) {
             RoleIconView(role: role, size: InterfaceScale.metric(16))
-            Text(role.name)
-                .font(.interface(.body).weight(.semibold))
-                .foregroundStyle(roleColor)
+            if let gradient = roleGradient {
+                Text(role.name)
+                    .font(.interface(.body).weight(.semibold))
+                    .foregroundStyle(gradient)
+            } else {
+                Text(role.name)
+                    .font(.interface(.body).weight(.semibold))
+                    .foregroundStyle(roleColor)
+            }
         }
         .padding(.horizontal, InterfaceScale.metric(10))
         .padding(.vertical, InterfaceScale.metric(6))
@@ -44,6 +50,14 @@ struct RoleIconPopoverView: View {
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
         .fixedSize()
+    }
+
+    private var roleGradient: LinearGradient? {
+        guard let primary = role.colorHex,
+              let secondary = role.secondaryColorHex else { return nil }
+        let tertiary = role.tertiaryColorHex
+        let colors = [Color(hex: primary), Color(hex: secondary)] + (tertiary.map { [Color(hex: $0)] } ?? [])
+        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
     }
 
     private var roleColor: Color {

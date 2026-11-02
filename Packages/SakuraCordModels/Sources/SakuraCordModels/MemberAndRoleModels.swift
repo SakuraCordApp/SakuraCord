@@ -13,11 +13,17 @@ public struct GuildRole: Identifiable, Codable, Hashable, Sendable {
     public var name: String
     public var position: Int
     public var colorHex: UInt32?
+    public var secondaryColorHex: UInt32?
+    public var tertiaryColorHex: UInt32?
     public var iconURL: URL?
     public var unicodeEmoji: String?
     public var isMentionable: Bool
     public var permissions: UInt64?
     public var isPurchasableSubscription: Bool?
+
+    public var hasGradient: Bool {
+        colorHex != nil && secondaryColorHex != nil
+    }
 
     public var hasIcon: Bool {
         iconURL != nil || !(unicodeEmoji?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
@@ -28,6 +34,8 @@ public struct GuildRole: Identifiable, Codable, Hashable, Sendable {
         name: String,
         position: Int = 0,
         colorHex: UInt32? = nil,
+        secondaryColorHex: UInt32? = nil,
+        tertiaryColorHex: UInt32? = nil,
         iconURL: URL? = nil,
         unicodeEmoji: String? = nil,
         isMentionable: Bool = true,
@@ -38,6 +46,8 @@ public struct GuildRole: Identifiable, Codable, Hashable, Sendable {
         self.name = name
         self.position = position
         self.colorHex = colorHex
+        self.secondaryColorHex = secondaryColorHex
+        self.tertiaryColorHex = tertiaryColorHex
         self.iconURL = iconURL
         self.unicodeEmoji = unicodeEmoji
         self.isMentionable = isMentionable

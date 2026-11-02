@@ -249,7 +249,7 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         }
 
         let sort = forThread ? threadMemberNameSort : memberNameSort
-        var sections = makeRoleSections(roleMembers, sort: sort)
+        var sections = makeRoleSections(roleMembers, roles: roles, sort: sort)
 
         if !ungroupedOnline.isEmpty {
             ungroupedOnline.sort(by: sort)
@@ -275,17 +275,28 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         return sections
     }
 
-    private static func makeRoleSections(_ roleMembers: [SectionIdentifier: [Member]], sort: (Member, Member) -> Bool) -> [MemberSection] {
+    private static func makeRoleSections(
+        _ roleMembers: [SectionIdentifier: [Member]],
+        roles: [GuildRole],
+        sort: (Member, Member) -> Bool
+    ) -> [MemberSection] {
+        let rolesByID = Dictionary(uniqueKeysWithValues: roles.map { ($0.id, $0) })
         return roleMembers.map { id, members in
             let name = switch id {
             case let .role(name, _): name
             case .online, .offline: ""
             }
+            let position = switch id {
+            case let .role(_, pos): pos
+            case .online, .offline: 0
+            }
             let role = members.lazy.compactMap { member in
-                member.roles.first {
-                    $0.name == member.roleName && $0.position == member.rolePosition
+                if let roleID = member.roleID, let matchedRole = rolesByID[roleID] { return matchedRole }
+                return member.roles.first {
+                    if let roleID = member.roleID, $0.id == roleID { return true }
+                    return $0.name == member.roleName && $0.position == member.rolePosition
                 }
-            }.first
+            }.first ?? roles.first { $0.name == name && $0.position == position }
             return MemberSection(
                 id: id,
                 title: name,
@@ -399,15 +410,14 @@ private struct MemberSectionHeader: View {
     let section: MemberSection
 
     var body: some View {
-        HStack(spacing: InterfaceScale.metric(6)) {
-            if case .role = section.id {
-                if let role = section.role, role.hasIcon {
-                    RoleIconView(role: role, size: InterfaceScale.metric(14))
-                } else {
-                    RoleColorIndicator(colorHex: section.colorHex, size: InterfaceScale.metric(8))
-                }
+        HStack(spacing: InterfaceScale.metric(4)) {
+            Text(section.title)
+                .font(.interface(.body).weight(.semibold))
+                .foregroundStyle(headerColor)
+            if case .role = section.id, let role = section.role, role.hasIcon {
+                RoleIconView(role: role, size: InterfaceScale.metric(14))
             }
-            Text("\(section.title) — \(section.totalCount)")
+            Text("— \(section.totalCount)")
                 .font(.interface(.body).weight(.semibold))
                 .foregroundStyle(headerColor)
         }
@@ -456,11 +466,20 @@ struct MemberRow: View {
                         MemberAvatar(member: member, isHovered: isHovered)
                         VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
                             HStack(spacing: InterfaceScale.metric(5)) {
-                                NameRoleColorIndicator(colorHex: MessageAuthorPresentation.topRoleColor(in: member.roles))
+                                NameRoleColorIndicator(
+                                    colorHex: topRole?.colorHex,
+                                    secondaryColorHex: topRole?.secondaryColorHex,
+                                    tertiaryColorHex: topRole?.tertiaryColorHex
+                                )
                                 if let style = member.user.displayNameStyle {
                                     ProfileDisplayName(name: member.user.displayName, style: style, size: 13,
                                                        showsEffects: false, plainColor: nameColor)
                                         .allowsHitTesting(false)
+                                } else if let gradient = nameGradient {
+                                    Text(member.user.displayName)
+                                        .font(.interface(.body).weight(.semibold))
+                                        .foregroundStyle(gradient)
+                                        .lineLimit(1)
                                 } else {
                                     Text(member.user.displayName)
                                         .font(.interface(.body).weight(.semibold))
@@ -516,8 +535,22 @@ struct MemberRow: View {
         .help(member.user.username)
     }
 
+    private var topRole: GuildRole? {
+        MessageAuthorPresentation.topRoleWithColor(in: member.roles)
+    }
+
+    private var nameGradient: LinearGradient? {
+        guard roleColorDisplay == .inNames,
+              let topRole,
+              let primary = topRole.colorHex,
+              let secondary = topRole.secondaryColorHex else { return nil }
+        let tertiary = topRole.tertiaryColorHex
+        let colors = [Color(hex: primary), Color(hex: secondary)] + (tertiary.map { [Color(hex: $0)] } ?? [])
+        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+    }
+
     private var nameColor: Color {
-        roleColorDisplay == .inNames ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Color.init(hex:)) ?? .primary : .primary
+        roleColorDisplay == .inNames ? topRole?.colorHex.map(Color.init(hex:)) ?? .primary : .primary
     }
 }
 

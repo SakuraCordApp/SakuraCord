@@ -6,6 +6,8 @@ struct ComposerReplyHeader: View {
     let authorName: String
     let avatarURL: URL?
     let roleColorHex: UInt32?
+    var roleSecondaryColorHex: UInt32?
+    var roleTertiaryColorHex: UInt32?
     let mentionsAuthor: Bool
     let canMentionAuthor: Bool
     let toggleMention: () -> Void
@@ -23,11 +25,22 @@ struct ComposerReplyHeader: View {
                     maximumPixelDimension: 36,
                     animates: false
                 )
-                NameRoleColorIndicator(colorHex: roleColorHex)
-                Text(authorName)
-                    .displayNameFont(authorFontID, textStyle: .callout)
-                    .foregroundStyle(authorColor)
-                    .lineLimit(1)
+                NameRoleColorIndicator(
+                    colorHex: roleColorHex,
+                    secondaryColorHex: roleSecondaryColorHex,
+                    tertiaryColorHex: roleTertiaryColorHex
+                )
+                if let authorGradient {
+                    Text(authorName)
+                        .displayNameFont(authorFontID, textStyle: .callout)
+                        .foregroundStyle(authorGradient)
+                        .lineLimit(1)
+                } else {
+                    Text(authorName)
+                        .displayNameFont(authorFontID, textStyle: .callout)
+                        .foregroundStyle(authorColor)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: InterfaceScale.metric(8))
@@ -52,6 +65,15 @@ struct ComposerReplyHeader: View {
         .padding(.trailing, InterfaceScale.metric(8))
         .padding(.vertical, InterfaceScale.metric(2))
         .background(.primary.opacity(0.035))
+    }
+
+    private var authorGradient: LinearGradient? {
+        guard roleColorDisplay == .inNames,
+              let roleColorHex,
+              let roleSecondaryColorHex else { return nil }
+        let colors = [Color(hex: roleColorHex), Color(hex: roleSecondaryColorHex)]
+            + (roleTertiaryColorHex.map { [Color(hex: $0)] } ?? [])
+        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
     }
 
     private var authorColor: Color {

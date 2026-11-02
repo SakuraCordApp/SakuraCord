@@ -69,6 +69,30 @@ extension NativeMemberListCanvasView {
         context.restoreGState()
     }
 
+    static func draw(line: CTLine, at point: CGPoint, gradientColors: [NSColor], width: CGFloat, context: CGContext) {
+        var ascent: CGFloat = 0
+        CTLineGetTypographicBounds(line, &ascent, nil, nil)
+        context.saveGState()
+        context.textMatrix = .identity
+        context.translateBy(x: point.x, y: point.y + ascent)
+        context.scaleBy(x: 1, y: -1)
+        context.setTextDrawingMode(.clip)
+        CTLineDraw(line, context)
+        let cgColors = gradientColors.map(\.cgColor) as CFArray
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let count = gradientColors.count
+        let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
+        if let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 0, y: 0),
+                end: CGPoint(x: max(1, width), y: 0),
+                options: []
+            )
+        }
+        context.restoreGState()
+    }
+
     static func truncatedLine(
         _ line: CTLine,
         token: CTLine,

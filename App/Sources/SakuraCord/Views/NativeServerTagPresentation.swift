@@ -124,6 +124,61 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         }
         context.restoreGState()
     }
+
+    @MainActor
+    func draw(in frame: CGRect, gradientColors: [NSColor], context: CGContext, isUnderlined: Bool = false) {
+        guard frame.width > 0, frame.height > 0, !gradientColors.isEmpty else { return }
+        if gradientColors.count == 1 {
+            draw(in: frame, color: gradientColors[0], context: context, isUnderlined: isUnderlined)
+            return
+        }
+        context.saveGState()
+        context.clip(to: frame)
+        context.translateBy(x: frame.minX, y: frame.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.textMatrix = .identity
+
+        let baseline = frame.height / 2 - glyphBounds.midY
+        let cgColors = gradientColors.map(\.cgColor) as CFArray
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let count = gradientColors.count
+        let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
+        guard let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) else {
+            context.restoreGState()
+            return
+        }
+
+        context.saveGState()
+        context.setTextDrawingMode(.clip)
+        context.textPosition = CGPoint(x: 0, y: baseline)
+        CTLineDraw(line, context)
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: 0, y: 0),
+            end: CGPoint(x: min(width, frame.width), y: 0),
+            options: []
+        )
+        context.restoreGState()
+
+        if isUnderlined {
+            context.saveGState()
+            let underlineRect = CGRect(
+                x: 0,
+                y: baseline - InterfaceScale.metric(1.5),
+                width: min(width, frame.width),
+                height: 1
+            )
+            context.clip(to: underlineRect)
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 0, y: 0),
+                end: CGPoint(x: min(width, frame.width), y: 0),
+                options: []
+            )
+            context.restoreGState()
+        }
+        context.restoreGState()
+    }
 }
 
 /// The same server-tag chrome as ProfileServerTag, shared by native canvases.

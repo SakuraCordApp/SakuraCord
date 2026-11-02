@@ -1207,14 +1207,18 @@ private struct RoleChip: View {
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(6)) {
-            if item.role.hasIcon {
-                RoleIconView(role: item.role, size: InterfaceScale.metric(14))
-            } else {
-                RoleColorIndicator(colorHex: item.role.colorHex, size: InterfaceScale.metric(10))
-            }
+            RoleColorIndicator(
+                colorHex: item.role.colorHex,
+                secondaryColorHex: item.role.secondaryColorHex,
+                tertiaryColorHex: item.role.tertiaryColorHex,
+                size: InterfaceScale.metric(10)
+            )
             Text(item.name)
                 .font(.interface(.callout).weight(.medium))
                 .lineLimit(1)
+            if item.role.hasIcon {
+                RoleIconView(role: item.role, size: InterfaceScale.metric(14))
+            }
         }
         .fixedSize(horizontal: true, vertical: true)
         .padding(.horizontal, InterfaceScale.metric(9))
