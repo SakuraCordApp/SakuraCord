@@ -27,7 +27,7 @@ extension NativeTimelineCanvasView {
         }
         frames += hiddenSpoilerContainerFrames(at: index)
         if let voice = layout.voiceMessageRegion {
-            frames += [voice.playHitFrame, voice.speedHitFrame, voice.waveformHitFrame]
+            frames += Self.controlHitFrames(of: voice).map { $0.1.intersection(voice.frame) }
         }
         for frame in frames {
             addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
