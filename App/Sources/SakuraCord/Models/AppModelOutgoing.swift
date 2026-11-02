@@ -95,14 +95,18 @@ extension AppModel {
         if !existing.attachments.isEmpty {
             for index in resolved.attachments.indices {
                 let attachment = resolved.attachments[index]
-                guard attachment.mediaKind == .image
-                        || attachment.mediaKind == .animatedImage
-                else { continue }
                 let previous = existing.attachments.first(where: {
                     $0.id == attachment.id
                 }) ?? (existing.attachments.indices.contains(index)
                     ? existing.attachments[index]
                     : nil)
+                if attachment.mediaKind == .video {
+                    resolved.attachments[index].localPreviewURL = previous?.localPreviewURL
+                    continue
+                }
+                guard attachment.mediaKind == .image
+                        || attachment.mediaKind == .animatedImage
+                else { continue }
                 let preservedPreviewURL: URL? = if let proxyURL = previous?.proxyURL {
                     proxyURL
                 } else if previous?.url.isFileURL == true {

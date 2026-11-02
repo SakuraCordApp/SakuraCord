@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import MediaPipeline
 import SwiftUI
 import UniformTypeIdentifiers
@@ -54,7 +53,7 @@ struct LocalAttachmentThumbnail: View {
                 }
             }
             if isVideoFile {
-                guard let frame = await Self.videoFrame(
+                guard let frame = await LocalVideo.frame(
                     at: url,
                     maximumPixelDimension: maximumPixelDimension
                 ),
@@ -102,21 +101,6 @@ struct LocalAttachmentThumbnail: View {
     }
 
     private var isVideoFile: Bool {
-        UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
-    }
-
-    /// Video files keep showing their Finder icon until this frame is ready,
-    /// so an undecodable file never leaves a spinner behind.
-    private nonisolated static func videoFrame(
-        at url: URL,
-        maximumPixelDimension: Int
-    ) async -> CGImage? {
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(
-            width: maximumPixelDimension,
-            height: maximumPixelDimension
-        )
-        return try? await generator.image(at: .zero).image
+        LocalVideo.isVideo(url)
     }
 }
