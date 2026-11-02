@@ -24,7 +24,10 @@ final class ProfileEditorState {
     /// Widget images still being cropped or uploaded. Saving and widget
     /// edits wait for them: either could reject or discard the image that
     /// is about to land.
-    private var preparingWidgetImages = 0
+    private(set) var preparingWidgetImageSlots: Set<String> = []
+    /// Each slot's last upload failure, with the draft it belongs to, kept
+    /// here so a rebuilt slot view still shows it and a later draft doesn't.
+    private var widgetImageFailures: [String: (message: String, generation: UUID)] = [:]
     private(set) var requiresReload = false
     var errorMessage: String?
     var fieldErrors: [String: [String]] = [:]
@@ -68,9 +71,9 @@ final class ProfileEditorState {
     }
 
     var isNitro: Bool { snapshot?.widgetEligibility.hasFullNitro == true }
-    var canSave: Bool { snapshot != nil && hasChanges && !isSaving && preparingWidgetImages == 0 && loadingScope == nil && !requiresReload && bio.utf16.count <= 300 && widgetsAreValid }
+    var canSave: Bool { snapshot != nil && hasChanges && !isSaving && preparingWidgetImageSlots.isEmpty && loadingScope == nil && !requiresReload && bio.utf16.count <= 300 && widgetsAreValid }
     var isResolvingScope: Bool { snapshot == nil || (loadingScope != nil && loadingScope != scope) }
-    var canEditWidgets: Bool { canModifyWidgets && preparingWidgetImages == 0 }
+    var canEditWidgets: Bool { canModifyWidgets && preparingWidgetImageSlots.isEmpty }
     private var canModifyWidgets: Bool { snapshot != nil && !isLoading && !isSaving && !requiresReload }
     var canEditPersonalWidget: Bool { canEditWidgets && snapshot?.widgetEligibility.canEditPersonalWidget == true }
     /// Whether the personal widget shows its editable layout, empty image
@@ -169,7 +172,7 @@ final class ProfileEditorState {
                 await refreshIfNeeded()
                 return
             }
-            guard refreshExisting, !hasChanges, widgetDraft == nil, !isSaving, preparingWidgetImages == 0, !requiresReload else { return }
+            guard refreshExisting, !hasChanges, widgetDraft == nil, !isSaving, preparingWidgetImageSlots.isEmpty, !requiresReload else { return }
             await load(loadingScope ?? scope, preferCached: preferCached)
             return
         }
@@ -183,7 +186,7 @@ final class ProfileEditorState {
     }
 
     func refreshIfNeeded() async {
-        guard needsExternalRefresh, loadingScope == nil, !hasChanges, widgetDraft == nil, !isSaving, preparingWidgetImages == 0,
+        guard needsExternalRefresh, loadingScope == nil, !hasChanges, widgetDraft == nil, !isSaving, preparingWidgetImageSlots.isEmpty,
               !requiresReload else { return }
         needsExternalRefresh = false
         await load(scope, preferCached: false)
@@ -290,7 +293,7 @@ final class ProfileEditorState {
     /// a refresh of the same scope waits and retries once it lands; switching
     /// scope abandons the image instead.
     private func holdsBaselineForWidgetImage(_ requestedScope: ProfileEditingScope) -> Bool {
-        guard preparingWidgetImages > 0, requestedScope == scope else { return false }
+        guard !preparingWidgetImageSlots.isEmpty, requestedScope == scope else { return false }
         needsExternalRefresh = true
         return true
     }
@@ -386,35 +389,39 @@ final class ProfileEditorState {
     }
 
     /// Crops a chosen image to a widget slot's centred frame, uploads it and
-    /// hands it to `apply`. The editor owns the work, so the slot's view
-    /// scrolling away or being rebuilt can't cancel it; widget edits and
-    /// saving pause until it lands, as they did behind the crop screen.
-    /// The task returns a failure for the slot to show, since the editor's
-    /// own error belongs to its loads and saves.
-    func prepareWidgetImage(from url: URL, purpose: ProfileImagePurpose, aspectRatio: Double,
-                            apply: @escaping (ProfileWidgetImage) -> Void) -> Task<String?, Never> {
-        preparingWidgetImages += 1
+    /// hands it to `apply`. The editor owns the work and the slot's progress
+    /// and failure, so the slot's view scrolling away or being rebuilt can't
+    /// cancel or lose them; widget edits and saving pause until it lands, as
+    /// they did behind the crop screen.
+    func prepareWidgetImage(from url: URL, slot: String, purpose: ProfileImagePurpose, aspectRatio: Double,
+                            apply: @escaping (ProfileWidgetImage) -> Void) {
+        preparingWidgetImageSlots.insert(slot)
+        widgetImageFailures[slot] = nil
         let account = session, requestRevision = revision, generation = draftGeneration
-        return Task {
+        Task {
             let image: ProfileWidgetImage?
-            var failure: String?
             do {
                 image = try await croppedWidgetImage(from: url, purpose: purpose, aspectRatio: aspectRatio)
             } catch {
                 image = nil
                 // An upload the draft has moved on from fails quietly.
                 if !(error is CancellationError), let account, isCurrent(account, revision: requestRevision), draftGeneration == generation {
-                    failure = error.localizedDescription
+                    widgetImageFailures[slot] = (error.localizedDescription, generation)
                 }
             }
             // Editing resumes before the image applies, since applying is an edit.
-            preparingWidgetImages -= 1
+            preparingWidgetImageSlots.remove(slot)
             if let image { apply(image) }
             // A refresh held back for the image runs now, unless it left a draft.
             if needsExternalRefresh { await refreshIfNeeded() }
-            return failure
         }
     }
+
+    func widgetImageFailure(for slot: String) -> String? {
+        widgetImageFailures[slot].flatMap { $0.generation == draftGeneration ? $0.message : nil }
+    }
+
+    func dismissWidgetImageFailure(for slot: String) { widgetImageFailures[slot] = nil }
 
     private func croppedWidgetImage(from url: URL, purpose: ProfileImagePurpose, aspectRatio: Double) async throws -> ProfileWidgetImage {
         guard showsEditablePersonalWidget, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }

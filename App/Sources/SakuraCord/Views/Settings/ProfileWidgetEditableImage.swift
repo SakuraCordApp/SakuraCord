@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 
 struct ProfileWidgetEditableImage: View {
     let image: ProfileWidgetImage?
+    /// Identifies this image slot to the editor, which keeps its upload
+    /// progress and failure while the slot's view comes and goes.
+    let slot: String
     let purpose: ProfileImagePurpose
     let animates: Bool
     let editor: ProfileEditorState?
@@ -16,8 +19,10 @@ struct ProfileWidgetEditableImage: View {
     @State private var isHovered = false
     @State private var isActionHovered = false
     @State private var importing = false
-    @State private var busy = false
     @State private var errorMessage: String?
+
+    private var busy: Bool { editor?.preparingWidgetImageSlots.contains(slot) == true }
+    private var failure: String? { errorMessage ?? editor?.widgetImageFailure(for: slot) }
 
     private var isActive: Bool {
         purpose == .widgetCover ? isCoverHovered : isHovered || isActionHovered
@@ -88,9 +93,9 @@ struct ProfileWidgetEditableImage: View {
             case let .failure(error): errorMessage = error.localizedDescription
             }
         }
-        .alert("Unable to Use Image", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: { Text(errorMessage ?? "") }
+        .alert("Unable to Use Image", isPresented: Binding(get: { failure != nil }, set: { if !$0 { dismissFailure() } })) {
+            Button("OK", role: .cancel, action: dismissFailure)
+        } message: { Text(failure ?? "") }
     }
 
     private func remove() {
@@ -100,11 +105,11 @@ struct ProfileWidgetEditableImage: View {
     /// Hands a chosen image to the editor, which crops and uploads it.
     private func load(_ url: URL) {
         guard let editor, editor.canEditPersonalWidget else { return }
-        let upload = editor.prepareWidgetImage(from: url, purpose: purpose, aspectRatio: aspectRatio, apply: update)
-        busy = true
-        Task {
-            errorMessage = await upload.value
-            busy = false
-        }
+        editor.prepareWidgetImage(from: url, slot: slot, purpose: purpose, aspectRatio: aspectRatio, apply: update)
+    }
+
+    private func dismissFailure() {
+        errorMessage = nil
+        editor?.dismissWidgetImageFailure(for: slot)
     }
 }

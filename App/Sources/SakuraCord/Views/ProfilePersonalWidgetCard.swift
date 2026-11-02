@@ -104,7 +104,7 @@ private struct ProfilePersonalWidgetCover: View {
         .background {
             if cover.image != nil || editor?.showsEditablePersonalWidget == true {
                 GeometryReader { geometry in
-                    ProfileWidgetEditableImage(image: cover.image, purpose: .widgetCover, animates: animates, editor: editor,
+                    ProfileWidgetEditableImage(image: cover.image, slot: "\(id)/cover/\(section)", purpose: .widgetCover, animates: animates, editor: editor,
                                                aspectRatio: geometry.size.width / max(geometry.size.height, 1),
                                                isCoverHovered: isHovered && !isTitleHovered && !isSubtitleHovered) { image in
                         editor?.updateWidgetCover(id: id, section: section) { $0.image = image }
@@ -207,7 +207,8 @@ private struct ProfilePersonalWidgetField: View {
     var body: some View {
         HStack(alignment: .top, spacing: InterfaceScale.metric(12)) {
             if field.image != nil || (editor?.showsEditablePersonalWidget == true && !hidesImage) {
-                ProfileWidgetEditableImage(image: field.image, purpose: .widgetField, animates: animates, editor: editor, aspectRatio: 1, onHoverChange: { isImageHovered = $0 }, removeImage: {
+                ProfileWidgetEditableImage(image: field.image, slot: "\(id)/field/\(field.id)", purpose: .widgetField, animates: animates, editor: editor,
+                                           aspectRatio: 1, onHoverChange: { isImageHovered = $0 }, removeImage: {
                     imageVisibilityOverrides[field.id] = true
                     editor?.updateWidgetField(id: id, section: section, fieldID: field.id) { $0.image = nil }
                 }, update: { image in
