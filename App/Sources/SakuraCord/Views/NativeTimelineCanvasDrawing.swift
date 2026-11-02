@@ -1518,13 +1518,14 @@ extension NativeTimelineCanvasView {
 
     func messageHasRelativeTimestamp(_ item: NativeMessageTimelineItem) -> Bool {
         guard case let .message(row, _, _) = item else { return false }
-        if row.message.content.contains(":R>") { return true }
-        return row.textPlan.preparedText?.tokens.contains(where: { token in
-            if case let .mention(mention) = token, mention.kind == .timestamp, mention.timestampStyle == "R" {
+        let sources = TimestampMentionPresentation.sources(in: row.message, replyContent: row.replyPreview?.content)
+        for source in sources {
+            if source.contains(":R>") { return true }
+            for token in TimestampMentionPresentation.tokens(in: source) where token.style == .relative {
                 return true
             }
-            return false
-        }) ?? false
+        }
+        return false
     }
 
     func reconcileRelativeTimestamps() {
@@ -1534,6 +1535,19 @@ extension NativeTimelineCanvasView {
             return
         }
         updateRelativeTimestampAnimationOverlays()
+    }
+
+    private func isTimestampConcealedBySpoiler(frame: CGRect, at index: Int) -> Bool {
+        if textSpoilerPointerHit(at: CGPoint(x: frame.midX, y: frame.midY)) != nil {
+            return true
+        }
+        guard let messageID = items[index].messageID else { return false }
+        let hiddenContainers = layouts[index].componentLayouts.flatMap {
+            NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(in: $0, messageID: messageID, store: spoilerRevealStore)
+        }
+        return NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            frame.offsetBy(dx: 0, dy: -displayedRowOrigin(at: index)), hiddenContainerFrames: hiddenContainers
+        )
     }
 
     func updateRelativeTimestampAnimationOverlays() {
@@ -1556,6 +1570,7 @@ extension NativeTimelineCanvasView {
         for (key, host) in timestampAnimationHosts where !visibleKeys.contains(key) {
             host.removeFromSuperview()
             timestampAnimationHosts.removeValue(forKey: key)
+            timestampAnimationHostConfigs.removeValue(forKey: key)
         }
     }
 
@@ -1569,8 +1584,10 @@ extension NativeTimelineCanvasView {
         let isOutgoing = layouts.indices.contains(index) && layouts[index].bubbleRegion?.isOutgoing == true
         for region in regions where region.isTimestamp && region.timestampStyle == "R" {
             guard let date = region.timestampDate else { continue }
+            guard !isTimestampConcealedBySpoiler(frame: region.frame, at: index) else { continue }
             let key = RelativeTimestampKey(
                 itemIdentifier: item.identifier,
+                region: region.region,
                 characterIndex: region.characterIndex
             )
             visibleKeys.insert(key)
@@ -1586,6 +1603,15 @@ extension NativeTimelineCanvasView {
     ) {
         if let host = timestampAnimationHosts[key] {
             if host.frame != frame { host.frame = frame }
+            if let config = timestampAnimationHostConfigs[key], config.date == date, config.isOutgoing == isOutgoing {
+                return
+            }
+            timestampAnimationHostConfigs[key] = (date, isOutgoing)
+            host.rootView = AnyView(NativeTimelineTimestampPillView(
+                date: date,
+                style: "R",
+                isOutgoingBubble: isOutgoing
+            ))
             return
         }
         let root = AnyView(NativeTimelineTimestampPillView(
@@ -1599,6 +1625,7 @@ extension NativeTimelineCanvasView {
         host.layer?.backgroundColor = NSColor.clear.cgColor
         addSubview(host, positioned: .above, relativeTo: nil)
         timestampAnimationHosts[key] = host
+        timestampAnimationHostConfigs[key] = (date, isOutgoing)
     }
 
     func cleanupRelativeTimestampAnimationOverlays() {
@@ -1606,5 +1633,6 @@ extension NativeTimelineCanvasView {
             host.removeFromSuperview()
         }
         timestampAnimationHosts.removeAll()
+        timestampAnimationHostConfigs.removeAll()
     }
 }

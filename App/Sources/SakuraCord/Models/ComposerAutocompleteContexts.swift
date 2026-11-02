@@ -69,7 +69,7 @@ struct MentionAutocompleteContext {
 
 struct TimeMentionContext: Equatable {
     private static let expression = RegularExpressionFactory.make(
-        #"(?:^|\s)(@time\s*([^\n]*))$"#
+        #"(?:^|\s)(@time(?:\s+([^\n]*))?)$"#
     )
 
     let range: NSRange
@@ -86,7 +86,7 @@ struct TimeMentionContext: Equatable {
         ), match.range(at: 1).location != NSNotFound else { return nil }
 
         let fullToken = (prefix as NSString).substring(with: match.range(at: 1))
-        guard fullToken.hasPrefix("@time ") || fullToken.contains(" ") else {
+        guard fullToken == "@time" || fullToken.hasPrefix("@time ") else {
             return nil
         }
         range = match.range(at: 1)

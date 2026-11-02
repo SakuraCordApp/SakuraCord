@@ -103,22 +103,33 @@ public enum DiscordNaturalLanguageTimeParser {
         calendar: Calendar
     ) -> DiscordParsedTimeCandidate {
         let seconds = Int64(targetDate.timeIntervalSince1970)
-        let shortText = Date.FormatStyle(date: .numeric, time: .standard, locale: locale, calendar: calendar, timeZone: timeZone).format(targetDate)
-        let datePart = Date.FormatStyle(date: .long, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone).format(targetDate)
-        let timePart = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone).format(targetDate)
-        let weekdayPart = Date.FormatStyle(date: .complete, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone).format(targetDate)
-
-        let longText = "\(datePart) at \(timePart)"
-        let fullText = "\(weekdayPart) at \(timePart)"
-        let relativeText = DiscordTimestampFormatter.relativeText(for: targetDate, relativeTo: now, locale: locale)
-
         return DiscordParsedTimeCandidate(
             date: targetDate,
             options: [
-                .init(id: "now-T", style: "T", displayText: shortText, markdownToken: "<t:\(seconds):T>"),
-                .init(id: "now-f", style: "f", displayText: longText, markdownToken: "<t:\(seconds):f>"),
-                .init(id: "now-F", style: "F", displayText: fullText, markdownToken: "<t:\(seconds):F>"),
-                .init(id: "now-R", style: "R", displayText: relativeText, markdownToken: "<t:\(seconds):R>")
+                .init(
+                    id: "now-s",
+                    style: "s",
+                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "s", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):s>"
+                ),
+                .init(
+                    id: "now-f",
+                    style: "f",
+                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "f", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):f>"
+                ),
+                .init(
+                    id: "now-F",
+                    style: "F",
+                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "F", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):F>"
+                ),
+                .init(
+                    id: "now-R",
+                    style: "R",
+                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "R", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):R>"
+                )
             ]
         )
     }
@@ -131,26 +142,17 @@ public enum DiscordNaturalLanguageTimeParser {
         calendar: Calendar
     ) -> DiscordParsedTimeCandidate {
         let seconds = Int64(date.timeIntervalSince1970)
-        let shortTime = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let longTime = Date.FormatStyle(date: .omitted, time: .standard, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let shortDate = Date.FormatStyle(date: .numeric, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let longDate = Date.FormatStyle(date: .long, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let weekdayPart = Date.FormatStyle(date: .complete, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let longDateTime = "\(longDate) at \(shortTime)"
-        let fullDateTime = "\(weekdayPart) at \(shortTime)"
-        let relative = DiscordTimestampFormatter.relativeText(for: date, relativeTo: now, locale: locale)
-
+        let styles = ["t", "T", "d", "D", "f", "F", "R"]
         return DiscordParsedTimeCandidate(
             date: date,
-            options: [
-                .init(id: "unix-t", style: "t", displayText: shortTime, markdownToken: "<t:\(seconds):t>"),
-                .init(id: "unix-T", style: "T", displayText: longTime, markdownToken: "<t:\(seconds):T>"),
-                .init(id: "unix-d", style: "d", displayText: shortDate, markdownToken: "<t:\(seconds):d>"),
-                .init(id: "unix-D", style: "D", displayText: longDate, markdownToken: "<t:\(seconds):D>"),
-                .init(id: "unix-f", style: "f", displayText: longDateTime, markdownToken: "<t:\(seconds):f>"),
-                .init(id: "unix-F", style: "F", displayText: fullDateTime, markdownToken: "<t:\(seconds):F>"),
-                .init(id: "unix-R", style: "R", displayText: relative, markdownToken: "<t:\(seconds):R>")
-            ]
+            options: styles.map { style in
+                .init(
+                    id: "unix-\(style)",
+                    style: style,
+                    displayText: DiscordTimestampFormatter.formatted(date: date, style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):\(style)>"
+                )
+            }
         )
     }
 
@@ -164,22 +166,35 @@ public enum DiscordNaturalLanguageTimeParser {
         calendar: Calendar
     ) -> DiscordParsedTimeCandidate {
         let seconds = Int64(date.timeIntervalSince1970)
-        let shortDateTime = Date.FormatStyle(date: .numeric, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let longDate = Date.FormatStyle(date: .long, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let shortTime = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let weekdayPart = Date.FormatStyle(date: .complete, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone).format(date)
-        let longDateTime = "\(longDate) at \(shortTime)"
-        let fullDateTime = "\(weekdayPart) at \(shortTime)"
-        let relative = DiscordTimestampFormatter.relativeText(for: date, relativeTo: now, locale: locale)
-
         let prefix = "cand-\(candidateIndex)"
         return DiscordParsedTimeCandidate(
             date: date,
             options: [
-                .init(id: "\(prefix)-f-short", style: "f", displayText: shortDateTime, markdownToken: "<t:\(seconds):f>", badgeText: badgeText),
-                .init(id: "\(prefix)-f-long", style: "f", displayText: longDateTime, markdownToken: "<t:\(seconds):f>"),
-                .init(id: "\(prefix)-F-full", style: "F", displayText: fullDateTime, markdownToken: "<t:\(seconds):F>"),
-                .init(id: "\(prefix)-R-rel", style: "R", displayText: relative, markdownToken: "<t:\(seconds):R>")
+                .init(
+                    id: "\(prefix)-s",
+                    style: "s",
+                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "s", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):s>",
+                    badgeText: badgeText
+                ),
+                .init(
+                    id: "\(prefix)-f",
+                    style: "f",
+                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "f", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):f>"
+                ),
+                .init(
+                    id: "\(prefix)-F",
+                    style: "F",
+                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "F", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):F>"
+                ),
+                .init(
+                    id: "\(prefix)-R",
+                    style: "R",
+                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "R", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
+                    markdownToken: "<t:\(seconds):R>"
+                )
             ]
         )
     }
@@ -198,7 +213,7 @@ public enum DiscordNaturalLanguageTimeParser {
     ) -> [DiscordParsedTimeCandidate] {
         var result: [DiscordParsedTimeCandidate] = []
         let seconds = Int64(timeItems.timeOnly.timeIntervalSince1970)
-        let timeText = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone).format(timeItems.timeOnly)
+        let timeText = DiscordTimestampFormatter.formatted(date: timeItems.timeOnly, style: "t", now: now, locale: locale, timeZone: timeZone, calendar: calendar)
 
         result.append(DiscordParsedTimeCandidate(
             date: timeItems.timeOnly,
@@ -256,13 +271,19 @@ public enum DiscordNaturalLanguageTimeParser {
             second = parsedSecond
         }
 
+        guard minute >= 0, minute <= 59, second >= 0, second <= 59 else {
+            return nil
+        }
+
         if match.range(at: 4).location != NSNotFound,
            let ampmRange = Range(match.range(at: 4), in: cleaned) {
+            guard hour >= 1, hour <= 12 else { return nil }
             let ampm = cleaned[ampmRange].lowercased()
             if ampm == "pm", hour < 12 { hour += 12 }
             if ampm == "am", hour == 12 { hour = 0 }
-        } else if hour > 24 || minute > 59 || second > 59 {
-            return nil
+        } else {
+            guard hour >= 0, hour <= 24 else { return nil }
+            if hour == 24 { hour = 0 }
         }
 
         return ParsedTimeOfDay(hour: hour, minute: minute, second: second)
@@ -672,11 +693,17 @@ public enum DiscordNaturalLanguageTimeParser {
 
         let currentWeekday = calendar.component(.weekday, from: now)
         var diff = targetWeekday - currentWeekday
-        if modifier == "last" {
+        if modifier == "this" {
+            // "this friday" on Friday is today (diff 0).
+        } else if modifier == "last" {
             if diff >= 0 { diff -= 7 }
         } else if modifier == "next" {
-            if diff <= 0 { diff += 7 }
-            diff += 7
+            if diff == 0 {
+                diff = 7
+            } else {
+                if diff < 0 { diff += 7 }
+                diff += 7
+            }
         } else if diff <= 0 {
             diff += 7
         }
@@ -731,7 +758,8 @@ public enum DiscordNaturalLanguageTimeParser {
         let lower = query.lowercased()
         if lower.starts(with: "in ") || lower.hasSuffix(" ago")
             || lower.contains("yesterday") || lower.contains("tomorrow") || lower.contains("today")
-            || lower.contains("next") || lower.contains("last") {
+            || lower.contains("next") || lower.contains("last")
+            || query.range(of: #"^\d{1,2}(?::\d{1,2})*(?:\s*(?:am|pm))?$"#, options: [.caseInsensitive, .regularExpression]) != nil {
             return []
         }
 

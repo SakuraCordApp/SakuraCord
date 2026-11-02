@@ -169,45 +169,6 @@ struct TimeMentionHelpStrip: View {
     }
 }
 
-struct TimeMentionNSTextFieldView: View {
-    @Binding var query: String
-    let onCommit: () -> Void
-    let onCancel: () -> Void
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(6)) {
-            HStack(spacing: InterfaceScale.metric(4)) {
-                Image(systemName: "clock")
-                    .font(.interfaceSystem(size: 12, weight: .semibold))
-                Text("@time")
-                    .font(.interfaceSystem(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(Color.primary)
-            .padding(.horizontal, InterfaceScale.metric(6))
-            .padding(.vertical, InterfaceScale.metric(3))
-            .background(
-                Color.primary.opacity(0.12),
-                in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous)
-            )
-
-            TextField("Type a date or time...", text: $query)
-                .textFieldStyle(.plain)
-                .font(.interfaceSystem(size: 14))
-                .onSubmit(onCommit)
-                .onExitCommand(perform: onCancel)
-        }
-        .padding(InterfaceScale.metric(6))
-        .background(
-            RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .overlay {
-                    RoundedRectangle(cornerRadius: InterfaceScale.metric(6), style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                }
-        )
-    }
-}
-
 final class TimeMentionNSTextField: NSTextField {
     var onCancel: (() -> Void)?
     var onAccept: (() -> Void)?

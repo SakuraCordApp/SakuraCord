@@ -544,7 +544,11 @@ struct ComposerView: View {
             await gameMentionSearch.search(query ?? "", model: model)
         }
         .task(id: composerPresentationID) {
-            activeTimeEntry = nil
+            if let entry = activeTimeEntry {
+                let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
+                updateDraft("\(entry.prefix)\(raw)\(entry.suffix)")
+                activeTimeEntry = nil
+            }
             if !voiceMessage.restoreAfterGuildTimeout(in: activeConversationID) {
                 voiceMessage.discard(playback: model.voiceMessagePlayback)
             }
@@ -982,6 +986,9 @@ private var autocompleteContext: ColonAutocompleteContext? {
         if hasActiveCommand {
             return true
         }
+        if activeTimeEntry != nil {
+            return false
+        }
         return !isSubmitting
             && !hasCheckingAttachments
             && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1109,7 +1116,7 @@ private var autocompleteContext: ColonAutocompleteContext? {
             model.presentIssueReport(kind)
             return
         }
-        guard allowsSubmission() else { return }
+        guard allowsSubmission(), activeTimeEntry == nil else { return }
         if hasActiveCommand {
             model.executeApplicationCommand(in: conversation)
         } else {
@@ -1563,6 +1570,11 @@ private extension ComposerView {
 extension ComposerView {
     private func composerDidDisappear() {
         timestampClock.stop()
+        if let entry = activeTimeEntry {
+            let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
+            updateDraft("\(entry.prefix)\(raw)\(entry.suffix)")
+            activeTimeEntry = nil
+        }
         if let channelID = sendTransitionAnchor.channelID,
            channelID == activeConversationID,
            model.guildTimeoutUntil(in: channelID) != nil {

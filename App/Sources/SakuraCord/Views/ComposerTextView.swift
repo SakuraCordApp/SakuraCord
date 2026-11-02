@@ -659,7 +659,8 @@ struct ComposerTextView: NSViewRepresentable {
                     let root = AnyView(NativeTimelineTimestampPillView(
                         date: date,
                         style: "R",
-                        isOutgoingBubble: false
+                        isOutgoingBubble: false,
+                        showsBackground: true
                     ))
                     let host = NativeTimelinePassthroughHostingView(rootView: root)
                     host.frame = rect

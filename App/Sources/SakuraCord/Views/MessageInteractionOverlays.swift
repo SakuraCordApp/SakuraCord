@@ -901,9 +901,21 @@ private struct InlineMessageEditor: View {
 
     private var composerActions: InlineMessageEditorComposerActions {
         InlineMessageEditorComposerActions(
-            onSubmit: save,
-            onEscape: cancel
+            onSubmit: {
+                guard activeTimeEntry == nil else { return }
+                save()
+            },
+            onEscape: cancelEditing
         )
+    }
+
+    private func cancelEditing() {
+        if let entry = activeTimeEntry {
+            let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
+            text = "\(entry.prefix)\(raw)\(entry.suffix)"
+            activeTimeEntry = nil
+        }
+        cancel()
     }
 
     var body: some View {
@@ -999,18 +1011,38 @@ private struct InlineMessageEditor: View {
                 }
                 .accessibilityLabel("Message text")
                 .accessibilityHint("Press Return to save, Shift-Return for a new line, or Escape to cancel.")
-                .onExitCommand(perform: cancel)
+                .onExitCommand(perform: cancelEditing)
             }
 
             InlineMessageEditFooter(
                 canSave: canEdit && MessageEditInputPolicy.submission(from: text) != nil && activeTimeEntry == nil,
-                save: save,
-                cancel: cancel
+                save: {
+                    guard activeTimeEntry == nil else { return }
+                    save()
+                },
+                cancel: cancelEditing
             )
         }
         .onChange(of: selection) { _, _ in
             isAutocompleteDismissed = false
             autocompleteIndex = 0
+        }
+        .onChange(of: timeMentionContext?.query) { _, _ in
+            timeReferenceDate = Date.now
+        }
+        .onChange(of: timeMentionContext != nil) { _, active in
+            if active, timeReferenceDate == nil {
+                timeReferenceDate = Date.now
+            } else if !active {
+                timeReferenceDate = nil
+            }
+        }
+        .onDisappear {
+            if let entry = activeTimeEntry {
+                let raw = entry.query.isEmpty ? "@time " : "@time \(entry.query) "
+                text = "\(entry.prefix)\(raw)\(entry.suffix)"
+                activeTimeEntry = nil
+            }
         }
     }
 
@@ -1129,15 +1161,6 @@ private struct InlineMessageEditor: View {
             discordUsageScores: model.discordEmojiUsageScores,
             discordSettingsAreLoaded: model.hasLoadedDiscordEmojiSettings
         )
-    }
-
-    private var editorMentionPresentations: [String: MentionPresentation] {
-        let resolver = MessageMentionResolver(model: model)
-        return MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
-            if case let .mention(mention) = segment {
-                values[mention.rawToken] = resolver.presentation(mention)
-            }
-        }
     }
 
     private func handleAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
@@ -1424,49 +1447,5 @@ struct MessageProfilePopoverContent: View {
         .onDisappear {
             model.dismissContextualProfile(requestID: requestID)
         }
-    }
-}
-
-struct TimestampMentionTooltip: View {
-    let date: Date?
-    let style: String?
-    let fallbackText: String
-    @State private var clock = RelativeTimestampDisplayClock()
-
-    init(date: Date? = nil, style: String? = nil, fallbackText: String = "") {
-        self.date = date
-        self.style = style
-        self.fallbackText = fallbackText
-    }
-
-    init(text: String) {
-        self.date = nil
-        self.style = nil
-        self.fallbackText = text
-    }
-
-    var body: some View {
-        Text(currentText)
-            .font(.interfaceSystem(size: 13, weight: .medium).monospacedDigit())
-            .foregroundStyle(Color.primary)
-            .contentTransition(.numericText())
-            .animation(.snappy(duration: 0.25), value: currentText)
-            .padding(.horizontal, InterfaceScale.metric(12))
-            .padding(.vertical, InterfaceScale.metric(8))
-            .fixedSize()
-            .interfaceScaleRoot()
-            .onAppear {
-                if date != nil {
-                    clock.start()
-                }
-            }
-            .onDisappear {
-                clock.stop()
-            }
-    }
-
-    private var currentText: String {
-        guard let date else { return fallbackText }
-        return DiscordTimestampFormatter.tooltip(date: date, style: style, now: clock.date)
     }
 }

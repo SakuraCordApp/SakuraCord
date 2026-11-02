@@ -2,14 +2,13 @@ import Foundation
 
 public enum DiscordTimestampFormatter {
     public static func formatted(
-        seconds: Int64,
+        date: Date,
         style: String?,
         now: Date = .now,
         locale: Locale = .autoupdatingCurrent,
         timeZone: TimeZone = .autoupdatingCurrent,
         calendar: Calendar = .autoupdatingCurrent
     ) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(seconds))
         switch style {
         case "t":
             var format = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
@@ -53,6 +52,18 @@ public enum DiscordTimestampFormatter {
     }
 
     public static func formatted(
+        seconds: Int64,
+        style: String?,
+        now: Date = .now,
+        locale: Locale = .autoupdatingCurrent,
+        timeZone: TimeZone = .autoupdatingCurrent,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(seconds))
+        return formatted(date: date, style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar)
+    }
+
+    public static func tooltip(
         date: Date,
         style: String?,
         now: Date = .now,
@@ -60,7 +71,13 @@ public enum DiscordTimestampFormatter {
         timeZone: TimeZone = .autoupdatingCurrent,
         calendar: Calendar = .autoupdatingCurrent
     ) -> String {
-        formatted(seconds: Int64(date.timeIntervalSince1970), style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar)
+        if style == "R" {
+            var format = Date.FormatStyle(date: .complete, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
+            format.capitalizationContext = .unknown
+            return format.format(date)
+        } else {
+            return relativeText(for: date, relativeTo: now, locale: locale)
+        }
     }
 
     public static func tooltip(
@@ -72,24 +89,7 @@ public enum DiscordTimestampFormatter {
         calendar: Calendar = .autoupdatingCurrent
     ) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(seconds))
-        if style == "R" {
-            var format = Date.FormatStyle(date: .complete, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        } else {
-            return relativeText(for: date, relativeTo: now, locale: locale)
-        }
-    }
-
-    public static func tooltip(
-        date: Date,
-        style: String?,
-        now: Date = .now,
-        locale: Locale = .autoupdatingCurrent,
-        timeZone: TimeZone = .autoupdatingCurrent,
-        calendar: Calendar = .autoupdatingCurrent
-    ) -> String {
-        tooltip(seconds: Int64(date.timeIntervalSince1970), style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar)
+        return tooltip(date: date, style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar)
     }
 
     public static func relativeText(
@@ -100,10 +100,10 @@ public enum DiscordTimestampFormatter {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = locale
         formatter.unitsStyle = .full
-        let diff = Int(date.timeIntervalSince(now))
-        let absDiff = abs(diff)
-        if absDiff >= 7 * 86400, absDiff < 26 * 86400 {
-            return formatter.localizedString(from: DateComponents(day: diff / 86400))
+        let interval = date.timeIntervalSince(now)
+        if !interval.isNaN, abs(interval) >= 7 * 86400, abs(interval) < 26 * 86400 {
+            let days = Int(interval / 86400)
+            return formatter.localizedString(from: DateComponents(day: days))
         }
         return formatter.localizedString(for: date, relativeTo: now)
     }

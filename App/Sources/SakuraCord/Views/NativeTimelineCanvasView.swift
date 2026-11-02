@@ -303,9 +303,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
     struct RelativeTimestampKey: Hashable {
         let itemIdentifier: NativeMessageTimelineItem.Identifier
+        let region: NativeTimelineTextRegion
         let characterIndex: Int
     }
     var timestampAnimationHosts: [RelativeTimestampKey: NativeTimelinePassthroughHostingView] = [:]
+    var timestampAnimationHostConfigs: [RelativeTimestampKey: (date: Date, isOutgoing: Bool)] = [:]
     var pendingReactionBaseline: NativeTimelineReactionBaseline?
     var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
     var reactionRowMotions: [NativeTimelineReactionRowMotion] = []

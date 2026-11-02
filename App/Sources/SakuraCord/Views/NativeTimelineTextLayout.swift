@@ -583,11 +583,7 @@ nonisolated enum NativeTimelineCoreText {
                 ofSize: font.pointSize,
                 weight: presentation.labelWeight
             )
-            if case let .timestamp(date, style) = presentation.target, style == "R" {
-                labelText = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
-            } else {
-                labelText = presentation.label
-            }
+            labelText = presentation.label
         } else {
             labelFont = NSFont.systemFont(
                 ofSize: font.pointSize,

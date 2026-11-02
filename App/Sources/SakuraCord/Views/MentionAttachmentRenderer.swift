@@ -226,7 +226,6 @@ enum MentionAttachmentRenderer {
         let horizontalPadding: CGFloat = InterfaceScale.metric(6)
         let width = ceil(horizontalPadding * 2 + labelSize.width)
         let size = NSSize(width: width, height: height)
-        let isRelative = if case let .timestamp(_, style) = presentation.target, style == "R" { true } else { false }
         let image = NSImage(size: size, flipped: false) { bounds in
             let background = NSColor.white.withAlphaComponent(hovered ? 0.14 : 0.08)
             let shape = NSBezierPath(
@@ -236,14 +235,12 @@ enum MentionAttachmentRenderer {
             background.setFill()
             shape.fill()
 
-            if !isRelative {
-                let textAttributes: [NSAttributedString.Key: Any] = [
-                    .font: labelFont,
-                    .foregroundColor: NSColor.labelColor
-                ]
-                let textY = floor((height - labelSize.height) / 2)
-                label.draw(at: NSPoint(x: horizontalPadding, y: textY), withAttributes: textAttributes)
-            }
+            let textAttributes: [NSAttributedString.Key: Any] = [
+                .font: labelFont,
+                .foregroundColor: NSColor.labelColor
+            ]
+            let textY = floor((height - labelSize.height) / 2)
+            label.draw(at: NSPoint(x: horizontalPadding, y: textY), withAttributes: textAttributes)
             return true
         }
         image.accessibilityDescription = presentation.label

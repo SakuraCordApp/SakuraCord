@@ -7,6 +7,7 @@ struct NativeTimelineTimestampPillView: View {
     let style: String?
     let isOutgoingBubble: Bool
     var fontSize: CGFloat = 15
+    var showsBackground: Bool = false
     @State private var clock = RelativeTimestampDisplayClock()
 
     var body: some View {
@@ -15,6 +16,13 @@ struct NativeTimelineTimestampPillView: View {
             .foregroundStyle(isOutgoingBubble ? Color.white : Color.primary)
             .contentTransition(.numericText())
             .animation(.snappy(duration: 0.25), value: currentLabel)
+            .padding(.horizontal, showsBackground ? InterfaceScale.metric(6) : 0)
+            .background {
+                if showsBackground {
+                    RoundedRectangle(cornerRadius: InterfaceScale.metric(4.5))
+                        .fill(Color(nsColor: NSColor.textBackgroundColor))
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .onAppear { clock.start() }
             .onDisappear { clock.stop() }

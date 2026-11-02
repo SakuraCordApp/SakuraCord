@@ -804,4 +804,20 @@ private func spoilerOutline(_ source: String) -> String {
     #expect(compYesterday.day == 29)
     #expect(compYesterday.hour == 17)
     #expect(compYesterday.minute == 0)
+
+    #expect(!DiscordTimestampFormatter.relativeText(for: Date(timeIntervalSince1970: TimeInterval(-9223372036854775808))).isEmpty)
+    #expect(!DiscordTimestampFormatter.formatted(seconds: -9223372036854775808, style: "R").isEmpty)
+    #expect(DiscordNaturalLanguageTimeParser.candidates(for: "13pm", now: now).isEmpty)
+    #expect(DiscordNaturalLanguageTimeParser.candidates(for: "9:70pm", now: now).isEmpty)
+
+    // Friday 2026-10-30
+    let cal = Calendar.current
+    let fridayNow = cal.date(from: DateComponents(year: 2026, month: 10, day: 30, hour: 12))!
+    let thisFriday = DiscordNaturalLanguageTimeParser.candidates(for: "this friday 5pm", now: fridayNow)
+    #expect(thisFriday.count == 1)
+    #expect(cal.component(.day, from: thisFriday[0].date) == 30)
+
+    let nextFriday = DiscordNaturalLanguageTimeParser.candidates(for: "next friday 5pm", now: fridayNow)
+    #expect(nextFriday.count == 1)
+    #expect(cal.component(.day, from: nextFriday[0].date) == 6)
 }
