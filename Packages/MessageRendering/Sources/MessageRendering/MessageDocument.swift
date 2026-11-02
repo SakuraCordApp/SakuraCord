@@ -59,34 +59,59 @@ public struct RenderedMention: Codable, Hashable, Sendable {
     )
 
     public enum Kind: String, Codable, Hashable, Sendable {
-        case user, role, channel, channelLink, message, guildNavigation, timestamp
+        case user, role, game, broadcast, timestamp, command, channel, channelLink, message, guildNavigation
     }
 
-    public static let tokenPattern = #"<id:(?:guide|browse|customize)>|<t:-?[0-9]+(?::[A-Za-z])?>|"#
-        + #"<@!?[0-9]+>|<@&[0-9]+>|<#[0-9]+>|https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+(?:/[0-9]+)?"#
+    public static let tokenPattern = [
+        #"<id:(?:guide|browse|customize)>|"#,
+        #"<@!?[0-9]+>|<@&[0-9]+>|<@\$[0-9]+>|<#[0-9]+>|"#,
+        #"(?<![\w@\\])@(?:everyone|here)(?!\w)|"#,
+        #"<t:-?[0-9]+(?::[tTdDfFsSR])?>|"#,
+        // Discord's command mention: up to three name parts, as in `</role add:123>`.
+        #"</[-_\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}(?: [-_\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}){0,2}:[0-9]+>|"#,
+        #"https?://(?:(?:canary|ptb|www)\.)?discord(?:app)?\.com/channels/(?:@me|[0-9]+)/[0-9]+(?:/[0-9]+)?"#
+    ].joined()
 
     public var id: String
     public var kind: Kind
     public var rawToken: String
     public var messageGuildID: String?
     public var messageChannelID: String?
-    public var timestampStyle: String?
+
+    public var timestampToken: DiscordTimestampToken? {
+        guard kind == .timestamp else { return nil }
+        return DiscordTimestampToken(rawToken: rawToken)
+    }
+
+    public var timestampDate: Date? {
+        guard kind == .timestamp, let seconds = Int64(id) else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(seconds))
+    }
+
+    public var timestampStyle: String? {
+        guard kind == .timestamp else { return nil }
+        let inner = rawToken.dropFirst(3).dropLast()
+        let parts = inner.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        return parts.count > 1 ? String(parts[1]) : nil
+    }
+
+    public var formattedTimestamp: String {
+        guard kind == .timestamp, let seconds = Int64(id) else { return rawToken }
+        return DiscordTimestampFormatter.formatted(seconds: seconds, style: timestampStyle)
+    }
+
+    public var timestampTooltip: String? {
+        guard kind == .timestamp, let seconds = Int64(id) else { return nil }
+        return DiscordTimestampFormatter.tooltip(seconds: seconds, style: timestampStyle)
+    }
+
+    /// The full name of a command mention, such as `role add`.
+    public var commandName: String? {
+        guard kind == .command, let separator = rawToken.lastIndex(of: ":") else { return nil }
+        return String(rawToken[rawToken.index(rawToken.startIndex, offsetBy: 2) ..< separator])
+    }
 
     public init?(rawToken: String) {
-        if rawToken.hasPrefix("<t:"), rawToken.hasSuffix(">") {
-            let inner = rawToken.dropFirst(3).dropLast()
-            let parts = inner.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-            guard !parts.isEmpty, let seconds = Int64(parts[0]) else { return nil }
-            guard parts.count == 1 || (parts.count == 2 && parts[1].count == 1) else { return nil }
-            id = String(seconds)
-            kind = .timestamp
-            self.rawToken = rawToken
-            messageGuildID = nil
-            messageChannelID = nil
-            timestampStyle = parts.count > 1 ? String(parts[1]) : nil
-            return
-        }
-
         if rawToken.hasPrefix("<id:"), rawToken.hasSuffix(">"),
            let destination = GuildNavigationMention(rawValue: String(rawToken.dropFirst(4).dropLast())) {
             id = destination.rawValue
@@ -94,7 +119,14 @@ public struct RenderedMention: Codable, Hashable, Sendable {
             self.rawToken = rawToken
             messageGuildID = nil
             messageChannelID = nil
-            timestampStyle = nil
+            return
+        }
+        if let (id, kind) = Self.selfContainedMention(rawToken) {
+            self.id = id
+            self.kind = kind
+            self.rawToken = rawToken
+            messageGuildID = nil
+            messageChannelID = nil
             return
         }
 
@@ -112,7 +144,6 @@ public struct RenderedMention: Codable, Hashable, Sendable {
             self.rawToken = rawToken
             messageGuildID = nil
             messageChannelID = nil
-            timestampStyle = nil
             return
         }
 
@@ -133,22 +164,24 @@ public struct RenderedMention: Codable, Hashable, Sendable {
         self.rawToken = rawToken
         messageGuildID = components[1] == "@me" ? nil : components[1]
         messageChannelID = components[2]
-        timestampStyle = nil
     }
 
-    public var timestampDate: Date? {
-        guard kind == .timestamp, let seconds = Int64(id) else { return nil }
-        return Date(timeIntervalSince1970: TimeInterval(seconds))
-    }
-
-    public var formattedTimestamp: String {
-        guard kind == .timestamp, let seconds = Int64(id) else { return rawToken }
-        return DiscordTimestampFormatter.formatted(seconds: seconds, style: timestampStyle)
-    }
-
-    public var timestampTooltip: String? {
-        guard kind == .timestamp, let seconds = Int64(id) else { return nil }
-        return DiscordTimestampFormatter.tooltip(seconds: seconds, style: timestampStyle)
+    /// Game, timestamp, command and broadcast mentions: the token is all they hold.
+    private static func selfContainedMention(_ rawToken: String) -> (id: String, kind: Kind)? {
+        if rawToken.hasPrefix("<@$"), rawToken.hasSuffix(">"), let gameID = UInt64(rawToken.dropFirst(3).dropLast()) {
+            return (String(gameID), .game)
+        }
+        if let timestamp = DiscordTimestampToken(rawToken: rawToken) {
+            return (String(timestamp.seconds), .timestamp)
+        }
+        if rawToken.hasPrefix("</"), rawToken.hasSuffix(">"), let separator = rawToken.lastIndex(of: ":"),
+           let commandID = UInt64(rawToken[rawToken.index(after: separator)...].dropLast()) {
+            return (String(commandID), .command)
+        }
+        if rawToken == "@everyone" || rawToken == "@here" {
+            return (String(rawToken.dropFirst()), .broadcast)
+        }
+        return nil
     }
 
     private static let messageLinkHosts: Set<String> = [
@@ -185,6 +218,8 @@ public struct MessageDocument: Hashable, Sendable {
             in: source, range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
+        // Only the token-only mention kinds need these scans; most matches are not.
+        var literalRanges: [NSRange]?
         var result: [Segment] = []
         var cursor = source.startIndex
         for match in matches {
@@ -195,7 +230,8 @@ public struct MessageDocument: Hashable, Sendable {
             let token = String(source[range])
             if let emoji = RenderedEmoji(rawToken: token) {
                 result.append(.customEmoji(emoji))
-            } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token) {
+            } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
+                      !isLiteralMention(mention, range: range, in: source, literalRanges: &literalRanges) {
                 result.append(.mention(mention))
             } else {
                 result.append(.markdown(token))
@@ -213,6 +249,38 @@ public struct MessageDocument: Hashable, Sendable {
                 merged.append(segment)
             }
         }
+    }
+
+    /// A link's own text, such as `https://example.com/@here`, holds no
+    /// mentions. Links end where the Markdown renderer ends them.
+    private static func urlRanges(in source: String) -> [NSRange] {
+        guard source.contains("://") else { return [] }
+        var ranges: [NSRange] = []
+        var rest = source[...]
+        while let match = DiscordMarkdown.firstURL(in: rest) {
+            ranges.append(NSRange(match.range, in: source))
+            rest = source[match.range.upperBound...]
+        }
+        return ranges
+    }
+
+    private static func isLiteralMention(
+        _ mention: RenderedMention, range: Range<String.Index>, in source: String, literalRanges: inout [NSRange]?
+    ) -> Bool {
+        guard [.game, .broadcast, .timestamp, .command].contains(mention.kind) else { return false }
+        let tokenRange = NSRange(range, in: source)
+        let ranges = literalRanges ?? DiscordMarkdown.sourceCodeRanges(source) + urlRanges(in: source)
+        literalRanges = ranges
+        if ranges.contains(where: { NSIntersectionRange($0, tokenRange).length > 0 }) { return true }
+        var cursor = range.lowerBound
+        var escaped = false
+        while cursor > source.startIndex {
+            let previous = source.index(before: cursor)
+            guard source[previous] == "\\" else { break }
+            escaped.toggle()
+            cursor = previous
+        }
+        return escaped
     }
 
     /// `[label](https://discord.com/channels/…)` is a masked link, as in

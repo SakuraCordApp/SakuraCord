@@ -11,7 +11,7 @@ import SwiftUI
 /// A viewless, virtualized message surface. One AppKit view owns the entire
 /// timeline; only rows intersecting the dirty rectangle are painted.
 @MainActor
-final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
+final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSViewToolTipOwner {
     struct CachedRowBitmap {
         let item: NativeMessageTimelineItem
         let width: CGFloat
@@ -30,25 +30,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         let frame: CGRect
     }
 
-    struct ReactionCountKey: Hashable {
-        let messageID: MessageID
-        let reactionID: String
-    }
-
     struct ReactionPreviewLoadKey: Hashable {
         let messageID: MessageID
         let reactionID: String
         let count: Int
-    }
-
-    struct ActiveReactionCountAnimation {
-        let from: Int
-        let to: Int
-    }
-
-    struct ReactionCountSnapshot {
-        let counts: [ReactionCountKey: Int]
-        let messageIDs: Set<MessageID>
     }
 
     struct InlineVideoOverlayKey: Hashable {
@@ -89,7 +74,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         /// Whether the row paints nothing beneath this overlay once it is live.
         var replacesPoster: Bool {
             switch self {
-            case .sticker, .reaction: true
+            case .sticker, .reaction, .componentButton: true
             default: false
             }
         }
@@ -121,9 +106,9 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         let region: NativeTimelineTextRegion
         let characterIndex: Int
         let rawToken: String
+        let isTimestamp: Bool
         let frame: CGRect
         var toolTip: String?
-        var isTimestamp: Bool = false
         var timestampDate: Date?
         var timestampStyle: String?
     }
@@ -135,18 +120,22 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
 
     struct ComponentButtonPointerHit {
         enum Kind {
+            case autoModAlert(NativeTimelineAutoModAlertLayout.Action)
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
+            case fileCard(NativeTimelineFileCard)
 
             var isDisabled: Bool {
                 switch self {
                 case let .component(region):
                     region.isDisabled
-                case .sakuraCordDeepLink:
+                case .sakuraCordDeepLink, .autoModAlert:
                     false
                 case let .invite(card, expands):
                     !expands && card.isDisabled
+                case .fileCard:
+                    false
                 }
             }
         }
@@ -273,6 +262,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var presentedConversationID: ChannelID?
     var mediaReadyConversationID: ChannelID?
     var mediaViewerHighlightedMessageID: MessageID?
+    var mediaViewerTransition: NativeTimelineMediaViewerTransition?
     var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?
@@ -311,26 +301,30 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
-    let timestampHoverCoordinator =
-        StableAnchoredPopoverPresenter<TimestampMentionTooltip>.Coordinator()
-    var activeTimestampHoverAnchor: StablePopoverAnchor?
     struct RelativeTimestampKey: Hashable {
         let itemIdentifier: NativeMessageTimelineItem.Identifier
         let characterIndex: Int
     }
     var timestampAnimationHosts: [RelativeTimestampKey: NativeTimelinePassthroughHostingView] = [:]
     var relativeTimestampClockTask: Task<Void, Never>?
-    var visibleReactionCounts: [ReactionCountKey: Int] = [:]
-    var previouslyVisibleReactionMessageIDs: Set<MessageID> = []
-    var activeReactionCountAnimations:
-        [ReactionCountKey: ActiveReactionCountAnimation] = [:]
-    var reactionCountAnimationHosts:
-        [ReactionCountKey: NativeTimelineReactionCountAnimationHost] = [:]
-    var reactionCountAnimationTasks:
-        [ReactionCountKey: Task<Void, Never>] = [:]
-    var reactionCountBaselineTask: Task<Void, Never>?
-    var pendingReactionCountSnapshot: ReactionCountSnapshot?
-    var hasCapturedVisibleReactionCounts = false
+    var pendingReactionBaseline: NativeTimelineReactionBaseline?
+    var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
+    var reactionRowMotions: [NativeTimelineReactionRowMotion] = []
+    /// Per-frame geometry of `reactionRowMotions`: the displacement of rows up
+    /// to the first changed one, and how much less each changed row and the
+    /// rows after it are displaced.
+    var reactionMotionShift: CGFloat = 0
+    var reactionMotionSteps: [(index: Int, cumulative: CGFloat)] = []
+    var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
+    let reactionTicker = NativeTimelineDisplayLinkTicker()
+    var reactionPictures: [ReactionPictureKey: CGImage] = [:]
+    var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
+    /// The width the running reaction motions were laid out at.
+    var reactionTransitionWidth: CGFloat = 0
+    let timestampHoverCoordinator =
+        StableAnchoredPopoverPresenter<NativeHoverHelpLabel>.Coordinator()
+    /// A press dismisses the hovered timestamp's label until another is hovered.
+    var dismissedTimestampHover: NativeTimelineMentionHover?
     var visibleReactionPreviewLoadKeys:
         Set<ReactionPreviewLoadKey> = []
     var reactionPreviewLoadTasks:
@@ -341,11 +335,16 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
     var inlineVideoOverlays:
         [InlineVideoOverlayKey: NativeTimelineInlineVideoOverlay] = [:]
+    /// Video attachments the user started, playing over their tiles.
+    var inlinePlayers: [NativeTimelineInlinePlayer.Key: NativeTimelineInlinePlayer] = [:]
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
-    var voiceMessageActiveMessageID: MessageID?
-    var voiceMessageSpeed: Float = 1
+    var codeCopyControl: NativeTimelineCodeCopyControl?
+    /// A hovered audio file's seek bar while another player is active.
+    var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
+    var voiceMessageActiveID: VoiceMessagePlaybackID?
+    var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?
     var hoveredVoiceMessage: VoiceMessageHover?
     struct ActivityIndicatorKey: Hashable {
@@ -354,6 +353,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     }
 
     var activityIndicators: [ActivityIndicatorKey: NSView] = [:]
+    var uploadRings: [UploadRingKey: NativeTimelineUploadRingView] = [:]
     var spoilerOverlays:
         [NativeTimelineComponentRevealKey:
             NativeTimelineSpoilerOverlayHost] = [:]
@@ -399,7 +399,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         layerContentsPlacement = .topLeft
         // Pointer-driven state must paint in the same display pass as the
         // mouse event. Async layer drawing visibly leaves the previous row's
-        // hover behind even though hit testing has already moved on.
+        // hover even though hit testing has already moved on.
         layer?.drawsAsynchronously = false
         layer?.addSublayer(historySkeletonShimmer.layer)
         beginningSelectionOverlay.imageAlignment = .alignTopLeft
@@ -423,6 +423,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                                        name: NSMenu.didEndTrackingNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(voiceMessagePlaybackDidChange(_:)),
                                        name: VoiceMessagePlaybackStore.didChange, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(attachmentDownloadsDidChange(_:)),
+                                       name: AttachmentDownloadStore.didChange, object: nil)
         notificationCenter.addObserver(self, selector: #selector(attachmentUploadsDidChange(_:)),
                                        name: AttachmentUploadProgressStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -448,9 +450,16 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         super.viewDidChangeEffectiveAppearance()
         // In-flight copies were rendered for the previous appearance.
         finishSendTransitions(reconcilesHeldMedia: true)
+        finishReactionTransitions()
         invalidatePresentationCaches()
         reconcileBeginningSelectionOverlay()
         reconcileHistorySkeletonShimmer()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        // Moving chips were drawn for the previous display's scale and colours.
+        finishReactionTransitions()
     }
 
     deinit {
@@ -470,6 +479,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
             unreadDividerGapTicker.stop()
+            reactionTicker.stop()
             for fade in unreadDividerFades.values {
                 fade.finishTask?.cancel()
                 fade.overlay.removeFromSuperview()
@@ -532,7 +542,7 @@ enum NativeTimelineRowPainter {
         isCommandPillHovered: Bool = false,
         hoveredMention: NativeTimelineMentionHover? = nil,
         hoveredTextLink: NativeTimelineTextLinkHover? = nil,
-        hoveredTextSpoiler: NativeTimelineTextSpoilerHover? = nil,
+        textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat] = [:],
         hoveredComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         activeComponentChoiceTarget:
@@ -540,6 +550,8 @@ enum NativeTimelineRowPainter {
         pressedComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         componentButtonPressProgress: CGFloat = 0,
+        fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
+        fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
         isForwardedSourceHovered: Bool = false,
         threadCardInteraction: NativeTimelineThreadCard.Interaction = .idle,
         isEphemeralDismissHovered: Bool = false,
@@ -553,8 +565,6 @@ enum NativeTimelineRowPainter {
         revealedTextSpoilerState:
             NativeTimelineTextSpoilerRevealState = .init(),
         spoilerRevealStore: NativeTimelineSpoilerRevealStore? = nil,
-        reactionCountTransitions:
-            [String: NativeTimelineReactionCountTransition] = [:],
         pollPresentation: NativeTimelinePollPresentation = .init(),
         animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole> = []
     ) {
@@ -619,12 +629,14 @@ enum NativeTimelineRowPainter {
                 isCommandPillHovered: isCommandPillHovered,
                 hoveredMention: hoveredMention,
                 hoveredTextLink: hoveredTextLink,
-                hoveredTextSpoiler: hoveredTextSpoiler,
+                textSpoilerHover: textSpoilerHover,
                 hoveredComponentButton: hoveredComponentButton,
                 activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,
+                fileCardHoverProgress: fileCardHoverProgress,
+                fileCardFinishProgress: fileCardFinishProgress,
                 isForwardedSourceHovered: isForwardedSourceHovered,
                 threadCardInteraction: threadCardInteraction,
                 isEphemeralDismissHovered: isEphemeralDismissHovered,
@@ -638,8 +650,7 @@ enum NativeTimelineRowPainter {
                     revealedTextSpoilerState,
                 spoilerRevealStore: spoilerRevealStore,
                 pollPresentation: pollPresentation,
-                animatedOverlayRoles: animatedOverlayRoles,
-                reactionCountTransitions: reactionCountTransitions
+                animatedOverlayRoles: animatedOverlayRoles
             ))
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -661,7 +672,7 @@ enum NativeTimelineRowPainter {
         ).fill()
     }
 
-    private static func drawHighlight(
+    static func drawHighlight(
         for item: NativeMessageTimelineItem,
         in frame: CGRect?,
         bubbleRegion: NativeTimelineBubbleRegion?,

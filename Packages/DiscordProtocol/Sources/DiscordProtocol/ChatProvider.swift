@@ -89,6 +89,10 @@ public protocol ChatProvider: Sendable {
     func leaveGroupDirectMessage(_ channelID: ChannelID, silently: Bool) async throws
     /// Closes a 1:1 DM, hiding it from the list without deleting its messages.
     func closeDirectMessage(_ channelID: ChannelID) async throws
+    /// Moves a message request into the conversation list.
+    func acceptMessageRequest(_ channelID: ChannelID) async throws
+    /// Removes a message request without notifying its sender.
+    func ignoreMessageRequest(_ channelID: ChannelID) async throws
     /// Reads every relationship at most once per Gateway connection.
     func loadRelationships() async throws
     func setUserIgnored(_ userID: UserID, ignored: Bool, location: IgnoreActionLocation) async throws
@@ -240,7 +244,7 @@ public protocol ChatProvider: Sendable {
     /// flushes pending uses. Returns what the server stored.
     func saveApplicationCommandFrecency(_ history: DiscordFrecencyHistory) async throws
         -> DiscordFrecencyHistory
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message
+    func edit(_ message: Message, content: String) async throws -> Message
     func delete(messageID: MessageID, channelID: ChannelID) async throws
     func acknowledge(
         channelID: ChannelID,
@@ -504,6 +508,14 @@ public extension ChatProvider {
 
     func closeDirectMessage(_ channelID: ChannelID) async throws {
         throw ChatProviderError.invalidRequest("Closing direct messages is unavailable for this session.")
+    }
+
+    func acceptMessageRequest(_ channelID: ChannelID) async throws {
+        throw ChatProviderError.invalidRequest("Message requests are unavailable for this session.")
+    }
+
+    func ignoreMessageRequest(_ channelID: ChannelID) async throws {
+        throw ChatProviderError.invalidRequest("Message requests are unavailable for this session.")
     }
 
     func loadRelationships() async throws {}

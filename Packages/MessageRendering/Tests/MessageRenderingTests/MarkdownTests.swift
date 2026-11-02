@@ -291,6 +291,76 @@ import Testing
     #expect(!document.isEmojiOnly)
 }
 
+@Test func `message document recognizes broadcast mentions at word boundaries`() {
+    let document = MessageDocument(
+        source: #"@everyone and @here, but not name@everyone or @hereabouts or \@everyone"#
+    )
+    let mentions = document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.kind) == [.broadcast, .broadcast])
+    #expect(mentions.map(\.rawToken) == ["@everyone", "@here"])
+    #expect(!document.isEmojiOnly)
+}
+
+@Test func `message document recognizes Discord timestamps and localizes their display`() throws {
+    let source = "<t:1790247407:S> <t:1790247407:f> <t:1790247407:R> <t:1790247407>"
+    let document = MessageDocument(source: source)
+    let mentions = document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.kind) == [.timestamp, .timestamp, .timestamp, .timestamp])
+    #expect(mentions.map(\.rawToken) == source.split(separator: " ").map(String.init))
+
+    let timestamp = try #require(DiscordTimestampToken(rawToken: mentions[0].rawToken))
+    #expect(timestamp.seconds == 1_790_247_407)
+    #expect(timestamp.style == .shortDateMediumTime)
+    #expect(timestamp.rawToken == mentions[0].rawToken)
+    let timeZone = try #require(TimeZone(secondsFromGMT: 8 * 3_600))
+    let localTime = timestamp.formatted(locale: Locale(identifier: "en_GB"), timeZone: timeZone)
+    #expect(localTime.contains("24/09/2026"))
+    #expect(localTime.contains("18:56:47"))
+    #expect(DiscordTimestampToken(rawToken: "<t:1790247407:Q>") == nil)
+}
+
+@Test func `message document recognizes game profile mentions`() {
+    let token = "<@$356875221078245376>"
+    let document = MessageDocument(source: "Playing \(token) now")
+    let mentions = document.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.kind) == [.game])
+    #expect(mentions.first?.id == "356875221078245376")
+    #expect(mentions.first?.rawToken == token)
+}
+
+@Test func `new mention types stay literal in code and escaped text`() {
+    let tokens = ["@everyone", "<t:1000000:R>", "<@$356875221078245376>", "</role add:1234>"]
+    let raw = tokens.joined(separator: " ")
+    for source in [
+        "🌸 `\(raw)`", "**`\(raw)`**", "```swift\n\(raw)\n```",
+        "* `**\(raw)**`", ">>> quote\n\n* `**\(raw)**`",
+        #"\@everyone \<t:1000000:R> \<@$356875221078245376> \</role add:1234>"#,
+        "[open](https://example.com/@here) https://example.com/@everyone",
+    ] {
+        #expect(MessageDocument(source: source).segments == [.markdown(source)])
+    }
+    let mixed = MessageDocument(source: "`\(raw)` \(raw)")
+    let mentions = mixed.segments.compactMap { segment -> RenderedMention? in
+        guard case let .mention(mention) = segment else { return nil }
+        return mention
+    }
+    #expect(mentions.map(\.rawToken) == tokens)
+    #expect(mentions.map(\.kind) == [.broadcast, .timestamp, .game, .command])
+    #expect(mentions.last?.id == "1234")
+    #expect(mentions.last?.commandName == "role add")
+    let afterLink = MessageDocument(source: "[read](https://example.com)@here").segments
+    #expect(afterLink.last == .mention(RenderedMention(rawToken: "@here")!))
+}
+
 @Test func `message document recognizes discord message links as structured mentions`() throws {
     let link = "https://discord.com/channels/1523442314092089394/1523442315329405001/1529105171584389150"
     let document = MessageDocument(source: "See \(link) now")
@@ -436,8 +506,8 @@ import Testing
     #expect(!value.string.contains("```"))
     #expect(!value.string.contains("\u{001B}"))
     #expect(value.string.contains("[31mRed[0m"))
-    #expect(value.string.contains("• Item"))
-    #expect(value.string.contains("1. Ordered"))
+    // Discord continues a list with its first item's kind.
+    #expect(value.string.contains("•\tItem\n•\tOrdered"))
 
     let string = value.string as NSString
     let quote = string.range(of: "Quote")
@@ -471,32 +541,11 @@ import Testing
     ) as? NSFont
     #expect(codeFont?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
 
-    let key = string.range(of: "\"value\"")
-    #expect(
-        value.attribute(
-            .foregroundColor,
-            at: key.location,
-            effectiveRange: nil
-        ) as? NSColor == NSColor(
-            red: 0.31,
-            green: 0.63,
-            blue: 0.98,
-            alpha: 1
-        )
-    )
-    let number = string.range(of: "42")
-    #expect(
-        value.attribute(
-            .foregroundColor,
-            at: number.location,
-            effectiveRange: nil
-        ) as? NSColor == NSColor(
-            red: 0.94,
-            green: 0.56,
-            blue: 0.31,
-            alpha: 1
-        )
-    )
+    // JSON keys and numbers get their own appearance-aware colours.
+    let key = value.attribute(.foregroundColor, at: string.range(of: "\"value\"").location, effectiveRange: nil) as? NSColor
+    let number = value.attribute(.foregroundColor, at: string.range(of: "42").location, effectiveRange: nil) as? NSColor
+    #expect(key != nil && number != nil && key != number)
+    #expect(key != NSColor.labelColor && number != NSColor.labelColor)
 }
 
 @Test func `composer source formatting preserves UTF16 ranges and nested styles`() throws {
@@ -558,6 +607,8 @@ import Testing
     #expect(DiscordAttachmentLink.needsRefresh(try url("?ex=6a000e10&is=1&hm=2&"), now: now))
     #expect(!DiscordAttachmentLink.needsRefresh(try url("?ex=6a000e11&is=1&hm=2&"), now: now))
     #expect(DiscordAttachmentLink.matches(try url("?ex=6a000e11&is=1&hm=2&")))
+    let encodedName = "https://cdn.discordapp.com/attachments/1/2/my%20notes%E2%9C%93.txt?ex=1"
+    #expect(DiscordAttachmentLink.matches(try #require(URL(string: encodedName))))
     #expect(!DiscordAttachmentLink.matches(try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/a.png#x"))))
 }
 

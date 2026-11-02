@@ -32,6 +32,12 @@ public final class VoiceMessagePlayer {
         }
     }
 
+    /// Output gain, 0–1.
+    public var volume: Float {
+        get { playerNode.volume }
+        set { playerNode.volume = newValue }
+    }
+
     /// How long a paused player keeps the output device running.
     public nonisolated static let idleOutputDuration: Duration = .seconds(15)
 

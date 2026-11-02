@@ -30,7 +30,7 @@ extension AppModel {
     /// the whole message.
     func cancelAttachmentUpload(_ attachmentID: String, of message: Message) {
         guard let nonce = message.nonce,
-              attachmentUploads.canCancel(nonce: nonce, attachmentID: attachmentID),
+              attachmentUploads.isUploading(nonce: nonce, attachmentID: attachmentID),
               let id = UUID(uuidString: attachmentID)
         else { return }
         // A failed send keeps no transfer; its retry starts from the edited draft.
@@ -95,14 +95,18 @@ extension AppModel {
         if !existing.attachments.isEmpty {
             for index in resolved.attachments.indices {
                 let attachment = resolved.attachments[index]
-                guard attachment.mediaKind == .image
-                        || attachment.mediaKind == .animatedImage
-                else { continue }
                 let previous = existing.attachments.first(where: {
                     $0.id == attachment.id
                 }) ?? (existing.attachments.indices.contains(index)
                     ? existing.attachments[index]
                     : nil)
+                if attachment.mediaKind == .video {
+                    resolved.attachments[index].localPreviewURL = previous?.localPreviewURL
+                    continue
+                }
+                guard attachment.mediaKind == .image
+                        || attachment.mediaKind == .animatedImage
+                else { continue }
                 let preservedPreviewURL: URL? = if let proxyURL = previous?.proxyURL {
                     proxyURL
                 } else if previous?.url.isFileURL == true {
@@ -233,7 +237,11 @@ extension AppModel {
         isTTS: Bool = false,
         nonce: String = ClientNonce.make()
     ) -> Task<Bool, Never>? {
-        guard allowSlowmodeSubmission(in: channelID) else { return nil }
+        // Every send passes here, so a message request takes no reply from any
+        // entry point until it is accepted.
+        guard !awaitsMessageRequestDecision(in: channelID),
+              allowSlowmodeSubmission(in: channelID)
+        else { return nil }
         let outgoing = SendMessageDraft(
             channelID: channelID,
             content: content,

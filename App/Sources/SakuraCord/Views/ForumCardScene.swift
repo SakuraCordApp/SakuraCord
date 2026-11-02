@@ -177,7 +177,7 @@ nonisolated enum ForumCardRasterizer {
     }
 
     /// Images draw right side up in the flipped context.
-    private static func drawUpright(_ image: CGImage, in frame: CGRect, context: CGContext) {
+    static func drawUpright(_ image: CGImage, in frame: CGRect, context: CGContext) {
         context.saveGState()
         context.translateBy(x: frame.minX, y: frame.maxY)
         context.scaleBy(x: 1, y: -1)

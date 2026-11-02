@@ -71,13 +71,24 @@ final class WindowModalCoordinator {
         reorderHosts()
     }
 
+    /// Adds a window-wide overlay that belongs to the workspace, such as a
+    /// send transition, beneath any open modal.
+    func addBelowModals(_ view: NSView, to container: NSView) {
+        let lowest = entries.lazy.compactMap(\.host).first { $0.superview === container }
+        container.addSubview(view, positioned: lowest == nil ? .above : .below, relativeTo: lowest)
+    }
+
     func unregisterAccessory(_ view: NSView) {
         for entry in entries { entry.accessories.remove(view) }
     }
 
     func present(_ host: WindowModalHostingView) {
         guard !entries.contains(where: { $0.host === host }), let window else { return }
-        entries.append(Entry(host: host, previousResponder: window.firstResponder))
+        // A text field being edited has the window's shared field editor as
+        // its responder, which a field in the modal reuses; keep the field.
+        let responder = window.firstResponder
+        let previous = (responder as? NSText).flatMap { $0.isFieldEditor ? $0.delegate as? NSResponder : nil } ?? responder
+        entries.append(Entry(host: host, previousResponder: previous))
         reorderHosts()
         installMonitor()
         updateInputOwnership()
@@ -98,11 +109,14 @@ final class WindowModalCoordinator {
         for accessory in entries[index].accessories.allObjects { accessory.removeFromSuperview() }
         entries.remove(at: index)
         host.animationState.isInputActive = false
-        reorderHosts()
+        // The rest keep their order; reordering would raise them over a
+        // modal still animating away.
         updateInputOwnership()
         if wasTopmost, let window {
+            // Not into the modal itself: it is still in the window as it
+            // animates away.
             if let view = previous as? NSView, view.window === window,
-               allowsInput(to: view), !view.isHiddenOrHasHiddenAncestor {
+               Self.allowsInput(for: view), !view.isHiddenOrHasHiddenAncestor {
                 window.makeFirstResponder(view)
             } else {
                 window.makeFirstResponder(topmost ?? window.contentView)
@@ -114,13 +128,14 @@ final class WindowModalCoordinator {
         }
     }
 
+    // Subview order alone stacks the modals. A raised zPosition would also
+    // lift them above the layer AppKit draws a held slider's glass thumb in,
+    // so the thumb vanished while dragging inside a modal.
     private func reorderHosts() {
-        for (index, entry) in entries.enumerated() {
+        for entry in entries {
             guard let host = entry.host, let container = host.superview else { continue }
-            host.layer?.zPosition = CGFloat(100_000 + index)
             container.addSubview(host, positioned: .above, relativeTo: nil)
             for accessory in entry.accessories.allObjects {
-                accessory.layer?.zPosition = CGFloat(100_000 + index) + 0.5
                 container.addSubview(accessory, positioned: .above, relativeTo: host)
             }
         }

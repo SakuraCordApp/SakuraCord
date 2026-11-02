@@ -9,12 +9,14 @@ final class NativePickerScrollPosition {
         let sequence: UInt64
         let id: String
         let anchor: UnitPoint?
+        /// Room kept between a revealed row and the viewport's edge.
+        let edgeInset: CGFloat
     }
 
     private(set) var request: Request?
 
-    func scrollTo(_ id: String, anchor: UnitPoint? = nil) {
-        request = Request(sequence: (request?.sequence ?? 0) &+ 1, id: id, anchor: anchor)
+    func scrollTo(_ id: String, anchor: UnitPoint? = nil, edgeInset: CGFloat = 0) {
+        request = Request(sequence: (request?.sequence ?? 0) &+ 1, id: id, anchor: anchor, edgeInset: edgeInset)
     }
 }
 

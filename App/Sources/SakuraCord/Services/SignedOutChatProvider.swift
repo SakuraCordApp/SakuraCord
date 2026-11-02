@@ -38,7 +38,7 @@ actor SignedOutChatProvider: ChatProvider {
         throw ChatProviderError.unauthenticated
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         throw ChatProviderError.unauthenticated
     }
 

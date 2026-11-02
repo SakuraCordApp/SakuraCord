@@ -171,6 +171,9 @@ final class WorkspaceColumnsView: NSView {
     /// The columns the workspace last listed; others are leaving.
     private var listedColumnIDs: Set<String> = []
     private var supplementaryPaneFrameChanged: (CGRect) -> Void = { _ in }
+    /// The workspace's environment and conversation, as last given.
+    private var environment = EnvironmentValues()
+    private var conversationContent: AnyView?
     private var reportedPaneFrame = CGRect.zero
     private var displayLink: CADisplayLink?
 
@@ -293,7 +296,32 @@ final class WorkspaceColumnsView: NSView {
         if isAnimating(at: now) { startMotion() }
     }
 
+    /// A theme change reaches this view's appearance without updating the
+    /// environment its hosting views were given, so they take it again,
+    /// in the new colour scheme, leaving the columns and their motion be.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        if let conversation, let conversationContent { conversation.rootView = hosted(conversationContent) }
+        for island in islands {
+            island.host.setContent(hosted(island.column), isLeaving: island.host.isLeaving)
+        }
+    }
+
+    /// Content for one of the columns' own hosting views, which take the
+    /// workspace's environment whole, in the colour scheme of this view.
+    private func hosted(_ content: AnyView) -> AnyView {
+        var environment = environment
+        environment.colorScheme = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+        return AnyView(content.environment(\.self, environment))
+    }
+
+    private func hosted(_ column: WorkspaceColumnsHost.Column) -> AnyView {
+        AnyView(hosted(column.content).coordinateSpace(.named(WorkspaceColumnsHost.columnSpace)))
+    }
+
     func apply(_ spec: WorkspaceColumnsHost, environment: EnvironmentValues, animates: Bool) {
+        self.environment = environment
+        conversationContent = spec.conversation
         let now = CACurrentMediaTime()
         supplementaryPaneFrameChanged = spec.supplementaryPaneFrameChanged
 
@@ -301,7 +329,7 @@ final class WorkspaceColumnsView: NSView {
             measuredScale = InterfaceScale.factor
             needsMeasurement = true
         }
-        let conversationRoot = AnyView(spec.conversation.environment(\.self, environment))
+        let conversationRoot = hosted(spec.conversation)
         if let conversation {
             conversation.rootView = conversationRoot
         } else {
@@ -335,11 +363,7 @@ final class WorkspaceColumnsView: NSView {
         islands.removeAll { !ids.contains($0.column.id) && !heldIDs.contains($0.column.id) }
         listedColumnIDs = ids
         for column in spec.columns {
-            let root = AnyView(
-                column.content
-                    .environment(\.self, environment)
-                    .coordinateSpace(.named(WorkspaceColumnsHost.columnSpace))
-            )
+            let root = hosted(column)
             if var island = islands.first(where: { $0.column.id == column.id }) {
                 // A column marked leaving before the change stays so until
                 // it comes back in or the motion settles: updates within the
@@ -448,12 +472,8 @@ final class WorkspaceColumnsView: NSView {
     private func startMotion() {
         guard displayLink == nil else { return }
         let link = displayLink(target: self, selector: #selector(displayLinkDidFire(_:)))
-        // Every frame the screen can show, up to 120 Hz on ProMotion, and
-        // never fewer than 60 (or 80 on ProMotion): a lower minimum lets the
-        // system halve the rate under load. The motion is evaluated by time,
-        // so any rate places it correctly.
-        let rate = Float(window?.screen?.maximumFramesPerSecond ?? 60)
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: min(rate, 80), maximum: rate, preferred: rate)
+        // The motion is evaluated by time, so any rate places it correctly.
+        link.preferredFrameRateRange = .fullRate(on: window?.screen)
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
@@ -589,13 +609,27 @@ final class WorkspaceColumnsView: NSView {
             let minX = bounds.maxX - (island.column.isDeparting ? covered : shown)
             setFrame(of: island.view, CGRect(x: minX, y: 0, width: width, height: bounds.height))
         }
-        // Columns are translucent, so a column that leaves beneath one that
-        // arrives fades as the arriving one comes in, rather than showing
-        // through it.
-        var arriving: CGFloat = 0
-        for island in islands.reversed() where !island.column.isFullWidth {
-            island.view.alphaValue = island.column.isDeparting ? 1 - arriving : 1
-            if !island.column.isDeparting { arriving = max(arriving, island.reveal.value(at: time)) }
+        // Columns are translucent, so a column that leaves beneath others
+        // shows only where none of them covers it yet, as the conversation
+        // does. A pane that left this way can come back at full width,
+        // uncovered.
+        var coveredSpans: [Range<CGFloat>] = []
+        for island in islands.reversed() {
+            guard !island.column.isFullWidth else {
+                island.view.showSpans(nil)
+                continue
+            }
+            let frame = island.view.frame
+            let visible = coveredSpans.reduce([frame.minX ..< frame.maxX]) { spans, cover in
+                spans.flatMap { span in
+                    [(span.lowerBound, min(span.upperBound, cover.lowerBound)),
+                     (max(span.lowerBound, cover.upperBound), span.upperBound)]
+                        .filter { $0.0 < $0.1 }.map { $0.0 ..< $0.1 }
+                }
+            }
+            island.view.showSpans(island.column.isDeparting
+                ? visible.map { ($0.lowerBound - frame.minX) ..< ($0.upperBound - frame.minX) } : nil)
+            coveredSpans += island.column.isDeparting ? visible : [frame.minX ..< frame.maxX]
         }
         // How far a widening side chat has covered the conversation.
         var recede: CGFloat = 0
@@ -687,7 +721,9 @@ final class WorkspaceColumnsView: NSView {
                     minX: frame.minX,
                     maxX: frame.maxX,
                     isFullWidth: island.column.isFullWidth,
-                    widening: island.column.isFullWidth ? widening : 0
+                    widening: island.column.isFullWidth ? widening : 0,
+                    reveal: island.reveal.value(at: time),
+                    isDeparting: island.column.isDeparting
                 )
             }
         )
@@ -783,6 +819,52 @@ final class MovingHostContainerView: NSView {
         for subview in subviews where subview.frame.size != newSize {
             subview.frame = CGRect(origin: .zero, size: newSize)
         }
+    }
+}
+
+extension NSView {
+    private static let coverMaskName = "SakuraCordCoverMask"
+
+    /// Shows only the leading `width` points, the rest being covered by
+    /// something in front that would let it show through; nil shows it all.
+    /// Returns false, changing nothing, for a view whose layer already has a
+    /// mask of its own.
+    @discardableResult
+    func showLeading(_ width: CGFloat?) -> Bool {
+        showSpans(width.map { [0 ..< max(0, $0)] })
+    }
+
+    /// Shows only `spans` of its width, as `showLeading` does.
+    @discardableResult
+    func showSpans(_ spans: [Range<CGFloat>]?) -> Bool {
+        let mask = layer?.mask
+        guard mask.map({ $0.name == Self.coverMaskName }) ?? true else { return false }
+        let showsAll = spans.map { $0.count == 1 && $0[0].lowerBound <= 0 && $0[0].upperBound >= bounds.width } ?? true
+        guard let spans, !showsAll else {
+            if mask != nil { layer?.mask = nil }
+            return true
+        }
+        if !wantsLayer { wantsLayer = true }
+        guard let layer else { return false }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let cover = (mask as? CAShapeLayer) ?? {
+            let cover = CAShapeLayer()
+            cover.name = Self.coverMaskName
+            layer.mask = cover
+            return cover
+        }()
+        cover.frame = layer.bounds
+        let path = CGMutablePath()
+        // In the mask's own space, which starts at the layer's bounds origin.
+        for span in spans {
+            path.addRect(CGRect(
+                x: span.lowerBound, y: 0, width: max(0, span.upperBound - span.lowerBound), height: layer.bounds.height
+            ))
+        }
+        cover.path = path
+        CATransaction.commit()
+        return true
     }
 }
 

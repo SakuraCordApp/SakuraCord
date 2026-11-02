@@ -30,6 +30,7 @@ extension ForumBoardView {
                 }
                 proxy.update(
                     presentation: presentation,
+                    isGallery: isGallery,
                     excerpt: renderer?.accessibilityText,
                     toggleReaction: { [weak self] in self?.toggleReaction(on: postID) ?? false },
                     revealSpoiler: revealSpoiler
@@ -103,6 +104,7 @@ final class ForumBoardAccessibilityProxyView: NSView {
 
     func update(
         presentation: ForumCardPresentation,
+        isGallery: Bool,
         excerpt: String?,
         toggleReaction: @escaping @MainActor () -> Bool,
         revealSpoiler: (@MainActor () -> Bool)?
@@ -112,7 +114,7 @@ final class ForumBoardAccessibilityProxyView: NSView {
         setAccessibilityLabel(presentation.accessibilityLabel)
         var value = [presentation.isEmphasized ? "Unread" : "Read"]
         if let excerpt, !excerpt.isEmpty { value.append(excerpt) }
-        if let attachment = presentation.thumbnail?.accessibilityDescription { value.append(attachment) }
+        if let attachment = presentation.media(isGallery: isGallery)?.accessibilityDescription { value.append(attachment) }
         if let author = presentation.galleryAuthor { value.append("Posted by \(author.name)") }
         if let reaction = presentation.reaction {
             value.append(MessageReactionPresentation.accessibilityLabel(for: reaction.reaction))

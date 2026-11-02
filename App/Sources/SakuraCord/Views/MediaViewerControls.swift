@@ -297,6 +297,9 @@ private struct MediaViewerThumbnail: View {
                 case .file:
                     Image(systemName: "doc.fill")
                         .font(.interface(.title3))
+                case .text:
+                    Image(systemName: "doc.text.fill")
+                        .font(.interface(.title3))
                 }
             }
             .frame(

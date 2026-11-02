@@ -467,3 +467,23 @@ struct TimeMentionSurroundingPillView: View {
         return Color.accentColor.opacity(0.16)
     }
 }
+
+private struct ComposerAutocompletePanel<Content: View>: View {
+    let heading: String
+    var cornerRadius: CGFloat = ChatChromeMetrics.composerCornerRadius
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(heading)
+                .font(.interface(.caption).weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, InterfaceScale.metric(14))
+                .padding(.top, InterfaceScale.metric(10))
+                .padding(.bottom, InterfaceScale.metric(5))
+            content()
+        }
+        .frame(maxWidth: .infinity)
+        .commandPanelSurface(cornerRadius: cornerRadius)
+    }
+}

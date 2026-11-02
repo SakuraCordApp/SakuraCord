@@ -63,10 +63,17 @@ func `animated linked Discord emoji use the normal animated emoji presentation`(
 }
 
 @MainActor @Test
-func `linked emoji inside spoilers stay spoilered links`() throws {
+func `linked emoji and images inside spoilers stay spoilered links`() throws {
     let party = "https://cdn.discordapp.com/emojis/456.png"
     let wave = "https://cdn.discordapp.com/emojis/789.png"
     #expect(LinkedImagePresentation(content: "[party](\(party))").visibleText == "<:party:456>")
+
+    let image = "https://cdn.discordapp.com/attachments/1/2/secret.gif"
+    #expect(LinkedImagePresentation(content: "[secret](\(image))").images.count == 1)
+    let hiddenImage = "||[secret](\(image))||"
+    let spoileredImage = LinkedImagePresentation(content: hiddenImage)
+    #expect(spoileredImage.visibleText == hiddenImage)
+    #expect(spoileredImage.images.isEmpty)
 
     let hidden = "||[party](\(party))||"
     let spoilered = LinkedImagePresentation(content: hidden)

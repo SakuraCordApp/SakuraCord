@@ -9,6 +9,9 @@ nonisolated enum MentionTarget: Hashable, Sendable {
     case unresolved
     case guildNavigation(guildID: GuildID, destination: GuildNavigationMention)
     case user(UserID)
+    case game(String)
+    /// A slash command by its root ID and full name, such as `role add`.
+    case command(id: String, name: String)
     case role(RoleID)
     case channel(ChannelID)
     case linkedChannel(guildID: GuildID?, channelID: ChannelID)
@@ -23,22 +26,88 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     var avatarURL: URL?
     var colorHex: UInt32?
     var systemImage: String?
+    var isTimestamp = false
     var toolTip: String?
 
     var id: String { rawToken }
+    var isGame: Bool {
+        if case .game = target { true } else { false }
+    }
+    var showsAvatar: Bool {
+        if isGame { return avatarURL != nil }
+        if case .user = target { return true }
+        return false
+    }
     var isInteractive: Bool {
         switch target {
         case .unresolved, .timestamp: false
         default: true
         }
     }
-    var isTimestamp: Bool {
-        if case .timestamp = target { return true }
-        return false
+    /// Discord sets timestamps in the message's own weight, unlike mentions.
+    var labelWeight: NSFont.Weight { isTimestamp ? .regular : .semibold }
+    /// A game's square icon keeps slightly rounded corners; avatars are round.
+    func avatarCornerRadius(size: CGFloat) -> CGFloat { isGame ? 3 : size / 2 }
+
+    init(
+        rawToken: String,
+        label: String,
+        target: MentionTarget,
+        avatarURL: URL? = nil,
+        colorHex: UInt32? = nil,
+        systemImage: String? = nil,
+        isTimestamp: Bool = false,
+        toolTip: String? = nil
+    ) {
+        self.rawToken = rawToken
+        self.label = label
+        self.target = target
+        self.avatarURL = avatarURL
+        self.colorHex = colorHex
+        self.systemImage = systemImage
+        if case .timestamp = target {
+            self.isTimestamp = true
+        } else {
+            self.isTimestamp = isTimestamp
+        }
+        self.toolTip = toolTip
     }
 
     /// A link to a channel, thread or forum post the account does not know.
     static let unknownChannelLinkLabel = "unknown-channel"
+
+    /// Broadcast, game, timestamp and command mentions carry everything
+    /// they show in the token itself; a game's name and icon load later.
+    private static func selfContainedPresentation(for mention: RenderedMention) -> MentionPresentation {
+        switch mention.kind {
+        case .game:
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: "Unknown Game",
+                target: .game(mention.id),
+                systemImage: "gamecontroller.fill"
+            )
+        case .timestamp:
+            let token = DiscordTimestampToken(rawToken: mention.rawToken)
+            let date = token?.date ?? mention.timestampDate ?? .now
+            let style = token?.style.rawValue ?? mention.timestampStyle
+            return MentionPresentation(
+                rawToken: mention.rawToken,
+                label: token?.formatted() ?? mention.formattedTimestamp,
+                target: .timestamp(date: date, style: style),
+                isTimestamp: true,
+                toolTip: mention.timestampTooltip
+            )
+        case .command:
+            if let name = mention.commandName {
+                return MentionPresentation(rawToken: mention.rawToken, label: "/\(name)", target: .command(id: mention.id, name: name))
+            } else {
+                return unresolved(mention, label: mention.rawToken)
+            }
+        default:
+            return unresolved(mention, label: mention.rawToken)
+        }
+    }
 
     static func fallback(for mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
@@ -64,6 +133,8 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
                 label: "@unknown-role",
                 target: .role(id)
             )
+        case .broadcast, .game, .timestamp, .command:
+            return selfContainedPresentation(for: mention)
         case .channel:
             guard let id = ChannelID(mention.id) else {
                 return unresolved(
@@ -114,16 +185,6 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
                     messageID: messageID
                 ),
                 systemImage: "bubble.left.fill"
-            )
-        case .timestamp:
-            guard let date = mention.timestampDate else {
-                return unresolved(mention, label: mention.rawToken)
-            }
-            return MentionPresentation(
-                rawToken: mention.rawToken,
-                label: mention.formattedTimestamp,
-                target: .timestamp(date: date, style: mention.timestampStyle),
-                toolTip: mention.timestampTooltip
             )
         }
     }
@@ -191,6 +252,23 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.isSelectable = isSelectable
         textView.applySakuraCordTextSelectionAppearance()
         configureTextContainer(textView.textContainer)
+        let coordinator = context.coordinator
+        if !TimestampMentionPresentation.tokens(in: source).isEmpty {
+            textView.timestampRefresh = { [weak textView, weak coordinator] date in
+                guard let textView, let coordinator else { return }
+                render(in: textView, coordinator: coordinator, at: date)
+            }
+        } else {
+            textView.timestampRefresh = nil
+        }
+        textView.updateTimestampObservation()
+        render(in: textView, coordinator: coordinator, at: .now)
+    }
+
+    func render(in textView: RichMessageNSTextView, coordinator: Coordinator, at date: Date) {
+        let currentMentions = TimestampMentionPresentation.refreshed(
+            mentionPresentations, source: source, at: date
+        )
         let signature = RichMessageRenderSignature(
             source: source,
             emojiSize: emojiSize,
@@ -198,18 +276,19 @@ struct SelectableMessageTextView: NSViewRepresentable {
             maximumNumberOfLines: maximumNumberOfLines,
             isSelectable: isSelectable,
             foregroundColor: foregroundColor.map(String.init(describing:)),
-            mentionPresentations: mentionPresentations
+            mentionPresentations: currentMentions
         )
         guard textView.renderSignature != signature else { return }
         textView.clearHoveredLink()
         textView.invalidateMeasurementCache()
+        let selectedRanges = textView.renderSignature?.source == source ? textView.selectedRanges : []
         textView.renderSignature = signature
         let rendered = NSMutableAttributedString(
             attributedString: RichMessageAttributedText.make(
                 source: source,
                 emojiSize: emojiSize,
                 baseFontSize: baseFontSize,
-                mentionPresentations: mentionPresentations
+                mentionPresentations: currentMentions
             )
         )
         if let foregroundColor {
@@ -221,9 +300,11 @@ struct SelectableMessageTextView: NSViewRepresentable {
         }
         RichMessageAttributedText.concealSpoilers(in: rendered)
         textView.textStorage?.setAttributedString(rendered)
+        let validRanges = selectedRanges.filter { NSMaxRange($0.rangeValue) <= rendered.length }
+        if !validRanges.isEmpty { textView.selectedRanges = validRanges }
         textView.invalidateIntrinsicContentSize()
-        context.coordinator.loadEmojiImages(in: textView)
-        context.coordinator.loadMentionAvatars(in: textView)
+        coordinator.loadEmojiImages(in: textView)
+        coordinator.loadMentionAvatars(in: textView)
     }
 
     func sizeThatFits(
@@ -238,6 +319,8 @@ struct SelectableMessageTextView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: RichMessageNSTextView, coordinator: Coordinator) {
+        RelativeTimestampClock.shared.remove(nsView)
+        nsView.timestampRefresh = nil
         coordinator.cancelEmojiLoads()
         RichMessageSelectionOwnership.remove(nsView)
     }
@@ -564,6 +647,26 @@ enum RichMessageCopySerializer {
 }
 
 final class RichMessageNSTextView: NSTextView {
+    var timestampRefresh: ((Date) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTimestampObservation()
+        if window != nil { timestampRefresh?(.now) }
+    }
+
+    func updateTimestampObservation() {
+        guard window != nil, timestampRefresh != nil else {
+            RelativeTimestampClock.shared.remove(self)
+            return
+        }
+        RelativeTimestampClock.shared.observe(self) { [weak self] date in
+            guard let self, let window, window.occlusionState.contains(.visible),
+                  !isHiddenOrHasHiddenAncestor, !visibleRect.isEmpty else { return }
+            timestampRefresh?(date)
+        }
+    }
+
     fileprivate var renderSignature: RichMessageRenderSignature?
     weak var model: AppModel?
     var onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }

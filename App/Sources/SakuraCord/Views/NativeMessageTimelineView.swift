@@ -5,6 +5,13 @@ import SwiftUI
 
 @MainActor
 private final class NativeTimelineInputShieldScrollView: NSScrollView {
+    var onWindowChange: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?()
+    }
+
     let inputPerformanceProbe = ScrollInputPerformanceProbe(
         surface: .timeline
     )
@@ -320,6 +327,9 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var performanceUpdatePath = "none"
         var performanceFallbackReason = "none"
         var lastPerformanceUpdateDuration = 0.0
+        /// Timeline updates and their main-thread time during a benchmark run.
+        var performanceUpdateCount = 0
+        var performanceUpdateTotalDuration = 0.0
         var lastLoggedPerformanceFallbackReason: String?
         var recentLayoutCacheHits = 0
 #if SAKURACORD_MOTION_BENCHMARK
@@ -369,6 +379,8 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var pendingModelRowsUpdateTask: Task<Void, Never>?
         var layoutPreparationTask: Task<Void, Never>?
         var layoutPreparation: LayoutPreparation?
+        var timestampSources: [NativeMessageTimelineItem.Identifier: [String]] = [:]
+        var timestampLabels: [NativeMessageTimelineItem.Identifier: [String: String]] = [:]
         var scrollIdleTask: Task<Void, Never>?
         var activeGlide: NativeTimelineGlideScroll?
         var lastScrollActivityUptime = 0.0
@@ -464,6 +476,7 @@ extension NativeMessageTimelineCoordinator {
             self.canvas = canvas
             self.documentView = documentView
             self.scrollView = scrollView
+            scrollView.onWindowChange = { [weak self] in self?.timestampWindowChanged() }
             positionViewportCanvas()
             beginObserving(scrollView)
             update(parent: parent, scrollView: scrollView)
@@ -587,8 +600,9 @@ extension NativeMessageTimelineCoordinator {
             let timestampDayChanged = currentTimestampDay != timestampDay
             let presentationChanged = parent.presentationRevision != presentationRevision
                 || timestampDayChanged
-            if parent.rowsRevision != rowsRevision || conversationChanged {
-                canvas.captureReactionCountsBeforeStorageMutation()
+            // The coordinator mutates the storage it shares with the canvas.
+            if parent.rowsRevision != rowsRevision, !conversationChanged {
+                canvas.captureReactionBaseline()
             }
             let oldItemCount = items.count
             let oldRowCount = rowCount
@@ -952,6 +966,8 @@ extension NativeMessageTimelineCoordinator {
                       let restoreAnchor = preparation.restoreAnchor {
                 restore(restoreAnchor)
             }
+            // Reaction changes move rows from where the scroll position just settled.
+            canvas.beginReactionTransitions()
         }
 
         func finishTimelineUpdate(
@@ -963,6 +979,8 @@ extension NativeMessageTimelineCoordinator {
             if parent.runsPerformanceAutoScroll {
                 let milliseconds = (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000
                 lastPerformanceUpdateDuration = milliseconds
+                performanceUpdateCount += 1
+                performanceUpdateTotalDuration += milliseconds
                 if milliseconds >= 4 {
                     NSLog(
                         "SakuraCord timeline reload: %.2f ms (%d -> %d items)",
@@ -1017,11 +1035,13 @@ extension NativeMessageTimelineCoordinator {
                 mediaViewerHighlightedMessageID:
                     parent.model.mediaViewerPresentation?.messageID
             )
+            canvas?.mediaViewerPresentationDidChange(to: parent.model.mediaViewerPresentation?.id)
             guard !prepareLayoutsIfNeeded(parent: parent, scrollView: scrollView) else {
                 return
             }
             updateTimeline(parent: parent, scrollView: scrollView)
             layoutPreparation = nil
+            updateTimestampObservation()
         }
 
         func scheduleModelRowsUpdate() {
@@ -1052,6 +1072,7 @@ extension NativeMessageTimelineCoordinator {
         }
 
         func stopObserving() {
+            RelativeTimestampClock.shared.remove(self)
             liveScrollViewport = nil
             cancelGlide()
             cancelLayoutPreparation()

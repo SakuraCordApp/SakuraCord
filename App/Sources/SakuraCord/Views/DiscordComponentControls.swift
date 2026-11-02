@@ -2,19 +2,26 @@ import AppKit
 import SakuraCordModels
 
 enum DiscordComponentButtonAppearance {
-    static func backgroundHex(for style: ComponentButtonStyle?) -> UInt32 {
+    /// Discord's solid fills at rest, hover and press. Secondary, link and
+    /// premium buttons use a translucent grey instead.
+    static func solidFillHexes(for style: ComponentButtonStyle?) -> [UInt32]? {
         switch style ?? .secondary {
-        case .primary: 0x5865F2
-        case .secondary, .link, .premium: 0x4E5058
-        case .success: 0x248046
-        case .destructive: 0xDA373C
+        case .primary: [0x5865F2, 0x4452BB, 0x3A48A3]
+        case .success: [0x008545, 0x006C37, 0x005F30]
+        case .destructive: [0xD22D39, 0xA9232E, 0x971D28]
+        case .secondary, .link, .premium: nil
         }
+    }
+
+    /// The secondary grey's opacity at rest, hover and press for an appearance.
+    static func secondaryFillAlphas(isDark: Bool) -> [CGFloat] {
+        isDark ? [0.12, 0.16, 0.20] : [0.12, 0.16, 0.24]
     }
 }
 
 nonisolated enum DiscordComponentEmojiMetrics {
-    static var buttonSize: CGFloat { InterfaceScale.metric(16) }
-    static var selectSize: CGFloat { InterfaceScale.metric(16) }
+    static var buttonSize: CGFloat { DiscordRichMessageMetrics.px(18) }
+    static var selectSize: CGFloat { DiscordRichMessageMetrics.px(16) }
 
     static func opticalSize(for boxSize: CGFloat) -> CGFloat {
         max(0, boxSize - 2)

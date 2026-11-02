@@ -96,7 +96,7 @@ struct MediaViewerTests {
         #expect(direct.canSave)
     }
 
-    @Test func `composer images open in the shared media viewer`() throws {
+    @Test func `staged composer files open in the shared media viewer`() throws {
         let firstID = UUID()
         let secondID = UUID()
         let textID = UUID()
@@ -133,9 +133,10 @@ struct MediaViewerTests {
 
         #expect(presentation.items.map(\.id) == [
             firstID.uuidString,
+            textID.uuidString,
             secondID.uuidString,
         ])
-        #expect(presentation.selection == 1)
+        #expect(presentation.selection == 2)
         #expect(presentation.authorName == "Me")
         #expect(presentation.items[presentation.selection].url == attachments[2].url)
     }
@@ -395,7 +396,8 @@ struct MediaViewerTests {
             )
         )
 
-        #expect(presentation.items.map(\.id) == ["visible", "image-file"])
+        #expect(presentation.items.map(\.id) == ["visible", "image-file", "document"])
+        #expect(presentation.items[1].kind == .image(animated: false))
         #expect(presentation.selection == 1)
         #expect(
             NativeTimelineMediaViewerPlan.components(
@@ -411,7 +413,7 @@ struct MediaViewerTests {
                 layouts: layout.componentLayouts,
                 selectedComponentID: "document",
                 isRevealed: { _ in true }
-            ) == nil
+            )?.items.last?.kind == .text(language: "txt")
         )
     }
 

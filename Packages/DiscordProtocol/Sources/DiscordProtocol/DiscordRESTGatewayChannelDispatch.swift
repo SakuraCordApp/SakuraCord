@@ -51,6 +51,9 @@ extension DiscordRESTProvider {
         if let channelID = ChannelID(dto.id) {
             lazyPrivateChannelIDs.remove(channelID)
             privateChannelRevisions[channelID, default: 0] &+= 1
+            if name == "CHANNEL_CREATE" || dto.isMessageRequest != nil || dto.isSpam != nil {
+                messageRequestRevisions[channelID, default: 0] &+= 1
+            }
         }
         cachePrivateRecipientReferences([dto])
         guard dto.type == 1 || dto.type == 3,
@@ -74,6 +77,8 @@ extension DiscordRESTProvider {
                 channel.iconURL = existing.iconURL
             }
             channel.blockedUserWarningDismissed = dto.blockedUserWarningDismissed ?? existing.blockedUserWarningDismissed
+            channel.isMessageRequest = dto.isMessageRequest ?? existing.isMessageRequest
+            channel.isSpam = dto.isSpam ?? existing.isSpam
             channel.lastPinTimestamp = channel.lastPinTimestamp ?? existing.lastPinTimestamp
             if dto.lastMessageID == nil {
                 channel.lastMessageID = existing.lastMessageID
