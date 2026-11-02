@@ -1,47 +1,29 @@
 import DiscordProtocol
 import Foundation
 import Observation
-import SakuraCordModels
 
-/// One account-scoped human challenge. Completion resumes the original
-/// request's task once; dismissal, cancellation and account reset reject it.
+/// The app's one human challenge presentation for every REST route.
+/// Concurrent challenges wait their turn instead of stacking sheets. Each
+/// resumes its request once; dismissal, failure, cancellation and account
+/// reset resume it without a solution.
 @Observable
 final class HumanCaptchaStore {
     private(set) var challenge: DiscordCaptchaChallenge?
-    @ObservationIgnored private var continuation: CheckedContinuation<String, any Error>?
-    @ObservationIgnored private let busyError: any Error
-    @ObservationIgnored private let failureError: any Error
+    /// Set by the window's presentation; without one, a challenge would wait forever.
+    @ObservationIgnored var isPresentable = false
+    @ObservationIgnored private var waiting: [(challenge: DiscordCaptchaChallenge, continuation: CheckedContinuation<String?, Never>)] = []
 
-    init(busyError: any Error, failureError: any Error) {
-        self.busyError = busyError
-        self.failureError = failureError
-    }
-
-    static func serverInvites() -> HumanCaptchaStore {
-        HumanCaptchaStore(
-            busyError: ServerInviteError.failed("Finish the current CAPTCHA before joining another server."),
-            failureError: ServerInviteError.failed("CAPTCHA verification failed or expired. Try joining again.")
-        )
-    }
-
-    static func friends() -> HumanCaptchaStore {
-        HumanCaptchaStore(
-            busyError: RelationshipActionError.failed("Finish the current CAPTCHA first."),
-            failureError: RelationshipActionError.failed("CAPTCHA verification failed or expired. Try again.")
-        )
-    }
-
-    func solution(for challenge: DiscordCaptchaChallenge) async throws -> String {
-        try Task.checkCancellation()
-        guard self.challenge == nil else { throw busyError }
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+    func solution(for challenge: DiscordCaptchaChallenge) async -> String? {
+        // Empty: it could not be shown, as opposed to closed (nil).
+        guard isPresentable else { return "" }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
                 guard !Task.isCancelled else {
-                    continuation.resume(throwing: CancellationError())
+                    continuation.resume(returning: nil)
                     return
                 }
-                self.continuation = continuation
-                self.challenge = challenge
+                waiting.append((challenge, continuation))
+                if self.challenge == nil { self.challenge = challenge }
             }
         } onCancel: {
             Task { @MainActor in self.cancel(id: challenge.id) }
@@ -49,25 +31,21 @@ final class HumanCaptchaStore {
     }
 
     func complete(id: UUID, token: String?) {
-        guard challenge?.id == id else { return }
-        let result: Result<String, any Error>
-        if let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            result = .success(token)
-        } else {
-            result = .failure(failureError)
-        }
-        finish(result)
+        guard let index = waiting.firstIndex(where: { $0.challenge.id == id }) else { return }
+        let continuation = waiting.remove(at: index).continuation
+        challenge = waiting.first?.challenge
+        continuation.resume(returning: token)
     }
 
+    /// Without an identifier, releases every waiting challenge.
     func cancel(id: UUID? = nil) {
-        guard id == nil || challenge?.id == id else { return }
-        finish(.failure(CancellationError()))
-    }
-
-    private func finish(_ result: Result<String, any Error>) {
-        let pending = continuation
-        continuation = nil
-        challenge = nil
-        pending?.resume(with: result)
+        guard let id else {
+            let released = waiting
+            waiting = []
+            challenge = nil
+            for entry in released { entry.continuation.resume(returning: nil) }
+            return
+        }
+        complete(id: id, token: nil)
     }
 }

@@ -79,16 +79,13 @@ public extension MockChatProvider {
         _ readStates: [BulkReadStateAcknowledgement]
     ) async throws {
         bulkAcknowledgementRequests.append(readStates)
-        if let acceptedCount = bulkAckAcceptedPrefixBeforeFailure {
-            throw PartialBulkReadAcknowledgementError(
-                acceptedReadStates: Array(readStates.prefix(acceptedCount)),
-                failureDescription: "Synthetic later-batch failure"
-            )
+        if failsBulkAcknowledgement {
+            throw ChatProviderError.transport(status: 500, requestID: nil)
         }
     }
 
-    func failBulkAcknowledgement(afterAcceptedCount acceptedCount: Int) {
-        bulkAckAcceptedPrefixBeforeFailure = max(0, acceptedCount)
+    func failBulkAcknowledgement() {
+        failsBulkAcknowledgement = true
     }
 
     func updateGuildNotificationLevel(

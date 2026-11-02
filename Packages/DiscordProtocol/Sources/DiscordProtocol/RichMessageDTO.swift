@@ -153,12 +153,18 @@ struct MessageThreadDTO: Decodable {
     struct Metadata: Decodable {
         var archived: Bool?
         var locked: Bool?
+        var createTimestamp: String?
+        enum CodingKeys: String, CodingKey {
+            case archived, locked
+            case createTimestamp = "create_timestamp"
+        }
     }
 
     var rateLimitPerUser: Int?
     var id: String
     var guildID: String?
     var parentID: String?
+    var ownerID: String?
     var name: String?
     var messageCount: Int?
     var memberCount: Int?
@@ -169,6 +175,7 @@ struct MessageThreadDTO: Decodable {
         case id, name
         case guildID = "guild_id"
         case parentID = "parent_id"
+        case ownerID = "owner_id"
         case messageCount = "message_count"
         case memberCount = "member_count"
         case lastMessageID = "last_message_id"
@@ -182,6 +189,8 @@ struct MessageThreadDTO: Decodable {
             name: name ?? "Thread", messageCount: messageCount ?? 0, memberCount: memberCount ?? 0,
             lastMessageID: lastMessageID.flatMap(MessageID.init),
             isArchived: threadMetadata?.archived ?? false, isLocked: threadMetadata?.locked ?? false,
+            ownerID: ownerID.flatMap(UserID.init),
+            createdAt: threadMetadata?.createTimestamp.flatMap(DiscordDate.parse),
             rateLimitPerUser: rateLimitPerUser ?? 0
         )
     }

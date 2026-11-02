@@ -14,8 +14,7 @@ struct PrivacySafetySettingsPage: View {
                     value: $value,
                     state: state
                 )
-                IgnoredAccountsSettingsSection(model: model)
-                    .settingsControlAnchor(.ignoredAccounts, state: state)
+                PrivacyIgnoreBlockSection(model: model, state: state)
                 PrivacyLinksServicesSection(value: $value, state: state)
                 PrivacyLocalActivitySection(model: model, state: state)
             }
@@ -23,6 +22,8 @@ struct PrivacySafetySettingsPage: View {
                 switch destination {
                 case .trustedDomains:
                     TrustedDomainsSettingsPage(trustedDomains: $value.trustedDomains)
+                case .relationships(let list):
+                    RelationshipListSettingsPage(model: model, list: list)
                 }
             }
         }
@@ -41,6 +42,31 @@ struct PrivacySafetySettingsPage: View {
 
 private enum PrivacyDestination: Hashable {
     case trustedDomains
+    case relationships(ManagedRelationshipList)
+}
+
+private struct PrivacyIgnoreBlockSection: View {
+    let model: AppModel
+    let state: SettingsViewState
+
+    var body: some View {
+        Section {
+            link(.blocked).settingsControlAnchor(.blockedAccounts, state: state)
+            link(.ignored).settingsControlAnchor(.ignoredAccounts, state: state)
+        } header: {
+            Text("Ignore & Block", bundle: #bundle)
+        }
+    }
+
+    private func link(_ list: ManagedRelationshipList) -> some View {
+        NavigationLink(value: PrivacyDestination.relationships(list)) {
+            LabeledContent {
+                Text(model.relationships.count(where: list.contains), format: .number)
+            } label: {
+                Label { Text(list.title) } icon: { Image(systemName: list.systemImage) }
+            }
+        }
+    }
 }
 
 private struct PrivacyLinksServicesSection: View {

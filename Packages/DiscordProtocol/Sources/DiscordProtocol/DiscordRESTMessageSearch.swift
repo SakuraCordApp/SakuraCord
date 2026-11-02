@@ -188,10 +188,7 @@ extension DiscordRESTProvider {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             default:
-                throw apiDiagnostics.coalescing(ChatProviderError.transport(
-                    status: response.statusCode,
-                    requestID: response.value(forHTTPHeaderField: "x-request-id")
-                ), with: response)
+                throw unexplainedFailure(data, response)
             }
         }
         preconditionFailure("The bounded message-search loop always returns or throws.")

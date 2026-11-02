@@ -26,6 +26,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
+      AGENT_MODEL: ${{ vars.AGENT_INVESTIGATE_MODEL || 'claude-sonnet-5-5' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,21 +44,46 @@ jobs:
           persist-credentials: false
       - name: Build prompt
         run: node .agent-control/.github/agents/issue-context.mjs .agent-control/.github/agents/investigate.md "$RUNNER_TEMP/prompt.md" --triage
-      - name: Investigate with Codex
+      # Ubuntu's bubblewrap AppArmor profile and user-namespace restriction stop the
+      # sandbox from starting, which would leave the agent without a shell.
+      - name: Install Claude Code
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat
+          sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          npm install -g @anthropic-ai/claude-code@2.1.316
+      # Sandboxed commands can read other processes' environments here, so the key
+      # stays out of every environment and is read only by Claude Code itself.
+      - name: Store the API key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mkdir -m 700 ~/.agent-secrets
+          printf '%s' "$ANTHROPIC_API_KEY" > ~/.agent-secrets/anthropic-key
+      # Shell commands run sandboxed with no network and cannot write the checkout or
+      # runner files, so the trusted post step and later step environment stay intact.
+      # A leading `//` marks an absolute path in permission rules.
+      - name: Investigate with Claude
         env:
           GH_TOKEN: ""
-        uses: openai/codex-action@bdf19a4a223ec2549a3e2274a0cf61556bc07675 # v1.13
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: ${{ runner.temp }}/prompt.md
-          output-schema-file: .agent-control/.github/agents/investigation.schema.json
-          output-file: ${{ runner.temp }}/investigation.json
-          model: ${{ vars.AGENT_INVESTIGATE_MODEL || 'gpt-6-luna' }}
-          effort: ${{ vars.AGENT_INVESTIGATE_EFFORT || 'high' }}
-          permission-profile: ":read-only"
-          allow-bot-users: ${{ vars.SAKURACORD_BOT_SLUG }}
+          EFFORT: ${{ vars.AGENT_INVESTIGATE_EFFORT || 'high' }}
+        run: |
+          secrets="$HOME/.agent-secrets"
+          settings=$(jq -n --arg workspace "$GITHUB_WORKSPACE" --arg temp "$RUNNER_TEMP" --arg secrets "$secrets" '{
+            apiKeyHelper: "cat \($secrets)/anthropic-key", sandbox: {
+            enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false,
+            network: {allowedDomains: []}, filesystem: {denyWrite: [$workspace, $temp], denyRead: [$secrets]}}}')
+          claude -p --model "$AGENT_MODEL" --effort "$EFFORT" --max-budget-usd 5 \
+            --output-format json --no-session-persistence --strict-mcp-config \
+            --tools "Bash,Read,Grep,Glob" --allowedTools Bash Read Grep Glob \
+            --disallowedTools "Read(/$secrets/**)" \
+            --permission-mode dontAsk --add-dir "$RUNNER_TEMP" --settings "$settings" \
+            --json-schema "$(cat .agent-control/.github/agents/investigation.schema.json)" \
+            < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/claude.json"
+          jq -r '"Claude cost: $\(.total_cost_usd)"' "$RUNNER_TEMP/claude.json" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.structured_output' "$RUNNER_TEMP/claude.json" > "$RUNNER_TEMP/investigation.json"
       - name: Post findings
         env:
           RESULT_PATH: ${{ runner.temp }}/investigation.json
-          AGENT_MODEL: ${{ vars.AGENT_INVESTIGATE_MODEL || 'gpt-6-luna' }}
         run: node .agent-control/.github/agents/post-investigation.mjs

@@ -82,18 +82,27 @@ extension AppModel {
             && (!accountTransitionIsActive || session.allowsTransition)
     }
 
+    /// No challenge is presented for a session being replaced or signed out.
+    func solveCaptcha(_ challenge: DiscordCaptchaChallenge) async -> String? {
+        guard !accountTransitionIsActive else { return nil }
+        return await captcha.solution(for: challenge)
+    }
+
     func invalidateAccountSession() {
         accountSessionGeneration &+= 1
         resetMessageSearches()
+        captcha.cancel()
         serverInvites.reset()
         friends.reset()
         lastDirectMessageSelection = nil
         ignoredUsers.reset()
         serverTagCards.reset()
+        messageInteractionData.reset()
         issueReports.reset()
         nicknameEditor.reset()
         groupDirectMessageEditor.reset()
         groupDirectMessageLeave.reset()
+        threadActions.reset()
         onboarding.reset()
     }
 
@@ -213,16 +222,20 @@ nonisolated enum OptimisticAttachmentPresentation {
         let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
         let orientation = (properties?[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
         let swapsDimensions = (5 ... 8).contains(orientation)
+        // ImageIO can't read a video; its size was read as it was staged.
+        let videoSize = LocalVideo.isVideo(url) ? LocalVideo.preparedSize(of: url) : nil
         let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
-        return Attachment(
+        var attachment = Attachment(
             id: id ?? "pending-\(index)",
             filename: url.lastPathComponent,
             url: url,
             mediaType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType,
-            width: swapsDimensions ? height : width,
-            height: swapsDimensions ? width : height,
+            width: (swapsDimensions ? height : width) ?? videoSize.map { Int($0.width) },
+            height: (swapsDimensions ? width : height) ?? videoSize.map { Int($0.height) },
             size: resourceValues?.fileSize ?? 0
         )
+        if LocalVideo.isVideo(url) { attachment.localPreviewURL = url }
+        return attachment
     }
 }
 
@@ -247,18 +260,11 @@ nonisolated enum MessageComposerDestination: Hashable, Sendable {
     case thread
 }
 
-nonisolated struct ThreadCreationPermissions: Equatable, Sendable {
-    let canCreatePublic: Bool
-    let canCreatePrivate: Bool
-
-    var canCreateAny: Bool { canCreatePublic || canCreatePrivate }
-}
-
 /// A reference type so editing the name does not invalidate every view that
 /// only observes whether a thread is being created.
 @Observable
 final class ThreadCreationDraft {
-    static let maximumNameLength = 100
+    static let maximumNameLength = ThreadNamePolicy.maximumLength
 
     let identity = UUID()
     let parentID: ChannelID
@@ -277,13 +283,40 @@ final class ThreadCreationDraft {
     /// Required-field errors appear after an invalid submission, never while a valid draft is consumed.
     var showsValidationErrors = false
     var isSubmitting = false
+    /// Discord's reason when creating the thread failed; the draft stays.
+    var submissionError: String?
+    /// The parent-channel message a thread started from it takes its ID from.
+    /// Such a thread is public and its name is optional.
+    let starterMessage: Message?
+    /// Created from the Threads browser rather than the composer.
+    let isFromThreadBrowser: Bool
+    /// The first-party default name used when the optional name is blank.
+    let defaultName: String
 
     var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
 
-    init(parentID: ChannelID, permissions: ThreadCreationPermissions) {
+    /// The name to create the thread with, or nil when one is required.
+    var nameToCreate: String? {
+        if !trimmedName.isEmpty { return trimmedName }
+        return starterMessage == nil ? nil : defaultName
+    }
+
+    init(parentID: ChannelID, permissions: ThreadCreationPermissions, isFromThreadBrowser: Bool = false) {
         self.parentID = parentID
         self.permissions = permissions
+        self.isFromThreadBrowser = isFromThreadBrowser
         isPrivate = !permissions.canCreatePublic
+        starterMessage = nil
+        defaultName = ""
+    }
+
+    init(startingFrom message: Message, defaultName: String) {
+        parentID = message.channelID
+        permissions = ThreadCreationPermissions(canCreatePublic: true, canCreatePrivate: false)
+        isPrivate = false
+        starterMessage = message
+        isFromThreadBrowser = false
+        self.defaultName = defaultName
     }
 }
 
@@ -295,6 +328,12 @@ nonisolated enum MessageReplyNavigationDirection: Equatable, Sendable {
 nonisolated struct ComponentControlKey: Hashable, Sendable {
     let messageID: MessageID
     let customID: String
+}
+
+/// Asks the timeline to scroll to the keyboard-selected reply.
+nonisolated struct ReplyRevealRequest: Equatable, Sendable {
+    let requestID: UInt64
+    let destination: MessageComposerDestination
 }
 
 nonisolated struct MessageNavigationRequest: Equatable, Sendable {

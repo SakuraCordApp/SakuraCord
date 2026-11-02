@@ -90,7 +90,7 @@ extension NativeTimelineCanvasView {
         for attachment in message.attachments
         where attachment.mediaKind == .animatedImage {
             if NativeTimelineSpoilerConcealmentPolicy
-                .shouldLoadOrAnimate(
+                .shouldAnimate(
                     messageID: message.id,
                     contentID:
                         NativeTimelineComponentRevealKey
@@ -238,7 +238,7 @@ extension NativeTimelineCanvasView {
     ) {
         let message = row.message
         for sticker in message.stickers
-        where sticker.format == .apng || sticker.format == .gif {
+        where sticker.format?.isAnimated == true {
             if let url = sticker.mediaURL {
                 keys.insert(.media(url, maximumPixelDimension: 384))
             }
@@ -291,24 +291,6 @@ extension NativeTimelineCanvasView {
         default:
             false
         }
-    }
-
-    func reactionCountTransitions(
-        inMessageAt index: Int
-    ) -> [String: NativeTimelineReactionCountTransition] {
-        guard items.indices.contains(index),
-              let messageID = items[index].messageID
-        else { return [:] }
-        var result: [String: NativeTimelineReactionCountTransition] = [:]
-        for (key, animation) in activeReactionCountAnimations
-        where key.messageID == messageID {
-            result[key.reactionID] = NativeTimelineReactionCountTransition(
-                from: animation.from,
-                to: animation.to,
-                progress: 0
-            )
-        }
-        return result
     }
 
     func setHoveredReaction(
@@ -519,6 +501,16 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.media
             where region.frame.contains(point) {
+                let revealKey = NativeTimelineComponentRevealKey(messageID: message.id, componentID: region.componentID)
+                if region.isVideo, !region.isSpoiler || spoilerRevealStore.isMediaRevealed(revealKey) {
+                    let (id, openURL, isSpoiler) = (region.componentID, region.openURL, region.isSpoiler)
+                    playInline(region.displayURL, mediaID: id, frame: region.frame, rowIndex: rowIndex) { [weak self] index, layout, message in
+                        _ = self?.activateComponentMedia(
+                            id: id, openURL: openURL, isSpoiler: isSpoiler, layout: layout, message: message, rowIndex: index
+                        )
+                    }
+                    return true
+                }
                 return activateComponentMedia(
                     id: region.componentID,
                     openURL: region.openURL,
@@ -530,6 +522,7 @@ extension NativeTimelineCanvasView {
             }
             for region in componentLayout.files
             where region.frame.contains(point) {
+                // The card's button and link act through their own pointer hit.
                 return activateComponentMedia(
                     id: region.componentID,
                     openURL: region.openURL,
@@ -552,7 +545,7 @@ extension NativeTimelineCanvasView {
         return false
     }
 
-    private func activateComponentMedia(
+    func activateComponentMedia(
         id: String,
         openURL: URL,
         isSpoiler: Bool,
@@ -736,7 +729,7 @@ extension NativeTimelineCanvasView {
                rangeLocation: spoilerRange.location
            ), !spoilerRevealStore.isTextRevealed(key)
         {
-            revealTextSpoiler(key)
+            revealTextSpoiler(itemIdentifier: rowIdentifier, region: region, rangeLocation: spoilerRange.location)
             return true
         }
         if let mention = hit.mention, mention.isInteractive {
@@ -782,12 +775,27 @@ extension NativeTimelineCanvasView {
             region: region,
             rangeLocation: rangeLocation
         ),
-              spoilerRevealStore.revealText(key)
+              !spoilerRevealStore.isTextRevealed(key)
         else { return }
-    }
-
-    func revealTextSpoiler(_ key: NativeTimelineTextSpoilerRevealKey) {
-        _ = spoilerRevealStore.revealText(key)
+        if let index = items.firstIndex(where: { $0.identifier == itemIdentifier }),
+           layouts.indices.contains(index),
+           let text = selectableTextRegions(for: items[index], layout: layouts[index])
+               .first(where: { $0.region == region })
+        {
+            let rowOrigin = displayedRowOrigin(at: index)
+            fadeOutSpoilerCover(
+                NativeTimelineTextHitTester.spoilerRegions(
+                    value: text.value,
+                    framesetter: text.framesetter,
+                    frame: text.frame
+                )
+                .filter { $0.range.location == rangeLocation }
+                .map { $0.frame.offsetBy(dx: 0, dy: rowOrigin) },
+                cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
+                duration: NativeTimelineSpoilerAppearance.textRevealDuration
+            )
+        }
+        spoilerRevealStore.revealText(key)
     }
 
     func activateMention(
@@ -799,6 +807,10 @@ extension NativeTimelineCanvasView {
         switch mention.target {
         case .unresolved:
             break
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentions.gamesByID[id]
+        case let .command(id, name):
+            model.startCommandMention(id: id, name: name, in: message.channelID)
         case let .user(id):
             let resolver = MessageMentionResolver(
                 model: model,
@@ -913,9 +925,18 @@ extension NativeTimelineCanvasView {
         rowIndex: Int
     ) {
         guard items.indices.contains(rowIndex),
-              items[rowIndex].messageID == key.messageID
+              items[rowIndex].messageID == key.messageID,
+              !spoilerRevealStore.isMediaRevealed(key)
         else { return }
-        guard spoilerRevealStore.revealMedia(key) else { return }
+        if let cover = spoilerOverlays[key] {
+            fadeOutSpoilerCover(
+                [cover.frame],
+                cornerRadius: cover.cornerRadius,
+                duration: NativeTimelineSpoilerAppearance.mediaRevealDuration,
+                dropsPill: true
+            )
+        }
+        spoilerRevealStore.revealMedia(key)
     }
 
     func installSpoilerRevealStore(
@@ -944,6 +965,8 @@ extension NativeTimelineCanvasView {
         window?.invalidateCursorRects(for: self)
         reconcileAnimatedMedia()
         reconcileSpoilerOverlays()
+        // A reset reveal store hides a video playing in place again.
+        reconcileInlinePlayers()
         rebuildAccessibilityProxy(for: identifier)
     }
 
@@ -1108,6 +1131,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        dismissTimestampHover()
         guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         guard let index = rowIndex(at: point.y),
@@ -1164,7 +1188,7 @@ extension NativeTimelineCanvasView {
                   highlightFrame: layouts[index].highlightFrame
               )
         else { return nil }
-        return messageContextMenu(
+        guard let menu = messageContextMenu(
             for: row,
             at: index,
             targetsAuthor: NativeTimelineAuthorProfileGeometry.hitFrame(
@@ -1177,7 +1201,9 @@ extension NativeTimelineCanvasView {
             failedMediaActions: interactionMode == .failed
                 ? imageItem.map(imageContextMenuActions(for:))
                 : nil
-        )
+        ) else { return nil }
+        prependTextLinkActions(to: menu, row: row, index: index, localPoint: localPoint)
+        return menu
     }
 
     /// `targetsAuthor` offers user commands instead of message commands in
@@ -1220,6 +1246,9 @@ extension NativeTimelineCanvasView {
                 ),
             canEndPoll: row.message.outboxState == .confirmed && row.message.author.id == model?.currentUser?.id && row.message.poll?.isClosed() == false,
             canForward: actions.forward != nil && model?.canForward(row.message) == true,
+            threadAction: row.message.thread != nil
+                ? .viewThread
+                : (model?.canCreateThread(from: row.message) == true ? .createThread : nil),
             canPin: model?.canManagePins(for: row.message) == true,
             isPinned: row.message.isPinned,
             translationTitle: row.isResource ? nil : model?.messageTranslationMenuTitle(for: row.message),
@@ -1350,14 +1379,34 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    private func threadMessageMenuHandler(
+        action: NativeTimelineMessageMenuAction,
+        row: MessageRowPresentation,
+        actions: NativeTimelineRowActions
+    ) -> (() -> Void)? {
+        switch action {
+        case .createThread:
+            { [weak model] in model?.beginThreadCreation(from: row.message) }
+        case .viewThread:
+            {
+                guard let thread = row.message.thread else { return }
+                actions.openThread(thread)
+            }
+        default:
+            nil
+        }
+    }
+
     private func nonPinMessageMenuHandler(
         action: NativeTimelineMessageMenuAction,
         row: MessageRowPresentation,
         index: Int,
         actions: NativeTimelineRowActions
     ) -> () -> Void {
-        if let copyHandler = copyMessageMenuHandler(action: action, row: row) {
-            return copyHandler
+        if let handler = copyMessageMenuHandler(action: action, row: row)
+            ?? threadMessageMenuHandler(action: action, row: row, actions: actions)
+        {
+            return handler
         }
         return switch action {
         case .jumpToMessage:
@@ -1439,7 +1488,7 @@ extension NativeTimelineCanvasView {
                             from: item.url
                         )
                     } catch {
-                        self?.presentMediaActionError(error)
+                        self?.presentActionError(error)
                     }
                 }
             },
@@ -1471,7 +1520,7 @@ extension NativeTimelineCanvasView {
                     to: destination
                 )
             } catch {
-                self?.presentMediaActionError(error)
+                self?.presentActionError(error)
             }
         }
     }
@@ -1497,7 +1546,7 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    func presentMediaActionError(_ error: Error) {
+    func presentActionError(_ error: Error) {
         let alert = NSAlert(error: error)
         if let window {
             alert.beginSheetModal(for: window)

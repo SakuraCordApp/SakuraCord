@@ -185,12 +185,9 @@ struct ProfileImageProcessingTests {
             #expect(throws: (any Error).self) { try ProfileWebPCropper.crop(source, region: region) }
         }
         var geometry = ProfileImageCropGeometry(naturalSize: CGSize(width: 600, height: 211), purpose: .widgetCover, aspectRatio: 399 / 142)
-        let original = geometry
         geometry.rotate(); geometry.setZoom(1.5); geometry.setOffset(CGPoint(x: 1000, y: -1000))
         #expect(abs(geometry.cropSize.width / geometry.cropSize.height - 399 / 142) < 0.001)
         #expect(geometry.sourceRect.minX >= -1 && geometry.sourceRect.minY >= -1)
-        geometry.reset()
-        #expect(geometry == original)
     }
 
     private func animation() throws -> Data {

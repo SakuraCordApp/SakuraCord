@@ -955,6 +955,16 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         kind: .image(animated: false)
     ))
 
+    let spoileredLink = ForwardMessagePreviewPlan.make(message: message(
+        content: "||\(imageURL.absoluteString)||",
+        embeds: [MessageEmbed(
+            type: "image",
+            url: imageURL,
+            image: MessageEmbedMedia(url: imageURL)
+        )]
+    ))
+    #expect(spoileredLink.media?.isSpoiler == true)
+
     let videoURL = try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/video.mp4"))
     let linkedVideo = ForwardMessagePreviewPlan.make(message: message(
         content: "https://example.com/video",
@@ -1518,7 +1528,7 @@ private actor ForwardSettingsFailureProvider: ChatProvider {
     func send(_ draft: SendMessageDraft) async throws -> Message {
         throw ChatProviderError.invalidRequest("unused")
     }
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
+    func edit(_ message: Message, content: String) async throws
         -> Message
     {
         throw ChatProviderError.invalidRequest("unused")

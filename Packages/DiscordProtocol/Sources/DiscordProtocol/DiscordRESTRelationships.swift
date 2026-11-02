@@ -103,9 +103,7 @@ extension DiscordRESTProvider {
         do {
             let (data, response) = try await perform("/users/@me/relationships", method: "GET", query: [], body: nil)
             guard (200 ..< 300).contains(response.statusCode) else {
-                throw apiDiagnostics.coalescing(ChatProviderError.transport(
-                    status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")
-                ), with: response)
+                throw unexplainedFailure(data, response)
             }
             rows = try JSONDecoder().decode(LossyList<GatewayRelationshipDTO>.self, from: data).elements
         } catch {
@@ -135,9 +133,7 @@ extension DiscordRESTProvider {
     /// Sends a friend request by username; one POST, never replayed except
     /// once after a completed human challenge. The Sent row arrives through
     /// `RELATIONSHIP_ADD`, not the empty response.
-    public func sendFriendRequest(
-        username: String, discriminator: Int?, note: String? = nil, captchaHandler: DiscordCaptchaHandler?
-    ) async throws {
+    public func sendFriendRequest(username: String, discriminator: Int?, note: String? = nil) async throws {
         let tag = discriminator.map { "\(username)#\(String(format: "%04d", $0))" } ?? username
         var body: [String: JSONValue] = [
             "username": .string(username),
@@ -145,21 +141,29 @@ extension DiscordRESTProvider {
         ]
         if let note = try FriendRequestNote.normalized(note) { body["note"] = .string(note) }
         try await relationshipMutation(
-            "/users/@me/relationships", method: "POST", body: body, location: "Add Friend",
-            captchaHandler: captchaHandler, failure: { Self.friendRequestFailureMessage(code: $0, status: $1, discordTag: tag) }
+            "/users/@me/relationships", method: "POST", body: body, location: "Add Friend", explainsEveryFailure: true, quietWhenChallengeClosed: true,
+            failure: { Self.friendRequestFailureMessage(code: $0, status: $1, discordTag: tag) }
+        )
+    }
+
+    /// Sends a request to a known user from a profile, DM or user menu. The
+    /// empty body and the surface as context match the official client; only
+    /// the Add Friend form and Group DM add flow send by tag.
+    public func sendFriendRequest(to user: User, location: IgnoreActionLocation) async throws {
+        try await relationshipMutation(
+            "/users/@me/relationships/\(user.id)", method: "PUT", body: [:], location: location.rawValue, explainsEveryFailure: true, quietWhenChallengeClosed: true,
+            failure: { Self.friendRequestFailureMessage(code: $0, status: $1, discordTag: user.tag) }
         )
     }
 
     /// Accepts an incoming request. Discord answers code 80013 when it wants
     /// confirmation the requester is known; only an explicit confirmation
     /// repeats the request with `confirm_stranger_request: true`.
-    public func acceptFriendRequest(
-        from userID: UserID, confirmingStranger: Bool, captchaHandler: DiscordCaptchaHandler?
-    ) async throws {
+    public func acceptFriendRequest(from userID: UserID, confirmingStranger: Bool) async throws {
         try await relationshipMutation(
             "/users/@me/relationships/\(userID)", method: "PUT",
             body: ["confirm_stranger_request": .bool(confirmingStranger)], location: "Friends",
-            captchaHandler: captchaHandler, failure: { code, status in
+            failure: { code, status in
                 code == 80013 && !confirmingStranger ? nil : Self.relationshipUpdateFailureMessage(code: code, status: status)
             }
         )
@@ -170,16 +174,16 @@ extension DiscordRESTProvider {
     public func removeRelationship(with userID: UserID, as removal: RelationshipRemoval) async throws {
         try await relationshipMutation(
             "/users/@me/relationships/\(userID)", method: "DELETE", body: nil,
-            location: removal == .unblock ? nil : "Friends", captchaHandler: nil,
+            location: removal == .unblock ? nil : "Friends",
             failure: { Self.relationshipUpdateFailureMessage(code: $0, status: $1) }
         )
     }
 
     /// Blocks a user, replacing any friendship or request.
-    public func blockUser(_ userID: UserID, captchaHandler: DiscordCaptchaHandler? = nil) async throws {
+    public func blockUser(_ userID: UserID) async throws {
         try await relationshipMutation(
             "/users/@me/relationships/\(userID)", method: "PUT", body: ["type": .number(Double(RelationshipType.blocked.rawValue))],
-            location: "ContextMenu", captchaHandler: captchaHandler,
+            location: "ContextMenu",
             failure: { Self.relationshipUpdateFailureMessage(code: $0, status: $1) }
         )
     }
@@ -192,7 +196,7 @@ extension DiscordRESTProvider {
         }
         try await relationshipMutation(
             "/users/@me/relationships/\(userID)/ignore", method: ignored ? "PUT" : "DELETE",
-            body: nil, location: location.rawValue, captchaHandler: nil,
+            body: nil, location: location.rawValue,
             failure: { _, status in
                 status == 429 ? "Discord is limiting relationship changes. Wait a moment before trying again."
                     : "Discord couldn’t update Ignore. Try again."
@@ -200,27 +204,27 @@ extension DiscordRESTProvider {
         )
     }
 
-    /// `failure` returns nil for the stranger-confirmation response.
+    /// `failure` returns nil for the stranger-confirmation response (80013), which
+    /// accept turns into a prompt and send leaves to its caller. Sending
+    /// explains every failed status; other routes only explain 400, 403 and 429.
+    /// - Parameter quietWhenChallengeClosed: A friend request whose security
+    ///   check the person closed fails silently. Its failure copy blamed the
+    ///   username. A check that failed, or a solution Discord rejects, still
+    ///   reports the failure.
     private func relationshipMutation(
         _ path: String, method: String, body: [String: JSONValue]?, location: String?,
-        captchaHandler: DiscordCaptchaHandler?, failure: (Int?, Int) -> String?
+        explainsEveryFailure: Bool = false, quietWhenChallengeClosed: Bool = false,
+        failure: (Int?, Int) -> String?
     ) async throws {
-        guard let account = currentUser?.id else { throw ChatProviderError.unauthenticated }
+        guard currentUser != nil else { throw ChatProviderError.unauthenticated }
         var headers: [String: String] = [:]
         if let location {
             let context = try JSONSerialization.data(withJSONObject: ["location": location], options: [.sortedKeys])
             headers["X-Context-Properties"] = context.base64EncodedString()
         }
-        let data: Data
-        let response: HTTPURLResponse
-        do {
-            (data, response) = try await performChallengeable(
-                path, method: method, query: [], body: body, headers: headers, captchaHandler: captchaHandler,
-                replayIsCurrent: { [weak self] in await self?.currentUser?.id == account }
-            )
-        } catch let failure as CaptchaReplayFailure {
-            throw RelationshipActionError.failed(failure.message)
-        }
+        let ((data, response), challengeDismissed) = try await performAnsweringChallenge(
+            path, method: method, query: [], body: body, headers: headers, maximumAttempts: 1
+        )
         guard !(200 ..< 300).contains(response.statusCode) else { return }
         // Another session already removed it; Gateway reconciles the list.
         if response.statusCode == 404, method == "DELETE" { return }
@@ -232,27 +236,31 @@ extension DiscordRESTProvider {
            let fields = try? JSONDecoder().decode([String: JSONValue].self, from: data), fields["note"] != nil {
             throw RelationshipActionError.failed(FriendRequestNote.validationMessage)
         }
+        if quietWhenChallengeClosed, challengeDismissed { throw CancellationError() }
         let code = Self.discordErrorCode(from: data)
-        if response.statusCode == 400 || response.statusCode == 429 || response.statusCode == 403 {
+        if explainsEveryFailure || [400, 403, 429].contains(response.statusCode) {
             guard let message = failure(code, response.statusCode) else {
                 throw RelationshipActionError.strangerConfirmationRequired
             }
             throw RelationshipActionError.failed(message)
         }
-        throw apiDiagnostics.coalescing(ChatProviderError.transport(
-            status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")
-        ), with: response)
+        throw unexplainedFailure(data, response)
     }
 
     // Official stable633029 module395422 `vU` and module717398 HTTP 429 copy.
-    static func friendRequestFailureMessage(code: Int?, status: Int, discordTag: String) -> String {
+    /// Nil for the stranger-confirmation response (80013).
+    static func friendRequestFailureMessage(code: Int?, status: Int, discordTag: String) -> String? {
         if status == 429 { return "You’re sending friend requests too quickly!" }
         return switch code {
+        case 80013: nil
         case 80000: "\(discordTag) is not accepting friend requests. They’ll have to add you to become friends."
         case 30002: "You’ve maxed out your friend list. Welcome to the elite 1,000 friends club!"
         case 80007: "You’re already friends with that user!"
         case 30059: "You’ve maxed out your block list."
         case 30078: "You’ve maxed out your pending outgoing friend requests."
+        case 40002: "You need to claim your account and verify your email before you can send friend requests."
+        case let code? where code == 40068 || ((340_000 ... 349_999).contains(code) && (400 ..< 500).contains(status)):
+            "Your account has limited access"
         default: "Hm, didn’t work. Double check that the username is correct."
         }
     }
@@ -290,9 +298,7 @@ extension DiscordRESTProvider {
                 authorizationValue = nil
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             }
-            throw apiDiagnostics.coalescing(ChatProviderError.transport(
-                status: response.statusCode, requestID: response.value(forHTTPHeaderField: "x-request-id")
-            ), with: response)
+            throw unexplainedFailure(data, response)
         }
         // Only this friend's events supersede the save; the generation also
         // guards READY and disconnect, which clear the per-user revisions.

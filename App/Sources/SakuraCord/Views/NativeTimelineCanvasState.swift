@@ -46,17 +46,19 @@ final class NativeTimelinePointerState {
         let mention: NativeTimelineMentionHover?
         let textLink: NativeTimelineTextLinkHover?
         let textSpoiler: NativeTimelineTextSpoilerHover?
-        let codeBlock: NativeTimelineCodeBlockPointerTarget?
         let componentButton: NativeTimelineComponentButtonTarget?
         let forwardedSourceMessageID: MessageID?
+        let threadMessageID: MessageID?
         let footerAction: NativeTimelineFooterActionTarget?
         let serverTagMessageID: MessageID?
+        let commandPillMessageID: MessageID?
     }
 
     var hoveredRow: Int?
     var hoveredCompactTimestampRow: Int?
     var hoveredAuthorMessageID: MessageID?
     var hoveredServerTagMessageID: MessageID?
+    var hoveredCommandPillMessageID: MessageID?
     var hoveredMention: NativeTimelineMentionHover?
     var hoveredTextLink: NativeTimelineTextLinkHover?
     var hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
@@ -64,12 +66,20 @@ final class NativeTimelinePointerState {
     var pressedCodeBlockCopyButton: NativeTimelineCodeBlockPointerTarget?
     var hoveredComponentButton: NativeTimelineComponentButtonTarget?
     var hoveredForwardedSourceMessageID: MessageID?
+    var hoveredThreadMessageID: MessageID?
     var hoveredFooterAction: NativeTimelineFooterActionTarget?
     var pressedComponentButton: NativeTimelineComponentButtonTarget?
     var visualPressedComponentButton: NativeTimelineComponentButtonTarget?
     var componentButtonPressProgress: CGFloat = 0
     var componentButtonPressAnimationTask: Task<Void, Never>?
     var componentButtonPressAnimationDestination: CGFloat?
+    /// File card parts whose hover is easing in, held, or easing out.
+    var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] = [:]
+    /// Text spoilers whose hover is easing in, held, or easing out.
+    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] = [:]
+    var componentButtonHoverAnimationTask: Task<Void, Never>?
+    /// Download buttons crossfading from their full ring to their next step.
+    var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] = [:]
     var pressedActivationTarget: NativeTimelinePointerActivationTarget?
     var hoveredReaction: NativeTimelineReactionPointerTarget?
     var suppressesHoverPresentation = false
@@ -90,17 +100,19 @@ final class NativeTimelinePointerState {
             mention: hoveredMention,
             textLink: hoveredTextLink,
             textSpoiler: hoveredTextSpoiler,
-            codeBlock: hoveredCodeBlock,
             componentButton:
                 visualPressedComponentButton ?? hoveredComponentButton,
             forwardedSourceMessageID: hoveredForwardedSourceMessageID,
+            threadMessageID: hoveredThreadMessageID,
             footerAction: hoveredFooterAction,
-            serverTagMessageID: hoveredServerTagMessageID
+            serverTagMessageID: hoveredServerTagMessageID,
+            commandPillMessageID: hoveredCommandPillMessageID
         )
         hoveredRow = nil
         hoveredCompactTimestampRow = nil
         hoveredAuthorMessageID = nil
         hoveredServerTagMessageID = nil
+        hoveredCommandPillMessageID = nil
         hoveredMention = nil
         hoveredTextLink = nil
         hoveredTextSpoiler = nil
@@ -108,6 +120,7 @@ final class NativeTimelinePointerState {
         pressedCodeBlockCopyButton = nil
         hoveredComponentButton = nil
         hoveredForwardedSourceMessageID = nil
+        hoveredThreadMessageID = nil
         hoveredFooterAction = nil
         pressedComponentButton = nil
         visualPressedComponentButton = nil
@@ -115,6 +128,11 @@ final class NativeTimelinePointerState {
         componentButtonPressAnimationDestination = nil
         componentButtonPressAnimationTask?.cancel()
         componentButtonPressAnimationTask = nil
+        componentButtonHoverFades = [:]
+        textSpoilerHoverFades = [:]
+        fileCardFinishFades = [:]
+        componentButtonHoverAnimationTask?.cancel()
+        componentButtonHoverAnimationTask = nil
         pressedActivationTarget = nil
         hoveredReaction = nil
         return cleared
@@ -142,6 +160,7 @@ final class NativeTimelinePointerState {
             || hoveredCompactTimestampRow != nil
             || hoveredAuthorMessageID != nil
             || hoveredServerTagMessageID != nil
+            || hoveredCommandPillMessageID != nil
             || hoveredMention != nil
             || hoveredTextLink != nil
             || hoveredTextSpoiler != nil
@@ -149,6 +168,7 @@ final class NativeTimelinePointerState {
             || pressedCodeBlockCopyButton != nil
             || hoveredComponentButton != nil
             || hoveredForwardedSourceMessageID != nil
+            || hoveredThreadMessageID != nil
             || hoveredFooterAction != nil
             || pressedComponentButton != nil
             || visualPressedComponentButton != nil
@@ -272,6 +292,11 @@ extension NativeTimelineCanvasView {
         set { pointer.hoveredServerTagMessageID = newValue }
     }
 
+    var hoveredCommandPillMessageID: MessageID? {
+        get { pointer.hoveredCommandPillMessageID }
+        set { pointer.hoveredCommandPillMessageID = newValue }
+    }
+
     var hoveredAuthorMessageID: MessageID? {
         get { pointer.hoveredAuthorMessageID }
         set { pointer.hoveredAuthorMessageID = newValue }
@@ -312,6 +337,11 @@ extension NativeTimelineCanvasView {
         set { pointer.hoveredForwardedSourceMessageID = newValue }
     }
 
+    var hoveredThreadMessageID: MessageID? {
+        get { pointer.hoveredThreadMessageID }
+        set { pointer.hoveredThreadMessageID = newValue }
+    }
+
     var hoveredFooterAction: NativeTimelineFooterActionTarget? {
         get { pointer.hoveredFooterAction }
         set { pointer.hoveredFooterAction = newValue }
@@ -342,14 +372,46 @@ extension NativeTimelineCanvasView {
         set { pointer.componentButtonPressAnimationDestination = newValue }
     }
 
+    var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
+        get { pointer.componentButtonHoverFades }
+        set { pointer.componentButtonHoverFades = newValue }
+    }
+
+    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] {
+        get { pointer.textSpoilerHoverFades }
+        set { pointer.textSpoilerHoverFades = newValue }
+    }
+
+    var componentButtonHoverAnimationTask: Task<Void, Never>? {
+        get { pointer.componentButtonHoverAnimationTask }
+        set { pointer.componentButtonHoverAnimationTask = newValue }
+    }
+
+    var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
+        get { pointer.fileCardFinishFades }
+        set { pointer.fileCardFinishFades = newValue }
+    }
+
     var pressedActivationTarget: NativeTimelinePointerActivationTarget? {
         get { pointer.pressedActivationTarget }
-        set { pointer.pressedActivationTarget = newValue }
+        set {
+            let old = pointer.pressedActivationTarget
+            pointer.pressedActivationTarget = newValue
+            invalidatePressedThreadCard(old, newValue)
+        }
     }
 
     var hoveredReaction: NativeTimelineReactionPointerTarget? {
         get { pointer.hoveredReaction }
-        set { pointer.hoveredReaction = newValue }
+        set {
+            let old = pointer.hoveredReaction
+            pointer.hoveredReaction = newValue
+            guard old != newValue else { return }
+            // Moving chips are layers the row's redraw does not recolour.
+            for target in [old, newValue].compactMap(\.self) {
+                if let index = rowIndex(for: target) { refreshReactionChipHover(at: index) }
+            }
+        }
     }
 
     var suppressesHoverPresentation: Bool {

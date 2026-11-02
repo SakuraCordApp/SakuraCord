@@ -1,0 +1,17 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Repository rules, including Platform posture and Keep changes lean"
+    },
+    {
+      "path": "docs/TESTING.md",
+      "description": "When to commit tests, and test design rules",
+      "scope": [
+        "**/Tests/**",
+        "**/test_*.py",
+        "**/*.test.mjs"
+      ]
+    }
+  ]
+}

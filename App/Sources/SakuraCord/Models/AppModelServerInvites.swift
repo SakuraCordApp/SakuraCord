@@ -19,7 +19,6 @@ final class ServerInvitePresentationStore {
     var joining: Set<GuildID> = []
     var leaving: Set<GuildID> = []
     var expanded: Set<ServerInviteReference> = []
-    let captcha = HumanCaptchaStore.serverInvites()
     let creation = ServerInviteCreationStore()
     var showsJoinDialog = false
     var leaveConfirmation: Guild?
@@ -35,7 +34,6 @@ final class ServerInvitePresentationStore {
     }
 
     func reset() {
-        captcha.cancel()
         creation.reset()
         entries = [:]
         joining = []
@@ -144,10 +142,7 @@ extension AppModel {
             }
         }
         do {
-            let accepted = try await session.provider.acceptServerInvite(reference, messageID: messageID) { [weak self] challenge in
-                guard let self else { throw CancellationError() }
-                return try await self.solveInviteCaptcha(challenge, account: session)
-            }
+            let accepted = try await session.provider.acceptServerInvite(reference, messageID: messageID)
             guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
             store.entries[reference]?.invite = accepted.invite
             if accepted.requiresVerification {
@@ -189,11 +184,6 @@ extension AppModel {
             try await Task.sleep(for: .milliseconds(250))
         }
         throw ServerInviteError.failed("Discord accepted the join, but server details have not arrived yet. Reconnect and check your server list before trying again.")
-    }
-
-    func solveInviteCaptcha(_ challenge: DiscordCaptchaChallenge, account: AppModelAccountSession) async throws -> String {
-        guard isCurrentAccountSession(account) else { throw CancellationError() }
-        return try await serverInvites.captcha.solution(for: challenge)
     }
 
     private func navigateToInvite(_ invite: ServerInvite) {

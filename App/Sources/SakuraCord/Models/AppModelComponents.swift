@@ -8,21 +8,14 @@ extension AppModel {
     ) async {
         let key = ComponentControlKey(messageID: message.id, customID: customID)
         // One action per message at a time; siblings stay disabled meanwhile.
-        guard !componentInteractionPresentation.pendingMessages.contains(message.id) else { return }
+        guard !isComponentInteractionUnavailable(on: message) else { return }
         guard supportedCapabilities.contains(.components) else {
             updateComponentPresentation {
                 $0.errors[key] = ChatProviderError.capabilityDisabled(.components).localizedDescription
             }
             return
         }
-        guard let applicationID = message.applicationID
-            ?? message.application.flatMap({ ApplicationID($0.id) })
-            ?? message.interactionMetadata?.applicationID.flatMap(ApplicationID.init)
-            // Ordinary bot messages have no interaction/application envelope.
-            // Incoming webhooks are message-scoped identities, not bot apps.
-            ?? (message.author.isBot && message.webhookID == nil
-                ? ApplicationID(rawValue: message.author.id.rawValue) : nil)
-        else {
+        guard let applicationID = componentApplicationID(of: message) else {
             updateComponentPresentation {
                 $0.errors[key] = "This message doesn’t identify the app that owns it."
             }
@@ -62,6 +55,16 @@ extension AppModel {
                 $0.errors[key] = error.localizedDescription
             }
         }
+    }
+
+    func componentApplicationID(of message: Message) -> ApplicationID? {
+        message.applicationID
+            ?? message.application.flatMap { ApplicationID($0.id) }
+            ?? message.interactionMetadata?.applicationID.flatMap(ApplicationID.init)
+            // Ordinary bot messages have no interaction/application envelope.
+            // Incoming webhooks are message-scoped identities, not bot apps.
+            ?? (message.author.isBot && message.webhookID == nil
+                ? ApplicationID(rawValue: message.author.id.rawValue) : nil)
     }
 
     func updateComponentPresentation(_ change: (inout ComponentInteractionPresentationState) -> Void) {
@@ -333,9 +336,11 @@ extension AppModel {
             ComponentControlKey(messageID: messageID, customID: customID))
     }
 
-    /// Discord disables a message's other controls while one action is pending.
-    func isComponentInteractionPending(messageID: MessageID) -> Bool {
-        componentInteractionPresentation.pendingMessages.contains(messageID)
+    /// Discord disables a message's other controls while one action is
+    /// pending, and an unaccepted message request's until it is accepted.
+    func isComponentInteractionUnavailable(on message: Message) -> Bool {
+        componentInteractionPresentation.pendingMessages.contains(message.id)
+            || awaitsMessageRequestDecision(in: message.channelID)
     }
 
     func componentSelection(

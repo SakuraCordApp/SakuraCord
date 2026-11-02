@@ -16,12 +16,10 @@ extension AppModel {
         else { return }
         let session = accountSession()
         do {
-            let updated = try await session.provider.edit(
-                messageID: message.id, channelID: message.channelID, content: content
-            )
+            let updated = try await session.provider.edit(message, content: content)
             guard isCurrentAccountSession(session) else { return }
             invalidateMessageTranslation(updated.id, content: updated.content)
-            let reconciled = reconcileVisibleOrCached(updated)
+            let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)
             recordAuthoritativeMessageUpsert(reconciled)
         } catch {
             guard isCurrentAccountSession(session) else { return }
@@ -422,18 +420,6 @@ extension AppModel {
         if let message = inbox.retainedMessages.first(where: { $0.id == key.messageID }) {
             reconcileInboxMessage(updating(message))
         }
-
-        guard let forumIndex = forumCatalogueIndexByID[key.channelID] else { return }
-        var forumPost = forumCataloguePosts[forumIndex]
-        if let firstMessage = forumPost.firstMessage {
-            forumPost.firstMessage = updating(firstMessage)
-        }
-        if let mostRecentMessage = forumPost.mostRecentMessage {
-            forumPost.mostRecentMessage = updating(mostRecentMessage)
-        }
-        guard forumPost != forumCataloguePosts[forumIndex] else { return }
-        forumCataloguePosts[forumIndex] = forumPost
-        updateForumPresentation(with: forumPost)
     }
 
     func resetReactionReactorLoads() {

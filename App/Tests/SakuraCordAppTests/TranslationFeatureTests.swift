@@ -63,7 +63,7 @@ private func translationMessage(_ id: UInt64 = 300, content: String = "Hallo <@1
     canvas.storage.items = [item]
     canvas.storage.rowOrigins = [0]
     func refresh() throws -> NSView {
-        let layout = NativeTimelineRowLayout.make(item: item, width: 560, model: model)
+        let layout = NativeTimelineRowLayout.make(item: item, width: 560, source: model)
         canvas.storage.layouts = [layout]
         canvas.storage.contentHeight = layout.height
         canvas.reconcileAccessibilityProxies()

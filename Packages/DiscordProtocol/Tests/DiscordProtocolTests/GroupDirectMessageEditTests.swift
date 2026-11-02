@@ -126,6 +126,27 @@ struct GroupDirectMessageEditTests {
         await provider.disconnect()
     }
 
+    @Test func `close DM sends one bare delete, refuses a group and lets a new DM reopen it`() async throws {
+        let provider = await makeProvider()
+        let dmID = ChannelID(rawValue: 402)
+        await #expect(throws: ChatProviderError.self) { try await provider.closeDirectMessage(groupID) }
+        #expect(fixture.requests.withLock { $0.isEmpty })
+        try await provider.closeDirectMessage(dmID)
+        #expect(await provider.privateChannel(id: dmID) == nil)
+        // Discord's CHANNEL_DELETE for the close finds nothing left to remove.
+        await provider.handleGatewayDispatch(name: "CHANNEL_DELETE", body: .object(["id": .string("402"), "type": .number(1)]))
+        // A new message makes Discord send CHANNEL_CREATE, which restores the DM.
+        await provider.handleGatewayDispatch(name: "CHANNEL_CREATE", body: .object([
+            "id": .string("402"), "type": .number(1),
+            "recipients": .array([.object(["id": .string("2"), "username": .string("friend")])]),
+        ]))
+        #expect(await provider.privateChannel(id: dmID)?.kind == .directMessage)
+        let requests = fixture.requests.withLock { $0 }
+        #expect(requests.map { "\($0.httpMethod ?? "") \($0.url?.absoluteString ?? "")" } == ["DELETE https://discord.com/api/v9/channels/402"])
+        #expect(requests.first?.httpBody == nil && requests.first?.httpBodyStream == nil)
+        await provider.disconnect()
+    }
+
     @Test func `a rejected leave keeps the group without retrying or stopping the session`() async throws {
         let provider = await makeProvider()
         fixture.leaveStatus.withLock { $0 = 403 }

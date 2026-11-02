@@ -113,10 +113,7 @@ extension AppModel {
             }
         }
         do {
-            let requiresVerification = try await session.provider.joinDiscoverableGuild(guildID) { [weak self] challenge in
-                guard let self else { throw CancellationError() }
-                return try await self.solveInviteCaptcha(challenge, account: session)
-            }
+            let requiresVerification = try await session.provider.joinDiscoverableGuild(guildID)
             guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
             if requiresVerification {
                 throw ServerInviteError.unsupported("Discord requires verification to finish joining. Complete it in Discord, then return to SakuraCord.")

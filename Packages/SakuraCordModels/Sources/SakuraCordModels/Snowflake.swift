@@ -18,10 +18,15 @@ public struct Snowflake<Kind>: RawRepresentable, Codable, Hashable, Comparable, 
         String(rawValue)
     }
 
+    /// The lowest snowflake for an instant, as Discord's `fromTimestamp`.
+    public init(timestamp: Date) {
+        let milliseconds = timestamp.timeIntervalSince1970 * 1_000 - Double(ClientNonce.discordEpochMilliseconds)
+        rawValue = UInt64(max(0, milliseconds)) << 22
+    }
+
     /// Discord snowflakes store milliseconds since 2015-01-01 in their upper 42 bits.
     public var createdAt: Date {
-        let discordEpochMilliseconds: UInt64 = 1_420_070_400_000
-        let milliseconds = (rawValue >> 22) + discordEpochMilliseconds
+        let milliseconds = (rawValue >> 22) + ClientNonce.discordEpochMilliseconds
         return Date(timeIntervalSince1970: Double(milliseconds) / 1_000)
     }
 

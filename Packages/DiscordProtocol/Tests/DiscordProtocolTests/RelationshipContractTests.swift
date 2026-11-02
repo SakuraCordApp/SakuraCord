@@ -217,9 +217,9 @@ struct RelationshipContractTests {
     @Test func `relationship mutations use Discord's routes, bodies and context once each`() async throws {
         let (provider, session) = await makeProvider()
         defer { session.invalidateAndCancel() }
-        try await provider.sendFriendRequest(username: "example", discriminator: nil, captchaHandler: nil)
-        try await provider.sendFriendRequest(username: "legacy", discriminator: 42, note: "  Hello\n🌸  ", captchaHandler: nil)
-        try await provider.acceptFriendRequest(from: id(2), confirmingStranger: false, captchaHandler: nil)
+        try await provider.sendFriendRequest(username: "example", discriminator: nil)
+        try await provider.sendFriendRequest(username: "legacy", discriminator: 42, note: "  Hello\n🌸  ")
+        try await provider.acceptFriendRequest(from: id(2), confirmingStranger: false)
         try await provider.removeRelationship(with: id(3), as: .removeFriend)
         try await provider.removeRelationship(with: id(4), as: .unblock)
         try await provider.blockUser(id(5))
@@ -248,25 +248,72 @@ struct RelationshipContractTests {
         let (provider, session) = await makeProvider()
         defer { session.invalidateAndCancel() }
         await #expect(throws: RelationshipActionError.failed("You’re already friends with that user!")) {
-            try await provider.sendFriendRequest(username: "already", discriminator: nil, captchaHandler: nil)
+            try await provider.sendFriendRequest(username: "already", discriminator: nil)
         }
         await #expect(throws: RelationshipActionError.failed("closed is not accepting friend requests. They’ll have to add you to become friends.")) {
-            try await provider.sendFriendRequest(username: "closed", discriminator: nil, captchaHandler: nil)
+            try await provider.sendFriendRequest(username: "closed", discriminator: nil)
         }
         await #expect(throws: RelationshipActionError.failed("You’re sending friend requests too quickly!")) {
-            try await provider.sendFriendRequest(username: "limited", discriminator: nil, captchaHandler: nil)
+            try await provider.sendFriendRequest(username: "limited", discriminator: nil)
         }
         // Stranger confirmation is explicit: only a confirmed retry sends true.
         await #expect(throws: RelationshipActionError.strangerConfirmationRequired) {
-            try await provider.acceptFriendRequest(from: id(813), confirmingStranger: false, captchaHandler: nil)
+            try await provider.acceptFriendRequest(from: id(813), confirmingStranger: false)
         }
-        try await provider.acceptFriendRequest(from: id(813), confirmingStranger: true, captchaHandler: nil)
+        try await provider.acceptFriendRequest(from: id(813), confirmingStranger: true)
         let captured = fixture.requests.withLock { $0 }
         #expect(captured.count == 5)
         #expect(captured.suffix(2).map(\.body) == [
             .object(["confirm_stranger_request": .bool(false)]), .object(["confirm_stranger_request": .bool(true)]),
         ])
         #expect(await !provider.requestSafetyCircuitIsOpen)
+        await provider.disconnect()
+    }
+
+    @Test func `a request from a profile or menu is an empty PUT by user ID with the surface as context`() async throws {
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
+        try await provider.sendFriendRequest(to: target(7), location: .profile)
+        await #expect(throws: RelationshipActionError.failed("You’re already friends with that user!")) {
+            try await provider.sendFriendRequest(to: target(807), location: .directMessage)
+        }
+        let captured = fixture.requests.withLock { $0 }
+        #expect(captured.map { "\($0.request.httpMethod!) \($0.request.url!.path)" } == [
+            "PUT /api/v9/users/@me/relationships/7", "PUT /api/v9/users/@me/relationships/807",
+        ])
+        #expect(captured.map(\.body) == [.object([:]), .object([:])])
+        #expect(captured.map { context($0.request) } == ["user profile overflow menu", "DMUserContextMenu"])
+        await provider.disconnect()
+    }
+
+    @Test(arguments: [
+        ("unverified", "You need to claim your account and verify your email before you can send friend requests."),
+        ("restricted", "Your account has limited access"),
+        ("broken", "Hm, didn’t work. Double check that the username is correct."),
+    ])
+    func `account restrictions and unexpected statuses on send show friend request copy`(username: String, message: String) async throws {
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
+        await #expect(throws: RelationshipActionError.failed(message)) {
+            try await provider.sendFriendRequest(username: username, discriminator: nil)
+        }
+        await provider.disconnect()
+    }
+
+    @Test(arguments: ["cancel", "ignore"])
+    func `cancelling a request or ignoring a user replays a human challenge once`(action: String) async throws {
+        let (provider, session) = await makeProvider()
+        defer { session.invalidateAndCancel() }
+        await provider.setCaptchaHandler { _ in "human-solution" }
+        if action == "cancel" {
+            try await provider.removeRelationship(with: id(991), as: .cancelOutgoingRequest)
+        } else {
+            try await provider.setUserIgnored(id(992), ignored: true, location: .contextMenu)
+        }
+        let captured = fixture.requests.withLock { $0 }
+        #expect(captured.count == 2)
+        #expect(captured.map { $0.request.httpMethod! } == (action == "cancel" ? ["DELETE", "DELETE"] : ["PUT", "PUT"]))
+        #expect(captured.map { $0.request.value(forHTTPHeaderField: "X-Captcha-Key") } == [nil, "human-solution"])
         await provider.disconnect()
     }
 
@@ -277,7 +324,7 @@ struct RelationshipContractTests {
         #expect(try FriendRequestNote.normalized(" \n ") == nil)
         await #expect(throws: RelationshipActionError.self) {
             try await provider.sendFriendRequest(username: "example", discriminator: nil,
-                                                 note: String(repeating: "🌸", count: 61), captchaHandler: nil)
+                                                 note: String(repeating: "🌸", count: 61))
         }
         #expect(requests(method: "POST").isEmpty)
         await provider.disconnect()
@@ -287,13 +334,14 @@ struct RelationshipContractTests {
     func `a friend request challenge is solved by a human once and replays the original request`(service: String) async throws {
         let (provider, session) = await makeProvider()
         defer { session.invalidateAndCancel() }
-        try await provider.sendFriendRequest(username: "captcha-\(service)", discriminator: nil, note: "Hello 🌸") { challenge in
+        await provider.setCaptchaHandler { challenge in
             #expect(challenge.service.rawValue == service)
             #expect(challenge.siteKey == "site-key")
             #expect(challenge.userFlow == "friend_request")
             #expect(await !provider.requestSafetyCircuitIsOpen)
             return "human-solution"
         }
+        try await provider.sendFriendRequest(username: "captcha-\(service)", discriminator: nil, note: "Hello 🌸")
         let captured = fixture.requests.withLock { $0 }
         #expect(captured.count == 2)
         let original = captured[0], replay = captured[1]
@@ -312,10 +360,11 @@ struct RelationshipContractTests {
     func `blocking presents the human challenge and preserves its original context`() async throws {
         let (provider, session) = await makeProvider()
         defer { session.invalidateAndCancel() }
-        try await provider.blockUser(id(990)) { challenge in
+        await provider.setCaptchaHandler { challenge in
             #expect(challenge.service == .hcaptcha)
             return "human-solution"
         }
+        try await provider.blockUser(id(990))
         let captured = fixture.requests.withLock { $0 }
         #expect(captured.count == 2)
         #expect(captured.allSatisfy { $0.request.httpMethod == "PUT" && context($0.request) == "ContextMenu" })
@@ -329,20 +378,27 @@ struct RelationshipContractTests {
         let (provider, session) = await makeProvider()
         defer { session.invalidateAndCancel() }
         let username = outcome == "repeated" ? "captcha-repeated" : "captcha-hcaptcha"
-        let handler: DiscordCaptchaHandler = { _ in
-            if outcome == "cancel" { throw CancellationError() }
-            if outcome == "accountChanged" { await provider.replaceCurrentUser() }
-            return outcome == "empty" ? " " : "human-solution"
+        if outcome != "noHandler" {
+            await provider.setCaptchaHandler { _ in
+                if outcome == "cancel" { return nil }
+                if outcome == "accountChanged" { await provider.replaceCurrentUser() }
+                return outcome == "empty" ? " " : "human-solution"
+            }
         }
-        await #expect(throws: (any Error).self) {
-            try await provider.sendFriendRequest(username: username, discriminator: nil, captchaHandler: outcome == "noHandler" ? nil : handler)
+        let error = await #expect(throws: (any Error).self) {
+            try await provider.sendFriendRequest(username: username, discriminator: nil)
         }
+        // Only a challenge the person closed ends quietly (and an account
+        // change cancels); one that failed, or a rejected solution, reports.
+        #expect((error is CancellationError) == ["cancel", "accountChanged"].contains(outcome))
         #expect(fixture.requests.withLock { $0.count } == (outcome == "repeated" ? 2 : 1))
         #expect(await !provider.requestSafetyCircuitIsOpen)
         await provider.disconnect()
     }
 
     private func id(_ value: UInt64) -> UserID { UserID(rawValue: value) }
+
+    private func target(_ value: UInt64) -> User { User(id: id(value), username: "target", displayName: "Target") }
 
     private func user(_ id: String) -> JSONValue {
         .object(["id": .string(id), "username": .string("user\(id)")])
@@ -413,6 +469,20 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
         let body: JSONValue?
     }
 
+    static let usernameFailures: [String: (Int, String)] = [
+        "already": (400, #"{"code":80007,"message":"You are already friends with that user."}"#),
+        "closed": (400, #"{"code":80000,"message":"Incoming friend requests disabled."}"#),
+        "limited": (429, #"{"retry_after":0.01,"global":false}"#),
+        "unverified": (403, #"{"code":40002,"message":"You need to verify your account"}"#),
+        "restricted": (403, #"{"code":340007,"message":"Limited access"}"#),
+        "broken": (500, ""),
+    ]
+
+    static let challengedRoutes: Set = [
+        "PUT /api/v9/users/@me/relationships/990", "DELETE /api/v9/users/@me/relationships/991",
+        "PUT /api/v9/users/@me/relationships/992/ignore",
+    ]
+
     static func challenge(service: String) -> String {
         """
         {"captcha_key":["captcha-required"],"captcha_service":"\(service)","captcha_sitekey":"site-key",
@@ -438,15 +508,15 @@ private final class RelationshipURLProtocol: URLProtocol, @unchecked Sendable {
         let (status, response): (Int, String) = switch (request.httpMethod!, username, lastComponent) {
         case (_, _, "ignore") where ["400", "401", "403", "429", "500"].contains(request.url!.deletingLastPathComponent().lastPathComponent):
             (Int(request.url!.deletingLastPathComponent().lastPathComponent)!, #"{"message":"Rejected","retry_after":0.01,"global":false}"#)
+        case _ where !solved && Self.challengedRoutes.contains("\(request.httpMethod!) \(request.url!.path)"):
+            (400, Self.challenge(service: "hcaptcha"))
         case ("POST", _, "blocked-user-warning-dismissal"): (200, "")
         case ("GET", _, _): (200, fixture.relationships.withLock { $0 })
-        case (_, "already"?, _): (400, #"{"code":80007,"message":"You are already friends with that user."}"#)
-        case (_, "closed"?, _): (400, #"{"code":80000,"message":"Incoming friend requests disabled."}"#)
-        case (_, "limited"?, _): (429, #"{"retry_after":0.01,"global":false}"#)
+        case (_, let name?, _) where Self.usernameFailures[name] != nil: Self.usernameFailures[name]!
+        case ("PUT", _, "807"): (400, Self.usernameFailures["already"]!.1)
         case (_, "captcha-repeated"?, _): (400, Self.challenge(service: "hcaptcha"))
         case (_, let name?, _) where name.hasPrefix("captcha-") && !solved:
             (400, Self.challenge(service: String(name.dropFirst("captcha-".count))))
-        case ("PUT", _, "990") where !solved: (400, Self.challenge(service: "hcaptcha"))
         case ("PUT", _, "813") where body == .object(["confirm_stranger_request": .bool(false)]):
             (400, #"{"code":80013,"message":"Confirmation required"}"#)
         case ("DELETE", _, "404"): (404, #"{"code":10013,"message":"Unknown User"}"#)

@@ -122,7 +122,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             hostingController.view.setAccessibilityIdentifier(accessibilityIdentifier)
             let popover = NSPopover()
             popover.behavior = behavior
-            popover.animates = true
+            popover.animates = AppMotionPolicy.animates(.overlays)
             popover.delegate = self
             popover.contentViewController = hostingController
 
@@ -197,6 +197,7 @@ struct StableReactionPickerPresenter<Content: View>: NSViewRepresentable {
             }
             restoreReturnResponder()
             popover.delegate = nil
+            popover.animates = popover.animates && AppMotionPolicy.animates(.overlays)
             popover.performClose(nil)
             restoreReturnResponder()
             finishClosing(notifyBinding: notifyBinding)

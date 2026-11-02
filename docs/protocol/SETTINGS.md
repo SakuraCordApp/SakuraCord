@@ -9,7 +9,7 @@
 | Profile reads | [DiscordRESTProviderProfiles.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProviderProfiles.swift) | [DirectMessageProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessageProviderContractTests.swift); [ProviderBootstrapContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderBootstrapContractTests.swift) |
 | Profile saves and widgets | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordProfileWidgetEligibility.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileWidgetEligibility.swift) | [ProfileEditingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProfileEditingContractTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Nicknames | [DiscordRESTProfileSaving.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileSaving.swift); [DiscordRESTRelationships.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTRelationships.swift); [AppModelNicknames.swift](../../App/Sources/SakuraCord/Models/AppModelNicknames.swift) | [NicknameCommandTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/NicknameCommandTests.swift) |
-| Group DM name, icon and leaving | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
+| Group DM name, icon, leaving and 1:1 DM closing | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
 | Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [QuickReactionPolicyTests.swift](../../App/Tests/SakuraCordAppTests/QuickReactionPolicyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
@@ -206,6 +206,69 @@ The same live desktop capture confirmed one bodyless DELETE with `silent=true`,
 a `200` channel response, and a `CHANNEL_DELETE` arriving before that response.
 The group disappeared from the sidebar. Its remaining member could re-add the
 leaving account through the ordinary Invite to Group DM UI.
+
+## Closing a 1:1 DM
+
+A 1:1 DM's context menu has an untinted **Close DM** at the top of its last
+section, above Remove Friend; group DMs offer Leave Group instead. There is no confirmation. Close DM sends one bodyless
+`DELETE /channels/{channel}` without `silent`, shares Leave Group's provider
+path, and is never replayed. It hides the DM without deleting messages. After a
+successful response the provider removes the DM from the list unless a Gateway
+event or session reset changed it during the request, and a selection on it
+moves to the next conversation. The matching `CHANNEL_DELETE` finds the DM gone.
+A failure keeps the DM and appears in the workspace error alert. A new message
+makes Discord send `CHANNEL_CREATE`, which the ordinary private-channel handling
+adds back to the list.
+
+The request follows the public
+[Delete/Close Channel](https://docs.discord.com/developers/resources/channel#deleteclose-channel)
+route and the first-party `closePrivateChannel` call analysed for Leave Group.
+The omitted `silent` is inferred from that analysis; the request was not
+captured from the first-party client. A live SakuraCord check on 25 October 2026
+closed the DM between the two saved test accounts, kept its history visible from
+the other account, and showed the DM back in the closer's list after the other
+account sent a message.
+
+## Message requests
+
+Researched on 2026-11-01 from the official production web bundle (web stable
+**657850**) plus a live capture of both authorized accounts' READY. Neither
+account held a request, and a DM between two accounts that already share a 1:1
+channel never becomes one, so accept and ignore were not observed live. Pinned
+Paicord and pinned Swiftcord v1 (with its DiscordKit) have no equivalent.
+
+READY `private_channels` and channel events carry `is_message_request`,
+`is_message_request_timestamp` and `is_spam`. Discord's stores file a channel
+under Spam when `is_spam` is set, otherwise under Requests when
+`is_message_request` is set; both leave the DM list. There is no dedicated
+Gateway dispatch. A `CHANNEL_UPDATE` changes only the flags it carries; an
+explicit `false` clears that flag alone.
+
+The Direct Messages home shows **Message Requests** under Friends only while a
+request or spam conversation exists. Its badge counts requests, not spam. The
+page has Requests and Spam (count when non-zero) tabs, newest activity first,
+with Discord's empty-state copy. **Accept DM** sends one
+`PUT /channels/{channel}/recipients/@me` with `{"consent_status":2}` (ACCEPTED)
+and moves the conversation into the list. **Ignore** sends one bodyless
+`DELETE /channels/{channel}/recipients/@me` and removes it without notifying
+the sender. Spam offers Accept DM only. Both share Close DM's provider path:
+never replayed, nothing applied after an account or session change, and a
+failure keeps the request and appears in the workspace error alert. Ignore
+removes the DM only if no Gateway event changed it meanwhile; Accept keeps
+unrelated updates but yields to a re-created or re-flagged DM.
+
+Until accepted, a request is read-only. The delivery boundary that enforces
+guild timeouts also refuses its messages, forwards, typing, reactions, edits,
+poll votes, interactions and call rings, and the app offers no composer,
+reactions, votes, components, pins, calls or profile quick message there. Opening a request shows
+its messages with Accept DM and Ignore in place of the composer.
+
+Not implemented: Report Spam and the not-spam report (their report endpoint was
+not traced), click-to-preview through
+`GET /users/@me/message-requests/supplemental-data`, the staff-only batch
+reject, and the GB-only "Are you sure you know this person?" confirmation. Not
+verified live: the Gateway events that follow a decision, whether Ignore also
+changes the relationship, and whether opening a request acknowledges it.
 
 ## Protobuf preservation
 

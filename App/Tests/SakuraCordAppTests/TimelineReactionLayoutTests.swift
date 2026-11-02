@@ -33,7 +33,7 @@ func `bubble reactions flow in one line beyond a short bubble`(isOutgoing: Bool)
         ),
         isUnreadBoundary: false, isHighlighted: false
     )
-    let layout = NativeTimelineRowLayout.make(item: item, width: 900, model: model)
+    let layout = NativeTimelineRowLayout.make(item: item, width: 900, source: model)
 
     let bubble = try #require(layout.bubbleRegion).frame
     let addFrame = try #require(layout.addReactionFrame)

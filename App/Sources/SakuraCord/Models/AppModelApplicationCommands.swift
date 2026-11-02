@@ -3,6 +3,24 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    /// Clicking a command mention starts that command in the composer of the
+    /// conversation showing it, as in Discord.
+    func startCommandMention(id: String, name: String, in channelID: ChannelID) {
+        let destination: MessageComposerDestination
+        if channelID == openThread?.id {
+            destination = .thread
+        } else if channelID == selectedChannelID {
+            destination = .channel
+        } else {
+            return
+        }
+        let commandComposer = commandComposer(for: destination)
+        commandComposer.mentionedCommand = .init(id: id, name: name)
+        if !commandComposer.hasLoadedCatalogs, !commandComposer.isLoading {
+            loadApplicationCommands(in: destination)
+        }
+    }
+
     func loadApplicationCommands(in destination: MessageComposerDestination = .channel) {
         let commandComposer = commandComposer(for: destination)
         guard supportedCapabilities.contains(.slashCommands),

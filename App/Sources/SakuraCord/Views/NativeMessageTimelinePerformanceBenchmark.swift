@@ -4,9 +4,14 @@ import SakuraCordModels
 
 extension NativeMessageTimelineCoordinator {
         func startPerformanceAutoScrollIfNeeded() {
+            // History pages are viewport-sized, as Discord's are, so a
+            // settled timeline holds about a screenful and the run pages in
+            // the rest itself. One with no more history, such as the launch
+            // conversation, has nothing to measure.
             guard parent.runsPerformanceAutoScroll,
                   !didStartPerformanceAutoScroll,
-                  items.count >= 100,
+                  parent.hasMoreMessages || parent.hasMoreLaterMessages,
+                  initialPositionConversation == parent.conversation,
                   let canvas
             else { return }
             didStartPerformanceAutoScroll = true
@@ -34,8 +39,11 @@ extension NativeMessageTimelineCoordinator {
             // the canvas deliberately paints uncached rows directly; a
             // prewarm would defeat that fallback and make the first cold
             // AppKit/CoreText bitmap block the main thread before motion.
-            canvas.dismissHoverPresentationForScroll()
-            noteScrollActivity()
+            // An idle run measures the ordinary stationary timeline.
+            if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                canvas.dismissHoverPresentationForScroll()
+                noteScrollActivity()
+            }
             startup.phase = "launch-stabilization"
             performanceAutoScrollTask = Task { @MainActor [weak self, weak canvas] in
                 guard let self, let canvas else { return }
@@ -84,13 +92,17 @@ extension NativeMessageTimelineCoordinator {
                     parent.conversation.loaderKind == .pins
                 let positionShift =
                     bottomInset + min(160, initialRect.height * 0.25)
-                scroll(
-                    toDocumentY:
-                        scrollsTowardLater
-                            ? initialRect.minY + positionShift
-                            : materializedHistoryMaximumY(viewportHeight: initialRect.height) - initialRect.height - min(160, initialRect.height * 0.25),
-                    scrollView: scrollView
-                )
+                // An idle run stays where the conversation opened, pinned
+                // to its newest message.
+                if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                    scroll(
+                        toDocumentY:
+                            scrollsTowardLater
+                                ? initialRect.minY + positionShift
+                                : materializedHistoryMaximumY(viewportHeight: initialRect.height) - initialRect.height - min(160, initialRect.height * 0.25),
+                        scrollView: scrollView
+                    )
+                }
                 startup.phase = "settling"
                 let ticksBeforePositionShift = startup.completedTicks
                 let positionShiftDeadline =
@@ -132,6 +144,8 @@ extension NativeMessageTimelineCoordinator {
             scrollsTowardLater: Bool
         ) {
                 canvas.resetDrawTelemetry()
+                performanceUpdateCount = 0
+                performanceUpdateTotalDuration = 0
                 // Exercise native pagination directly. This synthetic workload
                 // must never invoke the user-interaction callback: that callback
                 // deliberately unblocks read acknowledgements for real input.
@@ -157,6 +171,9 @@ extension NativeMessageTimelineCoordinator {
                 self.performanceDisplayLinkTicker = state.ticker
                 let finish: (NativeTimelineBenchmarkFinishOutcome) -> Void = { [weak self, weak canvas, state] outcome in
                     guard let elapsed = state.finish(
+                        endActivity: {
+                            if !NativeTimelineBenchmarkScrollPolicy.isIdle { AppScrollWorkGate.endActivity() }
+                        },
                         beforeMeasurementClose: {
                             Self.emitPerformanceBenchmarkOutcome(outcome)
                         },
@@ -165,7 +182,11 @@ extension NativeMessageTimelineCoordinator {
                                 outcome: outcome,
                                 elapsed: elapsed,
                                 state: state,
-                                canvas: canvas
+                                canvas: canvas,
+                                timelineUpdates: (
+                                    self?.performanceUpdateCount ?? 0,
+                                    self?.performanceUpdateTotalDuration ?? 0
+                                )
                             )
                         }
                     ) else { return }
@@ -183,7 +204,7 @@ extension NativeMessageTimelineCoordinator {
                 // loading isolation keys off the same cross-surface gate as a
                 // real gesture. Exercise that scheduling policy here so the
                 // permanent benchmark catches priority regressions.
-                AppScrollWorkGate.beginActivity()
+                if !NativeTimelineBenchmarkScrollPolicy.isIdle { AppScrollWorkGate.beginActivity() }
                 state.ticker.start(on: canvas) { [weak self, weak scrollView, weak state] in
                     guard let self, let scrollView, let state else {
                         finish(.cancelled)
@@ -218,8 +239,19 @@ extension NativeMessageTimelineCoordinator {
             let targetDocumentY = state.scrollsTowardLater
                 ? visibleRect.minY + scrollDistance
                 : visibleRect.minY - scrollDistance
-            scroll(toDocumentY: targetDocumentY, scrollView: scrollView)
-            reportScrollState()
+            // A real gesture that pushes past the loaded edge enters the
+            // provisional reserve, which an unread conversation needs before
+            // it loads; this scroll is clamped short of it, so it crosses on
+            // the gesture's behalf.
+            let direction: TimelineHistoryDirection = state.scrollsTowardLater ? .later : .earlier
+            let boundaryY = materializedHistoryScrollBoundaryY(direction, viewportHeight: visibleRect.height)
+            if state.scrollsTowardLater ? targetDocumentY > boundaryY : targetDocumentY < boundaryY {
+                setFollowsMaterializedHistoryBoundary(true, direction: direction)
+            }
+            if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                scroll(toDocumentY: targetDocumentY, scrollView: scrollView)
+                reportScrollState()
+            }
             let currentDocumentY = scrollView.contentView.bounds.minY
             let didAdvance = state.scrollsTowardLater
                 ? currentDocumentY > visibleRect.minY + 0.5
@@ -227,10 +259,13 @@ extension NativeMessageTimelineCoordinator {
             let hasMoreHistory = state.scrollsTowardLater
                 ? parent.hasMoreLaterMessages
                 : parent.hasMoreMessages
-            state.recordHistoryProgress(
-                didAdvance: didAdvance,
-                hasMoreHistory: hasMoreHistory
-            )
+            // A still timeline is not starved of history.
+            if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+                state.recordHistoryProgress(
+                    didAdvance: didAdvance,
+                    hasMoreHistory: hasMoreHistory
+                )
+            }
             state.maximumScrollWork = max(
                 state.maximumScrollWork,
                 ProcessInfo.processInfo.systemUptime - workStart
@@ -303,7 +338,8 @@ extension NativeMessageTimelineCoordinator {
             outcome: NativeTimelineBenchmarkFinishOutcome,
             elapsed: TimeInterval,
             state: NativeTimelineBenchmarkRunState,
-            canvas: NativeTimelineCanvasView?
+            canvas: NativeTimelineCanvasView?,
+            timelineUpdates: (count: Int, milliseconds: Double)
         ) {
             NativeTimelineBenchmarkArtifact.write(
                 outcome: outcome,
@@ -318,7 +354,10 @@ extension NativeMessageTimelineCoordinator {
                 historyStarvedTicks: state.historyStarvedTicks,
                 maximumConsecutiveHistoryStarvedTicks:
                     state.maximumHistoryStarvedTicks,
-                renderTelemetry: canvas?.renderTelemetry
+                renderTelemetry: canvas?.renderTelemetry,
+                mainThreadCPUTime: NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
+                    - state.mainThreadCPUTimeAtStart,
+                timelineUpdates: timelineUpdates
             )
             AppPerformanceSignposts.endResourceWindow(
                 named: "MessageTimelineAutoScrollBenchmark",

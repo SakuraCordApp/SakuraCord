@@ -18,10 +18,10 @@ struct NativeTimelineTranslationPresentation {
 
     static func make(
         row: MessageRowPresentation,
-        model: AppModel?,
+        source model: AppModel?,
         isOutgoingBubble: Bool
     ) -> Self? {
-        guard row.searchContext == nil, row.pinnedAt == nil, !row.isResource,
+        guard row.isConversationRow,
               let entry = model?.messageTranslationPresentation(for: row.message)
         else { return nil }
         switch entry.status {
@@ -39,7 +39,7 @@ struct NativeTimelineTranslationPresentation {
                 attributedText: nil,
                 baseFontSize: 15
             )
-            let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, model: model)
+            let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, source: model)
             return Self(
                 requestID: entry.requestID,
                 kind: .translated,
@@ -119,8 +119,9 @@ extension NativeTimelineRowLayout {
         var bottom = origin.y + InterfaceScale.metric(15)
         if let attributed = presentation.text?.attributedContent, let framesetter = presentation.text?.framesetter {
             let height = measuredTextHeight(framesetter, value: attributed, length: attributed.length, width: width)
-            textFrame = CGRect(x: origin.x, y: bottom + 2, width: width, height: height)
-            bottom += 2 + height
+            bottom += 2 + NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributed)
+            textFrame = CGRect(x: origin.x, y: bottom, width: width, height: height)
+            bottom += height
         }
         return TranslationRegion(
             messageID: messageID,
@@ -171,8 +172,7 @@ extension NativeTimelineRowPainter {
                 && input.hoveredMention?.region == region.regionID ? input.hoveredMention?.characterIndex : nil,
             hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == .message(input.row.identity)
                 && input.hoveredTextLink?.region == region.regionID ? input.hoveredTextLink?.characterIndex : nil,
-            hoveredSpoilerRangeLocation: input.hoveredTextSpoiler?.itemIdentifier == .message(input.row.identity)
-                && input.hoveredTextSpoiler?.region == region.regionID ? input.hoveredTextSpoiler?.rangeLocation : nil,
+            spoilerHoverProgress: input.textSpoilerHover.progress(in: .message(input.row.identity), region: region.regionID),
             revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: region.regionID)
         )
     }

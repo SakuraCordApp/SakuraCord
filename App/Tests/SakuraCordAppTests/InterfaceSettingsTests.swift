@@ -144,11 +144,11 @@ import Testing
         isHighlighted: false
     )
 
-    let original = NativeTimelineRowLayout.make(item: item, width: 620, model: model)
+    let original = NativeTimelineRowLayout.make(item: item, width: 620, source: model)
     var settings = AccessibilitySettingsSnapshot.defaults
     settings.underlinesLinks = true
     model.applyAccessibilitySettings(settings, persists: false)
-    let layout = NativeTimelineRowLayout.make(item: item, width: 620, model: model)
+    let layout = NativeTimelineRowLayout.make(item: item, width: 620, source: model)
     #expect(layout.height == original.height)
     #expect(layout.contentFrame == original.contentFrame)
     let content = try #require(layout.attributedContent)

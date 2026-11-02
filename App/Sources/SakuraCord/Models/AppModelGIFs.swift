@@ -3,6 +3,22 @@ import Foundation
 import SakuraCordModels
 
 extension AppModel {
+    func resetGIFPicker() {
+        gifSearchTask?.cancel()
+        gifSearchTask = nil
+        gifPickerLoadTask?.cancel()
+        gifPickerLoadTask = nil
+        gifPickerLoadGeneration &+= 1
+        gifResults = []
+        gifCategories = []
+        gifTrendingPreviewURL = nil
+        favoriteGIFs = []
+        isLoadingGIFs = false
+        isLoadingGIFPicker = false
+        gifFavoriteMutationURL = nil
+        gifErrorMessage = nil
+    }
+
     func searchGIFs(_ query: String) {
         gifSearchTask?.cancel()
         isLoadingGIFs = true

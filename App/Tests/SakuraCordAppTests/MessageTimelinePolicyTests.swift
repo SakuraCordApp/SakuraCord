@@ -289,3 +289,20 @@ import Testing
         ) == nil
     )
 }
+
+/// Measured in the official desktop client (build 650389) with a window
+/// 794 CSS px tall at 100% zoom.
+@Test(arguments: [
+    (zoom: 1.0, initial: 10, page: 20),
+    (zoom: 0.8, initial: 11, page: 22),
+    (zoom: 0.75, initial: 12, page: 24),
+    (zoom: 0.67, initial: 13, page: 26),
+])
+func `history fetch limits follow the official client's viewport formula`(
+    zoom: Double,
+    initial: Int,
+    page: Int
+) {
+    #expect(DiscordHistoryFetchLimit.initial(windowHeight: 794, zoom: zoom) == initial)
+    #expect(DiscordHistoryFetchLimit.page(windowHeight: 794, zoom: zoom) == page)
+}

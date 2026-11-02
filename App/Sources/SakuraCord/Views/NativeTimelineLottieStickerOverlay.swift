@@ -80,10 +80,6 @@ final class NativeTimelineLottieStickerOverlay: NSView {
         }
     }
 
-    func pauseForScroll() {
-        animationView.pause()
-    }
-
     func stop() {
         loadingTask?.cancel()
         loadingTask = nil

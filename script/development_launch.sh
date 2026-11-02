@@ -73,7 +73,10 @@ PY
   else
     sakuracord_apply_secure_release_credential_policy run "$updates_enabled" || return
   fi
-  if [[ "$credential_mode" != "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" ]]; then
+  # A release bundle packaged for distribution always uses Keychain. That is
+  # stricter than the local preference, so it stays launchable.
+  if [[ "$credential_mode" != "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" ]] \
+    && ! [[ "$configuration" == "release" && "$credential_mode" == "0" ]]; then
     echo "Refusing to launch: built credential mode is $credential_mode, expected $SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS ($SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE). Rebuild with the current launcher and --build." >&2
     return 2
   fi

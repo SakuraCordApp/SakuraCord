@@ -21,6 +21,14 @@ nonisolated enum SelectionFieldLeading: Hashable, Sendable {
         fallback: String,
         shape: SelectionFieldImageShape = .circle
     )
+
+    var imageURL: URL? {
+        switch self {
+        case .role(_, let iconURL, _): iconURL
+        case .remoteImage(let url, _, _): url
+        case .none, .systemImage, .text: nil
+        }
+    }
 }
 
 nonisolated enum SelectionFieldTitleStyle: Hashable, Sendable {
@@ -175,8 +183,10 @@ struct SelectionField<ID: Hashable & Sendable>: View {
     @State private var highlightedID: ID?
     @State private var resultHeight: CGFloat = 260
     @State private var searchIsFocused = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.isEnabled) private var isEnabled
+
+    private var reduceMotion: Bool { systemReduceMotion || !AppMotionPolicy.animates(.overlays) }
 
     private let source: SelectionFieldSource<ID>
     private let mode: SelectionFieldSelectionMode
@@ -269,7 +279,7 @@ struct SelectionField<ID: Hashable & Sendable>: View {
                 }
                 if selection.isEmpty {
                     Text(configuration.placeholder)
-                        .font(.interfaceSystem(size: 13, weight: .medium))
+                        .font(Font(SelectionFieldLayoutMetrics.placeholderFont as CTFont))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: SelectionFieldLayoutMetrics.tokenHeight, alignment: .leading)
                 }
@@ -289,14 +299,14 @@ struct SelectionField<ID: Hashable & Sendable>: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isExpanded ? "Close options" : "Show options")
         }
-        .padding(.horizontal, InterfaceScale.metric(11))
-        .padding(.vertical, InterfaceScale.metric(7))
-        .frame(minHeight: InterfaceScale.metric(44))
-        .contentShape(.rect(cornerRadius: InterfaceScale.metric(11)))
+        .padding(.horizontal, SelectionFieldLayoutMetrics.leadingInset)
+        .padding(.vertical, SelectionFieldLayoutMetrics.tokenVerticalPadding)
+        .frame(minHeight: SelectionFieldLayoutMetrics.minimumHeight)
+        .contentShape(.rect(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius))
         .onTapGesture { open() }
-        .glassEffect(.regular, in: .rect(cornerRadius: InterfaceScale.metric(11)))
+        .glassEffect(.regular, in: .rect(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: InterfaceScale.metric(11))
+            RoundedRectangle(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius)
                 .strokeBorder(isExpanded
                     ? SakuraCordAccentColor.color.opacity(0.65)
                     : Color.primary.opacity(hovered ? 0.25 : 0.16), lineWidth: 1)
@@ -368,10 +378,10 @@ struct SelectionField<ID: Hashable & Sendable>: View {
         }
         // The list floats over message text; a backing keeps rows legible
         // while the glass still picks up the surrounding tint.
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.78), in: .rect(cornerRadius: InterfaceScale.metric(11)))
-        .glassEffect(.regular, in: .rect(cornerRadius: InterfaceScale.metric(11)))
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.78), in: .rect(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius))
+        .glassEffect(.regular, in: .rect(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: InterfaceScale.metric(11)).strokeBorder(.primary.opacity(0.1), lineWidth: 0.75)
+            RoundedRectangle(cornerRadius: SelectionFieldLayoutMetrics.cornerRadius).strokeBorder(.primary.opacity(0.1), lineWidth: 0.75)
                 .allowsHitTesting(false)
         }
     }

@@ -228,9 +228,7 @@ extension AppModel {
                 : age > 10 * 86_400 ? 8 : age > 2 * 86_400 ? 6
                 : policy.level == .nothing ? 7 : policy.level == .allMessages ? 4 : 5
             let guild = snapshot.guilds.first { $0.id == entry.guildID }
-            let boundary = entry.lastAcknowledgedMessageID ?? guild?.joinedAt.map {
-                MessageID(rawValue: UInt64(max(0, $0.timeIntervalSince1970 * 1_000 - 1_420_070_400_000)) << 22)
-            }
+            let boundary = entry.lastAcknowledgedMessageID ?? guild?.joinedAt.map(MessageID.init(timestamp:))
             guard let boundary, boundary < newest else { continue }
             let restricted = inboxRequiresAgeAgreement(channelID: entry.channelID, guildID: entry.guildID)
             let group = InboxUnreadGroup(
@@ -386,19 +384,14 @@ extension AppModel {
         if inbox.tab == .mentions, inbox.visibleMentions.isEmpty { loadMoreInbox() }
     }
 
+    /// Drops Inbox groups that any read-state change has read.
     func reconcileInboxReadState() {
         guard inbox.isPresented else { return }
-        for (id, group) in inbox.pendingReadGroups where readState[id]?.pendingAcknowledgementID == nil {
-            if (readState[id]?.lastAcknowledgedMessageID ?? MessageID(rawValue: 0)) < group.newestUnreadMessageID {
-                restoreInboxGroup(group)
-                inbox.undoGroups.removeAll { $0.id == id }
-            }
-            inbox.pendingReadGroups[id] = nil
-        }
+        let count = inbox.groups.count
         inbox.groups.removeAll { group in
             !group.isEvents && (readState[group.id]?.lastAcknowledgedMessageID ?? MessageID(rawValue: 0)) >= group.newestUnreadMessageID
         }
-        publishInbox()
+        if inbox.groups.count != count { publishInbox() }
     }
 
     func markInboxGroupRead(_ channelID: ChannelID, allowsUndo: Bool = true) {
@@ -409,16 +402,13 @@ extension AppModel {
             markInboxEventGroupRead(group)
             return
         }
-        let boundary = group.newestUnreadMessageID
-        inbox.pendingReadGroups[channelID] = group
+        let boundary = Self.inboxAcknowledgementTarget(for: group, now: .now)
         let metadata = readState.acknowledgementMetadata(channelID: channelID)
         let lastViewed = readState[channelID]?.lastViewed
-        acknowledgementTasks[channelID]?.cancel()
-        acknowledgementTasks[channelID] = nil
-        readState.markAcknowledgementPending(channelID: channelID, messageID: boundary)
+        discardPendingAcknowledgement(for: channelID)
+        readState.acknowledge(channelID: channelID, messageID: boundary)
         enqueueAcknowledgement(channelID: channelID, mutation: ReadStateMutation(
-            messageID: boundary, manual: false, mentionCount: nil,
-            flags: metadata.flags, lastViewed: lastViewed
+            messageID: boundary, flags: metadata.flags, lastViewed: lastViewed
         ))
         if readState[channelID]?.isUnread != true {
             cancelNativeNotifications(channelID: channelID)
@@ -436,11 +426,10 @@ extension AppModel {
         }
         let metadata = readState.acknowledgementMetadata(channelID: group.id)
         let lastViewed = readState[group.id]?.lastViewed
-        inbox.pendingReadGroups[group.id] = nil
-        readState.markUnread(channelID: group.id, after: boundary, mentionCount: 0)
+        discardPendingAcknowledgement(for: group.id)
+        readState.acknowledge(channelID: group.id, messageID: boundary)
         enqueueAcknowledgement(channelID: group.id, mutation: ReadStateMutation(
-            messageID: boundary, manual: true, mentionCount: nil,
-            flags: metadata.flags, lastViewed: lastViewed, wireManual: false
+            messageID: boundary, flags: metadata.flags, lastViewed: lastViewed
         ))
         restoreInboxGroup(group)
         refreshUnreadPresentation()

@@ -104,7 +104,7 @@ private struct BrowseChannelRow: View {
         .overlay {
             ChannelContextMenuBridge(
                 isSelected: false,
-                isUnread: model.isChannelUnread(channel.id),
+                isUnread: model.canMarkConversationRead(channelID: channel.id),
                 isMutationPending: model.isChannelNotificationMutationPending(channel.id),
                 allowsMutations: !model.checkingChannelIDs.contains(channel.id),
                 directOverride: model.channelNotificationOverride(for: channel),

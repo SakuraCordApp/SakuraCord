@@ -52,8 +52,8 @@ func `account or thread draft replacement invalidates an external upload result`
     let channelID = try #require(model.selectedChannelID)
     let destination: MessageComposerDestination = resetsAccount ? .channel : .thread
     if !resetsAccount {
-        model.threadCreation = ThreadCreationDraft(parentID: channelID,
-                                                  permissions: .init(canCreatePublic: true, canCreatePrivate: false))
+        model.sideConversations.thread = .threadCreation(ThreadCreationDraft(parentID: channelID,
+                                                                             permissions: .init(canCreatePublic: true, canCreatePrivate: false)))
     }
     let prompt = OversizedAttachmentPrompt(
         fileURL: URL(fileURLWithPath: "/tmp/account-reset.bin"),
@@ -71,8 +71,8 @@ func `account or thread draft replacement invalidates an external upload result`
         await model.resetAccountScopedLoadsAndForumState()
     } else {
         model.closeThread()
-        model.threadCreation = ThreadCreationDraft(parentID: channelID,
-                                                  permissions: .init(canCreatePublic: true, canCreatePrivate: false))
+        model.sideConversations.thread = .threadCreation(ThreadCreationDraft(parentID: channelID,
+                                                                             permissions: .init(canCreatePublic: true, canCreatePrivate: false)))
     }
     await uploader.release(
         call: 1,
@@ -237,6 +237,22 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
     attachment.description = "A useful description"
     model.updateComposerAttachment(attachment, in: .channel)
     #expect(model.channelComposerAttachments.first?.filename == attachment.filename)
+}
+
+@MainActor
+@Test func `selecting a whole draft preserves literal and active mention ranges`() {
+    let raw = "@everyone <t:1000000:R> <@$356875221078245376>"
+    for source in ["🌸 `\(raw)`", "🌸 `\(raw)` \(raw)"] {
+        let attributed = ComposerEmojiAttributedText.make(source)
+        let rawSelection = NSRange(location: 0, length: source.utf16.count)
+        let displayed = ComposerEmojiAttributedText.displayRange(forRaw: rawSelection, source: source)
+        #expect(displayed == NSRange(location: 0, length: attributed.length))
+        let textView = ComposerNSTextView()
+        textView.textStorage?.setAttributedString(attributed)
+        textView.setSelectedRange(displayed)
+        textView.insertText("replacement", replacementRange: textView.selectedRange())
+        #expect(ComposerEmojiAttributedText.serialize(textView.attributedString()) == "replacement")
+    }
 }
 
 @MainActor
@@ -479,7 +495,7 @@ func `timeout during thread creation preserves its unsent message without replac
     let creation = ThreadCreationDraft(parentID: channelID, permissions: model.selectedChannelThreadCreationPermissions)
     try #require(creation.permissions.canCreatePublic)
     creation.name = "Thread"
-    model.threadCreation = creation
+    model.sideConversations.thread = .threadCreation(creation)
     let originalDraft = "  Keep this first message\n"
     let attachment = ForumPostAttachment(url: URL(fileURLWithPath: "/tmp/thread-timeout-draft.txt"))
     model.threadDraft = originalDraft
@@ -851,7 +867,7 @@ private actor TypingTestProvider: ChatProvider {
         capability == .stickerSending
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         editCount += 1
         throw ChatProviderError.invalidRequest("not used")
     }

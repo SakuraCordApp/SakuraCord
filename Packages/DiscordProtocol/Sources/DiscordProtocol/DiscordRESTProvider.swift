@@ -12,11 +12,14 @@ nonisolated struct AttachmentUploadFile: Equatable, Sendable {
     let url: URL
     let name: String
     let description: String?
+    /// The draft attachment this file came from, which lets the user stop it alone.
+    let id: UUID?
 
-    init(url: URL, name: String, description: String? = nil) {
+    init(url: URL, name: String, description: String? = nil, id: UUID? = nil) {
         self.url = url
         self.name = name
         self.description = description
+        self.id = id
     }
 }
 
@@ -74,6 +77,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     let usesDesktopHeartbeat: Bool
     let clientMetadata: DiscordClientMetadata
     let apiDiagnostics: DiscordAPIDiagnosticStore
+    /// The app's human-solving presentation, shared by every REST route.
+    var captchaHandler: DiscordCaptchaHandler?
+    var captchaPresentations: [UUID: Task<String?, Never>] = [:]
     let usesEmojiDiskCache: Bool
     let usesForwardSearchPeopleDiskCache: Bool
     let persistsResolvedInstallationID: Bool
@@ -114,10 +120,30 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var guildChannelTasks: [GuildID: Task<[Channel], Error>] = [:]
     var privateChannelTasks: [UserID: Task<Channel, Error>] = [:]
     var messageSendTasks: [String: Task<Message, Error>] = [:]
+    var attachmentUploadDelegates: [UUID: AttachmentUploadTaskDelegate] = [:]
+    var cancelledAttachmentUploads: Set<UUID> = []
+    var postingAttachmentUploads: Set<UUID> = []
+    /// Staged files storing ahead of their message, by draft attachment ID; each yields its stored name.
+    var attachmentPreuploads: [UUID: Task<String, Error>] = [:]
     var cachedForumPosts: [ChannelID: [ChannelID: ForumPost]] = [:]
     var cachedForumThreadOrder: [ChannelID] = []
     var cachedJoinedThreads: [ChannelID: MessageThreadSummary] = [:]
     var cachedJoinedThreadOrder: [ChannelID] = []
+    /// Advanced by each authoritative thread record or deletion; a REST
+    /// result is applied only when no newer record arrived meanwhile.
+    var threadRecordRevisions: [ChannelID: UInt64] = [:]
+    /// Advanced by authoritative membership changes and each local join or
+    /// leave; a REST result carries membership only when none arrived meanwhile.
+    var threadMembershipRevisions: [ChannelID: UInt64] = [:]
+    /// Advanced only by changes that supersede a pending mutation's result:
+    /// Gateway records and deletions, and accepted local mutations. Reads
+    /// advance the revisions above but never these, so an observation cannot
+    /// cancel a mutation's confirmation.
+    var threadRecordEpochs: [ChannelID: UInt64] = [:]
+    /// Gateway membership events and the start of each local join or leave.
+    var threadMembershipEpochs: [ChannelID: UInt64] = [:]
+    /// The latest pending edit per thread; the next edit waits for it.
+    var threadMutationTails: [ChannelID: Task<Void, Never>] = [:]
     var cachedGuildNotificationSettings: [GuildID?: GuildNotificationSettings] = [:]
     var forumCatalogueTasks: [ForumCatalogueLoadKey: Task<Void, Never>] = [:]
     var forumCatalogueTaskIDs: [ForumCatalogueLoadKey: UUID] = [:]
@@ -246,6 +272,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var relationshipRevisions: [UserID: UInt64] = [:]
     /// Per-group revisions keep an Edit Group response from replacing a newer Gateway update.
     var privateChannelRevisions: [ChannelID: UInt64] = [:]
+    /// Per-DM revisions of the Gateway events that re-create a DM or carry
+    /// request flags. With its status check, Accept DM keeps unrelated updates
+    /// but never clears a request Discord re-created or re-flagged meanwhile.
+    var messageRequestRevisions: [ChannelID: UInt64] = [:]
     var cachedUserRevisions: [String: UInt64] = [:]
     var relationshipUserPublicationTask: Task<Void, Never>?
     var cachedGuildRoles: [GuildID: [GuildRoleDTO]] = [:]
@@ -385,6 +415,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
                 nextIndex = 0
             }
         }
+    }
+
+    public func setCaptchaHandler(_ handler: @escaping DiscordCaptchaHandler) async {
+        captchaHandler = handler
     }
 
     public func updateClientAppState(isFocused: Bool) async {

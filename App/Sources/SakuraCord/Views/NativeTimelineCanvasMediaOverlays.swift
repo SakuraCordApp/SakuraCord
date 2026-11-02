@@ -38,9 +38,6 @@ extension NativeTimelineCanvasView {
         reconcileInlineVideoOverlays(
             plays: !reduceMotion
         )
-        reconcileLottieStickerOverlays(
-            reduceMotion: reduceMotion
-        )
     }
 
     func scheduleAnimatedMediaReconciliation() {
@@ -76,7 +73,6 @@ extension NativeTimelineCanvasView {
     }
 
     func startVisibleInlineVideosImmediately() {
-        guard !suppressesHoverPresentation else { return }
         let reduceMotion =
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             || !permitsAnimatedMediaPlayback
@@ -118,7 +114,9 @@ extension NativeTimelineCanvasView {
         }
         inlineVideoRows = rows
         reconcileInlineVideoOverlays(
-            plays: !reduceMotion
+            // Created while scrolling so the embed is not blank, but paused
+            // until scrolling settles.
+            plays: !reduceMotion && !suppressesHoverPresentation
         )
     }
 
@@ -260,7 +258,7 @@ extension NativeTimelineCanvasView {
             )
 
             appendAnimatedEmbedOverlays(
-                messageID: row.message.id,
+                message: row.message,
                 identifier: identifier,
                 layout: layout,
                 accumulator: accumulator
@@ -271,6 +269,7 @@ extension NativeTimelineCanvasView {
             {
                 appendAnimatedComponentMediaOverlays(
                     component,
+                    messageID: row.message.id,
                     componentIndex: componentIndex,
                     identifier: identifier,
                     accumulator: accumulator
@@ -349,7 +348,7 @@ extension NativeTimelineCanvasView {
                                media: .media(url, maximumPixelDimension: 64), frame: frame,
                                cornerRadius: 0, isLooping: true)
         }
-        for reaction in layout.reactionRegions {
+        for reaction in layout.reactionRegions where reactionTransitions[identifier] == nil {
             for (avatarIndex, avatar) in reaction.avatarRegions.enumerated() {
                 guard let url = avatar.reactor.avatarURL,
                       NativeTimelineAvatarPresentation.shouldDecodeAnimation(for: url)
@@ -388,10 +387,15 @@ extension NativeTimelineCanvasView {
             )
         }
         let fillsFrame = MediaGalleryImagePresentation.fillsFrame(
-            itemCount: layout.attachmentRegions.count
+            itemCount: layout.mediaGalleryItemCount
         )
+        // A revealed attachment can share its animation with one still hidden.
         for region in layout.attachmentRegions
-        where region.attachment.mediaKind == .animatedImage {
+        where region.attachment.mediaKind == .animatedImage
+            && !NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                messageID: row.message.id, contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
+                isSpoiler: region.attachment.isSpoiler, store: spoilerRevealStore
+            ) {
             accumulator.append(
                 row: identifier,
                 role: .attachment(region.attachment.id),
@@ -428,12 +432,15 @@ extension NativeTimelineCanvasView {
     }
 
     private func appendAnimatedEmbedOverlays(
-        messageID: MessageID,
+        message: Message,
         identifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
-        for embed in layout.embedRegions {
+        let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+            in: message, store: spoilerRevealStore
+        )
+        for embed in layout.embedRegions where concealedEmbeds[embed.embedID] == nil {
             for (imageIndex, imageRegion) in embed.imageRegions.enumerated()
             where Self.isPotentiallyAnimated(imageRegion.url) {
                 accumulator.append(
@@ -479,7 +486,7 @@ extension NativeTimelineCanvasView {
                     selectionRange: textSelection?.itemIdentifier == identifier
                         && textSelection?.region == textRegionID ? textSelection?.range : nil,
                     revealedSpoilerLocations: revealedTextSpoilerLocations(
-                        messageID: messageID,
+                        messageID: message.id,
                         region: textRegionID,
                         value: textRegion.text.value,
                         layout: layout
@@ -491,12 +498,23 @@ extension NativeTimelineCanvasView {
 
     private func appendAnimatedComponentMediaOverlays(
         _ component: NativeTimelineComponentLayout,
+        messageID: MessageID,
         componentIndex: Int,
         identifier: NativeMessageTimelineItem.Identifier,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
+        // A revealed item can share its animation with one still hidden.
+        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+            in: component, messageID: messageID, store: spoilerRevealStore
+        )
+        let isHidden = { [spoilerRevealStore] (frame: CGRect, componentID: String, isSpoiler: Bool) in
+            NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(frame, hiddenContainerFrames: hiddenContainerFrames)
+                || NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                    messageID: messageID, contentID: componentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+                )
+        }
         for image in component.images
-        where Self.isPotentiallyAnimated(image.displayURL) {
+        where Self.isPotentiallyAnimated(image.displayURL) && !isHidden(image.frame, image.componentID, image.isSpoiler) {
             accumulator.append(
                 row: identifier,
                 role: .componentImage(componentIndex, image.componentID),
@@ -506,18 +524,21 @@ extension NativeTimelineCanvasView {
                 ),
                 frame: image.frame,
                 cornerRadius: image.cornerRadius,
-                isLooping: false
+                isLooping: false,
+                fillsFrame: true
             )
         }
         for media in component.media
-        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL) {
+        where !media.isVideo && Self.isPotentiallyAnimated(media.displayURL)
+            && !isHidden(media.frame, media.componentID, media.isSpoiler) {
             accumulator.append(
                 row: identifier,
                 role: .componentMedia(componentIndex, media.componentID),
                 media: .media(media.displayURL),
                 frame: media.frame,
-                cornerRadius: InterfaceScale.metric(8),
-                isLooping: true
+                cornerRadius: DiscordRichMessageMetrics.px(8),
+                isLooping: true,
+                fillsFrame: true
             )
         }
     }
@@ -530,7 +551,14 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
-        for (textIndex, textRegion) in component.textRegions.enumerated() {
+        // A hidden container's cover blurs its emoji; none may animate over it.
+        let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+            in: component, messageID: messageID, store: spoilerRevealStore
+        )
+        for (textIndex, textRegion) in component.textRegions.enumerated()
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            textRegion.frame, hiddenContainerFrames: hiddenContainerFrames
+        ) {
             var drawingFrame = textRegion.frame
             drawingFrame.size.height += textRegion.text.layoutHeightAdjustment
             let textRegionID = NativeTimelineTextRegion.component(
@@ -555,26 +583,43 @@ extension NativeTimelineCanvasView {
                 )
             )
         }
-        for button in component.buttons {
+        for button in component.buttons
+        where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+            button.frame, hiddenContainerFrames: hiddenContainerFrames
+        ) {
             guard let emoji = button.emoji,
                   emoji.isAnimated,
                   let url = emoji.imageURL(size: 32)
             else { continue }
             let size = DiscordComponentEmojiMetrics.buttonSize
             let box = CGRect(
-                x: button.frame.minX + NativeTimelineComponentButtonMetrics.horizontalPadding,
+                x: button.contentMinX,
                 y: button.frame.midY - size / 2,
                 width: size,
                 height: size
             )
             let opticalInset = (size - DiscordComponentEmojiMetrics.opticalSize(for: size)) / 2
+            var frame = box.insetBy(dx: opticalInset, dy: opticalInset)
+            // The emoji dips with its pressed button, about the same centre.
+            if button.opacity >= 1, visualPressedComponentButton == NativeTimelineComponentButtonTarget(
+                messageID: messageID, componentID: button.componentID
+            ) {
+                let scale = NativeTimelineComponentButtonVisualState.scale(pressProgress: componentButtonPressProgress)
+                frame = CGRect(
+                    x: button.frame.midX + (frame.minX - button.frame.midX) * scale,
+                    y: button.frame.midY + (frame.minY - button.frame.midY) * scale,
+                    width: frame.width * scale,
+                    height: frame.height * scale
+                )
+            }
             accumulator.append(
                 row: identifier,
                 role: .componentButton(componentIndex, button.componentID),
                 media: .media(url, maximumPixelDimension: 64),
-                frame: box.insetBy(dx: opticalInset, dy: opticalInset),
+                frame: frame,
                 cornerRadius: InterfaceScale.metric(3),
-                isLooping: true
+                isLooping: true,
+                opacity: button.opacity
             )
         }
     }
@@ -586,7 +631,7 @@ extension NativeTimelineCanvasView {
         accumulator: AnimatedMediaOverlayAccumulator
     ) {
         for (stickerIndex, sticker) in row.message.stickers.enumerated()
-        where sticker.format == .apng || sticker.format == .gif {
+        where sticker.format?.isAnimated == true {
             guard layout.stickerFrames.indices.contains(stickerIndex),
                   let url = sticker.mediaURL
             else { continue }
@@ -602,7 +647,7 @@ extension NativeTimelineCanvasView {
                 ))
             )
         }
-        for reaction in layout.reactionRegions {
+        for reaction in layout.reactionRegions where reactionTransitions[identifier] == nil {
             let reference = reaction.reaction.emojiReference
             guard reference.isAnimated,
                   let url = reference.id.flatMap({ model?.customEmojiURLsByID[$0] })
@@ -624,7 +669,7 @@ extension NativeTimelineCanvasView {
     ) {
         let desiredKeys = Set(desired.map(\.key))
         let changedKeys = Set(animatedMediaOverlays.keys).symmetricDifference(desiredKeys)
-        defer { invalidateReactionPosters(for: changedKeys) }
+        defer { invalidateOverlaidPosters(for: changedKeys) }
         for key in Array(animatedMediaOverlays.keys)
         where !desiredKeys.contains(key) {
             animatedMediaOverlays.removeValue(forKey: key)?
@@ -734,17 +779,19 @@ extension NativeTimelineCanvasView {
         reconcileAnimatedMediaOverlays(reduceMotion: reduceMotion)
     }
 
-    func animatedReactionIDs(for row: NativeMessageTimelineItem.Identifier) -> Set<String> {
+    /// The row's live reactions, stickers and button emoji, whose still
+    /// copies the row leaves out: their transparent frames would show the
+    /// still through.
+    func animatedOverlayRoles(for row: NativeMessageTimelineItem.Identifier) -> Set<AnimatedMediaOverlayRole> {
         Set(animatedMediaOverlays.keys.compactMap { key in
-            guard key.row == row, case let .reaction(id) = key.role else { return nil }
-            return id
+            guard key.row == row, key.role.replacesPoster else { return nil }
+            return key.role
         })
     }
 
-    private func invalidateReactionPosters(for keys: Set<AnimatedMediaOverlayKey>) {
+    private func invalidateOverlaidPosters(for keys: Set<AnimatedMediaOverlayKey>) {
         let rows = Set(keys.compactMap { key -> NativeMessageTimelineItem.Identifier? in
-            guard case .reaction = key.role else { return nil }
-            return key.row
+            key.role.replacesPoster ? key.row : nil
         })
         for row in rows {
             invalidateBitmap(row)
@@ -760,13 +807,15 @@ extension NativeTimelineCanvasView {
             overlay.removeFromSuperview()
         }
         animatedMediaOverlays.removeAll()
-        invalidateReactionPosters(for: removedKeys)
+        invalidateOverlaidPosters(for: removedKeys)
     }
 
     static let maximumActivityIndicatorCount = 32
 
     func reconcileActivityIndicators() {
         reconcileInboxHeaders()
+        reconcileUploadRings()
+        positionUnreadDividerFades()
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
         else {
@@ -835,12 +884,19 @@ extension NativeTimelineCanvasView {
             view.removeFromSuperview()
         }
         activityIndicators.removeAll()
+        removeUploadRings()
     }
 
     static let maximumInlineVideoOverlayCount = 4
 
+    struct DesiredInlineVideoOverlay {
+        let key: InlineVideoOverlayKey
+        let frame: CGRect
+        let placeholder: NativeTimelineMediaPlaceholder?
+    }
+
     func reconcileInlineVideoOverlays(plays: Bool) {
-        var desired: [(InlineVideoOverlayKey, CGRect)] = []
+        var desired: [DesiredInlineVideoOverlay] = []
         desired.reserveCapacity(Self.maximumInlineVideoOverlayCount)
 
         guard var index = rowIndex(at: max(0, visibleRect.minY)) else {
@@ -854,23 +910,28 @@ extension NativeTimelineCanvasView {
             if let urls = inlineVideoRows[identifier],
                layouts.indices.contains(index)
             {
+                let concealedEmbeds = items[index].messageRow.map {
+                    NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: $0.message, store: spoilerRevealStore)
+                } ?? [:]
                 for region in layouts[index].embedRegions {
                     guard region.mediaIsVideo,
+                          concealedEmbeds[region.embedID] == nil,
                           region.mediaAutoplaysInline,
                           let url = region.mediaURL,
                           urls.contains(url),
                           let frame = region.mediaFrame
                     else { continue }
-                    desired.append((
-                        InlineVideoOverlayKey(
+                    desired.append(DesiredInlineVideoOverlay(
+                        key: InlineVideoOverlayKey(
                             row: identifier,
                             embedID: region.embedID,
                             url: url
                         ),
-                        frame.offsetBy(
+                        frame: frame.offsetBy(
                             dx: 0,
                             dy: displayedRowOrigin(at: index)
-                        )
+                        ),
+                        placeholder: region.mediaPlaceholder
                     ))
                     if desired.count == Self.maximumInlineVideoOverlayCount {
                         break
@@ -883,7 +944,7 @@ extension NativeTimelineCanvasView {
             index += 1
         }
 
-        let desiredKeys = Set(desired.map(\.0))
+        let desiredKeys = Set(desired.map(\.key))
         for key in Array(inlineVideoOverlays.keys)
         where !desiredKeys.contains(key) {
             guard let overlay = inlineVideoOverlays.removeValue(forKey: key)
@@ -891,7 +952,9 @@ extension NativeTimelineCanvasView {
             overlay.stop()
             overlay.removeFromSuperview()
         }
-        for (key, frame) in desired {
+        for item in desired {
+            let key = item.key
+            let frame = item.frame
             let overlay: NativeTimelineInlineVideoOverlay
             if let existing = inlineVideoOverlays[key] {
                 overlay = existing
@@ -905,6 +968,7 @@ extension NativeTimelineCanvasView {
                 inlineVideoOverlays[key] = overlay
             }
             overlay.frame = frame
+            overlay.placeholder = item.placeholder?.image
             overlay.display(key.url, plays: plays)
         }
     }
@@ -934,6 +998,7 @@ extension NativeTimelineCanvasView {
         for key in removed {
             inlineVideoOverlays[key] = nil
         }
+        reconcileInlinePlayers()
     }
 
     func removeInlineVideoOverlays() {
@@ -942,126 +1007,93 @@ extension NativeTimelineCanvasView {
             overlay.removeFromSuperview()
         }
         inlineVideoOverlays.removeAll()
+        removeInlinePlayers()
     }
 
-    static let maximumLottieStickerOverlayCount = 4
-
-    func reconcileLottieStickerOverlays(reduceMotion: Bool) {
-        var desired: [DesiredLottieStickerOverlay] = []
-        desired.reserveCapacity(Self.maximumLottieStickerOverlayCount)
-
-        guard var index = rowIndex(at: max(0, visibleRect.minY)) else {
-            removeLottieStickerOverlays()
-            return
+    /// Plays a video in place over its tile, as Discord does. When the
+    /// player's menu asks for the viewer, `openInViewer` receives the row as it
+    /// is then: an edit may have changed the message's other media.
+    func playInline(
+        _ url: URL, mediaID: String, frame: CGRect, rowIndex: Int,
+        openInViewer: @escaping (_ rowIndex: Int, _ layout: NativeTimelineRowLayout, _ message: Message) -> Void
+    ) {
+        let key = NativeTimelineInlinePlayer.Key(row: items[rowIndex].identifier, mediaID: mediaID)
+        guard inlinePlayers[key] == nil else { return }
+        let player = NativeTimelineInlinePlayer(
+            url: url,
+            frame: frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex))
+        ) { [weak self] in
+            guard let self, let index = self.rowIndex(forIdentifier: key.row), layouts.indices.contains(index),
+                  let message = items[index].messageRow?.message
+            else { return }
+            openInViewer(index, layouts[index], message)
         }
-        while items.indices.contains(index),
-              displayedRowOrigin(at: index) < visibleRect.maxY
-        {
-            let identifier = items[index].identifier
-            if let urls = lottieStickerRows[identifier],
-               layouts.indices.contains(index),
-               case let .message(row, _, _) = items[index]
-            {
-                for (sticker, frame) in zip(
-                    row.message.stickers,
-                    layouts[index].stickerFrames
-                ) {
-                    guard sticker.format == .lottie,
-                          let url = sticker.mediaURL,
-                          urls.contains(url)
-                    else { continue }
-                    desired.append(DesiredLottieStickerOverlay(
-                        key: LottieStickerOverlayKey(
-                            row: identifier,
-                            stickerID: sticker.id,
-                            url: url
-                        ),
-                        frame: frame.offsetBy(
-                            dx: 0,
-                            dy: displayedRowOrigin(at: index)
-                        ),
-                        opacity: CGFloat(MessageOutboxPresentation.mediaOpacity(
-                            for: row.message.outboxState
-                        ))
-                    ))
-                    if desired.count == Self.maximumLottieStickerOverlayCount {
-                        break
-                    }
-                }
-            }
-            if desired.count == Self.maximumLottieStickerOverlayCount {
-                break
-            }
-            index += 1
-        }
-
-        let desiredKeys = Set(desired.map(\.key))
-        for key in Array(lottieStickerOverlays.keys)
-        where !desiredKeys.contains(key) {
-            guard let overlay = lottieStickerOverlays.removeValue(forKey: key)
-            else { continue }
-            overlay.stop()
-            overlay.removeFromSuperview()
-        }
-        for item in desired {
-            let overlay: NativeTimelineLottieStickerOverlay
-            if let existing = lottieStickerOverlays[item.key] {
-                overlay = existing
-            } else {
-                overlay = NativeTimelineLottieStickerOverlay(frame: item.frame)
-                addSubview(
-                    overlay,
-                    positioned: .below,
-                    relativeTo: mediaViewerHost
-                )
-                lottieStickerOverlays[item.key] = overlay
-            }
-            overlay.frame = item.frame
-            overlay.alphaValue = item.opacity
-            overlay.display(item.key.url, reduceMotion: reduceMotion)
-        }
+        addSubview(player, positioned: .below, relativeTo: mediaViewerHost)
+        inlinePlayers[key] = player
     }
 
-    func positionLottieStickerOverlays() {
-        var removed: [LottieStickerOverlayKey] = []
-        for (key, overlay) in lottieStickerOverlays {
-            guard let index = items.firstIndex(where: {
-                $0.identifier == key.row
-            }),
-               layouts.indices.contains(index),
-               case let .message(row, _, _) = items[index],
-               let stickerIndex = row.message.stickers.firstIndex(where: {
-                   $0.id == key.stickerID && $0.mediaURL == key.url
-               }),
-               layouts[index].stickerFrames.indices.contains(stickerIndex)
+    /// Players follow their tiles and pause once out of view. One ends when
+    /// its row leaves the timeline, its tile no longer shows that video, an
+    /// edit hides it behind a spoiler, or its message is being edited, whose
+    /// editor shows no media.
+    func reconcileInlinePlayers() {
+        guard !inlinePlayers.isEmpty else { return }
+        let viewport = enclosingScrollView?.documentVisibleRect ?? visibleRect
+        for (key, player) in inlinePlayers {
+            guard let index = rowIndex(forIdentifier: key.row),
+                  layouts.indices.contains(index),
+                  let messageID = items[index].messageID, messageID != editingMessageID,
+                  let frame = inlinePlayerFrame(key.mediaID, url: player.url, in: layouts[index], messageID: messageID)
             else {
-                overlay.stop()
-                overlay.removeFromSuperview()
-                removed.append(key)
+                player.stop()
+                player.removeFromSuperview()
+                inlinePlayers[key] = nil
                 continue
             }
-            overlay.frame = layouts[index].stickerFrames[stickerIndex]
-                .offsetBy(
-                    dx: 0,
-                    dy: displayedRowOrigin(at: index)
-                )
-            overlay.alphaValue = CGFloat(
-                MessageOutboxPresentation.mediaOpacity(
-                    for: row.message.outboxState
-                )
-            )
-        }
-        for key in removed {
-            lottieStickerOverlays[key] = nil
+            player.frame = frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
+            if !player.frame.intersects(viewport) { player.pause() }
         }
     }
 
-    func removeLottieStickerOverlays() {
-        for overlay in lottieStickerOverlays.values {
-            overlay.stop()
-            overlay.removeFromSuperview()
+    /// The tile still showing the player's video, unless a spoiler now
+    /// hides it. Signed URLs refresh their query, so the host and path
+    /// identify the media.
+    private func inlinePlayerFrame(
+        _ mediaID: String, url: URL, in layout: NativeTimelineRowLayout, messageID: MessageID
+    ) -> CGRect? {
+        func isSameMedia(_ other: URL) -> Bool { other.host == url.host && other.path == url.path }
+        func isConcealed(_ contentID: String, isSpoiler: Bool) -> Bool {
+            NativeTimelineSpoilerConcealmentPolicy.isConcealed(
+                messageID: messageID, contentID: contentID, isSpoiler: isSpoiler, store: spoilerRevealStore
+            )
         }
-        lottieStickerOverlays.removeAll()
+        if let region = layout.attachmentRegions.first(where: { $0.attachment.id == mediaID }) {
+            let attachment = region.attachment
+            let contentID = NativeTimelineComponentRevealKey.attachmentComponentID(attachment.id)
+            return attachment.mediaKind == .video && isSameMedia(attachment.proxyURL ?? attachment.url)
+                && !isConcealed(contentID, isSpoiler: attachment.isSpoiler) ? region.frame : nil
+        }
+        for component in layout.componentLayouts {
+            guard let media = component.media.first(where: {
+                $0.componentID == mediaID && $0.isVideo && isSameMedia($0.displayURL)
+            }) else { continue }
+            let hiddenContainerFrames = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: component, messageID: messageID, store: spoilerRevealStore
+            )
+            let isHidden = NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                media.frame, hiddenContainerFrames: hiddenContainerFrames
+            ) || isConcealed(media.componentID, isSpoiler: media.isSpoiler)
+            return isHidden ? nil : media.frame
+        }
+        return nil
+    }
+
+    func removeInlinePlayers() {
+        for player in inlinePlayers.values {
+            player.stop()
+            player.removeFromSuperview()
+        }
+        inlinePlayers.removeAll()
     }
 
     struct DesiredSpoilerOverlay {
@@ -1073,6 +1105,8 @@ extension NativeTimelineCanvasView {
     func reconcileSpoilerOverlays() {
         let desired = desiredSpoilerOverlays()
         applySpoilerOverlays(desired)
+        // Revealing a file card uncovers its upload ring.
+        reconcileUploadRings()
     }
 
     private func desiredSpoilerOverlays() -> [DesiredSpoilerOverlay] {
@@ -1103,6 +1137,19 @@ extension NativeTimelineCanvasView {
                 rowOrigin: rowOrigin,
                 into: &desired
             )
+            let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+                in: message, store: spoilerRevealStore
+            )
+            for region in layouts[index].embedRegions {
+                guard let key = concealedEmbeds[region.embedID] else { continue }
+                appendDesiredSpoilerOverlay(
+                    key,
+                    frame: region.frame,
+                    cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
+                    rowOrigin: rowOrigin,
+                    into: &desired
+                )
+            }
             for component in layouts[index].componentLayouts {
                 appendComponentSpoilerOverlays(
                     for: component,
@@ -1126,7 +1173,7 @@ extension NativeTimelineCanvasView {
             appendDesiredSpoilerOverlay(
                 .attachment(messageID: message.id, attachmentID: region.attachment.id),
                 frame: region.frame,
-                cornerRadius: InterfaceScale.metric(8),
+                cornerRadius: layout.cornerRadius(of: region),
                 rowOrigin: rowOrigin,
                 into: &desired
             )
@@ -1233,7 +1280,7 @@ extension NativeTimelineCanvasView {
                     componentID: region.componentID
                 ),
                 frame: region.frame,
-                cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
+                cornerRadius: region.card.cornerRadius,
                 rowOrigin: rowOrigin,
                 into: &desired
             )

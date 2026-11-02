@@ -30,8 +30,6 @@ final class GuildOnboardingStore {
     @ObservationIgnored var timeoutExpiryTasks: [GuildID: Task<Void, Never>] = [:]
     @ObservationIgnored var timeoutRevisions: [GuildID: UInt64] = [:]
     var presentedGuildID: GuildID?
-    var previewChannelID: ChannelID?
-    var previewReturnChannelID: ChannelID?
     var profiles: [GuildID: UserProfile] = [:]
     var browsingChannels = false
     var channelSearch = ""
@@ -50,8 +48,6 @@ final class GuildOnboardingStore {
         timeoutRevisions = [:]
         guides = [:]
         presentedGuildID = nil
-        previewChannelID = nil
-        previewReturnChannelID = nil
         profiles = [:]
         browsingChannels = false
         channelSearch = ""
@@ -66,7 +62,8 @@ extension AppModel {
         permissionBasis: ConversationPermissionBasis?
     ) -> ConversationAccess {
         guard channel.guildID != nil else {
-            return .readable(canSend: !channel.isOfficialSystemDirectMessage)
+            // A message request takes no replies until it is accepted.
+            return .readable(canSend: !channel.isOfficialSystemDirectMessage && channel.messageRequest == nil)
         }
         guard let permissionBasis, permissionBasis.currentUserOnboardingIsKnown else { return .checking }
         let permissions = ConversationPermissionResolver.effectivePermissions(
@@ -101,16 +98,13 @@ extension AppModel {
     }
 
     func openChannelsAndRoles(in guildID: GuildID) {
-        closeCustomizationPreview()
-        closeThread()
-        closeVoiceChat()
+        closeSideConversations()
         onboarding.browsingChannels = false
         onboarding.channelSearch = ""
         onboarding.isChannelSearchFocused = false
         onboarding.page = .channelsAndRoles
         if onboarding.entries[guildID] == nil { onboarding.entries[guildID] = .init() }
         onboarding.presentedGuildID = guildID
-        onboarding.previewChannelID = nil
         suspendSelectedConversationPresentation()
         if hasCustomizationQuestions(in: guildID) || requiresOnboarding(in: guildID) { refreshOnboarding(in: guildID) }
     }

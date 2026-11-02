@@ -44,16 +44,18 @@ struct ChatDetailView: View {
                     editRequest: editRequest
                 )
                 .overlay(alignment: .bottom) {
-                    ChatDetailFooter(
-                        model: model,
-                        channel: channel,
-                        access: model.selectedConversationAccess,
-                        onEditMessage: { messageID in
-                            editRequest = MessageTimelineEditRequest(
-                                messageID: messageID
-                            )
-                        }
-                    )
+                    ConversationFooterHost {
+                        ChatDetailFooter(
+                            model: model,
+                            channel: channel,
+                            access: model.selectedConversationAccess,
+                            onEditMessage: { messageID in
+                                editRequest = MessageTimelineEditRequest(
+                                    messageID: messageID
+                                )
+                            }
+                        )
+                    }
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.size.height
                     } action: { height in
@@ -75,51 +77,88 @@ private struct ChatDetailFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let until = model.guildTimeoutUntil(in: channel.id) {
+            if let request = channel.messageRequest {
+                // Discord asks for a decision before a request can be answered.
                 DisabledComposerView(
-                    message: "You are timed out.",
-                    appearance: model.appearanceSettings.composerBarAppearance,
-                    timeoutUntil: until
-                )
+                    message: request == .spam ? "Discord filed this request as spam." : "Accept this request to reply.",
+                    appearance: model.appearanceSettings.composerBarAppearance
+                ) {
+                    MessageRequestActions(model: model, channel: channel)
+                        .controlSize(.small)
+                }
             } else {
+                composerSlot
+            }
+        }
+    }
+
+    private var composerSlot: some View {
+        ConversationComposerSlot(
+            access: access,
+            timeoutUntil: model.guildTimeoutUntil(in: channel.id),
+            appearance: model.appearanceSettings.composerBarAppearance,
+            checkingMessage: "Checking channel permissions…",
+            readOnlyMessage: channel.isOfficialSystemDirectMessage
+                ? "This chat is reserved for official Discord notifications."
+                : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
+                   ? "Complete this server’s member screening in Discord to send messages."
+                   : "You do not have permission to send messages in this channel.")
+        ) {
+            if model.messageAppearance(for: channel.id) == .bubbles {
+                TypingBubbleIndicatorView(model: model, channel: channel)
+            } else {
+                TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
+            }
+            ComposerView(
+                model: model,
+                channelName: channel.name,
+                onEditMessage: onEditMessage
+            )
+        }
+    }
+}
+
+/// The composer slot shared by every conversation footer. A timeout,
+/// permission check or read-only notice takes the composer's place.
+struct ConversationComposerSlot<Composer: View>: View {
+    let access: ConversationAccess
+    let timeoutUntil: Date?
+    let appearance: ComposerBarAppearance
+    let checkingMessage: String
+    /// Shown when the conversation is readable but not writable.
+    let readOnlyMessage: String?
+    @ViewBuilder let composer: Composer
+
+    var body: some View {
+        if let timeoutUntil {
+            DisabledComposerView(
+                message: "You are timed out.",
+                appearance: appearance,
+                timeoutUntil: timeoutUntil
+            )
+        } else {
             switch access {
             case .checking:
-                DisabledComposerView(
-                    message: "Checking channel permissions…",
-                    appearance: model.appearanceSettings.composerBarAppearance
-                )
+                DisabledComposerView(message: checkingMessage, appearance: appearance)
             case .readable(canSend: true):
-                if model.messageAppearance(for: channel.id) == .bubbles {
-                    TypingBubbleIndicatorView(model: model, channel: channel)
-                } else {
-                    TypingIndicatorView(typingState: model.typingState, channelID: channel.id)
-                }
-                ComposerView(
-                    model: model,
-                    channelName: channel.name,
-                    onEditMessage: onEditMessage
-                )
+                composer
             case .readable(canSend: false):
-                DisabledComposerView(
-                    message: channel.isOfficialSystemDirectMessage
-                        ? "This chat is reserved for official Discord notifications."
-                        : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
-                           ? "Complete this server’s member screening in Discord to send messages."
-                           : "You do not have permission to send messages in this channel."),
-                    appearance: model.appearanceSettings.composerBarAppearance
-                )
+                if let readOnlyMessage {
+                    DisabledComposerView(message: readOnlyMessage, appearance: appearance)
+                }
             case .hidden:
                 EmptyView()
-            }
             }
         }
     }
 }
 
-struct DisabledComposerView: View {
+struct DisabledComposerView<Accessory: View>: View {
     let message: String
     let appearance: ComposerBarAppearance
     var timeoutUntil: Date?
+    /// Controls at the bar's trailing edge, read apart from the notice.
+    @ViewBuilder var accessory: Accessory
 
     var body: some View {
         let usesDefaultStyle = appearance == .defaultStyle
@@ -138,21 +177,25 @@ struct DisabledComposerView: View {
             ))
 
         HStack(spacing: 0) {
-            if timeoutUntil != nil {
-                Image(systemName: "clock")
-                    .foregroundStyle(.red)
-                    .padding(.trailing, InterfaceScale.metric(8))
-                    .accessibilityHidden(true)
+            HStack(spacing: 0) {
+                if timeoutUntil != nil {
+                    Image(systemName: "clock")
+                        .foregroundStyle(.red)
+                        .padding(.trailing, InterfaceScale.metric(8))
+                        .accessibilityHidden(true)
+                }
+                Text(message)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let until = timeoutUntil {
+                    Text(timerInterval: min(Date.now, until) ... until, countsDown: true, showsHours: true)
+                        .monospacedDigit()
+                        .fixedSize()
+                        .help("Timeout ends \(until.formatted(date: .abbreviated, time: .standard))")
+                }
             }
-            Text(message)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            if let until = timeoutUntil {
-                Text(timerInterval: min(Date.now, until) ... until, countsDown: true, showsHours: true)
-                    .monospacedDigit()
-                    .fixedSize()
-                    .help("Timeout ends \(until.formatted(date: .abbreviated, time: .standard))")
-            }
+            .accessibilityElement(children: .combine)
+            accessory
         }
         .font(.interfaceSystem(size: 15))
         .foregroundStyle(timeoutUntil == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.white))
@@ -165,7 +208,12 @@ struct DisabledComposerView: View {
         .glassEffect(.regular, in: shape)
         .padding(.horizontal, ChatChromeMetrics.composerWindowInset)
         .padding(.bottom, ChatChromeMetrics.composerWindowInset)
-        .accessibilityElement(children: .combine)
+    }
+}
+
+extension DisabledComposerView where Accessory == EmptyView {
+    init(message: String, appearance: ComposerBarAppearance, timeoutUntil: Date? = nil) {
+        self.init(message: message, appearance: appearance, timeoutUntil: timeoutUntil) { EmptyView() }
     }
 }
 

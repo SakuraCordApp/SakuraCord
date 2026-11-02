@@ -132,6 +132,21 @@ struct GatewayLifecycleEventTests {
         #expect(await provider.cachedChannelForTesting(channelID: textChannelID) == nil)
     }
 
+    @Test func `a server joined mid-session keeps the join time GUILD_CREATE carries`() async throws {
+        let provider = makeProvider()
+        guard case var .object(payload) = guildCreatePayload() else { return }
+        payload["joined_at"] = .string("2026-10-26T15:05:52.000000+00:00")
+        await provider.receiveGatewayDispatchForTesting(name: "GUILD_CREATE", data: .object(payload))
+        let joinedAt = try #require(await provider.cachedGuildForTesting(guildID: guildID)?.joinedAt)
+        #expect(joinedAt == DiscordDate.parse("2026-10-26T15:05:52.000000+00:00"))
+
+        await provider.receiveGatewayDispatchForTesting(
+            name: "GUILD_UPDATE",
+            data: .object(["id": .string("100"), "name": .string("Renamed")])
+        )
+        #expect(await provider.cachedGuildForTesting(guildID: guildID)?.joinedAt == joinedAt)
+    }
+
     @Test func `permission scoped member lists remain isolated when revisited`() async {
         let provider = makeProvider()
         await provider.receiveGatewayDispatchForTesting(
@@ -791,16 +806,20 @@ extension GatewayLifecycleEventTests {
             _ = try await provider.send(SendMessageDraft(channelID: textChannelID, content: "blocked", nonce: "timeout"))
         }
         await #expect(throws: ChatProviderError.self) {
-            try await provider.requireGuildCommunicationForRequest(path: "/channels/200/messages", method: "POST", body: nil)
+            try await provider.requireCommunicationForRequest(path: "/channels/200/messages", method: "POST", body: nil)
         }
         await #expect(throws: ChatProviderError.self) {
             try await provider.setReaction("👍", reacted: false, messageID: .init(rawValue: 300), channelID: textChannelID)
         }
         await #expect(throws: ChatProviderError.self) {
-            _ = try await provider.edit(messageID: .init(rawValue: 300), channelID: textChannelID, content: "blocked")
+            let message = Message(
+                id: .init(rawValue: 300), channelID: textChannelID,
+                author: User(id: .init(rawValue: 1), username: "me", displayName: "Me"), content: "original"
+            )
+            _ = try await provider.edit(message, content: "blocked")
         }
         await #expect(throws: ChatProviderError.self) {
-            try await provider.requireGuildCommunicationForRequest(
+            try await provider.requireCommunicationForRequest(
                 path: "/channels/200/messages/300", method: "PATCH", body: ["content": .string("blocked")]
             )
         }
@@ -808,7 +827,7 @@ extension GatewayLifecycleEventTests {
             try await provider.setPollAnswers([1], messageID: .init(rawValue: 300), channelID: textChannelID)
         }
         await #expect(throws: ChatProviderError.self) {
-            try await provider.requireGuildCommunicationForRequest(
+            try await provider.requireCommunicationForRequest(
                 path: "/channels/200/polls/300/answers/@me", method: "PUT", body: ["answer_ids": .array([.number(1)])]
             )
         }
@@ -821,7 +840,7 @@ extension GatewayLifecycleEventTests {
             )
         }
         await #expect(throws: ChatProviderError.self) {
-            try await provider.requireGuildCommunicationForRequest(
+            try await provider.requireCommunicationForRequest(
                 path: "/channels/\(voiceChannelID)/send-soundboard-sound", method: "POST", body: nil
             )
         }
@@ -834,15 +853,15 @@ extension GatewayLifecycleEventTests {
         )
         await provider.seedMessageForTesting(searchMessage)
         await #expect(throws: ChatProviderError.self) {
-            try await provider.requireGuildCommunicationForRequest(
+            try await provider.requireCommunicationForRequest(
                 path: "/channels/250/messages/350/reactions/%F0%9F%91%8D/@me", method: "PUT", body: nil
             )
         }
         #expect(GatewayDispatchCountingURLProtocol.requestCount.withLock { $0 } == 0)
         // A timeout must not block acknowledging, deleting or clearing a poll vote.
-        try await provider.requireGuildCommunicationForRequest(path: "/channels/200/messages/300/ack", method: "POST", body: nil)
-        try await provider.requireGuildCommunicationForRequest(path: "/channels/200/messages/300", method: "DELETE", body: nil)
-        try await provider.requireGuildCommunicationForRequest(
+        try await provider.requireCommunicationForRequest(path: "/channels/200/messages/300/ack", method: "POST", body: nil)
+        try await provider.requireCommunicationForRequest(path: "/channels/200/messages/300", method: "DELETE", body: nil)
+        try await provider.requireCommunicationForRequest(
             path: "/channels/200/polls/300/answers/@me", method: "PUT", body: ["answer_ids": .array([])]
         )
         try await provider.requireGuildCommunication(in: textChannelID, now: expiry)

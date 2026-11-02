@@ -115,9 +115,8 @@ enum ComposerEmojiAttributedText {
         imageProvider: (String) -> NSImage? = { ComposerEmojiImageStore.shared.cachedImage(for: $0) }
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
-        let range = NSRange(source.startIndex ..< source.endIndex, in: source)
         var cursor = 0
-        for match in expression.matches(in: source, range: range) {
+        for match in attachmentMatches(in: source) {
             if match.range.location > cursor {
                 result.append(
                     NSAttributedString(
@@ -170,6 +169,36 @@ enum ComposerEmojiAttributedText {
         }
         ComposerMarkdownPresentation.apply(to: result, font: font)
         return result
+    }
+
+    private static func attachmentMatches(in source: String) -> [NSTextCheckingResult] {
+        let matches = expression.matches(in: source, range: NSRange(location: 0, length: source.utf16.count))
+        guard !matches.isEmpty else { return [] }
+        let mentionRanges = renderedMentionRanges(in: source)
+        return matches.filter { match in
+            let token = (source as NSString).substring(with: match.range)
+            // Discord's composer keeps a command mention as typed text.
+            guard !token.hasPrefix("</") else { return false }
+            let isNewMention = token.hasPrefix("<t:") || token.hasPrefix("<@$") || token == "@everyone" || token == "@here"
+            return !isNewMention || mentionRanges.contains(match.range)
+        }
+    }
+
+    private static func renderedMentionRanges(in source: String) -> Set<NSRange> {
+        var ranges: Set<NSRange> = []
+        var location = 0
+        for segment in MessageDocumentCache.shared.document(for: source).segments {
+            let text: String
+            switch segment {
+            case let .markdown(value): text = value
+            case let .customEmoji(emoji): text = emoji.rawToken
+            case let .mention(mention):
+                text = mention.rawToken
+                ranges.insert(NSRange(location: location, length: text.utf16.count))
+            }
+            location += text.utf16.count
+        }
+        return ranges
     }
 
     static func serialize(_ value: NSAttributedString, range: NSRange? = nil) -> String {
@@ -246,8 +275,7 @@ enum ComposerEmojiAttributedText {
 
     private static func displayOffset(forRawOffset offset: Int, source: String) -> Int {
         var reduction = 0
-        let sourceLength = (source as NSString).length
-        for match in expression.matches(in: source, range: NSRange(location: 0, length: sourceLength)) {
+        for match in attachmentMatches(in: source) {
             if offset >= NSMaxRange(match.range) {
                 reduction += match.range.length - 1
             } else if offset > match.range.location {
@@ -334,7 +362,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.onFirstResponderChange = { [weak coordinator = context.coordinator] in
             coordinator?.firstResponderDidChange($0)
         }
-        textView.isEditable = context.environment.isEnabled
+        textView.isEditable = context.environment.acceptsComposerInput
         textView.isSelectable = true
         textView.isRichText = true
         textView.importsGraphics = false
@@ -386,7 +414,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.canReceiveAttachments = { [weak coordinator = context.coordinator] in
             coordinator?.parent.canReceiveAttachments() ?? false
         }
-        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.isEnabled
+        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.acceptsComposerInput
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)
 
         let scrollView = NSScrollView()
@@ -438,8 +466,8 @@ struct ComposerTextView: NSViewRepresentable {
             && conversationID == context.coordinator.parent.conversationID
         context.coordinator.parent = self
         sendTransitionAnchor?.textView = textView
-        textView.isEditable = context.environment.isEnabled
-        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.isEnabled
+        textView.isEditable = context.environment.acceptsComposerInput
+        textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.acceptsComposerInput
         context.coordinator.updateCompositionState(from: textView, deferringNotification: true)
 
         textView.onReturn = { [weak coordinator = context.coordinator] event in
@@ -588,10 +616,13 @@ struct ComposerTextView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView, !isNormalizing else { return }
             updateCompositionState(from: textView)
             var raw = ComposerEmojiAttributedText.serialize(textView.attributedString())
+            // An existing pill is checked too: typing on after `@here` leaves
+            // literal text that no longer matches, and the pill must unfold.
             if !textView.hasMarkedText(),
-               ComposerEmojiAttributedText.expression.firstMatch(
-                   in: raw, range: NSRange(location: 0, length: (raw as NSString).length)
-               ) != nil
+               attachmentCount(in: textView.attributedString()) > 0
+                   || ComposerEmojiAttributedText.expression.firstMatch(
+                       in: raw, range: NSRange(location: 0, length: (raw as NSString).length)
+                   ) != nil
             {
                 let rawSelection = ComposerEmojiAttributedText.rawRange(
                     forDisplay: textView.selectedRange(), attributed: textView.attributedString()
@@ -1415,4 +1446,11 @@ final class ComposerFocusSurfaceView: NSView {
     override func mouseDown(with _: NSEvent) {
         focus()
     }
+}
+
+private extension EnvironmentValues {
+    /// A composer in a pane leaving the workspace takes no text: its thread
+    /// has closed, and a picker closing with it can hand the editor focus
+    /// back.
+    var acceptsComposerInput: Bool { isEnabled && !isLeavingWorkspace }
 }

@@ -18,8 +18,8 @@ Ground rules:
 - Dependencies are already resolved and there is no network access. Build with
   `source script/runtime.sh` and the same `swift build` / `script/test.sh`
   invocations that `script/ci.sh` uses, and run the tests relevant to your
-  change. Add a regression test when the behaviour is critical, following
-  `docs/TESTING.md`. Do not add tests for purely visual changes.
+  change. Most fixes need no new test; add one only when `docs/TESTING.md`
+  allows it, and name the failure it catches in your summary.
 - Run `./script/code_quality.sh check` before finishing and fix what it reports
   in the files you changed.
 - Do not commit; the workflow commits and opens a draft pull request.

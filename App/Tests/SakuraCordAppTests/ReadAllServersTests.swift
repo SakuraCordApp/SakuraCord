@@ -46,13 +46,13 @@ struct ReadAllServersTests {
             BulkReadStateAcknowledgement(channelID: active.id, messageID: MessageID(rawValue: 400)),
         ])
         for target in targets {
-            readState.markAcknowledgementPending(channelID: target.channelID, messageID: target.messageID)
+            readState.acknowledge(channelID: target.channelID, messageID: target.messageID)
         }
         #expect(!readState.hasUnreadServerConversations(in: [guildID, secondGuildID]))
     }
 
     @Test(arguments: [false, true])
-    func `Read All preserves new messages and rolls back only rejected targets`(fails: Bool) async {
+    func `Read All preserves new messages and keeps rejected targets read`(fails: Bool) async {
         let (model, provider) = await fixture()
         // Explicitly disable the feature, independently of this Mac’s saved settings.
         model.featuresSettings.readAllButton = false
@@ -60,7 +60,7 @@ struct ReadAllServersTests {
         #expect(await provider.bulkAcknowledgementRequests.isEmpty)
         model.featuresSettings.readAllButton = true
         #expect(model.hasUnreadServers)
-        if fails { await provider.failBulkAcknowledgement(afterAcceptedCount: 1) }
+        if fails { await provider.failBulkAcknowledgement() }
         model.markAllServersRead()
         let task = model.allServersReadTask
         model.markAllServersRead()
@@ -74,9 +74,10 @@ struct ReadAllServersTests {
         #expect(requests.first?.map(\.messageID) == [MessageID(rawValue: 400), MessageID(rawValue: 400)])
         #expect(model.readState.entries[ChannelID(rawValue: 200)]?.lastAcknowledgedMessageID == MessageID(rawValue: 400))
         #expect(model.readState.entries[ChannelID(rawValue: 200)]?.isUnread == true)
-        #expect(model.readState.entries[ChannelID(rawValue: 201)]?.lastAcknowledgedMessageID == MessageID(rawValue: fails ? 300 : 400))
-        #expect(model.readState.entries[ChannelID(rawValue: 201)]?.isUnread == fails)
-        #expect((model.errorMessage != nil) == fails)
+        // As in Discord, a rejected batch changes no read state.
+        #expect(model.readState.entries[ChannelID(rawValue: 201)]?.lastAcknowledgedMessageID == MessageID(rawValue: 400))
+        #expect(model.readState.entries[ChannelID(rawValue: 201)]?.isUnread == false)
+        #expect(model.errorMessage == nil)
         #expect(!model.isMarkingAllServersRead)
         if !fails {
             model.consumeImmediately(.readStateChanged(ChannelReadState(channelID: incoming.channelID, lastAcknowledgedMessageID: incoming.id)))

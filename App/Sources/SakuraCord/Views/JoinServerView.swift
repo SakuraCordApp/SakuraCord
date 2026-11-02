@@ -15,7 +15,7 @@ struct JoinServerView: View {
         VStack(spacing: 0) {
             if let reference {
                 let card = NativeTimelineInviteLayout(reference: reference, index: 0, origin: .zero,
-                    maximumWidth: width, model: model, isOwnMessage: false, fillsWidth: true)
+                    maximumWidth: width, source: model, isOwnMessage: false, fillsWidth: true)
                 ScrollView(.vertical) {
                     JoinServerPreview(card: card) { activate(reference, card: card, expands: $0) }
                 }

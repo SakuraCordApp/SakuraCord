@@ -3,6 +3,16 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
+extension CAFrameRateRange {
+    /// Every frame the screen can show, up to 120 Hz on ProMotion, and never
+    /// fewer than 60 (or 80 on ProMotion): a lower minimum lets the system
+    /// halve the rate under load.
+    static func fullRate(on screen: NSScreen?) -> Self {
+        let rate = Float(screen?.maximumFramesPerSecond ?? 60)
+        return CAFrameRateRange(minimum: min(rate, 80), maximum: rate, preferred: rate)
+    }
+}
+
 @MainActor
 final class NativeTimelineDisplayLinkTicker: NSObject {
     var displayLink: CADisplayLink?
@@ -15,6 +25,7 @@ final class NativeTimelineDisplayLinkTicker: NSObject {
             target: self,
             selector: #selector(displayLinkDidFire(_:))
         )
+        displayLink.preferredFrameRateRange = .fullRate(on: view.window?.screen)
         self.displayLink = displayLink
         displayLink.add(to: .main, forMode: .common)
     }
@@ -50,6 +61,9 @@ struct MessageTimelineScrollRequest: Equatable {
         case top
         case bottom
         case message(MessageID, anchor: UnitPoint)
+        /// A reading position: the message at the top of the viewport and
+        /// its offset from the viewport's top edge.
+        case readingPosition(MessageID, offsetFromViewportTop: CGFloat)
     }
 
     let id = UUID()
@@ -214,8 +228,8 @@ enum NativeTimelineConversation: Hashable {
             model.pinnedMessages.rows
         case .inbox:
             model.inbox.rows
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.rows ?? []
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.rows ?? []
         }
     }
 
@@ -232,8 +246,8 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsRevision
         case .pins:
             model.pinnedMessages.rowsRevision
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.revision ?? 0
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.revision ?? 0
         }
     }
 
@@ -262,8 +276,8 @@ enum NativeTimelineConversation: Hashable {
             model.inbox.rowsUpdateJournal
         case .pins:
             model.pinnedMessages.rowsUpdateJournal
-        case .resource(let guildID, _):
-            model.onboarding.guides[guildID]?.resource?.journal ?? MessageRowsUpdateJournal()
+        case .resource(_, let channelID):
+            model.guideResource(for: channelID)?.journal ?? MessageRowsUpdateJournal()
         }
     }
 
@@ -526,9 +540,12 @@ nonisolated enum NativeTimelineBenchmarkScrollPolicy {
     static let maximumStep: CGFloat = 40
     static let duration: TimeInterval = 20
     static let nominalDistance = pointsPerSecond * duration
+    /// Measures live updates on a still timeline instead of a scrolling one.
+    static let isIdle = ProcessInfo.processInfo.arguments.contains("--offline-chat-performance-idle")
 
     static func distance(tickInterval: TimeInterval) -> CGFloat {
-        min(
+        guard !isIdle else { return 0 }
+        return min(
             maximumStep,
             max(0, CGFloat(tickInterval)) * pointsPerSecond
         )
@@ -642,17 +659,13 @@ enum NativeTimelineBenchmarkArtifact {
         maximumScrollWork: TimeInterval? = nil,
         historyStarvedTicks: Int? = nil,
         maximumConsecutiveHistoryStarvedTicks: Int? = nil,
-        renderTelemetry: NativeTimelineRenderTelemetry? = nil
+        renderTelemetry: NativeTimelineRenderTelemetry? = nil,
+        mainThreadCPUTime: TimeInterval? = nil,
+        timelineUpdates: (count: Int, milliseconds: Double)? = nil
     ) {
         guard let path = ProcessInfo.processInfo.environment[
             "SAKURACORD_PERFORMANCE_RESULT_PATH"
         ] else { return }
-        let deficit = NativeTimelineBenchmarkScrollPolicy.distanceDeficit(
-            completedDistance: completedDistance
-        )
-        let quality = NativeTimelineBenchmarkScrollPolicy.spatialQuality(
-            completedDistance: completedDistance
-        )
         let duration = NativeTimelineBenchmarkScrollPolicy.duration
         let overshoot = max(0, elapsed - duration)
         var contents = """
@@ -660,12 +673,18 @@ enum NativeTimelineBenchmarkArtifact {
         elapsed_seconds\t\(elapsed)
         nominal_duration_seconds\t\(duration)
         elapsed_overshoot_seconds\t\(overshoot)
-        completed_distance_points\t\(completedDistance)
-        nominal_distance_points\t\(NativeTimelineBenchmarkScrollPolicy.nominalDistance)
-        distance_deficit_points\t\(deficit)
-        spatial_quality_ratio\t\(quality)
 
         """
+        // A still timeline covers no distance by design.
+        if !NativeTimelineBenchmarkScrollPolicy.isIdle {
+            contents += """
+            completed_distance_points\t\(completedDistance)
+            nominal_distance_points\t\(NativeTimelineBenchmarkScrollPolicy.nominalDistance)
+            distance_deficit_points\t\(NativeTimelineBenchmarkScrollPolicy.distanceDeficit(completedDistance: completedDistance))
+            spatial_quality_ratio\t\(NativeTimelineBenchmarkScrollPolicy.spatialQuality(completedDistance: completedDistance))
+
+            """
+        }
         if let completedTicks,
            let delayedTicks,
            let tickIntervals,
@@ -725,11 +744,40 @@ enum NativeTimelineBenchmarkArtifact {
 
             """
         }
+        if let mainThreadCPUTime {
+            contents += "main_thread_cpu_ms\t\(mainThreadCPUTime * 1_000)\n"
+        }
+        if let timelineUpdates {
+            contents += """
+            timeline_update_count\t\(timelineUpdates.count)
+            timeline_update_total_ms\t\(timelineUpdates.milliseconds)
+
+            """
+        }
         try? contents.write(
             to: URL(fileURLWithPath: path),
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    /// CPU time the calling thread has used, user and system.
+    static func currentThreadCPUTime() -> TimeInterval {
+        let thread = mach_thread_self()
+        defer { mach_port_deallocate(mach_task_self_, thread) }
+        var info = thread_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                thread_info(thread, thread_flavor_t(THREAD_BASIC_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        let seconds = info.user_time.seconds + info.system_time.seconds
+        let microseconds = info.user_time.microseconds + info.system_time.microseconds
+        return TimeInterval(seconds) + TimeInterval(microseconds) / 1_000_000
     }
 
     private static func percentile(
@@ -751,6 +799,20 @@ nonisolated enum NativeTimelineReadBoundaryPolicy {
     ) -> Bool {
         newestMessageMaximumY >= viewportMinimumY - tolerance
             && newestMessageMaximumY <= viewportMaximumY + tolerance
+    }
+
+    /// A fully loaded conversation without messages has reached its newest
+    /// edge once the end of the document is in view. Without this the first
+    /// message to arrive would be treated as unseen and plant a NEW divider,
+    /// while a viewport scrolled away from the end must not read it.
+    static func hasReachedEmptyTimelineBoundary(
+        hasMoreEarlier: Bool,
+        isLoadingEarlier: Bool,
+        isLoadingLater: Bool,
+        isAtDocumentBottom: Bool
+    ) -> Bool {
+        !hasMoreEarlier && !isLoadingEarlier && !isLoadingLater
+            && isAtDocumentBottom
     }
 
     /// AppKit reports wheel and trackpad deltas after applying the natural

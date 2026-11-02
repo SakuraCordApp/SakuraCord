@@ -24,6 +24,9 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
     private var udp: VoiceUDPConnection?
     private var cipher: VoiceTransportCipher?
     private var audioEngine: VoiceAudioEngine?
+    private var audioEngineStartTask: Task<Void, Error>?
+    /// The engine a start is building before it is published as `audioEngine`.
+    private var startingAudioEngine: VoiceAudioEngine?
     private var videoEngine: VoiceVideoEngine?
     private var screenCaptureEngine: ScreenShareCaptureEngine?
     private var encodedScreenTask: Task<Void, Never>?
@@ -182,6 +185,8 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         connectTimeoutTask?.cancel()
         connectContinuation?.resume(throwing: CancellationError())
         connectContinuation = nil
+        audioEngineStartTask?.cancel()
+        audioEngineStartTask = nil
         // Stop local producers before best-effort network signaling. A saturated
         // screen-share path must never keep capture, mute, or leave work queued
         // behind more video frames.
@@ -197,8 +202,12 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
         cameraGeneration &+= 1
         stopCameraPipeline()
         if let audioEngine {
-            await audioEngine.stop()
+            await audioEngine.shutDown()
         }
+        // A cancelled start may still hold the microphone through an engine it has
+        // not published. It stays recorded until that start ends, so a repeated
+        // disconnect also waits for it.
+        await startingAudioEngine?.shutDown()
 
         if locallySpeaking, let audioSSRC {
             try? await gateway.sendSpeaking(flags: 0, ssrc: audioSSRC)
@@ -318,6 +327,12 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             try await audioEngine.selectInputDevice(deviceID)
         }
         configuration.inputDeviceID = deviceID
+    }
+
+    /// The microphone actually capturing, which differs from the requested one after a fallback.
+    public func activeInputDeviceID() async -> AudioDeviceID? {
+        guard let audioEngine else { return configuration.inputDeviceID }
+        return await audioEngine.inputDeviceID
     }
 
     public func selectOutputDevice(_ deviceID: AudioDeviceID?) async throws {
@@ -724,41 +739,27 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
             voiceMediaLogger.info("Voice media transport re-established")
             return
         }
-        let permission = await VoiceAudioEngine.requestMicrophonePermission()
-        guard permission else { throw VoiceSessionError.microphonePermissionDenied }
-        let audio = try await VoiceAudioEngine()
-        await audio.setInputVolume(configuration.inputVolume)
-        await audio.setOutputVolume(configuration.outputVolume)
-        await audio.setMuted(configuration.isMuted)
-        await audio.setDeafened(configuration.isDeafened)
-        // Never turn a transient UDP stall into seconds of stale microphone
-        // audio. The capture offset preserves the RTP clock when older frames
-        // are discarded, while the newest three frames bound latency to 60 ms.
-        let capturedFrames = AsyncStream<CapturedOpusFrame>.makeStream(
-            bufferingPolicy: .bufferingNewest(3)
-        )
-        capturedAudioContinuation = capturedFrames.continuation
-        capturedAudioTask = Task { [weak self] in
-            for await frame in capturedFrames.stream {
-                guard !Task.isCancelled else { return }
-                await self?.handleCapturedFrame(frame)
-            }
+        // A repeated session description can arrive while the first start is
+        // still awaiting; building a second engine would open the same mic twice.
+        if let audioEngineStartTask {
+            try? await audioEngineStartTask.value
+            // If that start failed, fall through and retry so reconnect completes.
+            if audioEngine != nil || audioEngineStartTask.isCancelled { return }
         }
-        do {
-            try await audio.start(
-                inputDeviceID: configuration.inputDeviceID,
-                outputDeviceID: configuration.outputDeviceID
-            ) { [continuation = capturedFrames.continuation] frame in
-                continuation.yield(frame)
-            }
-        } catch {
-            capturedFrames.continuation.finish()
-            capturedAudioTask?.cancel()
-            capturedAudioContinuation = nil
-            capturedAudioTask = nil
-            throw error
+        if let audioEngineStartTask {
+            // Another waiter already began the retry.
+            try await audioEngineStartTask.value
+            return
         }
-        audioEngine = audio
+        let startTask = Task { try await self.startAudioEngine() }
+        audioEngineStartTask = startTask
+        defer {
+            if audioEngineStartTask == startTask { audioEngineStartTask = nil }
+        }
+        try await startTask.value
+        // disconnect() can run after the start finishes but before this resumes;
+        // it already tore the engine down, so the session must not report connected.
+        guard state != .disconnecting, state != .disconnected else { throw CancellationError() }
         voiceMediaLogger.info("Voice audio engine started")
         connectTimeoutTask?.cancel()
         connectContinuation?.resume()
@@ -1282,6 +1283,62 @@ public actor DiscordVoiceSession: DaveSessionDelegate {
                 )
             }
         }
+    }
+}
+
+private extension DiscordVoiceSession {
+    func startAudioEngine() async throws {
+        // disconnect() cancels this task; bail out after each await so a late
+        // start never opens the mic on a disconnected session.
+        let permission = await VoiceAudioEngine.requestMicrophonePermission()
+        try Task.checkCancellation()
+        guard permission else { throw VoiceSessionError.microphonePermissionDenied }
+        let audio = try await VoiceAudioEngine()
+        startingAudioEngine = audio
+        defer {
+            if startingAudioEngine === audio { startingAudioEngine = nil }
+        }
+        await audio.setInputVolume(configuration.inputVolume)
+        await audio.setOutputVolume(configuration.outputVolume)
+        await audio.setMuted(configuration.isMuted)
+        await audio.setDeafened(configuration.isDeafened)
+        try Task.checkCancellation()
+        // Never turn a transient UDP stall into seconds of stale microphone
+        // audio. The capture offset preserves the RTP clock when older frames
+        // are discarded, while the newest three frames bound latency to 60 ms.
+        let capturedFrames = AsyncStream<CapturedOpusFrame>.makeStream(
+            bufferingPolicy: .bufferingNewest(3)
+        )
+        capturedAudioContinuation = capturedFrames.continuation
+        let captureTask = Task { [weak self] in
+            for await frame in capturedFrames.stream {
+                guard !Task.isCancelled else { return }
+                await self?.handleCapturedFrame(frame)
+            }
+        }
+        capturedAudioTask = captureTask
+        do {
+            try await audio.start(
+                inputDeviceID: configuration.inputDeviceID,
+                outputDeviceID: configuration.outputDeviceID
+            ) { [continuation = capturedFrames.continuation] frame in
+                continuation.yield(frame)
+            }
+        } catch {
+            capturedFrames.continuation.finish()
+            capturedAudioTask?.cancel()
+            capturedAudioContinuation = nil
+            capturedAudioTask = nil
+            throw error
+        }
+        if Task.isCancelled {
+            // disconnect() already cleared the shared stream state; only release ours.
+            await audio.shutDown()
+            capturedFrames.continuation.finish()
+            captureTask.cancel()
+            throw CancellationError()
+        }
+        audioEngine = audio
     }
 }
 

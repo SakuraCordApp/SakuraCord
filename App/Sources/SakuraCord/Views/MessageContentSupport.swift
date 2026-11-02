@@ -2,6 +2,7 @@ import MessageRendering
 import SakuraCordModels
 import SwiftUI
 
+/// Resolves mention metadata for a message through the app model.
 struct MessageMentionResolver {
     let model: AppModel
     let message: Message?
@@ -11,198 +12,36 @@ struct MessageMentionResolver {
         self.message = message
     }
 
-    private func member(_ id: UserID) -> Member? {
-        sourceGuildID.flatMap { model.membersByGuildID[$0]?[id] }
-            ?? (sourceGuildID == model.selectedGuildID ? model.membersByID[id] ?? model.knownMentionMembers[id] : nil)
-    }
-
     func user(_ userID: UserID) -> User? {
-        member(userID)?.user
-            ?? message?.mentionedUsers.first { $0.id == userID }
-            ?? model.messages.first { $0.author.id == userID }?.author
-            ?? model.threadMessages.first { $0.author.id == userID }?.author
-            ?? (model.currentUser?.id == userID ? model.currentUser : nil)
+        model.mentionUser(userID, in: message)
     }
 
     func presentation(_ mention: RenderedMention) -> MentionPresentation {
-        switch mention.kind {
-        case .guildNavigation: guildNavigationPresentation(mention)
-        case .user: userPresentation(mention)
-        case .role: rolePresentation(mention)
-        case .channel: channelPresentation(mention)
-        case .channelLink: channelLinkPresentation(mention)
-        case .message: messagePresentation(mention)
-        }
+        model.mentionPresentation(mention, in: message)
     }
 
-    /// Media discovery only needs the avatar carried by user mentions. Going
-    /// through the complete presentation switch for channel, role, and
-    /// message mentions performs unrelated channel/role lookups even though
-    /// those presentations can never contribute a media key.
     func avatarURL(_ mention: RenderedMention) -> URL? {
-        guard mention.kind == .user,
-              let userID = UserID(mention.id)
-        else { return nil }
-        let member = member(userID)
-        return member?.guildAvatarURL ?? user(userID)?.avatarURL
-    }
-
-    private func userPresentation(_ mention: RenderedMention) -> MentionPresentation {
-        guard let userID = UserID(mention.id) else {
-            return MentionPresentation.fallback(for: mention)
-        }
-        let member = member(userID)
-        let value = user(userID)
-        let topColor = member.flatMap {
-            MessageAuthorPresentation.topRoleColor(in: $0.roles)
-        }
-        return MentionPresentation(
-            rawToken: mention.rawToken,
-            label: "@\((sourceGuildID == nil ? model.friendNickname(for: userID) : nil) ?? member?.user.displayName ?? value?.displayName ?? "unknown-user")",
-            target: .user(userID),
-            avatarURL: member?.guildAvatarURL ?? value?.avatarURL,
-            colorHex: topColor
-        )
-    }
-
-    private func rolePresentation(_ mention: RenderedMention) -> MentionPresentation {
-        guard let roleID = RoleID(mention.id) else {
-            return MentionPresentation.fallback(for: mention)
-        }
-        let roles = sourceGuildID.flatMap { model.guildRolesByGuildID[$0] }
-            ?? (sourceGuildID == model.selectedGuildID ? model.guildRoles : [])
-        let role = roles.first { $0.id == roleID }
-        return MentionPresentation(
-            rawToken: mention.rawToken,
-            label: "@\(role?.name ?? "unknown-role")",
-            target: .role(roleID),
-            colorHex: role?.colorHex
-        )
-    }
-
-    private func guildNavigationPresentation(_ mention: RenderedMention) -> MentionPresentation {
-        var presentation = MentionPresentation.fallback(for: mention)
-        if let destination = GuildNavigationMention(rawValue: mention.id),
-           let guildID = sourceGuildID,
-           model.hasGuildNavigationDestination(destination, in: guildID) {
-            presentation = MentionPresentation(
-                rawToken: mention.rawToken, label: destination.title,
-                target: .guildNavigation(guildID: guildID, destination: destination),
-                systemImage: presentation.systemImage
-            )
-        }
-        return presentation
-    }
-
-    private func channelPresentation(_ mention: RenderedMention) -> MentionPresentation {
-        guard let channelID = ChannelID(mention.id) else {
-            return MentionPresentation.fallback(for: mention)
-        }
-        let channel = channel(channelID)
-        let guildName = channel?.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-        let label = if crossesGuild(targetGuildID: channel?.guildID),
-                       let guildName,
-                       let channel
-        {
-            "\(guildName) / \(channel.name)"
-        } else {
-            channel?.name ?? "unknown-channel"
-        }
-        return MentionPresentation(
-            rawToken: mention.rawToken,
-            label: label,
-            target: .channel(channelID),
-            systemImage: ChannelIconPresentation.systemImage(
-                for: channel?.kind ?? .unknown,
-                isHidden: false
-            )
-        )
-    }
-
-    private func channelLinkPresentation(_ mention: RenderedMention) -> MentionPresentation {
-        guard let channelID = ChannelID(mention.id) else {
-            return MentionPresentation.fallback(for: mention)
-        }
-        let guildID = mention.messageGuildID.flatMap(GuildID.init)
-        if let channel = channel(channelID) {
-            let guildName = channel.guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-            let label = if crossesGuild(targetGuildID: channel.guildID), let guildName {
-                "\(guildName) / \(channel.name)"
-            } else {
-                channel.name
-            }
-            return MentionPresentation(
-                rawToken: mention.rawToken,
-                label: label,
-                target: .channel(channelID),
-                systemImage: ChannelIconPresentation.systemImage(
-                    for: channel.kind,
-                    isHidden: false
-                )
-            )
-        }
-        let post = model.forumCataloguePosts.first { $0.id == channelID }
-            ?? model.forumPosts.first { $0.id == channelID }
-        return MentionPresentation(
-            rawToken: mention.rawToken,
-            label: post?.thread.name ?? "unknown-post",
-            target: .linkedChannel(guildID: guildID, channelID: channelID),
-            systemImage: ChannelIconPresentation.forumPostSystemImage
-        )
-    }
-
-    private func messagePresentation(_ mention: RenderedMention) -> MentionPresentation {
-        guard let rawChannelID = mention.messageChannelID,
-              let channelID = ChannelID(rawChannelID),
-              let messageID = MessageID(mention.id)
-        else {
-            return MentionPresentation.fallback(for: mention)
-        }
-        let guildID = mention.messageGuildID.flatMap(GuildID.init)
-        let channel = channel(channelID)
-        let guildName = guildID.flatMap { model.serverRailGuildsByID[$0]?.name }
-        let channelLabel = if crossesGuild(targetGuildID: guildID),
-                              let guildName,
-                              let channel
-        {
-            "\(guildName) / \(channel.name) ›"
-        } else {
-            "\(channel?.name ?? "unknown-channel") ›"
-        }
-        return MentionPresentation(
-            rawToken: mention.rawToken,
-            label: channelLabel,
-            target: .message(
-                guildID: guildID,
-                channelID: channelID,
-                messageID: messageID
-            ),
-            systemImage: "bubble.left.fill"
-        )
-    }
-
-    private func channel(_ channelID: ChannelID) -> Channel? {
-        model.messagePresentationChannel(channelID)
-    }
-
-    private var sourceGuildID: GuildID? {
-        if let guildID = message?.guildID { return guildID }
-        if let channelID = message?.channelID { return channel(channelID)?.guildID }
-        return model.selectedGuildID
-    }
-
-    private func crossesGuild(targetGuildID: GuildID?) -> Bool {
-        guard let targetGuildID, let sourceGuildID else { return false }
-        return targetGuildID != sourceGuildID
+        model.mentionAvatarURL(mention, in: message)
     }
 
     func label(_ mention: RenderedMention) -> String {
         presentation(mention).label
     }
+
+    /// Every mention a draft holds, keyed by token, as an editor shows them.
+    func presentations(in text: String) -> [String: MentionPresentation] {
+        MessageDocumentCache.shared.document(for: text).segments.reduce(into: [:]) { values, segment in
+            if case let .mention(mention) = segment {
+                values[mention.rawToken] = presentation(mention)
+            }
+        }
+    }
 }
 
 struct CustomEmojiRichText: View {
     var model: AppModel?
+    /// Resolves clicked user mentions the source message knows about.
+    var message: Message?
     let content: String
     let emojiSize: CGFloat
     var baseFontSize: CGFloat?
@@ -216,6 +55,7 @@ struct CustomEmojiRichText: View {
 
     init(
         model: AppModel? = nil,
+        message: Message? = nil,
         content: String,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
@@ -229,6 +69,7 @@ struct CustomEmojiRichText: View {
         onURLClick: @escaping (URL) -> Bool = { _ in false }
     ) {
         self.model = model
+        self.message = message
         self.content = content
         self.emojiSize = emojiSize
         self.baseFontSize = baseFontSize
@@ -286,12 +127,15 @@ struct CustomEmojiRichText: View {
         switch mention.target {
         case .unresolved:
             return
+        case let .game(id):
+            model.presentedProfileGame = model.gameMentions.gamesByID[id]
+        case let .command(id, name):
+            guard let channelID = message?.channelID ?? model.selectedChannelID else { return }
+            model.startCommandMention(id: id, name: name, in: channelID)
         case let .user(id):
-            let user = model.membersByID[id]?.user
+            let user = model.mentionUser(id, in: message)
+                ?? model.membersByID[id]?.user
                 ?? model.knownMentionMembers[id]?.user
-                ?? model.messages.first { $0.author.id == id }?.author
-                ?? model.threadMessages.first { $0.author.id == id }?.author
-                ?? (model.currentUser?.id == id ? model.currentUser : nil)
             guard let user else { return }
             let requestID = model.showProfile(for: user)
             presentedMention = AnchoredMentionPresentation(
@@ -349,7 +193,7 @@ private struct AnchoredMentionPopoverLayer: View {
                     }
                 case let .role(id):
                     RoleMembersPopover(model: model, roleID: id, guildID: model.selectedGuildID)
-                case .unresolved, .guildNavigation, .channel, .linkedChannel, .message:
+                case .unresolved, .game, .command, .guildNavigation, .channel, .linkedChannel, .message:
                     EmptyView()
                 }
             }
@@ -363,7 +207,7 @@ private struct AnchoredMentionPopoverLayer: View {
         switch request.mention.target {
         case .user:
             .memberProfile
-        case .unresolved, .guildNavigation, .role, .channel, .linkedChannel, .message:
+        case .unresolved, .game, .command, .guildNavigation, .role, .channel, .linkedChannel, .message:
             .interactive
         }
     }
@@ -396,12 +240,11 @@ nonisolated struct LinkedImagePresentation: Sendable {
                 )
             )
         }
-        // Discord leaves an emoji link inside a spoiler as a spoilered link.
-        if references.contains(where: { $0.1.linkedEmoji != nil }) {
+        // Discord leaves an image or emoji link inside a spoiler as a
+        // spoilered link, so it never shows before its reveal.
+        if !references.isEmpty, content.contains("||") {
             let spoilered = Self.spoileredMatchLocations(matches, in: content)
-            references.removeAll {
-                $0.1.linkedEmoji != nil && spoilered.contains($0.0.location)
-            }
+            references.removeAll { spoilered.contains($0.0.location) }
         }
         matchedEmojiURLs = Set(
             references.compactMap { reference in

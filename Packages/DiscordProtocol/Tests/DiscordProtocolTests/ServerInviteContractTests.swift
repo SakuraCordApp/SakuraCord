@@ -72,16 +72,17 @@ struct ServerInviteContractTests {
         let capture = InviteRequestCapture()
         let provider = try await makeProvider(capture.id)
         let reference = try #require(ServerInviteReference("captcha"))
-        let accepted = try await provider.acceptServerInvite(reference, messageID: .init(rawValue: 42)) { challenge in
+        await provider.setCaptchaHandler { challenge in
             #expect(challenge.siteKey == "site-key")
             #expect(challenge.rqdata == "request-data")
             #expect(challenge.rqtoken == "request-token")
             #expect(challenge.sessionID == "captcha-session")
             #expect(challenge.shouldServeInvisible)
             #expect(await !provider.requestSafetyCircuitIsOpen)
-            _ = try await provider.serverInvite(try #require(ServerInviteReference("valid")))
+            #expect(await (try? provider.serverInvite(ServerInviteReference("valid")!)) != nil)
             return "human-solution"
         }
+        let accepted = try await provider.acceptServerInvite(reference, messageID: .init(rawValue: 42))
         #expect(accepted.invite.guildID == .init(rawValue: 900))
         let requests = capture.requests
         #expect(requests.map(\.httpMethod) == ["GET", "POST", "GET", "POST"])
@@ -98,18 +99,33 @@ struct ServerInviteContractTests {
         await provider.disconnect()
     }
 
-    @Test(arguments: ["captchaCancel", "captchaEmpty", "captchaDisconnect", "captchaRepeated", "captchaLimited", "captchaTimeout", "captchaNoHandler"])
+    @Test(arguments: ["captchaCancel", "captchaEmpty", "captchaDisconnect", "captchaSessionReplaced", "captchaRepeated", "captchaLimited",
+                      "captchaTimeout", "captchaNoHandler"])
     func `cancelled stale or rejected CAPTCHA cannot cause an automatic join loop`(code: String) async throws {
         let capture = InviteRequestCapture()
-        let provider = try await makeProvider(capture.id)
+        let socket = ReadyGatewaySocket()
+        let provider = try await makeProvider(capture.id, socket: socket)
         let reference = try #require(ServerInviteReference(code))
-        let handler: DiscordCaptchaHandler = { _ in
-            if code == "captchaCancel" { throw CancellationError() }
-            if code == "captchaDisconnect" { await provider.disconnect() }
-            return code == "captchaEmpty" ? "  " : "human-solution"
+        if code != "captchaNoHandler" {
+            await provider.setCaptchaHandler { _ in
+                if code == "captchaCancel" { return nil }
+                if code == "captchaDisconnect" { await provider.disconnect() }
+                if code == "captchaSessionReplaced" {
+                    // The body still carries the session the join was sent with.
+                    await socket.push(gatewayMessage(op: 0, data: .object([
+                        "session_id": .string("replacement-session"), "resume_gateway_url": .string("wss://gateway.discord.gg")
+                    ]), sequence: 2, eventName: "READY"))
+                    #expect(await eventually { await provider.gatewaySession?.snapshot().sessionID == "replacement-session" })
+                }
+                return code == "captchaEmpty" ? "  " : "human-solution"
+            }
         }
-        await #expect(throws: (any Error).self) {
-            _ = try await provider.acceptServerInvite(reference, messageID: nil, captchaHandler: code == "captchaNoHandler" ? nil : handler)
+        let error = await #expect(throws: (any Error).self) {
+            _ = try await provider.acceptServerInvite(reference, messageID: nil)
+        }
+        // An unsolved challenge never surfaces as a raw HTTP status.
+        if ["captchaCancel", "captchaEmpty", "captchaRepeated", "captchaNoHandler"].contains(code) {
+            #expect(error?.localizedDescription == "Couldn’t complete the security check.")
         }
         let completed = ["captchaRepeated", "captchaLimited", "captchaTimeout"].contains(code)
         #expect(capture.requests.filter { $0.httpMethod == "POST" }.count == (completed ? 2 : 1))
@@ -122,7 +138,7 @@ struct ServerInviteContractTests {
     @Test func `discoverable profile join sends one full membership request and resumes CAPTCHA once`() async throws {
         let capture = InviteRequestCapture()
         let provider = try await makeProvider(capture.id)
-        #expect(try await !provider.joinDiscoverableGuild(.init(rawValue: 950), captchaHandler: nil))
+        #expect(try await !provider.joinDiscoverableGuild(.init(rawValue: 950)))
         let request = try #require(capture.requests.last)
         #expect(request.httpMethod == "PUT")
         #expect(request.url?.path == "/api/v9/guilds/950/members/@me")
@@ -130,20 +146,21 @@ struct ServerInviteContractTests {
         #expect(request.httpBody == Data("{}".utf8))
         #expect(request.value(forHTTPHeaderField: "X-Context-Properties") == "e30=")
 
-        _ = try await provider.joinDiscoverableGuild(.init(rawValue: 951)) { challenge in
+        await provider.setCaptchaHandler { challenge in
             #expect(challenge.siteKey == "site-key")
             #expect(await !provider.requestSafetyCircuitIsOpen)
             return "human-solution"
         }
+        _ = try await provider.joinDiscoverableGuild(.init(rawValue: 951))
         let writes = capture.requests.filter { $0.httpMethod == "PUT" }
         #expect(writes.count == 3)
         #expect(writes[1].url == writes[2].url)
         #expect(writes[1].value(forHTTPHeaderField: "X-Captcha-Key") == nil)
         #expect(writes[2].value(forHTTPHeaderField: "X-Captcha-Key") == "human-solution")
 
-        await #expect(throws: ServerInviteError.banned) { _ = try await provider.joinDiscoverableGuild(.init(rawValue: 952), captchaHandler: nil) }
+        await #expect(throws: ServerInviteError.banned) { _ = try await provider.joinDiscoverableGuild(.init(rawValue: 952)) }
         await provider.seedInviteGuild(owner: false)
-        _ = try await provider.joinDiscoverableGuild(.init(rawValue: 900), captchaHandler: nil)
+        _ = try await provider.joinDiscoverableGuild(.init(rawValue: 900))
         #expect(capture.requests.filter { $0.httpMethod == "PUT" }.count == 4)
         #expect(await !provider.requestSafetyCircuitIsOpen)
 
@@ -219,8 +236,7 @@ struct ServerInviteContractTests {
         await provider.disconnect()
     }
 
-    private func makeProvider(_ accountID: String) async throws -> DiscordRESTProvider {
-        let socket = ReadyGatewaySocket()
+    private func makeProvider(_ accountID: String, socket: ReadyGatewaySocket = ReadyGatewaySocket()) async throws -> DiscordRESTProvider {
         await socket.push(gatewayMessage(op: 10, data: .object(["heartbeat_interval": .number(60_000)])))
         await socket.push(gatewayMessage(op: 0, data: .object([
             "session_id": .string("invite-session"), "resume_gateway_url": .string("wss://gateway.discord.gg")

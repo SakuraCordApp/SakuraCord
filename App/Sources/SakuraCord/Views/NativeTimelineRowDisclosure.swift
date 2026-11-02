@@ -153,7 +153,7 @@ extension NativeTimelineCanvasView {
         disclosureTicker.stop()
         resetDisclosureGeometry()
         guard let disclosure else { return }
-        if redraws { redrawForDisclosure() }
+        if redraws { redrawForRowMotion() }
         // Drops held rows from the next published item list.
         if disclosure.isCollapsing, !disclosure.isFinished { releaseHeldRows(of: disclosure) }
     }
@@ -207,7 +207,7 @@ extension NativeTimelineCanvasView {
     func visibleRowSpan(at index: Int) -> Range<CGFloat> {
         let minY = displayedRowOrigin(at: index)
         let maxY = minY + displayedRowHeight(at: index)
-        guard disclosureRange.contains(index) else { return minY ..< maxY }
+        guard disclosureRange.contains(index) else { return unreadDividerGapSpan(at: index, minY: minY, maxY: maxY) }
         let clippedMin = min(disclosureClipMaxY, max(disclosureClipMinY, minY))
         let clippedMax = min(disclosureClipMaxY, max(disclosureClipMinY, maxY))
         return clippedMin ..< clippedMax
@@ -238,10 +238,13 @@ extension NativeTimelineCanvasView {
         isCollapsing: Bool,
         keepsHeaderPosition: Bool
     ) -> DisclosureStart? {
+        // Two row motions would fight over the same displacement.
+        finishUnreadDividerGap()
+        finishReactionTransitions()
         let previous = rowDisclosure?.key == key ? rowDisclosure : nil
         // Reversing the same group continues from where it is; another group snaps to its end.
         if previous == nil { finishDisclosure() } else { rowDisclosure = nil }
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+        guard AppMotionPolicy.animatesUncategorized,
               let headerIndex = disclosureHeaderIndex(for: key),
               displayedRowOrigin(at: headerIndex) < visibleRect.maxY,
               displayedRowOrigin(at: headerIndex) + layouts[headerIndex].height > visibleRect.minY
@@ -320,7 +323,7 @@ extension NativeTimelineCanvasView {
                 rowDisclosure = disclosure
                 disclosureTicker.stop()
                 refreshDisclosureGeometry()
-                redrawForDisclosure()
+                redrawForRowMotion()
                 if case .suppressedMessages = disclosure.key { pendingDisclosureScrollAnchor = disclosure.key }
                 releaseHeldRows(of: disclosure)
             } else {
@@ -330,7 +333,7 @@ extension NativeTimelineCanvasView {
         }
         rowDisclosure = disclosure
         refreshDisclosureGeometry()
-        redrawForDisclosure()
+        redrawForRowMotion()
     }
 
     private func releaseHeldRows(of disclosure: NativeTimelineRowDisclosure) {
@@ -340,7 +343,7 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private var viewportMinY: CGFloat {
+    var viewportMinY: CGFloat {
         enclosingScrollView?.contentView.bounds.minY ?? visibleRect.minY
     }
 
@@ -365,15 +368,27 @@ extension NativeTimelineCanvasView {
         disclosureRelativeClipMaxY = .greatestFiniteMagnitude
     }
 
-    private func redrawForDisclosure() {
-        invalidateVisibleContent()
+    func redrawForRowMotion(invalidating rect: CGRect? = nil) {
+        // Hover regions are cached at the rows' displaced positions.
+        mentionPointerRegionCache.removeAll(keepingCapacity: true)
+        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, reactionRowMotions.isEmpty,
+           !suppressesHoverPresentation {
+            // The motion has landed: tracking areas and cursor rects follow the rows.
+            updateTrackingAreas()
+            window?.invalidateCursorRects(for: self)
+        }
+        if let rect { setNeedsDisplay(rect) } else { invalidateVisibleContent() }
         reconcileInboxHeaders()
         positionAnimatedMediaOverlays()
         positionInlineVideoOverlays()
+        // The copy button can't follow its block as rows move and clip, so
+        // it leaves until the pointer next moves over a block.
+        if !(rowDisclosure?.isFinished ?? true) || unreadDividerGap != nil { setHoveredCodeBlock(nil) }
         reconcileVoiceMessageOverlay()
-        positionLottieStickerOverlays()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
+        positionReactionBandViews()
         maskDisclosureSubviews()
     }
 
@@ -395,7 +410,7 @@ extension NativeTimelineCanvasView {
         }
         views += animatedMediaOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += inlineVideoOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
-        views += lottieStickerOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
+        views += inlinePlayers.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += activityIndicators.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += spoilerOverlays.filter { messageIDs.contains($0.key.messageID) }.map(\.value)
         for view in views {

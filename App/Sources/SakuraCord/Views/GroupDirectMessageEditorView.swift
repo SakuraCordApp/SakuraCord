@@ -107,20 +107,15 @@ private struct GroupDirectMessageNameField: View {
     }
 }
 
-/// The group icon with Discord's pencil badge. A chosen image is cropped to a
-/// circle with the profile avatar editor before it becomes the draft icon.
+/// The group icon with Discord's pencil badge. A chosen image is cropped to
+/// its centred square before it becomes the draft icon.
 private struct GroupDirectMessageIconEditor: View {
     let store: GroupDirectMessageEditorStore
     let presentation: GroupDirectMessageEditorStore.Presentation
     @Binding var isPreparing: Bool
     @State private var importing = false
-    @State private var cropping = false
-    @State private var source: ProfileImageSource?
-    @State private var sourceURL: URL?
-    @State private var filename = ""
     @State private var work: Task<Void, Never>?
     @State private var errorMessage: String?
-    @State private var temporaryFiles: [URL] = []
     /// The cropped upload, decoded once for display.
     @State private var preview: NSImage?
 
@@ -157,21 +152,10 @@ private struct GroupDirectMessageIconEditor: View {
                 case let .failure(error): errorMessage = error.localizedDescription
                 }
             }
-            .windowModal(isPresented: $cropping) {
-                if let source, let sourceURL {
-                    ProfileImageCropView(image: source, imageURL: sourceURL, filename: filename, purpose: .avatar,
-                                         isProcessing: isPreparing, canApply: true,
-                                         cancel: { work?.cancel(); cropping = false }, apply: crop)
-                        .windowModalDismissDisabled(isPreparing)
-                }
-            }
             .alert("Unable to Use Image", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("OK", role: .cancel) { errorMessage = nil }
             } message: { Text(errorMessage ?? "") }
-            .onDisappear {
-                work?.cancel()
-                for url in temporaryFiles { try? FileManager.default.removeItem(at: url) }
-            }
+            .onDisappear { work?.cancel() }
     }
 
     @ViewBuilder
@@ -197,6 +181,7 @@ private struct GroupDirectMessageIconEditor: View {
 
     private func load(_ url: URL) {
         work?.cancel()
+        let revision = store.revision
         work = Task {
             isPreparing = true
             defer { isPreparing = false }
@@ -207,41 +192,19 @@ private struct GroupDirectMessageIconEditor: View {
                 let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                 guard size <= Self.maximumSourceBytes else { throw GroupIconError.tooLarge }
                 let maximumBytes = Self.maximumSourceBytes
-                let (decoded, local) = try await Task.detached {
+                let processing = Task.detached {
                     let data = try Data(contentsOf: url)
                     guard data.count <= maximumBytes else { throw GroupIconError.tooLarge }
-                    let decoded = try ProfileImageSource(data: data)
-                    let local = FileManager.default.temporaryDirectory.appending(path: "group-icon-source-\(UUID().uuidString)")
-                    try data.write(to: local, options: [.atomic, .completeFileProtection])
-                    return (decoded, local)
-                }.value
-                // A dismissed editor has already cleaned up its files.
-                guard !Task.isCancelled else {
-                    try? FileManager.default.removeItem(at: local)
-                    throw CancellationError()
+                    let source = try ProfileImageSource(data: data)
+                    return try ProfileImageProcessor.crop(source, geometry: ProfileImageCropGeometry(naturalSize: source.size, purpose: .avatar))
                 }
-                temporaryFiles.append(local)
-                source = decoded; sourceURL = local; filename = url.lastPathComponent; cropping = true
-            } catch is CancellationError {} catch { errorMessage = error.localizedDescription }
-        }
-    }
-
-    private func crop(_ geometry: ProfileImageCropGeometry) {
-        guard let source, !isPreparing else { return }
-        let revision = store.revision
-        work = Task {
-            isPreparing = true
-            defer { isPreparing = false }
-            do {
-                let processing = Task.detached { try ProfileImageProcessor.crop(source, geometry: geometry) }
                 let output = try await withTaskCancellationHandler { try await processing.value } onCancel: { processing.cancel() }
                 try Task.checkCancellation()
                 guard store.revision == revision else { throw CancellationError() }
                 preview = NSImage(data: output.data)
                 store.icon = .upload(ProfileImageUpload(
-                    data: output.data, mediaType: output.mediaType, description: filename, isAnimated: output.isAnimated
+                    data: output.data, mediaType: output.mediaType, description: url.lastPathComponent, isAnimated: output.isAnimated
                 ))
-                cropping = false
             } catch is CancellationError {} catch { errorMessage = error.localizedDescription }
         }
     }

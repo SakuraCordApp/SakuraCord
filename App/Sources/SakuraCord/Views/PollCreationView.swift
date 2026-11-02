@@ -159,17 +159,6 @@ struct PollCreationView: View {
     }
 }
 
-private struct PollCreationRowBackground: ViewModifier {
-    var isHighlighted = false
-
-    func body(content: Content) -> some View {
-        content
-            .padding(InterfaceScale.metric(8))
-            .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(48), alignment: .leading)
-            .background(.quaternary.opacity(isHighlighted ? 0.9 : 0.5), in: RoundedRectangle(cornerRadius: InterfaceScale.metric(24), style: .continuous))
-    }
-}
-
 private struct PollCreationAnswerRow: View {
     let model: AppModel
     @Binding var answer: PollAnswer
@@ -199,9 +188,7 @@ private struct PollCreationAnswerRow: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .contentShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(24), style: .continuous))
-        .onTapGesture { focus.wrappedValue = .answer(answer.id) }
-        .modifier(PollCreationRowBackground(isHighlighted: focus.wrappedValue == .answer(answer.id)))
+        .modifier(ModalRowBackground(isHighlighted: focus.wrappedValue == .answer(answer.id)) { focus.wrappedValue = .answer(answer.id) })
         .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
     }
 
@@ -280,6 +267,6 @@ private struct PollCreationSettingRow<Control: View>: View {
             Spacer(minLength: InterfaceScale.metric(8))
             control().padding(.trailing, InterfaceScale.metric(6))
         }
-        .modifier(PollCreationRowBackground())
+        .modifier(ModalRowBackground())
     }
 }

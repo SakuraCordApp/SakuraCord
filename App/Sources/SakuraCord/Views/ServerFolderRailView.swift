@@ -11,7 +11,9 @@ struct ServerFolderRailView: View {
     @State private var isAnimatingFolder = false
     @State private var animationGeneration = 0
     @State private var pointerLocation: CGPoint?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @Environment(ServerRailDragController.self) private var drag
     @Environment(\.displayScale) private var displayScale
     @Environment(\.windowModalInputAllowed) private var inputAllowed
@@ -302,7 +304,9 @@ struct ServerFolderRailHeader: View {
     var isPointerOverHeader: Bool?
     let toggle: () -> Void
     var loadsImageWhenOffscreen = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var isHovering = false
     @State private var iconIsVisible = false
     @Environment(ServerRailDragController.self) private var drag
@@ -454,7 +458,9 @@ private struct ExpandedFolderGuilds: View {
     let morphsInFolder: Bool
     let previewIDs: Set<GuildID>
     let isExpanded: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var extraRowsHeight: CGFloat = 0
 
     var body: some View {

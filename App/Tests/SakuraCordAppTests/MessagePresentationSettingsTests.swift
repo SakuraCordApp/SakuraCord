@@ -55,7 +55,7 @@ import Testing
     let layout = NativeTimelineRowLayout.make(
         item: item,
         width: 900,
-        model: model
+        source: model
     )
     #expect(layout.sakuraCordDeepLinkRegions.first?.action == .checkForUpdates)
     #expect(layout.sakuraCordDeepLinkRegions.first?.action.title == "Update SakuraCord")
@@ -131,7 +131,7 @@ import Testing
     let layout = NativeTimelineRowLayout.make(
         item: item,
         width: 900,
-        model: model
+        source: model
     )
     let region = try #require(layout.sakuraCordDeepLinkRegions.first)
     #expect(region.action == .applyTheme(decodedTheme))
@@ -199,7 +199,7 @@ import Testing
             isHighlighted: false
         ),
         width: 900,
-        model: AppModel(launchMode: .offlineTesting)
+        source: AppModel(launchMode: .offlineTesting)
     )
     let regions = layout.sakuraCordDeepLinkRegions
     try #require(regions.count == 3)

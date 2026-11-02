@@ -66,6 +66,12 @@ public struct ChannelPermissionOverwrite: Codable, Hashable, Sendable {
     }
 }
 
+/// Discord files a non-friend's DM under Message Requests, or under Spam
+/// when its filter flags the sender.
+public enum MessageRequestStatus: String, Codable, Hashable, Sendable {
+    case pending, spam
+}
+
 public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public let id: ChannelID
     public var guildID: GuildID?
@@ -85,6 +91,10 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
     public var isAgeRestricted: Bool
     public var recipients: [User]
     public var blockedUserWarningDismissed: Bool
+    /// Discord's `is_message_request`: a non-friend's DM awaiting a decision.
+    public var isMessageRequest: Bool
+    /// Discord's `is_spam`, kept apart so a partial update can change either flag.
+    public var isSpam: Bool
     public var permissionOverwrites: [ChannelPermissionOverwrite]?
     public var memberListID: String?
     public var lastMessageID: MessageID?
@@ -120,6 +130,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         isAgeRestricted: Bool = false,
         recipients: [User] = [],
         blockedUserWarningDismissed: Bool = false,
+        isMessageRequest: Bool = false,
+        isSpam: Bool = false,
         permissionOverwrites: [ChannelPermissionOverwrite]? = nil,
         memberListID: String? = nil,
         lastMessageID: MessageID? = nil,
@@ -154,6 +166,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         self.isAgeRestricted = isAgeRestricted
         self.recipients = recipients
         self.blockedUserWarningDismissed = blockedUserWarningDismissed
+        self.isMessageRequest = isMessageRequest
+        self.isSpam = isSpam
         self.permissionOverwrites = permissionOverwrites
         self.memberListID = memberListID
         self.lastMessageID = lastMessageID
@@ -175,13 +189,30 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         flags & (1 << 4) != 0
     }
 
+    /// Where Discord files the conversation: spam outranks a plain request.
+    public var messageRequest: MessageRequestStatus? {
+        if isSpam { return .spam }
+        return isMessageRequest ? .pending : nil
+    }
+
+    /// A DM or group in the conversation list; message requests wait on
+    /// their own page until accepted.
+    public var isListedDirectMessage: Bool {
+        (kind == .directMessage || kind == .groupDirectMessage) && messageRequest == nil
+    }
+
+    /// The latest message, or the channel's creation for one without messages.
+    public var lastActivityDate: Date {
+        lastMessageID?.createdAt ?? id.createdAt
+    }
+
     public var isOfficialSystemDirectMessage: Bool {
         kind == .directMessage && recipients.contains(where: \.isSystem)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, guildID, name, hasExplicitName, iconURL, ownerID, topic, kind, category, categoryID, position, categoryPosition
-        case isAgeRestricted, blockedUserWarningDismissed
+        case isAgeRestricted, blockedUserWarningDismissed, isMessageRequest, isSpam
         case unreadCount, mentionCount, isMuted, recipients, permissionOverwrites, memberListID, lastMessageID, lastPinTimestamp
         case flags, availableTags, defaultReaction, defaultSortOrder, defaultForumLayout
         case defaultTagMatch, defaultAutoArchiveDuration, defaultThreadRateLimitPerUser
@@ -209,6 +240,8 @@ public struct Channel: Identifiable, Codable, Hashable, Sendable {
         isAgeRestricted = try values.decodeIfPresent(Bool.self, forKey: .isAgeRestricted) ?? false
         recipients = try values.decodeIfPresent([User].self, forKey: .recipients) ?? []
         blockedUserWarningDismissed = try values.decodeIfPresent(Bool.self, forKey: .blockedUserWarningDismissed) ?? false
+        isMessageRequest = try values.decodeIfPresent(Bool.self, forKey: .isMessageRequest) ?? false
+        isSpam = try values.decodeIfPresent(Bool.self, forKey: .isSpam) ?? false
         permissionOverwrites = try values.decodeIfPresent(
             [ChannelPermissionOverwrite].self, forKey: .permissionOverwrites
         )
@@ -259,6 +292,9 @@ public struct ForumPost: Identifiable, Codable, Hashable, Sendable {
     private var storedFirstMessage: StoredMessage?
     private var storedMostRecentMessage: StoredMessage?
     public var isUnread: Bool
+    /// Whether Discord has answered for the starter, so a missing
+    /// `firstMessage` means it was deleted rather than not yet loaded.
+    public var isFirstMessageLoaded = false
 
     // Most bootstrap thread entries have no messages. Immutable boxes keep
     // absent messages compact and preserve independent mutation after a copy.
@@ -402,12 +438,63 @@ public struct ForumPostPage: Equatable, Sendable {
     public var posts: [ForumPost]
     public var hasMore: Bool
     public var nextOffset: Int?
+    /// Discord's `total_results` for the query, when reported.
+    public var totalResults: Int?
+    /// Records Discord returned archived that were deleted or reopened before
+    /// the page was delivered. They no longer occupy Discord's offsets.
+    public var departedCount: Int
 
-    public init(posts: [ForumPost], hasMore: Bool, nextOffset: Int?) {
+    public init(
+        posts: [ForumPost], hasMore: Bool, nextOffset: Int?, totalResults: Int? = nil, departedCount: Int = 0
+    ) {
         self.posts = posts
         self.hasMore = hasMore
         self.nextOffset = nextOffset
+        self.totalResults = totalResults
+        self.departedCount = departedCount
     }
+}
+
+/// One thread-browser request for a text or announcement channel. Active
+/// threads come from local state; Discord serves archived pages and name search.
+public struct ThreadBrowserQuery: Hashable, Sendable {
+    public enum Scope: Hashable, Sendable {
+        /// Archived threads, newest activity first, from a raw-record offset.
+        case archived(offset: Int)
+        /// Active and archived threads whose names match, as one page.
+        case search(String)
+    }
+
+    public static let pageSize = 25
+
+    public var scope: Scope
+    public var selectedTagIDs: Set<ForumTagID>
+    public var tagMatch: ForumTagMatch
+
+    public init(
+        scope: Scope = .archived(offset: 0),
+        selectedTagIDs: Set<ForumTagID> = [],
+        tagMatch: ForumTagMatch = .matchSome
+    ) {
+        self.scope = scope
+        self.selectedTagIDs = selectedTagIDs
+        self.tagMatch = tagMatch
+    }
+}
+
+/// The surface that joins or leaves a thread, reported as Discord's
+/// `location` analytics value.
+public enum ThreadMembershipLocation: String, Hashable, Sendable {
+    /// Channel-list and forum-card context menus.
+    case contextMenu = "Context Menu"
+    /// The side-pane thread menu.
+    case sidePaneMenu = "Sidebar Overflow"
+    /// The full-view thread menu.
+    case fullViewMenu = "Toolbar Overflow"
+    /// The forum post header Follow toggle.
+    case forumToolbar = "Forum Toolbar"
+    /// Mark Unread in a thread the account has not joined.
+    case markUnread = "Mark Unread"
 }
 
 public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
@@ -415,7 +502,15 @@ public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
     public var url: URL
     public var filename: String
     public var description: String
-    public var isSpoiler: Bool
+    /// Discord treats a `SPOILER_` file name as a spoiler, so a file named
+    /// that way stages as one, and unmarking it drops the prefix.
+    public var isSpoiler: Bool {
+        didSet {
+            guard !isSpoiler else { return }
+            filename = Self.droppingSpoilerPrefix(filename)
+            filenameBeforeAnonymising = filenameBeforeAnonymising.map(Self.droppingSpoilerPrefix)
+        }
+    }
     private var filenameBeforeAnonymising: String?
     private var hasChosenFilenamePrivacy = false
 
@@ -456,7 +551,13 @@ public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
         self.url = url
         self.filename = filename ?? url.lastPathComponent
         self.description = description
-        self.isSpoiler = isSpoiler
+        self.isSpoiler = isSpoiler || self.filename.hasPrefix(Self.spoilerPrefix)
+    }
+
+    private static let spoilerPrefix = "SPOILER_"
+
+    private static func droppingSpoilerPrefix(_ name: String) -> String {
+        name.hasPrefix(spoilerPrefix) ? String(name.dropFirst(spoilerPrefix.count)) : name
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -494,28 +595,59 @@ public struct CreateForumPostDraft: Equatable, Sendable {
     }
 }
 
-/// A thread started from a text or announcement channel without a starter
-/// message. Its first message is sent separately once Discord creates it.
+/// A thread started in a text or announcement channel, either on its own or
+/// from an existing message there. Its first message is sent separately once
+/// Discord creates it.
 public struct CreateThreadDraft: Equatable, Sendable {
     public var channelID: ChannelID
     public var name: String
     public var isPrivate: Bool
     public var autoArchiveDuration: Int
+    /// The parent-channel message the thread starts from. The thread takes
+    /// the message's ID; message threads are always public.
+    public var starterMessageID: MessageID?
+    /// Reported as the request location: the Threads browser's create button
+    /// differs from the composer's Plus Button.
+    public var isFromThreadBrowser: Bool
 
     public init(
         channelID: ChannelID,
         name: String,
         isPrivate: Bool = false,
-        autoArchiveDuration: Int = 4_320
+        autoArchiveDuration: Int = 4_320,
+        starterMessageID: MessageID? = nil,
+        isFromThreadBrowser: Bool = false
     ) {
         self.channelID = channelID
         self.name = name
         self.isPrivate = isPrivate
         self.autoArchiveDuration = autoArchiveDuration
+        self.starterMessageID = starterMessageID
+        self.isFromThreadBrowser = isFromThreadBrowser
+    }
+
+    /// Starting from `message` with the parent's default inactivity period.
+    /// A blank name uses the first-party default derived from the message.
+    public static func startingFrom(
+        _ message: Message,
+        in parent: Channel,
+        name: String = ""
+    ) -> Self {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self(
+            channelID: parent.id,
+            name: trimmed.isEmpty ? ThreadNamePolicy.defaultName(for: message) : trimmed,
+            autoArchiveDuration: parent.defaultAutoArchiveDuration ?? 4_320,
+            starterMessageID: message.id
+        )
     }
 }
 
+/// One thread or forum-post change. Changes other than archiving first
+/// unarchive an archived thread, which stays open afterwards.
 public enum ForumPostMutation: Equatable, Sendable {
+    /// Renames the thread; see `ThreadNamePolicy`.
+    case name(String)
     case tags([ForumTagID])
     case archived(Bool)
     case locked(Bool)

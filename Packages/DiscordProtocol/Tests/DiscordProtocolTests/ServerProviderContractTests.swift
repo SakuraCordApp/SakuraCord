@@ -32,7 +32,7 @@ extension ProviderRequestContractTests {
     }
 
     @Test(arguments: [400, 429])
-    func `bulk read acknowledgement reports completed batches on later failure without replay`(status: Int) async throws {
+    func `bulk read acknowledgement stops at a rejected batch without replay`(status: Int) async throws {
         RateLimitURLProtocol.reset()
         RateLimitURLProtocol.bulkAckStatuses = [204, status]
         let provider = makeProvider()
@@ -43,13 +43,8 @@ extension ProviderRequestContractTests {
             )
         }
 
-        do {
+        await #expect(throws: ChatProviderError.self) {
             try await provider.acknowledgeBulk(readStates)
-            Issue.record("A rejected second batch was reported as fully accepted.")
-        } catch let error as PartialBulkReadAcknowledgementError {
-            #expect(error.acceptedReadStates == Array(readStates.prefix(100)))
-        } catch {
-            Issue.record("The completed first batch was not preserved: \(error)")
         }
         #expect(RateLimitURLProtocol.bulkAckRequestCount == 2)
     }

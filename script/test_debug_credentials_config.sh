@@ -60,15 +60,43 @@ assert_resolution 1 "machine config"
 sakuracord_apply_secure_release_credential_policy package 1
 [[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
   || fail "update-enabled package retained debug preference"
-for release_mode in package-release run-release; do
-  unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
-  assert_resolution 1 "machine config"
-  sakuracord_apply_secure_release_credential_policy "$release_mode" 0
-  [[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
-    || fail "$release_mode retained machine debug preference"
-  [[ "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "release safety override" ]] \
-    || fail "$release_mode safety override source was not reported"
+# Distributable packages stay on Keychain regardless of the machine preference.
+unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
+assert_resolution 1 "machine config"
+sakuracord_apply_secure_release_credential_policy package-release 0
+[[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
+  || fail "package-release retained machine debug preference"
+[[ "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "release safety override" ]] \
+  || fail "package-release safety override source was not reported"
 
+# A local run-release honours the machine preference.
+assert_resolution 1 "machine config"
+sakuracord_apply_secure_release_credential_policy run-release 0
+[[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "1" ]] \
+  || fail "run-release ignored machine debug preference"
+[[ "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "machine config (local release)" ]] \
+  || fail "run-release machine preference source was not reported"
+
+# Update-enabled run-release stays on Keychain.
+assert_resolution 1 "machine config"
+sakuracord_apply_secure_release_credential_policy run-release 1
+[[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
+  || fail "update-enabled run-release retained machine debug preference"
+[[ "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_SOURCE" == "release safety override" ]] \
+  || fail "update-enabled run-release safety override source was not reported"
+
+# Only the machine preference applies; legacy repository config does not.
+git config --global --unset "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY"
+git -C "$TEMP_ROOT" config --local "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY" true
+assert_resolution 1 "legacy repository config"
+sakuracord_apply_secure_release_credential_policy run-release 0
+[[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
+  || fail "run-release honoured legacy repository preference"
+git -C "$TEMP_ROOT" config --local "$SAKURACORD_INSECURE_DEBUG_CREDENTIALS_CONFIG_KEY" false
+SAKURACORD_ROOT_DIR="$TEMP_ROOT" "$ROOT_DIR/script/debug_credentials.sh" enable >/dev/null
+
+# Explicit environment overrides are rejected in every release mode.
+for release_mode in package-release run-release; do
   SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1
   sakuracord_resolve_insecure_debug_credentials "$TEMP_ROOT"
   if (sakuracord_apply_secure_release_credential_policy "$release_mode" 0) \
@@ -76,6 +104,15 @@ for release_mode in package-release run-release; do
     fail "$release_mode accepted explicit insecure environment override"
   fi
 done
+
+# With the machine preference off, run-release uses Keychain.
+unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
+SAKURACORD_ROOT_DIR="$TEMP_ROOT" "$ROOT_DIR/script/debug_credentials.sh" disable >/dev/null
+assert_resolution 0 "machine config"
+sakuracord_apply_secure_release_credential_policy run-release 0
+[[ "$SAKURACORD_RESOLVED_INSECURE_DEBUG_CREDENTIALS" == "0" ]] \
+  || fail "run-release enabled credentials with machine preference off"
+SAKURACORD_ROOT_DIR="$TEMP_ROOT" "$ROOT_DIR/script/debug_credentials.sh" enable >/dev/null
 
 unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
 SAKURACORD_ROOT_DIR="$TEMP_ROOT" "$ROOT_DIR/script/debug_credentials.sh" disable >/dev/null
@@ -126,7 +163,7 @@ unset SAKURACORD_CODE_SIGN_IDENTITY
 security() { printf '%s\n' "$TEST_IDENTITIES"; }
 codesign() { [[ "$TEST_SIGNATURE_VALID" == "1" ]]; }
 write_test_plist() {
-  python3 - "$SAKURACORD_APP_BUNDLE/Contents/Info.plist" "$1" "${2:-debug}" <<'PY'
+  python3 - "$SAKURACORD_APP_BUNDLE/Contents/Info.plist" "$1" "${2:-debug}" "${3:-0}" <<'PY'
 import plistlib
 import sys
 
@@ -134,6 +171,7 @@ with open(sys.argv[1], "wb") as stream:
     plistlib.dump({
         "SakuraCordInsecureDebugCredentialsEnabled": sys.argv[2] == "1",
         "SakuraCordBuildConfiguration": sys.argv[3],
+        "SakuraCordUpdatesEnabled": sys.argv[4] == "1",
     }, stream)
 PY
 }
@@ -162,6 +200,15 @@ unset SAKURACORD_CODE_SIGN_IDENTITY
 write_test_plist 0 release
 sakuracord_verify_development_launch >/dev/null
 write_test_plist 1 release
-assert_launch_refused "release bundle with insecure credentials"
+sakuracord_verify_development_launch >/dev/null
+write_test_plist 1 release 1
+assert_launch_refused "update-enabled release bundle with insecure credentials"
+write_test_plist 1 release 0
+SAKURACORD_INSECURE_DEBUG_CREDENTIALS=1
+assert_launch_refused "release bundle with explicit insecure environment override"
+unset SAKURACORD_INSECURE_DEBUG_CREDENTIALS
+write_test_plist 1 release 0
+sakuracord_set_persistent_debug_credentials false
+assert_launch_refused "release bundle with insecure credentials while machine preference is off"
 
 echo "Debug credential configuration tests passed."

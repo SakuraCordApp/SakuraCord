@@ -1,11 +1,22 @@
 import AppKit
 import MessageRendering
 import SakuraCordModels
+import Synchronization
 
 enum DiscordRichMessageMetrics {
     static var maximumWidth: CGFloat { InterfaceScale.metric(520) }
-    static var cardCornerRadius: CGFloat { InterfaceScale.metric(8) }
-    static var cardPadding: CGFloat { InterfaceScale.metric(12) }
+    /// Discord lays Components V2 out up to 600 pixels wide.
+    static var componentsMaximumWidth: CGFloat { px(600) }
+    static var cardCornerRadius: CGFloat { px(8) }
+    /// A container's 16-pixel padding inside its 1-point border.
+    static var cardPadding: CGFloat { px(16) + InterfaceScale.metric(1) }
+
+    /// One of Discord's CSS pixels. Discord sizes components against its
+    /// 16-pixel message text, which SakuraCord draws at `messageTextSize`,
+    /// so every Discord length keeps its proportion to the text.
+    nonisolated static func px(_ value: CGFloat) -> CGFloat {
+        InterfaceScale.metric((value * InterfaceTypographyMetrics.messageTextSize / 16 * 2).rounded() / 2)
+    }
 }
 
 nonisolated enum DiscordFittingWidthPlan {
@@ -22,14 +33,12 @@ nonisolated enum MessageEmbedPresentation {
     static func visibleEmbeds(
         for message: Message
     ) -> [MessageEmbed] {
-        guard !message.flags.contains(.suppressEmbeds), message.type != .pollResult else { return [] }
-        let linkedEmojiURLs =
-            LinkedImagePresentation(content: message.content)
-                .matchedEmojiURLs
-        let sakuraCordDeepLinkActions = Set(
-            SakuraCordDeepLinkPresentation.all(in: message.content)
-                .map(\.action)
-        )
+        // The content scans below only filter embeds: a row re-laid out for
+        // every frame of a resize paid for them with none to filter.
+        guard !message.embeds.isEmpty, !message.flags.contains(.suppressEmbeds), message.type != .pollResult,
+              message.type != .autoModerationAction
+        else { return [] }
+        let (linkedEmojiURLs, sakuraCordDeepLinkActions) = contentLinks(in: message.content)
         return message.embeds.filter { embed in
             if let url = embed.url,
                let action = SakuraCordDeepLinkPresentation.action(for: url),
@@ -42,10 +51,35 @@ nonisolated enum MessageEmbedPresentation {
         }
     }
 
+    /// What the content links to, by content: a row laid out again at
+    /// another width, as on every frame of a resize, scanned it each time.
+    /// Keyed by the content's exact bytes: equal strings can differ in
+    /// Unicode scalars, which the link parsers tell apart.
+    private static let contentLinkCache = Mutex<[Data: ContentLinks]>([:])
+
+    private typealias ContentLinks = (emojiURLs: Set<URL>, deepLinkActions: Set<SakuraCordDeepLinkAction>)
+
+    private static func contentLinks(in content: String) -> ContentLinks {
+        let key = Data(content.utf8)
+        if let links = contentLinkCache.withLock({ $0[key] }) { return links }
+        let links: ContentLinks = (
+            LinkedImagePresentation(content: content).matchedEmojiURLs,
+            Set(SakuraCordDeepLinkPresentation.all(in: content).map(\.action))
+        )
+        contentLinkCache.withLock { cache in
+            if cache.count >= 2_048 { cache.removeAll(keepingCapacity: true) }
+            cache[key] = links
+        }
+        return links
+    }
+
     static func visibleMessageContent(
         for message: Message
     ) -> String {
-        visibleMessageContent(
+        if let alert = message.autoModerationAlert {
+            return AutoModAlertPresentation.headline(alert)
+        }
+        return visibleMessageContent(
             message.content,
             embeds: visibleEmbeds(
                 for: message
@@ -122,6 +156,16 @@ nonisolated enum SystemMessagePresentation {
         static func link(_ text: String, action: Action) -> Self {
             Self(text: text, isEmphasized: false, action: action, isLink: true)
         }
+    }
+
+    /// What a system message says after its author's name, for one-line
+    /// previews such as a thread card's latest message.
+    static func previewText(for message: Message) -> String {
+        if message.type == .channelPinnedMessage { return "pinned a message to this channel." }
+        var runs = textRuns(for: message)
+        if runs.first?.action == .profile(message.author.id) { runs.removeFirst() }
+        return runs.filter { !$0.isLink }.map(\.text).joined()
+            .trimmingCharacters(in: .whitespaces)
     }
 
     static func label(
@@ -255,6 +299,13 @@ nonisolated enum SystemMessagePresentation {
                 .secondary(" removed "),
                 .emphasized(recipient, action: recipientUser.map { .profile($0.id) }),
                 .secondary(" from the group."),
+            ]
+        case .channelNameChange where message.guildID != nil:
+            // A renamed thread or forum post, worded as the first-party client does.
+            return [
+                actorRun(message),
+                .secondary(" changed the channel name: "),
+                .emphasized(message.content),
             ]
         case .channelNameChange:
             let editGroup = TextRun.link("Edit Group", action: .editGroup(message.channelID))
@@ -479,6 +530,8 @@ struct RichMediaItem: Identifiable, Hashable {
     enum Kind: Hashable {
         case image(animated: Bool)
         case video, audio, file
+        /// A text or code file, read and highlighted as its language.
+        case text(language: String)
         case youtube(YouTubeEmbedPlayback)
     }
 
@@ -528,7 +581,7 @@ struct RichMediaItem: Identifiable, Hashable {
             case .animatedImage: .image(animated: true)
             case .video: .video
             case .audio: .audio
-            case .file: .file
+            case .file: attachment.textPreviewLanguage.map { .text(language: $0) } ?? .file
             }
     }
 
@@ -663,7 +716,7 @@ struct RichMediaItem: Identifiable, Hashable {
         return extensions.contains(url.pathExtension.lowercased())
     }
 
-    private static func isAnimatedImageURL(_ url: URL) -> Bool {
+    static func isAnimatedImageURL(_ url: URL) -> Bool {
         let pathExtension = url.pathExtension.lowercased()
         return pathExtension == "gif" || pathExtension == "apng"
     }
@@ -679,6 +732,9 @@ struct RichMediaItem: Identifiable, Hashable {
     }
 }
 
+/// Discord's media mosaic: one item at its own size, three as a hero beside
+/// a stacked pair, and otherwise rows of two and square rows of three, led by
+/// a full-width hero when the count leaves one over.
 nonisolated enum MediaGalleryPlan {
     static func rowCounts(for count: Int) -> [Int] {
         switch count {
@@ -687,13 +743,9 @@ nonisolated enum MediaGalleryPlan {
         case 2: [2]
         case 3: [1, 2]
         case 4: [2, 2]
-        case 5: [2, 3]
-        case 6: [3, 3]
-        case 7: [1, 3, 3]
-        case 8: [2, 3, 3]
-        case 9: [3, 3, 3]
-        case 10: [1, 3, 3, 3]
-        default: stride(from: 0, to: count, by: 3).map { min(3, count - $0) }
+        default:
+            // Rows of three, after a lone hero or a pair for what is left.
+            (count % 3 == 0 ? [] : [count % 3]) + Array(repeating: 3, count: count / 3)
         }
     }
 
@@ -703,11 +755,12 @@ nonisolated enum MediaGalleryPlan {
     ) -> [CGRect]
     {
         guard count > 0 else { return [] }
+        let maximumHeight = InterfaceScale.metric(350)
         if count == 1 {
             if let intrinsicSize = intrinsicSizes.first,
                intrinsicSize.width > 0, intrinsicSize.height > 0
             {
-                let scale = min(1, width / intrinsicSize.width, 350 / intrinsicSize.height)
+                let scale = min(1, width / intrinsicSize.width, maximumHeight / intrinsicSize.height)
                 return [
                     CGRect(
                         x: 0, y: 0, width: intrinsicSize.width * scale,
@@ -716,29 +769,33 @@ nonisolated enum MediaGalleryPlan {
                 ]
             }
             let ratio = max(0.2, min(12, aspectRatios.first ?? 16 / 9))
-            let fittedWidth = min(width, 350 * ratio)
-            let fittedHeight = min(350, fittedWidth / ratio)
+            let fittedWidth = min(width, maximumHeight * ratio)
+            let fittedHeight = min(maximumHeight, fittedWidth / ratio)
             return [CGRect(x: 0, y: 0, width: fittedWidth, height: max(InterfaceScale.metric(80), fittedHeight))]
         }
         if count == 3 {
-            let height = min(300, max(190, width * 0.62))
-            let heroWidth = (width - spacing) * 0.64
+            let height = min(maximumHeight, width * 7 / 12)
+            let heroWidth = (width - spacing) * 2 / 3
             let stackWidth = width - spacing - heroWidth
+            let stackHeight = (height - spacing) / 2
             return [
                 CGRect(x: 0, y: 0, width: heroWidth, height: height),
-                CGRect(x: heroWidth + spacing, y: 0, width: stackWidth, height: (height - spacing) / 2),
-                CGRect(
-                    x: heroWidth + spacing, y: (height + spacing) / 2, width: stackWidth,
-                    height: (height - spacing) / 2
-                )
+                CGRect(x: heroWidth + spacing, y: 0, width: stackWidth, height: stackHeight),
+                CGRect(x: heroWidth + spacing, y: stackHeight + spacing, width: stackWidth, height: stackHeight)
             ]
         }
+        // A row is as tall as its tallest item at the row's tile width, up
+        // to 280 points, or half the 350-point grid for four items. Rows of
+        // three are square.
+        let rowCap = count == 4 ? (maximumHeight - spacing) / 2 : InterfaceScale.metric(280)
         var result: [CGRect] = []
         var verticalOffset: CGFloat = 0
-        for (rowIndex, columns) in rowCounts(for: count).enumerated() {
+        for columns in rowCounts(for: count) {
             let tileWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
-            let hero = columns == 1 && (count == 7 || count == 10) && rowIndex == 0
-            let height = hero ? min(240, max(150, width * 0.44)) : min(175, max(92, tileWidth * 0.72))
+            let ratios = aspectRatios.dropFirst(result.count).prefix(columns).map { max(0.2, $0) }
+            let height = columns == 3
+                ? tileWidth
+                : min(rowCap, tileWidth / (ratios.min() ?? 1))
             for column in 0 ..< columns {
                 result.append(
                     CGRect(
@@ -766,14 +823,26 @@ nonisolated enum DiscordComponentContainerLayoutPlan {
         idealContent: CGFloat,
         available: CGFloat?,
         maximum: CGFloat,
-        padding: CGFloat,
-        hasAccent: Bool
+        padding: CGFloat
     ) -> CGFloat {
-        let fixedWidth = padding * 2 + (hasAccent ? InterfaceScale.metric(4) : 0)
-        return DiscordFittingWidthPlan.width(
-            ideal: idealContent + fixedWidth,
+        // The accent bar overlays the leading padding, so it adds no width.
+        DiscordFittingWidthPlan.width(
+            ideal: idealContent + padding * 2,
             available: available,
             maximum: maximum
         )
+    }
+}
+
+extension MessageReplyPreview {
+    /// A one-line preview of `message`. A system message is summarized,
+    /// since its content is empty or only a parameter such as a new name.
+    nonisolated static func presenting(_ message: Message) -> Self {
+        var preview = Self(message: message)
+        if message.type.hasGeneratedContent {
+            preview.content = SystemMessagePresentation.previewText(for: message)
+            preview.mediaKind = nil
+        }
+        return preview
     }
 }

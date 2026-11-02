@@ -5,7 +5,7 @@ extension MockMessageFixtureBuilder {
     func messageShowcase() -> [Message] {
         showcaseText() + showcaseMedia() + showcaseEmbeds()
             + showcaseComponents() + showcaseReferencesAndStates() + showcasePolls()
-            + showcaseSystemMessages() + showcaseBubbleGroups()
+            + showcaseSystemMessages() + showcaseBubbleGroups() + showcaseThreadCards()
     }
 
     var showcaseThread: MessageThreadSummary {
@@ -13,6 +13,39 @@ extension MockMessageFixtureBuilder {
             id: ChannelID(rawValue: 902), guildID: auroraID, parentID: ChannelID(rawValue: 216),
             name: "Showcase thread", messageCount: 2, memberCount: 2, lastMessageID: MessageID(rawValue: 609_002)
         )
+    }
+
+    /// Thread cards in each state: busy, empty, archived, locked and long-named,
+    /// under a message and as a thread-starter system message.
+    func showcaseThreadCards() -> [Message] {
+        func thread(
+            _ number: UInt64, _ name: String, messages: Int, archived: Bool = false, locked: Bool = false
+        ) -> MessageThreadSummary {
+            MessageThreadSummary(
+                id: ChannelID(rawValue: 1_400_000_000_000_000_000 + number), guildID: auroraID,
+                parentID: ChannelID(rawValue: 216), name: name, messageCount: messages,
+                isArchived: archived, isLocked: locked, createdAt: now.addingTimeInterval(-13 * 3_600)
+            )
+        }
+        let long = "An extremely long thread name that cannot possibly fit on one line of the timeline card"
+        return [
+            showcaseMessage(800, content: "# Thread cards"),
+            showcaseMessage(801, content: "A busy thread.") { $0.thread = thread(1, "Release checklist for side chats", messages: 133) },
+            showcaseMessage(802, author: nova, content: "A thread nobody has answered yet.") { $0.thread = thread(2, "Empty thread", messages: 0) },
+            showcaseMessage(803, content: "An archived thread.") { $0.thread = thread(3, "Q3 planning notes", messages: 48, archived: true) },
+            showcaseMessage(804, author: nova, content: "A locked thread.") { $0.thread = thread(4, "Announcements discussion", messages: 12, locked: true) },
+            showcaseMessage(805, content: "A thread with a very long name.") { $0.thread = thread(5, long, messages: 2) },
+            showcaseMessage(806, author: nova) {
+                $0.type = .threadCreated
+                $0.content = long
+                $0.thread = thread(6, long, messages: 1)
+            },
+            showcaseMessage(807, author: nova) {
+                $0.type = .threadCreated
+                $0.content = "Empty thread"
+                $0.thread = thread(7, "Empty thread", messages: 0)
+            },
+        ]
     }
 
     func showcaseThreadMessages() -> [Message] {

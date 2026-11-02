@@ -28,6 +28,11 @@ struct FriendsProjection {
     }
 
     var displaySections: [MemberSection] {
+        // An empty list shows only its centred empty state. Pending lists its
+        // requests under Received and Sent, which a Pending header would
+        // only repeat.
+        guard count > 0 else { return [] }
+        if section == .pending { return sections }
         let title = switch section {
         case .online: "Online"
         case .all: "All Friends"

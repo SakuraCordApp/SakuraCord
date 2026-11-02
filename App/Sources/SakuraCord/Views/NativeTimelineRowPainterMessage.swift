@@ -16,16 +16,25 @@ struct NativeTimelineMessageDrawInput {
     let showsCompactTimestamp: Bool
     let isAuthorHovered: Bool
     let isServerTagHovered: Bool
+    let isCommandPillHovered: Bool
     let hoveredMention: NativeTimelineMentionHover?
     let hoveredTextLink: NativeTimelineTextLinkHover?
-    let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
+    /// How far each text spoiler is hovered, easing in and out.
+    let textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat]
     let hoveredComponentButton: NativeTimelineComponentButtonTarget?
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
+    /// How far each file card part's hover has eased in.
+    let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
+    /// How far each just-finished download's button has crossfaded.
+    let fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat]
     let isForwardedSourceHovered: Bool
+    let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
     let isTranslationActionHovered: Bool
+    /// A hovered upload cancel or Retry of a local send.
+    let hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind?
     let hidesMessageContent: Bool
     let hoveredReactionID: String?
     let isAddReactionHovered: Bool
@@ -33,14 +42,14 @@ struct NativeTimelineMessageDrawInput {
     let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
     let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
     let pollPresentation: NativeTimelinePollPresentation
-    let animatedReactionIDs: Set<String>
-    let reactionCountTransitions: [String: NativeTimelineReactionCountTransition]
+    let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
 }
 
 extension NativeTimelineRowPainter {
     static func drawMessage(_ input: NativeTimelineMessageDrawInput) {
         drawMessageSearchContext(input)
         drawMessageSeparators(input)
+        drawAutoModAlert(input)
         drawMessageIdentity(input)
         drawMessageReplyAndCommand(input)
         if input.hidesMessageContent { return }
@@ -70,7 +79,20 @@ extension NativeTimelineRowPainter {
                 container.chrome == .bubbleSection ? container.chromeFrame : nil
             }
         }
-        bubbleIntegratedSectionsTint(integratedSectionFrames, bubbleRegion: bubbleRegion)
+        bubbleIntegratedSectionsTint(
+            integratedSectionFrames + [fileSectionFrame(input.layout)].compactMap { $0 },
+            bubbleRegion: bubbleRegion
+        )
+    }
+
+    /// Files below other bubble content share one integrated section, as
+    /// thread cards and invites do; a bubble holding only files is their card.
+    private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
+        let files = layout.attachmentRegions.filter { !$0.attachment.mediaKind.isVisual }.map(\.frame)
+        guard let bubble = layout.bubbleRegion, let first = files.first,
+              first.minY - bubble.frame.minY > NativeTimelineBubbleLayout.verticalPadding + 0.5
+        else { return nil }
+        return files.dropFirst().reduce(first) { $0.union($1) }
     }
 
     private static func drawMessageSearchContext(_ input: NativeTimelineMessageDrawInput) {
@@ -109,10 +131,16 @@ extension NativeTimelineRowPainter {
 
     private static func drawMessageSeparators(_ input: NativeTimelineMessageDrawInput) {
         if let frame = input.layout.daySeparatorFrame {
-            dateSeparator(date: input.row.message.timestamp, frame: frame)
+            dateSeparator(date: input.row.message.timestamp, frame: frame, isUnread: input.layout.foldedUnreadDay != nil)
         }
         if let frame = input.layout.unreadSeparatorFrame {
             newMessagesSeparator(frame: frame)
+        }
+        // While editing, the editor replaces the row's height, so the rule
+        // would sit at the starter's old bottom across later replies.
+        if let frame = input.layout.postStarterDividerFrame, !input.hidesMessageContent {
+            NSColor.labelColor.withAlphaComponent(0.16).setFill()
+            CGRect(x: frame.minX, y: frame.midY, width: frame.width, height: 1).fill()
         }
     }
 
@@ -248,7 +276,8 @@ extension NativeTimelineRowPainter {
                 region,
                 bubbleConnector: input.layout.bubbleReferenceConnector,
                 message: input.row.message,
-                cosmeticPolicy: input.model?.cosmeticPolicy ?? .init()
+                cosmeticPolicy: input.model?.cosmeticPolicy ?? .init(),
+                isPillHovered: input.isCommandPillHovered
             )
         }
     }
@@ -307,7 +336,7 @@ extension NativeTimelineRowPainter {
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
         let hoveredTextLink = input.hoveredTextLink
-        let hoveredTextSpoiler = input.hoveredTextSpoiler
+        let textSpoilerHover = input.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         if let frame = layout.contentFrame,
            let attributedContent = layout.attributedContent,
@@ -346,12 +375,7 @@ extension NativeTimelineRowPainter {
                         && hoveredTextLink?.region == .content
                     ? hoveredTextLink?.characterIndex
                     : nil,
-                hoveredSpoilerRangeLocation:
-                    hoveredTextSpoiler?.itemIdentifier
-                        == .message(row.identity)
-                        && hoveredTextSpoiler?.region == .content
-                    ? hoveredTextSpoiler?.rangeLocation
-                    : nil,
+                spoilerHoverProgress: textSpoilerHover.progress(in: .message(row.identity), region: .content),
                 revealedSpoilerLocations:
                     revealedTextSpoilerState.locations(in: .content)
             )
@@ -404,11 +428,7 @@ extension NativeTimelineRowPainter {
             context?.setAlpha(opacity)
             context?.beginTransparencyLayer(auxiliaryInfo: nil)
         }
-        NativeTimelineVoiceMessagePainter.drawIdle(
-            region,
-            speedLabel: playback?.speedLabel ?? "1×",
-            isActive: playback?.isActive(region.playbackID) == true
-        )
+        NativeTimelineVoiceMessagePainter.drawIdle(region, playback: playback)
         if opacity < 1 { context?.endTransparencyLayer() }
     }
 
@@ -432,87 +452,97 @@ extension NativeTimelineRowPainter {
         }
         let attachmentFillsFrame =
             MediaGalleryImagePresentation.fillsFrame(
-                itemCount: layout.attachmentRegions.count
+                itemCount: layout.mediaGalleryItemCount
             )
+        if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
+            bubbleIntegratedSection(
+                section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
+            )
+        }
         for region in layout.attachmentRegions {
-            let attachment = region.attachment
             let isConcealed =
                 spoilerRevealStore.map {
                     NativeTimelineSpoilerConcealmentPolicy.isConcealed(
                         messageID: message.id,
-                        contentID: "attachment:\(attachment.id)",
-                        isSpoiler: attachment.isSpoiler,
+                        contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
+                        isSpoiler: region.attachment.isSpoiler,
                         store: $0
                     )
                 } ?? false
-            if isConcealed {
-                spoilerConcealedBase(
-                    in: region.frame,
-                    cornerRadius: attachmentCornerRadius
-                )
-                continue
-            }
-            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(
-                concentricRoundedRect: region.frame,
-                cornerRadius: attachmentCornerRadius
-            ).fill()
-            switch attachment.mediaKind {
-            case .image, .animatedImage, .video:
-                let isVideo = attachment.mediaKind == .video
-                if let image = region.previewKey.flatMap(mediaImage(for:)) {
-                    drawImage(
-                        image,
-                        in: region.frame,
-                        cornerRadius: attachmentCornerRadius,
-                        fillsFrame: attachmentFillsFrame
-                    )
-                } else if isVideo {
-                    systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-                }
-                if isVideo { mediaPlayGlyph(in: region.frame) }
-            case .audio:
-                attachmentAudio(
-                    attachment,
-                    in: region.frame
-                )
-            case .file:
-                systemSymbol(
-                    "doc",
-                    in: CGRect(
-                        x: region.frame.midX - InterfaceScale.metric(19),
-                        y: region.frame.midY - InterfaceScale.metric(34),
-                        width: InterfaceScale.metric(38),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    color: .labelColor,
-                    inset: 1
-                )
-                text(
-                    attachment.filename,
-                    in: CGRect(
-                        x: region.frame.minX + InterfaceScale.metric(12),
-                        y: region.frame.midY + InterfaceScale.metric(11),
-                        width: max(1, region.frame.width - InterfaceScale.metric(24)),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    font: .interfacePreferredFont(forTextStyle: .body),
-                    color: .labelColor,
-                    alignment: .center,
-                    lineBreakMode: .byTruncatingTail
-                )
+            NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: layout.cornerRadius(of: region)) {
+                drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
             }
         }
         if opacity < 1 { attachmentContext?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
 
+    private static func drawAttachment(
+        _ region: NativeTimelineRowLayout.AttachmentRegion,
+        fillsFrame: Bool,
+        input: NativeTimelineMessageDrawInput
+    ) {
+        let attachment = region.attachment
+        let layout = input.layout
+        let message = input.row.message
+        if attachment.mediaKind.isVisual {
+            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
+            NSBezierPath(
+                concentricRoundedRect: region.frame,
+                cornerRadius: attachmentCornerRadius
+            ).fill()
+        }
+        switch attachment.mediaKind {
+        case .image, .animatedImage, .video:
+            let isVideo = attachment.mediaKind == .video
+            if let image = region.previewKey.flatMap(mediaImage(for:)) {
+                drawImage(
+                    image,
+                    in: region.frame,
+                    cornerRadius: attachmentCornerRadius,
+                    fillsFrame: fillsFrame
+                )
+            } else if let placeholder = region.placeholder?.image {
+                drawImage(placeholder, in: region.frame, cornerRadius: attachmentCornerRadius, fillsFrame: true)
+            } else if isVideo {
+                systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
+            }
+            if isVideo { mediaPlayGlyph(in: region.frame) }
+        case .audio, .file:
+            fileCard(
+                .init(
+                    frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil
+                ),
+                messageID: message.id,
+                bubbleRegion: layout.bubbleRegion,
+                state: input.model?.attachmentDownloads.states[attachment.id],
+                upload: uploadState(of: attachment, in: input),
+                finishProgress: input.fileCardFinishProgress,
+                pointer: .init(
+                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                )
+            )
+            if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
+                NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)
+            }
+        }
+    }
+
     private static func drawMessageEmbeds(_ input: NativeTimelineMessageDrawInput) {
         let layout = input.layout
+        let concealedEmbeds = input.spoilerRevealStore.map {
+            NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
+        } ?? [:]
         for region in layout.embedRegions {
-            drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
-            drawEmbedText(region, input: input)
-            drawEmbedMedia(region)
+            let isCovered = concealedEmbeds[region.embedID] != nil
+            NativeTimelineSpoilerCover.draw(
+                covering: isCovered, in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+            ) {
+                drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
+                drawEmbedText(region, input: input)
+                drawEmbedMedia(region, isCovered: isCovered)
+            }
         }
     }
 
@@ -556,15 +586,15 @@ extension NativeTimelineRowPainter {
                 hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == itemIdentifier
                     && input.hoveredTextLink?.region == textRegionID
                     ? input.hoveredTextLink?.characterIndex : nil,
-                hoveredSpoilerRangeLocation: input.hoveredTextSpoiler?.itemIdentifier == itemIdentifier
-                    && input.hoveredTextSpoiler?.region == textRegionID
-                    ? input.hoveredTextSpoiler?.rangeLocation : nil,
+                spoilerHoverProgress: input.textSpoilerHover.progress(in: itemIdentifier, region: textRegionID),
                 revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: textRegionID)
             )
         }
     }
 
-    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion) {
+    /// `isCovered`: a spoiler cover blurs the embed, so it draws the poster
+    /// of a video that otherwise plays in its own view.
+    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion, isCovered: Bool) {
         for imageRegion in region.imageRegions {
             if let image = mediaImage(for: .media(
                 imageRegion.url,
@@ -576,6 +606,8 @@ extension NativeTimelineRowPainter {
                     cornerRadius: imageRegion.cornerRadius,
                     fillsFrame: false
                 )
+            } else if let placeholder = imageRegion.placeholder?.image {
+                drawImage(placeholder, in: imageRegion.frame, cornerRadius: imageRegion.cornerRadius, fillsFrame: false)
             } else {
                 systemSymbol(
                     imageRegion.fallbackSystemImage,
@@ -587,7 +619,7 @@ extension NativeTimelineRowPainter {
         }
         guard let frame = region.mediaFrame,
               let url = region.mediaURL,
-              TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
+              isCovered || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
                   mediaIsVideo: region.mediaIsVideo,
                   autoplaysInline: region.mediaAutoplaysInline
               )
@@ -599,11 +631,12 @@ extension NativeTimelineRowPainter {
                 image, in: frame, cornerRadius: InterfaceScale.metric(8),
                 fillsFrame: region.mediaPosterFillsFrame
             )
-            if region.mediaIsVideo { mediaPlayGlyph(in: frame) }
+        } else if let placeholder = region.mediaPlaceholder?.image {
+            drawImage(placeholder, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
         } else if region.mediaIsVideo {
             systemSymbol("film", in: frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-            mediaPlayGlyph(in: frame)
         }
+        if region.mediaIsVideo { mediaPlayGlyph(in: frame) }
     }
 
     private static func drawMessageComponentsAndStickers(
@@ -616,7 +649,7 @@ extension NativeTimelineRowPainter {
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
         let hoveredTextLink = input.hoveredTextLink
-        let hoveredTextSpoiler = input.hoveredTextSpoiler
+        let textSpoilerHover = input.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         let spoilerRevealStore = input.spoilerRevealStore
         let hoveredComponentButton = input.hoveredComponentButton
@@ -656,7 +689,7 @@ extension NativeTimelineRowPainter {
                 textSelection: textSelection,
                 hoveredMention: hoveredMention,
                 hoveredTextLink: hoveredTextLink,
-                hoveredTextSpoiler: hoveredTextSpoiler,
+                textSpoilerHover: textSpoilerHover,
                 revealedTextSpoilerState:
                     revealedTextSpoilerState,
                 spoilerRevealStore: spoilerRevealStore,
@@ -664,7 +697,10 @@ extension NativeTimelineRowPainter {
                 activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
-                    componentButtonPressProgress
+                    componentButtonPressProgress,
+                fileCardHoverProgress: input.fileCardHoverProgress,
+                fileCardFinishProgress: input.fileCardFinishProgress,
+                animatedOverlayRoles: input.animatedOverlayRoles
             ))
         }
         guard !layout.stickerFrames.isEmpty else { return }
@@ -681,9 +717,8 @@ extension NativeTimelineRowPainter {
             let sticker = message.stickers.indices.contains(index)
                 ? message.stickers[index]
                 : nil
-            if sticker?.format == .lottie {
-                // A bounded native Lottie overlay owns loading, playback, and
-                // reduced-motion presentation for this exact layout frame.
+            if let sticker,
+               input.animatedOverlayRoles.contains(.sticker(sticker.id)) {
                 continue
             }
             let image = sticker?.mediaURL.flatMap {
@@ -713,7 +748,6 @@ extension NativeTimelineRowPainter {
         let model = input.model
         let hoveredReactionID = input.hoveredReactionID
         let isAddReactionHovered = input.isAddReactionHovered
-        let reactionCountTransitions = input.reactionCountTransitions
         drawForwardedSource(input)
         if let frame = layout.threadFrame, let thread = message.thread {
             if message.type == .threadCreated, let iconFrame = layout.systemIconFrame {
@@ -724,13 +758,13 @@ extension NativeTimelineRowPainter {
                     toX: frame.minX - 4
                 )
             }
-            threadSummary(
+            threadCard(
                 thread,
                 preview: model?.threadPreviewMessages[thread.id],
-                message: message,
                 model: model,
                 in: frame,
-                bubbleRegion: layout.bubbleRegion
+                bubbleRegion: layout.bubbleRegion,
+                interaction: input.threadCardInteraction
             )
         }
         ComponentUnicodeEmojiRenderer.prepareImages(
@@ -743,11 +777,8 @@ extension NativeTimelineRowPainter {
             reaction(
                 region,
                 model: model,
-                isHovered: model?.canUpdateReactions(on: message) != false && hoveredReactionID == region.reaction.id,
-                countTransition: reactionCountTransitions[
-                    region.reaction.id
-                ],
-                hasAnimatedEmojiOverlay: input.animatedReactionIDs.contains(region.reaction.id)
+                isHovered: hoveredReactionID == region.reaction.id && model?.canUpdateReactions(on: message) != false,
+                hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(.reaction(region.reaction.id))
             )
         }
         if let frame = layout.addReactionFrame, model?.canCreateReactions(on: message) != false {
@@ -760,30 +791,41 @@ extension NativeTimelineRowPainter {
             ephemeralFooter(region, isDismissHovered: input.isEphemeralDismissHovered)
         }
         if let frame = layout.failedFrame {
-            systemSymbol(
-                "exclamationmark.circle",
-                in: CGRect(
-                    x: frame.minX,
-                    y: frame.minY + 1,
-                    width: InterfaceScale.metric(12),
-                    height: InterfaceScale.metric(12)
-                ),
-                color: .systemRed,
-                inset: 0
-            )
-            text(
+            failureNotice(
                 MessageOutboxPresentation.failureText(for: input.row.message),
-                in: CGRect(
-                    x: frame.minX + InterfaceScale.metric(16),
-                    y: frame.minY,
-                    width: max(0, frame.width - InterfaceScale.metric(16)),
-                    height: frame.height
-                ),
+                in: frame,
                 font: .interfacePreferredFont(forTextStyle: .caption2),
-                color: .systemRed,
-                lineBreakMode: .byWordWrapping
+                color: .systemRed
             )
         }
+        if let frame = layout.failedRetryFrame {
+            text(
+                MessageOutboxPresentation.retryTitle,
+                in: frame,
+                font: .interfacePreferredFont(forTextStyle: .caption2),
+                color: .sakuraCordAccentColor,
+                isInteractiveHovered: input.hoveredDeliveryAction == .retrySend
+            )
+        }
+    }
+
+    /// A failed send's icon and wording, so the state also reads without colour.
+    static func failureNotice(_ notice: String, in frame: CGRect, font: NSFont, color: NSColor) {
+        let iconSize = InterfaceScale.metric(12)
+        let inset = InterfaceScale.metric(16)
+        systemSymbol(
+            "exclamationmark.circle",
+            in: CGRect(x: frame.minX, y: frame.minY + 1, width: iconSize, height: iconSize),
+            color: color,
+            inset: 0
+        )
+        text(
+            notice,
+            in: CGRect(x: frame.minX + inset, y: frame.minY, width: max(0, frame.width - inset), height: frame.height),
+            font: font,
+            color: color,
+            lineBreakMode: .byWordWrapping
+        )
     }
 
     private static func drawForwardedSource(_ input: NativeTimelineMessageDrawInput) {
@@ -1045,7 +1087,7 @@ extension NativeTimelineRowPainter {
             url: author.avatarURL,
             in: avatarFrame
         )
-        let font = ProfileNameFontLoader.shared.resolvedFont(for: author, fallback: NativeTimelineReplyMetrics.authorFont)
+        let font = ProfileNameFontCache.font(id: author.displayNameStyle?.fontID, fallback: NativeTimelineReplyMetrics.authorFont)
         let displayName = showsReplyMention
             ? NativeTimelineReplyMetrics.authorDisplayName(author, in: message)
             : author.displayName
@@ -1123,7 +1165,8 @@ extension NativeTimelineRowPainter {
         _ region: NativeTimelineRowLayout.CommandInvocationRegion,
         bubbleConnector: NativeTimelineRowLayout.ReferenceConnector?,
         message: Message,
-        cosmeticPolicy: ProfileCosmeticPolicy
+        cosmeticPolicy: ProfileCosmeticPolicy,
+        isPillHovered: Bool
     ) {
         if let bubbleConnector {
             elbowConnector(
@@ -1153,7 +1196,7 @@ extension NativeTimelineRowPainter {
         text(
             user?.displayName ?? "Someone",
             in: region.userFrame,
-            font: ProfileNameFontLoader.shared.resolvedFont(for: user, fallback: .interfaceSystemFont(
+            font: ProfileNameFontCache.font(id: user?.displayNameStyle?.fontID, fallback: .interfaceSystemFont(
                 ofSize: NSFont.preferredFont(
                     forTextStyle: .caption2
                 ).pointSize,
@@ -1167,7 +1210,9 @@ extension NativeTimelineRowPainter {
             font: .interfacePreferredFont(forTextStyle: .caption1),
             color: .secondaryLabelColor
         )
-        NSColor.sakuraCordAccentColor.withAlphaComponent(0.16).setFill()
+        // Like Discord, hovering fills the pill and turns its content white.
+        let pillContentColor: NSColor = isPillHovered ? .white : .sakuraCordAccentColor
+        NSColor.sakuraCordAccentColor.withAlphaComponent(isPillHovered ? 1 : 0.16).setFill()
         NSBezierPath(
             roundedRect: region.pillFrame,
             xRadius: InterfaceScale.metric(4),
@@ -1176,7 +1221,7 @@ extension NativeTimelineRowPainter {
         systemSymbol(
             SakuraCordSystemSymbol.applicationCommands,
             in: region.commandSymbolFrame,
-            color: .sakuraCordAccentColor,
+            color: pillContentColor,
             inset: 0,
             weight: .semibold
         )
@@ -1189,7 +1234,7 @@ extension NativeTimelineRowPainter {
                 ).pointSize,
                 weight: .semibold
             ),
-            color: .sakuraCordAccentColor,
+            color: pillContentColor,
             lineBreakMode: .byTruncatingTail
         )
     }
@@ -1226,15 +1271,27 @@ extension NativeTimelineRowPainter {
         )
     }
 
-    static func dateSeparator(date: Date, frame: CGRect) {
+    /// `isUnread` folds the NEW divider in, as Discord does when both fall on
+    /// the same message: the rule and date turn red and the pill ends the line.
+    static func dateSeparator(date: Date, frame: CGRect, isUnread: Bool = false) {
         let label = date.formatted(
             .dateTime.day().month(.wide).year()
         )
-        let labelFrame = NativeTimelineDateSeparatorMetrics.labelFrame(
+        let pill = newMessagesPillFrame(in: frame)
+        let pillLineEnd = lineEnd(before: pill)
+        var labelFrame = NativeTimelineDateSeparatorMetrics.labelFrame(
             for: label,
             in: frame
         )
-        NSColor.labelColor.withAlphaComponent(0.16).setFill()
+        // In a narrow timeline the date keeps clear of where NEW folds in,
+        // so it stays put while NEW fades in or out over it.
+        if labelFrame.maxX > pillLineEnd {
+            labelFrame.origin.x = max(frame.minX, pillLineEnd - labelFrame.width)
+            labelFrame.size.width = pillLineEnd - labelFrame.minX
+        }
+        let ruleEnd = isUnread ? pillLineEnd : frame.maxX
+        if isUnread { drawNewMessagesPill(pill) }
+        (isUnread ? MentionRed.nsColor : NSColor.labelColor.withAlphaComponent(0.16)).setFill()
         CGRect(
             x: frame.minX,
             y: frame.midY,
@@ -1252,7 +1309,7 @@ extension NativeTimelineRowPainter {
             y: frame.midY,
             width: max(
                 0,
-                frame.maxX
+                ruleEnd
                     - labelFrame.maxX
                     - NativeTimelineDateSeparatorMetrics.lineSpacing
             ),
@@ -1262,40 +1319,40 @@ extension NativeTimelineRowPainter {
             label,
             in: labelFrame,
             font: NativeTimelineDateSeparatorMetrics.font,
-            color: .secondaryLabelColor,
+            color: isUnread ? MentionRed.nsColor : .secondaryLabelColor,
             alignment: .center,
             lineBreakMode: .byClipping
         )
     }
 
     static func newMessagesSeparator(frame: CGRect) {
-        let font = NSFont.interfaceSystemFont(ofSize: 10, weight: .bold)
-        let labelWidth = ceil(
-            measuredTextWidth("NEW", font: font) + 14
-        )
-        let capsuleFrame = CGRect(
-            x: frame.maxX - labelWidth,
-            y: frame.minY
-                + NativeTimelineUnreadSeparatorMetrics.verticalPadding,
-            width: labelWidth,
-            height: NativeTimelineUnreadSeparatorMetrics.capsuleHeight
-        )
-        NSColor.systemRed.setFill()
-        CGRect(
-            x: frame.minX,
-            y: frame.midY,
-            width: max(0, capsuleFrame.minX - InterfaceScale.metric(8) - frame.minX),
-            height: 1
-        ).fill()
-        NSBezierPath(
-            roundedRect: capsuleFrame,
-            xRadius: capsuleFrame.height / 2,
-            yRadius: capsuleFrame.height / 2
-        ).fill()
+        let pill = newMessagesPillFrame(in: frame)
+        drawNewMessagesPill(pill)
+        MentionRed.nsColor.setFill()
+        CGRect(x: frame.minX, y: frame.midY, width: max(0, lineEnd(before: pill) - frame.minX), height: 1).fill()
+    }
+
+    /// Where a divider's line stops short of the NEW pill.
+    private static func lineEnd(before pill: CGRect) -> CGFloat {
+        pill.minX - InterfaceScale.metric(8)
+    }
+
+    private static var newMessagesPillFont: NSFont { .interfaceSystemFont(ofSize: 10, weight: .bold) }
+
+    /// Where the red NEW pill sits at the end of a divider's `frame`.
+    private static func newMessagesPillFrame(in frame: CGRect) -> CGRect {
+        let width = ceil(measuredTextWidth("NEW", font: newMessagesPillFont) + 14)
+        let height = NativeTimelineUnreadSeparatorMetrics.capsuleHeight
+        return CGRect(x: frame.maxX - width, y: frame.midY - height / 2, width: width, height: height)
+    }
+
+    private static func drawNewMessagesPill(_ pill: CGRect) {
+        MentionRed.nsColor.setFill()
+        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         text(
             "NEW",
-            in: capsuleFrame,
-            font: font,
+            in: pill,
+            font: newMessagesPillFont,
             color: .white,
             alignment: .center,
             lineBreakMode: .byClipping

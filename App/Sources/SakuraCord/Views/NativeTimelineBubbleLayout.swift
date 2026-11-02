@@ -32,26 +32,10 @@ enum NativeTimelineBubbleLayout {
 
     static func context(
         for message: Message,
-        model: AppModel?
+        source: AppModel?
     ) -> Context {
-        let isEnabled =
-            model?.messageAppearance(for: message.channelID) == .bubbles
-                && !message.type.hasGeneratedContent
-        // Standard message layout never consumes bubble identity. Avoid an
-        // account-wide channel search for every newly paginated message.
-        guard isEnabled else {
-            return Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
-        }
-        let selectedChannel = model?.selectedChannel
-        let channel = selectedChannel?.id == message.channelID
-            ? selectedChannel
-            : model?.messagePresentationChannelsByID[message.channelID]
-        return Context(
-            isEnabled: isEnabled,
-            isOutgoing: isEnabled
-                && message.author.id == model?.currentUser?.id,
-            showsAvatar: showsAvatar(in: channel)
-        )
+        source?.bubbleContext(for: message)
+            ?? Context(isEnabled: false, isOutgoing: false, showsAvatar: true)
     }
 
     /// One-to-one conversations leave incoming bubbles without avatars.
@@ -84,7 +68,7 @@ enum NativeTimelineBubbleLayout {
                 preferredWidth,
                 measuredTextWidth(
                     content.framesetter,
-                    length: attributedContent.length,
+                    value: attributedContent,
                     maximumWidth: maximumWidth
                 )
             )
@@ -100,12 +84,19 @@ enum NativeTimelineBubbleLayout {
                 min(maximumWidth, linkedImageWidth)
             )
         }
-        if !message.attachments.isEmpty {
-            let attachmentWidth = message.attachments.compactMap(\.width)
+        let media = message.attachments.filter(\.mediaKind.isVisual)
+        if !media.isEmpty {
+            let attachmentWidth = media.compactMap(\.width)
                 .map(CGFloat.init).max() ?? 360
             preferredWidth = max(
                 preferredWidth,
                 min(maximumWidth, max(InterfaceScale.metric(180), attachmentWidth))
+            )
+        }
+        for file in message.attachments where !file.mediaKind.isVisual {
+            preferredWidth = max(
+                preferredWidth,
+                NativeTimelineFileCard.fittedWidth(for: file, isInBubble: true, maximumWidth: maximumWidth)
             )
         }
         if !message.embeds.isEmpty || !message.components.isEmpty
@@ -253,20 +244,15 @@ enum NativeTimelineBubbleLayout {
 
     static func measuredTextWidth(
         _ framesetter: CTFramesetter,
-        length: Int,
+        value: NSAttributedString,
         maximumWidth: CGFloat
     ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+        let width = NativeTimelineMarkdownChromeMetrics.fittedWidth(
             framesetter,
-            CFRange(location: 0, length: length),
-            nil,
-            CGSize(
-                width: max(1, maximumWidth),
-                height: .greatestFiniteMagnitude
-            ),
-            nil
+            value: value,
+            maximumWidth: maximumWidth
         )
-        return min(maximumWidth, ceil(size.width + 1))
+        return min(maximumWidth, ceil(width + 1))
     }
 }
 

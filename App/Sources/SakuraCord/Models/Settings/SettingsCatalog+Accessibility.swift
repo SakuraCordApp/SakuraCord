@@ -15,6 +15,30 @@ nonisolated extension SettingsCatalog {
             keywords: ["motion", "send", "animation", "bubbles", "attachments"], scope: .appWideLocal
         ),
         control(
+            .accessibilityDisableAllAnimations, page: .accessibility,
+            section: .accessibilityMotion, label: "Disable all animations",
+            help: "Show every SakuraCord animation as an instant change.",
+            keywords: ["motion", "animation", "reduce motion", "instant"], scope: .appWideLocal
+        ),
+        control(
+            .accessibilityDisableSidebarAnimations, page: .accessibility,
+            section: .accessibilityMotion, label: "Disable sidebar and member list animations",
+            help: "Show or hide the channel sidebar, member list, and search results without animation.",
+            keywords: ["motion", "animation", "sidebar", "members", "inspector", "search results"], scope: .appWideLocal
+        ),
+        control(
+            .accessibilityDisableSideChatAnimations, page: .accessibility,
+            section: .accessibilityMotion, label: "Disable side chat and full width animations",
+            help: "Open, close, and widen side chats without animation.",
+            keywords: ["motion", "animation", "threads", "side chat", "pane", "full width"], scope: .appWideLocal
+        ),
+        control(
+            .accessibilityDisableOverlayAnimations, page: .accessibility,
+            section: .accessibilityMotion, label: "Disable search, popover and overlay animations",
+            help: "Show search, popovers, menus, and overlays without animation.",
+            keywords: ["motion", "animation", "search", "popover", "modal", "menu", "dropdown"], scope: .appWideLocal
+        ),
+        control(
             .accessibilityDisableProfileEffects, page: .accessibility,
             section: .accessibilityCosmetics, label: "Profile effects",
             help: "Hide profile effects in SakuraCord.",

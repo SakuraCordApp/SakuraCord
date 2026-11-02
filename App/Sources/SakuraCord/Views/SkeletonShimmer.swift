@@ -9,6 +9,20 @@ nonisolated enum SkeletonShimmerStyle {
     static let bandWidthFraction = 0.72
     static let startingOffsetFraction = -0.68
     static let travelFraction = 1.58
+    /// The resting fill of every placeholder shape, as an opacity of the label color.
+    static let baseOpacity: CGFloat = 0.09
+    /// The highlight band's opacity over an opaque shape at each of
+    /// `highlightLocations`: the old 0 / 18 / 92 / 18 / 0% band scaled by `baseOpacity`.
+    static let highlightOpacities: [CGFloat] = [0, 0.016, 0.083, 0.016, 0]
+    static let highlightLocations: [CGFloat] = [0, 0.25, 0.5, 0.75, 1]
+
+    static func baseColor(scale: CGFloat = 1) -> NSColor {
+        NSColor.labelColor.withAlphaComponent(baseOpacity * scale)
+    }
+
+    static func highlightColors(_ color: NSColor = .labelColor, scale: CGFloat = 1) -> [CGColor] {
+        highlightOpacities.map { color.withAlphaComponent($0 * scale).cgColor }
+    }
 
     static func phase(at date: Date) -> Double {
         date.timeIntervalSinceReferenceDate
@@ -60,13 +74,7 @@ final class SkeletonShimmer {
             width: frame.width * SkeletonShimmerStyle.bandWidthFraction,
             height: frame.height
         )
-        gradient.colors = [
-            color.withAlphaComponent(0).cgColor,
-            color.withAlphaComponent(0.18).cgColor,
-            color.withAlphaComponent(0.92).cgColor,
-            color.withAlphaComponent(0.18).cgColor,
-            color.withAlphaComponent(0).cgColor,
-        ]
+        gradient.colors = SkeletonShimmerStyle.highlightColors(color)
         CATransaction.commit()
         if changedWidth || layer.isHidden {
             gradient.removeAnimation(forKey: "shimmer")
@@ -162,14 +170,15 @@ private final class SkeletonShimmerView: NSView {
     }
 }
 
-private struct SkeletonShimmerModifier: ViewModifier {
+private struct SkeletonShimmerModifier<Mask: Shape>: ViewModifier {
     @Environment(\.skeletonShimmerEnabled) private var enabled
+    let mask: Mask
 
     func body(content: Content) -> some View {
         content.overlay {
             if enabled {
                 SkeletonShimmerOverlay()
-                    .mask(content)
+                    .mask(mask)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -178,7 +187,9 @@ private struct SkeletonShimmerModifier: ViewModifier {
 }
 
 extension View {
-    func skeletonShimmer() -> some View {
-        modifier(SkeletonShimmerModifier())
+    /// Sweeps the shimmer across `mask`. The mask is opaque, so the highlight is
+    /// not attenuated by the translucent resting fill underneath.
+    func skeletonShimmer(mask: some Shape) -> some View {
+        modifier(SkeletonShimmerModifier(mask: mask))
     }
 }

@@ -121,9 +121,11 @@ struct HoverActionControlLabel<Content: View>: View {
         content()
             .foregroundStyle(iconColor)
             .frame(width: diameter, height: diameter)
-            .contentShape(Circle())
             .background(backgroundColor, in: Circle())
-            .contentShape(Circle())
+            // Hover tracks the square frame, so clicks and the pointer cover
+            // it too instead of only the circle.
+            .contentShape(Rectangle())
+            .pointerStyle(.link)
             .onModalHover {
                 isHovering = $0
                 onHoverChanged?($0)
@@ -137,11 +139,9 @@ struct HoverActionControlLabel<Content: View>: View {
     }
 
     private var backgroundColor: Color {
-        if isHovering {
-            return role == .destructive ? .red.opacity(0.18) : .primary.opacity(0.14)
-        }
-        return isSelected == true
-            ? SakuraCordAccentColor.color.opacity(0.16)
-            : .clear
+        // A selected toggle shows in its accent glyph alone, so it can't be
+        // mistaken for the control under the pointer.
+        guard isHovering else { return .clear }
+        return role == .destructive ? .red.opacity(0.18) : .primary.opacity(0.14)
     }
 }

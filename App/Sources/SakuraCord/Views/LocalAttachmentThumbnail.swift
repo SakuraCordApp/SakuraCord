@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import MediaPipeline
 import SwiftUI
 import UniformTypeIdentifiers
@@ -7,9 +6,8 @@ import UniformTypeIdentifiers
 struct LocalAttachmentThumbnail: View {
     let url: URL
     var maximumPixelDimension = 256
+    var contentMode: ContentMode = .fill
     var cachedImage: NSImage?
-    var preservesImageAspectRatio = false
-    var imageCornerRadius: CGFloat = 0
     var onImageLoaded: ((NSImage) -> Void)?
     @State private var image: NSImage?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,21 +16,10 @@ struct LocalAttachmentThumbnail: View {
         ZStack {
             Color.clear
             if let displayImage {
-                Group {
-                    if preservesImageAspectRatio {
-                        Image(nsImage: displayImage)
-                            .resizable()
-                            .scaledToFit()
-                    } else {
-                        Image(nsImage: displayImage)
-                            .resizable()
-                            .scaledToFill()
-                    }
-                }
-                .clipShape(
-                    ConcentricRectangle(cornerRadius: imageCornerRadius, style: .continuous)
-                )
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+                Image(nsImage: displayImage)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
                 if isVideoFile {
                     Image(systemName: "play.fill")
                         .font(.interfaceSystem(size: 14, weight: .semibold))
@@ -67,7 +54,7 @@ struct LocalAttachmentThumbnail: View {
                 }
             }
             if isVideoFile {
-                guard let frame = await Self.videoFrame(
+                guard let frame = await LocalVideo.frame(
                     at: url,
                     maximumPixelDimension: maximumPixelDimension
                 ),
@@ -115,21 +102,6 @@ struct LocalAttachmentThumbnail: View {
     }
 
     private var isVideoFile: Bool {
-        UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
-    }
-
-    /// Video files keep showing their Finder icon until this frame is ready,
-    /// so an undecodable file never leaves a spinner behind.
-    private nonisolated static func videoFrame(
-        at url: URL,
-        maximumPixelDimension: Int
-    ) async -> CGImage? {
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(
-            width: maximumPixelDimension,
-            height: maximumPixelDimension
-        )
-        return try? await generator.image(at: .zero).image
+        LocalVideo.isVideo(url)
     }
 }
