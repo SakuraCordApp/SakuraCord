@@ -50,6 +50,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func resetCursorRects() {
+        removeAllToolTips()
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard !suppressesHoverPresentation,
               !sendTransitionBlocksInteractions,
@@ -63,12 +64,14 @@ extension NativeTimelineCanvasView {
               displayedRowOrigin(at: index) < visibleRect.maxY
         {
             if layouts.indices.contains(index) {
+                installContentCursors(at: index, rowOrigin: displayedRowOrigin(at: index))
                 installTextCursorRects(at: index)
                 for codeBlock in codeBlockPointerTargets(at: index) {
                     addCursorRect(
                         codeBlock.copyButtonFrame,
                         cursor: .pointingHand
                     )
+                    addToolTip(codeBlock.copyButtonFrame, owner: self, userData: nil)
                 }
             }
             if layouts.indices.contains(index) {
@@ -126,6 +129,10 @@ extension NativeTimelineCanvasView {
                 installReactionCursors(at: index, rowOrigin: rowOrigin)
                 installPollCursors(at: index, rowOrigin: rowOrigin)
                 installInviteCursors(at: index, rowOrigin: rowOrigin)
+                installFileCardCursors(at: index, rowOrigin: rowOrigin)
+                installAudioFileCursors(at: index, rowOrigin: rowOrigin)
+                installComponentCursors(at: index, rowOrigin: rowOrigin)
+                installAutoModAlertCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -134,12 +141,12 @@ extension NativeTimelineCanvasView {
 
     private func installReactionCursors(at index: Int, rowOrigin: CGFloat) {
         guard case let .message(row, _, _) = items[index] else { return }
-        let cursor: NSCursor = model?.canUpdateReactions(on: row.message) == true ? .arrow : .operationNotAllowed
+        let cursor: NSCursor = model?.canUpdateReactions(on: row.message) == true ? .pointingHand : .operationNotAllowed
         for region in layouts[index].reactionRegions {
             addCursorRect(region.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: cursor)
         }
         if let frame = layouts[index].addReactionFrame, model?.canCreateReactions(on: row.message) == true {
-            addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .arrow)
+            addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
         }
     }
 
@@ -147,15 +154,17 @@ extension NativeTimelineCanvasView {
         let item = items[index]
         let layout = layouts[index]
         let rowOrigin = displayedRowOrigin(at: index)
+        let hiddenContainers = hiddenSpoilerContainerFrames(at: index).map { $0.offsetBy(dx: 0, dy: rowOrigin) }
         for selectable in selectableTextRegions(for: item, layout: layout) {
-            addCursorRect(
-                textSelectionInteractionFrame(
-                    region: selectable.region,
-                    frame: selectable.interactionFrame,
-                    rowIndex: index
-                ),
-                cursor: .iBeam
+            let frame = textSelectionInteractionFrame(
+                region: selectable.region,
+                frame: selectable.interactionFrame,
+                rowIndex: index
             )
+            guard !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                frame, hiddenContainerFrames: hiddenContainers
+            ) else { continue }
+            addCursorRect(frame, cursor: .iBeam)
             for spoiler in NativeTimelineTextHitTester.spoilerRegions(
                 value: selectable.value,
                 framesetter: selectable.framesetter,
@@ -423,8 +432,8 @@ extension NativeTimelineCanvasView {
             return
         }
         if let target = codeBlockCopyButtonHit(at: point) {
-            setHoveredCodeBlock(target)
             pressedCodeBlockCopyButton = target
+            setHoveredCodeBlock(target)
             textSelectionGesture = nil
             didDragTextSelection = false
             setTextSelection(nil)
@@ -618,6 +627,7 @@ extension NativeTimelineCanvasView {
                     == pressedCodeBlockCopyButton.rangeLocation
             {
                 Self.copyText(pressedCodeBlockCopyButton.content)
+                codeCopyControl?.confirmCopy()
             }
             return true
         }
@@ -640,6 +650,8 @@ extension NativeTimelineCanvasView {
             ), let hit
             {
                 switch hit.kind {
+                case let .autoModAlert(action):
+                    activateAutoModAlertAction(action, message: hit.message, anchor: hit.frame)
                 case let .component(region):
                     _ = activateComponentButton(
                         region,
@@ -649,6 +661,12 @@ extension NativeTimelineCanvasView {
                     _ = activateSakuraCordDeepLink(action, message: hit.message)
                 case let .invite(card, expands):
                     activateInvite(card, message: hit.message, expands: expands)
+                case let .fileCard(card):
+                    if card.part(of: hit.target, messageID: hit.message.id) == .card {
+                        previewFileCard(card, message: hit.message, rowIndex: hit.rowIndex)
+                    } else {
+                        activateFileCard(card.attachment)
+                    }
                 }
             }
             return true
@@ -739,9 +757,6 @@ extension NativeTimelineCanvasView {
             return true
         }
         switch layout.deliveryAction(at: point) {
-        case let .cancelUpload(attachmentID):
-            model?.cancelAttachmentUpload(attachmentID, of: row.message)
-            return true
         case .retrySend:
             actions?.retry(row.message)
             return true
@@ -862,31 +877,15 @@ extension NativeTimelineCanvasView {
                !spoilerRevealStore.isMediaRevealed(revealKey)
             {
                 reveal(revealKey, rowIndex: rowIndex)
-            } else if let presentation =
-                NativeTimelineMediaViewerPlan.attachments(
-                    in: row.message,
-                    selectedAttachmentID: attachment.id,
-                    isRevealed: { [spoilerRevealStore] componentID in
-                        spoilerRevealStore.isMediaRevealed(
-                            NativeTimelineComponentRevealKey(
-                                messageID: row.id,
-                                componentID: componentID
-                            )
-                        )
-                    }
-                )
-            {
-                model?.mediaViewerPresentation = mediaViewerPresentation(
-                    presentation,
-                    sourceFrame: attachmentRegion.frame,
-                    rowIndex: rowIndex,
-                    mediaKey: NativeTimelineMediaKey.attachment(attachment),
-                    cornerRadius: InterfaceScale.metric(8),
-                    fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                        itemCount: layout.attachmentRegions.count
-                    )
-                )
-            } else {
+            } else if attachment.mediaKind == .video {
+                playInline(
+                    attachment.proxyURL ?? attachment.url, mediaID: attachment.id,
+                    frame: attachmentRegion.frame, rowIndex: rowIndex
+                ) { [weak self, attachmentID = attachment.id] index, layout, message in
+                    guard let region = layout.attachmentRegions.first(where: { $0.attachment.id == attachmentID }) else { return }
+                    _ = self?.openAttachmentInViewer(region, message: message, layout: layout, rowIndex: index)
+                }
+            } else if !openAttachmentInViewer(attachmentRegion, message: row.message, layout: layout, rowIndex: rowIndex) {
                 NSWorkspace.shared.open(attachment.url)
             }
             return true
@@ -1199,6 +1198,7 @@ extension NativeTimelineCanvasView {
         setHoveredThreadMessageID(nil)
         setHoveredFooterAction(nil)
         setHoveredReaction(nil)
+        updateVoiceMessageHover(at: nil)
         setHoveredRow(nil)
     }
 
@@ -1220,6 +1220,7 @@ extension NativeTimelineCanvasView {
         }
         synchronizeHoveredRow(at: point)
         setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
+        updateVoiceMessageHover(at: visibleRect.contains(point) ? point : nil, measuresDuration: false)
         setHoveredCompactTimestampRow(
             visibleRect.contains(point)
                 ? compactTimestampRowIndex(at: point)
@@ -1685,6 +1686,25 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
+    /// Enabled buttons, link buttons and selects take the pointing hand at
+    /// their drawn frame. Disabled or loading ones, and those under an
+    /// unrevealed spoiler, keep the arrow.
+    func installComponentCursors(at index: Int, rowOrigin: CGFloat) {
+        guard let messageID = items[index].messageID else { return }
+        for layout in layouts[index].componentLayouts {
+            let hiddenContainers = NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(
+                in: layout, messageID: messageID, store: spoilerRevealStore
+            )
+            let frames = layout.buttons.filter { !$0.isDisabled && !$0.isLoading }.map(\.frame)
+                + layout.selects.filter { !$0.isDisabled && !$0.isLoading }.map(\.frame)
+            for frame in frames where !NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
+                frame, hiddenContainerFrames: hiddenContainers
+            ) {
+                addCursorRect(frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
+            }
+        }
+    }
+
     func componentButtonPointerHit(
         at point: CGPoint
     ) -> ComponentButtonPointerHit? {
@@ -1708,6 +1728,13 @@ extension NativeTimelineCanvasView {
                     frame: (expands ? card.detailsFrame! : card.buttonFrame).offsetBy(dx: 0, dy: rowOrigin))
             }
         }
+        if let button = layouts[index].autoModAlert?.button(at: local) {
+            return ComponentButtonPointerHit(
+                target: NativeTimelineComponentButtonTarget(messageID: row.id, componentID: button.action.rawValue),
+                rowIndex: index, message: row.message, kind: .autoModAlert(button.action),
+                frame: button.frame.offsetBy(dx: 0, dy: rowOrigin)
+            )
+        }
         if let region = layouts[index].sakuraCordDeepLinkRegions.first(
             where: { $0.buttonFrame.contains(local) }
         ) {
@@ -1724,6 +1751,9 @@ extension NativeTimelineCanvasView {
                     dy: rowOrigin
                 )
             )
+        }
+        if let hit = fileCardPointerHit(at: local, rowIndex: index, rowOrigin: rowOrigin, message: row.message) {
+            return hit
         }
         for layout in layouts[index].componentLayouts {
             if layout.containers.contains(where: { container in
@@ -1759,4 +1789,34 @@ extension NativeTimelineCanvasView {
         return nil
     }
 
+}
+
+extension NativeTimelineCanvasView {
+    /// Opens the media viewer at an attachment, zooming from its tile.
+    /// Returns false when the attachment has no viewer presentation.
+    func openAttachmentInViewer(
+        _ region: NativeTimelineRowLayout.AttachmentRegion,
+        message: Message,
+        layout: NativeTimelineRowLayout,
+        rowIndex: Int
+    ) -> Bool {
+        guard let presentation = NativeTimelineMediaViewerPlan.attachments(
+            in: message,
+            selectedAttachmentID: region.attachment.id,
+            isRevealed: { [spoilerRevealStore] componentID in
+                spoilerRevealStore.isMediaRevealed(
+                    NativeTimelineComponentRevealKey(messageID: message.id, componentID: componentID)
+                )
+            }
+        ) else { return false }
+        model?.mediaViewerPresentation = mediaViewerPresentation(
+            presentation,
+            sourceFrame: region.frame,
+            rowIndex: rowIndex,
+            mediaKey: NativeTimelineMediaKey.attachment(region.attachment),
+            cornerRadius: InterfaceScale.metric(8),
+            fillsFrame: MediaGalleryImagePresentation.fillsFrame(itemCount: layout.mediaGalleryItemCount)
+        )
+        return true
+    }
 }

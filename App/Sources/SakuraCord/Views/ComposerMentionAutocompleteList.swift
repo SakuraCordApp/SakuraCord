@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// People, roles and channels matching an `@` or `#` query, in the composer's
+/// option menu, in the order the suggestions arrive.
 struct MentionAutocompleteList: View {
     let heading: String
     let suggestions: [MentionAutocompleteSuggestion]
@@ -11,36 +13,34 @@ struct MentionAutocompleteList: View {
     var keyboardSelectionRevision = 0
 
     var body: some View {
-        ComposerAutocompletePanel(heading: heading, cornerRadius: cornerRadius) {
-            ComposerSuggestionList(
-                rows: suggestions,
-                selectedID: suggestions.indices.contains(selectedIndex) ? suggestions[selectedIndex].id : nil,
-                keyboardSelectionRevision: keyboardSelectionRevision,
-                rowHeight: { hasDivider(before: $0) ? 50 : 42 },
-                highlight: highlightRow,
-                activate: select,
-                content: { suggestion in
-                    VStack(spacing: 0) {
-                        if hasDivider(before: suggestion) {
-                            Divider().padding(.horizontal, InterfaceScale.metric(8)).frame(height: InterfaceScale.metric(8))
-                        }
-                        MentionAutocompleteRow(
-                            suggestion: suggestion,
-                            isSelected: suggestions.indices.contains(selectedIndex) && suggestions[selectedIndex].id == suggestion.id,
-                            select: { select(suggestion) },
-                            cornerRadius: max(0, cornerRadius - 6)
-                        )
-                    }
+        ComposerOptionPanel(
+            title: heading,
+            rows: suggestions,
+            selectedIndex: selectedIndex,
+            cornerRadius: cornerRadius,
+            keyboardSelectionRevision: keyboardSelectionRevision,
+            select: select,
+            highlight: highlight,
+            accessibilityLabel: { [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: ", ") },
+            startsGroup: startsRoles,
+            label: { suggestion in
+                if suggestion.target != .unresolved {
+                    MentionAutocompleteIcon(suggestion: suggestion)
+                        .frame(width: InterfaceScale.metric(22), height: InterfaceScale.metric(22))
                 }
-            )
-        }
+                Text(suggestion.title)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: InterfaceScale.metric(12))
+                if !suggestion.detail.isEmpty {
+                    ComposerOptionDetail(suggestion.detail)
+                }
+            }
+        )
     }
 
-    private func highlightRow(_ suggestion: MentionAutocompleteSuggestion) {
-        if let index = suggestions.firstIndex(where: { $0.id == suggestion.id }), index != selectedIndex { highlight(index) }
-    }
-
-    private func hasDivider(before suggestion: MentionAutocompleteSuggestion) -> Bool {
+    /// Roles follow the people they're listed with, below a divider.
+    private func startsRoles(_ suggestion: MentionAutocompleteSuggestion) -> Bool {
         guard let index = suggestions.firstIndex(where: { $0.id == suggestion.id }), index > 0,
               (suggestion.member != nil) != (suggestions[index - 1].member != nil) else { return false }
         return true

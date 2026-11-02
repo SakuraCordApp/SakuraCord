@@ -380,9 +380,12 @@ struct ComposerOptionPanel<Row: Identifiable, Label: View>: View where Row.ID ==
     let select: (Row) -> Void
     let highlight: (Int) -> Void
     let accessibilityLabel: (Row) -> String
+    /// Rows that start a new group get a divider above them.
+    var startsGroup: (Row) -> Bool = { _ in false }
     @ViewBuilder let label: (Row) -> Label
 
     private static var rowHeight: CGFloat { InterfaceScale.metric(34) }
+    private static var dividerHeight: CGFloat { InterfaceScale.metric(8) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -399,13 +402,17 @@ struct ComposerOptionPanel<Row: Identifiable, Label: View>: View where Row.ID ==
                     selectedID: selectedIndex.flatMap { rows.indices.contains($0) ? rows[$0].id : nil },
                     keyboardSelectionRevision: keyboardSelectionRevision,
                     maximumHeight: 320,
-                    rowHeight: { _ in Self.rowHeight },
+                    rowHeight: { Self.rowHeight + (startsGroup($0) ? Self.dividerHeight : 0) },
                     highlight: { row in
                         if let index = rows.firstIndex(where: { $0.id == row.id }), index != selectedIndex { highlight(index) }
                     },
                     activate: select,
                     content: { row in
                         let isSelected = rows.firstIndex(where: { $0.id == row.id }) == selectedIndex
+                        VStack(spacing: 0) {
+                        if startsGroup(row) {
+                            Divider().padding(.horizontal, InterfaceScale.metric(8)).frame(height: Self.dividerHeight)
+                        }
                         Button { select(row) } label: {
                             // Every row spans the panel, whether or not its
                             // label ends in a spacer.
@@ -423,6 +430,7 @@ struct ComposerOptionPanel<Row: Identifiable, Label: View>: View where Row.ID ==
                         .focusable(false)
                         .accessibilityLabel(accessibilityLabel(row))
                         .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        }
                     }
                 )
                 .padding(.bottom, InterfaceScale.metric(6))

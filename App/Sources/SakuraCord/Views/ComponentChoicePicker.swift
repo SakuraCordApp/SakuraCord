@@ -271,18 +271,10 @@ enum ComponentChoiceOptionPresentation {
 }
 
 extension NativeTimelineComponentLayout {
-    func selectMediaKeys(
-        _ hiddenContainerFrames: [CGRect]
-    ) -> [NativeTimelineMediaKey] {
+    var selectMediaKeys: [NativeTimelineMediaKey] {
         selects.flatMap { select -> [NativeTimelineMediaKey] in
-            guard !NativeTimelineSpoilerConcealmentPolicy
-                .isInsideHiddenContainer(
-                    select.frame,
-                    hiddenContainerFrames: hiddenContainerFrames
-                )
-            else { return [] }
             // Load the image the field draws, so the two cannot disagree.
-            return select.selectedOptions.compactMap { option in
+            select.selectedOptions.compactMap { option in
                 guard let url = ComponentChoiceOptionPresentation
                     .fieldOption(option, selectKind: select.kind)
                     .leading.imageURL,

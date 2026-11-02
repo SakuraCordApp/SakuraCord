@@ -118,6 +118,7 @@ final class NativeTimelineBenchmarkStartupState {
 @MainActor
 final class NativeTimelineBenchmarkRunState {
     let startedAt = ProcessInfo.processInfo.systemUptime
+    let mainThreadCPUTimeAtStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
     let ticker = NativeTimelineDisplayLinkTicker()
     let scrollsTowardLater: Bool
     let closeMeasurement: () -> Void

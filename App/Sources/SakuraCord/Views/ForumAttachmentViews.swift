@@ -365,6 +365,7 @@ private struct ForumComposerAttachmentTile: View {
     let delete: () -> Void
     let thumbnailLoaded: (NSImage) -> Void
     let hoverChanged: (Bool) -> Void
+    @State private var isHovered = false
 
     var body: some View {
         ZStack {
@@ -377,17 +378,11 @@ private struct ForumComposerAttachmentTile: View {
                 transaction.animation = nil
                 transaction.disablesAnimations = true
             }
-
-            if attachment.isSpoiler {
-                Rectangle()
-                    .fill(.black.opacity(0.5))
-                VStack(spacing: InterfaceScale.metric(4)) {
-                    Image(systemName: "eye.slash")
-                    Text("SPOILER")
-                        .font(.interface(.caption2).weight(.bold))
-                }
-                .foregroundStyle(.white)
-            }
+            .spoilerCover(
+                attachment.isSpoiler,
+                pillScale: NativeTimelineSpoilerAppearance.pillScale(forTileWidth: size),
+                isHovered: isHovered
+            )
         }
         .frame(width: size, height: size)
         .background(.quaternary)
@@ -397,7 +392,12 @@ private struct ForumComposerAttachmentTile: View {
                 .stroke(.separator, lineWidth: 1)
         }
         .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous))
-        .onModalHover(perform: hoverChanged)
+        // A spoiler takes the pointing hand, as it does in the timeline.
+        .pointerStyle(attachment.isSpoiler ? .link : nil)
+        .onModalHover { hovering in
+            withAnimation(ComposerResizeMotion.hover) { isHovered = hovering }
+            hoverChanged(hovering)
+        }
         .help(attachment.filename)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(attachment.filename)

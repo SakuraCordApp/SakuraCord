@@ -240,6 +240,7 @@ extension NativeTimelineCanvasView {
     ) -> DisclosureStart? {
         // Two row motions would fight over the same displacement.
         finishUnreadDividerGap()
+        finishReactionTransitions()
         let previous = rowDisclosure?.key == key ? rowDisclosure : nil
         // Reversing the same group continues from where it is; another group snaps to its end.
         if previous == nil { finishDisclosure() } else { rowDisclosure = nil }
@@ -367,22 +368,27 @@ extension NativeTimelineCanvasView {
         disclosureRelativeClipMaxY = .greatestFiniteMagnitude
     }
 
-    func redrawForRowMotion() {
+    func redrawForRowMotion(invalidating rect: CGRect? = nil) {
         // Hover regions are cached at the rows' displaced positions.
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
-        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, !suppressesHoverPresentation {
+        if rowDisclosure?.isFinished ?? true, unreadDividerGap == nil, reactionRowMotions.isEmpty,
+           !suppressesHoverPresentation {
             // The motion has landed: tracking areas and cursor rects follow the rows.
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
         }
-        invalidateVisibleContent()
+        if let rect { setNeedsDisplay(rect) } else { invalidateVisibleContent() }
         reconcileInboxHeaders()
         positionAnimatedMediaOverlays()
         positionInlineVideoOverlays()
+        // The copy button can't follow its block as rows move and clip, so
+        // it leaves until the pointer next moves over a block.
+        if !(rowDisclosure?.isFinished ?? true) || unreadDividerGap != nil { setHoveredCodeBlock(nil) }
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
+        positionReactionBandViews()
         maskDisclosureSubviews()
     }
 
@@ -404,6 +410,7 @@ extension NativeTimelineCanvasView {
         }
         views += animatedMediaOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += inlineVideoOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
+        views += inlinePlayers.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += activityIndicators.filter { identifiers.contains($0.key.row) }.map(\.value)
         views += spoilerOverlays.filter { messageIDs.contains($0.key.messageID) }.map(\.value)
         for view in views {

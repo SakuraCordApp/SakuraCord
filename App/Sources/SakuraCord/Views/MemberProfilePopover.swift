@@ -42,6 +42,7 @@ struct ProfilePresentationContent<Footer: View>: View {
 
     private var showsQuickMessage: Bool {
         layout == .popover && !presentation.isLoading && !presentation.isCurrentUser && sendMessage != nil
+            && model?.hasMessageRequest(from: presentation.member.id) != true
     }
 
     var body: some View {

@@ -220,6 +220,65 @@ public extension MockChatProvider {
         }
     }
 
+    /// A busy channel's reaction traffic through the normal Gateway-event
+    /// path: most events land on the newest messages, the rest further back.
+    /// Adds open new chips until a message wraps onto a second line, and
+    /// removals close chips and empty rows again. Offline test infrastructure
+    /// only; it never performs a network request.
+    func emitTimelineReactionStress(
+        in channelID: ChannelID,
+        operationCount: Int,
+        recentCount: Int = 10,
+        lookback: Int = 300,
+        initialDelay: Duration = .milliseconds(500),
+        operationInterval: Duration = .milliseconds(25)
+    ) async {
+        let emoji = ["👍", "🎉", "❤️", "😂", "🔥", "👀", "✅", "🙏", "💯", "😮", "🚀", "🌸"]
+        do {
+            try await Task.sleep(for: initialDelay)
+        } catch {
+            return
+        }
+        for operation in 0 ..< operationCount {
+            guard !Task.isCancelled,
+                  let messageCount = messagesByChannel[channelID]?.count,
+                  messageCount > 0
+            else { return }
+            let offset = operation % 10 < 7
+                ? (operation * 3) % min(recentCount, messageCount)
+                : (recentCount + (operation * 37) % max(1, lookback - recentCount)) % messageCount
+            let index = messageCount - 1 - offset
+            guard let message = messagesByChannel[channelID]?[index] else { return }
+            let existing = message.reactions
+            let update: MessageReactionUpdate
+            if existing.count < 9, operation % 3 != 2 || existing.isEmpty {
+                update = .add(
+                    channelID: channelID,
+                    messageID: message.id,
+                    userID: UserID(rawValue: 900_000 + UInt64(operation)),
+                    emoji: emoji[(operation * 7) % emoji.count],
+                    kind: .normal
+                )
+            } else {
+                update = .remove(
+                    channelID: channelID,
+                    messageID: message.id,
+                    userID: UserID(rawValue: 900_000 + UInt64(operation)),
+                    emoji: existing[operation % existing.count].emoji,
+                    kind: .normal
+                )
+            }
+            messagesByChannel[channelID]?[index].applyReactionUpdate(update, currentUserID: currentUser.id)
+            continuation?.yield(.messageReactionUpdated(update))
+            guard operation + 1 < operationCount else { return }
+            do {
+                try await Task.sleep(for: operationInterval)
+            } catch {
+                return
+            }
+        }
+    }
+
     func sendTyping(in channelID: ChannelID) async throws {
         guard let channel = snapshot.channels.first(where: { $0.id == channelID }) else {
             throw ChatProviderError.channelNotFound
@@ -340,20 +399,18 @@ public extension MockChatProvider {
         return message
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws
-        -> Message
-    {
-        guard var messages = messagesByChannel[channelID],
-              let index = messages.firstIndex(where: { $0.id == messageID })
+    func edit(_ message: Message, content: String) async throws -> Message {
+        guard var messages = messagesByChannel[message.channelID],
+              let index = messages.firstIndex(where: { $0.id == message.id })
         else {
             throw ChatProviderError.messageNotFound
         }
         messages[index].content = content
         messages[index].editedTimestamp = .now
-        let message = messages[index]
-        messagesByChannel[channelID] = messages
-        continuation?.yield(.messageUpdated(message))
-        return message
+        let updated = messages[index]
+        messagesByChannel[message.channelID] = messages
+        continuation?.yield(.messageUpdated(updated))
+        return updated
     }
 
     func delete(messageID: MessageID, channelID: ChannelID) async throws {

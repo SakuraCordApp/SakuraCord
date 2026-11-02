@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 import MediaPipeline
 import MessageRendering
@@ -8,16 +9,31 @@ import SakuraCordModels
 nonisolated enum VoiceMessagePlaybackID: Hashable, Sendable {
     case message(MessageID)
     case composer(MessageComposerDestination)
+    /// An audio file attachment in a message, played in its file card. A
+    /// forward shows the same file in another message, with its own player.
+    case attachment(MessageID, attachmentID: String)
+    /// An audio file outside a message, such as one the media viewer shows
+    /// from the composer.
+    case file(URL)
+
+    var isAudioFile: Bool {
+        switch self {
+        case .attachment, .file: true
+        case .message, .composer: false
+        }
+    }
 }
 
-/// Owns voice-message playback for the timeline and composer previews.
+/// Owns voice-message and audio-file playback for the timeline and composer
+/// previews.
 ///
-/// Like Discord, one voice message plays at a time; starting another pauses
-/// the first. Speed is device-local and shared by every player.
+/// Like Discord, one voice message or audio file plays at a time; starting
+/// another pauses the first. Speed is device-local and shared by every voice
+/// message player; audio files play at normal speed, at the media viewer's volume.
 @MainActor
 @Observable
 final class VoiceMessagePlaybackStore {
-    enum Source: Equatable {
+    enum Source: Hashable {
         case local(URL)
         case remote(URL)
     }
@@ -41,13 +57,19 @@ final class VoiceMessagePlaybackStore {
     static let maximumPrefetchedURLs = 512
     /// Starts quicker than this show no spinner, so resuming doesn't flicker.
     static let startSpinnerDelay: Duration = .milliseconds(150)
-    /// Discord remembers where up to 25 messages were left.
+    /// Discord remembers where up to 25 voice messages and audio files were left.
     static let maximumResumePositions = 25
+    /// Audio files whose length, or failure to read it, is remembered.
+    static let maximumKnownDurations = 128
 
     private(set) var activeID: VoiceMessagePlaybackID?
     private(set) var phase: Phase = .paused
     private(set) var speed: Float {
-        didSet { player?.rate = speed }
+        didSet { applyOutput() }
+    }
+    /// The media viewer's audio file volume, 0–1, which voice messages ignore.
+    private(set) var audioFileVolume: Float = 1 {
+        didSet { applyOutput() }
     }
 
     @ObservationIgnored private var player: VoiceMessagePlayer?
@@ -60,11 +82,21 @@ final class VoiceMessagePlaybackStore {
     /// open so returning to one starts at once.
     @ObservationIgnored private var cachedPlayers: [CachedPlayer] = []
     @ObservationIgnored private var prefetchedURLs: Set<URL> = []
+    /// Durations learned by playing or measuring audio files, which arrive
+    /// without one.
+    @ObservationIgnored private var knownDurations: [Source: TimeInterval] = [:]
+    @ObservationIgnored private var knownDurationOrder: [Source] = []
+    /// Changes whenever a length is learned, so cached rows know to redraw.
+    @ObservationIgnored private(set) var knownDurationsRevision = 0
+    @ObservationIgnored private var measurements: [Source: Task<Void, Never>] = [:]
+    /// When a file's length last couldn't be read, so moving the pointer over
+    /// it waits before trying again rather than retrying on every move.
+    @ObservationIgnored private var failedMeasurements: [Source: ContinuousClock.Instant] = [:]
     /// When play was last pressed, to tell a slow start from a quick one.
     @ObservationIgnored private var playRequestedAt: ContinuousClock.Instant?
     @ObservationIgnored private var resumesAfterScrub = false
-    @ObservationIgnored private var resumePositions: [MessageID: TimeInterval] = [:]
-    @ObservationIgnored private var resumeOrder: [MessageID] = []
+    @ObservationIgnored private var resumePositions: [VoiceMessagePlaybackID: TimeInterval] = [:]
+    @ObservationIgnored private var resumeOrder: [VoiceMessagePlaybackID] = []
     @ObservationIgnored private let defaults: UserDefaults
     /// Re-signs an expiring Discord attachment link before it is fetched.
     @ObservationIgnored var resolveRemoteURL: (@MainActor (URL) async -> URL)?
@@ -87,13 +119,14 @@ final class VoiceMessagePlaybackStore {
     /// The live position of the active item, or a remembered position.
     func position(of id: VoiceMessagePlaybackID) -> TimeInterval {
         if activeID == id { return player?.isPlaying == true ? player?.currentTime ?? pausedPosition : pausedPosition }
-        if case let .message(messageID) = id { return resumePositions[messageID] ?? 0 }
-        return 0
+        return resumePositions[id] ?? 0
     }
 
     func duration(of id: VoiceMessagePlaybackID) -> TimeInterval? {
         activeID == id ? player?.duration ?? activeDuration : nil
     }
+
+    func knownDuration(of source: Source) -> TimeInterval? { knownDurations[source] }
 
     /// Whether `id` was pressed and still hasn't sounded, after a moment;
     /// a cached message opens too quickly to be worth a spinner.
@@ -164,6 +197,32 @@ final class VoiceMessagePlaybackStore {
         play()
     }
 
+    func setAudioFileVolume(_ volume: Float) {
+        audioFileVolume = min(max(volume, 0), 1)
+        notify()
+    }
+
+    /// Reads an audio file's length ahead of playing it, as Discord's player
+    /// loads its metadata when the pointer reaches it.
+    func measureDuration(of source: Source) {
+        guard knownDurations[source] == nil,
+              failedMeasurements[source].map({ ContinuousClock.now - $0 > .seconds(30) }) ?? true,
+              measurements[source] == nil
+        else { return }
+        measurements[source] = Task { [weak self] in
+            let duration = try? await Self.measuredDuration(of: source, resolve: self?.resolveRemoteURL)
+            guard let self, !Task.isCancelled else { return }
+            measurements[source] = nil
+            guard let duration else {
+                if failedMeasurements.count >= Self.maximumKnownDurations { failedMeasurements.removeAll() }
+                failedMeasurements[source] = .now
+                return
+            }
+            rememberDuration(duration, for: source)
+            notify()
+        }
+    }
+
     func cycleSpeed() {
         let index = Self.speeds.firstIndex(of: speed) ?? 0
         speed = Self.speeds[(index + 1) % Self.speeds.count]
@@ -193,6 +252,11 @@ final class VoiceMessagePlaybackStore {
         cachedPlayers.removeAll()
         resumePositions.removeAll()
         resumeOrder.removeAll()
+        measurements.values.forEach { $0.cancel() }
+        measurements.removeAll()
+        knownDurations.removeAll()
+        knownDurationOrder.removeAll()
+        failedMeasurements.removeAll()
     }
 
     // MARK: Internals
@@ -208,8 +272,7 @@ final class VoiceMessagePlaybackStore {
     }
 
     private func position(ofInactive id: VoiceMessagePlaybackID) -> TimeInterval {
-        guard case let .message(messageID) = id else { return 0 }
-        return resumePositions[messageID] ?? 0
+        resumePositions[id] ?? 0
     }
 
     private func play() {
@@ -241,18 +304,19 @@ final class VoiceMessagePlaybackStore {
                 self.loadTask = nil
                 self.phase = .paused
                 self.notify()
-                self.onError?("This voice message couldn't be played.")
+                self.onError?(Self.playbackFailure(for: id))
             }
         }
     }
 
     private func adopt(_ player: VoiceMessagePlayer, file: PlaybackFile, for id: VoiceMessagePlaybackID) {
-        player.rate = speed
         player.onFinish = { [weak self] in self?.finish(id) }
         player.onInterruption = { [weak self] in self?.interrupted(id) }
         self.player = player
         playerFile = file
         activeDuration = player.duration
+        if let activeSource { rememberDuration(player.duration, for: activeSource) }
+        applyOutput()
         if pausedPosition > 0 { player.seek(to: pausedPosition) }
         start(player)
     }
@@ -265,9 +329,21 @@ final class VoiceMessagePlaybackStore {
             phase = .playing
         } catch {
             phase = .paused
-            onError?("This voice message couldn't be played.")
+            if let activeID { onError?(Self.playbackFailure(for: activeID)) }
         }
         notify()
+    }
+
+    private static func playbackFailure(for id: VoiceMessagePlaybackID) -> String {
+        id.isAudioFile ? "This audio file couldn't be played." : "This voice message couldn't be played."
+    }
+
+    /// Voice messages take the chosen speed; audio files play at normal
+    /// speed, at the viewer's volume.
+    private func applyOutput() {
+        let isAudioFile = activeID?.isAudioFile == true
+        player?.rate = isAudioFile ? 1 : speed
+        player?.volume = isAudioFile ? audioFileVolume : 1
     }
 
     private func pause() {
@@ -287,7 +363,7 @@ final class VoiceMessagePlaybackStore {
 
     private func finish(_ id: VoiceMessagePlaybackID) {
         guard activeID == id else { return }
-        if case let .message(messageID) = id { forgetResumePosition(messageID) }
+        forgetResumePosition(id)
         if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
         player = nil
         playerFile = nil
@@ -308,12 +384,12 @@ final class VoiceMessagePlaybackStore {
         if let player, let playerFile, let activeSource { cache(player, file: playerFile, for: activeSource) }
         player = nil
         playerFile = nil
-        if case let .message(messageID) = id {
-            if rememberingPosition, position > 0.5, duration > 0, position < duration * 0.95 {
-                rememberResumePosition(position, for: messageID)
-            } else {
-                forgetResumePosition(messageID)
-            }
+        // A composer preview's recording is about to go away.
+        let isComposer = if case .composer = id { true } else { false }
+        if !isComposer, rememberingPosition, position > 0.5, duration > 0, position < duration * 0.95 {
+            rememberResumePosition(position, for: id)
+        } else {
+            forgetResumePosition(id)
         }
         activeID = nil
         activeSource = nil
@@ -340,18 +416,27 @@ final class VoiceMessagePlaybackStore {
         }
     }
 
-    private func rememberResumePosition(_ position: TimeInterval, for messageID: MessageID) {
-        resumePositions[messageID] = position
-        resumeOrder.removeAll { $0 == messageID }
-        resumeOrder.append(messageID)
+    private func rememberResumePosition(_ position: TimeInterval, for id: VoiceMessagePlaybackID) {
+        resumePositions[id] = position
+        resumeOrder.removeAll { $0 == id }
+        resumeOrder.append(id)
         while resumeOrder.count > Self.maximumResumePositions {
             resumePositions[resumeOrder.removeFirst()] = nil
         }
     }
 
-    private func forgetResumePosition(_ messageID: MessageID) {
-        resumePositions[messageID] = nil
-        resumeOrder.removeAll { $0 == messageID }
+    private func rememberDuration(_ duration: TimeInterval, for source: Source) {
+        if knownDurations.updateValue(duration, forKey: source) != duration { knownDurationsRevision += 1 }
+        knownDurationOrder.removeAll { $0 == source }
+        knownDurationOrder.append(source)
+        while knownDurationOrder.count > Self.maximumKnownDurations {
+            knownDurations[knownDurationOrder.removeFirst()] = nil
+        }
+    }
+
+    private func forgetResumePosition(_ id: VoiceMessagePlaybackID) {
+        resumePositions[id] = nil
+        resumeOrder.removeAll { $0 == id }
     }
 
     /// AVAudioFile needs a file, so remote audio plays from its file in the
@@ -378,11 +463,40 @@ final class VoiceMessagePlaybackStore {
             try Task.checkCancellation()
             let directory = FileManager.default.temporaryDirectory
                 .appending(path: "SakuraCordVoicePlayback", directoryHint: .isDirectory)
-            let fileURL = directory.appending(path: "\(UUID().uuidString).ogg")
+            // The extension tells Core Audio the file's format.
+            let fileURL = directory.appending(path: UUID().uuidString)
+                .appendingPathExtension(url.pathExtension.isEmpty ? "ogg" : url.pathExtension)
             let file = PlaybackFile(url: fileURL, removesOnRelease: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             return (try VoiceMessagePlayer(fileURL: fileURL), file)
+        }
+    }
+}
+
+private extension VoiceMessagePlaybackStore {
+    /// The length of an audio file from its header; a remote file not yet
+    /// cached is read only as far as AVFoundation needs.
+    static func measuredDuration(
+        of source: Source,
+        resolve: (@MainActor (URL) async -> URL)?
+    ) async throws -> TimeInterval {
+        switch source {
+        case let .local(url):
+            return try await Task.detached(priority: .utility) {
+                let file = try AVAudioFile(forReading: url)
+                return Double(file.length) / file.processingFormat.sampleRate
+            }.value
+        case let .remote(url):
+            let resolved = await resolve?(url) ?? url
+            // A file played before is read from the media cache, not fetched.
+            if let file = await SharedMediaDataLoader.shared.storedFile(for: resolved),
+               let duration = try? await measuredDuration(of: .local(file), resolve: nil) {
+                return duration
+            }
+            let duration = try await AVURLAsset(url: resolved).load(.duration).seconds
+            guard duration.isFinite, duration > 0 else { throw CocoaError(.fileReadCorruptFile) }
+            return duration
         }
     }
 }

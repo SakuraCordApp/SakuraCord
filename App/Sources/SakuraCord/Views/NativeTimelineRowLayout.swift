@@ -49,6 +49,8 @@ struct NativeTimelineRowLayout {
             case bareMedia
             case bubbleIntegratedCard
             case card
+            /// Text another card frames, such as an AutoMod alert's.
+            case unframed
         }
 
         struct TextRegion {
@@ -192,9 +194,38 @@ struct NativeTimelineRowLayout {
     var forwardedBarFrame: CGRect?
     var forwardedSourceRegion: ForwardedSourceRegion?
     var linkedImageRegions: [LinkedImageRegion] = []
+    /// One region per attachment, in message order: a gallery tile or a file card.
     var attachmentRegions: [AttachmentRegion] = []
-    var uploadRegions: [UploadRegion] = []
+    var uploadRings: [UploadRing] = []
+
+    var audioFilePlayers: [NativeTimelineVoiceMessageRegion] = []
+
+    /// File and audio cards.
+    var fileCards: [NativeTimelineFileCard] { attachmentRegions.compactMap(fileCard) }
+
+    /// A file or audio region's card; a gallery tile has none.
+    func fileCard(_ region: AttachmentRegion) -> NativeTimelineFileCard? {
+        let attachment = region.attachment
+        guard !attachment.mediaKind.isVisual else { return nil }
+        return NativeTimelineFileCard(
+            frame: region.frame, attachment: attachment, isInBubble: bubbleRegion != nil
+        )
+    }
+
+    /// A region's outline, which its spoiler cover takes: its file card's,
+    /// or a gallery tile's.
+    func cornerRadius(of region: AttachmentRegion) -> CGFloat {
+        fileCard(region)?.cornerRadius ?? NativeTimelineRowPainter.attachmentCornerRadius
+    }
+
+    var mediaGalleryItemCount: Int {
+        attachmentRegions.count { $0.attachment.mediaKind.isVisual }
+    }
     var voiceMessageRegion: NativeTimelineVoiceMessageRegion?
+    /// Every voice message and audio file player in the row.
+    var audioPlayers: [NativeTimelineVoiceMessageRegion] {
+        (voiceMessageRegion.map { [$0] } ?? []) + audioFilePlayers
+    }
     var embedFrames: [CGRect] = []
     var embedRegions: [EmbedRegion] = []
     var sakuraCordDeepLinkRegions: [SakuraCordDeepLinkRegion] = []
@@ -207,10 +238,10 @@ struct NativeTimelineRowLayout {
     var ephemeralRegion: EphemeralRegion?
     var failedFrame: CGRect?
     var failedRetryFrame: CGRect?
-    /// A local send's upload cancels and its failed-send Retry.
+    /// A local send's failed-send Retry. Its files' upload rings act on
+    /// their own.
     var deliveryActions: [(frame: CGRect, kind: NativeTimelineFooterActionTarget.Kind)] {
-        uploadRegions.map { ($0.cancelFrame, .cancelUpload(attachmentID: $0.attachmentID)) }
-            + [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
+        [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
     }
 
     func deliveryAction(at point: CGPoint) -> NativeTimelineFooterActionTarget.Kind? {
@@ -219,6 +250,7 @@ struct NativeTimelineRowLayout {
     var pinnedAtFrame: CGRect?
     var pollLayout: NativeTimelinePollLayout?
     var pollResultFrame: CGRect?
+    var autoModAlert: NativeTimelineAutoModAlertLayout?
     var inviteRegions: [NativeTimelineInviteLayout] = []
     var translationRegion: TranslationRegion?
 
@@ -498,5 +530,12 @@ struct NativeTimelineSearchPrefixLayout {
             ),
             height: sectionFrame.maxY + 4
         )
+    }
+}
+
+extension NativeTimelineRowLayout {
+    func matchesAuthorPrimaryGuild(for item: NativeMessageTimelineItem, source: AppModel) -> Bool {
+        guard authorFrame != nil, let row = item.messageRow else { return true }
+        return authorPrimaryGuild == source.authorPresentation(for: row.message).user.primaryGuild
     }
 }

@@ -1,7 +1,6 @@
 import AppKit
 import QuartzCore
 import SakuraCordModels
-import SwiftUI
 
 extension NativeTimelineCanvasView {
     func reactionPointerHit(at point: CGPoint) -> ReactionPointerHit? {
@@ -16,10 +15,11 @@ extension NativeTimelineCanvasView {
         )
         let rowOrigin = displayedRowOrigin(at: index)
         let layout = layouts[index]
+        let frames = displayedReactionFrames(at: index)
         let target = NativeTimelineReactionClickHitTesting.target(
             at: local,
-            reactionFrames: layout.reactionRegions.map(\.frame),
-            addReactionFrame: layout.addReactionFrame
+            reactionFrames: frames.reactions,
+            addReactionFrame: frames.add
         )
         switch target {
         case let .reaction(regionIndex):
@@ -32,11 +32,11 @@ extension NativeTimelineCanvasView {
                 rowIndex: index,
                 message: row.message,
                 reaction: region.reaction,
-                frame: region.frame.offsetBy(dx: 0, dy: rowOrigin)
+                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
             )
         case .add:
             guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = layout.addReactionFrame else { return nil }
+                  let frame = frames.add else { return nil }
             return ReactionPointerHit(
                 target: .add(messageID: row.id),
                 rowIndex: index,
@@ -58,21 +58,22 @@ extension NativeTimelineCanvasView {
               case let .message(row, _, _) = items[index]
         else { return nil }
         let rowOrigin = displayedRowOrigin(at: index)
+        let frames = displayedReactionFrames(at: index)
         switch target {
         case let .reaction(_, reactionID):
-            guard let region = layouts[index].reactionRegions.first(where: {
+            guard let regionIndex = layouts[index].reactionRegions.firstIndex(where: {
                 $0.reaction.id == reactionID
             }) else { return nil }
             return ReactionPointerHit(
                 target: target,
                 rowIndex: index,
                 message: row.message,
-                reaction: region.reaction,
-                frame: region.frame.offsetBy(dx: 0, dy: rowOrigin)
+                reaction: layouts[index].reactionRegions[regionIndex].reaction,
+                frame: frames.reactions[regionIndex].offsetBy(dx: 0, dy: rowOrigin)
             )
         case .add:
             guard model?.canCreateReactions(on: row.message) == true,
-                  let frame = layouts[index].addReactionFrame else {
+                  let frame = frames.add else {
                 return nil
             }
             return ReactionPointerHit(
@@ -110,230 +111,6 @@ extension NativeTimelineCanvasView {
               case let .add(targetMessageID) = hoveredReaction
         else { return false }
         return targetMessageID == messageID
-    }
-
-    func reactionCountSnapshot() -> ReactionCountSnapshot? {
-        guard !items.isEmpty,
-              var index = rowIndex(at: max(0, visibleRect.minY))
-        else { return nil }
-        var counts: [ReactionCountKey: Int] = [:]
-        var messageIDs: Set<MessageID> = []
-        while items.indices.contains(index),
-              displayedRowOrigin(at: index) < visibleRect.maxY
-        {
-            if case let .message(row, _, _) = items[index] {
-                messageIDs.insert(row.id)
-                for reaction in row.message.reactions where reaction.count > 0 {
-                    counts[ReactionCountKey(
-                        messageID: row.id,
-                        reactionID: reaction.id
-                    )] = reaction.count
-                }
-            }
-            index += 1
-        }
-        return ReactionCountSnapshot(
-            counts: counts,
-            messageIDs: messageIDs
-        )
-    }
-
-    func reconcileReactionCountAnimations(
-        storedBeforeUpdate: ReactionCountSnapshot? = nil
-    ) {
-        guard !items.isEmpty,
-              var index = rowIndex(at: max(0, visibleRect.minY))
-        else { return }
-        var counts: [ReactionCountKey: Int] = [:]
-        var visibleMessageIDs: Set<MessageID> = []
-        let reducesMotion =
-            !AppMotionPolicy.animatesUncategorized
-
-        while items.indices.contains(index),
-              displayedRowOrigin(at: index) < visibleRect.maxY
-        {
-            if case let .message(row, _, _) = items[index] {
-                visibleMessageIDs.insert(row.id)
-                for reaction in row.message.reactions where reaction.count > 0 {
-                    let key = ReactionCountKey(
-                        messageID: row.id,
-                        reactionID: reaction.id
-                    )
-                    counts[key] = reaction.count
-                    guard NativeTimelineReactionCountBaseline.canAnimate(
-                        hasCapturedVisibleCounts:
-                            hasCapturedVisibleReactionCounts,
-                        hasStoredSnapshot: storedBeforeUpdate != nil
-                    ) else { continue }
-                    let oldCount =
-                        NativeTimelineReactionCountBaseline.previousCount(
-                            capturedCount: visibleReactionCounts[key],
-                            storedCountBeforeUpdate:
-                                storedBeforeUpdate?.counts[key],
-                            messageExistedBeforeUpdate:
-                                storedBeforeUpdate?.messageIDs.contains(row.id)
-                                    == true,
-                            messageWasPreviouslyVisible:
-                                previouslyVisibleReactionMessageIDs.contains(
-                                    row.id
-                                ),
-                            currentCount: reaction.count
-                        )
-                    if !reducesMotion, oldCount != reaction.count {
-                        activeReactionCountAnimations[key] =
-                            ActiveReactionCountAnimation(
-                                from: oldCount,
-                                to: reaction.count
-                            )
-                        startReactionCountAnimation(
-                            for: key,
-                            from: oldCount,
-                            to: reaction.count,
-                            rowIndex: index,
-                            reaction: reaction
-                        )
-                    }
-                }
-            }
-            index += 1
-        }
-
-        // A canvas can receive its first model update before its clip view has
-        // a non-zero viewport. Do not treat that empty pass as the baseline:
-        // doing so makes the first real reaction mutation after launch appear
-        // without a numeric transition.
-        guard !visibleMessageIDs.isEmpty else { return }
-        visibleReactionCounts = counts
-        previouslyVisibleReactionMessageIDs = visibleMessageIDs
-        hasCapturedVisibleReactionCounts = true
-    }
-
-    func scheduleInitialReactionCountCapture() {
-        guard !hasCapturedVisibleReactionCounts,
-              reactionCountBaselineTask == nil
-        else { return }
-        reactionCountBaselineTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard !Task.isCancelled, let self else { return }
-            self.reactionCountBaselineTask = nil
-            self.reconcileReactionCountAnimations()
-        }
-    }
-
-    func startReactionCountAnimation(
-        for key: ReactionCountKey,
-        from: Int,
-        to: Int,
-        rowIndex: Int,
-        reaction: Reaction
-    ) {
-        // Remove the previous host even when the replacement needs no animation.
-        reactionCountAnimationTasks.removeValue(forKey: key)?.cancel()
-        reactionCountAnimationHosts.removeValue(forKey: key)?.removeFromSuperview()
-
-        // A newly added reaction shows its first count immediately.
-        guard !(from == 0 && to == 1),
-              layouts.indices.contains(rowIndex),
-              let region = layouts[rowIndex].reactionRegions.first(where: {
-                  $0.reaction.id == reaction.id
-              }),
-              let countFrame = region.countFrame
-        else {
-            activeReactionCountAnimations[key] = nil
-            return
-        }
-
-        let color: NSColor = reaction.didCurrentUserReact
-            ? .sakuraCordAccentColor
-            : .labelColor
-        let animationState = TimelineReactionCountAnimation(
-            from: from,
-            to: to
-        )
-        let root = AnyView(NativeTimelineReactionCountAnimationView(
-            state: animationState,
-            color: color
-        ))
-        let host = NativeTimelineReactionCountAnimationHost(rootView: root)
-        let countFont = NativeTimelineReactionFonts.count
-        let stableCountWidth = max(
-            countFrame.width,
-            ceil((String(from) as NSString).size(withAttributes: [
-                .font: countFont,
-            ]).width),
-            ceil((String(to) as NSString).size(withAttributes: [
-                .font: countFont,
-            ]).width)
-        )
-        var stableCountFrame = countFrame
-        stableCountFrame.size.width = stableCountWidth
-        let canvasCountFrame = stableCountFrame.offsetBy(
-            dx: 0,
-            dy: displayedRowOrigin(at: rowIndex)
-        )
-        // The updated row bitmap already contains the destination count.
-        // Paint the pill without its static glyph before attaching SwiftUI's
-        // transition so the two values never overlap for one display pass.
-        display(canvasCountFrame.insetBy(dx: -1, dy: -1))
-        host.frame = canvasCountFrame
-        host.wantsLayer = true
-        host.layer?.backgroundColor = NSColor.clear.cgColor
-        addSubview(host, positioned: .above, relativeTo: nil)
-        reactionCountAnimationHosts[key] = host
-        // A newly constructed NSHostingView can otherwise publish the target
-        // before its initial state has ever reached the screen. Commit the
-        // starting count synchronously, then mutate on the next run-loop turn.
-        host.needsLayout = true
-        host.layoutSubtreeIfNeeded()
-        host.needsDisplay = true
-        host.displayIfNeeded()
-        DispatchQueue.main.async { @MainActor [weak host, weak animationState] in
-            guard host?.superview != nil else { return }
-            animationState?.start()
-        }
-        setNeedsDisplay(rowFrame(at: rowIndex))
-
-        reactionCountAnimationTasks[key] = Task { @MainActor [weak self, weak host] in
-            try? await Task.sleep(for: .milliseconds(320))
-            guard !Task.isCancelled,
-                  let self,
-                  self.reactionCountAnimationHosts[key] === host
-            else { return }
-            self.activeReactionCountAnimations[key] = nil
-            if let index = self.rowIndex(for: .reaction(
-                messageID: key.messageID,
-                reactionID: key.reactionID
-            )),
-               self.layouts.indices.contains(index),
-               let region = self.layouts[index].reactionRegions.first(
-                   where: { $0.reaction.id == key.reactionID }
-               ),
-               let frame = region.countFrame
-            {
-                // Paint the final static count underneath the still-visible
-                // host, then remove the host. This prevents an empty display
-                // pass at the end of the transition.
-                self.display(frame.offsetBy(
-                    dx: 0,
-                    dy: self.displayedRowOrigin(at: index)
-                ).insetBy(dx: -1, dy: -1))
-            }
-            host?.removeFromSuperview()
-            self.reactionCountAnimationHosts[key] = nil
-            self.reactionCountAnimationTasks[key] = nil
-        }
-    }
-
-    func cancelReactionCountAnimations() {
-        for task in reactionCountAnimationTasks.values {
-            task.cancel()
-        }
-        for host in reactionCountAnimationHosts.values {
-            host.removeFromSuperview()
-        }
-        reactionCountAnimationTasks.removeAll()
-        reactionCountAnimationHosts.removeAll()
-        activeReactionCountAnimations.removeAll()
     }
 
     func reconcileAnimatedMedia(

@@ -867,7 +867,7 @@ private actor TypingTestProvider: ChatProvider {
         capability == .stickerSending
     }
 
-    func edit(messageID: MessageID, channelID: ChannelID, content: String) async throws -> Message {
+    func edit(_ message: Message, content: String) async throws -> Message {
         editCount += 1
         throw ChatProviderError.invalidRequest("not used")
     }
