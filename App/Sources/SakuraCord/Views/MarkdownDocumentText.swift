@@ -376,8 +376,11 @@ private struct MarkdownFence {
     private let isBare: Bool
 
     nonisolated init?(_ line: String) {
-        let indent = line.prefix { $0 == " " }.count
-        let trimmed = line.dropFirst(indent)
+        // A fence can open a list item or sit in a quote, as in "- ```md".
+        let containers = line.prefixMatch(of: /(?: {0,3}(?:[-*+]|\d{1,9}[.)]) +| {0,3}> ?)*/)?.output.count ?? 0
+        let rest = line.dropFirst(containers)
+        let indent = rest.prefix { $0 == " " }.count
+        let trimmed = rest.dropFirst(indent)
         guard indent <= 3, let marker = trimmed.first, marker == "`" || marker == "~" else { return nil }
         let length = trimmed.prefix { $0 == marker }.count
         guard length >= 3 else { return nil }

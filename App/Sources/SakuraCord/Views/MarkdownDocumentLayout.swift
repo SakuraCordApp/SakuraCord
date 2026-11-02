@@ -55,12 +55,15 @@ struct MarkdownBlockLayout {
         case .heading:
             break
         case let .code(language):
+            // A marker would sit inside the box, which already shows the item's indent.
+            placement.marker = nil
             let box = block(leaf.identity) { [margin = placement.indent] in Self.codeBlock(margin: margin) }
             placement.textBlocks.append(box)
             placement.indent = 0
             font = .monospacedSystemFont(ofSize: InterfaceScale.fontSize(12), weight: .regular)
             content.setAttributedString(highlighted(content.string, language: language, font: font))
         case .thematicBreak:
+            placement.marker = nil
             let box = block(leaf.identity) { [margin = placement.indent] in Self.ruleBlock(margin: margin) }
             placement.textBlocks.append(box)
             placement.indent = 0
@@ -72,6 +75,7 @@ struct MarkdownBlockLayout {
                 in: tableIntent, row: row, column: column, outerBlocks: placement.textBlocks, indent: placement.indent
             ) else { return }
             alignment = cell.alignment
+            placement.marker = nil
             placement.textBlocks.append(cell.block)
             placement.indent = 0
         case let .footnote(number):
