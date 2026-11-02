@@ -255,7 +255,8 @@ final class ProfileEditorState {
             }
             guard isCurrent(account, revision: requestRevision) else { return }
             loadedAt[requestedScope] = now()
-            guard changes == remainingChanges, customStatusChange == remainingStatus, !isSaving else { return }
+            guard changes == remainingChanges, customStatusChange == remainingStatus, !isSaving,
+                  preparingWidgetImages == 0 || requestedScope != scope else { return }
             selectLoadedScope(requestedScope)
             adoptBaseline(value)
             requiresReload = false
@@ -277,6 +278,9 @@ final class ProfileEditorState {
     }
 
     private func canReplaceBaseline(changes expectedChanges: ProfileEditChanges, widgets expectedWidgets: [ProfileWidget]?, requestedScope: ProfileEditingScope) -> Bool {
+        // A widget image being prepared will land in this scope's baseline;
+        // switching scope abandons it instead.
+        guard preparingWidgetImages == 0 || requestedScope != scope else { return false }
         guard changes == expectedChanges, widgetDraft == expectedWidgets else {
             if requestedScope != scope { showsUnsavedReminder = true }
             return false
