@@ -320,6 +320,9 @@ final class NativeMessageTimelineCoordinator: NSObject {
         var performanceUpdatePath = "none"
         var performanceFallbackReason = "none"
         var lastPerformanceUpdateDuration = 0.0
+        /// Timeline updates and their main-thread time during a benchmark run.
+        var performanceUpdateCount = 0
+        var performanceUpdateTotalDuration = 0.0
         var lastLoggedPerformanceFallbackReason: String?
         var recentLayoutCacheHits = 0
 #if SAKURACORD_MOTION_BENCHMARK
@@ -578,8 +581,9 @@ extension NativeMessageTimelineCoordinator {
             let timestampDayChanged = currentTimestampDay != timestampDay
             let presentationChanged = parent.presentationRevision != presentationRevision
                 || timestampDayChanged
-            if parent.rowsRevision != rowsRevision || conversationChanged {
-                canvas.captureReactionCountsBeforeStorageMutation()
+            // The coordinator mutates the storage it shares with the canvas.
+            if parent.rowsRevision != rowsRevision, !conversationChanged {
+                canvas.captureReactionBaseline()
             }
             let oldItemCount = items.count
             let oldRowCount = rowCount
@@ -943,6 +947,8 @@ extension NativeMessageTimelineCoordinator {
                       let restoreAnchor = preparation.restoreAnchor {
                 restore(restoreAnchor)
             }
+            // Reaction changes move rows from where the scroll position just settled.
+            canvas.beginReactionTransitions()
         }
 
         func finishTimelineUpdate(
@@ -954,6 +960,8 @@ extension NativeMessageTimelineCoordinator {
             if parent.runsPerformanceAutoScroll {
                 let milliseconds = (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000
                 lastPerformanceUpdateDuration = milliseconds
+                performanceUpdateCount += 1
+                performanceUpdateTotalDuration += milliseconds
                 if milliseconds >= 4 {
                     NSLog(
                         "SakuraCord timeline reload: %.2f ms (%d -> %d items)",
@@ -1008,6 +1016,7 @@ extension NativeMessageTimelineCoordinator {
                 mediaViewerHighlightedMessageID:
                     parent.model.mediaViewerPresentation?.messageID
             )
+            canvas?.mediaViewerPresentationDidChange(to: parent.model.mediaViewerPresentation?.id)
             guard !prepareLayoutsIfNeeded(parent: parent, scrollView: scrollView) else {
                 return
             }

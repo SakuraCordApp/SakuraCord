@@ -17,14 +17,29 @@ struct DirectMessageInboxView: View {
             pinnedChannelIDs: pinnedChannelIDs
         )
 
+        let messageRequests = model.messageRequestChannels
+
         List(selection: $selection) {
-            FriendsSidebarRow(
-                requestCount: model.incomingFriendRequestCount,
-                isSelected: selection == .friends
+            DirectMessageHomeRow(
+                title: "Friends", systemImage: "person.2.fill", countedItem: "friend request",
+                count: model.incomingFriendRequestCount, isSelected: selection == .friends
             )
             .tag(DirectMessageSidebarSelection.friends)
             .pointerStyle(.link)
             .overlay { ChannelRowHoverBridge(isSelected: selection == .friends) }
+
+            // Discord shows the row only while requests or spam wait; its
+            // badge counts requests alone.
+            if !messageRequests.isEmpty {
+                DirectMessageHomeRow(
+                    title: "Message Requests", systemImage: "envelope.fill", countedItem: "message request",
+                    count: messageRequests.count { $0.messageRequest == .pending },
+                    isSelected: selection == .messageRequests
+                )
+                .tag(DirectMessageSidebarSelection.messageRequests)
+                .pointerStyle(.link)
+                .overlay { ChannelRowHoverBridge(isSelected: selection == .messageRequests) }
+            }
 
             Section {
                 ForEach(directMessages) { channel in
@@ -67,23 +82,27 @@ struct DirectMessageInboxView: View {
     }
 }
 
-private struct FriendsSidebarRow: View {
-    let requestCount: Int
+/// A Direct Messages home destination above the conversations.
+private struct DirectMessageHomeRow: View {
+    let title: String
+    let systemImage: String
+    let countedItem: String
+    let count: Int
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(10)) {
-            Image(systemName: "person.2.fill")
+            Image(systemName: systemImage)
                 .font(.interfaceSystem(size: 16, weight: .semibold))
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
-            Text("Friends")
+            Text(title)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if requestCount > 0 {
-                Text(requestCount, format: .number)
+            if count > 0 {
+                Text(count, format: .number)
                     .font(.interface(.caption2).bold())
                     .foregroundStyle(.white)
                     .padding(.horizontal, InterfaceScale.metric(6))
@@ -93,7 +112,7 @@ private struct FriendsSidebarRow: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityValue(requestCount == 0 ? "" : requestCount == 1 ? "1 pending friend request" : "\(requestCount) pending friend requests")
+        .accessibilityValue(count == 0 ? "" : count == 1 ? "1 pending \(countedItem)" : "\(count) pending \(countedItem)s")
     }
 }
 
@@ -102,15 +121,9 @@ nonisolated enum DirectMessageInboxPolicy {
         in channels: [Channel],
         pinnedChannelIDs: Set<ChannelID> = []
     ) -> [Channel] {
-        let conversations = channels.filter {
-            $0.kind == .directMessage || $0.kind == .groupDirectMessage
-        }
+        let conversations = channels.filter(\.isListedDirectMessage)
         let pinned = conversations.filter { pinnedChannelIDs.contains($0.id) }
-            .sorted { lhs, rhs in
-                let leftActivity = lhs.lastMessageID?.createdAt ?? lhs.id.createdAt
-                let rightActivity = rhs.lastMessageID?.createdAt ?? rhs.id.createdAt
-                return leftActivity > rightActivity
-            }
+            .sorted { $0.lastActivityDate > $1.lastActivityDate }
         return pinned + conversations.filter { !pinnedChannelIDs.contains($0.id) }
     }
 

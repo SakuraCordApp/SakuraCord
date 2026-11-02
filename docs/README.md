@@ -113,8 +113,8 @@ maintain a second backlog there or in a repository `ROADMAP.md`.
   tracked separately. The hub posts release updates and notifies Discord
   followers. See [Releasing](RELEASING.md#release-model) for the checklist.
 - New reports trigger one read-only triage and investigation agent in GitHub
-  Actions against the nightly checkout (GPT-6 Luna by default). It reads the
-  report, recent comments, screenshots, and similar reports, then posts one
+  Actions against the nightly checkout (Claude Sonnet 5.5 by default). It reads
+  the report, recent comments, screenshots, and similar reports, then posts one
   assessment with classification, questions, duplicate suggestions, and code
   findings. The hub validates the result before applying metadata; later
   maintainer status decisions take precedence over automated triage. Each agent

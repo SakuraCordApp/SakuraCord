@@ -19,11 +19,16 @@ struct NativeTimelineMessageDrawInput {
     let isCommandPillHovered: Bool
     let hoveredMention: NativeTimelineMentionHover?
     let hoveredTextLink: NativeTimelineTextLinkHover?
-    let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
+    /// How far each text spoiler is hovered, easing in and out.
+    let textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat]
     let hoveredComponentButton: NativeTimelineComponentButtonTarget?
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
+    /// How far each file card part's hover has eased in.
+    let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
+    /// How far each just-finished download's button has crossfaded.
+    let fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat]
     let isForwardedSourceHovered: Bool
     let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
@@ -38,7 +43,6 @@ struct NativeTimelineMessageDrawInput {
     let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
     let pollPresentation: NativeTimelinePollPresentation
     let animatedOverlayRoles: Set<NativeTimelineCanvasView.AnimatedMediaOverlayRole>
-    let reactionCountTransitions: [String: NativeTimelineReactionCountTransition]
 }
 
 extension NativeTimelineRowPainter {
@@ -57,7 +61,6 @@ extension NativeTimelineRowPainter {
         drawPollResult(input)
         drawMessageLinkedImages(input)
         drawMessageAttachments(input)
-        drawMessageUploads(input)
         drawMessageVoiceMessage(input)
         drawMessageEmbeds(input)
         drawMessageComponentsAndStickers(input)
@@ -76,7 +79,20 @@ extension NativeTimelineRowPainter {
                 container.chrome == .bubbleSection ? container.chromeFrame : nil
             }
         }
-        bubbleIntegratedSectionsTint(integratedSectionFrames, bubbleRegion: bubbleRegion)
+        bubbleIntegratedSectionsTint(
+            integratedSectionFrames + [fileSectionFrame(input.layout)].compactMap { $0 },
+            bubbleRegion: bubbleRegion
+        )
+    }
+
+    /// Files below other bubble content share one integrated section, as
+    /// thread cards and invites do; a bubble holding only files is their card.
+    private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
+        let files = layout.attachmentRegions.filter { !$0.attachment.mediaKind.isVisual }.map(\.frame)
+        guard let bubble = layout.bubbleRegion, let first = files.first,
+              first.minY - bubble.frame.minY > NativeTimelineBubbleLayout.verticalPadding + 0.5
+        else { return nil }
+        return files.dropFirst().reduce(first) { $0.union($1) }
     }
 
     private static func drawMessageSearchContext(_ input: NativeTimelineMessageDrawInput) {
@@ -320,7 +336,7 @@ extension NativeTimelineRowPainter {
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
         let hoveredTextLink = input.hoveredTextLink
-        let hoveredTextSpoiler = input.hoveredTextSpoiler
+        let textSpoilerHover = input.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         if let frame = layout.contentFrame,
            let attributedContent = layout.attributedContent,
@@ -359,12 +375,7 @@ extension NativeTimelineRowPainter {
                         && hoveredTextLink?.region == .content
                     ? hoveredTextLink?.characterIndex
                     : nil,
-                hoveredSpoilerRangeLocation:
-                    hoveredTextSpoiler?.itemIdentifier
-                        == .message(row.identity)
-                        && hoveredTextSpoiler?.region == .content
-                    ? hoveredTextSpoiler?.rangeLocation
-                    : nil,
+                spoilerHoverProgress: textSpoilerHover.progress(in: .message(row.identity), region: .content),
                 revealedSpoilerLocations:
                     revealedTextSpoilerState.locations(in: .content)
             )
@@ -417,11 +428,7 @@ extension NativeTimelineRowPainter {
             context?.setAlpha(opacity)
             context?.beginTransparencyLayer(auxiliaryInfo: nil)
         }
-        NativeTimelineVoiceMessagePainter.drawIdle(
-            region,
-            speedLabel: playback?.speedLabel ?? "1×",
-            isActive: playback?.isActive(region.playbackID) == true
-        )
+        NativeTimelineVoiceMessagePainter.drawIdle(region, playback: playback)
         if opacity < 1 { context?.endTransparencyLayer() }
     }
 
@@ -445,89 +452,97 @@ extension NativeTimelineRowPainter {
         }
         let attachmentFillsFrame =
             MediaGalleryImagePresentation.fillsFrame(
-                itemCount: layout.attachmentRegions.count
+                itemCount: layout.mediaGalleryItemCount
             )
+        if let bubble = layout.bubbleRegion, let section = fileSectionFrame(layout) {
+            bubbleIntegratedSection(
+                section, bubbleRegion: bubble, accentColor: nil, drawsTopSeparator: true, drawsNeutralRail: false
+            )
+        }
         for region in layout.attachmentRegions {
-            let attachment = region.attachment
             let isConcealed =
                 spoilerRevealStore.map {
                     NativeTimelineSpoilerConcealmentPolicy.isConcealed(
                         messageID: message.id,
-                        contentID: "attachment:\(attachment.id)",
-                        isSpoiler: attachment.isSpoiler,
+                        contentID: NativeTimelineComponentRevealKey.attachmentComponentID(region.attachment.id),
+                        isSpoiler: region.attachment.isSpoiler,
                         store: $0
                     )
                 } ?? false
-            if isConcealed {
-                spoilerConcealedBase(
-                    in: region.frame,
-                    cornerRadius: attachmentCornerRadius
-                )
-                continue
-            }
-            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(
-                concentricRoundedRect: region.frame,
-                cornerRadius: attachmentCornerRadius
-            ).fill()
-            switch attachment.mediaKind {
-            case .image, .animatedImage, .video:
-                let isVideo = attachment.mediaKind == .video
-                if let image = region.previewKey.flatMap(mediaImage(for:)) {
-                    drawImage(
-                        image,
-                        in: region.frame,
-                        cornerRadius: attachmentCornerRadius,
-                        fillsFrame: attachmentFillsFrame
-                    )
-                } else if let placeholder = region.placeholder?.image {
-                    drawImage(placeholder, in: region.frame, cornerRadius: attachmentCornerRadius, fillsFrame: true)
-                } else if isVideo {
-                    systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-                }
-                if isVideo { mediaPlayGlyph(in: region.frame) }
-            case .audio:
-                attachmentAudio(
-                    attachment,
-                    in: region.frame
-                )
-            case .file:
-                systemSymbol(
-                    "doc",
-                    in: CGRect(
-                        x: region.frame.midX - InterfaceScale.metric(19),
-                        y: region.frame.midY - InterfaceScale.metric(34),
-                        width: InterfaceScale.metric(38),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    color: .labelColor,
-                    inset: 1
-                )
-                text(
-                    attachment.filename,
-                    in: CGRect(
-                        x: region.frame.minX + InterfaceScale.metric(12),
-                        y: region.frame.midY + InterfaceScale.metric(11),
-                        width: max(1, region.frame.width - InterfaceScale.metric(24)),
-                        height: InterfaceScale.metric(38)
-                    ),
-                    font: .interfacePreferredFont(forTextStyle: .body),
-                    color: .labelColor,
-                    alignment: .center,
-                    lineBreakMode: .byTruncatingTail
-                )
+            NativeTimelineSpoilerCover.draw(covering: isConcealed, in: region.frame, cornerRadius: layout.cornerRadius(of: region)) {
+                drawAttachment(region, fillsFrame: attachmentFillsFrame, input: input)
             }
         }
         if opacity < 1 { attachmentContext?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
 
+    private static func drawAttachment(
+        _ region: NativeTimelineRowLayout.AttachmentRegion,
+        fillsFrame: Bool,
+        input: NativeTimelineMessageDrawInput
+    ) {
+        let attachment = region.attachment
+        let layout = input.layout
+        let message = input.row.message
+        if attachment.mediaKind.isVisual {
+            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
+            NSBezierPath(
+                concentricRoundedRect: region.frame,
+                cornerRadius: attachmentCornerRadius
+            ).fill()
+        }
+        switch attachment.mediaKind {
+        case .image, .animatedImage, .video:
+            let isVideo = attachment.mediaKind == .video
+            if let image = region.previewKey.flatMap(mediaImage(for:)) {
+                drawImage(
+                    image,
+                    in: region.frame,
+                    cornerRadius: attachmentCornerRadius,
+                    fillsFrame: fillsFrame
+                )
+            } else if let placeholder = region.placeholder?.image {
+                drawImage(placeholder, in: region.frame, cornerRadius: attachmentCornerRadius, fillsFrame: true)
+            } else if isVideo {
+                systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
+            }
+            if isVideo { mediaPlayGlyph(in: region.frame) }
+        case .audio, .file:
+            fileCard(
+                .init(
+                    frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil
+                ),
+                messageID: message.id,
+                bubbleRegion: layout.bubbleRegion,
+                state: input.model?.attachmentDownloads.states[attachment.id],
+                upload: uploadState(of: attachment, in: input),
+                finishProgress: input.fileCardFinishProgress,
+                pointer: .init(
+                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                )
+            )
+            if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
+                NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)
+            }
+        }
+    }
+
     private static func drawMessageEmbeds(_ input: NativeTimelineMessageDrawInput) {
         let layout = input.layout
+        let concealedEmbeds = input.spoilerRevealStore.map {
+            NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
+        } ?? [:]
         for region in layout.embedRegions {
-            drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
-            drawEmbedText(region, input: input)
-            drawEmbedMedia(region)
+            let isCovered = concealedEmbeds[region.embedID] != nil
+            NativeTimelineSpoilerCover.draw(
+                covering: isCovered, in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+            ) {
+                drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
+                drawEmbedText(region, input: input)
+                drawEmbedMedia(region, isCovered: isCovered)
+            }
         }
     }
 
@@ -571,15 +586,15 @@ extension NativeTimelineRowPainter {
                 hoveredLinkCharacterIndex: input.hoveredTextLink?.itemIdentifier == itemIdentifier
                     && input.hoveredTextLink?.region == textRegionID
                     ? input.hoveredTextLink?.characterIndex : nil,
-                hoveredSpoilerRangeLocation: input.hoveredTextSpoiler?.itemIdentifier == itemIdentifier
-                    && input.hoveredTextSpoiler?.region == textRegionID
-                    ? input.hoveredTextSpoiler?.rangeLocation : nil,
+                spoilerHoverProgress: input.textSpoilerHover.progress(in: itemIdentifier, region: textRegionID),
                 revealedSpoilerLocations: input.revealedTextSpoilerState.locations(in: textRegionID)
             )
         }
     }
 
-    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion) {
+    /// `isCovered`: a spoiler cover blurs the embed, so it draws the poster
+    /// of a video that otherwise plays in its own view.
+    private static func drawEmbedMedia(_ region: NativeTimelineRowLayout.EmbedRegion, isCovered: Bool) {
         for imageRegion in region.imageRegions {
             if let image = mediaImage(for: .media(
                 imageRegion.url,
@@ -604,7 +619,7 @@ extension NativeTimelineRowPainter {
         }
         guard let frame = region.mediaFrame,
               let url = region.mediaURL,
-              TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
+              isCovered || TimelineInlineVideoPolicy.canvasOwnsLoadingSurface(
                   mediaIsVideo: region.mediaIsVideo,
                   autoplaysInline: region.mediaAutoplaysInline
               )
@@ -634,7 +649,7 @@ extension NativeTimelineRowPainter {
         let textSelection = input.textSelection
         let hoveredMention = input.hoveredMention
         let hoveredTextLink = input.hoveredTextLink
-        let hoveredTextSpoiler = input.hoveredTextSpoiler
+        let textSpoilerHover = input.textSpoilerHover
         let revealedTextSpoilerState = input.revealedTextSpoilerState
         let spoilerRevealStore = input.spoilerRevealStore
         let hoveredComponentButton = input.hoveredComponentButton
@@ -674,7 +689,7 @@ extension NativeTimelineRowPainter {
                 textSelection: textSelection,
                 hoveredMention: hoveredMention,
                 hoveredTextLink: hoveredTextLink,
-                hoveredTextSpoiler: hoveredTextSpoiler,
+                textSpoilerHover: textSpoilerHover,
                 revealedTextSpoilerState:
                     revealedTextSpoilerState,
                 spoilerRevealStore: spoilerRevealStore,
@@ -682,7 +697,10 @@ extension NativeTimelineRowPainter {
                 activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
-                    componentButtonPressProgress
+                    componentButtonPressProgress,
+                fileCardHoverProgress: input.fileCardHoverProgress,
+                fileCardFinishProgress: input.fileCardFinishProgress,
+                animatedOverlayRoles: input.animatedOverlayRoles
             ))
         }
         guard !layout.stickerFrames.isEmpty else { return }
@@ -730,7 +748,6 @@ extension NativeTimelineRowPainter {
         let model = input.model
         let hoveredReactionID = input.hoveredReactionID
         let isAddReactionHovered = input.isAddReactionHovered
-        let reactionCountTransitions = input.reactionCountTransitions
         drawForwardedSource(input)
         if let frame = layout.threadFrame, let thread = message.thread {
             if message.type == .threadCreated, let iconFrame = layout.systemIconFrame {
@@ -761,9 +778,6 @@ extension NativeTimelineRowPainter {
                 region,
                 model: model,
                 isHovered: hoveredReactionID == region.reaction.id && model?.canUpdateReactions(on: message) != false,
-                countTransition: reactionCountTransitions[
-                    region.reaction.id
-                ],
                 hasAnimatedEmojiOverlay: input.animatedOverlayRoles.contains(.reaction(region.reaction.id))
             )
         }

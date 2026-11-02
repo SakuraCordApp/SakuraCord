@@ -436,8 +436,8 @@ import Testing
     #expect(!value.string.contains("```"))
     #expect(!value.string.contains("\u{001B}"))
     #expect(value.string.contains("[31mRed[0m"))
-    #expect(value.string.contains("• Item"))
-    #expect(value.string.contains("1. Ordered"))
+    // Discord continues a list with its first item's kind.
+    #expect(value.string.contains("•\tItem\n•\tOrdered"))
 
     let string = value.string as NSString
     let quote = string.range(of: "Quote")
@@ -471,32 +471,11 @@ import Testing
     ) as? NSFont
     #expect(codeFont?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true)
 
-    let key = string.range(of: "\"value\"")
-    #expect(
-        value.attribute(
-            .foregroundColor,
-            at: key.location,
-            effectiveRange: nil
-        ) as? NSColor == NSColor(
-            red: 0.31,
-            green: 0.63,
-            blue: 0.98,
-            alpha: 1
-        )
-    )
-    let number = string.range(of: "42")
-    #expect(
-        value.attribute(
-            .foregroundColor,
-            at: number.location,
-            effectiveRange: nil
-        ) as? NSColor == NSColor(
-            red: 0.94,
-            green: 0.56,
-            blue: 0.31,
-            alpha: 1
-        )
-    )
+    // JSON keys and numbers get their own appearance-aware colours.
+    let key = value.attribute(.foregroundColor, at: string.range(of: "\"value\"").location, effectiveRange: nil) as? NSColor
+    let number = value.attribute(.foregroundColor, at: string.range(of: "42").location, effectiveRange: nil) as? NSColor
+    #expect(key != nil && number != nil && key != number)
+    #expect(key != NSColor.labelColor && number != NSColor.labelColor)
 }
 
 @Test func `composer source formatting preserves UTF16 ranges and nested styles`() throws {
@@ -558,6 +537,8 @@ import Testing
     #expect(DiscordAttachmentLink.needsRefresh(try url("?ex=6a000e10&is=1&hm=2&"), now: now))
     #expect(!DiscordAttachmentLink.needsRefresh(try url("?ex=6a000e11&is=1&hm=2&"), now: now))
     #expect(DiscordAttachmentLink.matches(try url("?ex=6a000e11&is=1&hm=2&")))
+    let encodedName = "https://cdn.discordapp.com/attachments/1/2/my%20notes%E2%9C%93.txt?ex=1"
+    #expect(DiscordAttachmentLink.matches(try #require(URL(string: encodedName))))
     #expect(!DiscordAttachmentLink.matches(try #require(URL(string: "https://cdn.discordapp.com/attachments/1/2/a.png#x"))))
 }
 

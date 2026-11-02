@@ -16,9 +16,7 @@ extension AppModel {
         else { return }
         let session = accountSession()
         do {
-            let updated = try await session.provider.edit(
-                messageID: message.id, channelID: message.channelID, content: content
-            )
+            let updated = try await session.provider.edit(message, content: content)
             guard isCurrentAccountSession(session) else { return }
             invalidateMessageTranslation(updated.id, content: updated.content)
             let reconciled = reconcileVisibleOrCached(updated, updatesOnly: true)

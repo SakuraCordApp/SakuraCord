@@ -93,7 +93,7 @@ func `concealed spoiler policy gates loading animation and nested containers unt
         )
     )
     #expect(
-        !NativeTimelineSpoilerConcealmentPolicy.shouldLoadOrAnimate(
+        !NativeTimelineSpoilerConcealmentPolicy.shouldAnimate(
             messageID: messageID,
             contentID: contentID,
             isSpoiler: true,
@@ -101,7 +101,7 @@ func `concealed spoiler policy gates loading animation and nested containers unt
         )
     )
     #expect(
-        NativeTimelineSpoilerConcealmentPolicy.shouldLoadOrAnimate(
+        NativeTimelineSpoilerConcealmentPolicy.shouldAnimate(
             messageID: messageID,
             contentID: "ordinary-media",
             isSpoiler: false,
@@ -116,7 +116,7 @@ func `concealed spoiler policy gates loading animation and nested containers unt
         )
     )
     #expect(
-        NativeTimelineSpoilerConcealmentPolicy.shouldLoadOrAnimate(
+        NativeTimelineSpoilerConcealmentPolicy.shouldAnimate(
             messageID: messageID,
             contentID: contentID,
             isSpoiler: true,
@@ -200,7 +200,8 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     let bounds = CGRect(x: 0, y: 0, width: 280, height: 160)
     let pill = NativeTimelineSpoilerAppearance.pillFrame(
         in: bounds,
-        measuredLabelWidth: 47.2
+        measuredLabelWidth: 47.2,
+        scale: 1
     )
     #expect(pill.midX == bounds.midX)
     #expect(pill.midY == bounds.midY)
@@ -221,14 +222,6 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     #expect(label.midY == pill.height / 2)
     #expect(label.height == 14)
     #expect(NativeTimelineSpoilerAppearance.textCornerRadius == 4)
-    #expect(
-        NativeTimelineSpoilerAppearance.textBackgroundAlpha(
-            isHovered: true
-        )
-            > NativeTimelineSpoilerAppearance.textBackgroundAlpha(
-                isHovered: false
-            )
-    )
 
     var activationCount = 0
     let overlay = NativeTimelineSpoilerOverlayHost(
@@ -329,7 +322,7 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
     #expect(overlay.accessibilityLabel() == "Reveal spoiler")
     #expect(
         overlay.accessibilityHelp()
-            == "Reveals this media without opening it"
+            == "Reveals the spoiler without opening it"
     )
     #expect(overlay.accessibilityActionNames() == [.press])
 

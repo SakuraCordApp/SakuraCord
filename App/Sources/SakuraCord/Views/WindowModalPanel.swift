@@ -10,7 +10,7 @@ extension View {
     func windowModal<Item: Identifiable, Modal: View>(
         item: Binding<Item?>,
         title: LocalizedStringResource? = nil,
-        cornerRadius: CGFloat = 16,
+        cornerRadius: CGFloat = WindowModalSurface.cornerRadius,
         cornerStyle: RoundedCornerStyle = .continuous,
         isConcealed: @escaping () -> Bool = { false },
         @ViewBuilder content: @escaping (Item) -> Modal
@@ -21,7 +21,7 @@ extension View {
     func windowModal<Modal: View>(
         isPresented: Binding<Bool>,
         title: LocalizedStringResource? = nil,
-        cornerRadius: CGFloat = 16,
+        cornerRadius: CGFloat = WindowModalSurface.cornerRadius,
         cornerStyle: RoundedCornerStyle = .continuous,
         isConcealed: @escaping () -> Bool = { false },
         @ViewBuilder content: @escaping () -> Modal
@@ -32,6 +32,24 @@ extension View {
         ), title: title, cornerRadius: cornerRadius, cornerStyle: cornerStyle, isConcealed: isConcealed) { _ in content() }
     }
 
+    /// The surface a window modal sits on: the window's background with a
+    /// hairline edge, clipped to its corners.
+    func windowModalSurface(
+        cornerRadius: CGFloat = WindowModalSurface.cornerRadius,
+        cornerStyle: RoundedCornerStyle = .continuous
+    ) -> some View {
+        let shape = ConcentricRectangle(cornerRadius: cornerRadius, style: cornerStyle)
+        return background(Color(nsColor: .windowBackgroundColor), in: shape)
+            .clipShape(shape)
+            .containerShape(.rect(cornerRadius: cornerRadius, style: cornerStyle))
+            .overlay { shape.stroke(.separator, lineWidth: 1) }
+    }
+
+    /// The shadow a window modal casts on what it covers.
+    func windowModalShadow() -> some View {
+        shadow(color: .black.opacity(0.28), radius: InterfaceScale.metric(24), y: 10)
+    }
+
     func windowModalSize(width: CGFloat, height: CGFloat? = nil) -> some View {
         modifier(WindowModalSize(width: width, height: height))
     }
@@ -39,6 +57,10 @@ extension View {
     func windowModalDismissDisabled(_ disabled: Bool) -> some View {
         modifier(WindowModalDismissGuard(disabled: disabled))
     }
+}
+
+enum WindowModalSurface {
+    static let cornerRadius: CGFloat = 16
 }
 
 private struct WindowModalBooleanPresentation: Identifiable { let id = "presented" }
@@ -89,19 +111,16 @@ private struct WindowModalPanelSurface<Content: View>: View {
                         content()
                     }
                     .fixedSize()
-                    .background(Color(nsColor: .windowBackgroundColor), in: ConcentricRectangle(cornerRadius: cornerRadius, style: cornerStyle))
-                    .clipShape(ConcentricRectangle(cornerRadius: cornerRadius, style: cornerStyle))
-                    .containerShape(.rect(cornerRadius: cornerRadius, style: cornerStyle))
+                    .windowModalSurface(cornerRadius: cornerRadius, cornerStyle: cornerStyle)
                     .contentShape(Rectangle())
                     .onTapGesture {}
-                    .overlay { ConcentricRectangle(cornerRadius: cornerRadius, style: cornerStyle).stroke(.separator, lineWidth: 1) }
                     .backgroundPreferenceValue(ProfileFrameAnchorKey.self) { anchor in
                         ProfileFrameDecoration(anchor: anchor, order: "back")
                     }
                     .overlayPreferenceValue(ProfileFrameAnchorKey.self) { anchor in
                         ProfileFrameDecoration(anchor: anchor, order: "front")
                     }
-                    .shadow(color: .black.opacity(0.28), radius: InterfaceScale.metric(24), y: 10)
+                    .windowModalShadow()
                     .scaleEffect(animationState.isVisible ? 1 : 0.965)
                     .padding(InterfaceScale.metric(24))
                     .environment(\.windowModalContext, context)

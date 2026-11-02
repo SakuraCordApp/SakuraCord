@@ -35,6 +35,9 @@ extension NativeTimelineRowLayout {
         private var message: Message { row.message }
         private var searchContext: MessageSearchRowContext? { row.searchContext }
         private var usesComponentsV2: Bool { message.flags.contains(.isComponentsV2) }
+        private var componentsMaximumWidth: CGFloat {
+            min(contentWidth, DiscordRichMessageMetrics.componentsMaximumWidth)
+        }
         private var isGenerated: Bool { message.type.hasGeneratedContent }
         private let bubbleContext: NativeTimelineBubbleLayout.Context
         private var messageSpacing: CGFloat {
@@ -88,13 +91,12 @@ extension NativeTimelineRowLayout {
             if let attributedContent = layout.attributedContent, let framesetter = layout.contentFramesetter {
                 extent = max(extent, NativeTimelineBubbleLayout.measuredTextWidth(
                     framesetter,
-                    length: attributedContent.length,
+                    value: attributedContent,
                     maximumWidth: contentWidth
                 ))
             }
             let mediaFrames = layout.linkedImageRegions.map(\.frame)
                 + layout.attachmentRegions.map(\.frame)
-                + layout.uploadRegions.map(\.frame)
                 + [layout.voiceMessageRegion?.frame].compactMap { $0 }
                 + layout.embedFrames
                 + layout.stickerFrames
@@ -496,6 +498,7 @@ extension NativeTimelineRowLayout {
             result.attributedContent = contentPresentation.attributedContent
             result.contentFramesetter = contentPresentation.framesetter
             if let attributedContent = contentPresentation.attributedContent {
+                verticalOffset += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributedContent)
                 let textHeight = NativeTimelineRowLayout.measuredTextHeight(
                     contentPresentation.framesetter,
                     value: attributedContent,
@@ -578,14 +581,12 @@ extension NativeTimelineRowLayout {
 
         private mutating func appendAttachments() {
             if !usesComponentsV2, (message.forwardedSnapshot?.flags ?? message.flags).contains(.voiceMessage) {
-                let style: NativeTimelineVoiceMessageRegion.Style =
-                    usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
                 let voiceY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                 if let region = NativeTimelineVoiceMessageRegion.make(
                     message: message,
                     origin: CGPoint(x: contentX, y: voiceY),
                     maximumWidth: inlineMediaMaximumWidth,
-                    style: style
+                    style: voiceMessageStyle
                 ) {
                     result.voiceMessageRegion = region
                     verticalOffset = region.frame.maxY
@@ -593,28 +594,25 @@ extension NativeTimelineRowLayout {
                     return
                 }
             }
-            if message.isUnconfirmedLocalSend, source?.attachmentUploads.tracks(nonce: message.nonce) == true {
-                if hasRichContent {
-                    verticalOffset += InterfaceScale.metric(8)
-                }
-                result.uploadRegions = NativeTimelineRowLayout.uploadRegions(
-                    for: message.attachments,
-                    origin: CGPoint(x: contentX, y: verticalOffset),
-                    maximumWidth: inlineMediaMaximumWidth
-                )
-                verticalOffset = result.uploadRegions.last?.frame.maxY ?? verticalOffset
-                hasRichContent = true
-                return
-            }
-            if !usesComponentsV2, !message.attachments.isEmpty {
+            guard !usesComponentsV2 else { return }
+            // Like Discord, audio and other files leave the media gallery for
+            // cards and text previews stacked below it. Regions keep the
+            // attachments' order, which the send transition matches against
+            // the composer's.
+            let (files, media) = (
+                message.attachments.filter { !$0.mediaKind.isVisual },
+                message.attachments.filter(\.mediaKind.isVisual)
+            )
+            var regions: [String: AttachmentRegion] = [:]
+            if !media.isEmpty {
                 if hasRichContent {
                     verticalOffset += InterfaceScale.metric(8)
                 }
                 let galleryWidth = min(InterfaceScale.metric(500), max(InterfaceScale.metric(180), inlineMediaMaximumWidth))
                 let galleryFrames = MediaGalleryPlan.frames(
-                    count: message.attachments.count,
+                    count: media.count,
                     width: galleryWidth,
-                    aspectRatios: message.attachments.map {
+                    aspectRatios: media.map {
                         guard let width = $0.width,
                               let height = $0.height,
                               width > 0,
@@ -622,7 +620,7 @@ extension NativeTimelineRowLayout {
                         else { return 16 / 9 }
                         return CGFloat(width) / CGFloat(height)
                     },
-                    intrinsicSizes: message.attachments.map {
+                    intrinsicSizes: media.map {
                         guard let width = $0.width,
                               let height = $0.height,
                               width > 0,
@@ -635,11 +633,8 @@ extension NativeTimelineRowLayout {
                     },
                     spacing: InterfaceScale.metric(4)
                 )
-                result.attachmentRegions = zip(
-                    message.attachments,
-                    galleryFrames
-                ).map { attachment, frame in
-                    AttachmentRegion(
+                for (attachment, frame) in zip(media, galleryFrames) {
+                    regions[attachment.id] = AttachmentRegion(
                         frame: frame.offsetBy(dx: contentX, dy: verticalOffset),
                         attachment: attachment,
                         previewKey: attachment.mediaKind == .video
@@ -650,7 +645,56 @@ extension NativeTimelineRowLayout {
                 verticalOffset += galleryFrames.map(\.maxY).max() ?? 0
                 hasRichContent = true
             }
+            for attachment in files {
+                if hasRichContent {
+                    verticalOffset += NativeTimelineFileCard.spacing
+                }
+                let frame = appendFile(attachment)
+                regions[attachment.id] = AttachmentRegion(frame: frame, attachment: attachment, previewKey: nil)
+                verticalOffset = frame.maxY
+                hasRichContent = true
+            }
+            result.attachmentRegions = message.attachments.compactMap { regions[$0.id] }
+            if message.isUnconfirmedLocalSend, source?.attachmentUploads.tracks(nonce: message.nonce) == true {
+                result.uploadRings = NativeTimelineRowLayout.uploadRings(
+                    for: result.attachmentRegions, isInBubble: usesBubbles, isFailed: message.outboxState == .failed
+                )
+            }
+        }
 
+        /// The surface voice messages and audio files draw on.
+        private var voiceMessageStyle: NativeTimelineVoiceMessageRegion.Style {
+            usesBubbles ? (isOutgoingBubble ? .outgoingBubble : .incomingBubble) : .plain
+        }
+
+        /// Lays out a file's card, with its player for audio. In a bubble,
+        /// which grows to fit it, a card spans the column so its hover
+        /// highlight lines up with the bubble.
+        private mutating func appendFile(_ attachment: Attachment) -> CGRect {
+            let origin = CGPoint(x: contentX, y: verticalOffset)
+            let isAudio = attachment.mediaKind == .audio
+            let card = NativeTimelineFileCard(
+                frame: CGRect(
+                    origin: origin,
+                    size: CGSize(
+                        width: usesBubbles
+                            ? contentWidth
+                            : NativeTimelineFileCard.fittedWidth(
+                                for: attachment, isInBubble: false, maximumWidth: inlineMediaMaximumWidth
+                            ),
+                        height: NativeTimelineFileCard.height(isInBubble: usesBubbles, isAudio: isAudio)
+                    )
+                ),
+                attachment: attachment,
+                isInBubble: usesBubbles
+            )
+            if isAudio {
+                result.audioFilePlayers.append(.audioFile(
+                    in: card, messageID: message.id,
+                    surface: voiceMessageStyle
+                ))
+            }
+            return card.frame
         }
 
         private mutating func appendCards() {
@@ -694,7 +738,7 @@ extension NativeTimelineRowLayout {
                             components: embed.components ?? [],
                             source: source,
                             origin: CGPoint(x: contentX, y: embedY),
-                            maximumWidth: inlineMediaMaximumWidth,
+                            maximumWidth: componentsMaximumWidth,
                             integratesWithBubble: usesBubbles,
                             drawsTopSeparator: usesBubbles && hasRichContent
                         ) {
@@ -726,7 +770,7 @@ extension NativeTimelineRowLayout {
                 message: message,
                 source: source,
                 origin: CGPoint(x: contentX, y: componentY),
-                maximumWidth: inlineMediaMaximumWidth,
+                maximumWidth: componentsMaximumWidth,
                 integratesWithBubble: usesBubbles,
                 drawsTopSeparator: usesBubbles && hasRichContent
             ) {
@@ -744,7 +788,8 @@ extension NativeTimelineRowLayout {
                         x: button.frame.midX - dots.width / 2, y: button.frame.midY - dots.height / 2,
                         width: dots.width, height: dots.height
                     ),
-                    style: .dots(.onFill)
+                    // Light dots on a solid fill, label-coloured on the translucent grey.
+                    style: .dots(DiscordComponentButtonAppearance.solidFillHexes(for: button.style) == nil ? .content : .onFill)
                 ))
             }
             for select in result.componentLayouts.flatMap(\.selects) where select.isLoading {
