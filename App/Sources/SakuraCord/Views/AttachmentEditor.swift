@@ -75,11 +75,11 @@ struct AttachmentEditor: View {
                 LocalAttachmentThumbnail(url: attachment.url, maximumPixelDimension: 1_024, contentMode: .fit, onImageLoaded: { previewImage = $0 })
                     .blur(radius: isSpoiler ? InterfaceScale.metric(28) : 0)
             }
-        .background(.quaternary.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(24), style: .continuous))
-        .overlay(alignment: .bottomLeading) { spoilerButton.padding(InterfaceScale.metric(8)) }
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: isSpoiler)
-        .accessibilityElement(children: .contain)
+            .background(.quaternary.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(24), style: .continuous))
+            .overlay(alignment: .bottomLeading) { spoilerButton.padding(InterfaceScale.metric(8)) }
+            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: isSpoiler)
+            .accessibilityElement(children: .contain)
     }
 
     /// Sits 8 points inside the preview, so its 32-point capsule is concentric with it.
