@@ -36,7 +36,6 @@ public struct ProfileImageCropGeometry: Hashable, Sendable {
         cropSize = Self.cropSize(imageSize, originalHeight: initial.height, purpose: purpose, aspectRatio: self.aspectRatio)
     }
 
-    public var hasEdits: Bool { zoom != 1 || quarterTurns != 0 || offset != .zero }
     public var dragLimit: CGSize {
         CGSize(width: max(0, (imageSize.width * zoom - cropSize.width) / 2),
                height: max(0, (imageSize.height * zoom - cropSize.height) / 2))
@@ -95,7 +94,6 @@ public struct ProfileImageCropGeometry: Hashable, Sendable {
         }
         setOffset(CGPoint(x: -offset.y, y: offset.x))
     }
-    public mutating func reset() { self = Self(naturalSize: naturalSize, purpose: purpose, viewportHeight: viewportHeight, aspectRatio: aspectRatio) }
 
     private static func fitted(_ size: CGSize, aspectRatio: Double) -> CGSize {
         guard aspectRatio != 1 else { return size }
