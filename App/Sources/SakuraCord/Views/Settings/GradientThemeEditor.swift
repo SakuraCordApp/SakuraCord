@@ -9,6 +9,8 @@ struct GradientThemeEditor: View {
 
     let themeStore: SakuraCordThemeStore
     let presentation: Presentation
+    var overrideMacOSAccent: Binding<Bool>?
+    var matchBackgroundToPrimaryColor: Binding<Bool>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(18)) {
@@ -17,6 +19,21 @@ struct GradientThemeEditor: View {
                 presentation: presentation
             )
             GradientThemeControls(themeStore: themeStore)
+            if let overrideMacOSAccent {
+                Toggle(isOn: overrideMacOSAccent) {
+                    VStack(alignment: .leading) {
+                        Text("Override macOS accent", bundle: #bundle)
+                        Text("Not needed if macOS is set to \"Multicolor\". Restart required.", bundle: #bundle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .settingsControlAnchor(.overrideMacOSAccent)
+            }
+            if let matchBackgroundToPrimaryColor {
+                Toggle("Use primary color in background gradients", isOn: matchBackgroundToPrimaryColor)
+                    .settingsControlAnchor(.matchBackgroundToPrimaryColor)
+            }
         }
         .padding(.vertical, InterfaceScale.metric(6))
     }
@@ -27,13 +44,25 @@ private struct GradientThemeEditorHeader: View {
     let presentation: GradientThemeEditor.Presentation
 
     var body: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: InterfaceScale.metric(3)) {
                 Text(title, bundle: #bundle)
                     .font(.interface(.title3).weight(.semibold))
-                Text(subtitle, bundle: #bundle)
-                    .font(.interface(.callout))
-                    .foregroundStyle(.secondary)
+                if let subtitle {
+                    HStack(alignment: .center, spacing: InterfaceScale.metric(8)) {
+                        if themeStore.isSystemAccentActive {
+                            Image(systemName: "lock.fill")
+                                .font(.interface(.caption).weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: InterfaceScale.metric(24), height: InterfaceScale.metric(24))
+                                .background(Color(nsColor: .controlAccentColor), in: Circle())
+                                .accessibilityHidden(true)
+                        }
+                        Text(subtitle, bundle: #bundle)
+                            .font(.interface(.callout))
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             Spacer(minLength: InterfaceScale.metric(16))
             HStack(spacing: InterfaceScale.metric(8)) {
@@ -59,9 +88,15 @@ private struct GradientThemeEditorHeader: View {
         }
     }
 
-    private var subtitle: LocalizedStringKey {
-        switch presentation {
-        case .settings: "Create your perfect theme."
+    private var subtitle: LocalizedStringKey? {
+        if themeStore.isSystemAccentActive {
+            switch presentation {
+            case .settings: return "macOS controls the accent color. You can override it with the toggle below or customize only the background colour."
+            case .onboarding: return "macOS controls the accent color. You can customize the background colour or override the accent in Theme settings."
+            }
+        }
+        return switch presentation {
+        case .settings: nil
         case .onboarding: "Pick colors you love. You can change them anytime in Settings."
         }
     }
@@ -105,7 +140,8 @@ private struct ThemeShareCopyButton: View {
         let sharedTheme = SakuraCordSharedTheme(
             appearance: appearance,
             theme: themeStore.activeTheme,
-            windowOpacity: windowOpacity
+            windowOpacity: windowOpacity,
+            usePrimaryColorInBackground: themeStore.matchesBackgroundToPrimaryColor
         )
         guard let url = try? SakuraCordThemeShareCodec.shareURL(
             for: sharedTheme
@@ -213,7 +249,7 @@ private struct GradientThemeControls: View {
                         height: ThemePickerGeometry.diameter
                     )
                 CircularThemeControl(
-                    value: themeStore.activeTheme.saturation,
+                    value: themeStore.editableSaturation,
                     systemImage: "drop.halffull",
                     label: "Theme saturation",
                     setter: themeStore.setSaturation,
@@ -221,6 +257,7 @@ private struct GradientThemeControls: View {
                 )
                     .frame(maxWidth: .infinity)
                     .settingsControlAnchor(.themeSaturation)
+                    .disabled(themeStore.isSystemAccentActive && themeStore.activeTheme.activeColorCount == 1)
             }
         }
         .frame(maxWidth: .infinity)
@@ -275,6 +312,8 @@ private struct GradientHuePicker: View {
                     themeStore: themeStore,
                     colorIndex: index
                 )
+                .disabled(index == 0 && themeStore.isSystemAccentActive)
+                .allowsHitTesting(index != 0 || !themeStore.isSystemAccentActive)
             }
 
             // Keep the intensity control above every hue-handle hit target.
@@ -305,7 +344,10 @@ private struct ThemeHueHandle: View {
 
     var body: some View {
         ZStack {
-            if let order {
+            if colorIndex == 0, themeStore.isSystemAccentActive {
+                Image(systemName: "lock.fill")
+                    .font(.interface(.title2).weight(.semibold))
+            } else if let order {
                 Text(order, format: .number)
                     .font(.interface(.body).weight(.bold).monospacedDigit())
             }
@@ -316,7 +358,12 @@ private struct ThemeHueHandle: View {
             height: ThemePickerGeometry.hueHandleSize
         )
         .contentShape(Circle())
-        .glassEffect(.clear.interactive(), in: Circle())
+        .glassEffect(
+            colorIndex == 0 && themeStore.isSystemAccentActive
+                ? .clear.tint(Color(nsColor: .controlAccentColor)).interactive()
+                : .clear.interactive(),
+            in: Circle()
+        )
         .frame(
             width: ThemePickerGeometry.hueHandleHitSize,
             height: ThemePickerGeometry.hueHandleHitSize
@@ -339,6 +386,7 @@ private struct ThemeHueHandle: View {
                 }
         )
         .accessibilityLabel(order.map { "Gradient color \($0)" } ?? "Gradient color")
+        .accessibilityHint(colorIndex == 0 && themeStore.isSystemAccentActive ? "Controlled by macOS. Change the accent override setting to edit this color." : "")
         .accessibilityValue("Hue \(Int((hue * 360).rounded())) degrees")
         .accessibilityAdjustableAction { direction in
             let step = direction == .increment ? 1.0 / 72 : -1.0 / 72
@@ -368,7 +416,7 @@ private struct ThemeIntensityControl: View {
 
     var body: some View {
         let theme = themeStore.activeTheme
-        let colors = theme.colors(for: colorScheme)
+        let colors = themeStore.backgroundTheme.colors(for: colorScheme)
         let trackColors = colors + Array(colors.prefix(1))
         let handleY = ThemePickerGeometry.intensityHandleCenterY(for: theme.intensity)
 

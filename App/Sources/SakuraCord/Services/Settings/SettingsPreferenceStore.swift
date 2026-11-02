@@ -147,6 +147,18 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(AppColorScheme.system.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .matchBackgroundToPrimaryColor,
+            page: .appearance,
+            storage: .appWide(key: "settings.appearance.matchBackgroundToPrimaryColor"),
+            defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .overrideMacOSAccent,
+            page: .appearance,
+            storage: .appWide(key: "settings.appearance.overrideMacOSAccent"),
+            defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
             id: .windowOpacity,
             page: .appearance,
             storage: .appWide(key: "settings.appearance.windowOpacity"),

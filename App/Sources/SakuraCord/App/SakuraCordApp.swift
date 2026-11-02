@@ -7,6 +7,7 @@ import UserNotifications
 /// Starts the application from the executable while keeping its implementation shared with tests.
 @MainActor
 public func runSakuraCord() {
+    AppAccentColorController.configureSystemAccentOverride()
     SakuraCordApp.main()
 }
 
@@ -329,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateController.start()
         if let model = SakuraCordRuntimeModelHolder.shared.model {
             self.model = model
+            AppAccentColorController.shared.start()
             model.reportApplicationActive(NSApp.isActive)
             Task {
                 await startSession(for: model)
