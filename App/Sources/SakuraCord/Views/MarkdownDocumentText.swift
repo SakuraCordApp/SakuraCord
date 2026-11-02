@@ -156,13 +156,18 @@ struct MarkdownLeaf {
 enum MarkdownInlineStyle {
     /// Marks inline and preformatted code, where footnote references aren't read.
     static let codeKey = NSAttributedString.Key("dev.sakuracord.markdown.document-code")
-    static let bodySize: CGFloat = 13
+    static let bodySize = InterfaceTypographyMetrics.messageTextSize
 
     static func font(for kind: MarkdownLeaf.Kind) -> NSFont {
         switch kind {
+        // Discord's three heading sizes; deeper levels read as its third.
         case let .heading(level):
-            let sizes: [CGFloat] = [24, 19, 16, 14, 13, 12]
-            return .interfaceSystemFont(ofSize: sizes[min(max(level, 1), 6) - 1], weight: .semibold)
+            let scale: CGFloat = switch level {
+            case 1: 1.5
+            case 2: 1.25
+            default: 1
+            }
+            return .interfaceSystemFont(ofSize: bodySize * scale, weight: .bold)
         case .tableCell(row: 0, _):
             return .interfaceSystemFont(ofSize: bodySize, weight: .semibold)
         default:
@@ -174,12 +179,12 @@ enum MarkdownInlineStyle {
         _ text: String, inline: InlinePresentationIntent, html: MarkdownInlineHTML,
         link: URL?, imageURL: URL?, font base: NSFont
     ) -> NSAttributedString {
-        let isCode = inline.contains(.code) || html.isCode
+        let isInlineCode = inline.contains(.code) || html.isCode
         var traits: NSFontTraitMask = []
         if inline.contains(.stronglyEmphasized) || html.isBold { traits.insert(.boldFontMask) }
         if inline.contains(.emphasized) || html.isItalic { traits.insert(.italicFontMask) }
-        var font = isCode || html.isPreformatted
-            ? NSFont.monospacedSystemFont(ofSize: base.pointSize * 0.9, weight: base.fontDescriptor.symbolicTraits.contains(.bold) ? .semibold : .regular)
+        var font = isInlineCode || html.isPreformatted
+            ? NSFont.monospacedSystemFont(ofSize: base.pointSize * 0.85, weight: base.fontDescriptor.symbolicTraits.contains(.bold) ? .semibold : .regular)
             : base
         if !traits.isEmpty { font = NSFontManager.shared.convert(font, toHaveTrait: traits) }
         if html.baselineShift != 0 { font = NSFontManager.shared.convert(font, toSize: font.pointSize * 0.75) }
@@ -191,11 +196,29 @@ enum MarkdownInlineStyle {
         if html.isUnderlined { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
         if html.isMarked { attributes[.backgroundColor] = NSColor.systemYellow.withAlphaComponent(0.35) }
         if html.baselineShift != 0 { attributes[.baselineOffset] = html.baselineShift * base.pointSize * 0.35 }
-        if isCode { attributes[.backgroundColor] = NSColor.tertiarySystemFill }
-        if isCode || html.isPreformatted { attributes[codeKey] = true }
+        if isInlineCode { attributes[.discordMarkdownInlineCode] = true }
+        if isInlineCode || html.isPreformatted { attributes[codeKey] = true }
         if let link = link ?? html.link { attributes[.link] = link }
         guard let imageURL else { return NSAttributedString(string: text, attributes: attributes) }
         return image(alt: text, url: imageURL, attributes: attributes)
+    }
+
+    /// The room inline code's chrome takes on each side, as in the timeline.
+    nonisolated static func inlineCodePadding(font: NSFont) -> CGFloat {
+        font.pointSize * 0.2 + 1
+    }
+
+    /// Kerning after the character before inline code, and after the code,
+    /// reserves its chrome's padding, so the chrome never covers its neighbours.
+    static func padInlineCode(in content: NSMutableAttributedString) {
+        content.enumerateAttribute(.discordMarkdownInlineCode, in: NSRange(location: 0, length: content.length)) { value, range, _ in
+            guard value != nil, let font = content.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
+            let padding = inlineCodePadding(font: font)
+            for location in [range.location - 1, NSMaxRange(range) - 1] where location >= 0 {
+                let kern = content.attribute(.kern, at: location, effectiveRange: nil) as? CGFloat ?? 0
+                content.addAttribute(.kern, value: kern + padding, range: NSRange(location: location, length: 1))
+            }
+        }
     }
 
     /// Images aren't fetched, since loading a stranger's file's images would

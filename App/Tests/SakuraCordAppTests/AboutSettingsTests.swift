@@ -191,7 +191,8 @@ func markdownDocumentMaterializesNativeFormatting() {
     )
     let rendered = MarkdownDocumentText.make(document, codeBackground: .dark)
 
-    #expect(rendered.string.hasPrefix("Heading\nParagraph with bold.\n\t•\tFirst\n\t•\tSecond\n"))
+    // Bullets are drawn discs, each an attachment character.
+    #expect(rendered.string.hasPrefix("Heading\nParagraph with bold.\n\t\u{FFFC}\tFirst\n\t\u{FFFC}\tSecond\n"))
 
     let headingFont = rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
     let bodyIndex = (rendered.string as NSString).range(of: "Paragraph").location

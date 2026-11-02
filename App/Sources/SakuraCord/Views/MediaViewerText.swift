@@ -153,6 +153,9 @@ struct MediaViewerTextContent: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         // Markdown's quotes, code blocks and tables are text table cells, which TextKit 1 lays out.
         let textView = NSTextView(usingTextLayoutManager: false)
+        textView.textContainer?.replaceLayoutManager(MarkdownLayoutManager())
+        // Discord underlines links only on hover.
+        textView.linkTextAttributes = [.foregroundColor: NSColor.linkColor, .cursor: NSCursor.pointingHand]
         textView.autoresizingMask = .width
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)

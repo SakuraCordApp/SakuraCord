@@ -138,6 +138,7 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextView {
         // Markdown's quotes, code blocks and tables are text table cells, which TextKit 1 lays out.
         let textView = NSTextView(usingTextLayoutManager: false)
+        textView.textContainer?.replaceLayoutManager(MarkdownLayoutManager())
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
