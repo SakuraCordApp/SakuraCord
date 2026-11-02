@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 import SakuraCordModels
 
 nonisolated struct NativeTimelineFooterActionTarget: Equatable {
@@ -27,10 +28,24 @@ nonisolated struct NativeTimelineTextLinkHover: Equatable {
     let characterIndex: Int
 }
 
-nonisolated struct NativeTimelineTextSpoilerHover: Equatable {
+nonisolated struct NativeTimelineTextSpoilerHover: Hashable {
     let itemIdentifier: NativeMessageTimelineItem.Identifier
     let region: NativeTimelineTextRegion
     let rangeLocation: Int
+}
+
+extension [NativeTimelineTextSpoilerHover: CGFloat] {
+    /// How far each spoiler in one text region is hovered, by where its
+    /// range starts.
+    func progress(
+        in itemIdentifier: NativeMessageTimelineItem.Identifier,
+        region: NativeTimelineTextRegion
+    ) -> [Int: CGFloat] {
+        reduce(into: [:]) { result, entry in
+            guard entry.key.itemIdentifier == itemIdentifier, entry.key.region == region else { return }
+            result[entry.key.rangeLocation] = entry.value
+        }
+    }
 }
 
 struct NativeTimelineMentionHitRegion {
@@ -60,6 +75,8 @@ nonisolated enum NativeTimelineComponentButtonVisualState {
     /// Long enough, eased at both ends, that a round button's growth reads
     /// as motion rather than a snap.
     static let hoverAnimationDuration: TimeInterval = 0.2
+    /// `easeInOut`'s cubic curve, for hovers Core Animation runs.
+    static var hoverTimingFunction: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1) }
 
     static func scale(pressProgress: CGFloat) -> CGFloat {
         1 - 0.015 * min(max(pressProgress, 0), 1)

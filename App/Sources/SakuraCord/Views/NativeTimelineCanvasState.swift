@@ -76,6 +76,8 @@ final class NativeTimelinePointerState {
     var componentButtonPressAnimationDestination: CGFloat?
     /// File card parts whose hover is easing in, held, or easing out.
     var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] = [:]
+    /// Text spoilers whose hover is easing in, held, or easing out.
+    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] = [:]
     var componentButtonHoverAnimationTask: Task<Void, Never>?
     /// Download buttons crossfading from their full ring to their next step.
     var fileCardFinishFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] = [:]
@@ -129,6 +131,7 @@ final class NativeTimelinePointerState {
         componentButtonPressAnimationTask?.cancel()
         componentButtonPressAnimationTask = nil
         componentButtonHoverFades = [:]
+        textSpoilerHoverFades = [:]
         fileCardFinishFades = [:]
         componentButtonHoverAnimationTask?.cancel()
         componentButtonHoverAnimationTask = nil
@@ -374,6 +377,11 @@ extension NativeTimelineCanvasView {
     var componentButtonHoverFades: [NativeTimelineComponentButtonTarget: NativeTimelineHoverFade] {
         get { pointer.componentButtonHoverFades }
         set { pointer.componentButtonHoverFades = newValue }
+    }
+
+    var textSpoilerHoverFades: [NativeTimelineTextSpoilerHover: NativeTimelineHoverFade] {
+        get { pointer.textSpoilerHoverFades }
+        set { pointer.textSpoilerHoverFades = newValue }
     }
 
     var componentButtonHoverAnimationTask: Task<Void, Never>? {

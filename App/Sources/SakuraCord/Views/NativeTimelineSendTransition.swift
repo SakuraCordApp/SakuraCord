@@ -292,12 +292,15 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         var card: Card?
     }
 
+    /// A file's card, or the spoiler cover over a tile, which the flying
+    /// tile becomes.
     struct Card {
-        /// The card as the row draws it, faded in as the tile becomes it.
+        /// The card or cover as the row draws it, faded in as the tile
+        /// becomes it.
         let image: NSImage
         /// Where the tile's icon lands and fades into the card's: its icon,
-        /// or an audio card's play button.
-        let iconFrame: CGRect
+        /// or an audio card's play button. A covered tile flies no icon.
+        let iconFrame: CGRect?
     }
 
     struct UploadRing {
@@ -351,6 +354,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     /// Rings keep showing progress while they fly.
     private var ringAttachmentIDs: [Int: String] = [:]
     private weak var uploads: AttachmentUploadProgressStore?
+    /// When a finished upload's ring and dim have faded, which the hand-off
+    /// waits for.
+    private(set) var uploadFadeEnd: CFTimeInterval = 0
     private var uploadNonce: String?
 
     /// Covers the composer's text and attachments with identical copies so
@@ -455,13 +461,19 @@ final class NativeTimelineSendTransitionOverlay: NSView {
     @discardableResult
     private func addDim(index: Int) -> CALayer? {
         guard let tile = pieceLayers[index] else { return nil }
-        // Oversized, so the tile's clip shapes it as the tile morphs.
+        let dim = Self.addDim(over: tile)
+        pieceDimLayers[index] = dim
+        return dim
+    }
+
+    @discardableResult
+    private static func addDim(over layer: CALayer) -> CALayer {
+        // Oversized, so the layer's clip shapes it as the layer morphs.
         let dim = CALayer()
         dim.backgroundColor = .black
         dim.opacity = Float(AttachmentUploadRing.dimOpacity)
-        dim.frame = tile.bounds.insetBy(dx: -4_000, dy: -4_000)
-        tile.addSublayer(dim)
-        pieceDimLayers[index] = dim
+        dim.frame = layer.bounds.insetBy(dx: -4_000, dy: -4_000)
+        layer.addSublayer(dim)
         return dim
     }
 
@@ -483,6 +495,22 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         else { return }
         for (index, id) in ringAttachmentIDs {
             ringLayers[index]?.fraction = uploads.fraction(nonce: uploadNonce, attachmentID: id)
+            // A finished upload leaves the row without its ring and dim, so
+            // the flight lets them go too, including the dim over a cover.
+            guard !uploads.isUploading(nonce: uploadNonce, attachmentID: id) else { continue }
+            ringAttachmentIDs[index] = nil
+            let layers = [ringLayers[index], pieceDimLayers[index]] + (pieceCardLayers[index]?.sublayers ?? [])
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
+            for layer in layers.compactMap(\.self) {
+                // A layer not yet on screen shows where its pending fade starts.
+                let pending = (layer.animation(forKey: "opacity") as? CABasicAnimation)?.fromValue as? NSNumber
+                let opacity = layer.presentation()?.opacity ?? pending?.floatValue ?? layer.opacity
+                layer.opacity = 0
+                add(layer, "opacity", from: CGFloat(opacity), to: 0, duration: NativeTimelineSendTransitionTiming.dismissalDuration)
+            }
+            uploadFadeEnd = CACurrentMediaTime() + NativeTimelineSendTransitionTiming.dismissalDuration
         }
     }
 
@@ -626,6 +654,8 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         cardLayer.zPosition = 0.55
         layer?.addSublayer(cardLayer)
         pieceCardLayers[piece.index] = cardLayer
+        // The row dims an image still uploading under its cover too.
+        if piece.uploadRing?.dimsFile == true { Self.addDim(over: cardLayer) }
         let radii = (pieceSourceCornerRadii[piece.index] ?? piece.cornerRadius, piece.cornerRadius)
         morph(cardLayer, from: source, to: piece.frame, cornerRadius: radii, delay: delay)
         // The row's drawing already carries a pending message's opacity.
@@ -634,8 +664,8 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         surface.opacity = 0
         add(surface, "opacity", from: 1, to: 0, duration: Timing.duration - handoff, delay: delay + handoff)
         // The icon moves within the surface, so it lands relative to it.
-        guard let icon = pieceIconLayers[piece.index] else { return }
-        let target = card.iconFrame.offsetBy(dx: -piece.frame.minX, dy: -piece.frame.minY)
+        guard let icon = pieceIconLayers[piece.index], let iconFrame = card.iconFrame else { return }
+        let target = iconFrame.offsetBy(dx: -piece.frame.minX, dy: -piece.frame.minY)
         // The type label shrinks with its icon and gives way to the card's
         // own name and size, which fade in after it.
         if let label = pieceLabelLayers[piece.index] {
@@ -700,13 +730,19 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         return Timing.duration + mediaDelay + (mediaDelay > 0 ? Timing.textAfterCrossingFadeDuration : 0)
     }
 
-    /// Replaces the bubble's content after its media finishes loading.
-    func updateContent(_ image: NSImage) {
-        let transition = CATransition()
-        transition.type = .fade
-        transition.duration = NativeTimelineSendTransitionTiming.contentRefreshDuration
-        finalContentLayer.add(transition, forKey: "contents")
-        finalContentLayer.contents = image
+    /// Replaces the bubble's content, and the covers its tiles land in,
+    /// after its media finishes loading.
+    func updateContent(_ image: NSImage, covers: [Int: NSImage]) {
+        let layers = [(finalContentLayer, image)] + covers.compactMap { index, cover in
+            pieceCardLayers[index].map { ($0, cover) }
+        }
+        for (layer, contents) in layers {
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = NativeTimelineSendTransitionTiming.contentRefreshDuration
+            layer.add(transition, forKey: "contents")
+            layer.contents = contents
+        }
     }
 
     /// Moves the in-flight bubble when its destination row moves, for example
@@ -794,7 +830,7 @@ final class NativeTimelineSendTransitionOverlay: NSView {
         animation.beginTime = delay > 0 ? layer.convertTime(CACurrentMediaTime(), from: nil) + delay : 0
         animation.fillMode = .backwards
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer.add(animation, forKey: nil)
+        layer.add(animation, forKey: "opacity")
     }
 
     private func add(
@@ -818,7 +854,9 @@ final class NativeTimelineSendTransitionOverlay: NSView {
             animation.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + delay
             animation.fillMode = .backwards
         }
-        layer.add(animation, forKey: nil)
+        // A later fade replaces an earlier one, such as a finished upload's
+        // dim fading while its flight still runs; moves add up.
+        layer.add(animation, forKey: keyPath == "opacity" ? keyPath : nil)
     }
 }
 
@@ -954,10 +992,14 @@ extension NativeTimelineCanvasView {
         let cards = sendTransitionCards(
             for: flyingAttachments, item: items[index], layout: layout, rowFrame: rowFrame
         ) { toOverlay(toWindow($0)) }
+        // A covered image or video lands in the cover the row draws over it.
+        let covers = sendTransitionCovers(
+            for: flyingAttachments.filter { cards[$0] == nil }, item: items[index], layout: layout, rowFrame: rowFrame
+        )
         // Any other preview that fades out, such as a video with no poster
         // yet, reveals what the bubble draws there instead.
         let fadingAttachments = flyingAttachments.filter {
-            layout.attachmentRegions[$0].previewKey == nil && cards[$0] == nil
+            layout.attachmentRegions[$0].previewKey == nil && cards[$0] == nil && covers[$0] == nil
         }
         guard let content = sendTransitionContent(
             item: items[index],
@@ -1000,7 +1042,7 @@ extension NativeTimelineCanvasView {
                         color: color, dimsFile: ring.mediaFrame != nil
                     )
                 },
-                card: card?.morph
+                card: card?.morph ?? covers[attachmentIndex].map { .init(image: $0, iconFrame: nil) }
             )
         }
         let bubble = layout.bubbleRegion.map { region in
@@ -1036,9 +1078,11 @@ extension NativeTimelineCanvasView {
         of message: Message,
         layout: NativeTimelineRowLayout
     ) -> NativeTimelineRowLayout.UploadRing? {
-        guard model?.attachmentUploads.isUploading(nonce: message.nonce, attachmentID: attachmentID) == true
+        guard model?.attachmentUploads.isUploading(nonce: message.nonce, attachmentID: attachmentID) == true,
+              let ring = layout.uploadRings.first(where: { $0.attachmentID == attachmentID && !$0.isFailed })
         else { return nil }
-        return layout.uploadRings.first { $0.attachmentID == attachmentID && !$0.isFailed }
+        // A ring the row hides fades from the flight.
+        return hidesUploadRing(ring, of: message) ? nil : ring
     }
 
     /// Keeps in-flight bubbles aimed at their rows after a later timeline
@@ -1106,7 +1150,13 @@ extension NativeTimelineCanvasView {
                       omittingAttachments: transition.omittedAttachments
                   )
             else { continue }
-            transition.overlay.updateContent(content.image)
+            let covers = sendTransitionCovers(
+                for: transition.omittedAttachments, item: items[index], layout: layouts[index], rowFrame: rowFrame(at: index)
+            )
+            transition.overlay.updateContent(content.image, covers: covers)
+            transition.endUptime = max(
+                transition.endUptime, CACurrentMediaTime() + NativeTimelineSendTransitionTiming.contentRefreshDuration
+            )
         }
     }
 
@@ -1315,10 +1365,12 @@ extension NativeTimelineCanvasView {
             }
             let mediaDeadline = CACurrentMediaTime()
                 + NativeTimelineSendTransitionTiming.mediaWaitLimit
+            // Media that loads, and an upload that ends, also extend the
+            // flight by their fades.
             while let self, let transition,
                   self.sendTransitions.contains(where: { $0 === transition }),
-                  self.sendTransitionAwaitsMedia(transition),
-                  CACurrentMediaTime() < mediaDeadline
+                  (self.sendTransitionAwaitsMedia(transition) && CACurrentMediaTime() < mediaDeadline)
+                      || CACurrentMediaTime() < max(transition.endUptime, transition.overlay.uploadFadeEnd)
             {
                 do {
                     try await Task.sleep(for: .milliseconds(30))
@@ -1367,6 +1419,26 @@ extension NativeTimelineCanvasView {
             ))
         }
         return cards
+    }
+
+    /// The spoiler covers the row draws over images and videos, which their
+    /// covered tiles land in.
+    private func sendTransitionCovers(
+        for attachmentIndexes: Set<Int>,
+        item: NativeMessageTimelineItem,
+        layout: NativeTimelineRowLayout,
+        rowFrame: CGRect
+    ) -> [Int: NSImage] {
+        guard let messageID = item.messageID else { return [:] }
+        var covers: [Int: NSImage] = [:]
+        for attachmentIndex in attachmentIndexes {
+            let region = layout.attachmentRegions[attachmentIndex]
+            guard isConcealedSpoiler(region.attachment, in: messageID),
+                  let image = sendTransitionImage(of: region.frame, item: item, layout: layout, rowFrame: rowFrame)
+            else { continue }
+            covers[attachmentIndex] = image
+        }
+        return covers
     }
 
     /// A part of the row as it draws it, such as a file's card.

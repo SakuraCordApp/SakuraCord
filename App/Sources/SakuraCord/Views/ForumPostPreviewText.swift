@@ -395,7 +395,7 @@ final class ForumPostPreviewTextRenderer {
     func draw(at origin: CGPoint) {
         for range in hiddenSpoilerRanges {
             NativeTimelineSpoilerAppearance.textBackgroundColor(
-                isHovered: hoveredSpoilerLocation == range.location
+                hover: hoveredSpoilerLocation == range.location ? 1 : 0
             ).setFill()
             for frame in hiddenSpoilerFrames(for: range) {
                 NSBezierPath(

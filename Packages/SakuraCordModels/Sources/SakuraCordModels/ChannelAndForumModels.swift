@@ -502,7 +502,15 @@ public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
     public var url: URL
     public var filename: String
     public var description: String
-    public var isSpoiler: Bool
+    /// Discord treats a `SPOILER_` file name as a spoiler, so a file named
+    /// that way stages as one, and unmarking it drops the prefix.
+    public var isSpoiler: Bool {
+        didSet {
+            guard !isSpoiler else { return }
+            filename = Self.droppingSpoilerPrefix(filename)
+            filenameBeforeAnonymising = filenameBeforeAnonymising.map(Self.droppingSpoilerPrefix)
+        }
+    }
     private var filenameBeforeAnonymising: String?
     private var hasChosenFilenamePrivacy = false
 
@@ -543,7 +551,13 @@ public struct ForumPostAttachment: Equatable, Identifiable, Sendable {
         self.url = url
         self.filename = filename ?? url.lastPathComponent
         self.description = description
-        self.isSpoiler = isSpoiler
+        self.isSpoiler = isSpoiler || self.filename.hasPrefix(Self.spoilerPrefix)
+    }
+
+    private static let spoilerPrefix = "SPOILER_"
+
+    private static func droppingSpoilerPrefix(_ name: String) -> String {
+        name.hasPrefix(spoilerPrefix) ? String(name.dropFirst(spoilerPrefix.count)) : name
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {

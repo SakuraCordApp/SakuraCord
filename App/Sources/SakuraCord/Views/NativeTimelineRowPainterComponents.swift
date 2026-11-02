@@ -365,9 +365,9 @@ struct NativeTimelineComponentsDrawInput {
     let textSelection: NativeTimelineTextSelection?
     let hoveredMention: NativeTimelineMentionHover?
     let hoveredTextLink: NativeTimelineTextLinkHover?
-    let hoveredTextSpoiler: NativeTimelineTextSpoilerHover?
+    let textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat]
     let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
-    let spoilerRevealStore: NativeTimelineSpoilerRevealStore?
+    var spoilerRevealStore: NativeTimelineSpoilerRevealStore?
     let hoveredComponentButton: NativeTimelineComponentButtonTarget?
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
@@ -472,7 +472,11 @@ extension NativeTimelineRowPainter {
                 componentContainer(container.frame, accentColor: container.accentColor)
             }
             if isHidden {
-                spoilerConcealedBase(in: container.frame, cornerRadius: container.cornerRadius)
+                NativeTimelineSpoilerCover.draw(covering: true, in: container.frame, cornerRadius: container.cornerRadius) {
+                    var revealed = input
+                    revealed.spoilerRevealStore = nil
+                    drawComponents(revealed)
+                }
             }
         }
         for separator in input.layout.separators
@@ -522,10 +526,7 @@ extension NativeTimelineRowPainter {
                     input.hoveredTextLink?.itemIdentifier == input.itemIdentifier
                         && input.hoveredTextLink?.region == textRegion
                     ? input.hoveredTextLink?.characterIndex : nil,
-                hoveredSpoilerRangeLocation:
-                    input.hoveredTextSpoiler?.itemIdentifier == input.itemIdentifier
-                        && input.hoveredTextSpoiler?.region == textRegion
-                    ? input.hoveredTextSpoiler?.rangeLocation : nil,
+                spoilerHoverProgress: input.textSpoilerHover.progress(in: input.itemIdentifier, region: textRegion),
                 revealedSpoilerLocations:
                     input.revealedTextSpoilerState.locations(in: textRegion)
             )
@@ -541,35 +542,37 @@ extension NativeTimelineRowPainter {
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
-            if isConcealedComponentContent(
-                contentID: region.componentID,
-                isSpoiler: region.isSpoiler,
-                input: input
-            ) {
-                spoilerConcealedBase(in: region.frame, cornerRadius: region.cornerRadius)
-                continue
-            }
-            NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
-            NSBezierPath(
-                concentricRoundedRect: region.frame,
+            NativeTimelineSpoilerCover.draw(
+                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
+                in: region.frame,
                 cornerRadius: region.cornerRadius
-            ).fill()
-            if let image = mediaImage(for: .media(
-                region.displayURL,
-                maximumPixelDimension: region.maximumPixelDimension
-            )) {
-                // Discord crops a thumbnail to fill its square.
-                drawImage(
-                    image,
-                    in: region.frame,
-                    cornerRadius: region.cornerRadius,
-                    fillsFrame: true
-                )
-            } else if let placeholder = region.placeholder?.image {
-                drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: true)
-            } else {
-                systemSymbol("photo", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(22))
+            ) {
+                drawComponentImage(region)
             }
+        }
+    }
+
+    private static func drawComponentImage(_ region: NativeTimelineComponentLayout.ImageRegion) {
+        NSColor.secondaryLabelColor.withAlphaComponent(0.08).setFill()
+        NSBezierPath(
+            concentricRoundedRect: region.frame,
+            cornerRadius: region.cornerRadius
+        ).fill()
+        if let image = mediaImage(for: .media(
+            region.displayURL,
+            maximumPixelDimension: region.maximumPixelDimension
+        )) {
+            // Discord crops a thumbnail to fill its square.
+            drawImage(
+                image,
+                in: region.frame,
+                cornerRadius: region.cornerRadius,
+                fillsFrame: true
+            )
+        } else if let placeholder = region.placeholder?.image {
+            drawImage(placeholder, in: region.frame, cornerRadius: region.cornerRadius, fillsFrame: true)
+        } else {
+            systemSymbol("photo", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(22))
         }
     }
 
@@ -582,27 +585,29 @@ extension NativeTimelineRowPainter {
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
-            if isConcealedComponentContent(
-                contentID: region.componentID,
-                isSpoiler: region.isSpoiler,
-                input: input
+            NativeTimelineSpoilerCover.draw(
+                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
+                in: region.frame,
+                cornerRadius: DiscordRichMessageMetrics.px(8)
             ) {
-                spoilerConcealedBase(in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8))
-                continue
+                drawComponentMediaItem(region)
             }
-            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8)).fill()
-            if let previewURL = region.previewURL,
-               let image = mediaImage(for: .media(previewURL))
-            {
-                drawImage(image, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
-            } else if let placeholder = region.placeholder?.image {
-                drawImage(placeholder, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
-            } else if region.isVideo {
-                systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
-            }
-            if region.isVideo { mediaPlayGlyph(in: region.frame) }
         }
+    }
+
+    private static func drawComponentMediaItem(_ region: NativeTimelineComponentLayout.MediaRegion) {
+        NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
+        NSBezierPath(concentricRoundedRect: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8)).fill()
+        if let previewURL = region.previewURL,
+           let image = mediaImage(for: .media(previewURL))
+        {
+            drawImage(image, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
+        } else if let placeholder = region.placeholder?.image {
+            drawImage(placeholder, in: region.frame, cornerRadius: DiscordRichMessageMetrics.px(8), fillsFrame: true)
+        } else if region.isVideo {
+            systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
+        }
+        if region.isVideo { mediaPlayGlyph(in: region.frame) }
     }
 
     private static func drawComponentFiles(
@@ -614,28 +619,23 @@ extension NativeTimelineRowPainter {
             region.frame,
             hiddenContainerFrames: hiddenContainerFrames
         ) {
-            if isConcealedComponentContent(
-                contentID: region.componentID,
-                isSpoiler: region.isSpoiler,
-                input: input
+            NativeTimelineSpoilerCover.draw(
+                covering: isConcealedComponentContent(contentID: region.componentID, isSpoiler: region.isSpoiler, input: input),
+                in: region.frame,
+                cornerRadius: region.card.cornerRadius
             ) {
-                spoilerConcealedBase(
-                    in: region.frame,
-                    cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+                fileCard(
+                    region.card,
+                    messageID: input.messageID,
+                    bubbleRegion: input.bubbleRegion,
+                    state: input.model?.attachmentDownloads.states[region.attachment.id],
+                    finishProgress: input.fileCardFinishProgress,
+                    pointer: .init(
+                        hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                        pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                    )
                 )
-                continue
             }
-            fileCard(
-                region.card,
-                messageID: input.messageID,
-                bubbleRegion: input.bubbleRegion,
-                state: input.model?.attachmentDownloads.states[region.attachment.id],
-                finishProgress: input.fileCardFinishProgress,
-                pointer: .init(
-                    hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
-                    pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
-                )
-            )
         }
     }
 
@@ -906,22 +906,6 @@ extension NativeTimelineRowPainter {
             frame.height / 2,
             max(4, NativeTimelineBubbleDrawing.cornerRadius - nearestInset)
         )
-    }
-
-    static func spoilerConcealedBase(
-        in frame: CGRect,
-        cornerRadius: CGFloat
-    ) {
-        NSColor(
-            srgbRed: 0.12,
-            green: 0.125,
-            blue: 0.14,
-            alpha: 1
-        ).setFill()
-        NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: cornerRadius
-        ).fill()
     }
 
     static func reaction(

@@ -65,13 +65,17 @@ extension NativeTimelineRowPainter {
             finish: finishProgress[.fileCard(messageID: messageID, attachmentID: card.attachment.id, part: .button)]
         )
 
-        text(
-            card.attachment.filename, in: card.nameFrame, font: NativeTimelineFileCard.nameFont,
-            color: palette.name, lineBreakMode: .byTruncatingMiddle
-        )
         let detail = upload == .failed
             ? (text: String(localized: "Upload failed"), link: nil)
             : NativeTimelineFileCard.detail(for: state, size: card.attachment.size)
+        // A file of unknown size has no detail line, so its name centres.
+        let hasDetail = !detail.text.isEmpty || detail.link != nil
+        text(
+            card.attachment.filename,
+            in: card.nameFrame.offsetBy(dx: 0, dy: hasDetail ? 0 : card.detailFrame.height / 2),
+            font: NativeTimelineFileCard.nameFont,
+            color: palette.name, lineBreakMode: .byTruncatingMiddle
+        )
         let detailColor = palette.isFailed ? palette.failure : palette.detail
         text(detail.text, in: card.detailFrame, font: NativeTimelineFileCard.detailFont, color: detailColor)
         if let link = detail.link {

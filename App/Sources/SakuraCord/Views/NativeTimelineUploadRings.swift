@@ -205,12 +205,7 @@ extension NativeTimelineCanvasView {
             let origin = displayedRowOrigin(at: index)
             for ring in layout.uploadRings
             where layout.activeUploadRing(for: ring.attachmentID, uploads: uploads, nonce: nonce) != nil {
-                // A spoiler still hides its file card's button, but not the
-                // cover over an image.
-                if ring.mediaFrame == nil, let attachment = message.attachments.first(where: { $0.id == ring.attachmentID }),
-                   isConcealedSpoiler(attachment, in: message.id) {
-                    continue
-                }
+                if hidesUploadRing(ring, of: message) { continue }
                 let key = UploadRingKey(row: items[index].identifier, attachmentID: ring.attachmentID)
                 shown.insert(key)
                 let view = uploadRings[key] ?? {
