@@ -2,10 +2,12 @@ import Foundation
 
 /// Recognizes complete Discord attachment URLs eligible for expiry refresh.
 public enum DiscordAttachmentLink {
-    /// Discord's attachment-link character set, used only to classify a complete URL.
+    /// Discord's attachment hosts and path, used only to classify a complete URL.
+    /// The filename and query may hold any URL characters, so a percent-encoded
+    /// name still counts.
     private static let expression = MessageRegularExpression.make(
         #"https://(?:[A-Za-z0-9-]+\.)*(?:(?:media|images)(?:-[A-Za-z0-9]+)?\.discordapp\.net|cdn(?:-[A-Za-z0-9]+)?\.discordapp\.com)"#
-            + #"/(?:attachments|ephemeral-attachments)/\d+/\d+/[A-Za-z0-9._-]*[A-Za-z0-9_-](?:\?[A-Za-z0-9?&=_-]*)?"#
+            + #"/(?:attachments|ephemeral-attachments)/\d+/\d+/[^/?#\s]+(?:\?[^#\s]*)?"#
     )
 
     private static let refreshLeadTime: TimeInterval = 60 * 60
