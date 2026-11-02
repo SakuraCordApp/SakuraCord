@@ -19,6 +19,9 @@ final class ProfileEditorState {
     private(set) var widgetResources: ProfileWidgetResources?
     private(set) var isLoading = false
     private(set) var isSaving = false
+    /// Widget images still being cropped or uploaded. Save waits for them,
+    /// since a save makes the editor reject an image that lands during it.
+    private(set) var preparingWidgetImages = 0
     private(set) var requiresReload = false
     var errorMessage: String?
     var fieldErrors: [String: [String]] = [:]
@@ -62,7 +65,7 @@ final class ProfileEditorState {
     }
 
     var isNitro: Bool { snapshot?.widgetEligibility.hasFullNitro == true }
-    var canSave: Bool { snapshot != nil && hasChanges && !isSaving && loadingScope == nil && !requiresReload && bio.utf16.count <= 300 && widgetsAreValid }
+    var canSave: Bool { snapshot != nil && hasChanges && !isSaving && preparingWidgetImages == 0 && loadingScope == nil && !requiresReload && bio.utf16.count <= 300 && widgetsAreValid }
     var isResolvingScope: Bool { snapshot == nil || (loadingScope != nil && loadingScope != scope) }
     var canEditWidgets: Bool { snapshot != nil && !isLoading && !isSaving && !requiresReload }
     var canEditPersonalWidget: Bool { canEditWidgets && snapshot?.widgetEligibility.canEditPersonalWidget == true }
@@ -361,6 +364,9 @@ final class ProfileEditorState {
         widgetResources = resources
         return games
     }
+
+    func beginPreparingWidgetImage() { preparingWidgetImages += 1 }
+    func endPreparingWidgetImage() { preparingWidgetImages -= 1 }
 
     func uploadWidgetImage(fileURL: URL, filename: String, contentType: String) async throws -> ProfileWidgetImage {
         guard canEditPersonalWidget, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }

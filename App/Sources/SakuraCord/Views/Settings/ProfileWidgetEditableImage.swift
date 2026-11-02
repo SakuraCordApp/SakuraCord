@@ -107,7 +107,8 @@ struct ProfileWidgetEditableImage: View {
         let generation = editor.draftGeneration
         work = Task {
             busy = true
-            defer { busy = false }
+            editor.beginPreparingWidgetImage()
+            defer { busy = false; editor.endPreparingWidgetImage() }
             var outputURL: URL?
             do {
                 let accessed = url.startAccessingSecurityScopedResource()
