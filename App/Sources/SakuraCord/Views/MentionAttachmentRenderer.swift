@@ -51,9 +51,9 @@ nonisolated final class MentionTextAttachment: NSTextAttachment {
     }
 
     @MainActor
-    func updateTimestampIfRelative() -> Bool {
+    func updateTimestampIfRelative(relativeTo now: Date = .now) -> Bool {
         guard case let .timestamp(date, style) = presentation.target, style == "R" else { return false }
-        let currentLabel = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
+        let currentLabel = DiscordTimestampFormatter.formatted(date: date, style: "R", now: now)
         if currentLabel == presentation.label { return false }
         let updatedPresentation = MentionPresentation(
             rawToken: presentation.rawToken,

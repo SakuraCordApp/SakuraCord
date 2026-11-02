@@ -608,13 +608,14 @@ struct ComposerTextView: NSViewRepresentable {
         private var isNormalizing = false
         private var isMarkedTextActive = false
         private let attachmentImageLoader = InlineAttachmentImageLoader()
-        private var relativeTimestampTickerTask: Task<Void, Never>?
+        private var isObservingClock = false
         var composerTimestampHosts: [ObjectIdentifier: NativeTimelinePassthroughHostingView] = [:]
 
         deinit {
-            relativeTimestampTickerTask?.cancel()
             let hosts = composerTimestampHosts
+            let id = ObjectIdentifier(self)
             DispatchQueue.main.async {
+                RelativeTimestampClock.shared.remove(id: id)
                 for host in hosts.values {
                     host.removeFromSuperview()
                 }
@@ -684,43 +685,44 @@ struct ComposerTextView: NSViewRepresentable {
 
         func reconcileRelativeTimestamps(in textView: NSTextView?) {
             guard let textView else {
-                relativeTimestampTickerTask?.cancel()
-                relativeTimestampTickerTask = nil
+                RelativeTimestampClock.shared.remove(self)
+                isObservingClock = false
                 cleanupComposerTimestampHosts()
                 return
             }
             let hasRelative = parent.text.contains(":R>")
             if !hasRelative {
-                relativeTimestampTickerTask?.cancel()
-                relativeTimestampTickerTask = nil
+                RelativeTimestampClock.shared.remove(self)
+                isObservingClock = false
                 cleanupComposerTimestampHosts()
                 return
             }
             updateComposerTimestampAnimationOverlays(in: textView)
-            guard relativeTimestampTickerTask == nil else { return }
-            relativeTimestampTickerTask = Task { @MainActor [weak self, weak textView] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    guard !Task.isCancelled, let self, let textView else { break }
-                    guard self.parent.text.contains(":R>") else { break }
-                    guard let textStorage = textView.textStorage else { break }
-                    var updated = false
-                    textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length)) { attachment, range, _ in
-                        if let mentionAttachment = attachment as? MentionTextAttachment {
-                            if mentionAttachment.updateTimestampIfRelative() {
-                                updated = true
-                                textView.layoutManager?.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
-                                textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
-                            }
+            guard !isObservingClock else { return }
+            isObservingClock = true
+            RelativeTimestampClock.shared.observe(self) { [weak self, weak textView] date in
+                guard let self, let textView else { return }
+                guard self.parent.text.contains(":R>") else {
+                    RelativeTimestampClock.shared.remove(self)
+                    self.isObservingClock = false
+                    self.cleanupComposerTimestampHosts()
+                    return
+                }
+                guard let textStorage = textView.textStorage else { return }
+                var updated = false
+                textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length)) { attachment, range, _ in
+                    if let mentionAttachment = attachment as? MentionTextAttachment {
+                        if mentionAttachment.updateTimestampIfRelative(relativeTo: date) {
+                            updated = true
+                            textView.layoutManager?.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                            textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
                         }
                     }
-                    if updated {
-                        textView.setNeedsDisplay(textView.bounds)
-                    }
-                    self.updateComposerTimestampAnimationOverlays(in: textView)
                 }
-                self?.cleanupComposerTimestampHosts()
-                self?.relativeTimestampTickerTask = nil
+                if updated {
+                    textView.setNeedsDisplay(textView.bounds)
+                }
+                self.updateComposerTimestampAnimationOverlays(in: textView)
             }
         }
 

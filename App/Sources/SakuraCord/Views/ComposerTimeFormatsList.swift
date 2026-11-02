@@ -18,6 +18,7 @@ public struct TimeMentionEntry: Equatable {
 private struct FlattenedOption: Identifiable {
     let index: Int
     let option: DiscordParsedTimeCandidate.Option
+    let targetDate: Date
     let hasDividerBefore: Bool
 
     var id: String { option.id }
@@ -40,7 +41,7 @@ struct TimeFormatsAutocompleteList: View {
         for (candidateIndex, candidate) in candidates.enumerated() {
             for (optionIndex, option) in candidate.options.enumerated() {
                 let showDivider = candidateIndex > 0 && optionIndex == 0
-                items.append(FlattenedOption(index: running, option: option, hasDividerBefore: showDivider))
+                items.append(FlattenedOption(index: running, option: option, targetDate: candidate.date, hasDividerBefore: showDivider))
                 running += 1
             }
         }
@@ -97,13 +98,14 @@ private struct TimeFormatAutocompleteRow: View {
     let isSelected: Bool
     let select: () -> Void
     var cornerRadius: CGFloat = 6
+    @State private var clock = RelativeTimestampDisplayClock()
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(8)) {
-            Text(item.option.displayText)
+            Text(currentDisplayText)
                 .font(.interfaceSystem(size: 14).monospacedDigit())
                 .contentTransition(.numericText())
-                .animation(.snappy(duration: 0.25), value: item.option.displayText)
+                .animation(.snappy(duration: 0.25), value: currentDisplayText)
                 .foregroundStyle(Color.primary)
                 .padding(.horizontal, InterfaceScale.metric(8))
                 .padding(.vertical, InterfaceScale.metric(4))
@@ -129,6 +131,21 @@ private struct TimeFormatAutocompleteRow: View {
                 : Color.clear,
             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
+        .onAppear {
+            if item.option.style == "R" {
+                clock.start()
+            }
+        }
+        .onDisappear {
+            clock.stop()
+        }
+    }
+
+    private var currentDisplayText: String {
+        if item.option.style == "R" {
+            return DiscordTimestampFormatter.relativeText(for: item.targetDate, relativeTo: clock.date)
+        }
+        return item.option.displayText
     }
 }
 
@@ -410,7 +427,7 @@ struct TimeMentionSurroundingContentView: View {
 
 struct TimeMentionSurroundingPillView: View {
     let presentation: MentionPresentation
-    @State private var now = Date.now
+    @State private var clock = RelativeTimestampDisplayClock()
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(4)) {
@@ -430,19 +447,19 @@ struct TimeMentionSurroundingPillView: View {
             backgroundColor,
             in: RoundedRectangle(cornerRadius: InterfaceScale.metric(4.5), style: .continuous)
         )
-        .task {
+        .onAppear {
             if case let .timestamp(_, style) = presentation.target, style == "R" {
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    now = .now
-                }
+                clock.start()
             }
+        }
+        .onDisappear {
+            clock.stop()
         }
     }
 
     private var currentLabel: String {
         if case let .timestamp(date, style) = presentation.target, style == "R" {
-            return DiscordTimestampFormatter.formatted(date: date, style: "R", now: now)
+            return DiscordTimestampFormatter.formatted(date: date, style: "R", now: clock.date)
         }
         return presentation.label
     }

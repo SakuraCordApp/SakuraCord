@@ -306,7 +306,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         let characterIndex: Int
     }
     var timestampAnimationHosts: [RelativeTimestampKey: NativeTimelinePassthroughHostingView] = [:]
-    var relativeTimestampClockTask: Task<Void, Never>?
     var pendingReactionBaseline: NativeTimelineReactionBaseline?
     var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
     var reactionRowMotions: [NativeTimelineReactionRowMotion] = []
@@ -467,7 +466,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             NotificationCenter.default.removeObserver(self)
             NSWorkspace.shared.notificationCenter.removeObserver(self)
             pollClockTask?.cancel()
-            relativeTimestampClockTask?.cancel()
             cleanupRelativeTimestampAnimationOverlays()
             timestampHoverCoordinator.close()
             pollAnimationTicker.stop()

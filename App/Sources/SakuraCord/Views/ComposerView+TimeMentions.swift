@@ -17,16 +17,17 @@ extension ComposerView {
 
     var timeCandidates: [DiscordParsedTimeCandidate] {
         guard let context = timeMentionContext else { return [] }
+        let reference = timeReferenceDate ?? .now
         let parsed = DiscordNaturalLanguageTimeParser.candidates(
             for: context.query,
-            referenceDate: timeReferenceDate,
-            now: timeTickerDate
+            referenceDate: reference,
+            now: reference
         )
         if parsed.isEmpty {
             return DiscordNaturalLanguageTimeParser.candidates(
                 for: "",
-                referenceDate: timeReferenceDate,
-                now: timeTickerDate
+                referenceDate: reference,
+                now: reference
             )
         }
         return parsed

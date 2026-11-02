@@ -7,7 +7,7 @@ struct NativeTimelineTimestampPillView: View {
     let style: String?
     let isOutgoingBubble: Bool
     var fontSize: CGFloat = 15
-    @State private var now = Date.now
+    @State private var clock = RelativeTimestampDisplayClock()
 
     var body: some View {
         Text(currentLabel)
@@ -16,16 +16,12 @@ struct NativeTimelineTimestampPillView: View {
             .contentTransition(.numericText())
             .animation(.snappy(duration: 0.25), value: currentLabel)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .task {
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    now = .now
-                }
-            }
+            .onAppear { clock.start() }
+            .onDisappear { clock.stop() }
     }
 
     private var currentLabel: String {
-        DiscordTimestampFormatter.formatted(date: date, style: style, now: now)
+        DiscordTimestampFormatter.formatted(date: date, style: style, now: clock.date)
     }
 }
 

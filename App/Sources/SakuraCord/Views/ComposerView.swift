@@ -55,7 +55,6 @@ struct ComposerView: View {
     @State private var isClearingForSend = false
     @State var activeTimeEntry: TimeMentionEntry?
     @State var timeReferenceDate: Date?
-    @State var timeTickerDate = Date.now
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -581,19 +580,12 @@ struct ComposerView: View {
         }
         .onChange(of: timeMentionContext?.query) { _, _ in
             timeReferenceDate = Date.now
-            timeTickerDate = Date.now
         }
-        .task(id: timeMentionContext != nil) {
-            guard timeMentionContext != nil else {
-                timeReferenceDate = nil
-                return
-            }
-            if timeReferenceDate == nil {
+        .onChange(of: timeMentionContext != nil) { _, active in
+            if active, timeReferenceDate == nil {
                 timeReferenceDate = Date.now
-            }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                timeTickerDate = Date.now
+            } else if !active {
+                timeReferenceDate = nil
             }
         }
     }

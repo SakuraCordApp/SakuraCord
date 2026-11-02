@@ -21,10 +21,13 @@ final class RelativeTimestampClock {
     func observe(_ owner: AnyObject, update: @escaping (Date) -> Void) {
         listeners[ObjectIdentifier(owner)] = Listener(owner: owner, update: update)
         guard timer == nil else { return }
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+        let now = Date()
+        let nextSecond = ceil(now.timeIntervalSince1970)
+        let fireDate = Date(timeIntervalSince1970: nextSecond > now.timeIntervalSince1970 + 0.05 ? nextSecond : nextSecond + 1.0)
+        let timer = Timer(fire: fireDate, interval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pulse(at: .now) }
         }
-        timer.tolerance = 0.1
+        timer.tolerance = 0.02
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
         for name in [
@@ -43,6 +46,11 @@ final class RelativeTimestampClock {
 
     func remove(_ owner: AnyObject) {
         listeners[ObjectIdentifier(owner)] = nil
+        stopIfUnused()
+    }
+
+    func remove(id: ObjectIdentifier) {
+        listeners[id] = nil
         stopIfUnused()
     }
 
@@ -108,10 +116,12 @@ nonisolated enum TimestampMentionPresentation {
         for case let .mention(mention) in RichMessageAttributedText.prepare(source: source).tokens {
             guard mention.kind == .timestamp,
                   let token = DiscordTimestampToken(rawToken: mention.rawToken) else { continue }
+            let targetDate = token.date
+            let style = token.style.rawValue
             result[mention.rawToken] = MentionPresentation(
                 rawToken: mention.rawToken,
                 label: token.formatted(relativeTo: date),
-                target: .unresolved,
+                target: .timestamp(date: targetDate, style: style),
                 isTimestamp: true
             )
         }

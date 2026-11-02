@@ -35,6 +35,14 @@ public enum DiscordTimestampFormatter {
             var format = Date.FormatStyle(date: .complete, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
             format.capitalizationContext = .unknown
             return format.format(date)
+        case "s":
+            var format = Date.FormatStyle(date: .numeric, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
+            format.capitalizationContext = .unknown
+            return format.format(date)
+        case "S":
+            var format = Date.FormatStyle(date: .numeric, time: .standard, locale: locale, calendar: calendar, timeZone: timeZone)
+            format.capitalizationContext = .unknown
+            return format.format(date)
         case "R":
             return relativeText(for: date, relativeTo: now, locale: locale)
         default:

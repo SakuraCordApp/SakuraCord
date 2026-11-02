@@ -593,8 +593,6 @@ extension NativeTimelineCanvasView {
             removeReactionMouseMonitor()
             finishReactionTransitions()
             cleanupRelativeTimestampAnimationOverlays()
-            relativeTimestampClockTask?.cancel()
-            relativeTimestampClockTask = nil
             animatedMediaReconcileTask?.cancel()
             animatedMediaReconcileTask = nil
             animatedMediaRows.removeAll()
@@ -1532,48 +1530,10 @@ extension NativeTimelineCanvasView {
     func reconcileRelativeTimestamps() {
         let hasRelativeTimestamps = storage.items.contains(where: { messageHasRelativeTimestamp($0) })
         if !hasRelativeTimestamps {
-            relativeTimestampClockTask?.cancel()
-            relativeTimestampClockTask = nil
             cleanupRelativeTimestampAnimationOverlays()
             return
         }
         updateRelativeTimestampAnimationOverlays()
-        guard relativeTimestampClockTask == nil else { return }
-        relativeTimestampClockTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled, let self else { break }
-                guard !self.storage.items.isEmpty else { break }
-                let foundAny = self.checkRelativeTimestampWidthChanges()
-                if !foundAny {
-                    break
-                }
-                self.updateRelativeTimestampAnimationOverlays()
-            }
-            self?.relativeTimestampClockTask = nil
-        }
-    }
-
-    private func checkRelativeTimestampWidthChanges() -> Bool {
-        var foundAny = false
-        for (index, item) in storage.items.enumerated() where messageHasRelativeTimestamp(item) {
-            foundAny = true
-            let regions = mentionPointerRegions(at: index)
-            for region in regions where region.isTimestamp && region.timestampStyle == "R" {
-                guard let date = region.timestampDate else { continue }
-                let currentText = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
-                let oldText = region.toolTip ?? ""
-                if currentText.count != oldText.count {
-                    mentionPointerRegionCache.removeValue(forKey: item.identifier)
-                    invalidateBitmap(item.identifier)
-                    let frame = rowFrame(at: index)
-                    if visibleRect.intersects(frame) {
-                        setNeedsDisplay(frame)
-                    }
-                }
-            }
-        }
-        return foundAny
     }
 
     func updateRelativeTimestampAnimationOverlays() {

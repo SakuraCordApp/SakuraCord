@@ -887,7 +887,6 @@ private struct InlineMessageEditor: View {
     @State private var isAutocompleteDismissed = false
     @State private var activeTimeEntry: TimeMentionEntry?
     @State private var timeReferenceDate: Date?
-    @State private var timeTickerDate = Date.now
     @State private var autocompleteKeyboardSelectionRevision = 0
 
     /// Game names and people resolve as they do in the message, and update
@@ -1009,13 +1008,6 @@ private struct InlineMessageEditor: View {
                 cancel: cancel
             )
         }
-        .task(id: timeMentionContext != nil) {
-            guard timeMentionContext != nil else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                timeTickerDate = .now
-            }
-        }
         .onChange(of: selection) { _, _ in
             isAutocompleteDismissed = false
             autocompleteIndex = 0
@@ -1053,16 +1045,17 @@ private struct InlineMessageEditor: View {
 
     private var timeCandidates: [DiscordParsedTimeCandidate] {
         guard let context = timeMentionContext else { return [] }
+        let reference = timeReferenceDate ?? .now
         let parsed = DiscordNaturalLanguageTimeParser.candidates(
             for: context.query,
-            referenceDate: timeReferenceDate,
-            now: timeTickerDate
+            referenceDate: reference,
+            now: reference
         )
         if parsed.isEmpty {
             return DiscordNaturalLanguageTimeParser.candidates(
                 for: "",
-                referenceDate: timeReferenceDate,
-                now: timeTickerDate
+                referenceDate: reference,
+                now: reference
             )
         }
         return parsed
@@ -1438,7 +1431,7 @@ struct TimestampMentionTooltip: View {
     let date: Date?
     let style: String?
     let fallbackText: String
-    @State private var now = Date.now
+    @State private var clock = RelativeTimestampDisplayClock()
 
     init(date: Date? = nil, style: String? = nil, fallbackText: String = "") {
         self.date = date
@@ -1462,16 +1455,18 @@ struct TimestampMentionTooltip: View {
             .padding(.vertical, InterfaceScale.metric(8))
             .fixedSize()
             .interfaceScaleRoot()
-            .task {
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    now = Date.now
+            .onAppear {
+                if date != nil {
+                    clock.start()
                 }
+            }
+            .onDisappear {
+                clock.stop()
             }
     }
 
     private var currentText: String {
         guard let date else { return fallbackText }
-        return DiscordTimestampFormatter.tooltip(date: date, style: style, now: now)
+        return DiscordTimestampFormatter.tooltip(date: date, style: style, now: clock.date)
     }
 }
