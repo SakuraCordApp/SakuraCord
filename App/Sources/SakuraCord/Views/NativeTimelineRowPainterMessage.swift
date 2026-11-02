@@ -49,6 +49,7 @@ extension NativeTimelineRowPainter {
     static func drawMessage(_ input: NativeTimelineMessageDrawInput) {
         drawMessageSearchContext(input)
         drawMessageSeparators(input)
+        drawAutoModAlert(input)
         drawMessageIdentity(input)
         drawMessageReplyAndCommand(input)
         if input.hidesMessageContent { return }

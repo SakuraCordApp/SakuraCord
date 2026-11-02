@@ -448,6 +448,7 @@ extension NativeTimelineRowPainter {
     }
 
     private struct MarkdownDecorationRects {
+        var autoModerationMatches: [CGRect] = []
         var quotes: [CGRect] = []
         var inlineCode: [CGRect] = []
         var spoilers: [(CGRect, CGFloat)] = []
@@ -483,6 +484,10 @@ extension NativeTimelineRowPainter {
         drawInlineCodeDecorations(decorations.inlineCode)
         drawSpoilerDecorations(decorations.spoilers)
         drawCodeBlockDecorations(codeBlocks)
+        for rect in decorations.autoModerationMatches {
+            autoModerationMatchColor.setFill()
+            NSBezierPath(concentricRoundedRect: rect, cornerRadius: InterfaceScale.metric(3)).fill()
+        }
         drawListMarkerDecorations(decorations.listMarkers)
         drawQuoteDecorations(decorations.quotes)
     }
@@ -517,6 +522,12 @@ extension NativeTimelineRowPainter {
                 rects[0].size.width += padding
             }
             result.inlineCode.append(contentsOf: rects)
+        }
+        attributedText.enumerateAttribute(.autoModerationMatch, in: fullRange) { value, range, _ in
+            guard value != nil else { return }
+            result.autoModerationMatches += NativeTimelineTextSelectionGeometry.rects(
+                in: textFrame, outerFrame: outerFrame, range: range
+            )
         }
         for range in NativeTimelineTextSpoilers.ranges(in: attributedText) {
             result.spoilers.append(

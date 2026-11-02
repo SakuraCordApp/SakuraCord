@@ -35,7 +35,8 @@ nonisolated enum MessageEmbedPresentation {
     ) -> [MessageEmbed] {
         // The content scans below only filter embeds: a row re-laid out for
         // every frame of a resize paid for them with none to filter.
-        guard !message.embeds.isEmpty, !message.flags.contains(.suppressEmbeds), message.type != .pollResult
+        guard !message.embeds.isEmpty, !message.flags.contains(.suppressEmbeds), message.type != .pollResult,
+              message.type != .autoModerationAction
         else { return [] }
         let (linkedEmojiURLs, sakuraCordDeepLinkActions) = contentLinks(in: message.content)
         return message.embeds.filter { embed in
@@ -75,7 +76,10 @@ nonisolated enum MessageEmbedPresentation {
     static func visibleMessageContent(
         for message: Message
     ) -> String {
-        visibleMessageContent(
+        if let alert = message.autoModerationAlert {
+            return AutoModAlertPresentation.headline(alert)
+        }
+        return visibleMessageContent(
             message.content,
             embeds: visibleEmbeds(
                 for: message

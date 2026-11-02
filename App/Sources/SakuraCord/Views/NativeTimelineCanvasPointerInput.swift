@@ -131,6 +131,7 @@ extension NativeTimelineCanvasView {
                 installFileCardCursors(at: index, rowOrigin: rowOrigin)
                 installAudioFileCursors(at: index, rowOrigin: rowOrigin)
                 installComponentCursors(at: index, rowOrigin: rowOrigin)
+                installAutoModAlertCursors(at: index, rowOrigin: rowOrigin)
                 installTranslationCursor(at: index, rowOrigin: rowOrigin)
             }
             index += 1
@@ -637,6 +638,8 @@ extension NativeTimelineCanvasView {
             ), let hit
             {
                 switch hit.kind {
+                case let .autoModAlert(action):
+                    activateAutoModAlertAction(action, message: hit.message, anchor: hit.frame)
                 case let .component(region):
                     _ = activateComponentButton(
                         region,
@@ -1707,6 +1710,13 @@ extension NativeTimelineCanvasView {
                     rowIndex: index, message: row.message, kind: .invite(card, expands: expands),
                     frame: (expands ? card.detailsFrame! : card.buttonFrame).offsetBy(dx: 0, dy: rowOrigin))
             }
+        }
+        if let button = layouts[index].autoModAlert?.button(at: local) {
+            return ComponentButtonPointerHit(
+                target: NativeTimelineComponentButtonTarget(messageID: row.id, componentID: button.action.rawValue),
+                rowIndex: index, message: row.message, kind: .autoModAlert(button.action),
+                frame: button.frame.offsetBy(dx: 0, dy: rowOrigin)
+            )
         }
         if let region = layouts[index].sakuraCordDeepLinkRegions.first(
             where: { $0.buttonFrame.contains(local) }

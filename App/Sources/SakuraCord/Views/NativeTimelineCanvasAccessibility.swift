@@ -503,6 +503,8 @@ extension NativeTimelineCanvasView {
         )
         let baseLabel = message.type.hasGeneratedContent
             ? "System message, \(generatedLabel)"
+            : message.type == .autoModerationAction
+            ? "AutoMod alert about a message from \(author.displayName)"
             : "Message from \(author.displayName)"
         let press: (@MainActor @Sendable () -> Bool)? =
             if actions?.openMessage != nil {
@@ -909,6 +911,7 @@ extension NativeTimelineCanvasView {
             rowIndex: rowIndex,
             parent: parent
         )
+        appendAutoModAlertAccessibility(message: message, to: &children, layout: layout, rowIndex: rowIndex, parent: parent)
         appendComponentAccessibility(
             to: &children,
             message: message,
@@ -1213,7 +1216,7 @@ extension NativeTimelineCanvasView {
             let embed = message.embeds.first { $0.id == region.embedID }
             let group = accessibilityElement(
                 role: .group,
-                label: embed?.title ?? "Embed",
+                label: embed?.title ?? (region.kind == .unframed ? "Caught message" : "Embed"),
                 frame: accessibilityChildFrame(
                     region.frame,
                     rowIndex: rowIndex
