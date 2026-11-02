@@ -823,7 +823,8 @@ extension NativeTimelineCanvasView {
         case let .game(id):
             model.presentedProfileGame = model.gameMentions.gamesByID[id]
         case let .command(id, name):
-            model.startCommandMention(id: id, name: name, in: message.channelID)
+            guard let channelID = message?.channelID ?? model.selectedChannelID else { break }
+            model.startCommandMention(id: id, name: name, in: channelID)
         case let .user(id):
             let resolver = MessageMentionResolver(
                 model: model,
