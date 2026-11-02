@@ -154,6 +154,7 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
             .underlineStyle: 0,
         ]
         textView.applySakuraCordTextSelectionAppearance()
+        textView.delegate = context.coordinator
         return textView
     }
 
@@ -204,8 +205,14 @@ private struct AboutMarkdownTextView: NSViewRepresentable {
         )
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, NSTextViewDelegate {
         var document: AttributedString?
         var colorScheme: ColorScheme?
+
+        /// Release notes and notices are SakuraCord's own, so their other
+        /// links open as the text view opens them.
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            MarkdownDocumentText.scrollToAnchor(link, in: textView)
+        }
     }
 }

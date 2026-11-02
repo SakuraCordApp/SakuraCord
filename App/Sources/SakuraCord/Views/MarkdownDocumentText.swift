@@ -17,7 +17,30 @@ enum MarkdownDocumentText {
             interpretedSyntax: .full,
             failurePolicy: .returnPartiallyParsedIfPossible
         )
-        return (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
+        return (try? AttributedString(markdown: escapingFootnoteDefinitions(markdown), options: options))
+            ?? AttributedString(markdown)
+    }
+
+    /// Foundation reads a definition such as `[^1]: https://…` as a link
+    /// reference, which hides it; an escaped bracket keeps it as text for
+    /// `MarkdownFootnotes`. Fenced code is left as written.
+    private nonisolated static func escapingFootnoteDefinitions(_ markdown: String) -> String {
+        var fence: Substring?
+        return markdown.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            let trimmed = line.drop { $0 == " " }
+            if let open = fence {
+                if trimmed.hasPrefix(open) { fence = nil }
+                return String(line)
+            }
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                fence = trimmed.prefix(3)
+                return String(line)
+            }
+            guard line.prefixMatch(of: /^ {0,3}\[\^[^\]\s]+\]:/) != nil, let bracket = line.firstIndex(of: "[") else {
+                return String(line)
+            }
+            return line[..<bracket] + "\\" + line[bracket...]
+        }.joined(separator: "\n")
     }
 
     static func make(
@@ -37,12 +60,18 @@ enum MarkdownDocumentText {
     /// message link would be, which ignores local files and app schemes.
     static func activate(_ link: Any, in textView: NSTextView, at index: Int) -> Bool {
         guard let url = link as? URL else { return true }
-        guard url.scheme == nil, url.host() == nil, url.path().isEmpty, let fragment = url.fragment(percentEncoded: false) else {
-            return MessageLinkActivator.activate(
-                url, model: nil,
-                displayedText: MessageLinkActivator.safetyDisplayedText(in: textView.attributedString(), at: index)
-            )
-        }
+        return scrollToAnchor(url, in: textView) || MessageLinkActivator.activate(
+            url, model: nil,
+            displayedText: MessageLinkActivator.safetyDisplayedText(in: textView.attributedString(), at: index)
+        )
+    }
+
+    /// Scrolls to the heading or footnote a `#` link names, returning
+    /// whether the link was one.
+    static func scrollToAnchor(_ link: Any, in textView: NSTextView) -> Bool {
+        guard let url = link as? URL, url.scheme == nil, url.host() == nil, url.path().isEmpty,
+              let fragment = url.fragment(percentEncoded: false)
+        else { return false }
         let text = textView.attributedString()
         var target: NSRange?
         text.enumerateAttribute(.markdownAnchor, in: NSRange(location: 0, length: text.length)) { value, range, stop in
@@ -172,7 +201,7 @@ enum MarkdownInlineStyle {
         var traits: NSFontTraitMask = []
         if inline.contains(.stronglyEmphasized) || html.isBold { traits.insert(.boldFontMask) }
         if inline.contains(.emphasized) || html.isItalic { traits.insert(.italicFontMask) }
-        var font = isCode
+        var font = isCode || html.isPreformatted
             ? NSFont.monospacedSystemFont(ofSize: base.pointSize * 0.9, weight: base.fontDescriptor.symbolicTraits.contains(.bold) ? .semibold : .regular)
             : base
         if !traits.isEmpty { font = NSFontManager.shared.convert(font, toHaveTrait: traits) }
@@ -235,6 +264,7 @@ struct MarkdownInlineHTML {
     var isUnderlined: Bool { isOpen("u", "ins") }
     var isStruck: Bool { isOpen("s", "del", "strike") }
     var isCode: Bool { isOpen("code", "kbd") }
+    var isPreformatted: Bool { isOpen("pre") }
     var isMarked: Bool { isOpen("mark") }
     var link: URL? { open.last { $0.link != nil }?.link }
     var baselineShift: CGFloat {
@@ -268,49 +298,53 @@ struct MarkdownInlineHTML {
     }
 
     /// A raw HTML block as text: comments dropped, block tags as line
-    /// breaks, whitespace collapsed and entities decoded.
+    /// breaks, whitespace collapsed outside `<pre>` and entities decoded.
     static func blockText(_ html: String, font: NSFont) -> NSMutableAttributedString {
         var state = MarkdownInlineHTML()
         let output = NSMutableAttributedString()
-        func breakLine() {
-            if output.length > 0, !output.string.hasSuffix("\u{2028}") { output.append(NSAttributedString(string: "\u{2028}")) }
-        }
+        var isAtLineStart: Bool { output.length == 0 || output.string.hasSuffix("\u{2028}") }
         var rest = Substring(html)
         while !rest.isEmpty {
-            guard let tag = rest.firstMatch(of: /<!--[\s\S]*?-->|<[^>]+>/) else {
-                output.append(text(rest, state: state, font: font))
-                break
-            }
-            output.append(text(rest[..<tag.range.lowerBound], state: state, font: font))
+            let tag = rest.firstMatch(of: /<!--[\s\S]*?-->|<\/?[A-Za-z][^>]*>/)
+            output.append(text(rest[..<(tag?.range.lowerBound ?? rest.endIndex)], state: state, isAtLineStart: isAtLineStart, font: font))
+            guard let tag else { break }
             let source = String(tag.output)
-            let name = source.firstMatch(of: /^<\s*\/?\s*([A-Za-z0-9]+)/)?.1.lowercased()
-            if let name, blockTags.contains(name) { breakLine() }
+            let name = source.firstMatch(of: /^<\/?([A-Za-z0-9]+)/)?.1.lowercased()
+            if let name, blockTags.contains(name), !isAtLineStart { output.append(NSAttributedString(string: "\u{2028}")) }
             if !source.hasPrefix("<!--"), let replacement = state.apply(tag: source, font: font) {
                 output.append(replacement)
             }
             rest = rest[tag.range.upperBound...]
         }
-        while let last = output.string.unicodeScalars.last, last == "\u{2028}" || CharacterSet.whitespaces.contains(last) {
+        while output.string.hasSuffix("\u{2028}") || output.string.hasSuffix(" ") {
             output.deleteCharacters(in: NSRange(location: output.length - 1, length: 1))
-        }
-        while let first = output.string.unicodeScalars.first, first == "\u{2028}" || CharacterSet.whitespaces.contains(first) {
-            output.deleteCharacters(in: NSRange(location: 0, length: 1))
         }
         return output
     }
 
-    private static func text(_ raw: Substring, state: MarkdownInlineHTML, font: NSFont) -> NSAttributedString {
-        let collapsed = String(raw.replacing(/\s+/, with: " "))
-        guard !collapsed.isEmpty else { return NSAttributedString() }
+    /// Text between tags. Whitespace collapses as HTML's does, except in
+    /// `<pre>`, which drops only the line break that opens it.
+    private static func text(
+        _ raw: Substring, state: MarkdownInlineHTML, isAtLineStart: Bool, font: NSFont
+    ) -> NSAttributedString {
+        var text = String(raw)
+        if state.isPreformatted {
+            if isAtLineStart, text.hasPrefix("\n") { text.removeFirst() }
+            text = text.replacing("\n", with: "\u{2028}")
+        } else {
+            text = text.replacing(/\s+/, with: " ")
+            if isAtLineStart, text.hasPrefix(" ") { text.removeFirst() }
+        }
+        guard !text.isEmpty else { return NSAttributedString() }
         return MarkdownInlineStyle.styled(
-            decodingEntities(collapsed), inline: [], html: state, link: nil, imageURL: nil, font: font
+            decodingEntities(text), inline: [], html: state, link: nil, imageURL: nil, font: font
         )
     }
 
     private static func attributes(_ source: String) -> [String: String] {
         var attributes: [String: String] = [:]
         for match in source.matches(of: /([A-Za-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/) {
-            attributes[match.1.lowercased()] = String(match.2 ?? match.3 ?? match.4 ?? "")
+            attributes[match.1.lowercased()] = decodingEntities(String(match.2 ?? match.3 ?? match.4 ?? ""))
         }
         return attributes
     }
@@ -336,16 +370,21 @@ struct MarkdownInlineHTML {
 /// GitHub's heading slugs, which `#` links name.
 enum MarkdownHeadingAnchors {
     static func assign(to leaves: inout [MarkdownLeaf]) {
-        var used: [String: Int] = [:]
+        var used: Set<String> = []
         for index in leaves.indices {
             guard case .heading = leaves[index].kind else { continue }
             let slug = String(leaves[index].content.string.lowercased().compactMap { character -> Character? in
                 if character == " " { return "-" }
                 return character.isLetter || character.isNumber || character == "-" || character == "_" ? character : nil
             })
-            let count = used[slug, default: 0]
-            used[slug] = count + 1
-            let anchor = count == 0 ? slug : "\(slug)-\(count)"
+            // A repeat takes the next free suffix, so "Foo", "Foo", "Foo-1" are foo, foo-1, foo-1-1.
+            var anchor = slug
+            var suffix = 0
+            while used.contains(anchor) {
+                suffix += 1
+                anchor = "\(slug)-\(suffix)"
+            }
+            used.insert(anchor)
             leaves[index].content.addAttribute(.markdownAnchor, value: anchor, range: NSRange(location: 0, length: leaves[index].content.length))
         }
     }
@@ -358,7 +397,7 @@ enum MarkdownFootnotes {
     static func extract(from leaves: inout [MarkdownLeaf]) -> [MarkdownLeaf] {
         var definitions: [String: NSMutableAttributedString] = [:]
         leaves.removeAll { leaf in
-            guard leaf.kind == .paragraph, leaf.content.string.prefixMatch(of: definitionPrefix) != nil else { return false }
+            guard leaf.kind == .paragraph, startsDefinition(leaf.content, at: 0) else { return false }
             for definition in definitionLines(leaf.content) {
                 guard let match = definition.string.prefixMatch(of: definitionPrefix) else { continue }
                 let label = String(match.1)
@@ -369,8 +408,9 @@ enum MarkdownFootnotes {
         }
         guard !definitions.isEmpty else { return [] }
 
-        let references = leaves.map { leaf in
-            leaf.content.string.matches(of: /\[\^([^\]\s]+)\]/).compactMap { match -> (label: String, range: NSRange)? in
+        let references = leaves.map { leaf -> [(label: String, range: NSRange)] in
+            if case .code = leaf.kind { return [] }
+            return leaf.content.string.matches(of: /\[\^([^\]\s]+)\]/).compactMap { match -> (label: String, range: NSRange)? in
                 let label = String(match.1)
                 let range = NSRange(match.range, in: leaf.content.string)
                 guard definitions[label] != nil,
@@ -410,14 +450,20 @@ enum MarkdownFootnotes {
     static let lineStartKey = NSAttributedString.Key("dev.sakuracord.markdown.soft-break")
     private static let definitionPrefix = /\[\^([^\]\s]+)\]:[ \t]*/
 
+    /// Whether a definition starts here, outside inline code that shows the syntax.
+    private static func startsDefinition(_ text: NSAttributedString, at location: Int) -> Bool {
+        location < text.length
+            && text.attribute(MarkdownInlineStyle.codeKey, at: location, effectiveRange: nil) == nil
+            && (text.string as NSString).substring(from: location).prefixMatch(of: definitionPrefix) != nil
+    }
+
     /// Definitions on consecutive lines share one paragraph; each starts after a soft break.
     private static func definitionLines(_ paragraph: NSAttributedString) -> [NSMutableAttributedString] {
-        let text = paragraph.string as NSString
         var lines: [NSMutableAttributedString] = []
         var start = 0
         paragraph.enumerateAttribute(lineStartKey, in: NSRange(location: 0, length: paragraph.length)) { value, range, _ in
             let next = NSMaxRange(range)
-            guard value != nil, text.substring(from: next).prefixMatch(of: definitionPrefix) != nil else { return }
+            guard value != nil, startsDefinition(paragraph, at: next) else { return }
             lines.append(NSMutableAttributedString(attributedString: paragraph.attributedSubstring(from: NSRange(location: start, length: range.location - start))))
             start = next
         }
