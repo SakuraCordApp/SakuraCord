@@ -11,7 +11,7 @@ import SwiftUI
 /// A viewless, virtualized message surface. One AppKit view owns the entire
 /// timeline; only rows intersecting the dirty rectangle are painted.
 @MainActor
-final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
+final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSViewToolTipOwner {
     struct CachedRowBitmap {
         let item: NativeMessageTimelineItem
         let width: CGFloat
@@ -74,7 +74,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         /// Whether the row paints nothing beneath this overlay once it is live.
         var replacesPoster: Bool {
             switch self {
-            case .sticker, .reaction: true
+            case .sticker, .reaction, .componentButton: true
             default: false
             }
         }
@@ -119,6 +119,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
             case component(NativeTimelineComponentLayout.ButtonRegion)
             case sakuraCordDeepLink(SakuraCordDeepLinkAction)
             case invite(NativeTimelineInviteLayout, expands: Bool)
+            case fileCard(NativeTimelineFileCard)
 
             var isDisabled: Bool {
                 switch self {
@@ -128,6 +129,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                     false
                 case let .invite(card, expands):
                     !expands && card.isDisabled
+                case .fileCard:
+                    false
                 }
             }
         }
@@ -254,6 +257,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     var presentedConversationID: ChannelID?
     var mediaReadyConversationID: ChannelID?
     var mediaViewerHighlightedMessageID: MessageID?
+    var mediaViewerTransition: NativeTimelineMediaViewerTransition?
     var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?
@@ -316,11 +320,16 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
         [NativeMessageTimelineItem.Identifier: Set<URL>] = [:]
     var inlineVideoOverlays:
         [InlineVideoOverlayKey: NativeTimelineInlineVideoOverlay] = [:]
+    /// Video attachments the user started, playing over their tiles.
+    var inlinePlayers: [NativeTimelineInlinePlayer.Key: NativeTimelineInlinePlayer] = [:]
     var animatedMediaOverlays:
         [AnimatedMediaOverlayKey: NativeTimelineAnimatedMediaOverlay] = [:]
     var voiceMessageOverlay: NativeTimelineVoiceMessageOverlay?
-    var voiceMessageActiveMessageID: MessageID?
-    var voiceMessageSpeed: Float = 1
+    var codeCopyControl: NativeTimelineCodeCopyControl?
+    /// A hovered audio file's seek bar while another player is active.
+    var voiceMessageHoverOverlay: NativeTimelineVoiceMessageOverlay?
+    var voiceMessageActiveID: VoiceMessagePlaybackID?
+    var voiceMessageResting = VoiceMessageRestingPresentation()
     var voiceMessagePress: VoiceMessagePointerHit?
     var hoveredVoiceMessage: VoiceMessageHover?
     struct ActivityIndicatorKey: Hashable {
@@ -329,6 +338,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
     }
 
     var activityIndicators: [ActivityIndicatorKey: NSView] = [:]
+    var uploadRings: [UploadRingKey: NativeTimelineUploadRingView] = [:]
     var spoilerOverlays:
         [NativeTimelineComponentRevealKey:
             NativeTimelineSpoilerOverlayHost] = [:]
@@ -398,6 +408,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant {
                                        name: NSMenu.didEndTrackingNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(voiceMessagePlaybackDidChange(_:)),
                                        name: VoiceMessagePlaybackStore.didChange, object: nil)
+        notificationCenter.addObserver(self, selector: #selector(attachmentDownloadsDidChange(_:)),
+                                       name: AttachmentDownloadStore.didChange, object: nil)
         notificationCenter.addObserver(self, selector: #selector(attachmentUploadsDidChange(_:)),
                                        name: AttachmentUploadProgressStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -512,7 +524,7 @@ enum NativeTimelineRowPainter {
         isCommandPillHovered: Bool = false,
         hoveredMention: NativeTimelineMentionHover? = nil,
         hoveredTextLink: NativeTimelineTextLinkHover? = nil,
-        hoveredTextSpoiler: NativeTimelineTextSpoilerHover? = nil,
+        textSpoilerHover: [NativeTimelineTextSpoilerHover: CGFloat] = [:],
         hoveredComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         activeComponentChoiceTarget:
@@ -520,6 +532,8 @@ enum NativeTimelineRowPainter {
         pressedComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         componentButtonPressProgress: CGFloat = 0,
+        fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
+        fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
         isForwardedSourceHovered: Bool = false,
         threadCardInteraction: NativeTimelineThreadCard.Interaction = .idle,
         isEphemeralDismissHovered: Bool = false,
@@ -597,12 +611,14 @@ enum NativeTimelineRowPainter {
                 isCommandPillHovered: isCommandPillHovered,
                 hoveredMention: hoveredMention,
                 hoveredTextLink: hoveredTextLink,
-                hoveredTextSpoiler: hoveredTextSpoiler,
+                textSpoilerHover: textSpoilerHover,
                 hoveredComponentButton: hoveredComponentButton,
                 activeComponentChoiceTarget: activeComponentChoiceTarget,
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,
+                fileCardHoverProgress: fileCardHoverProgress,
+                fileCardFinishProgress: fileCardFinishProgress,
                 isForwardedSourceHovered: isForwardedSourceHovered,
                 threadCardInteraction: threadCardInteraction,
                 isEphemeralDismissHovered: isEphemeralDismissHovered,

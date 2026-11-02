@@ -25,7 +25,7 @@ extension AppModel {
     }
 
     var isFriendsSearchActive: Bool {
-        isFriendsPresented && friendsSection != .addFriend
+        isFriendsPresented && friends.messageRequestsTab == nil && friendsSection != .addFriend
     }
 
     var friendsSearchText: String {
@@ -39,6 +39,7 @@ extension AppModel {
 
     func openFriends() {
         lastDirectMessageSelection = .friends
+        friends.messageRequestsTab = nil
         cancelConversationNavigation()
         guard selectedGuildID == nil else {
             friends.isPresented = true

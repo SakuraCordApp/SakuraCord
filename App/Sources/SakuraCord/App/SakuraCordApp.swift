@@ -18,6 +18,7 @@ struct SakuraCordApp: App {
     private let opensChatPerformanceFixture: Bool
     private let opensPinsPerformanceFixture: Bool
     private let runsFriendsPerformanceBenchmark: Bool
+    private let runsChannelOpenBenchmark: Bool
 #if SAKURACORD_MOTION_BENCHMARK
     /// Set when the launch runs the side chat motion benchmark.
     private let sideChatMotionOptions: SideChatMotionBenchmark.Options?
@@ -37,6 +38,7 @@ struct SakuraCordApp: App {
         AppPerformanceSignposts.beginStartup()
         ComposerPromisedFileStorage.removeAbandonedFilesAtStartup()
         SharedMediaDataLoader.removeAbandonedDownloadsAtStartup()
+        MediaViewerPreviewFile.removeAbandonedFilesAtStartup()
         DiagnosticsPreferences.restore()
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture
@@ -47,6 +49,7 @@ struct SakuraCordApp: App {
         opensChatPerformanceFixture = configuration.includesChatPerformanceFixture
         opensPinsPerformanceFixture = configuration.includesPinsPerformanceFixture
         runsFriendsPerformanceBenchmark = configuration.runsFriendsPerformanceBenchmark
+        runsChannelOpenBenchmark = configuration.runsChannelOpenBenchmark
 #if SAKURACORD_MOTION_BENCHMARK
         let motionOptions = configuration.runsSideChatMotionBenchmark
             ? SideChatMotionBenchmark.Options(arguments: ProcessInfo.processInfo.arguments)
@@ -97,6 +100,8 @@ struct SakuraCordApp: App {
                     configuration.includesChatMediaPerformanceFixture,
                 timelineIncludesVoiceMessages:
                     configuration.includesChatVoicePerformanceFixture,
+                timelineIncludesFiles:
+                    configuration.includesChatFilesPerformanceFixture,
                 includesIncomingPrivateCall:
                     configuration.includesIncomingPrivateCallFixture,
                 friendCount: configuration.runsFriendsPerformanceBenchmark ? 1_000 : nil
@@ -127,6 +132,8 @@ struct SakuraCordApp: App {
             appModel.appearanceSettings.colorScheme
         )
         InterfaceScale.shared.update(appModel.appearanceSettings.interfaceSize)
+        // After the interface size, which sets the icons' pixel size.
+        FileTypeIconCache.prewarm()
         SakuraCordRuntimeModelHolder.shared.model = appModel
         _model = State(initialValue: appModel)
     }
@@ -189,7 +196,7 @@ struct SakuraCordApp: App {
                     }
                     if opensForumPerformanceFixture {
                         model.selectedChannelID = ChannelID(rawValue: 220)
-                    } else if opensChatPerformanceFixture {
+                    } else if opensChatPerformanceFixture, !runsChannelOpenBenchmark {
                         model.selectedChannelID = ChannelID(rawValue: 210)
                     }
 #if DEBUG
@@ -199,6 +206,9 @@ struct SakuraCordApp: App {
 #endif
                     if runsFriendsPerformanceBenchmark {
                         await FriendsPerformanceBenchmark.run(model: model, provider: performanceMockProvider)
+                    }
+                    if runsChannelOpenBenchmark {
+                        await ChannelOpenBenchmark.run(model: model, channelID: ChannelID(rawValue: 210))
                     }
 #if SAKURACORD_MOTION_BENCHMARK
                     if let sideChatMotionOptions {

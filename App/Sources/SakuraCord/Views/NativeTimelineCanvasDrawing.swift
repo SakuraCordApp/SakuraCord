@@ -111,6 +111,7 @@ extension NativeTimelineCanvasView {
         startVisibleInlineVideosImmediately()
         scheduleAnimatedMediaReconciliation()
         positionAnimatedMediaOverlays()
+        reconcileInlinePlayers()
         reconcileVoiceMessageOverlay()
         reconcileBeginningSelectionOverlay()
         reconcileActivityIndicators()
@@ -308,6 +309,7 @@ extension NativeTimelineCanvasView {
             owner: visibleMediaPinOwner
         )
         mediaReadyConversationID = nil
+        removeInlinePlayers()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         needsDisplay = true
@@ -347,10 +349,12 @@ extension NativeTimelineCanvasView {
         window?.invalidateCursorRects(for: self)
         animatedMediaReconcileTask?.cancel()
         animatedMediaReconcileTask = nil
+        // Before the pointer targets clear, which drops the fades.
+        redrawFadingHovers()
         NativeTimelineMediaStore.shared.cancelAnimatedRequests(
             owner: visibleMediaPinOwner
         )
-        let clearedTargets = clearHoverAndPressTargets()
+        let clearedTargets = clearPointerTargets()
         reactionHoverCoordinator.close()
         closeMessageProfilePopover()
         closeServerTagPopover()
@@ -391,15 +395,7 @@ extension NativeTimelineCanvasView {
         {
             setNeedsDisplay(rowFrame(at: oldTextSpoilerIndex))
         }
-        if let oldCodeBlock = clearedTargets.codeBlock,
-           let oldCodeBlockIndex = items.firstIndex(where: {
-               $0.identifier == oldCodeBlock.itemIdentifier
-           }),
-           oldCodeBlockIndex != clearedTargets.row,
-           oldCodeBlockIndex != clearedTargets.compactTimestampRow
-        {
-            setNeedsDisplay(rowFrame(at: oldCodeBlockIndex))
-        }
+        updateCodeCopyControl()
         if let oldComponentButton = clearedTargets.componentButton {
             invalidateComponentButton(oldComponentButton)
         }
@@ -459,6 +455,9 @@ extension NativeTimelineCanvasView {
         _ isBlocked: Bool,
         mediaViewerHighlightedMessageID: MessageID?
     ) {
+        // The viewer's message stays highlighted only while the viewer holds
+        // input; once it starts closing, hover follows the pointer.
+        let mediaViewerHighlightedMessageID = isBlocked ? mediaViewerHighlightedMessageID : nil
         let highlightChanged = self.mediaViewerHighlightedMessageID
             != mediaViewerHighlightedMessageID
         guard overlayBlocksInteractions != isBlocked || highlightChanged else {
@@ -472,12 +471,13 @@ extension NativeTimelineCanvasView {
             hoveredPollTarget = nil
             pollPopover?.close()
             reactionDetailsPopover?.close()
-            clearHoverAndPressTargets()
+            clearPointerTargets()
             reactionHoverCoordinator.close()
             closeMessageProfilePopover()
             closeServerTagPopover()
             closeMentionPopover()
             closeComponentChoiceOverlay()
+            updateCodeCopyControl()
         }
         if isBlocked, mediaViewerHighlightedMessageID == nil {
             removeActionCapsule()
@@ -487,6 +487,11 @@ extension NativeTimelineCanvasView {
         needsDisplay = true
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
+        guard !isBlocked else { return }
+        // Hover was cleared while blocked; the pointer may have moved since.
+        synchronizeHoverWithCurrentPointer()
+        // A closing viewer zooms back to its card as the card looks now.
+        refreshMediaViewerTransition(retakingSnapshots: true)
     }
 
     func installViewportGeometry(frame: CGRect, bounds: CGRect) {
@@ -518,6 +523,8 @@ extension NativeTimelineCanvasView {
         }
         reconcileHistorySkeletonShimmer()
         presentRowsEnteringViewport()
+        reconcileInlinePlayers()
+        refreshMediaViewerTransition()
         // Supplementary Inbox rows are content, not hover presentation. Keep
         // them materialized as the viewport moves, including momentum ticks
         // that stay within the current overscanned backing window.
@@ -595,10 +602,11 @@ extension NativeTimelineCanvasView {
             closeComponentChoiceOverlay()
             closeMentionPopover()
             reactionPickerSource.frame = .zero
-            clearHoverAndPressTargets()
+            clearPointerTargets()
             removeAccessibilityProxies()
             removeActionCapsule()
             endEditing(commit: nil)
+            updateCodeCopyControl()
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -892,9 +900,6 @@ extension NativeTimelineCanvasView {
                 preparedMediaKeys: preparedMediaKeys, revealState: revealState
             )
         }
-        if let hoveredCodeBlock, hoveredCodeBlock.itemIdentifier == item.identifier {
-            drawCodeBlockCopyControl(hoveredCodeBlock)
-        }
         clearSendTransitionBubble(for: item, layout: layouts[index], rowFrame: rowFrame)
         if !unreadDividerFades.isEmpty {
             clearHeldUnreadDivider(for: item, layout: layouts[index], rowFrame: rowFrame)
@@ -939,9 +944,12 @@ extension NativeTimelineCanvasView {
             || hoveredMention?.itemIdentifier == item.identifier
             || hoveredTextLink?.itemIdentifier == item.identifier
             || hoveredTextSpoiler?.itemIdentifier == item.identifier
+            || textSpoilerHoverFades.keys.contains { $0.itemIdentifier == item.identifier }
             || hoveredComponentButton?.messageID == item.messageID
             || activeComponentChoiceTarget?.messageID == item.messageID
             || visualPressedComponentButton?.messageID == item.messageID
+            || componentButtonHoverFades.keys.contains { $0.messageID == item.messageID }
+            || fileCardFinishFades.keys.contains { $0.messageID == item.messageID }
             || hoveredForwardedSourceMessageID == item.messageID
             || hoveredThreadMessageID == item.messageID
             || hoveredFooterAction?.messageID == item.messageID
@@ -976,11 +984,13 @@ extension NativeTimelineCanvasView {
             isCommandPillHovered: hoveredCommandPillMessageID == item.messageID,
             hoveredMention: hoveredMention?.itemIdentifier == item.identifier ? hoveredMention : nil,
             hoveredTextLink: hoveredTextLink?.itemIdentifier == item.identifier ? hoveredTextLink : nil,
-            hoveredTextSpoiler: hoveredTextSpoiler?.itemIdentifier == item.identifier ? hoveredTextSpoiler : nil,
+            textSpoilerHover: textSpoilerHoverProgress(in: item.identifier),
             hoveredComponentButton: hoveredComponentButton?.messageID == item.messageID ? hoveredComponentButton : nil,
             activeComponentChoiceTarget: activeComponentChoiceTarget?.messageID == item.messageID ? activeComponentChoiceTarget : nil,
             pressedComponentButton: visualPressedComponentButton?.messageID == item.messageID ? visualPressedComponentButton : nil,
             componentButtonPressProgress: visualPressedComponentButton?.messageID == item.messageID ? componentButtonPressProgress : 0,
+            fileCardHoverProgress: fileCardHoverProgress(in: item.messageID),
+            fileCardFinishProgress: fileCardFinishProgress(in: item.messageID),
             isForwardedSourceHovered: hoveredForwardedSourceMessageID == item.messageID,
             threadCardInteraction: threadCardInteraction(forMessageID: item.messageID),
             isEphemeralDismissHovered: hoveredFooterAction?.messageID == item.messageID && hoveredFooterAction?.kind == .ephemeralDismiss,
@@ -1079,58 +1089,6 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    func drawCodeBlockCopyControl(
-        _ target: NativeTimelineCodeBlockPointerTarget
-    ) {
-        let buttonFrame = target.copyButtonFrame
-        let point = currentMouseLocationInCanvas()
-        let isButtonHovered = buttonFrame.contains(point)
-        if isButtonHovered
-            || pressedCodeBlockCopyButton?.itemIdentifier
-                == target.itemIdentifier
-                && pressedCodeBlockCopyButton?.region == target.region
-                && pressedCodeBlockCopyButton?.rangeLocation
-                    == target.rangeLocation
-        {
-            NSColor.labelColor.withAlphaComponent(0.10).setFill()
-            NSBezierPath(
-                concentricRoundedRect: buttonFrame,
-                cornerRadius: InterfaceScale.metric(4)
-            ).fill()
-        }
-        guard let symbol = NSImage(
-            systemSymbolName: "doc.on.doc.fill",
-            accessibilityDescription: "Copy code"
-        )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(
-                pointSize: 16,
-                weight: .regular
-            )
-            .applying(
-                NSImage.SymbolConfiguration(
-                    paletteColors: [
-                        NSColor.labelColor.withAlphaComponent(
-                            isButtonHovered ? 1 : 0.88
-                        ),
-                    ]
-                )
-            )
-        ) else { return }
-        let iconFrame = NativeTimelineSymbolGeometry.opticallyFitted(
-            sourceSize: symbol.size,
-            alignmentRect: symbol.alignmentRect,
-            in: buttonFrame.insetBy(dx: InterfaceScale.metric(6), dy: InterfaceScale.metric(6))
-        )
-        symbol.draw(
-            in: iconFrame,
-            from: .zero,
-            operation: .sourceOver,
-            fraction: isButtonHovered ? 1 : 0.88,
-            respectFlipped: true,
-            hints: nil
-        )
-    }
-
     func textSpoilerRevealState(
         at rowIndex: Int
     ) -> NativeTimelineTextSpoilerRevealState {
@@ -1138,7 +1096,7 @@ extension NativeTimelineCanvasView {
         // Most rows have no revealed spoilers. Avoid building selectable
         // regions (and hashing their text) on every scrolling frame in that
         // case; callers already know the row's current storage index.
-        guard !spoilerRevealStore.revealedText.isEmpty,
+        guard spoilerRevealStore.hasRevealedText,
               items.indices.contains(rowIndex),
                layouts.indices.contains(rowIndex),
            let messageID = items[rowIndex].messageID
@@ -1168,7 +1126,7 @@ extension NativeTimelineCanvasView {
         value: NSAttributedString,
         layout: NativeTimelineRowLayout
     ) -> Set<Int> {
-        guard !spoilerRevealStore.revealedText.isEmpty,
+        guard spoilerRevealStore.hasRevealedText,
               let contentID = textSpoilerContentID(
                   for: region,
                   layout: layout

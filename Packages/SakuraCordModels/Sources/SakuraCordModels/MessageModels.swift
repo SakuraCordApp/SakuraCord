@@ -18,6 +18,9 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
     public var flags: AttachmentFlags
     public var isSpoiler: Bool
     public var isAnimated: Bool
+    /// A preview on this Mac, such as a sent video's own file, kept ahead of
+    /// the server's until it is gone. It is never encoded.
+    public var localPreviewURL: URL?
 
     public var mediaKind: AttachmentMediaKind {
         let type = mediaType?.lowercased() ?? ""
@@ -28,10 +31,13 @@ public struct Attachment: Identifiable, Codable, Hashable, Sendable {
         if type.hasPrefix("image/") {
             return .image
         }
-        if type.hasPrefix("video/") {
+        // Like Discord, a pictureless file with an audio extension plays as
+        // audio whatever its type, and other audio types are plain files.
+        let playsAsAudio = (width ?? 0) <= 0 && Self.audioFileExtensions.contains((path as NSString).pathExtension)
+        if type.hasPrefix("video/"), !playsAsAudio {
             return .video
         }
-        if type.hasPrefix("audio/") || durationSeconds != nil || waveform != nil {
+        if playsAsAudio || durationSeconds != nil || waveform != nil {
             return .audio
         }
         return .file

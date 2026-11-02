@@ -14,7 +14,7 @@ extension NativeTimelineCanvasView {
         let message = input.message
         let rowIndex = input.rowIndex
         let parent = input.parent
-        let usesFileActionLabels = input.usesFileActionLabels
+        let file = input.file
         let viewerPresentation = input.viewerPresentation
         let key = NativeTimelineComponentRevealKey(
             messageID: message.id,
@@ -22,22 +22,10 @@ extension NativeTimelineCanvasView {
         )
         let isHiddenSpoiler =
             isSpoiler && !spoilerRevealStore.isMediaRevealed(key)
-        let accessibilityLabel =
-            if usesFileActionLabels {
-                isHiddenSpoiler ? "Reveal spoiler file" : "Open \(label)"
-            } else {
-                isHiddenSpoiler ? "Reveal spoiler media" : label
-            }
-        children.append(accessibilityElement(
+        let element = accessibilityElement(
             role: .button,
-            label: accessibilityLabel,
-            help: usesFileActionLabels
-                ? (isHiddenSpoiler ? "Reveal spoiler" : "Open \(label)")
-                : (
-                    isHiddenSpoiler
-                        ? "Reveals this media without opening it"
-                        : "Open \(label)"
-                ),
+            label: isHiddenSpoiler ? "Reveal spoiler" : label,
+            help: isHiddenSpoiler ? "Reveals the spoiler without opening it" : "Open \(label)",
             frame: accessibilityChildFrame(frame, rowIndex: rowIndex),
             parent: parent
         ) { [weak self] in
@@ -55,7 +43,17 @@ extension NativeTimelineCanvasView {
                 NSWorkspace.shared.open(openURL)
             }
             return true
-        })
+        }
+        // A file previews when pressed; its card's button downloads it.
+        if let file, !isHiddenSpoiler {
+            element.setAccessibilityCustomActions([
+                NSAccessibilityCustomAction(name: fileCardActionDescription(file, name: label)) { [weak self] in
+                    self?.activateFileCard(file)
+                    return self != nil
+                },
+            ])
+        }
+        children.append(element)
     }
 
     func accessibilityMessageActions(
@@ -361,7 +359,7 @@ extension NativeTimelineCanvasView {
                 mediaKey: NativeTimelineMediaKey.attachment(attachment),
                 cornerRadius: InterfaceScale.metric(8),
                 fillsFrame: MediaGalleryImagePresentation.fillsFrame(
-                    itemCount: layouts[rowIndex].attachmentRegions.count
+                    itemCount: layouts[rowIndex].mediaGalleryItemCount
                 )
             )
         } else {

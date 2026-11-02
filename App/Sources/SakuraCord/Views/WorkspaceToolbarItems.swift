@@ -281,39 +281,29 @@ extension View {
     }
 }
 
-/// The window toolbar's icon button: a glass circle with the item's icon.
+/// The window toolbar's button: a glass circle with the item's icon, or a
+/// glass capsule around a title, which keeps its own type and ink.
 struct TitlebarGlassButtonStyle: ButtonStyle {
     var hasOwnGlass = true
+    var isTitle = false
 
     func makeBody(configuration: Configuration) -> some View {
-        TitlebarGlassButton(configuration: configuration, hasOwnGlass: hasOwnGlass)
+        TitlebarGlassButton(configuration: configuration, hasOwnGlass: hasOwnGlass, isTitle: isTitle)
     }
 }
 
 private struct TitlebarGlassButton: View {
     let configuration: ButtonStyle.Configuration
     let hasOwnGlass: Bool
+    let isTitle: Bool
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
-        let ink: Color = colorScheme == .dark ? .white : .black
-        configuration.label
-            .font(.system(size: TitlebarButtonMetrics.iconSize))
-            .imageScale(.medium)
-            // The toolbar draws its icons in a plain translucent ink: as
-            // `.primary` over glass they took on its vibrancy and drew
-            // lighter in light mode. Disabled icons keep the dimmed primary.
-            .foregroundStyle(
-                isEnabled
-                    ? AnyShapeStyle(ink.opacity(TitlebarButtonMetrics.iconOpacity))
-                    : AnyShapeStyle(.primary.opacity(TitlebarButtonMetrics.iconOpacity))
-            )
-            // As wide as the toolbar's own: its icon's width, inset, at least
-            // a circle.
-            .padding(.horizontal, 5.75)
-            .frame(minWidth: 36, minHeight: 36)
+        label
+            .frame(minHeight: 36)
+            // The whole capsule takes the pointer, not just what it draws.
             .contentShape(Capsule())
             .glassEffect(hasOwnGlass ? .regular.interactive() : .identity, in: Capsule())
             // The toolbar tints the item under the pointer, icon and all; in
@@ -329,6 +319,30 @@ private struct TitlebarGlassButton: View {
             }
             .opacity(configuration.isPressed ? 0.75 : 1)
             .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        if isTitle {
+            configuration.label
+        } else {
+            let ink: Color = colorScheme == .dark ? .white : .black
+            configuration.label
+                .font(.system(size: TitlebarButtonMetrics.iconSize))
+                .imageScale(.medium)
+                // The toolbar draws its icons in a plain translucent ink: as
+                // `.primary` over glass they took on its vibrancy and drew
+                // lighter in light mode. Disabled icons keep the dimmed primary.
+                .foregroundStyle(
+                    isEnabled
+                        ? AnyShapeStyle(ink.opacity(TitlebarButtonMetrics.iconOpacity))
+                        : AnyShapeStyle(.primary.opacity(TitlebarButtonMetrics.iconOpacity))
+                )
+                // As wide as the toolbar's own: its icon's width, inset, at
+                // least a circle.
+                .padding(.horizontal, 5.75)
+                .frame(minWidth: 36)
+        }
     }
 }
 

@@ -60,6 +60,7 @@ public actor MockChatProvider: ChatProvider {
         pinMutationFailureStatus: Int? = nil,
         timelineIncludesAnimatedMedia: Bool = false,
         timelineIncludesVoiceMessages: Bool = false,
+        timelineIncludesFiles: Bool = false,
         includesIncomingPrivateCall: Bool = false,
         friendCount: Int? = nil
     ) {
@@ -67,7 +68,8 @@ public actor MockChatProvider: ChatProvider {
             includesLongServerList: includesLongServerList,
             timelineMessageCount: timelineMessageCount,
             timelineIncludesAnimatedMedia: timelineIncludesAnimatedMedia,
-            timelineIncludesVoiceMessages: timelineIncludesVoiceMessages
+            timelineIncludesVoiceMessages: timelineIncludesVoiceMessages,
+            timelineIncludesFiles: timelineIncludesFiles
         )
         currentUser = fixture.currentUser
         self.pinMutationFailureStatus = pinMutationFailureStatus

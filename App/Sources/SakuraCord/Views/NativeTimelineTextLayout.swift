@@ -245,7 +245,8 @@ enum NativeTimelineTextPresentation {
                     prepared: preparation.prepared,
                     emojiSize: preparation.emojiSize,
                     baseFontSize: preparation.baseFontSize,
-                    mentionPresentations: preparation.mentions
+                    mentionPresentations: preparation.mentions,
+                    usesMessageLineHeight: true
                 )
             )
         }
@@ -317,6 +318,11 @@ nonisolated final class NativeTimelineResolvedTextCache: Sendable {
     }
 }
 
+private extension NSParagraphStyle {
+    /// Message text floors its lines with a minimum and no maximum.
+    nonisolated var isMessageLine: Bool { maximumLineHeight == 0 && minimumLineHeight > 0 }
+}
+
 nonisolated enum NativeTimelineCoreText {
     private static let runDelegateKey = NSAttributedString.Key(
         rawValue: kCTRunDelegateAttributeName as String
@@ -327,34 +333,72 @@ nonisolated enum NativeTimelineCoreText {
     /// interface size to every resolved font once.
     static func scaledMarkdown(
         _ plan: DiscordMarkdown.AppKitPlan,
-        baseFontSize: CGFloat
+        baseFontSize: CGFloat,
+        usesMessageLineHeight: Bool = false,
+        reservesCodeCopyButton: Bool = false
     ) -> NSAttributedString {
         let factor = InterfaceScale.factor
         guard factor != 1 else {
-            return DiscordMarkdown.appKitAttributed(plan, baseFontSize: baseFontSize)
+            return DiscordMarkdown.appKitAttributed(
+                plan,
+                baseFontSize: baseFontSize,
+                usesMessageLineHeight: usesMessageLineHeight,
+                reservesCodeCopyButton: reservesCodeCopyButton
+            )
         }
         let unscaledBaseFontSize = baseFontSize / factor
-        return DiscordMarkdown.appKitAttributed(plan, baseFontSize: unscaledBaseFontSize)
+        return DiscordMarkdown.appKitAttributed(
+            plan,
+            baseFontSize: unscaledBaseFontSize,
+            usesMessageLineHeight: usesMessageLineHeight,
+            reservesCodeCopyButton: reservesCodeCopyButton
+        )
             .scalingTypography(by: baseFontSize / unscaledBaseFontSize)
     }
 
+    /// `bodyScale` shrinks every line but headings, and the mentions and
+    /// emoji in them; its source must use line feeds alone.
     static func make(
         prepared: RichMessageAttributedText.Prepared,
         emojiSize: CGFloat,
         baseFontSize: CGFloat? = nil,
-        mentionPresentations: [String: MentionPresentation]
+        bodyScale: CGFloat = 1,
+        mentionPresentations: [String: MentionPresentation],
+        usesMessageLineHeight: Bool = false
     ) -> NSAttributedString {
         let resolvedBaseFontSize =
             prepared.isEmojiOnly
                 ? emojiSize
                 : baseFontSize ?? InterfaceScale.fontSize(15)
-        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize)
+        let bodyScale = prepared.isEmojiOnly ? 1 : bodyScale
+        let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize * bodyScale)
         let output = NSMutableAttributedString(
             attributedString: scaledMarkdown(
                 prepared.markdownPlan,
-                baseFontSize: resolvedBaseFontSize
+                baseFontSize: resolvedBaseFontSize,
+                usesMessageLineHeight: usesMessageLineHeight && !prepared.isEmojiOnly,
+                // Every timeline text shows a code block's copy button.
+                reservesCodeCopyButton: true
             )
         )
+        if bodyScale != 1 {
+            var location = 0
+            // The markdown output joins its plan's lines with line feeds,
+            // which pair up when the source has no carriage returns.
+            let texts = output.string.split(separator: "\n", omittingEmptySubsequences: false)
+            for (line, text) in zip(prepared.markdownPlan.lines, texts) {
+                let range = NSRange(
+                    location: location,
+                    length: min(text.utf16.count + 1, output.length - location)
+                )
+                location = NSMaxRange(range)
+                guard !line.isHeading else { continue }
+                output.replaceCharacters(
+                    in: range,
+                    with: output.attributedSubstring(from: range).scalingTypography(by: bodyScale, keepingLegibility: true)
+                )
+            }
+        }
         let fullRange = NSRange(location: 0, length: output.length)
         let placeholderRanges = ranges(of: "\u{FFFC}", in: output.string)
         for (range, token) in zip(
@@ -387,7 +431,7 @@ nonisolated enum NativeTimelineCoreText {
                 inlineAttributes[.discordMentionToken] =
                     presentation.rawToken
                 inlineAttributes[.nativeTimelineMention] =
-                    NativeTimelineMentionBox(presentation)
+                    NativeTimelineMentionBox(presentation, fontSize: baseFont.pointSize)
                 replacement = inlineRun(
                     width: metrics.width,
                     height: metrics.height,
@@ -426,7 +470,21 @@ nonisolated enum NativeTimelineCoreText {
             let paragraphRange = source.paragraphRange(
                 for: NSRange(location: location, length: 0)
             )
-            var lineHeight: CGFloat = 0
+            let existing = output.attribute(
+                .paragraphStyle,
+                at: paragraphRange.location,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+            // A minimum without a maximum is a message's line height, which
+            // floors the tallest font; code fixes both and keeps its own.
+            // Normalizing drops markdown's line spacing, so the floor takes
+            // it on and message lines keep their pitch.
+            let messageLineHeight = if let existing, existing.isMessageLine {
+                existing.minimumLineHeight + existing.lineSpacing
+            } else {
+                CGFloat(0)
+            }
+            var lineHeight = messageLineHeight
             var containsInlineRun = false
             var containsSpoiler = false
             var paragraphFont: NSFont?
@@ -463,11 +521,6 @@ nonisolated enum NativeTimelineCoreText {
                 location = NSMaxRange(paragraphRange)
                 continue
             }
-            let existing = output.attribute(
-                .paragraphStyle,
-                at: paragraphRange.location,
-                effectiveRange: nil
-            ) as? NSParagraphStyle
             let style = (existing?.mutableCopy()
                 as? NSMutableParagraphStyle)
                 ?? NSMutableParagraphStyle()
@@ -476,15 +529,16 @@ nonisolated enum NativeTimelineCoreText {
             // CoreText otherwise rounds up the font bounding box and counts
             // that point once per line.
             style.lineSpacing = 0
-            if containsSpoiler {
+            if containsSpoiler || containsInlineRun && messageLineHeight > 0 {
                 // Natural line metrics agree between CoreText and TextKit.
                 // A fixed ceil(font height) changes TextKit's baseline at some
                 // sizes; the shared markdown line spacing adds another point.
-                style.minimumLineHeight = 0
+                style.minimumLineHeight = messageLineHeight
                 style.maximumLineHeight = 0
             } else if !containsInlineRun, lineHeight > 0 {
                 style.minimumLineHeight = lineHeight
-                style.maximumLineHeight = lineHeight
+                // A message line stays a floor, which row measurement reads.
+                style.maximumLineHeight = messageLineHeight > 0 ? 0 : lineHeight
             }
             output.addAttribute(
                 .paragraphStyle,
@@ -786,6 +840,7 @@ enum NativeTimelineEmbedLayout {
                 if hasTextSection {
                     textY += spacing
                 }
+                textY += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: box.value)
                 let height = measuredHeight(box, width: width)
                 textRegions.append(
                     .init(
@@ -1271,6 +1326,7 @@ enum NativeTimelineEmbedLayout {
                     field.name,
                     width: fieldWidth
                 )
+                let valueInset = NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: field.value.value)
                 let valueHeight = measuredHeight(
                     field.value,
                     width: fieldWidth
@@ -1291,7 +1347,7 @@ enum NativeTimelineEmbedLayout {
                     .init(
                         frame: CGRect(
                             x: fieldX,
-                            y: verticalOffset + nameHeight + InterfaceScale.metric(2),
+                            y: verticalOffset + nameHeight + InterfaceScale.metric(2) + valueInset,
                             width: fieldWidth,
                             height: valueHeight
                         ),
@@ -1299,7 +1355,7 @@ enum NativeTimelineEmbedLayout {
                         isSelectable: true
                     )
                 )
-                rowHeight = max(rowHeight, nameHeight + 2 + valueHeight)
+                rowHeight = max(rowHeight, nameHeight + 2 + valueInset + valueHeight)
             }
             verticalOffset += rowHeight
         }
@@ -1349,17 +1405,15 @@ enum NativeTimelineEmbedLayout {
         return values.joined(separator: " • ")
     }
 
-    private static func idealWidth(
+    static func idealWidth(
         _ box: NativeTimelineAttributedTextBox
     ) -> CGFloat {
-        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+        let width = NativeTimelineMarkdownChromeMetrics.fittedWidth(
             box.framesetter,
-            CFRange(location: 0, length: box.value.length),
-            nil,
-            CGSize(width: 10_000, height: 10_000),
-            nil
+            value: box.value,
+            maximumWidth: 10_000
         )
-        return max(1, ceil(size.width))
+        return max(1, ceil(width))
     }
 
     private static func measuredHeight(
@@ -1444,13 +1498,74 @@ enum NativeTimelineEmbedLayout {
 }
 
 nonisolated enum NativeTimelineMarkdownChromeMetrics {
-    static var codeBlockInset: CGFloat { InterfaceScale.metric(8) }
-    static var codeBlockParagraphBottomSpacing: CGFloat { InterfaceScale.metric(4) }
+    /// Discord's 8 px code block padding, at the block's text size.
+    static func codeBlockInset(in value: NSAttributedString, at location: Int) -> CGFloat {
+        8 * em(in: value, at: location)
+    }
+
+    static var codeBlockCornerRadius: CGFloat { InterfaceScale.metric(4) }
+
+    /// The copy button's inset from its block's top and trailing edges:
+    /// Discord's 4 px from the trailing edge.
+    static var codeCopyButtonInset: CGFloat { InterfaceScale.metric(4) }
+    /// A radius concentric with the block's would be square at this inset.
+    static var codeCopyButtonCornerRadius: CGFloat { InterfaceScale.metric(2) }
+
+    /// The width `value` needs within `maximumWidth`. CoreText's suggestion
+    /// counts a code line's head indent but not its tail indent, which only
+    /// narrows lines within a set width, so a block fitted to its text would
+    /// end at its last glyph, under its copy button.
+    static func fittedWidth(
+        _ framesetter: CTFramesetter,
+        value: NSAttributedString,
+        maximumWidth: CGFloat
+    ) -> CGFloat {
+        let range = CFRange(location: 0, length: value.length)
+        var width = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            range,
+            nil,
+            CGSize(width: max(1, maximumWidth), height: .greatestFiniteMagnitude),
+            nil
+        ).width
+        guard NativeTimelineCodeBlockGeometry.containsCodeBlock(value) else { return width }
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            range,
+            CGPath(rect: CGRect(x: 0, y: 0, width: max(1, maximumWidth), height: 1_000_000), transform: nil),
+            nil
+        )
+        for line in CTFrameGetLines(frame) as? [CTLine] ?? [] {
+            let location = CTLineGetStringRange(line).location
+            guard value.attribute(.discordMarkdownBlock, at: location, effectiveRange: nil) as? String == "code",
+                  let paragraph = value.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle
+            else { continue }
+            let textWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+                - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
+            width = max(width, paragraph.headIndent + textWidth - paragraph.tailIndent)
+        }
+        return width
+    }
+
+    /// One of Discord's CSS pixels at the size of the markdown block or
+    /// list marker at `location`.
+    static func em(in value: NSAttributedString, at location: Int) -> CGFloat {
+        CGFloat((value.attribute(.discordMarkdownEm, at: location, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 1)
+    }
     // The painter gives CoreText one point of extra layout headroom and its
     // selection-derived block rect has fractional vertical bounds. Preserve
     // the established three-point message-highlight inset after that painted
     // geometry instead of merely making the block fit the row.
     static var codeBlockTerminalPaintAndHighlightInset: CGFloat { InterfaceScale.metric(5.5) }
+
+    /// CoreText ignores the first paragraph's spacing before, so layout
+    /// moves the text frame down by it instead. This keeps Discord's top
+    /// margin and a leading code block's padding clear of the content above.
+    static func leadingVisualInset(in value: NSAttributedString) -> CGFloat {
+        guard value.length > 0 else { return 0 }
+        return (value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?
+            .paragraphSpacingBefore ?? 0
+    }
 
     static func trailingVisualOverflow(
         in value: NSAttributedString
@@ -1476,12 +1591,7 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
                   effectiveRange: nil
               ) as? String == "code"
         else { return 0 }
-        return max(
-            0,
-            codeBlockInset
-                - codeBlockParagraphBottomSpacing
-                + codeBlockTerminalPaintAndHighlightInset
-        )
+        return codeBlockInset(in: value, at: index) + codeBlockTerminalPaintAndHighlightInset
     }
 }
 
@@ -1573,9 +1683,12 @@ extension NSAttributedString.Key {
 
 nonisolated final class NativeTimelineMentionBox: NSObject {
     let presentation: MentionPresentation
+    /// The label's point size, which sized the pill.
+    let fontSize: CGFloat
 
-    init(_ presentation: MentionPresentation) {
+    init(_ presentation: MentionPresentation, fontSize: CGFloat) {
         self.presentation = presentation
+        self.fontSize = fontSize
     }
 }
 
@@ -1659,13 +1772,15 @@ extension NativeTimelineRowLayout {
         // 18-point compact row. CoreText reports that same line just under
         // 19 points because its suggested bounds include fractional font
         // leading. Multiline suggestions retain one trailing point that the
-        // preserved NSTextView usedRect omitted.
-        if size.height < 20 {
+        // preserved NSTextView usedRect omitted. A message's own line height
+        // (a minimum without a maximum) replaces that compact row, and a
+        // one-line code block still needs room for its bottom padding.
+        let style = length > 0 ? value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil
+        let overflow = NativeTimelineMarkdownChromeMetrics.trailingVisualOverflow(in: value)
+        if size.height < 20, overflow == 0, style?.isMessageLine != true {
             return MessageRowLayoutMetrics.compactContentHeight
         }
-        return ceil(size.height - 1.01)
-            + NativeTimelineMarkdownChromeMetrics
-                .trailingVisualOverflow(in: value)
+        return ceil(size.height - 1.01) + overflow
     }
 
     /// A single layout pass shares its font resolution and timestamp gutter.
