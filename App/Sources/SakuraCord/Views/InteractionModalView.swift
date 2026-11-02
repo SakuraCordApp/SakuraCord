@@ -225,10 +225,14 @@ private struct InteractionModalFieldBackground: ViewModifier {
     var isFocused = false
     var hasError = false
     var cornerRadius: CGFloat = InterfaceScale.metric(14)
+    /// Focuses the field from a click anywhere in its surface, padding
+    /// included, rather than only on the field's own text.
+    var focus: (() -> Void)?
 
     func body(content: Content) -> some View {
-        content
-            .background(.quaternary.opacity(isFocused ? 0.8 : 0.5), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let surface = content
+            .background(.quaternary.opacity(isFocused ? 0.8 : 0.5), in: shape)
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
@@ -237,6 +241,11 @@ private struct InteractionModalFieldBackground: ViewModifier {
                         lineWidth: 1.5
                     )
             }
+        if let focus {
+            surface.contentShape(shape).onTapGesture(perform: focus)
+        } else {
+            surface
+        }
     }
 }
 
@@ -270,7 +279,8 @@ private struct InteractionModalTextField: View {
             .padding(.vertical, InterfaceScale.metric(9))
             .modifier(InteractionModalFieldBackground(
                 isFocused: focus.wrappedValue == control.customID,
-                hasError: form.errors[control.customID] != nil
+                hasError: form.errors[control.customID] != nil,
+                focus: control.isDisabled ? nil : { focus.wrappedValue = control.customID }
             ))
             if let maximum, count > maximum * 3 / 4 || style == .paragraph {
                 Text("\(count)/\(maximum)")
