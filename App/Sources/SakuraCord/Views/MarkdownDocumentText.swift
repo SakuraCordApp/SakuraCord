@@ -375,18 +375,23 @@ private struct MarkdownFence {
     private let length: Int
     private let isBare: Bool
 
-    nonisolated init?(_ line: String) {
-        // A fence can open a list item or sit in a quote, as in "- ```md".
-        let containers = line.prefixMatch(of: /(?: {0,3}(?:[-*+]|\d{1,9}[.)]) +| {0,3}> ?)*/)?.output.count ?? 0
-        let rest = line.dropFirst(containers)
+    /// Any fence sits after its quote markers; an opening one can also start
+    /// a list item, as in "- ```md", which a closing one never does.
+    nonisolated init?(_ line: String, isOpening: Bool) {
+        let containers = isOpening
+            ? line.prefixMatch(of: /(?: {0,3}(?:[-*+]|\d{1,9}[.)]) +| {0,3}> ?)*/)?.output.count
+            : line.prefixMatch(of: /(?: {0,3}> ?)*/)?.output.count
+        let rest = line.dropFirst(containers ?? 0)
         let indent = rest.prefix { $0 == " " }.count
         let trimmed = rest.dropFirst(indent)
         guard indent <= 3, let marker = trimmed.first, marker == "`" || marker == "~" else { return nil }
         let length = trimmed.prefix { $0 == marker }.count
-        guard length >= 3 else { return nil }
+        let info = trimmed.dropFirst(length)
+        // A backtick in a backtick fence's info string makes the line inline code instead.
+        guard length >= 3, marker == "~" || !info.contains("`") else { return nil }
         self.marker = marker
         self.length = length
-        isBare = trimmed.dropFirst(length).allSatisfy(\.isWhitespace)
+        isBare = info.allSatisfy(\.isWhitespace)
     }
 
     /// A fence closes with the same character, at least as long, and nothing after it.
@@ -469,7 +474,7 @@ enum MarkdownFootnotes {
         // `\r\n` is one Character, so lines split on any newline, which also normalizes them.
         for line in markdown.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init) {
             if let open = fence {
-                if MarkdownFence(line)?.closes(open) == true { fence = nil }
+                if MarkdownFence(line, isOpening: false)?.closes(open) == true { fence = nil }
                 lines.append(line)
                 continue
             }
@@ -490,7 +495,7 @@ enum MarkdownFootnotes {
                 isInDefinition = false
             }
             hasPendingBlank = false
-            if let opening = MarkdownFence(line) {
+            if let opening = MarkdownFence(line, isOpening: true) {
                 fence = opening
                 isInDefinition = false
             } else if line.contains("[^"), line.prefixMatch(of: /^ {0,3}\[\^[^\]\s]+\]:/) != nil, let bracket = line.firstIndex(of: "[") {

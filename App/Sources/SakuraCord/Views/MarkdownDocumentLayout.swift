@@ -46,6 +46,7 @@ struct MarkdownBlockLayout {
         if openTable?.identity != tableIntent?.identity { closeTable() }
 
         var placement = placement(in: leaf.containers)
+        let isItemStart = placement.marker != nil
         let content = leaf.content
         var font = MarkdownInlineStyle.font(for: leaf.kind)
         var alignment = NSTextAlignment.natural
@@ -89,7 +90,7 @@ struct MarkdownBlockLayout {
         style.textBlocks = placement.textBlocks
         style.alignment = alignment
         style.lineSpacing = leaf.kind == .thematicBreak ? 0 : InterfaceScale.metric(2)
-        style.paragraphSpacingBefore = spacing(before: leaf, opening: placement.textBlocks, isItemStart: placement.marker != nil)
+        style.paragraphSpacingBefore = spacing(before: leaf, opening: placement.textBlocks, isItemStart: isItemStart)
         style.firstLineHeadIndent = placement.marker == nil ? placement.indent : placement.markerIndent
         style.headIndent = placement.indent
         if placement.marker != nil {
