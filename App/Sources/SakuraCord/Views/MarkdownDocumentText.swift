@@ -454,7 +454,8 @@ enum MarkdownFootnotes {
         var fence: (marker: Character, length: Int)?
         var isInDefinition = false
         var hasPendingBlank = false
-        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+        // `\r\n` is one Character, so lines split on any newline, which also normalizes them.
+        for line in markdown.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init) {
             if let open = fence {
                 if MarkdownFence(line)?.closes(open) == true { fence = nil }
                 lines.append(line)
