@@ -8,7 +8,6 @@ final class AppAccentColorController {
     private var bundledAccentColor: NSColor?
     private var appearanceObservation: NSKeyValueObservation?
     private var systemColorsObservation: NSObjectProtocol?
-    private var overridesSystemAccent = false
 
     private init() {}
 
@@ -31,11 +30,10 @@ final class AppAccentColorController {
         // The effective accent may already include the user's system override.
         bundledAccentColor = NSApp.perform(getter)?.takeUnretainedValue() as? NSColor
         hasStarted = true
-        if case let .bool(enabled) = SettingsPreferenceStore.shared.value(for: .overrideMacOSAccent) {
-            overridesSystemAccent = enabled
-        }
-        refreshSystemAccent()
         apply(SakuraCordThemeStore.shared.committedTheme, background: SakuraCordThemeStore.shared.committedBackgroundTheme)
+        // The override takes effect at launch, so macOS never supplies the accent.
+        guard SettingsPreferenceStore.shared.value(for: .overrideMacOSAccent) != .bool(true) else { return }
+        refreshSystemAccent()
         appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
             Task { @MainActor [weak self] in self?.refreshSystemAccent() }
         }
@@ -52,8 +50,7 @@ final class AppAccentColorController {
         // Read the global domain directly: our optional process-local override
         // deliberately masks AppleAccentColor in the standard search list.
         let selection = (UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleAccentColor"] as? NSNumber)?.intValue
-        let color = overridesSystemAccent ? nil : Self.systemAccentColor(for: selection)
-        SakuraCordThemeStore.shared.setSystemAccentColor(color)
+        SakuraCordThemeStore.shared.setSystemAccentColor(Self.systemAccentColor(for: selection))
     }
 
     static func systemAccentColor(for selection: Int?) -> SakuraCordThemeColor? {

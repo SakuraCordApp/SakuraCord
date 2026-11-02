@@ -254,6 +254,13 @@ nonisolated struct SakuraCordGradientTheme: Codable, Equatable, Hashable, Sendab
         }
     }
 
+    /// This theme with `color` as its first color.
+    func replacingPrimary(with color: SakuraCordThemeColor) -> Self {
+        var theme = self
+        theme.colors[0] = color
+        return theme
+    }
+
     mutating func setColor(_ color: SakuraCordThemeColor, at index: Int) {
         guard activeColors.indices.contains(index) else { return }
         colors[index].hue = color.hue
@@ -667,10 +674,7 @@ final class SakuraCordThemeStore {
     private(set) var matchesBackgroundToPrimaryColor = true
 
     private func effectiveTheme(_ theme: SakuraCordGradientTheme) -> SakuraCordGradientTheme {
-        guard let systemAccentColor else { return theme }
-        var colors = theme.colors
-        colors[0] = systemAccentColor
-        return SakuraCordGradientTheme(colors: colors, activeColorCount: theme.activeColorCount, intensity: theme.intensity, brightness: theme.brightness)
+        systemAccentColor.map(theme.replacingPrimary) ?? theme
     }
 
     var activeTheme: SakuraCordGradientTheme { effectiveTheme(authoredTheme) }
@@ -696,6 +700,8 @@ final class SakuraCordThemeStore {
 
     var committedTheme: SakuraCordGradientTheme { effectiveTheme(committedAuthoredTheme) }
     var isSystemAccentActive: Bool { systemAccentColor != nil }
+    /// macOS supplies the first color while it has a specific accent.
+    func isColorLocked(at index: Int) -> Bool { index == 0 && isSystemAccentActive }
     var isUsingDefaultTheme: Bool { authoredTheme == .defaultTheme }
 
     @ObservationIgnored private let persistence: SakuraCordThemeSettingsStore
@@ -726,7 +732,7 @@ final class SakuraCordThemeStore {
     }
 
     func setHue(_ hue: Double, at index: Int) {
-        guard index != 0 || !isSystemAccentActive else { return }
+        guard !isColorLocked(at: index) else { return }
         editTheme { $0.setHue(hue, at: index) }
     }
 
@@ -755,7 +761,7 @@ final class SakuraCordThemeStore {
     }
 
     func applyColor(_ color: SakuraCordThemeColor, at index: Int, reduceMotion: Bool) async {
-        guard index != 0 || !isSystemAccentActive else { return }
+        guard !isColorLocked(at: index) else { return }
         var target = authoredTheme
         guard target.activeColors.indices.contains(index) else { return }
         target.setColor(color, at: index)
@@ -763,7 +769,7 @@ final class SakuraCordThemeStore {
     }
 
     func removeColor(at index: Int) {
-        guard index != 0 || !isSystemAccentActive else { return }
+        guard !isColorLocked(at: index) else { return }
         editTheme { $0.removeColor(at: index) }
         commit()
     }
@@ -859,10 +865,7 @@ final class SakuraCordThemeStore {
     }
 
     private func preservingLockedPrimary(in theme: SakuraCordGradientTheme) -> SakuraCordGradientTheme {
-        guard isSystemAccentActive else { return theme }
-        var colors = theme.colors
-        colors[0] = authoredTheme.colors[0]
-        return SakuraCordGradientTheme(colors: colors, activeColorCount: theme.activeColorCount, intensity: theme.intensity, brightness: theme.brightness)
+        isSystemAccentActive ? theme.replacingPrimary(with: authoredTheme.colors[0]) : theme
     }
 
     private func editTheme(_ edit: (inout SakuraCordGradientTheme) -> Void) {

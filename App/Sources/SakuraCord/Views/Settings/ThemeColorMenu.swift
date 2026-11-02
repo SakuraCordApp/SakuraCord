@@ -12,14 +12,15 @@ struct ThemeColorMenu: ViewModifier {
 
     private var canInputColor: Bool {
         if let colorIndex {
-            guard colorIndex != 0 || !themeStore.isSystemAccentActive else { return false }
+            guard !themeStore.isColorLocked(at: colorIndex) else { return false }
             return themeStore.activeTheme.activeColors.indices.contains(colorIndex)
         }
         return themeStore.activeTheme.activeColorCount < SakuraCordGradientTheme.maximumColorCount
     }
 
     private var canRemoveColor: Bool {
-        (colorIndex != 0 || !themeStore.isSystemAccentActive) && colorIndex != nil && themeStore.activeTheme.activeColorCount > SakuraCordGradientTheme.minimumColorCount
+        colorIndex.map { !themeStore.isColorLocked(at: $0) } == true
+            && themeStore.activeTheme.activeColorCount > SakuraCordGradientTheme.minimumColorCount
     }
 
     func body(content: Content) -> some View {

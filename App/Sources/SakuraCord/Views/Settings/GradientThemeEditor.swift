@@ -312,8 +312,7 @@ private struct GradientHuePicker: View {
                     themeStore: themeStore,
                     colorIndex: index
                 )
-                .disabled(index == 0 && themeStore.isSystemAccentActive)
-                .allowsHitTesting(index != 0 || !themeStore.isSystemAccentActive)
+                .disabled(themeStore.isColorLocked(at: index))
             }
 
             // Keep the intensity control above every hue-handle hit target.
@@ -344,7 +343,7 @@ private struct ThemeHueHandle: View {
 
     var body: some View {
         ZStack {
-            if colorIndex == 0, themeStore.isSystemAccentActive {
+            if themeStore.isColorLocked(at: colorIndex) {
                 Image(systemName: "lock.fill")
                     .font(.interface(.title2).weight(.semibold))
             } else if let order {
@@ -359,7 +358,7 @@ private struct ThemeHueHandle: View {
         )
         .contentShape(Circle())
         .glassEffect(
-            colorIndex == 0 && themeStore.isSystemAccentActive
+            themeStore.isColorLocked(at: colorIndex)
                 ? .clear.tint(Color(nsColor: .controlAccentColor)).interactive()
                 : .clear.interactive(),
             in: Circle()
@@ -386,7 +385,7 @@ private struct ThemeHueHandle: View {
                 }
         )
         .accessibilityLabel(order.map { "Gradient color \($0)" } ?? "Gradient color")
-        .accessibilityHint(colorIndex == 0 && themeStore.isSystemAccentActive ? "Controlled by macOS. Change the accent override setting to edit this color." : "")
+        .accessibilityHint(themeStore.isColorLocked(at: colorIndex) ? "Controlled by macOS. Change the accent override setting to edit this color." : "")
         .accessibilityValue("Hue \(Int((hue * 360).rounded())) degrees")
         .accessibilityAdjustableAction { direction in
             let step = direction == .increment ? 1.0 / 72 : -1.0 / 72
