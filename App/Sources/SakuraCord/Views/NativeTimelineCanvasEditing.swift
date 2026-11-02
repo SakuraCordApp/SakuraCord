@@ -106,6 +106,81 @@ extension NativeTimelineCanvasView {
         for target in [old, value].compactMap({ $0 }) {
             invalidateComponentButton(target)
         }
+        if let old { fadeFileCardHover(old, isHovered: false) }
+        if let value { fadeFileCardHover(value, isHovered: true) }
+    }
+
+    /// Eases a file card part's hover in or out from wherever it is, so the
+    /// pointer moving between parts or leaving the card never snaps.
+    private func fadeFileCardHover(_ target: NativeTimelineComponentButtonTarget, isHovered: Bool) {
+        guard target.componentID.hasPrefix("file:") else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let current = componentButtonHoverFades[target]?.progress(at: now) ?? 0
+        // Reduce Motion lands at once.
+        let start = AppMotionPolicy.animatesUncategorized
+            ? now : now - NativeTimelineComponentButtonVisualState.hoverAnimationDuration
+        componentButtonHoverFades[target] = .init(from: current, to: isHovered ? 1 : 0, start: start)
+        animateFileCardFades()
+    }
+
+    /// Crossfades a download's button from its full ring to its next step.
+    func fadeFileCardFinish(_ target: NativeTimelineComponentButtonTarget) {
+        guard AppMotionPolicy.animatesUncategorized else { return }
+        fileCardFinishFades[target] = .init(from: 0, to: 1, start: ProcessInfo.processInfo.systemUptime)
+        animateFileCardFades()
+    }
+
+    private func animateFileCardFades() {
+        guard componentButtonHoverAnimationTask == nil else { return }
+        var previous = ProcessInfo.processInfo.systemUptime
+        componentButtonHoverAnimationTask = Task { @MainActor [weak self] in
+            while let self, !Task.isCancelled {
+                let now = ProcessInfo.processInfo.systemUptime
+                // Work that holds the main thread, such as saving a finished
+                // download, pauses the fades still running instead of skipping
+                // them, each from the later of the stall's start and its own.
+                // Under Reduce Motion every fade lands at once.
+                let stallStart = previous + 1.0 / 30
+                previous = now
+                if now > stallStart, AppMotionPolicy.animatesUncategorized {
+                    let resume = { (fade: NativeTimelineHoverFade) in
+                        fade.isSettled(at: stallStart) ? fade : fade.delayed(by: now - max(stallStart, fade.start))
+                    }
+                    componentButtonHoverFades = componentButtonHoverFades.mapValues(resume)
+                    fileCardFinishFades = fileCardFinishFades.mapValues(resume)
+                }
+                redrawFadingFileCardHovers()
+                // A faded-out part is forgotten; a hovered one holds.
+                componentButtonHoverFades = componentButtonHoverFades.filter { !$0.value.isSettled(at: now) || $0.value.to > 0 }
+                fileCardFinishFades = fileCardFinishFades.filter { !$0.value.isSettled(at: now) }
+                guard componentButtonHoverFades.values.contains(where: { !$0.isSettled(at: now) })
+                    || !fileCardFinishFades.isEmpty
+                else {
+                    componentButtonHoverAnimationTask = nil
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+        }
+    }
+
+    /// Redraws the parts still easing their hover, so dropping their fades
+    /// leaves none on its last frame.
+    func redrawFadingFileCardHovers() {
+        for target in componentButtonHoverFades.keys { invalidateComponentButton(target) }
+        for target in fileCardFinishFades.keys { invalidateComponentButton(target) }
+    }
+
+    /// How far each download finishing in a message has crossfaded.
+    func fileCardFinishProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
+        let now = ProcessInfo.processInfo.systemUptime
+        return fileCardFinishFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
+    }
+
+    /// The file card parts' hover in a message at this moment.
+    func fileCardHoverProgress(in messageID: MessageID?) -> [NativeTimelineComponentButtonTarget: CGFloat] {
+        let now = ProcessInfo.processInfo.systemUptime
+        return componentButtonHoverFades.filter { $0.key.messageID == messageID }.mapValues { $0.progress(at: now) }
     }
 
     func setHoveredForwardedSourceMessageID(_ value: MessageID?) {

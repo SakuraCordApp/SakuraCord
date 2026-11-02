@@ -533,6 +533,8 @@ enum NativeTimelineRowPainter {
         pressedComponentButton:
             NativeTimelineComponentButtonTarget? = nil,
         componentButtonPressProgress: CGFloat = 0,
+        fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
+        fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat] = [:],
         isForwardedSourceHovered: Bool = false,
         threadCardInteraction: NativeTimelineThreadCard.Interaction = .idle,
         isEphemeralDismissHovered: Bool = false,
@@ -618,6 +620,8 @@ enum NativeTimelineRowPainter {
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,
+                fileCardHoverProgress: fileCardHoverProgress,
+                fileCardFinishProgress: fileCardFinishProgress,
                 isForwardedSourceHovered: isForwardedSourceHovered,
                 threadCardInteraction: threadCardInteraction,
                 isEphemeralDismissHovered: isEphemeralDismissHovered,

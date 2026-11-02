@@ -34,24 +34,25 @@ extension NativeTimelineCanvasView {
     func fileCardPointerHit(at local: CGPoint, rowIndex: Int, rowOrigin: CGFloat, message: Message)
         -> ComponentButtonPointerHit? {
         let states = model?.attachmentDownloads.states
-        guard let card = fileCards(at: rowIndex, messageID: message.id).first(where: { card in
-            card.actionFrames(for: states?[card.attachment.id]).contains { $0.contains(local) }
-        }) else { return nil }
-        return ComponentButtonPointerHit(
-            target: .fileCard(messageID: message.id, attachmentID: card.attachment.id),
-            rowIndex: rowIndex, message: message, kind: .fileCard(card),
-            frame: card.actionFrame.offsetBy(dx: 0, dy: rowOrigin)
-        )
+        for card in fileCards(at: rowIndex, messageID: message.id) {
+            guard let part = card.part(at: local, state: states?[card.attachment.id]) else { continue }
+            return ComponentButtonPointerHit(
+                target: .fileCard(messageID: message.id, attachmentID: card.attachment.id, part: part),
+                rowIndex: rowIndex, message: message, kind: .fileCard(card),
+                frame: card.actionFrame.offsetBy(dx: 0, dy: rowOrigin)
+            )
+        }
+        return nil
     }
 
     /// Where a file's cards draw, including their bubble hover highlight, so
-    /// a press animation redraws them alone rather than their row. Cards of
-    /// one file share a target, so all of them are included.
+    /// a hover or press redraws them alone rather than their row. Cards of
+    /// one file share targets, so all of them are included.
     func fileCardDisplayFrame(_ target: NativeTimelineComponentButtonTarget, at index: Int) -> CGRect? {
         guard target.componentID.hasPrefix("file:") else { return nil }
         var frame: CGRect?
         for card in fileCards(at: index, messageID: target.messageID)
-        where .fileCard(messageID: target.messageID, attachmentID: card.attachment.id) == target {
+        where card.part(of: target, messageID: target.messageID) != nil {
             frame = frame?.union(card.highlightFrame) ?? card.highlightFrame
         }
         return frame?.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
@@ -82,16 +83,51 @@ extension NativeTimelineCanvasView {
         }
         let isProgressTick = if case let .downloading(fraction)? = downloads.states[attachmentID] { fraction > 0 } else { false }
         guard isProgressTick else {
+            let fileItems = items.filter(showsFile)
+            if case .finished = downloads.states[attachmentID] {
+                for messageID in fileItems.compactMap(\.messageID) {
+                    fadeFileCardFinish(.fileCard(messageID: messageID, attachmentID: attachmentID, part: .button))
+                }
+            }
             setNeedsDisplay(visibleRect)
-            items.filter(showsFile).forEach { rebuildAccessibilityProxy(for: $0.identifier) }
+            fileItems.forEach { rebuildAccessibilityProxy(for: $0.identifier) }
             return
         }
         // A progress tick changes only the button's ring and the detail line.
         forEachDisplayedRow(in: visibleRect) { index in
             guard let messageID = items[index].messageID, showsFile(items[index]),
-                  let frame = fileCardDisplayFrame(.fileCard(messageID: messageID, attachmentID: attachmentID), at: index)
+                  let frame = fileCardDisplayFrame(
+                      .fileCard(messageID: messageID, attachmentID: attachmentID, part: .card), at: index
+                  )
             else { return }
             setNeedsDisplay(frame)
+        }
+    }
+
+    /// A file card's action. A download Discord deems potentially dangerous
+    /// asks first, with Discord's warning.
+    func activateFileCard(_ attachment: Attachment) {
+        guard let downloads = model?.attachmentDownloads else { return }
+        guard downloads.startsDownload(attachment), DangerousDownloadPolicy.isPotentiallyDangerous(attachment.url) else {
+            downloads.activate(attachment)
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let window = self?.window, await DangerousDownloadPolicy.confirm(in: window) else { return }
+            downloads.activate(attachment)
+        }
+    }
+
+    /// A file card's body: previews the file in the media viewer.
+    func previewFileCard(_ card: NativeTimelineFileCard, message: Message, rowIndex: Int) {
+        let layout = layouts[rowIndex]
+        if let region = layout.componentLayouts.lazy.flatMap(\.files).first(where: { $0.frame == card.frame }) {
+            _ = activateComponentMedia(
+                id: region.componentID, openURL: region.openURL, isSpoiler: region.isSpoiler,
+                layout: layout, message: message, rowIndex: rowIndex
+            )
+        } else {
+            _ = activateAttachment(card.attachment, in: message, rowIndex: rowIndex)
         }
     }
 
@@ -116,5 +152,28 @@ extension NativeTimelineCanvasView {
         case .failed: "Retry downloading \(name)"
         case nil: "Download \(name)"
         }
+    }
+}
+
+extension DangerousDownloadPolicy {
+    /// Asks with Discord's warning before a potentially dangerous download,
+    /// as a sheet on `window` or, over the media viewer, which sits above
+    /// sheets, as its own panel; true to download.
+    @MainActor static func confirm(in window: NSWindow?) async -> Bool {
+        guard window?.attachedSheet == nil else { return false }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Potentially Dangerous Download"
+        alert.informativeText = """
+            Whoa there! While programs downloaded from the internet may be beneficial, this type of file can damage \
+            your device or steal your personal data. Make sure to only run executables from developers that you trust!
+            """
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Continue to Download").hasDestructiveAction = true
+        guard let window else {
+            await Task.yield()
+            return alert.runModal() == .alertSecondButtonReturn
+        }
+        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
     }
 }

@@ -645,7 +645,11 @@ extension NativeTimelineCanvasView {
                 case let .invite(card, expands):
                     activateInvite(card, message: hit.message, expands: expands)
                 case let .fileCard(card):
-                    model?.attachmentDownloads.activate(card.attachment)
+                    if card.part(of: hit.target, messageID: hit.message.id) == .card {
+                        previewFileCard(card, message: hit.message, rowIndex: hit.rowIndex)
+                    } else {
+                        activateFileCard(card.attachment)
+                    }
                 }
             }
             return true

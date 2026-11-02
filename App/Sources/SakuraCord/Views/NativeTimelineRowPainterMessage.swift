@@ -24,6 +24,10 @@ struct NativeTimelineMessageDrawInput {
     let activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let pressedComponentButton: NativeTimelineComponentButtonTarget?
     let componentButtonPressProgress: CGFloat
+    /// How far each file card part's hover has eased in.
+    let fileCardHoverProgress: [NativeTimelineComponentButtonTarget: CGFloat]
+    /// How far each just-finished download's button has crossfaded.
+    let fileCardFinishProgress: [NativeTimelineComponentButtonTarget: CGFloat]
     let isForwardedSourceHovered: Bool
     let threadCardInteraction: NativeTimelineThreadCard.Interaction
     let isEphemeralDismissHovered: Bool
@@ -501,15 +505,17 @@ extension NativeTimelineRowPainter {
                 }
                 if isVideo { mediaPlayGlyph(in: region.frame) }
             case .audio, .file:
-                let target = NativeTimelineComponentButtonTarget.fileCard(messageID: message.id, attachmentID: attachment.id)
                 fileCard(
                     .init(frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil),
                     messageID: message.id,
                     bubbleRegion: layout.bubbleRegion,
                     state: input.model?.attachmentDownloads.states[attachment.id],
                     upload: uploadState(of: attachment, in: input),
-                    hovered: input.hoveredComponentButton,
-                    pressProgress: input.pressedComponentButton == target ? input.componentButtonPressProgress : 0
+                    finishProgress: input.fileCardFinishProgress,
+                    pointer: .init(
+                        hovered: input.hoveredComponentButton, hoverProgress: input.fileCardHoverProgress,
+                        pressed: input.pressedComponentButton, pressProgress: input.componentButtonPressProgress
+                    )
                 )
                 if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
                     NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)
@@ -681,6 +687,8 @@ extension NativeTimelineRowPainter {
                 pressedComponentButton: pressedComponentButton,
                 componentButtonPressProgress:
                     componentButtonPressProgress,
+                fileCardHoverProgress: input.fileCardHoverProgress,
+                fileCardFinishProgress: input.fileCardFinishProgress,
                 animatedOverlayRoles: input.animatedOverlayRoles
             ))
         }
