@@ -389,9 +389,10 @@ final class ProfileEditorState {
     /// hands it to `apply`. The editor owns the work, so the slot's view
     /// scrolling away or being rebuilt can't cancel it; widget edits and
     /// saving pause until it lands, as they did behind the crop screen.
-    @discardableResult
+    /// The task returns a failure for the slot to show, since the editor's
+    /// own error belongs to its loads and saves.
     func prepareWidgetImage(from url: URL, purpose: ProfileImagePurpose, aspectRatio: Double,
-                            apply: @escaping (ProfileWidgetImage) -> Void) -> Task<Void, Never> {
+                            apply: @escaping (ProfileWidgetImage) -> Void) -> Task<String?, Never> {
         preparingWidgetImages += 1
         let account = session, requestRevision = revision, generation = draftGeneration
         return Task {
@@ -411,8 +412,7 @@ final class ProfileEditorState {
             if let image { apply(image) }
             // A refresh held back for the image runs now, unless it left a draft.
             if needsExternalRefresh { await refreshIfNeeded() }
-            // After the refresh, which clears the editor's error as it loads.
-            if let failure { errorMessage = failure }
+            return failure
         }
     }
 

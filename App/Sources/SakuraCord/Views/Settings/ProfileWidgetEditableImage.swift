@@ -103,7 +103,7 @@ struct ProfileWidgetEditableImage: View {
         let upload = editor.prepareWidgetImage(from: url, purpose: purpose, aspectRatio: aspectRatio, apply: update)
         busy = true
         Task {
-            await upload.value
+            errorMessage = await upload.value
             busy = false
         }
     }
