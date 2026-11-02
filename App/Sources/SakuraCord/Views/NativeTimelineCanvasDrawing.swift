@@ -466,6 +466,9 @@ extension NativeTimelineCanvasView {
         _ isBlocked: Bool,
         mediaViewerHighlightedMessageID: MessageID?
     ) {
+        // The viewer's message stays highlighted only while the viewer holds
+        // input; once it starts closing, hover follows the pointer.
+        let mediaViewerHighlightedMessageID = isBlocked ? mediaViewerHighlightedMessageID : nil
         let highlightChanged = self.mediaViewerHighlightedMessageID
             != mediaViewerHighlightedMessageID
         guard overlayBlocksInteractions != isBlocked || highlightChanged else {
@@ -494,6 +497,11 @@ extension NativeTimelineCanvasView {
         needsDisplay = true
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
+        guard !isBlocked else { return }
+        // Hover was cleared while blocked; the pointer may have moved since.
+        synchronizeHoverWithCurrentPointer()
+        // A closing viewer zooms back to its card as the card looks now.
+        refreshMediaViewerTransition(retakingSnapshots: true)
     }
 
     func installViewportGeometry(frame: CGRect, bounds: CGRect) {
@@ -525,6 +533,7 @@ extension NativeTimelineCanvasView {
         }
         reconcileHistorySkeletonShimmer()
         presentRowsEnteringViewport()
+        refreshMediaViewerTransition()
         // Supplementary Inbox rows are content, not hover presentation. Keep
         // them materialized as the viewport moves, including momentum ticks
         // that stay within the current overscanned backing window.

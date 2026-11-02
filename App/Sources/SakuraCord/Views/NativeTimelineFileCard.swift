@@ -5,7 +5,10 @@ import SakuraCordModels
 /// file components: the geometry that painting, hit testing, and cursors
 /// agree on. Outside a bubble it is a capsule like a plain voice message's;
 /// inside one it sits straight on the bubble, as a voice message does. The
-/// file's Finder icon leads, and a round button at the end downloads it.
+/// file's Finder icon leads, and a round button at the end downloads it; the
+/// rest of the card previews the file in the media viewer. An audio file's
+/// card adds Discord's mini player below: a play glyph under the icon and a
+/// seek bar.
 struct NativeTimelineFileCard {
     static var spacing: CGFloat { InterfaceScale.metric(8) }
     static var minimumWidth: CGFloat { InterfaceScale.metric(220) }
@@ -20,7 +23,13 @@ struct NativeTimelineFileCard {
     let attachment: Attachment
     let isInBubble: Bool
 
-    static func height(isInBubble: Bool) -> CGFloat { InterfaceScale.metric(isInBubble ? 44 : 52) }
+    /// The name row's height; an audio card adds its player row below.
+    static func height(isInBubble: Bool, isAudio: Bool = false) -> CGFloat {
+        InterfaceScale.metric(isInBubble ? 44 : 52) + (isAudio ? playerRowHeight : 0)
+    }
+
+    /// Discord's 32-pixel audio controls.
+    private static var playerRowHeight: CGFloat { DiscordRichMessageMetrics.px(32) }
 
     /// The capsule's padding around its icon and button, which keeps the
     /// button concentric with the capsule's end.
@@ -40,21 +49,60 @@ struct NativeTimelineFileCard {
         }
         let text = max(NativeTimelineRowLayout.measuredTextWidth(attachment.filename, font: nameFont), details.max() ?? 0)
         let width = inset(isInBubble: isInBubble) * 2 + iconSide + buttonDiameter + textGap * 2 + text
-        return min(maximumWidth, Self.maximumWidth, max(minimumWidth, ceil(width)))
+        // An audio card's seek row needs room to scrub.
+        let minimum = attachment.mediaKind == .audio ? InterfaceScale.metric(320) : minimumWidth
+        return min(maximumWidth, Self.maximumWidth, max(minimum, ceil(width)))
+    }
+
+    /// The name row, which is the whole card unless it plays audio.
+    private var nameRow: CGRect {
+        var row = frame
+        row.size.height = Self.height(isInBubble: isInBubble)
+        return row
     }
 
     /// The file type's Finder icon.
     var iconFrame: CGRect {
         let side = Self.iconSide
-        return CGRect(x: frame.minX + Self.inset(isInBubble: isInBubble) - InterfaceScale.metric(2), y: frame.midY - side / 2, width: side, height: side)
+        return CGRect(x: frame.minX + Self.inset(isInBubble: isInBubble) - InterfaceScale.metric(2), y: nameRow.midY - side / 2, width: side, height: side)
     }
 
     /// The round download button, like a voice message's play button.
     var buttonFrame: CGRect {
         let diameter = Self.buttonDiameter
         return CGRect(
-            x: frame.maxX - Self.inset(isInBubble: isInBubble) - diameter, y: frame.midY - diameter / 2,
+            x: frame.maxX - Self.inset(isInBubble: isInBubble) - diameter, y: nameRow.midY - diameter / 2,
             width: diameter, height: diameter
+        )
+    }
+
+    /// The download button, which alone downloads the file.
+    var actionFrame: CGRect { buttonFrame }
+
+    /// The card's outline, which its snapshot zooms out of into the viewer.
+    var cornerRadius: CGFloat {
+        isInBubble ? InterfaceScale.metric(12) : Self.height(isInBubble: false) / 2
+    }
+
+    /// Where a click acts on the file: its button, and the detail line's
+    /// Show in Finder or Retry link.
+    func actionFrames(for state: AttachmentDownloadStore.State?) -> [CGRect] {
+        let detail = Self.detail(for: state, size: attachment.size)
+        guard detail.link != nil else { return [actionFrame] }
+        let offset = NativeTimelineRowLayout.measuredTextWidth(detail.text, font: Self.detailFont)
+        var link = detailFrame
+        link.origin.x += offset
+        link.size.width = max(0, link.width - offset)
+        return [actionFrame, link]
+    }
+
+    /// An audio card's player row, under the name row and spanning the
+    /// icon to the download button. It starts just under the icon, as
+    /// Discord's controls follow its metadata.
+    var playerRowFrame: CGRect {
+        CGRect(
+            x: iconFrame.minX, y: nameRow.maxY - InterfaceScale.metric(2),
+            width: max(1, buttonFrame.maxX - iconFrame.minX), height: Self.playerRowHeight
         )
     }
 
@@ -64,7 +112,7 @@ struct NativeTimelineFileCard {
     var nameFrame: CGRect {
         let minX = iconFrame.maxX + Self.textGap
         return CGRect(
-            x: minX, y: frame.midY - InterfaceScale.metric(17),
+            x: minX, y: nameRow.midY - InterfaceScale.metric(17),
             width: max(1, buttonFrame.minX - Self.textGap - minX),
             height: InterfaceScale.metric(18)
         )

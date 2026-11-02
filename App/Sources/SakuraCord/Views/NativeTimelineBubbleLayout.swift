@@ -84,7 +84,7 @@ enum NativeTimelineBubbleLayout {
                 min(maximumWidth, linkedImageWidth)
             )
         }
-        let media = message.attachments.filter { $0.mediaKind != .file }
+        let media = message.attachments.filter(\.mediaKind.isVisual)
         if !media.isEmpty {
             let attachmentWidth = media.compactMap(\.width)
                 .map(CGFloat.init).max() ?? 360
@@ -93,7 +93,7 @@ enum NativeTimelineBubbleLayout {
                 min(maximumWidth, max(InterfaceScale.metric(180), attachmentWidth))
             )
         }
-        for file in message.attachments where file.mediaKind == .file {
+        for file in message.attachments where !file.mediaKind.isVisual {
             preferredWidth = max(
                 preferredWidth,
                 NativeTimelineFileCard.fittedWidth(for: file, isInBubble: true, maximumWidth: maximumWidth)

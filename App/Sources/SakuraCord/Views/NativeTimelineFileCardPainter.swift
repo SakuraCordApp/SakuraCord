@@ -27,9 +27,13 @@ extension NativeTimelineRowPainter {
                 ).fill()
             }
         } else {
-            // A plain voice message's capsule, deepening under the pointer.
+            // A plain voice message's capsule, deepening under the pointer;
+            // an audio card keeps its ends' radius over two rows.
             NativeTimelineSemanticColor.opacity(.secondaryLabelColor, 0.10 + highlight).setFill()
-            NSBezierPath(concentricRoundedRect: card.frame, cornerRadius: card.frame.height / 2).fill()
+            NSBezierPath(
+                concentricRoundedRect: card.frame,
+                cornerRadius: NativeTimelineFileCard.height(isInBubble: false) / 2
+            ).fill()
         }
         fileCardIcon(card)
         fileCardButton(card, state: state, palette: palette, isHovered: isHovered, pressProgress: pressProgress)

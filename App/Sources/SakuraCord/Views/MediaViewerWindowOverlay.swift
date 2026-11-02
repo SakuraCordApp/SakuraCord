@@ -5,13 +5,17 @@ import SwiftUI
 /// Media transitions stay feature-owned; window input and lifetime use the shared host.
 struct MediaViewerWindowOverlay: View {
     @Environment(\.profileCosmeticPolicy) private var cosmeticPolicy
+    @Environment(VoiceMessagePlaybackStore.self) private var playback
     let presentation: NativeTimelineMediaViewerPresentation?
+    /// Read live by the hosted viewer, whose tree outlives this view's updates.
+    let animatesOverlays: () -> Bool
     let dismiss: () -> Void
 
     var body: some View {
-        WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { presentation, context in
-            MediaViewerWindowAnimatedContent(presentation: presentation, context: context)
+        WindowModalOverlay(presentation: presentation, behavior: { _ in .contentAnimated }, dismiss: dismiss, content: { [animatesOverlays] presentation, context in
+            MediaViewerWindowAnimatedContent(presentation: presentation, context: context, animatesOverlays: animatesOverlays)
                 .environment(\.profileCosmeticPolicy, cosmeticPolicy)
+                .environment(playback)
         })
     }
 }
@@ -21,17 +25,38 @@ struct MediaViewerWindowOverlay: View {
 private final class MediaViewerWindowAnimationState {
     private(set) var isVisible = false
     private(set) var transitionSources: [String: MediaViewerTransitionSource] = [:]
-    private var reducesMotion = false
+    /// Follows the setting while the viewer is up, so its curves, its zoom
+    /// and the card it covers always agree.
+    var reducesMotion: Bool
     private let sourceItemIDs: Set<String>
+    /// Files zoom from a slim card into a large page, which reads only over
+    /// a longer, even curve than a photo's snappy one.
+    private let fileItemIDs: Set<String>
     private var selectedItemID: String
 
-    init(presentation: NativeTimelineMediaViewerPresentation) {
-        sourceItemIDs = Set(presentation.transitionSources.keys)
+    init(presentation: NativeTimelineMediaViewerPresentation, reducesMotion: Bool) {
+        self.reducesMotion = reducesMotion
+        sourceItemIDs = Set(presentation.transitionLink.sources.keys)
+        fileItemIDs = Set(presentation.items.filter {
+            switch $0.kind {
+            case .audio, .text, .file: true
+            default: false
+            }
+        }.map(\.id))
         selectedItemID = presentation.items[presentation.selection].id
     }
 
     private var hasTransitionSource: Bool {
         sourceItemIDs.contains(selectedItemID)
+    }
+
+    private var zoomsFile: Bool {
+        hasTransitionSource && fileItemIDs.contains(selectedItemID)
+    }
+
+    /// The card the zoom stands in for, which the timeline leaves out.
+    var coveredItemID: String? {
+        hasTransitionSource && !reducesMotion ? selectedItemID : nil
     }
 
     func select(itemID: String) {
@@ -49,18 +74,20 @@ private final class MediaViewerWindowAnimationState {
                 return previous.frameInWindow != source.frameInWindow
                     || previous.visibleFrameInWindow
                         != source.visibleFrameInWindow
+                    || previous.image !== source.image
             })
         else { return }
         transitionSources = sources
     }
 
-    func present(reducesMotion: Bool) {
+    func present() {
         guard !isVisible else { return }
-        self.reducesMotion = reducesMotion
         withAnimation(
             reducesMotion
                 ? .easeOut(duration: 0.12)
-                : hasTransitionSource
+                : zoomsFile
+                    ? .smooth(duration: 0.34)
+                    : hasTransitionSource
                     ? .snappy(
                         duration:
                             MediaViewerTransitionTiming.presentationDuration,
@@ -78,8 +105,12 @@ private final class MediaViewerWindowAnimationState {
     }
 
     func dismiss(interactively: Bool) -> TimeInterval {
+        // A pinch follows the fingers, so only a file closed outright eases.
+        let easesFile = zoomsFile && !interactively
         let duration = if reducesMotion {
             0.12
+        } else if easesFile {
+            0.3
         } else if hasTransitionSource {
             interactively
                 ? MediaViewerTransitionTiming.interactiveDismissalDuration
@@ -92,7 +123,9 @@ private final class MediaViewerWindowAnimationState {
         withAnimation(
             reducesMotion
                 ? .easeIn(duration: duration)
-                : hasTransitionSource
+                : easesFile
+                    ? .smooth(duration: duration)
+                    : hasTransitionSource
                     ? interactively
                         ? .snappy(duration: duration, extraBounce: 0.01)
                         : .snappy(duration: duration)
@@ -111,49 +144,83 @@ private struct MediaViewerWindowAnimatedContent: View {
     let context: WindowModalContext
     @State private var animationState: MediaViewerWindowAnimationState
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    let animatesOverlays: () -> Bool
 
-    private var reducesMotion: Bool { systemReducesMotion || !AppMotionPolicy.animates(.overlays) }
+    private var reducesMotion: Bool { systemReducesMotion || !animatesOverlays() }
+    private var link: MediaViewerTransitionLink { presentation.transitionLink }
 
-    init(presentation: NativeTimelineMediaViewerPresentation, context: WindowModalContext) {
+    init(
+        presentation: NativeTimelineMediaViewerPresentation,
+        context: WindowModalContext,
+        animatesOverlays: @escaping () -> Bool
+    ) {
         self.presentation = presentation
         self.context = context
-        _animationState = State(initialValue: MediaViewerWindowAnimationState(presentation: presentation))
+        self.animatesOverlays = animatesOverlays
+        _animationState = State(initialValue: MediaViewerWindowAnimationState(
+            presentation: presentation, reducesMotion: !animatesOverlays()
+        ))
     }
 
     var body: some View {
         MediaViewer(
             presentation: presentation,
             isVisible: animationState.isVisible,
-            transitionSources: reducesMotion ? [:] : animationState.transitionSources,
+            transitionSources: animationState.reducesMotion ? [:] : animationState.transitionSources,
             close: { context.dismiss() },
             closeInteractively: { context.dismiss(interactively: true) },
-            selectionChanged: { animationState.select(itemID: $0) }
+            selectionChanged: {
+                animationState.select(itemID: $0)
+                link.cover(animationState.coveredItemID)
+            }
         )
         .background {
-            MediaViewerTransitionFrameReader(presentation: presentation, animationState: animationState)
+            MediaViewerTransitionFrameReader(link: link, animationState: animationState)
         }
         .onAppear {
             context.dismissalTransition = { [animationState] interactively in
                 animationState.dismiss(interactively: interactively)
             }
+            context.willRemove = { [link] in link.release() }
+            animationState.reducesMotion = reducesMotion
             Task { @MainActor in
                 await Task.yield()
                 guard context.isVisible else { return }
-                animationState.present(reducesMotion: reducesMotion)
+                animationState.present()
+                // The zoom now draws over its card, so the card can leave.
+                link.cover(animationState.coveredItemID)
             }
         }
-        .onDisappear { context.dismissalTransition = nil }
+        .onChange(of: reducesMotion) { _, reducesMotion in
+            animationState.reducesMotion = reducesMotion
+            link.cover(animationState.coveredItemID)
+        }
+        .onDisappear {
+            context.dismissalTransition = nil
+            context.willRemove = nil
+        }
+    }
+}
+
+/// Reads the timeline's live sources here, so a refresh that moves nothing
+/// doesn't re-render the viewer.
+private struct MediaViewerTransitionFrameReader: View {
+    let link: MediaViewerTransitionLink
+    let animationState: MediaViewerWindowAnimationState
+
+    var body: some View {
+        MediaViewerTransitionFrameConverter(sources: link.sources, animationState: animationState)
     }
 }
 
 /// Convert the thumbnail source into the same full-window coordinate space used before.
-private struct MediaViewerTransitionFrameReader: NSViewRepresentable {
-    let presentation: NativeTimelineMediaViewerPresentation
+private struct MediaViewerTransitionFrameConverter: NSViewRepresentable {
+    let sources: [String: MediaViewerTransitionSource]
     let animationState: MediaViewerWindowAnimationState
 
     func makeNSView(context: Context) -> Reader { Reader() }
     func updateNSView(_ view: Reader, context: Context) {
-        view.sources = presentation.transitionSources
+        view.sources = sources
         view.animationState = animationState
         view.resolveFrames()
     }

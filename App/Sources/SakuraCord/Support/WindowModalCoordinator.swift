@@ -77,7 +77,11 @@ final class WindowModalCoordinator {
 
     func present(_ host: WindowModalHostingView) {
         guard !entries.contains(where: { $0.host === host }), let window else { return }
-        entries.append(Entry(host: host, previousResponder: window.firstResponder))
+        // A text field being edited has the window's shared field editor as
+        // its responder, which a field in the modal reuses; keep the field.
+        let responder = window.firstResponder
+        let previous = (responder as? NSText).flatMap { $0.isFieldEditor ? $0.delegate as? NSResponder : nil } ?? responder
+        entries.append(Entry(host: host, previousResponder: previous))
         reorderHosts()
         installMonitor()
         updateInputOwnership()
@@ -98,11 +102,14 @@ final class WindowModalCoordinator {
         for accessory in entries[index].accessories.allObjects { accessory.removeFromSuperview() }
         entries.remove(at: index)
         host.animationState.isInputActive = false
-        reorderHosts()
+        // The rest keep their order; reordering would raise them over a
+        // modal still animating away.
         updateInputOwnership()
         if wasTopmost, let window {
+            // Not into the modal itself: it is still in the window as it
+            // animates away.
             if let view = previous as? NSView, view.window === window,
-               allowsInput(to: view), !view.isHiddenOrHasHiddenAncestor {
+               Self.allowsInput(for: view), !view.isHiddenOrHasHiddenAncestor {
                 window.makeFirstResponder(view)
             } else {
                 window.makeFirstResponder(topmost ?? window.contentView)

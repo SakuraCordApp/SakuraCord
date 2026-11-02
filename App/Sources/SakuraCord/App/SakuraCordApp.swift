@@ -38,6 +38,7 @@ struct SakuraCordApp: App {
         AppPerformanceSignposts.beginStartup()
         ComposerPromisedFileStorage.removeAbandonedFilesAtStartup()
         SharedMediaDataLoader.removeAbandonedDownloadsAtStartup()
+        MediaViewerPreviewFile.removeAbandonedFilesAtStartup()
         DiagnosticsPreferences.restore()
         let configuration = AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
         opensForumPerformanceFixture = configuration.includesForumPerformanceFixture

@@ -1433,42 +1433,4 @@ extension NativeTimelineRowPainter {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    static func attachmentAudio(
-        _ attachment: Attachment,
-        in frame: CGRect
-    ) {
-        let title = attachment.title ?? attachment.filename
-        let font = NSFont.interfacePreferredFont(forTextStyle: .body)
-        let symbolSize: CGFloat = InterfaceScale.metric(18)
-        let spacing: CGFloat = InterfaceScale.metric(6)
-        let titleWidth = min(
-            measuredTextWidth(title, font: font),
-            max(1, frame.width - 24 - symbolSize - spacing)
-        )
-        let totalWidth = symbolSize + spacing + titleWidth
-        let horizontalPosition = frame.midX - totalWidth / 2
-        systemSymbol(
-            "waveform",
-            in: CGRect(
-                x: horizontalPosition,
-                y: frame.midY - symbolSize / 2,
-                width: symbolSize,
-                height: symbolSize
-            ),
-            color: .labelColor,
-            inset: 1
-        )
-        text(
-            title,
-            in: CGRect(
-                x: horizontalPosition + symbolSize + spacing,
-                y: frame.midY - InterfaceScale.metric(10),
-                width: titleWidth,
-                height: InterfaceScale.metric(20)
-            ),
-            font: font,
-            color: .labelColor
-        )
-    }
-
 }

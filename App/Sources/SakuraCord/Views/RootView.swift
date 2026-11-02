@@ -407,8 +407,10 @@ private struct ChatRootView: View {
         .background {
             MediaViewerWindowOverlay(
                 presentation: model.mediaViewerPresentation,
+                animatesOverlays: { model.animates(.overlays) },
                 dismiss: { model.mediaViewerPresentation = nil }
             )
+            .environment(model.voiceMessagePlayback)
             .frame(width: 0, height: 0)
         }
         .modifier(ExpandedProfilePresentationModifier(model: model))

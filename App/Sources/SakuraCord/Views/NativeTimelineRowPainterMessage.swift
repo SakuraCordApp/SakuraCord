@@ -84,10 +84,11 @@ extension NativeTimelineRowPainter {
     /// Files below other bubble content share one integrated section, as
     /// thread cards and invites do; a bubble holding only files is their card.
     private static func fileSectionFrame(_ layout: NativeTimelineRowLayout) -> CGRect? {
-        guard let bubble = layout.bubbleRegion, let first = layout.fileCards.first,
-              first.frame.minY - bubble.frame.minY > NativeTimelineBubbleLayout.verticalPadding + 0.5
+        let files = layout.attachmentRegions.filter { !$0.attachment.mediaKind.isVisual }.map(\.frame)
+        guard let bubble = layout.bubbleRegion, let first = files.first,
+              first.minY - bubble.frame.minY > NativeTimelineBubbleLayout.verticalPadding + 0.5
         else { return nil }
-        return layout.fileCards.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+        return files.dropFirst().reduce(first) { $0.union($1) }
     }
 
     private static func drawMessageSearchContext(_ input: NativeTimelineMessageDrawInput) {
@@ -428,11 +429,7 @@ extension NativeTimelineRowPainter {
             context?.setAlpha(opacity)
             context?.beginTransparencyLayer(auxiliaryInfo: nil)
         }
-        NativeTimelineVoiceMessagePainter.drawIdle(
-            region,
-            speedLabel: playback?.speedLabel ?? "1×",
-            isActive: playback?.isActive(region.playbackID) == true
-        )
+        NativeTimelineVoiceMessagePainter.drawIdle(region, playback: playback)
         if opacity < 1 { context?.endTransparencyLayer() }
     }
 
@@ -481,7 +478,7 @@ extension NativeTimelineRowPainter {
                 )
                 continue
             }
-            if attachment.mediaKind != .file {
+            if attachment.mediaKind.isVisual {
                 NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
                 NSBezierPath(
                     concentricRoundedRect: region.frame,
@@ -504,12 +501,7 @@ extension NativeTimelineRowPainter {
                     systemSymbol("film", in: region.frame, color: .secondaryLabelColor, inset: InterfaceScale.metric(30))
                 }
                 if isVideo { mediaPlayGlyph(in: region.frame) }
-            case .audio:
-                attachmentAudio(
-                    attachment,
-                    in: region.frame
-                )
-            case .file:
+            case .audio, .file:
                 let target = NativeTimelineComponentButtonTarget.fileCard(messageID: message.id, attachmentID: attachment.id)
                 fileCard(
                     .init(frame: region.frame, attachment: attachment, isInBubble: layout.bubbleRegion != nil),
@@ -519,6 +511,9 @@ extension NativeTimelineRowPainter {
                     hovered: input.hoveredComponentButton,
                     pressProgress: input.pressedComponentButton == target ? input.componentButtonPressProgress : 0
                 )
+                if let player = layout.audioFilePlayers.first(where: { $0.attachment.id == attachment.id }) {
+                    NativeTimelineVoiceMessagePainter.drawIdle(player, playback: input.model?.voiceMessagePlayback)
+                }
             }
         }
         if opacity < 1 { attachmentContext?.endTransparencyLayer() }
