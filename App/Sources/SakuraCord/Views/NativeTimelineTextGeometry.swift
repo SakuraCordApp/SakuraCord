@@ -102,7 +102,8 @@ enum NativeTimelineBeginningText {
 
     static func description(
         _ beginning: NativeTimelineBeginning,
-        source: AppModel? = nil
+        source: AppModel? = nil,
+        relativeTo date: Date = .now
     ) -> NativeTimelineAttributedTextBox {
         let font = NSFont.interfacePreferredFont(forTextStyle: .body)
         // Only a channel's own topic is Markdown; generated descriptions embed
@@ -113,12 +114,13 @@ enum NativeTimelineBeginningText {
         let baseFontSize = font.pointSize
         let prepared = RichMessageAttributedText.prepare(source: topic)
         let resolver = source.map { MessageMentionResolver(model: $0, message: nil) }
-        let mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { result, token in
+        var mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { result, token in
             guard case let .mention(mention) = token else { return }
             result[mention.rawToken] =
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
+        mentions = TimestampMentionPresentation.refreshed(mentions, source: topic, at: date)
         let emojiSize = InterfaceScale.metric(22)
         let attributed = NSMutableAttributedString(
             attributedString: NativeTimelineCoreText.make(

@@ -300,7 +300,8 @@ struct NativeTimelineRowLayout {
             let beginningLayout = NativeTimelineBeginningLayout.make(
                 beginning: beginning,
                 width: width,
-                source: source
+                source: source,
+                relativeTo: date
             )
             return Self(
                 height: beginningLayout.height,
@@ -331,7 +332,8 @@ struct NativeTimelineBeginningLayout {
     static func make(
         beginning: NativeTimelineBeginning,
         width: CGFloat,
-        source: AppModel? = nil
+        source: AppModel? = nil,
+        relativeTo date: Date = .now
     ) -> Self {
         let horizontalInset: CGFloat = InterfaceScale.metric(16)
         let contentWidth = max(
@@ -356,7 +358,8 @@ struct NativeTimelineBeginningLayout {
         )
         let descriptionBox = NativeTimelineBeginningText.description(
             beginning,
-            source: source
+            source: source,
+            relativeTo: date
         )
         let descriptionHeight = textHeight(
             for: descriptionBox,
