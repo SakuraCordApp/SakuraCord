@@ -17,30 +17,8 @@ enum MarkdownDocumentText {
             interpretedSyntax: .full,
             failurePolicy: .returnPartiallyParsedIfPossible
         )
-        return (try? AttributedString(markdown: escapingFootnoteDefinitions(markdown), options: options))
+        return (try? AttributedString(markdown: MarkdownFootnotes.prepare(markdown), options: options))
             ?? AttributedString(markdown)
-    }
-
-    /// Foundation reads a definition such as `[^1]: https://…` as a link
-    /// reference, which hides it; an escaped bracket keeps it as text for
-    /// `MarkdownFootnotes`. Fenced code is left as written.
-    private nonisolated static func escapingFootnoteDefinitions(_ markdown: String) -> String {
-        var fence: Substring?
-        return markdown.split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            let trimmed = line.drop { $0 == " " }
-            if let open = fence {
-                if trimmed.hasPrefix(open) { fence = nil }
-                return String(line)
-            }
-            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
-                fence = trimmed.prefix(3)
-                return String(line)
-            }
-            guard line.prefixMatch(of: /^ {0,3}\[\^[^\]\s]+\]:/) != nil, let bracket = line.firstIndex(of: "[") else {
-                return String(line)
-            }
-            return line[..<bracket] + "\\" + line[bracket...]
-        }.joined(separator: "\n")
     }
 
     static func make(
@@ -137,19 +115,18 @@ struct MarkdownLeaf {
             if case .code = leaves[index].kind {
                 leaves[index].content.mutableString.append(text)
             } else if inline.contains(.inlineHTML) {
-                if let replacement = html.apply(tag: text, font: MarkdownInlineStyle.font(for: leaves[index].kind)) {
-                    leaves[index].content.append(replacement)
+                // Adjacent tags, such as `<b><i>`, arrive as one run.
+                for tag in text.matches(of: /<[^>]+>/) {
+                    if let replacement = html.apply(tag: String(tag.output), font: MarkdownInlineStyle.font(for: leaves[index].kind)) {
+                        leaves[index].content.append(replacement)
+                    }
                 }
             } else {
-                let styled = NSMutableAttributedString(attributedString: MarkdownInlineStyle.styled(
+                leaves[index].content.append(MarkdownInlineStyle.styled(
                     inline.contains(.lineBreak) ? "\u{2028}" : text,
                     inline: inline, html: html, link: run.link, imageURL: run.imageURL,
                     font: MarkdownInlineStyle.font(for: leaves[index].kind)
                 ))
-                if inline.contains(.softBreak) {
-                    styled.addAttribute(MarkdownFootnotes.lineStartKey, value: true, range: NSRange(location: 0, length: styled.length))
-                }
-                leaves[index].content.append(styled)
             }
         }
         MarkdownHeadingAnchors.assign(to: &leaves)
@@ -177,7 +154,7 @@ struct MarkdownLeaf {
 
 /// Fonts and inline attributes: emphasis, code, links, images and the inline HTML GitHub allows.
 enum MarkdownInlineStyle {
-    /// Marks inline code, where footnote references aren't read.
+    /// Marks inline and preformatted code, where footnote references aren't read.
     static let codeKey = NSAttributedString.Key("dev.sakuracord.markdown.document-code")
     static let bodySize: CGFloat = 13
 
@@ -214,10 +191,8 @@ enum MarkdownInlineStyle {
         if html.isUnderlined { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
         if html.isMarked { attributes[.backgroundColor] = NSColor.systemYellow.withAlphaComponent(0.35) }
         if html.baselineShift != 0 { attributes[.baselineOffset] = html.baselineShift * base.pointSize * 0.35 }
-        if isCode {
-            attributes[.backgroundColor] = NSColor.tertiarySystemFill
-            attributes[codeKey] = true
-        }
+        if isCode { attributes[.backgroundColor] = NSColor.tertiarySystemFill }
+        if isCode || html.isPreformatted { attributes[codeKey] = true }
         if let link = link ?? html.link { attributes[.link] = link }
         guard let imageURL else { return NSAttributedString(string: text, attributes: attributes) }
         return image(alt: text, url: imageURL, attributes: attributes)
@@ -390,6 +365,29 @@ enum MarkdownHeadingAnchors {
     }
 }
 
+/// A fenced code block's opening or closing line: three or more backticks or tildes.
+private struct MarkdownFence {
+    let marker: Character
+    let length: Int
+    private let isBare: Bool
+
+    nonisolated init?(_ line: String) {
+        let indent = line.prefix { $0 == " " }.count
+        let trimmed = line.dropFirst(indent)
+        guard indent <= 3, let marker = trimmed.first, marker == "`" || marker == "~" else { return nil }
+        let length = trimmed.prefix { $0 == marker }.count
+        guard length >= 3 else { return nil }
+        self.marker = marker
+        self.length = length
+        isBare = trimmed.dropFirst(length).allSatisfy(\.isWhitespace)
+    }
+
+    /// A fence closes with the same character, at least as long, and nothing after it.
+    nonisolated func closes(_ open: (marker: Character, length: Int)) -> Bool {
+        marker == open.marker && length >= open.length && isBare
+    }
+}
+
 /// GitHub's footnotes, which Foundation leaves as text: each `[^label]`
 /// becomes a numbered link, and the definitions move to the end in the
 /// order they're first referenced.
@@ -397,13 +395,10 @@ enum MarkdownFootnotes {
     static func extract(from leaves: inout [MarkdownLeaf]) -> [MarkdownLeaf] {
         var definitions: [String: NSMutableAttributedString] = [:]
         leaves.removeAll { leaf in
-            guard leaf.kind == .paragraph, startsDefinition(leaf.content, at: 0) else { return false }
-            for definition in definitionLines(leaf.content) {
-                guard let match = definition.string.prefixMatch(of: definitionPrefix) else { continue }
-                let label = String(match.1)
-                definition.deleteCharacters(in: NSRange(match.range, in: definition.string))
-                if definitions[label] == nil { definitions[label] = definition }
-            }
+            guard leaf.kind == .paragraph, let match = leaf.content.string.prefixMatch(of: definitionPrefix) else { return false }
+            let label = String(match.1)
+            leaf.content.deleteCharacters(in: NSRange(match.range, in: leaf.content.string))
+            if definitions[label] == nil { definitions[label] = leaf.content }
             return true
         }
         guard !definitions.isEmpty else { return [] }
@@ -446,29 +441,52 @@ enum MarkdownFootnotes {
         return footnotes
     }
 
-    /// Marks a soft line break, where a definition written on the next line starts.
-    static let lineStartKey = NSAttributedString.Key("dev.sakuracord.markdown.soft-break")
-    private static let definitionPrefix = /\[\^([^\]\s]+)\]:[ \t]*/
+    /// Marks a definition, so text that only looks like one stays as written.
+    private nonisolated static let marker = "\u{2060}"
+    private static let definitionPrefix = /\[\u{2060}\^([^\]\s]+)\]:[ \t]*/
 
-    /// Whether a definition starts here, outside inline code that shows the syntax.
-    private static func startsDefinition(_ text: NSAttributedString, at location: Int) -> Bool {
-        location < text.length
-            && text.attribute(MarkdownInlineStyle.codeKey, at: location, effectiveRange: nil) == nil
-            && (text.string as NSString).substring(from: location).prefixMatch(of: definitionPrefix) != nil
-    }
-
-    /// Definitions on consecutive lines share one paragraph; each starts after a soft break.
-    private static func definitionLines(_ paragraph: NSAttributedString) -> [NSMutableAttributedString] {
-        var lines: [NSMutableAttributedString] = []
-        var start = 0
-        paragraph.enumerateAttribute(lineStartKey, in: NSRange(location: 0, length: paragraph.length)) { value, range, _ in
-            let next = NSMaxRange(range)
-            guard value != nil, startsDefinition(paragraph, at: next) else { return }
-            lines.append(NSMutableAttributedString(attributedString: paragraph.attributedSubstring(from: NSRange(location: start, length: range.location - start))))
-            start = next
+    /// Readies definitions for Foundation, which would read `[^1]: https://…`
+    /// as a link reference and hide it. Each definition becomes its own
+    /// paragraph opening with an escaped, marked bracket, and an indented
+    /// paragraph after it joins it as GitHub's do. Fenced code stays as written.
+    nonisolated static func prepare(_ markdown: String) -> String {
+        var lines: [String] = []
+        var fence: (marker: Character, length: Int)?
+        var isInDefinition = false
+        var hasPendingBlank = false
+        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if let open = fence {
+                if MarkdownFence(line)?.closes(open) == true { fence = nil }
+                lines.append(line)
+                continue
+            }
+            let isBlank = line.allSatisfy(\.isWhitespace)
+            if isInDefinition, isBlank {
+                hasPendingBlank = true
+                continue
+            }
+            if isInDefinition, hasPendingBlank, line.hasPrefix("    ") || line.hasPrefix("\t") {
+                lines[lines.count - 1] += "\\"
+                lines.append(line.trimmingPrefix(while: \.isWhitespace).description)
+                hasPendingBlank = false
+                continue
+            }
+            if hasPendingBlank { lines.append("") }
+            hasPendingBlank = false
+            if let opening = MarkdownFence(line) {
+                fence = (opening.marker, opening.length)
+                isInDefinition = false
+            } else if line.prefixMatch(of: /^ {0,3}\[\^[^\]\s]+\]:/) != nil, let bracket = line.firstIndex(of: "[") {
+                if !(lines.last?.allSatisfy(\.isWhitespace) ?? true) { lines.append("") }
+                lines.append(line[..<bracket] + "\\[" + marker + line[line.index(after: bracket)...])
+                isInDefinition = true
+                continue
+            } else if isBlank {
+                isInDefinition = false
+            }
+            lines.append(line)
         }
-        lines.append(NSMutableAttributedString(attributedString: paragraph.attributedSubstring(from: NSRange(location: start, length: paragraph.length - start))))
-        return lines
+        return lines.joined(separator: "\n")
     }
 
     private static func reference(number: Int, label: String, font: NSFont?) -> NSAttributedString {

@@ -296,7 +296,9 @@ struct MarkdownBlockLayout {
     /// GitHub's task list: `[ ]` or `[x]` opening an item becomes its marker.
     private static func taskCheckbox(in content: NSMutableAttributedString) -> NSAttributedString? {
         let text = content.string
-        guard text.count > 3, text.hasPrefix("[ ] ") || text.lowercased().hasPrefix("[x] ") else { return nil }
+        guard text.count > 3, text.hasPrefix("[ ] ") || text.lowercased().hasPrefix("[x] "),
+              content.attribute(MarkdownInlineStyle.codeKey, at: 0, effectiveRange: nil) == nil
+        else { return nil }
         let isDone = text.lowercased().hasPrefix("[x]")
         let font = content.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
         content.deleteCharacters(in: NSRange(location: 0, length: 4))
