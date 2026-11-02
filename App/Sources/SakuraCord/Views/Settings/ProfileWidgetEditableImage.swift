@@ -18,7 +18,6 @@ struct ProfileWidgetEditableImage: View {
     @State private var importing = false
     @State private var busy = false
     @State private var errorMessage: String?
-    @State private var work: Task<Void, Never>?
 
     private var isActive: Bool {
         purpose == .widgetCover ? isCoverHovered : isHovered || isActionHovered
@@ -92,54 +91,20 @@ struct ProfileWidgetEditableImage: View {
         .alert("Unable to Use Image", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
-        .onDisappear { work?.cancel() }
     }
 
     private func remove() {
-        work?.cancel()
         if let removeImage { removeImage() } else { update(nil) }
     }
 
-    /// Crops a chosen image to the widget's centred frame and uploads it.
+    /// Hands a chosen image to the editor, which crops and uploads it.
     private func load(_ url: URL) {
         guard let editor, editor.canEditPersonalWidget else { return }
-        work?.cancel()
-        let generation = editor.draftGeneration
-        work = Task {
-            busy = true
-            defer { busy = false }
-            var outputURL: URL?
-            do {
-                let uploaded = try await editor.preparingWidgetImage {
-                    let accessed = url.startAccessingSecurityScopedResource()
-                    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-                    let purpose = purpose, aspectRatio = aspectRatio
-                    let processing = Task.detached {
-                        let source = try ProfileImageSource(data: Data(contentsOf: url))
-                        let geometry = ProfileImageCropGeometry(naturalSize: source.size, purpose: purpose, aspectRatio: aspectRatio)
-                        return try ProfileImageProcessor.crop(source, geometry: geometry)
-                    }
-                    let output = try await withTaskCancellationHandler { try await processing.value } onCancel: { processing.cancel() }
-                    try Task.checkCancellation()
-                    guard generation == editor.draftGeneration else { throw CancellationError() }
-                    guard output.data.count <= 10 * 1024 * 1024 else { throw ProfileWidgetImageError.tooLarge }
-                    let local = FileManager.default.temporaryDirectory.appending(path: "profile-widget-draft-\(UUID().uuidString)")
-                    outputURL = local
-                    try output.data.write(to: local, options: [.atomic, .completeFileProtection])
-                    let base = url.deletingPathExtension().lastPathComponent
-                    let ext = UTType(mimeType: output.mediaType)?.preferredFilenameExtension ?? "png"
-                    return try await editor.uploadWidgetImage(fileURL: local, filename: "\(base.isEmpty ? "image" : base).\(ext)", contentType: output.mediaType)
-                }
-                outputURL = nil // The editor owns the successful draft preview.
-                try Task.checkCancellation()
-                update(uploaded)
-            } catch is CancellationError {} catch { errorMessage = error.localizedDescription }
-            if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
+        let upload = editor.prepareWidgetImage(from: url, purpose: purpose, aspectRatio: aspectRatio, apply: update)
+        busy = true
+        Task {
+            await upload.value
+            busy = false
         }
     }
-}
-
-private enum ProfileWidgetImageError: LocalizedError {
-    case tooLarge
-    var errorDescription: String? { String(localized: "The edited image must be 10 MB or smaller.", bundle: #bundle) }
 }

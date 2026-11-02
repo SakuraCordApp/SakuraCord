@@ -1,8 +1,10 @@
 import DiscordProtocol
 import Foundation
+import MediaPipeline
 import Observation
 import OSLog
 import SakuraCordModels
+import UniformTypeIdentifiers
 
 @Observable
 @MainActor
@@ -371,22 +373,56 @@ final class ProfileEditorState {
         return games
     }
 
-    /// Runs a widget image's crop and upload with widget editing paused,
-    /// returning once editing resumes so the result can be applied.
-    func preparingWidgetImage<T>(_ work: () async throws -> T) async rethrows -> T {
+    /// Crops a chosen image to a widget slot's centred frame, uploads it and
+    /// hands it to `apply`. The editor owns the work, so the slot's view
+    /// scrolling away or being rebuilt can't cancel it; widget edits and
+    /// saving pause until it lands, as they did behind the crop screen.
+    @discardableResult
+    func prepareWidgetImage(from url: URL, purpose: ProfileImagePurpose, aspectRatio: Double,
+                            apply: @escaping (ProfileWidgetImage) -> Void) -> Task<Void, Never> {
         preparingWidgetImages += 1
-        defer { preparingWidgetImages -= 1 }
-        return try await work()
+        return Task {
+            let image: ProfileWidgetImage?
+            do {
+                image = try await croppedWidgetImage(from: url, purpose: purpose, aspectRatio: aspectRatio)
+            } catch {
+                image = nil
+                if !(error is CancellationError) { errorMessage = error.localizedDescription }
+            }
+            // Editing resumes before the image applies, since applying is an edit.
+            preparingWidgetImages -= 1
+            if let image { apply(image) }
+        }
     }
 
-    func uploadWidgetImage(fileURL: URL, filename: String, contentType: String) async throws -> ProfileWidgetImage {
+    private func croppedWidgetImage(from url: URL, purpose: ProfileImagePurpose, aspectRatio: Double) async throws -> ProfileWidgetImage {
         guard showsEditablePersonalWidget, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }
         let requestRevision = revision
         let generation = draftGeneration
-        let image = try await session.provider.uploadProfileWidgetImage(fileURL: fileURL, filename: filename, contentType: contentType)
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let output = try await Task.detached {
+            let source = try ProfileImageSource(data: Data(contentsOf: url))
+            let geometry = ProfileImageCropGeometry(naturalSize: source.size, purpose: purpose, aspectRatio: aspectRatio)
+            return try ProfileImageProcessor.crop(source, geometry: geometry)
+        }.value
         guard isCurrent(session, revision: requestRevision), draftGeneration == generation else { throw CancellationError() }
-        ownedPreviewURLs.insert(fileURL)
-        return image
+        guard output.data.count <= 10 * 1024 * 1024 else { throw ProfileWidgetImageError.tooLarge }
+        let local = FileManager.default.temporaryDirectory.appending(path: "profile-widget-draft-\(UUID().uuidString)")
+        try output.data.write(to: local, options: [.atomic, .completeFileProtection])
+        do {
+            let base = url.deletingPathExtension().lastPathComponent
+            let ext = UTType(mimeType: output.mediaType)?.preferredFilenameExtension ?? "png"
+            let image = try await session.provider.uploadProfileWidgetImage(
+                fileURL: local, filename: "\(base.isEmpty ? "image" : base).\(ext)", contentType: output.mediaType
+            )
+            guard isCurrent(session, revision: requestRevision), draftGeneration == generation else { throw CancellationError() }
+            ownedPreviewURLs.insert(local) // The editor owns the successful draft preview.
+            return image
+        } catch {
+            try? FileManager.default.removeItem(at: local)
+            throw error
+        }
     }
 
     func deleteHistory(_ entry: ProfileAvatarHistoryEntry) async throws {
@@ -698,4 +734,9 @@ final class ProfileEditorState {
         if value == original?.value { return .unchanged }
         return value.map(ProfileChange.set) ?? .clear
     }
+}
+
+private enum ProfileWidgetImageError: LocalizedError {
+    case tooLarge
+    var errorDescription: String? { String(localized: "The edited image must be 10 MB or smaller.", bundle: #bundle) }
 }
