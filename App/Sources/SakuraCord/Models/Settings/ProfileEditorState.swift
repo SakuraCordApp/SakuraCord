@@ -71,6 +71,10 @@ final class ProfileEditorState {
     var canEditWidgets: Bool { canModifyWidgets && preparingWidgetImages == 0 }
     private var canModifyWidgets: Bool { snapshot != nil && !isLoading && !isSaving && !requiresReload }
     var canEditPersonalWidget: Bool { canEditWidgets && snapshot?.widgetEligibility.canEditPersonalWidget == true }
+    /// Whether the personal widget shows its editable layout, empty image
+    /// slots included. Unlike `canEditPersonalWidget`, it holds while a
+    /// widget image is prepared, so the slot receiving it stays on screen.
+    var showsEditablePersonalWidget: Bool { canModifyWidgets && snapshot?.widgetEligibility.canEditPersonalWidget == true }
     var hasAvatarSelection: Bool {
         switch changes.identity.avatar {
         case .unchanged: snapshot?.identity.avatarHash.value != nil
@@ -376,7 +380,7 @@ final class ProfileEditorState {
     }
 
     func uploadWidgetImage(fileURL: URL, filename: String, contentType: String) async throws -> ProfileWidgetImage {
-        guard canModifyWidgets, snapshot?.widgetEligibility.canEditPersonalWidget == true, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }
+        guard showsEditablePersonalWidget, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }
         let requestRevision = revision
         let generation = draftGeneration
         let image = try await session.provider.uploadProfileWidgetImage(fileURL: fileURL, filename: filename, contentType: contentType)
