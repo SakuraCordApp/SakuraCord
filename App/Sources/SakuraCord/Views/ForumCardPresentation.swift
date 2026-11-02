@@ -21,8 +21,10 @@ struct ForumCardPresentation: Equatable {
     enum Excerpt: Equatable {
         /// The starter message has not loaded yet.
         case pending
-        /// The post has no displayable starter text.
-        case empty
+        /// Discord's muted text in place of a starter without text, after
+        /// its author's name. An image or video starter has none: its
+        /// media is the card's thumbnail, so the name stands alone.
+        case placeholder(String?, author: Author)
         /// Discord answered without the starter: it was deleted. Discord
         /// still names the post's author before its placeholder.
         case deleted(author: Author?)
@@ -84,6 +86,13 @@ struct ForumCardPresentation: Equatable {
         isGallery ? hero == .pending : excerpt == .pending
     }
 
+    /// The attachment the layout shows: the thumbnail in the list, the hero in the gallery.
+    func media(isGallery: Bool) -> Media? {
+        guard isGallery else { return thumbnail }
+        guard case let .media(media) = hero else { return nil }
+        return media
+    }
+
     var accessibilityLabel: String {
         var parts = [title]
         if isPinned { parts.append("Pinned") }
@@ -126,6 +135,29 @@ enum ForumTagEmojiPresentation: Equatable {
     var mediaKey: NativeTimelineMediaKey? {
         guard case let .custom(url) = self else { return nil }
         return .media(url, maximumPixelDimension: 64)
+    }
+}
+
+extension ForumCardPresentation.Excerpt {
+    /// What Discord's forum card shows for a starter without text.
+    static func placeholderText(for starter: Message) -> String? {
+        if let poll = starter.poll { return poll.question }
+        // A forwarded starter carries its components in the snapshot.
+        if (starter.forwardedSnapshot?.flags ?? starter.flags).contains(.isComponentsV2) { return "Click to see message" }
+        if !starter.stickers.isEmpty { return "Click to see sticker" }
+        return ForumCardPresentation.thumbnailAttachment(of: starter) == nil ? "Click to see attachment" : nil
+    }
+}
+
+extension ForumCardPresentation {
+    /// Discord gives a list card a thumbnail only for a starter that opens
+    /// with an image or a video; audio and other files get none.
+    static func thumbnailAttachment(of starter: Message) -> Attachment? {
+        guard let attachment = starter.attachments.first else { return nil }
+        switch attachment.mediaKind {
+        case .image, .animatedImage, .video: return attachment
+        default: return nil
+        }
     }
 }
 
