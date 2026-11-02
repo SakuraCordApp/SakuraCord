@@ -12,12 +12,13 @@ struct MarkdownBlockLayout {
     private var previous: MarkdownLeaf?
     private var previousBlocks: [NSTextBlock] = []
     private var openTable: OpenTable?
+    /// Code left to highlight, past which blocks stay plain, as large text files do.
+    private var highlightBudget = 128 * 1_024
 
     private struct OpenTable {
         let identity: Int
         let table: NSTextTable
         let outerBlocks: [NSTextBlock]
-        let alignments: [NSTextAlignment]
         var row: Int
         var column: Int
     }
@@ -41,11 +42,8 @@ struct MarkdownBlockLayout {
     }
 
     mutating func append(_ leaf: MarkdownLeaf) {
-        let tableIdentity = leaf.containers.first { if case .table = $0.kind { true } else { false } }?.identity
-        if let openTable, openTable.identity != tableIdentity {
-            fillTable(through: (openTable.row, openTable.table.numberOfColumns - 1))
-            self.openTable = nil
-        }
+        let tableIntent = leaf.containers.first { if case .table = $0.kind { true } else { false } }
+        if openTable?.identity != tableIntent?.identity { closeTable() }
 
         var placement = placement(in: leaf.containers)
         let content = leaf.content
@@ -60,8 +58,8 @@ struct MarkdownBlockLayout {
             let box = block(leaf.identity) { [margin = placement.indent] in Self.codeBlock(margin: margin) }
             placement.textBlocks.append(box)
             placement.indent = 0
-            content.setAttributedString(highlighted(content.string, language: language))
             font = .monospacedSystemFont(ofSize: InterfaceScale.fontSize(12), weight: .regular)
+            content.setAttributedString(highlighted(content.string, language: language, font: font))
         case .thematicBreak:
             let box = block(leaf.identity) { [margin = placement.indent] in Self.ruleBlock(margin: margin) }
             placement.textBlocks.append(box)
@@ -70,12 +68,13 @@ struct MarkdownBlockLayout {
             content.setAttributedString(NSAttributedString())
             font = .systemFont(ofSize: 1)
         case let .tableCell(row, column):
-            guard let cell = tableCell(leaf, row: row, column: column, outerBlocks: placement.textBlocks, indent: placement.indent)
-            else { return }
-            alignment = openTable?.alignments[column] ?? .natural
-            placement.textBlocks.append(cell)
+            guard let tableIntent, let cell = tableCell(
+                in: tableIntent, row: row, column: column, outerBlocks: placement.textBlocks, indent: placement.indent
+            ) else { return }
+            alignment = cell.alignment
+            placement.textBlocks.append(cell.block)
             placement.indent = 0
-        case let .footnote(number, _):
+        case let .footnote(number):
             placement.marker = Self.listMarker(ordinal: number, isOrdered: true, depth: 1)
             placement.markerIndent = placement.indent
             placement.indent += Self.markerWidth
@@ -137,9 +136,7 @@ struct MarkdownBlockLayout {
     }
 
     mutating func finish() -> NSAttributedString {
-        if let openTable {
-            fillTable(through: (openTable.row, openTable.table.numberOfColumns - 1))
-        }
+        closeTable()
         // An empty last paragraph, such as a table's empty last cell, is only its newline.
         if output.string.hasSuffix("\n"), !output.string.hasSuffix("\n\n") {
             output.deleteCharacters(in: NSRange(location: output.length - 1, length: 1))
@@ -179,54 +176,55 @@ struct MarkdownBlockLayout {
     // MARK: Tables
 
     private mutating func tableCell(
-        _ leaf: MarkdownLeaf, row: Int, column: Int, outerBlocks: [NSTextBlock], indent: CGFloat
-    ) -> NSTextTableBlock? {
-        guard let intent = leaf.containers.first(where: { if case .table = $0.kind { true } else { false } }),
-              case let .table(columns) = intent.kind, column < columns.count
-        else { return nil }
-        if openTable?.identity != intent.identity {
+        in intent: PresentationIntent.IntentType, row: Int, column: Int, outerBlocks: [NSTextBlock], indent: CGFloat
+    ) -> (block: NSTextTableBlock, alignment: NSTextAlignment)? {
+        guard case let .table(columns) = intent.kind, column < columns.count else { return nil }
+        if openTable == nil {
             let table = NSTextTable()
             table.numberOfColumns = columns.count
             table.collapsesBorders = true
             table.hidesEmptyCells = false
             table.setWidth(indent, type: .absoluteValueType, for: .margin, edge: .minX)
-            openTable = OpenTable(
-                identity: intent.identity, table: table, outerBlocks: outerBlocks,
-                alignments: columns.map { column in
-                    switch column.alignment {
-                    case .center: .center
-                    case .right: .right
-                    default: .natural
-                    }
-                },
-                row: 0, column: -1
-            )
+            openTable = OpenTable(identity: intent.identity, table: table, outerBlocks: outerBlocks, row: 0, column: -1)
         }
-        fillTable(through: Self.position(before: (row, column), columns: columns.count))
-        openTable?.row = row
-        openTable?.column = column
-        return openTable.map { Self.cellBlock($0.table, row: row, column: column) }
+        fillTable(before: (row, column))
+        guard var open = openTable else { return nil }
+        (open.row, open.column) = (row, column)
+        openTable = open
+        let alignment: NSTextAlignment = switch columns[column].alignment {
+        case .center: .center
+        case .right: .right
+        default: .natural
+        }
+        return (Self.cellBlock(open.table, row: row, column: column), alignment)
     }
 
-    /// Foundation leaves out empty cells, which still need their borders.
-    private mutating func fillTable(through end: (row: Int, column: Int)) {
+    /// Ends the open table, filling its last row.
+    private mutating func closeTable() {
+        guard let openTable else { return }
+        fillTable(before: (openTable.row + 1, 0))
+        self.openTable = nil
+    }
+
+    /// Foundation leaves out empty cells, which still need their borders, so
+    /// this adds every cell from the last one written up to `cell`.
+    private mutating func fillTable(before cell: (row: Int, column: Int)) {
         guard var table = openTable else { return }
         let columns = table.table.numberOfColumns
-        var next = table.column + 1 < columns ? (table.row, table.column + 1) : (table.row + 1, 0)
-        while next.0 < end.row || (next.0 == end.row && next.1 <= end.column) {
+        func position(after cell: (row: Int, column: Int)) -> (row: Int, column: Int) {
+            cell.column + 1 < columns ? (cell.row, cell.column + 1) : (cell.row + 1, 0)
+        }
+        var next = position(after: (table.row, table.column))
+        while next < cell {
             let style = NSMutableParagraphStyle()
-            style.textBlocks = table.outerBlocks + [Self.cellBlock(table.table, row: next.0, column: next.1)]
+            style.textBlocks = table.outerBlocks + [Self.cellBlock(table.table, row: next.row, column: next.column)]
             output.append(NSAttributedString(string: "\n", attributes: [
                 .font: MarkdownInlineStyle.font(for: .paragraph), .paragraphStyle: style,
             ]))
             (table.row, table.column) = next
-            next = next.1 + 1 < columns ? (next.0, next.1 + 1) : (next.0 + 1, 0)
+            next = position(after: next)
         }
         openTable = table
-    }
-
-    private static func position(before cell: (row: Int, column: Int), columns: Int) -> (row: Int, column: Int) {
-        cell.column > 0 ? (cell.row, cell.column - 1) : (cell.row - 1, columns - 1)
     }
 
     private static func cellBlock(_ table: NSTextTable, row: Int, column: Int) -> NSTextTableBlock {
@@ -287,7 +285,7 @@ struct MarkdownBlockLayout {
         return NSAttributedString(
             string: isOrdered ? "\(ordinal)." : bullets[(depth - 1) % bullets.count],
             attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: InterfaceScale.fontSize(MarkdownInlineStyle.bodySize), weight: .regular),
+                .font: NSFont.interfaceMonospacedDigitSystemFont(ofSize: MarkdownInlineStyle.bodySize, weight: .regular),
                 .foregroundColor: NSColor.secondaryLabelColor,
             ]
         )
@@ -300,7 +298,7 @@ struct MarkdownBlockLayout {
               content.attribute(MarkdownInlineStyle.codeKey, at: 0, effectiveRange: nil) == nil
         else { return nil }
         let isDone = text.lowercased().hasPrefix("[x]")
-        let font = content.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        let font = content.attribute(.font, at: 0, effectiveRange: nil) as? NSFont ?? MarkdownInlineStyle.font(for: .paragraph)
         content.deleteCharacters(in: NSRange(location: 0, length: 4))
         return NSAttributedString(attachment: MarkdownInlineStyle.symbol(
             isDone ? "checkmark.square.fill" : "square", font: font,
@@ -308,11 +306,14 @@ struct MarkdownBlockLayout {
         ))
     }
 
-    private func highlighted(_ code: String, language: String?) -> NSAttributedString {
+    private mutating func highlighted(_ code: String, language: String?, font: NSFont) -> NSAttributedString {
         let code = code.hasSuffix("\n") ? String(code.dropLast()) : code
+        highlightBudget -= code.utf8.count
+        guard highlightBudget >= 0 else {
+            return NSAttributedString(string: code, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        }
         return NativeTimelineCoreText.scaledMarkdown(
-            DiscordMarkdown.appKitCodePlan(code, language: language, on: codeBackground),
-            baseFontSize: InterfaceScale.fontSize(12)
+            DiscordMarkdown.appKitCodePlan(code, language: language, on: codeBackground), baseFontSize: font.pointSize
         )
     }
 

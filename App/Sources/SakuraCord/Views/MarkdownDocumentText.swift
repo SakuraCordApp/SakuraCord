@@ -40,7 +40,7 @@ enum MarkdownDocumentText {
         guard let url = link as? URL else { return true }
         return scrollToAnchor(url, in: textView) || MessageLinkActivator.activate(
             url, model: nil,
-            displayedText: MessageLinkActivator.safetyDisplayedText(in: textView.attributedString(), at: index)
+            displayedText: textView.textStorage.flatMap { MessageLinkActivator.safetyDisplayedText(in: $0, at: index) }
         )
     }
 
@@ -50,7 +50,7 @@ enum MarkdownDocumentText {
         guard let url = link as? URL, url.scheme == nil, url.host() == nil, url.path().isEmpty,
               let fragment = url.fragment(percentEncoded: false)
         else { return false }
-        let text = textView.attributedString()
+        guard let text = textView.textStorage else { return true }
         var target: NSRange?
         text.enumerateAttribute(.markdownAnchor, in: NSRange(location: 0, length: text.length)) { value, range, stop in
             guard let anchor = value as? String, anchor == fragment || anchor == fragment.lowercased() else { return }
@@ -77,10 +77,10 @@ struct MarkdownLeaf {
         case thematicBreak
         case tableCell(row: Int, column: Int)
         /// A footnote at the end of the document, which links back to its first reference.
-        case footnote(number: Int, label: String)
+        case footnote(number: Int)
     }
 
-    var kind: Kind
+    let kind: Kind
     let identity: Int
     /// The containers around the leaf, outermost first.
     let containers: [PresentationIntent.IntentType]
@@ -207,15 +207,15 @@ enum MarkdownInlineStyle {
             attributes[.link] = url
         }
         attributes[.foregroundColor] = NSColor.secondaryLabelColor
-        let output = NSMutableAttributedString(attachment: symbol("photo", font: attributes[.font] as? NSFont))
+        let font = attributes[.font] as? NSFont ?? Self.font(for: .paragraph)
+        let output = NSMutableAttributedString(attachment: symbol("photo", font: font))
         output.append(NSAttributedString(string: " " + (alt.isEmpty ? url.lastPathComponent : alt)))
         output.addAttributes(attributes, range: NSRange(location: 0, length: output.length))
         return output
     }
 
     /// A symbol in the text, in palette colours ordered by its layers.
-    static func symbol(_ name: String, font: NSFont?, colors: [NSColor] = [.secondaryLabelColor]) -> NSTextAttachment {
-        let font = font ?? .interfaceSystemFont(ofSize: bodySize)
+    static func symbol(_ name: String, font: NSFont, colors: [NSColor] = [.secondaryLabelColor]) -> NSTextAttachment {
         let attachment = NSTextAttachment()
         attachment.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular).applying(.init(paletteColors: colors)))
@@ -229,7 +229,11 @@ enum MarkdownInlineStyle {
 /// The inline HTML GitHub keeps: each tag styles the text after it until it closes.
 struct MarkdownInlineHTML {
     private var open: [(name: String, link: URL?)] = []
-    private static let styledTags: Set = ["a", "b", "strong", "i", "em", "u", "ins", "s", "del", "strike", "code", "kbd", "sup", "sub", "mark"]
+    /// Tags whose styling applies to the text inside them.
+    private static let styledTags: Set = [
+        "a", "b", "strong", "i", "em", "u", "ins", "s", "del", "strike", "code", "kbd", "sup", "sub", "mark", "pre",
+        "h1", "h2", "h3", "h4", "h5", "h6", "summary",
+    ]
     private static let blockTags: Set = [
         "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "tr", "details", "summary", "ul", "ol", "table", "blockquote", "pre", "hr",
     ]
@@ -266,7 +270,7 @@ struct MarkdownInlineHTML {
         }
         if !match.1.isEmpty {
             if let index = open.lastIndex(where: { $0.name == name }) { open.remove(at: index) }
-        } else if Self.styledTags.contains(name) || Self.blockTags.contains(name) {
+        } else if Self.styledTags.contains(name) {
             open.append((name, name == "a" ? attributes["href"].flatMap(URL.init(string:)) : nil))
         }
         return nil
@@ -277,7 +281,7 @@ struct MarkdownInlineHTML {
     static func blockText(_ html: String, font: NSFont) -> NSMutableAttributedString {
         var state = MarkdownInlineHTML()
         let output = NSMutableAttributedString()
-        var isAtLineStart: Bool { output.length == 0 || output.string.hasSuffix("\u{2028}") }
+        var isAtLineStart: Bool { output.length == 0 || output.mutableString.hasSuffix("\u{2028}") }
         var rest = Substring(html)
         while !rest.isEmpty {
             let tag = rest.firstMatch(of: /<!--[\s\S]*?-->|<\/?[A-Za-z][^>]*>/)
@@ -367,8 +371,8 @@ enum MarkdownHeadingAnchors {
 
 /// A fenced code block's opening or closing line: three or more backticks or tildes.
 private struct MarkdownFence {
-    let marker: Character
-    let length: Int
+    private let marker: Character
+    private let length: Int
     private let isBare: Bool
 
     nonisolated init?(_ line: String) {
@@ -383,7 +387,7 @@ private struct MarkdownFence {
     }
 
     /// A fence closes with the same character, at least as long, and nothing after it.
-    nonisolated func closes(_ open: (marker: Character, length: Int)) -> Bool {
+    nonisolated func closes(_ open: MarkdownFence) -> Bool {
         marker == open.marker && length >= open.length && isBare
     }
 }
@@ -414,24 +418,29 @@ enum MarkdownFootnotes {
                 return (label, range)
             }
         }
-        var order: [String] = []
-        for label in references.joined().map(\.label) where !order.contains(label) {
-            order.append(label)
+        // Numbered in the order first referenced.
+        var numbers: [String: Int] = [:]
+        var referenced: [(label: String, definition: NSMutableAttributedString)] = []
+        for reference in references.joined() where numbers[reference.label] == nil {
+            guard let definition = definitions[reference.label] else { continue }
+            referenced.append((reference.label, definition))
+            numbers[reference.label] = referenced.count
         }
-        guard !order.isEmpty else { return [] }
+        guard !referenced.isEmpty else { return [] }
         for (leaf, leafReferences) in zip(leaves, references) {
             for reference in leafReferences.reversed() {
+                let font = leaf.content.attribute(.font, at: reference.range.location, effectiveRange: nil) as? NSFont
                 leaf.content.replaceCharacters(in: reference.range, with: Self.reference(
-                    number: (order.firstIndex(of: reference.label) ?? 0) + 1, label: reference.label,
-                    font: leaf.content.attribute(.font, at: reference.range.location, effectiveRange: nil) as? NSFont
+                    number: numbers[reference.label, default: 0], label: reference.label,
+                    font: font ?? MarkdownInlineStyle.font(for: .paragraph)
                 ))
             }
         }
 
         var footnotes = [MarkdownLeaf(kind: .thematicBreak, identity: Int.min, containers: [])]
-        for (index, label) in order.enumerated() {
-            var leaf = MarkdownLeaf(kind: .footnote(number: index + 1, label: label), identity: Int.min + index + 1, containers: [])
-            leaf.content = definitions[label] ?? NSMutableAttributedString()
+        for (index, (label, definition)) in referenced.enumerated() {
+            var leaf = MarkdownLeaf(kind: .footnote(number: index + 1), identity: Int.min + index + 1, containers: [])
+            leaf.content = definition
             let font = MarkdownInlineStyle.font(for: .paragraph)
             leaf.content.append(NSAttributedString(string: " ", attributes: [.font: font]))
             leaf.content.append(NSAttributedString(string: "↩", attributes: link(to: "fnref-" + label, [.font: font])))
@@ -451,7 +460,7 @@ enum MarkdownFootnotes {
     /// paragraph after it joins it as GitHub's do. Fenced code stays as written.
     nonisolated static func prepare(_ markdown: String) -> String {
         var lines: [String] = []
-        var fence: (marker: Character, length: Int)?
+        var fence: MarkdownFence?
         var isInDefinition = false
         var hasPendingBlank = false
         // `\r\n` is one Character, so lines split on any newline, which also normalizes them.
@@ -479,9 +488,9 @@ enum MarkdownFootnotes {
             }
             hasPendingBlank = false
             if let opening = MarkdownFence(line) {
-                fence = (opening.marker, opening.length)
+                fence = opening
                 isInDefinition = false
-            } else if line.prefixMatch(of: /^ {0,3}\[\^[^\]\s]+\]:/) != nil, let bracket = line.firstIndex(of: "[") {
+            } else if line.contains("[^"), line.prefixMatch(of: /^ {0,3}\[\^[^\]\s]+\]:/) != nil, let bracket = line.firstIndex(of: "[") {
                 if !(lines.last?.allSatisfy(\.isWhitespace) ?? true) { lines.append("") }
                 lines.append(line[..<bracket] + "\\[" + marker + line[line.index(after: bracket)...])
                 isInDefinition = true
@@ -494,9 +503,8 @@ enum MarkdownFootnotes {
         return lines.joined(separator: "\n")
     }
 
-    private static func reference(number: Int, label: String, font: NSFont?) -> NSAttributedString {
-        let font = font ?? MarkdownInlineStyle.font(for: .paragraph)
-        return NSAttributedString(string: "\(number)", attributes: link(to: "fn-" + label, [
+    private static func reference(number: Int, label: String, font: NSFont) -> NSAttributedString {
+        NSAttributedString(string: "\(number)", attributes: link(to: "fn-" + label, [
             .font: NSFontManager.shared.convert(font, toSize: font.pointSize * 0.75),
             .baselineOffset: font.pointSize * 0.35,
             .markdownAnchor: "fnref-" + label,
