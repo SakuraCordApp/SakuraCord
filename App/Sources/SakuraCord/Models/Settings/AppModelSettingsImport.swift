@@ -23,7 +23,7 @@ extension AppModel {
         if pages.contains(.accessibility) {
             applyAccessibilitySettings(AccessibilitySettingsStore.shared.load(), persists: false)
         }
-        if SettingsControlID.inspectorVisibilityIDs.contains(where: { ids.contains($0.rawValue) }) {
+        if InspectorContext.allCases.contains(where: { ids.contains($0.controlID.rawValue) }) {
             applyInspectorVisibility(GeneralWindowRestorationStore.shared.loadInspectorVisibility())
         }
         if pages.contains(.notifications) {

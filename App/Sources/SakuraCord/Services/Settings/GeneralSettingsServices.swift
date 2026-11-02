@@ -115,25 +115,22 @@ final class SettingsConversationRestorationStore {
 final class GeneralWindowRestorationStore {
     static let shared = GeneralWindowRestorationStore()
 
-    private static let legacyMemberListVisibleKey = "settings.memberListVisible"
     private let defaults: any PreferenceStoring
 
     init(defaults: any PreferenceStoring = PRBuildProfile.defaults) {
         self.defaults = defaults
     }
 
-    static func visibilityKey(for context: InspectorContext) -> String {
-        switch context {
-        case .server: legacyMemberListVisibleKey
-        case .directMessage: "settings.directMessageProfileVisible"
-        case .groupDirectMessage: "settings.groupDirectMessageMembersVisible"
-        }
+    private static func visibilityKey(for context: InspectorContext) -> String {
+        guard case let .appWide(key)? = SettingsPreferenceRegistry.foundation.registration(context.controlID)?.storage
+        else { preconditionFailure("Each sidebar context has an app-wide preference.") }
+        return key
     }
 
     /// Conversation kinds saved before they had separate keys start from the shared
     /// member-list value, then keep their own copy so later changes stay independent.
     func loadInspectorVisibility() -> InspectorVisibility {
-        let legacyValue = defaults.object(forKey: Self.legacyMemberListVisibleKey) as? Bool
+        let legacyValue = defaults.object(forKey: Self.visibilityKey(for: .server)) as? Bool
         var visibility = InspectorVisibility()
         for context in InspectorContext.allCases {
             let key = Self.visibilityKey(for: context)

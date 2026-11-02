@@ -14,6 +14,14 @@ nonisolated enum InspectorContext: CaseIterable, Sendable {
         default: self = .server
         }
     }
+
+    var controlID: SettingsControlID {
+        switch self {
+        case .server: .memberListVisibility
+        case .directMessage: .directMessageProfileVisibility
+        case .groupDirectMessage: .groupDirectMessageMembersVisibility
+        }
+    }
 }
 
 nonisolated struct InspectorVisibility: Equatable, Sendable {
