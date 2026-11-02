@@ -97,7 +97,6 @@ extension NativeTimelineRowLayout {
             }
             let mediaFrames = layout.linkedImageRegions.map(\.frame)
                 + layout.attachmentRegions.map(\.frame)
-                + layout.uploadRegions.map(\.frame)
                 + [layout.voiceMessageRegion?.frame].compactMap { $0 }
                 + layout.embedFrames
                 + layout.stickerFrames
@@ -561,19 +560,6 @@ extension NativeTimelineRowLayout {
                     return
                 }
             }
-            if message.isUnconfirmedLocalSend, source?.attachmentUploads.tracks(nonce: message.nonce) == true {
-                if hasRichContent {
-                    verticalOffset += InterfaceScale.metric(8)
-                }
-                result.uploadRegions = NativeTimelineRowLayout.uploadRegions(
-                    for: message.attachments,
-                    origin: CGPoint(x: contentX, y: verticalOffset),
-                    maximumWidth: inlineMediaMaximumWidth
-                )
-                verticalOffset = result.uploadRegions.last?.frame.maxY ?? verticalOffset
-                hasRichContent = true
-                return
-            }
             guard !usesComponentsV2 else { return }
             // Like Discord, audio and other files leave the media gallery for
             // cards and text previews stacked below it. Regions keep the
@@ -635,6 +621,11 @@ extension NativeTimelineRowLayout {
                 hasRichContent = true
             }
             result.attachmentRegions = message.attachments.compactMap { regions[$0.id] }
+            if message.isUnconfirmedLocalSend, source?.attachmentUploads.tracks(nonce: message.nonce) == true {
+                result.uploadRings = NativeTimelineRowLayout.uploadRings(
+                    for: result.attachmentRegions, isInBubble: usesBubbles, isFailed: message.outboxState == .failed
+                )
+            }
         }
 
         /// The surface voice messages and audio files draw on.

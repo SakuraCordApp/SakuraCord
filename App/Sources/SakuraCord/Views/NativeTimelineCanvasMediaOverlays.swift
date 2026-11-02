@@ -783,6 +783,7 @@ extension NativeTimelineCanvasView {
 
     func reconcileActivityIndicators() {
         reconcileInboxHeaders()
+        reconcileUploadRings()
         positionUnreadDividerFades()
         guard !items.isEmpty,
               var index = rowIndex(at: max(0, visibleRect.minY))
@@ -852,6 +853,7 @@ extension NativeTimelineCanvasView {
             view.removeFromSuperview()
         }
         activityIndicators.removeAll()
+        removeUploadRings()
     }
 
     static let maximumInlineVideoOverlayCount = 4
@@ -980,6 +982,8 @@ extension NativeTimelineCanvasView {
     func reconcileSpoilerOverlays() {
         let desired = desiredSpoilerOverlays()
         applySpoilerOverlays(desired)
+        // Revealing a file card uncovers its upload ring.
+        reconcileUploadRings()
     }
 
     private func desiredSpoilerOverlays() -> [DesiredSpoilerOverlay] {

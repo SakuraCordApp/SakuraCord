@@ -194,7 +194,7 @@ struct NativeTimelineRowLayout {
     var linkedImageRegions: [LinkedImageRegion] = []
     /// One region per attachment, in message order: a gallery tile or a file card.
     var attachmentRegions: [AttachmentRegion] = []
-    var uploadRegions: [UploadRegion] = []
+    var uploadRings: [UploadRing] = []
 
     var audioFilePlayers: [NativeTimelineVoiceMessageRegion] = []
 
@@ -229,10 +229,10 @@ struct NativeTimelineRowLayout {
     var ephemeralRegion: EphemeralRegion?
     var failedFrame: CGRect?
     var failedRetryFrame: CGRect?
-    /// A local send's upload cancels and its failed-send Retry.
+    /// A local send's failed-send Retry. Its files' upload rings act on
+    /// their own.
     var deliveryActions: [(frame: CGRect, kind: NativeTimelineFooterActionTarget.Kind)] {
-        uploadRegions.map { ($0.cancelFrame, .cancelUpload(attachmentID: $0.attachmentID)) }
-            + [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
+        [failedRetryFrame.map { ($0, .retrySend) }].compactMap(\.self)
     }
 
     func deliveryAction(at point: CGPoint) -> NativeTimelineFooterActionTarget.Kind? {
