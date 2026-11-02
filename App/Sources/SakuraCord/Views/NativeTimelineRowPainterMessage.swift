@@ -212,6 +212,21 @@ extension NativeTimelineRowPainter {
                 drawImage(image, in: frame, cornerRadius: 0, fillsFrame: false)
             }
         }
+        if let region = input.layout.roleIconRegion {
+            if let url = region.role.iconURL,
+               let image = mediaImage(for: .media(url, maximumPixelDimension: 48)) {
+                drawImage(image, in: region.frame, cornerRadius: 0, fillsFrame: false)
+            } else if let emoji = region.role.unicodeEmoji, !emoji.isEmpty {
+                text(
+                    emoji,
+                    in: region.frame,
+                    font: .systemFont(ofSize: region.frame.height * 0.85),
+                    color: .labelColor,
+                    alignment: .center,
+                    lineBreakMode: .byClipping
+                )
+            }
+        }
         if let frame = input.layout.timestampFrame,
            let context = NSGraphicsContext.current?.cgContext {
             input.layout.timestampText?.draw(in: frame, color: .secondaryLabelColor, context: context)

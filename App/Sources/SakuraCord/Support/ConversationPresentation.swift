@@ -405,6 +405,13 @@ nonisolated enum ConversationPermissionResolver {
 nonisolated struct MessageAuthorPresentation: Equatable {
     let user: User
     let roleColorHex: UInt32?
+    let topRoleWithIcon: GuildRole?
+
+    init(user: User, roleColorHex: UInt32?, topRoleWithIcon: GuildRole? = nil) {
+        self.user = user
+        self.roleColorHex = roleColorHex
+        self.topRoleWithIcon = topRoleWithIcon
+    }
 
     static func resolve(
         message: Message,
@@ -424,7 +431,7 @@ nonisolated struct MessageAuthorPresentation: Equatable {
         roles: [GuildRole]
     ) -> Self {
         if message.webhookID != nil, message.author.isWebhookIdentity {
-            return Self(user: message.author, roleColorHex: nil)
+            return Self(user: message.author, roleColorHex: nil, topRoleWithIcon: nil)
         }
         return resolve(
             user: message.author,
@@ -440,7 +447,7 @@ nonisolated struct MessageAuthorPresentation: Equatable {
         roles: [GuildRole]
     ) -> Self {
         if replyPreview.webhookID != nil, replyPreview.author.isWebhookIdentity {
-            return Self(user: replyPreview.author, roleColorHex: nil)
+            return Self(user: replyPreview.author, roleColorHex: nil, topRoleWithIcon: nil)
         }
         return resolve(
             user: replyPreview.author,
@@ -458,10 +465,12 @@ nonisolated struct MessageAuthorPresentation: Equatable {
     ) -> Self {
         if let member {
             let roleIDs = Set(member.roleIDs)
+            let effectiveRoles = !member.roles.isEmpty ? member.roles : roles.filter { roleIDs.contains($0.id) }
             return Self(
                 user: member.user,
                 roleColorHex: topRoleColor(in: member.roles)
-                    ?? topRoleColor(in: roles.filter { roleIDs.contains($0.id) })
+                    ?? topRoleColor(in: roles.filter { roleIDs.contains($0.id) }),
+                topRoleWithIcon: topRoleWithIcon(in: effectiveRoles)
             )
         }
 
@@ -470,9 +479,12 @@ nonisolated struct MessageAuthorPresentation: Equatable {
             user.displayName = guildMember.nickname ?? user.displayName
             user.avatarURL = guildMember.avatarURL ?? user.avatarURL
         }
+        let roleIDs = guildMember.map { Set($0.roleIDs) } ?? []
+        let memberRoles = roles.filter { roleIDs.contains($0.id) }
         return Self(
             user: user,
-            roleColorHex: roleColor(for: guildMember, roles: roles)
+            roleColorHex: roleColor(for: guildMember, roles: roles),
+            topRoleWithIcon: topRoleWithIcon(in: memberRoles)
         )
     }
 
@@ -490,6 +502,13 @@ nonisolated struct MessageAuthorPresentation: Equatable {
             if lhs.position != rhs.position { return lhs.position < rhs.position }
             return lhs.id.rawValue < rhs.id.rawValue
         }?.colorHex
+    }
+
+    static func topRoleWithIcon(in roles: [GuildRole]) -> GuildRole? {
+        roles.lazy.filter(\.hasIcon).max { lhs, rhs in
+            if lhs.position != rhs.position { return lhs.position < rhs.position }
+            return lhs.id.rawValue < rhs.id.rawValue
+        }
     }
 }
 

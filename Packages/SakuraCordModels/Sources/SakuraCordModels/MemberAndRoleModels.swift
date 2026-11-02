@@ -19,6 +19,10 @@ public struct GuildRole: Identifiable, Codable, Hashable, Sendable {
     public var permissions: UInt64?
     public var isPurchasableSubscription: Bool?
 
+    public var hasIcon: Bool {
+        iconURL != nil || !(unicodeEmoji?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     public init(
         id: RoleID,
         name: String,

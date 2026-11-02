@@ -697,3 +697,110 @@ func `server verification blocks sends without exposing hidden channels`(state: 
                     currentMember: context.currentMember)
     #expect(can(context))
 }
+
+@Test func `guild role hasIcon recognizes icon URL and unicode emoji`() {
+    var role = GuildRole(id: RoleID(rawValue: 1), name: "Member", position: 1)
+    #expect(!role.hasIcon)
+
+    role.unicodeEmoji = "  "
+    #expect(!role.hasIcon)
+
+    role.unicodeEmoji = "🌸"
+    #expect(role.hasIcon)
+
+    role.unicodeEmoji = nil
+    role.iconURL = URL(string: "https://cdn.discordapp.com/role-icons/1/icon.png")
+    #expect(role.hasIcon)
+}
+
+@Test func `message author presentation top role with icon selects highest position role`() {
+    let roleNoIcon = GuildRole(id: RoleID(rawValue: 10), name: "No Icon High", position: 100)
+    let roleIconLow = GuildRole(
+        id: RoleID(rawValue: 20),
+        name: "Icon Low",
+        position: 10,
+        unicodeEmoji: "⭐"
+    )
+    let roleIconHigh = GuildRole(
+        id: RoleID(rawValue: 30),
+        name: "Icon High",
+        position: 50,
+        iconURL: URL(string: "https://cdn.discordapp.com/role-icons/30/icon.png")
+    )
+    let roleIconTie = GuildRole(
+        id: RoleID(rawValue: 40),
+        name: "Icon Tie",
+        position: 50,
+        unicodeEmoji: "🔥"
+    )
+
+    let roles = [roleNoIcon, roleIconLow, roleIconHigh, roleIconTie]
+    let topRole = MessageAuthorPresentation.topRoleWithIcon(in: roles)
+    // Between roleIconHigh (id: 30, pos: 50) and roleIconTie (id: 40, pos: 50), roleIconTie wins due to higher id
+    #expect(topRole?.id == RoleID(rawValue: 40))
+
+    let topRoleNoTie = MessageAuthorPresentation.topRoleWithIcon(in: [roleNoIcon, roleIconLow, roleIconHigh])
+    #expect(topRoleNoTie?.id == RoleID(rawValue: 30))
+
+    let none = MessageAuthorPresentation.topRoleWithIcon(in: [roleNoIcon])
+    #expect(none == nil)
+}
+
+@MainActor
+@Test func `timeline message layout places role icon before bot badge and timestamp`() {
+    let model = AppModel(launchMode: .offlineTesting)
+    let channelID = ChannelID(rawValue: 99_410)
+    let guildID = GuildID(rawValue: 99_411)
+    let role = GuildRole(
+        id: RoleID(rawValue: 99),
+        name: "VIP",
+        position: 1,
+        unicodeEmoji: "👑"
+    )
+    let author = User(
+        id: UserID(rawValue: 99_413),
+        username: "botuser",
+        displayName: "Bot User",
+        isBot: true
+    )
+    let member = Member(
+        user: author,
+        roleName: "VIP",
+        isOnline: true,
+        roles: [role]
+    )
+    model.membersByGuildID[guildID] = [author.id: member]
+    model.guildRolesByGuildID[guildID] = [role]
+    let message = Message(
+        id: MessageID(rawValue: 99_414),
+        channelID: channelID,
+        author: author,
+        content: "Hello world",
+        guildID: guildID
+    )
+    let item = NativeMessageTimelineItem.message(
+        MessageRowPresentation(
+            message: message,
+            startsGroup: true,
+            startsDay: false,
+            replyPreview: nil,
+            isReplyAvailable: false
+        ),
+        isUnreadBoundary: false,
+        isHighlighted: false
+    )
+    let layout = NativeTimelineRowLayout.make(item: item, width: 800, source: model)
+
+    let roleRegion = layout.roleIconRegion
+    #expect(roleRegion != nil)
+    #expect(roleRegion?.role.id == RoleID(rawValue: 99))
+
+    if let roleFrame = roleRegion?.frame,
+       let botFrame = layout.botBadgeFrame,
+       let timestampFrame = layout.timestampFrame,
+       let authorFrame = layout.authorFrame {
+        #expect(authorFrame.maxX < roleFrame.minX)
+        #expect(roleFrame.maxX < botFrame.minX)
+        #expect(botFrame.maxX < timestampFrame.minX)
+    }
+}

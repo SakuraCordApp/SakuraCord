@@ -1207,7 +1207,11 @@ private struct RoleChip: View {
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(6)) {
-            RoleColorIndicator(colorHex: item.role.colorHex, size: InterfaceScale.metric(10))
+            if item.role.hasIcon {
+                RoleIconView(role: item.role, size: InterfaceScale.metric(14))
+            } else {
+                RoleColorIndicator(colorHex: item.role.colorHex, size: InterfaceScale.metric(10))
+            }
             Text(item.name)
                 .font(.interface(.callout).weight(.medium))
                 .lineLimit(1)

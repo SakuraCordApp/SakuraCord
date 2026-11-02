@@ -63,7 +63,40 @@ extension NativeMemberListCanvasView {
         )
         let line = cachedSectionHeaderLine(label, font: font, color: NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7))
         let labelY = origins[index] + InterfaceScale.metric(16)
-        let labelX = InterfaceScale.metric(14)
+        var labelX = InterfaceScale.metric(14)
+        if let role = section.role, role.hasIcon {
+            let iconSize = InterfaceScale.metric(14)
+            let iconY = labelY - InterfaceScale.metric(1)
+            let iconRect = CGRect(x: labelX, y: iconY, width: iconSize, height: iconSize)
+            if let iconURL = role.iconURL {
+                if let image = images[iconURL] {
+                    Self.draw(
+                        image: image,
+                        aspectFitIn: iconRect,
+                        context: context
+                    )
+                } else {
+                    requestImageIfNeeded(
+                        url: iconURL,
+                        index: index,
+                        priority: .visible,
+                        maximumPixelDimension: 32
+                    )
+                }
+            } else if let emoji = role.unicodeEmoji, !emoji.isEmpty {
+                let emojiLine = Self.line(
+                    emoji,
+                    font: .systemFont(ofSize: iconSize * 0.85),
+                    color: NSColor.secondaryLabelColor
+                )
+                Self.draw(
+                    line: emojiLine,
+                    at: CGPoint(x: labelX, y: iconY),
+                    context: context
+                )
+            }
+            labelX += iconSize + InterfaceScale.metric(6)
+        }
         Self.draw(
             line: line,
             at: CGPoint(
@@ -291,7 +324,6 @@ extension NativeMemberListCanvasView {
 
         let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
         let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
-        let botBadgeWidth = NativeAppBadgePresentation.width
         let tagPresentation = prepared.serverTag
         let roleColor = presentation.roleColorDisplay == .nextToNames
             ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil
@@ -311,11 +343,6 @@ extension NativeMemberListCanvasView {
             context.setFillColor(roleColor.cgColor)
             context.fillEllipse(in: CGRect(x: textX, y: nameY + InterfaceScale.metric(5), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8)))
         }
-        if member.user.isBot, let accessory = nameLayout.accessoryFrames.first {
-            if accessory.width >= botBadgeWidth {
-                drawBotBadge(at: nameX + accessory.minX, nameY: nameY, context: context)
-            }
-        }
         if let tagPresentation, let frame = geometry.serverTagFrame {
             tagPresentation.draw(
                 in: frame,
@@ -330,6 +357,12 @@ extension NativeMemberListCanvasView {
                 priority: .visible,
                 maximumPixelDimension: 32
             )
+        }
+        if let role = geometry.topRoleWithIcon, let frame = geometry.roleIconFrame {
+            drawMemberRoleIcon(role, in: frame, at: index, context: context)
+        }
+        if let frame = geometry.botBadgeFrame {
+            drawBotBadge(at: frame.minX, nameY: nameY, context: context)
         }
         if let activity = prepared.activity,
            let truncationToken = prepared.activityTruncationToken
@@ -537,6 +570,19 @@ extension NativeMemberListCanvasView {
         )
         context.drawPath(using: .eoFill)
         context.restoreGState()
+    }
+
+    private func drawMemberRoleIcon(_ role: GuildRole, in frame: CGRect, at index: Int, context: CGContext) {
+        if let iconURL = role.iconURL {
+            if let image = images[iconURL] {
+                Self.draw(image: image, aspectFitIn: frame, context: context)
+            } else {
+                requestImageIfNeeded(url: iconURL, index: index, priority: .visible, maximumPixelDimension: 32)
+            }
+        } else if let emoji = role.unicodeEmoji, !emoji.isEmpty {
+            let emojiLine = Self.line(emoji, font: .systemFont(ofSize: frame.height * 0.85), color: .labelColor)
+            Self.draw(line: emojiLine, at: CGPoint(x: frame.minX, y: frame.minY), context: context)
+        }
     }
 
     func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, context: CGContext) {

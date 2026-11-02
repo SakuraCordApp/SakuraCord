@@ -166,6 +166,11 @@ struct NativeTimelineRowLayout {
         let presentation: NativeServerTagPresentation
     }
     var serverTagRegion: ServerTagRegion?
+    struct RoleIconRegion: Equatable {
+        let frame: CGRect
+        let role: GuildRole
+    }
+    var roleIconRegion: RoleIconRegion?
     var timestampText: NativeIdentityTextPresentation?
     var editedText: NativeIdentityTextPresentation?
     var botBadgeFrame: CGRect?

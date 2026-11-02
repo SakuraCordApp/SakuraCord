@@ -283,6 +283,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var activeServerTagPopoverAnchor: StablePopoverAnchor?
     var serverTagCardPresentation: ServerTagCardPresentation?
 
+    let roleIconPopoverCoordinator = StableAnchoredPopoverPresenter<AnyView>.Coordinator()
+    var activeRoleIconPopoverAnchor: StablePopoverAnchor?
+    var roleIconCardPresentation: RoleIconCardPresentation?
+
     var componentChoiceOverlay: ComponentChoiceOverlayController?
     var activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
     let mentionPopoverCoordinator =

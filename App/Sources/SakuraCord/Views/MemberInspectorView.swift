@@ -178,6 +178,7 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
     let members: [Member]
     let gatewayStartIndex: Int?
     let isLoadingSkeleton: Bool
+    let role: GuildRole?
 
     init(
         id: SectionIdentifier,
@@ -186,7 +187,8 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         totalCount: Int,
         members: [Member],
         gatewayStartIndex: Int? = nil,
-        isLoadingSkeleton: Bool = false
+        isLoadingSkeleton: Bool = false,
+        role: GuildRole? = nil
     ) {
         self.id = id
         self.title = title
@@ -195,6 +197,7 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         self.members = members
         self.gatewayStartIndex = gatewayStartIndex
         self.isLoadingSkeleton = isLoadingSkeleton
+        self.role = role
     }
 
     static var loadingSkeletonSections: [MemberSection] {
@@ -278,16 +281,22 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
             case let .role(name, _): name
             case .online, .offline: ""
             }
+            let role = members.lazy.compactMap { member in
+                member.roles.first {
+                    $0.name == member.roleName && $0.position == member.rolePosition
+                }
+            }.first
             return MemberSection(
                 id: id,
                 title: name,
-                colorHex: members.lazy.compactMap { member in
+                colorHex: role?.colorHex ?? members.lazy.compactMap { member in
                     member.roles.first {
                         $0.name == member.roleName && $0.position == member.rolePosition
                     }?.colorHex
                 }.first,
                 totalCount: members.count,
-                members: members.sorted(by: sort)
+                members: members.sorted(by: sort),
+                role: role
             )
         }
         .sorted { lhs, rhs in
@@ -367,7 +376,8 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
                 colorHex: role?.colorHex,
                 totalCount: group.count,
                 members: loadedMembers,
-                gatewayStartIndex: startIndex
+                gatewayStartIndex: startIndex,
+                role: role
             ))
         }
         return sections
@@ -391,7 +401,11 @@ private struct MemberSectionHeader: View {
     var body: some View {
         HStack(spacing: InterfaceScale.metric(6)) {
             if case .role = section.id {
-                RoleColorIndicator(colorHex: section.colorHex, size: InterfaceScale.metric(8))
+                if let role = section.role, role.hasIcon {
+                    RoleIconView(role: role, size: InterfaceScale.metric(14))
+                } else {
+                    RoleColorIndicator(colorHex: section.colorHex, size: InterfaceScale.metric(8))
+                }
             }
             Text("\(section.title) — \(section.totalCount)")
                 .font(.interface(.body).weight(.semibold))
@@ -459,6 +473,9 @@ struct MemberRow: View {
                                 if !cosmeticPolicy.disables(.serverTag, for: member.id),
                                    let identity = member.user.primaryGuild, identity.tag != nil {
                                     PrimaryGuildTag(identity: identity)
+                                }
+                                if let role = MessageAuthorPresentation.topRoleWithIcon(in: member.roles) {
+                                    RoleIconView(role: role, size: InterfaceScale.metric(14))
                                 }
                             }
                             if let activity = member.memberListActivityText, !activity.isEmpty {

@@ -20,6 +20,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let totalCount: Int
         let gatewayStartIndex: Int?
         let isLoadingSkeleton: Bool
+        let role: GuildRole?
 
         init(_ section: MemberSection) {
             id = section.id
@@ -28,6 +29,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
             totalCount = section.totalCount
             gatewayStartIndex = section.gatewayStartIndex
             isLoadingSkeleton = section.isLoadingSkeleton
+            role = section.role
         }
     }
 

@@ -381,18 +381,21 @@ extension NativeTimelineRowLayout {
             let naturalBotWidth = botText.map { $0.width + ServerTagAppearance.horizontalPadding * 2 } ?? 0
             let botWidth = availableWidth >= naturalBotWidth + 7 + 12 ? naturalBotWidth : 0
             let botReserve = botWidth > 0 ? botWidth + 7 : 0
+            let role = presentation?.topRoleWithIcon
+            let roleIconSize: CGFloat = role != nil ? InterfaceScale.metric(16) : 0
+            let roleIconReserve: CGFloat = role != nil ? roleIconSize + 7 : 0
             let tag = author.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) }?
-                .fitting(maximumWidth: availableWidth - botReserve - timestampReserve - 32 - 7)
+                .fitting(maximumWidth: availableWidth - botReserve - roleIconReserve - timestampReserve - 32 - 7)
             let tagReserve = tag.map { $0.width + 7 } ?? 0
             let authorText = NativeIdentityTextPresentation(
                 author.displayName, font: authorFont,
-                maximumWidth: max(0, availableWidth - botReserve - tagReserve - timestampReserve)
+                maximumWidth: max(0, availableWidth - botReserve - tagReserve - roleIconReserve - timestampReserve)
             )
             let badgeHeight = ServerTagAppearance.height + InterfaceScale.metric(1)
             let botBaseline = botText?.baselineOffset(inHeight: badgeHeight) ?? 0
             let headerHeight = ceil(max(
                 authorFont.ascender - authorFont.descender,
-                tag == nil && botWidth == 0 ? MessageRowLayoutMetrics.authorLineHeight : badgeHeight
+                tag == nil && botWidth == 0 && role == nil ? MessageRowLayoutMetrics.authorLineHeight : max(badgeHeight, roleIconSize)
             ))
             let baselineY = verticalOffset + authorText.baselineOffset(inHeight: headerHeight)
             result.authorText = authorText
@@ -401,15 +404,6 @@ extension NativeTimelineRowLayout {
                 width: authorText.width, height: headerHeight
             )
             var headerX = contentX + indicatorWidth + authorText.width
-            if botWidth > 0 {
-                headerX += InterfaceScale.metric(7)
-                result.botBadgeText = botText
-                result.botBadgeFrame = CGRect(
-                    x: headerX, y: baselineY - botBaseline,
-                    width: botWidth, height: badgeHeight
-                )
-                headerX += botWidth
-            }
             if let tag {
                 headerX += InterfaceScale.metric(7)
                 result.serverTagRegion = .init(
@@ -420,6 +414,27 @@ extension NativeTimelineRowLayout {
                     presentation: tag
                 )
                 headerX += tag.width
+            }
+            if let role, roleIconSize > 0 {
+                headerX += InterfaceScale.metric(7)
+                let iconY = (verticalOffset + (headerHeight - roleIconSize) / 2).rounded()
+                result.roleIconRegion = .init(
+                    frame: CGRect(
+                        x: headerX, y: iconY,
+                        width: roleIconSize, height: roleIconSize
+                    ),
+                    role: role
+                )
+                headerX += roleIconSize
+            }
+            if botWidth > 0 {
+                headerX += InterfaceScale.metric(7)
+                result.botBadgeText = botText
+                result.botBadgeFrame = CGRect(
+                    x: headerX, y: baselineY - botBaseline,
+                    width: botWidth, height: badgeHeight
+                )
+                headerX += botWidth
             }
             headerX += InterfaceScale.metric(7)
             let timestampText = NativeIdentityTextPresentation(
