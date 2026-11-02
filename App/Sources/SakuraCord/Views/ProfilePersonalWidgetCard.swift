@@ -197,6 +197,11 @@ private struct ProfilePersonalWidgetField: View {
 
     private var showsActions: Bool { (isHovered || isActionHovered) && !isImageHovered }
 
+    /// A slot with an image in flight or a failure to show stays, even where the field would hide its image.
+    private var hasPendingUpload: Bool {
+        editor.map { $0.preparingWidgetImageSlots.contains(slot) || $0.widgetImageFailure(for: slot) != nil } ?? false
+    }
+
     private var hidesImage: Bool {
         if let hidden = imageVisibilityOverrides[field.id] { return hidden }
         let original = editor?.snapshot?.presentation.widgets?.first { $0.id == id }
@@ -211,7 +216,7 @@ private struct ProfilePersonalWidgetField: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: InterfaceScale.metric(12)) {
-            if field.image != nil || (editor?.showsEditablePersonalWidget == true && !hidesImage) {
+            if field.image != nil || (editor?.showsEditablePersonalWidget == true && (!hidesImage || hasPendingUpload)) {
                 ProfileWidgetEditableImage(image: field.image, slot: slot, purpose: .widgetField, animates: animates, editor: editor,
                                            aspectRatio: 1, onHoverChange: { isImageHovered = $0 }, removeImage: {
                     imageVisibilityOverrides[field.id] = true
