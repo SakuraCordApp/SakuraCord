@@ -19,9 +19,10 @@ final class ProfileEditorState {
     private(set) var widgetResources: ProfileWidgetResources?
     private(set) var isLoading = false
     private(set) var isSaving = false
-    /// Widget images still being cropped or uploaded. Saves wait for them,
-    /// since a save makes the editor reject an image that lands during it.
-    private(set) var preparingWidgetImages = 0
+    /// Widget images still being cropped or uploaded. Saving and widget
+    /// edits wait for them: either could reject or discard the image that
+    /// is about to land.
+    private var preparingWidgetImages = 0
     private(set) var requiresReload = false
     var errorMessage: String?
     var fieldErrors: [String: [String]] = [:]
@@ -67,7 +68,8 @@ final class ProfileEditorState {
     var isNitro: Bool { snapshot?.widgetEligibility.hasFullNitro == true }
     var canSave: Bool { snapshot != nil && hasChanges && !isSaving && preparingWidgetImages == 0 && loadingScope == nil && !requiresReload && bio.utf16.count <= 300 && widgetsAreValid }
     var isResolvingScope: Bool { snapshot == nil || (loadingScope != nil && loadingScope != scope) }
-    var canEditWidgets: Bool { snapshot != nil && !isLoading && !isSaving && !requiresReload }
+    var canEditWidgets: Bool { canModifyWidgets && preparingWidgetImages == 0 }
+    private var canModifyWidgets: Bool { snapshot != nil && !isLoading && !isSaving && !requiresReload }
     var canEditPersonalWidget: Bool { canEditWidgets && snapshot?.widgetEligibility.canEditPersonalWidget == true }
     var hasAvatarSelection: Bool {
         switch changes.identity.avatar {
@@ -365,11 +367,16 @@ final class ProfileEditorState {
         return games
     }
 
-    func beginPreparingWidgetImage() { preparingWidgetImages += 1 }
-    func endPreparingWidgetImage() { preparingWidgetImages -= 1 }
+    /// Runs a widget image's crop and upload with widget editing paused,
+    /// returning once editing resumes so the result can be applied.
+    func preparingWidgetImage<T>(_ work: () async throws -> T) async rethrows -> T {
+        preparingWidgetImages += 1
+        defer { preparingWidgetImages -= 1 }
+        return try await work()
+    }
 
     func uploadWidgetImage(fileURL: URL, filename: String, contentType: String) async throws -> ProfileWidgetImage {
-        guard canEditPersonalWidget, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }
+        guard canModifyWidgets, snapshot?.widgetEligibility.canEditPersonalWidget == true, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }
         let requestRevision = revision
         let generation = draftGeneration
         let image = try await session.provider.uploadProfileWidgetImage(fileURL: fileURL, filename: filename, contentType: contentType)
@@ -393,10 +400,6 @@ final class ProfileEditorState {
 
     func saveGameWidgetShortcut(gameID: String, kind: ProfileGameWidgetKind) async {
         guard scope == .main, canEditWidgets, !isResolvingScope else { return }
-        guard preparingWidgetImages == 0 else {
-            errorMessage = "Wait for the widget image to finish uploading before saving this game."
-            return
-        }
         if let widget = widgets.first(where: { if case let .games(value, _) = $0.content { value == kind } else { false } }),
            case let .games(_, games) = widget.content {
             if games.contains(where: { $0.id == gameID }) { removeWidgetGame(widgetID: widget.id, gameID: gameID) } else {

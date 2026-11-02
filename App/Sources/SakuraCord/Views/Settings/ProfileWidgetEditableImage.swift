@@ -107,28 +107,29 @@ struct ProfileWidgetEditableImage: View {
         let generation = editor.draftGeneration
         work = Task {
             busy = true
-            editor.beginPreparingWidgetImage()
-            defer { busy = false; editor.endPreparingWidgetImage() }
+            defer { busy = false }
             var outputURL: URL?
             do {
-                let accessed = url.startAccessingSecurityScopedResource()
-                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-                let purpose = purpose, aspectRatio = aspectRatio
-                let processing = Task.detached {
-                    let source = try ProfileImageSource(data: Data(contentsOf: url))
-                    let geometry = ProfileImageCropGeometry(naturalSize: source.size, purpose: purpose, aspectRatio: aspectRatio)
-                    return try ProfileImageProcessor.crop(source, geometry: geometry)
+                let uploaded = try await editor.preparingWidgetImage {
+                    let accessed = url.startAccessingSecurityScopedResource()
+                    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                    let purpose = purpose, aspectRatio = aspectRatio
+                    let processing = Task.detached {
+                        let source = try ProfileImageSource(data: Data(contentsOf: url))
+                        let geometry = ProfileImageCropGeometry(naturalSize: source.size, purpose: purpose, aspectRatio: aspectRatio)
+                        return try ProfileImageProcessor.crop(source, geometry: geometry)
+                    }
+                    let output = try await withTaskCancellationHandler { try await processing.value } onCancel: { processing.cancel() }
+                    try Task.checkCancellation()
+                    guard generation == editor.draftGeneration else { throw CancellationError() }
+                    guard output.data.count <= 10 * 1024 * 1024 else { throw ProfileWidgetImageError.tooLarge }
+                    let local = FileManager.default.temporaryDirectory.appending(path: "profile-widget-draft-\(UUID().uuidString)")
+                    outputURL = local
+                    try output.data.write(to: local, options: [.atomic, .completeFileProtection])
+                    let base = url.deletingPathExtension().lastPathComponent
+                    let ext = UTType(mimeType: output.mediaType)?.preferredFilenameExtension ?? "png"
+                    return try await editor.uploadWidgetImage(fileURL: local, filename: "\(base.isEmpty ? "image" : base).\(ext)", contentType: output.mediaType)
                 }
-                let output = try await withTaskCancellationHandler { try await processing.value } onCancel: { processing.cancel() }
-                try Task.checkCancellation()
-                guard generation == editor.draftGeneration else { throw CancellationError() }
-                guard output.data.count <= 10 * 1024 * 1024 else { throw ProfileWidgetImageError.tooLarge }
-                let local = FileManager.default.temporaryDirectory.appending(path: "profile-widget-draft-\(UUID().uuidString)")
-                outputURL = local
-                try output.data.write(to: local, options: [.atomic, .completeFileProtection])
-                let base = url.deletingPathExtension().lastPathComponent
-                let ext = UTType(mimeType: output.mediaType)?.preferredFilenameExtension ?? "png"
-                let uploaded = try await editor.uploadWidgetImage(fileURL: local, filename: "\(base.isEmpty ? "image" : base).\(ext)", contentType: output.mediaType)
                 outputURL = nil // The editor owns the successful draft preview.
                 try Task.checkCancellation()
                 update(uploaded)
