@@ -82,7 +82,7 @@ struct GuildJoinApplicationView: View {
             .fixedSize(horizontal: false, vertical: true)
             .disabled(store.isWorking)
             GuildJoinRequestError(store: store)
-        } else if store.isWorking {
+        } else if store.error == nil {
             ProgressView().controlSize(.small).frame(maxWidth: .infinity).frame(height: InterfaceScale.metric(140))
         } else {
             ContentUnavailableView("Unable to Load Application", systemImage: "exclamationmark.triangle",
@@ -94,9 +94,9 @@ struct GuildJoinApplicationView: View {
             ModalGlassButton(symbol: "xmark", label: "Cancel") {
                 if hasAnswers { confirmsDiscard = true } else { close() }
             }
-            .disabled(store.isWorking && store.form != nil)
+            .disabled(store.isWorking)
             Spacer(minLength: InterfaceScale.metric(16))
-            ModalGlassButton(symbol: "paperplane", label: "Submit", primary: true, isLoading: store.isWorking && store.form != nil) {
+            ModalGlassButton(symbol: "paperplane", label: "Submit", primary: true, isLoading: store.isWorking) {
                 model.submitGuildJoinApplication()
             }
             .disabled(store.form?.fields.allSatisfy(\.isSatisfied) != true || store.isWorking)

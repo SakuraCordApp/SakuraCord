@@ -242,6 +242,13 @@ struct ServerInviteContractTests {
         let capture = InviteRequestCapture()
         let provider = try await makeProvider(capture.id)
         let guildID = GuildID(rawValue: 900)
+        // Accepting the invite started the application; Gateway reported it before the form opened.
+        await provider.seedCurrentUser(id: 7)
+        await provider.handleGuildJoinRequestDispatch(name: "GUILD_JOIN_REQUEST_CREATE", body: .object([
+            "guild_id": .string("900"), "status": .string("STARTED"),
+            "request": .object(["id": .string("55"), "guild_id": .string("900"), "user_id": .string("7"),
+                                "application_status": .string("STARTED")])
+        ]))
         var form = try await provider.guildJoinApplicationForm(guildID, inviteCode: "apply")
         #expect(form.guildName == "Apply")
         #expect(form.fields.map(\.kind) == [.shortAnswer, .paragraph, .multipleChoice(["macOS", "Linux"]), .terms(["Be kind"]),

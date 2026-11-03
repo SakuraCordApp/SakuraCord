@@ -37,7 +37,7 @@ public extension DiscordRESTProvider {
             headers: ["X-Context-Properties": Data("{}".utf8).base64EncodedString()], maximumAttempts: 1
         )
         try checkJoinRequestResponse(data, response)
-        try applyJoinRequestResponse(data)
+        try applyJoinRequestResponse(data, replacingStarted: true)
     }
 
     /// Starts a new application after a rejection.
@@ -45,7 +45,7 @@ public extension DiscordRESTProvider {
         let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "POST", query: [], body: nil,
                                                  maximumAttempts: 1)
         try checkJoinRequestResponse(data, response)
-        try applyJoinRequestResponse(data)
+        try applyJoinRequestResponse(data, replacingStarted: false)
     }
 
     func withdrawGuildJoinRequest(_ guildID: GuildID) async throws {
@@ -113,11 +113,17 @@ extension DiscordRESTProvider {
         continuation?.yield(.guildJoinRequestsChanged(Array(cachedGuildJoinRequests.values)))
     }
 
-    private func applyJoinRequestResponse(_ data: Data) throws {
+    /// The Gateway event usually precedes the response, and a review, withdrawal or replacement can follow it
+    /// before the response arrives. A submission therefore only advances the cached STARTED request, and a
+    /// reapplication only adds a request Gateway has not reported yet.
+    private func applyJoinRequestResponse(_ data: Data, replacingStarted: Bool) throws {
         guard let request = try JSONDecoder().decode(GuildJoinRequestDTO.self, from: data).domain() else { return }
-        // GUILD_JOIN_REQUEST_UPDATE usually precedes the response, and a review can follow it before the
-        // response arrives. Once Gateway moved this request past STARTED, the response is no newer.
-        if let cached = cachedGuildJoinRequests[request.guildID], cached.id == request.id, cached.status != .started { return }
+        let cached = cachedGuildJoinRequests[request.guildID]
+        if replacingStarted {
+            guard cached?.id == request.id, cached?.status == .started else { return }
+        } else if cached?.id == request.id {
+            return
+        }
         cachedGuildJoinRequests[request.guildID] = request
         publishGuildJoinRequests()
     }

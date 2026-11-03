@@ -11,7 +11,8 @@ final class GuildJoinRequestStore {
         enum Kind: Equatable { case form, welcome }
         var guildID: GuildID
         var kind: Kind
-        var id: GuildID { guildID }
+        /// Each presentation is new, so a reopened form never receives an earlier load.
+        let id = UUID()
     }
 
     /// Discord's applications, one per server. The provider is authoritative.
@@ -120,14 +121,11 @@ extension AppModel {
         if let inviteCode { store.inviteCodes[guildID] = inviteCode }
         store.form = nil
         store.error = nil
-        store.isWorking = true
-        store.modal = .init(guildID: guildID, kind: .form)
+        let modal = GuildJoinRequestStore.Modal(guildID: guildID, kind: .form)
+        store.modal = modal
         startAccountChildTask(account: accountSession()) { model, account in
             let result = await Result { try await account.provider.guildJoinApplicationForm(guildID, inviteCode: store.inviteCodes[guildID]) }
-            guard model.isCurrentAccountSession(account) else { return }
-            // Cleared even when the form was closed meanwhile, which would otherwise block later actions.
-            store.isWorking = false
-            guard store.modal?.guildID == guildID else { return }
+            guard model.isCurrentAccountSession(account), store.modal?.id == modal.id else { return }
             switch result {
             case .success(let form):
                 store.form = form
@@ -140,9 +138,9 @@ extension AppModel {
 
     func submitGuildJoinApplication() {
         let store = guildJoinRequests
-        guard let form = store.form, form.fields.allSatisfy(\.isSatisfied) else { return }
+        guard let form = store.form, let modal = store.modal, form.fields.allSatisfy(\.isSatisfied) else { return }
         runGuildJoinRequestAction { try await $0.submitGuildJoinApplication(form.guildID, fields: form.fields) } completion: { [weak self] in
-            guard let self, store.modal?.guildID == form.guildID else { return }
+            guard let self, store.modal?.id == modal.id else { return }
             store.form = nil
             store.modal = nil
             showGuildJoinApprovalIfNeeded()
