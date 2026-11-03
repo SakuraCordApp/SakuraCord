@@ -187,10 +187,17 @@ public enum ServerInviteMaxUses: Int, CaseIterable, Codable, Hashable, Sendable 
 public struct ServerInviteSettings: Hashable, Sendable {
     public var maxAge: ServerInviteMaxAge
     public var maxUses: ServerInviteMaxUses
+    /// An Activity invite opens this application in the voice channel.
+    public var targetApplicationID: ApplicationID?
 
-    public init(maxAge: ServerInviteMaxAge = .sevenDays, maxUses: ServerInviteMaxUses = .unlimited) {
+    public init(
+        maxAge: ServerInviteMaxAge = .sevenDays,
+        maxUses: ServerInviteMaxUses = .unlimited,
+        targetApplicationID: ApplicationID? = nil
+    ) {
         self.maxAge = maxAge
         self.maxUses = maxUses
+        self.targetApplicationID = targetApplicationID
     }
 }
 

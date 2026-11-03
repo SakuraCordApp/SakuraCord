@@ -94,4 +94,7 @@ Activity, who is playing from the instance updates, and Join while the instance
 runs.
 
 An Activity invite is a channel invite with `target_type: 2` and
-`target_application_id`; the message carries only the invite link.
+`target_application_id`; the message carries only the invite link. The
+Activity's invite dialog creates it with `POST /channels/{voice}/invites`, the
+server invite body with those two fields and the context location
+`Stream Invite`.

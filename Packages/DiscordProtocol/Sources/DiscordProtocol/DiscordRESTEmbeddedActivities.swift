@@ -178,7 +178,15 @@ public extension DiscordRESTProvider {
             .application(applicationID.description),
         ]
         for target in targets {
-            guard let catalog = try? await applicationCommandCatalog(for: target) else { continue }
+            let catalog: ApplicationCommandCatalog
+            do {
+                catalog = try await applicationCommandCatalog(for: target)
+            } catch {
+                // The application's own index decides between its entry point
+                // and the older launch; without it either would be a guess.
+                if case .application = target { throw error }
+                continue
+            }
             if let command = catalog.commands.first(where: {
                 $0.type == .primaryEntryPoint && $0.applicationID == applicationID.description
             }) {

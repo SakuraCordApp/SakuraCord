@@ -141,6 +141,17 @@ extension AppModel {
         }
     }
 
+    /// An Activity's Invite Friends: a new link to its voice channel that opens
+    /// the Activity. Stored links don't target it, so the sheet starts on create.
+    func presentActivityInviteCreation(for instance: EmbeddedActivityInstance) {
+        let store = serverInvites.creation
+        guard !accountTransitionIsActive, let guildID = instance.location.guildID else { return }
+        store.resetPresentation()
+        store.presentation = .init(guildID: guildID, channelID: instance.location.channelID)
+        store.settings.targetApplicationID = instance.applicationID
+        store.page = .create
+    }
+
     func createServerInvite() {
         let store = serverInvites.creation
         guard let presentation = store.presentation, !store.isCreating else { return }

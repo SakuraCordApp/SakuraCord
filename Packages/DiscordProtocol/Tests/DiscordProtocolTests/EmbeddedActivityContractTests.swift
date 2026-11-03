@@ -15,11 +15,12 @@ struct EmbeddedActivityContractTests {
 
     @Test func `authorization reads the grant then authorizes once in the voice channel`() async throws {
         let accountID = UUID().uuidString
+        let recorder = ActivityRequestRecorder(authorization: accountID)
         let provider = makeProvider(accountID)
         let request = authorization(state: "granted")
         #expect(try await provider.embeddedActivityAuthorizationPreview(request).isAuthorized)
         #expect(try await provider.authorizeEmbeddedActivity(request) == "one-time-code")
-        let requests = ActivityURLProtocol.requests(authorizedBy: accountID)
+        let requests = recorder.requests
         #expect(requests.map(\.httpMethod) == ["GET", "POST"])
         let previewQuery = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
         #expect(previewQuery.contains(URLQueryItem(name: "integration_type", value: "1")))
@@ -43,11 +44,13 @@ struct EmbeddedActivityContractTests {
     }
 
     @Test func `a rejected Activity token leaves the account session running`() async throws {
+        let token = UUID().uuidString
+        let recorder = ActivityRequestRecorder(authorization: "Bearer \(token)")
         let provider = makeProvider(UUID().uuidString)
         await #expect(throws: OAuth2AuthorizationError.self) {
-            _ = try await provider.authenticateEmbeddedActivity(ApplicationID("880218394199220334")!, accessToken: "revoked")
+            _ = try await provider.authenticateEmbeddedActivity(ApplicationID("880218394199220334")!, accessToken: token)
         }
-        #expect(ActivityURLProtocol.requests(authorizedBy: "Bearer revoked").count == 1)
+        #expect(recorder.requests.count == 1)
         #expect(await !provider.requestSafetyCircuitIsOpen)
         await provider.disconnect()
     }
@@ -74,12 +77,28 @@ private actor ActivityCredentialStore: CredentialStore {
     func handles() async throws -> [CredentialHandle] { [] }
 }
 
-private final class ActivityURLProtocol: URLProtocol, @unchecked Sendable {
-    private static let captured = Mutex<[URLRequest]>([])
+/// Collects the requests one test sends, told apart by their Authorization header.
+private final class ActivityRequestRecorder {
+    private final class Storage: Sendable { let requests = Mutex<[URLRequest]>([]) }
+    private let storage = Storage()
+    private var observer: (any NSObjectProtocol)?
 
-    static func requests(authorizedBy authorization: String) -> [URLRequest] {
-        captured.withLock { $0.filter { $0.value(forHTTPHeaderField: "Authorization") == authorization } }
+    init(authorization: String) {
+        let storage = storage
+        observer = NotificationCenter.default.addObserver(forName: ActivityURLProtocol.captured, object: nil, queue: nil) { notification in
+            guard let request = notification.object as? URLRequest,
+                  request.value(forHTTPHeaderField: "Authorization") == authorization else { return }
+            storage.requests.withLock { $0.append(request) }
+        }
     }
+
+    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+
+    var requests: [URLRequest] { storage.requests.withLock { $0 } }
+}
+
+private final class ActivityURLProtocol: URLProtocol, @unchecked Sendable {
+    static let captured = Notification.Name("EmbeddedActivityContractRequest")
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -98,7 +117,7 @@ private final class ActivityURLProtocol: URLProtocol, @unchecked Sendable {
         }
         var capturedRequest = request
         capturedRequest.httpBody = body
-        Self.captured.withLock { $0.append(capturedRequest) }
+        NotificationCenter.default.post(name: Self.captured, object: capturedRequest)
 
         let state = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
             .queryItems?.first { $0.name == "state" }?.value ?? ""

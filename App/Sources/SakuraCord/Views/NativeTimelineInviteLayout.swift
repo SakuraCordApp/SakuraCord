@@ -297,7 +297,8 @@ struct NativeTimelineInviteLayout {
         if let instanceID = content?.activityInstanceID { return source?.activityInstanceAction(instanceID) ?? ("Join", true) }
         if let invite, invite.activity != nil, let source, source.presentationGuild(invite.guildID) != nil {
             if source.isInActivityInvite(invite) { return ("Joined", true) }
-            return (source.activityPlayers(reference: invite.reference, instanceID: nil) > 0 ? "Join Activity" : "Play", false)
+            let label = source.activityPlayers(reference: invite.reference, instanceID: nil) > 0 ? "Join Activity" : "Play"
+            return (label, source.activityInviteChannel(invite) == nil)
         }
         if let invite, source?.isLeavingInviteGuild(invite.guildID) == true { return ("Leaving…", true) }
         if let invite, source?.isJoiningInviteGuild(invite.guildID) == true { return ("Joining…", true) }

@@ -235,10 +235,14 @@ extension AppModel {
         return embeddedActivities.session?.instance?.compositeInstanceID == instance.compositeInstanceID
     }
 
+    /// The voice channel an Activity invite opens, when this account can see it.
+    func activityInviteChannel(_ invite: ServerInvite) -> Channel? {
+        guard invite.activity != nil else { return nil }
+        return invite.channelID.flatMap(knownRootChannel)
+    }
+
     func joinActivityInvite(_ invite: ServerInvite) async {
-        guard let activity = invite.activity, let channelID = invite.channelID,
-              let channel = knownRootChannel(channelID)
-        else { return }
+        guard let activity = invite.activity, let channel = activityInviteChannel(invite) else { return }
         let application = embeddedActivities.application(activity.applicationID) ?? EmbeddedActivityApplication(
             id: activity.applicationID, name: activity.name, iconURL: activity.iconURL, coverURL: activity.coverURL
         )
@@ -296,8 +300,10 @@ extension AppModel {
         store.session?.instance = instance
         store.host?.participantsChanged()
         // The update can arrive before and after the launch request returns;
-        // only the first one starts the Activity.
-        guard session.phase == .launching, session.instance == nil else { return }
+        // only the first one starts the Activity. It can also arrive after the
+        // launch failed or timed out, and Discord counts this client as joined.
+        guard session.instance == nil else { return }
+        store.session?.phase = .launching
         store.launchTimeout?.cancel()
         let account = accountSession()
         startAccountChildTask(account: account) { model, account in
