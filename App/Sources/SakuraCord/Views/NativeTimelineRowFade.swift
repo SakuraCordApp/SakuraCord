@@ -1,39 +1,56 @@
 import AppKit
 
-/// A row's picture from before an update, fading out while the row motion
-/// that update started runs: a deleted message in the gap its neighbours
-/// close, or an edited message's previous content under its new content.
+/// An edited row's previous picture, fading out under its new content
+/// while the motion its update started runs.
 struct NativeTimelineRowFade {
-    enum Placement: Equatable {
-        /// Deleted rows, drawn below `after`, whose step reopens their height.
-        case departed(after: NativeMessageTimelineItem.Identifier, height: CGFloat)
-        /// The row's own previous picture, crossfading into the current one.
-        case replaced(NativeMessageTimelineItem.Identifier)
-    }
-
-    let placement: Placement
+    let identifier: NativeMessageTimelineItem.Identifier
     let image: NSImage
     /// Set on the first frame, as for a row motion.
     var startUptime: TimeInterval?
 
-    var isReplacement: Bool {
-        if case .replaced = placement { return true }
-        return false
-    }
-
     /// How much of the old picture still shows, from 1 down to 0.
     func remaining(at uptime: TimeInterval) -> CGFloat {
+        Self.remaining(startedAt: startUptime, at: uptime)
+    }
+
+    static func remaining(startedAt startUptime: TimeInterval?, at uptime: TimeInterval) -> CGFloat {
         1 - (startUptime.map { NativeTimelineRowDisclosure.progress(at: uptime - $0) } ?? 0)
     }
 }
 
-extension NativeTimelineRowFade.Placement {
-    /// The row a fade is drawn against.
-    var anchor: NativeMessageTimelineItem.Identifier {
-        switch self {
-        case let .departed(after, _): after
-        case let .replaced(identifier): identifier
+/// The deleted rows below one row, in their order, each fading and giving
+/// up its height as the step its deletion added to that row runs. Rows
+/// deleted later beside the same row join the run, so every one of them
+/// keeps its place in the gap as it closes.
+struct NativeTimelineDepartedRun {
+    struct Piece {
+        /// Nil for a row too tall for one picture, which leaves its
+        /// space blank.
+        let image: NSImage?
+        let height: CGFloat
+        var startUptime: TimeInterval?
+
+        func remaining(at uptime: TimeInterval) -> CGFloat {
+            NativeTimelineRowFade.remaining(startedAt: startUptime, at: uptime)
         }
+    }
+
+    var pieces: [Piece] = []
+
+    /// The height the run still takes below its row.
+    func gap(at uptime: TimeInterval) -> CGFloat {
+        pieces.reduce(0) { $0 + $1.height * $1.remaining(at: uptime) }
+    }
+
+    /// The run on the frame at `uptime`, with new pieces started and
+    /// finished ones gone; nil once none is left.
+    func advanced(to uptime: TimeInterval) -> Self? {
+        var run = self
+        for index in run.pieces.indices where run.pieces[index].startUptime == nil {
+            run.pieces[index].startUptime = uptime
+        }
+        run.pieces.removeAll { $0.remaining(at: uptime) <= 0 }
+        return run.pieces.isEmpty ? nil : run
     }
 }
 
@@ -79,25 +96,6 @@ extension NativeTimelineCanvasView {
         return image
     }
 
-    /// Deleted rows stacked as they were, for the gap they leave.
-    func departedRowsImage(_ rows: [NativeTimelineReactionBaseline.Row]) -> NSImage? {
-        // Each picture keeps its place in the gap, so one missing picture,
-        // as a tall row's is, leaves the whole run without one.
-        let images = rows.compactMap { rowFadeImage($0, width: bounds.width) }
-        guard images.count == rows.count else { return nil }
-        guard images.count > 1 else { return images.first }
-        let size = NSSize(width: bounds.width, height: images.reduce(0) { $0 + $1.size.height })
-        return NSImage(size: size, flipped: true) { _ in
-            var originY: CGFloat = 0
-            for image in images {
-                image.draw(in: CGRect(x: 0, y: originY, width: image.size.width, height: image.size.height),
-                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-                originY += image.size.height
-            }
-            return true
-        }
-    }
-
     /// Draws a replaced row's new content fading in over the old picture.
     func drawCrossfadingRow(_ fade: NativeTimelineRowFade, rowFrame: CGRect, drawRow: () -> Void) {
         guard let context = NSGraphicsContext.current?.cgContext else {
@@ -117,61 +115,53 @@ extension NativeTimelineCanvasView {
         context.restoreGState()
     }
 
-    /// How much of a row's displayed height is the gap of a deleted run
-    /// still fading below it.
+    /// How much of a row's displayed height is the gap of the deleted run
+    /// below it.
     func departedGapHeight(
         below identifier: NativeMessageTimelineItem.Identifier,
         at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) -> CGFloat {
-        rowFades.reduce(0) { total, fade in
-            guard case let .departed(after, height) = fade.placement, after == identifier else { return total }
-            return total + height * fade.remaining(at: uptime)
-        }
+        departedRuns[identifier]?.gap(at: uptime) ?? 0
     }
 
     /// Draws deleted rows in the gaps closing after the rows they followed.
     func drawDepartedRows(in dirtyRect: CGRect) {
-        guard !rowFades.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
+        guard !departedRuns.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        for fade in rowFades {
-            guard case let .departed(after, _) = fade.placement,
-                  let index = rowIndex(forIdentifier: after),
-                  case let gap = departedGapHeight(below: after, at: now),
-                  // The gap is the end of the row's displayed height, which
-                  // may also be easing from a change of the row's own.
-                  case let frame = CGRect(
-                      x: 0, y: displayedRowOrigin(at: index) + displayedRowHeight(at: index) - gap,
-                      width: bounds.width, height: gap
-                  ),
-                  frame.intersects(dirtyRect)
-            else { continue }
-            context.saveGState()
-            context.clip(to: frame)
-            fade.image.draw(
-                in: CGRect(origin: frame.origin, size: fade.image.size), from: .zero, operation: .sourceOver,
-                fraction: fade.remaining(at: now), respectFlipped: true, hints: nil
-            )
-            context.restoreGState()
+        for (anchor, run) in departedRuns {
+            guard let index = rowIndex(forIdentifier: anchor) else { continue }
+            // The gap is the end of the row's displayed height, which may
+            // also be easing from a change of the row's own.
+            var originY = displayedRowOrigin(at: index) + displayedRowHeight(at: index) - run.gap(at: now)
+            for piece in run.pieces {
+                let remaining = piece.remaining(at: now)
+                let frame = CGRect(x: 0, y: originY, width: bounds.width, height: piece.height * remaining)
+                originY = frame.maxY
+                guard let image = piece.image, frame.intersects(dirtyRect) else { continue }
+                context.saveGState()
+                context.clip(to: frame)
+                image.draw(
+                    in: CGRect(origin: frame.origin, size: image.size), from: .zero, operation: .sourceOver,
+                    fraction: remaining, respectFlipped: true, hints: nil
+                )
+                context.restoreGState()
+            }
         }
     }
 
     /// The region every running fade draws in, for the next frame.
     var rowFadeFrame: CGRect {
+        let crossfades = rowFades.reduce(CGRect.null) { frame, fade in
+            guard let index = rowIndex(forIdentifier: fade.identifier) else { return frame }
+            return frame.union(rowFrame(at: index)).union(CGRect(origin: rowFrame(at: index).origin, size: fade.image.size))
+        }
         let now = ProcessInfo.processInfo.systemUptime
-        return rowFades.reduce(CGRect.null) { frame, fade in
-            switch fade.placement {
-            case let .departed(after, height):
-                guard let index = rowIndex(forIdentifier: after) else { return frame }
-                return frame.union(CGRect(
-                    x: 0, y: displayedRowOrigin(at: index), width: bounds.width,
-                    height: max(displayedRowHeight(at: index), layouts[index].height + height * fade.remaining(at: now))
-                ))
-            case let .replaced(identifier):
-                guard let index = rowIndex(forIdentifier: identifier) else { return frame }
-                return frame.union(rowFrame(at: index)).union(CGRect(
-                    origin: rowFrame(at: index).origin, size: fade.image.size
-                ))
-            }
+        return departedRuns.reduce(crossfades) { frame, entry in
+            guard let index = rowIndex(forIdentifier: entry.key) else { return frame }
+            return frame.union(CGRect(
+                x: 0, y: displayedRowOrigin(at: index), width: bounds.width,
+                height: max(displayedRowHeight(at: index), layouts[index].height + entry.value.gap(at: now))
+            ))
         }
     }
 }

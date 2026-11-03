@@ -82,7 +82,7 @@ extension NativeTimelineCanvasView {
         }
         // Rows laid out at another width no longer match the chips' frames
         // or the fading pictures.
-        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty || !rowFades.isEmpty,
+        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty || !rowFades.isEmpty || !departedRuns.isEmpty,
            abs(reactionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
             finishReactionTransitions()
         }
@@ -878,7 +878,7 @@ extension NativeTimelineCanvasView {
         )
         // A shrinking row is taller on screen than its new picture, though
         // not than the old one fading out over it.
-        let fade = rowFades.isEmpty ? nil : rowFades.first { $0.placement == .replaced(item.identifier) }
+        let fade = rowFades.isEmpty ? nil : rowFades.first { $0.identifier == item.identifier }
         let picturesFrame = fade.map { paintFrame.union(CGRect(origin: rowFrame.origin, size: $0.image.size)) }
         guard (picturesFrame ?? paintFrame).intersects(dirtyRect) else { return }
         if let fade {

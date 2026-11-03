@@ -105,10 +105,24 @@ struct NativeTimelineRowMotionPlan {
 /// What one update starts: the row motion, the fades that go with it, and
 /// the chip transitions already installed.
 struct NativeTimelineUpdateMotion {
+    typealias Identifier = NativeMessageTimelineItem.Identifier
+
     /// Where the rows that left the timeline stood before the update.
     let departedOldIndices: Set<Int>
+    /// The runs still closing below rows this update deleted, now below
+    /// the row before each of them.
+    var inheritedRuns: [Identifier: (anchor: Identifier, run: NativeTimelineDepartedRun)] = [:]
     var plan = NativeTimelineRowMotionPlan()
-    var fades: [NativeTimelineRowFade] = []
+    var crossfades: [NativeTimelineRowFade] = []
+    /// A piece joining the run below a row. A new one belongs to this
+    /// update's motion; an inherited one keeps its own.
+    struct DepartedPiece {
+        let anchor: Identifier
+        let piece: NativeTimelineDepartedRun.Piece
+        let isNew: Bool
+    }
+
+    var departedPieces: [DepartedPiece] = []
     var startedChips = false
     var pausesMedia = false
     var droppedMotion = false
