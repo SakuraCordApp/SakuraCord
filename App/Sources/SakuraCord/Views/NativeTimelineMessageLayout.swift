@@ -12,6 +12,8 @@ extension NativeTimelineRowLayout {
         let width: CGFloat
         let source: AppModel?
         let metrics: Metrics
+        /// The inline editor's text height while this message is edited.
+        let editingTextHeight: CGFloat?
 
         private var result = NativeTimelineRowLayout()
         private var contentPresentation: NativeTimelineTextPresentation.Value
@@ -47,8 +49,12 @@ extension NativeTimelineRowLayout {
         private var timestampGutterWidth: CGFloat { max(avatarWidth, metrics.timestampGutterWidth) }
         private let presentedReactions: [Reaction]
 
-        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics, relativeTo date: Date = .now) {
+        init(
+            row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics,
+            relativeTo date: Date = .now, editingTextHeight: CGFloat? = nil
+        ) {
             self.row = row
+            self.editingTextHeight = editingTextHeight
             self.isUnreadBoundary = isUnreadBoundary
             self.width = width
             self.source = source
@@ -88,9 +94,10 @@ extension NativeTimelineRowLayout {
                   layout.embedRegions.allSatisfy({ $0.kind == .bareMedia })
             else { return nil }
             var extent = InterfaceScale.metric(28)
-            if let attributedContent = layout.attributedContent, let framesetter = layout.contentFramesetter {
+            // The message's own text, which an inline edit hides from the layout.
+            if let attributedContent = contentPresentation.attributedContent {
                 extent = max(extent, NativeTimelineBubbleLayout.measuredTextWidth(
-                    framesetter,
+                    contentPresentation.framesetter,
                     value: attributedContent,
                     maximumWidth: contentWidth
                 ))
@@ -495,9 +502,11 @@ extension NativeTimelineRowLayout {
                 contentWidth,
                 DiscordRichMessageMetrics.maximumWidth
             )
-            result.attributedContent = contentPresentation.attributedContent
-            result.contentFramesetter = contentPresentation.framesetter
-            if let attributedContent = contentPresentation.attributedContent {
+            if let editingTextHeight {
+                appendEditingText(height: editingTextHeight)
+            } else if let attributedContent = contentPresentation.attributedContent {
+                result.attributedContent = attributedContent
+                result.contentFramesetter = contentPresentation.framesetter
                 verticalOffset += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributedContent)
                 let textHeight = NativeTimelineRowLayout.measuredTextHeight(
                     contentPresentation.framesetter,
@@ -551,6 +560,21 @@ extension NativeTimelineRowLayout {
                 verticalOffset = layout.frame.maxY
                 hasRichContent = true
             }
+        }
+
+        /// The editor takes the text's place and never ends above it, so
+        /// the rest of the row only moves when the edit outgrows the text.
+        private mutating func appendEditingText(height: CGFloat) {
+            let textHeight = contentPresentation.attributedContent.map { value in
+                NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: value)
+                    + NativeTimelineRowLayout.measuredTextHeight(
+                        contentPresentation.framesetter, value: value, length: value.length, width: contentWidth
+                    )
+            } ?? 0
+            let height = max(height, textHeight)
+            result.contentFrame = CGRect(x: contentX, y: verticalOffset, width: contentWidth, height: height)
+            verticalOffset += height
+            hasRichContent = true
         }
 
         private mutating func appendLinkedImages() {

@@ -183,10 +183,18 @@ final class NativeTimelinePointerState {
 @MainActor
 final class NativeTimelineEditingSession {
     var host: NativeTimelineEditingHost?
+    /// Cancel and Save, where the row's hover actions otherwise appear.
+    var controlsHost: NativeTimelineActionCapsuleHost?
     weak var textView: ComposerNSTextView?
     var messageID: MessageID?
     var rowIndex: Int?
-    var rowHeight: CGFloat?
+    /// The row laid out around the editor, standing in for its stored layout.
+    var layout: NativeTimelineRowLayout?
+    /// The item `layout` was made from, so an update to the message relays it out.
+    var item: NativeMessageTimelineItem?
+    var editorHeight: CGFloat = 0
+    /// The saved text, while the timeline has yet to show it.
+    var committedContent: String?
     var overlayLocalFrame: CGRect?
     var scrollSnapshot: NSImage?
 
@@ -197,10 +205,15 @@ final class NativeTimelineEditingSession {
     func clear() {
         host?.removeFromSuperview()
         host = nil
+        controlsHost?.removeFromSuperview()
+        controlsHost = nil
         textView = nil
         messageID = nil
         rowIndex = nil
-        rowHeight = nil
+        layout = nil
+        item = nil
+        editorHeight = 0
+        committedContent = nil
         overlayLocalFrame = nil
         scrollSnapshot = nil
     }
@@ -470,8 +483,7 @@ extension NativeTimelineCanvasView {
     }
 
     var editingRowHeight: CGFloat? {
-        get { editing.rowHeight }
-        set { editing.rowHeight = newValue }
+        editing.layout?.height
     }
 
     var editingOverlayLocalFrame: CGRect? {
