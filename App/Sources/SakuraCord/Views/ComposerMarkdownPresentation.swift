@@ -4,15 +4,15 @@ import MessageRendering
 /// Markdown is the document; AppKit attributes are only its presentation.
 @MainActor
 enum ComposerMarkdownPresentation {
-    static func apply(to text: NSMutableAttributedString, font: NSFont) {
-        text.setAttributedString(rendered(text, font: font))
+    /// Every run starts from the draft's plain `style`.
+    static func apply(to text: NSMutableAttributedString, style: ComposerTextStyle) {
+        text.setAttributedString(rendered(text, style: style))
     }
 
-    static func rendered(_ original: NSAttributedString, font: NSFont) -> NSAttributedString {
+    static func rendered(_ original: NSAttributedString, style: ComposerTextStyle) -> NSAttributedString {
         let fullRange = NSRange(location: 0, length: original.length)
-        let text = NSMutableAttributedString(
-            string: original.string, attributes: ComposerEmojiAttributedText.textAttributes(font)
-        )
+        let font = style.font
+        let text = NSMutableAttributedString(string: original.string, attributes: style.attributes)
         // Start with one plain run rather than resetting every previous style run.
         // Only app-owned token attachments survive incoming rich-text formatting.
         original.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
@@ -47,8 +47,7 @@ enum ComposerMarkdownPresentation {
 extension ComposerNSTextView {
     func refreshMarkdownPresentation() {
         guard !hasMarkedText(), let textStorage else { return }
-        let baseFont = plainTypingAttributes[.font] as? NSFont ?? .interfaceSystemFont(ofSize: 15)
-        let rendered = ComposerMarkdownPresentation.rendered(textStorage, font: baseFont)
+        let rendered = ComposerMarkdownPresentation.rendered(textStorage, style: plainTextStyle)
         // Only changed runs should invalidate layout. Most keystrokes leave all
         // existing attributes intact, even though delimiter recognition is global.
         guard !rendered.isEqual(to: textStorage) else {

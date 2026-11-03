@@ -1760,6 +1760,13 @@ nonisolated enum NativeTimelineRunDelegate {
 }
 
 extension NativeTimelineRowLayout {
+    /// A message's text height from CoreText's suggestion, without the
+    /// trailing point the suggestion keeps. An inline editor's TextKit height
+    /// rounded up is that same suggestion.
+    static func messageTextHeight(suggested height: CGFloat) -> CGFloat {
+        ceil(height - 1.01)
+    }
+
     static func measuredTextHeight(
         _ framesetter: CTFramesetter,
         value: NSAttributedString,
@@ -1785,7 +1792,7 @@ extension NativeTimelineRowLayout {
         if size.height < 20, overflow == 0, style?.isMessageLine != true {
             return MessageRowLayoutMetrics.compactContentHeight
         }
-        return ceil(size.height - 1.01) + overflow
+        return messageTextHeight(suggested: size.height) + overflow
     }
 
     /// A single layout pass shares its font resolution and timestamp gutter.

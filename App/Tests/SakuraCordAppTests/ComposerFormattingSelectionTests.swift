@@ -24,7 +24,7 @@ func `composer partial formatting preserves other text styles attachments and un
     defer { window.close() }
     let view = ComposerNSTextView(frame: window.contentView!.bounds)
     view.allowsUndo = true
-    view.plainTypingAttributes = ComposerEmojiAttributedText.textAttributes(.systemFont(ofSize: 15))
+    view.plainTextStyle = .composer(.systemFont(ofSize: 15))
     window.contentView = view
     window.makeFirstResponder(view)
     view.textStorage?.setAttributedString(ComposerEmojiAttributedText.make(source))

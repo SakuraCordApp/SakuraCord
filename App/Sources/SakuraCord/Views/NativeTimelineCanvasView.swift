@@ -235,7 +235,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             [NativeTimelineCodeBlockPointerTarget]] = [:]
 
     var items: [NativeMessageTimelineItem] { storage.items }
-    var layouts: [NativeTimelineRowLayout] { storage.layouts }
+    var layouts: NativeTimelineCanvasLayouts { .init(storage: storage, editing: editing) }
     var rowOrigins: [CGFloat] { storage.rowOrigins }
     var contentHeight: CGFloat { storage.contentHeight }
 
@@ -263,6 +263,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var messageInteractionContext: NativeTimelineMessageInteractionContext = .conversation
     var actions: NativeTimelineRowActions?
     var onWidthChange: ((CGFloat) -> Void)?
+    /// Lays a row out around an inline editor of the given text height.
+    var makeEditingLayout: ((NativeMessageTimelineItem, CGFloat) -> NativeTimelineRowLayout)?
     var usesViewportSizedBacking = false
     var onDocumentSizeChange: ((NSSize) -> Void)?
 
@@ -548,7 +550,6 @@ enum NativeTimelineRowPainter {
         isTranslationActionHovered: Bool = false,
         hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind? = nil,
         isSuppressedToggleHovered: Bool = false,
-        hidesMessageContent: Bool = false,
         hoveredReactionID: String? = nil,
         isAddReactionHovered: Bool = false,
         textSelection: NativeTimelineTextSelection? = nil,
@@ -634,7 +635,6 @@ enum NativeTimelineRowPainter {
                 isEphemeralDismissHovered: isEphemeralDismissHovered,
                 isTranslationActionHovered: isTranslationActionHovered,
                 hoveredDeliveryAction: hoveredDeliveryAction,
-                hidesMessageContent: hidesMessageContent,
                 hoveredReactionID: hoveredReactionID,
                 isAddReactionHovered: isAddReactionHovered,
                 textSelection: textSelection,
