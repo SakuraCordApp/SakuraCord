@@ -152,7 +152,8 @@ final class ServerRailDragController {
     @ObservationIgnored private(set) var swallowsClick = false
     /// While the rail scrolls, rows passing under a resting pointer do not
     /// take hover; following it re-rendered every row the scroll carried by.
-    @ObservationIgnored var isScrolling = false
+    /// Rows observe it only to take the hover they skipped once it ends.
+    var isScrolling = false
 
     var isTracking: Bool { draggedID != nil || flight != nil }
 

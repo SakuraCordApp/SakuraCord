@@ -11,6 +11,7 @@ struct ServerFolderRailView: View {
     @State private var isAnimatingFolder = false
     @State private var animationGeneration = 0
     @State private var pointerLocation: CGPoint?
+    @State private var pointer = ServerRailPointer()
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
     private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
@@ -120,13 +121,22 @@ struct ServerFolderRailView: View {
         .onContinuousHover { phase in
             switch phase {
             case .active(let location):
-                let location = inputAllowed && !drag.isScrolling ? location : nil
+                pointer.location = inputAllowed ? location : nil
+                let location = drag.isScrolling ? nil : pointer.location
                 if pointerLocation != location { pointerLocation = location }
-            case .ended: pointerLocation = nil
+            case .ended:
+                pointer.location = nil
+                pointerLocation = nil
             }
         }
+        .onChange(of: drag.isScrolling) { _, isScrolling in
+            if !isScrolling { pointerLocation = pointer.location }
+        }
         .onChange(of: inputAllowed) { _, allowed in
-            if !allowed { pointerLocation = nil }
+            if !allowed {
+                pointer.location = nil
+                pointerLocation = nil
+            }
         }
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil }

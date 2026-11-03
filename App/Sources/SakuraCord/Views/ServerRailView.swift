@@ -164,7 +164,9 @@ struct ServerRailView: View {
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
         }
-        .onScrollPhaseChange { _, phase in drag.isScrolling = phase.isScrolling }
+        .onScrollPhaseChange { _, phase in
+            if drag.isScrolling != phase.isScrolling { drag.isScrolling = phase.isScrolling }
+        }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
         // Scrolled icons must not draw beneath the window's traffic lights.
@@ -766,12 +768,25 @@ extension View {
 private struct ServerRailHover: ViewModifier {
     let action: (Bool) -> Void
     @Environment(ServerRailDragController.self) private var drag
+    @State private var pointer = ServerRailPointer()
 
     func body(content: Content) -> some View {
-        content.onModalHover { isInside in
-            if !isInside || !drag.isScrolling { action(isInside) }
-        }
+        content
+            .onModalHover { isInside in
+                pointer.isInside = isInside
+                if !isInside || !drag.isScrolling { action(isInside) }
+            }
+            .onChange(of: drag.isScrolling) { _, isScrolling in
+                if !isScrolling, pointer.isInside { action(true) }
+            }
     }
+}
+
+/// Where the pointer is over a rail row, kept out of view state so
+/// following it while the rail scrolls re-renders nothing.
+final class ServerRailPointer {
+    var isInside = false
+    var location: CGPoint?
 }
 
 /// Rail selection is drawn by the indicator; pressing must not tint the icon.
