@@ -16,7 +16,8 @@ is the Embedded App SDK parent.
 
 The contract below was captured from the official desktop client (host 0.0.411,
 web build 660103) on 3 November 2026 launching Watch Together and Chess In The
-Park in a guild voice channel and Wordle in its application DM, then cross-checked
+Park in a guild voice channel, Wordle in its application DM, and Watch Together
+in a DM call joined by a second account, then cross-checked
 against the public [Embedded App SDK](https://github.com/discord/embedded-app-sdk)
 2.5.0 (`b5f4774`). Paicord and Swiftcord v1 have no Activity support.
 
@@ -77,7 +78,18 @@ returned location reaches the Activity. `AUTHENTICATE` validates the Activity's
 bearer token with `GET /oauth2/@me` and requires its application and this
 account's user; that token's rejection never ends the account session.
 
-## Invites
+A running instance is joined the same way from the channel. The official
+client's Join button on a launch message instead sends
+`POST /activities/{channel}/{application}` with `{session_id}`; both join the
+existing instance.
+
+## Messages and invites
+
+Launching through the entry point can post the application's launch message:
+type 23 with `interaction_metadata` (the launching user), the `application` and
+`activity_instance: {id}` naming the composite instance. Its card shows the
+Activity, who is playing from the instance updates, and Join while the instance
+runs.
 
 An Activity invite is a channel invite with `target_type: 2` and
 `target_application_id`; the message carries only the invite link.

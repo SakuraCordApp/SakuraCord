@@ -156,12 +156,15 @@ private struct DirectMessageCallRegion: View {
                 if model.embeddedActivities.session?.location.channelID == channel.id {
                     EmbeddedActivityStage(model: model, channel: channel)
                 } else {
-                    VoiceVideoGrid(
-                        model: model,
-                        channel: channel,
-                        isCompact: true,
-                        ringingUserIDs: animatedRingingUserIDs
-                    )
+                    VStack(spacing: 0) {
+                        if isConnectedHere { EmbeddedActivityJoinBanner(model: model, channel: channel) }
+                        VoiceVideoGrid(
+                            model: model,
+                            channel: channel,
+                            isCompact: true,
+                            ringingUserIDs: animatedRingingUserIDs
+                        )
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

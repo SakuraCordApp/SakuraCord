@@ -58,6 +58,10 @@ final class EmbeddedActivityStore {
         )
     }
 
+    func instance(_ compositeInstanceID: String) -> EmbeddedActivityInstance? {
+        instances[compositeInstanceID]
+    }
+
     func instances(in channelID: ChannelID) -> [EmbeddedActivityInstance] {
         instances.values.filter { $0.location.channelID == channelID }
             .sorted { $0.compositeInstanceID < $1.compositeInstanceID }
@@ -172,10 +176,33 @@ extension AppModel {
         }
     }
 
-    /// Players in the instance an Activity invite points to.
-    func activityInvitePlayers(_ reference: ServerInviteReference) -> Int {
-        guard let invite = inviteEntry(for: reference)?.invite else { return 0 }
-        return activityInstance(for: invite)?.participants.count ?? 0
+    /// Players in the instance an Activity invite or launch message points to.
+    func activityPlayers(reference: ServerInviteReference?, instanceID: String?) -> Int {
+        let instance = instanceID.flatMap { embeddedActivities.instance($0) }
+            ?? reference.flatMap { inviteEntry(for: $0)?.invite }.flatMap(activityInstance(for:))
+        return instance?.participants.count ?? 0
+    }
+
+    /// The launch message's button: join a running instance, or show it joined or ended.
+    func activityInstanceAction(_ instanceID: String) -> (String, Bool) {
+        if embeddedActivities.session?.instance?.compositeInstanceID == instanceID { return ("Joined", true) }
+        return embeddedActivities.instance(instanceID) == nil ? ("Ended", true) : ("Join", false)
+    }
+
+    /// Joins the instance an application's launch message announced, joining
+    /// the call first in a private channel, where the Activity lives in the call.
+    func joinActivityInstance(_ instanceID: String, from message: Message) async {
+        guard let instance = embeddedActivities.instance(instanceID),
+              let channel = knownRootChannel(instance.location.channelID)
+        else { return }
+        let application = embeddedActivities.application(instance.applicationID) ?? EmbeddedActivityApplication(
+            id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL
+        )
+        if channel.guildID == nil, activeVoiceChannel?.id != channel.id {
+            await joinPrivateCall(in: channel)
+            guard activeVoiceChannel?.id == channel.id else { return }
+        }
+        await startActivity(application, in: channel)
     }
 
     func isInActivityInvite(_ invite: ServerInvite) -> Bool {
@@ -216,8 +243,8 @@ extension AppModel {
         default:
             return
         }
-        // Activity invite cards show who is playing.
-        if serverInvites.entries.values.contains(where: { $0.invite?.activity != nil }) { serverInvites.changed() }
+        // Activity invite and launch cards show who is playing.
+        serverInvites.changed()
     }
 
     private func consumeEmbeddedActivity(_ instance: EmbeddedActivityInstance) {

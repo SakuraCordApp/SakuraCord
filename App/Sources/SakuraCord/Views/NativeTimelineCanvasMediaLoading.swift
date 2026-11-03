@@ -338,8 +338,8 @@ extension NativeTimelineCanvasView {
             into: &keys
         )
         for card in layouts[index].inviteRegions {
+            if let url = card.content?.iconURL { keys.append(.media(url, maximumPixelDimension: 128)) }
             if let invite = card.invite {
-                if let url = card.content?.iconURL { keys.append(.media(url, maximumPixelDimension: 128)) }
                 if let url = invite.activity?.coverURL { keys.append(.media(url, maximumPixelDimension: 512)) }
                 if let url = invite.inviter?.avatarURL { keys.append(.media(url, maximumPixelDimension: 32)) }
                 for trait in invite.traits {
