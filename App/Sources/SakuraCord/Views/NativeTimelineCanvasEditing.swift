@@ -1042,7 +1042,10 @@ extension NativeTimelineCanvasView {
         editingRowScrollSnapshot = nil
         let draft = NativeTimelineInlineEditDraft(text: row.message.content)
         editing.draft = draft
-        let host = makeEditingHost(for: row, model: model, draft: draft)
+        let host = makeEditingHost(
+            for: row, model: model, draft: draft,
+            isOnOutgoingBubble: editingLayout.bubbleRegion?.isOutgoing == true
+        )
         editingRowHost = host
         addSubview(host, positioned: .above, relativeTo: nil)
         let controls = NativeTimelineActionCapsuleHost(rootView: AnyView(
@@ -1073,12 +1076,14 @@ extension NativeTimelineCanvasView {
     private func makeEditingHost(
         for row: MessageRowPresentation,
         model: AppModel,
-        draft: NativeTimelineInlineEditDraft
+        draft: NativeTimelineInlineEditDraft,
+        isOnOutgoingBubble: Bool
     ) -> NativeTimelineEditingHost {
         let root = NativeTimelineEditingMessageContent(
             model: model,
             message: row.message,
             draft: draft,
+            isOnOutgoingBubble: isOnOutgoingBubble,
             save: { [weak self] value in
                 self?.endEditing(commit: value)
             },

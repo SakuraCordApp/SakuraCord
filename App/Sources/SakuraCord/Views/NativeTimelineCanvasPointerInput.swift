@@ -1081,7 +1081,10 @@ extension NativeTimelineCanvasView {
                   !self.sendTransitionBlocksInteractions
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            guard let hit = self.reactionPointerHit(at: point) else {
+            // An inline editor's suggestions can lie over reactions.
+            guard self.editingRowHost?.frame.contains(point) != true,
+                  let hit = self.reactionPointerHit(at: point)
+            else {
                 return event
             }
             self.window?.makeFirstResponder(self)

@@ -336,6 +336,8 @@ struct ComposerTextView: NSViewRepresentable {
     var capturesUnfocusedTyping = false
     var verticalContentInset: CGFloat = 0
     var maximumHeight: CGFloat = InterfaceScale.metric(150)
+    /// Overrides the accent caret, for text set on an accent fill.
+    var insertionPointColor: NSColor?
     var sendTransitionAnchor: ComposerSendTransitionAnchor?
     @Binding var selection: NSRange?
     @Binding var isFocused: Bool
@@ -391,6 +393,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.font = font
         textView.textColor = .labelColor
         textView.applySakuraCordTextSelectionAppearance()
+        if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
         textView.plainTypingAttributes = textAttributes
         textView.restorePlainTypingAttributes()
         textView.setAccessibilityLabel(placeholder)
@@ -500,6 +503,7 @@ struct ComposerTextView: NSViewRepresentable {
         }
 
         textView.applySakuraCordTextSelectionAppearance()
+        if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
         textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)
         textView.setAccessibilityLabel(placeholder)

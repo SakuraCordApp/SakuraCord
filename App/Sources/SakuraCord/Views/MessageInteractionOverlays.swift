@@ -283,6 +283,8 @@ struct NativeTimelineEditingMessageContent: View {
     let model: AppModel
     let message: Message
     @Bindable var draft: NativeTimelineInlineEditDraft
+    /// An outgoing bubble's accent fill, which takes white text and caret.
+    let isOnOutgoingBubble: Bool
     let save: (String) -> Void
     let cancel: () -> Void
     let editorHeightDidChange: (CGFloat) -> Void
@@ -300,6 +302,7 @@ struct NativeTimelineEditingMessageContent: View {
                 save(value)
             },
             cancel: cancel,
+            isOnOutgoingBubble: isOnOutgoingBubble,
             suggestionsBelow: draft.showsSuggestionsBelow,
             editorHeightDidChange: editorHeightDidChange
         )
@@ -865,8 +868,10 @@ private struct InlineMessageEditor: View {
     let canEdit: Bool
     let save: () -> Void
     let cancel: () -> Void
+    let isOnOutgoingBubble: Bool
     let suggestionsBelow: Bool
     let editorHeightDidChange: (CGFloat) -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selection: NSRange?
     @State private var isFocused = true
     @State private var autocompleteIndex = 0
@@ -903,9 +908,12 @@ private struct InlineMessageEditor: View {
                 onEscape: composerActions.onEscape,
                 onAutocompleteCommand: handleAutocomplete,
                 capturesUnfocusedTyping: true,
+                insertionPointColor: isOnOutgoingBubble ? .white : nil,
                 selection: $selection,
                 isFocused: $isFocused
             )
+                // The timeline sets an outgoing bubble's text in white.
+                .environment(\.colorScheme, isOnOutgoingBubble ? .dark : colorScheme)
                 .disabled(!canEdit)
                 .padding(.top, MessageEditLayoutMetrics.editorTopInset)
                 .onGeometryChange(for: CGFloat.self, of: \.size.height, action: editorHeightDidChange)
