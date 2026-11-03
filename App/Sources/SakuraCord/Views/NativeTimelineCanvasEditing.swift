@@ -1156,13 +1156,16 @@ extension NativeTimelineCanvasView {
         // The editor reports its draft's height as CoreText suggests it.
         let draftHeight = editing.editorHeight > 0
             ? NativeTimelineRowLayout.messageTextHeight(suggested: editing.editorHeight) : 0
+        guard var layout = makeEditingLayout?(item, draftHeight) else { return }
         // A message's own rendering, such as a heading or jumbo emoji, can
         // be taller than its raw text; until the draft changes, the row
-        // keeps that height as well as making room for the raw text.
+        // keeps its height, with the room below the draft.
         editing.keepsRenderedHeight = editing.draft?.text == row.message.content
-        let height = editing.keepsRenderedHeight
-            ? max(draftHeight, storage.layouts[index].contentFrame?.height ?? 0) : draftHeight
-        guard let layout = makeEditingLayout?(item, height) else { return }
+        let shortfall = storage.layouts[index].height - layout.height
+        if editing.keepsRenderedHeight, shortfall > 0.5,
+           let tallerLayout = makeEditingLayout?(item, (layout.contentFrame?.height ?? draftHeight) + shortfall) {
+            layout = tallerLayout
+        }
         applyEditingLayout(layout)
     }
 
