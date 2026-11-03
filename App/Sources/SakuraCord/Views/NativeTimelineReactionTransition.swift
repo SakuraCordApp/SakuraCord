@@ -346,7 +346,7 @@ extension NativeTimelineCanvasView {
             if rowFrame(at: index).intersects(visibleRect), animatedMediaRows[identifier] == nil,
                let picture = rowFadeImage(old, width: baseline.width) {
                 // A crossfade still running starts the new one from the blend it shows.
-                let image = rowFades.first { $0.identifier == identifier }.map { shownCrossfade($0, over: picture) }
+                let image = rowFades.first { $0.identifier == identifier }.flatMap { shownCrossfade($0, over: picture) }
                 update.crossfades.append(.init(identifier: identifier, rowIndex: index, image: image ?? picture))
             }
             // A motion still running from an earlier change keeps going, so

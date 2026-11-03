@@ -80,12 +80,27 @@ extension NativeTimelineCanvasView {
         // A tall row is drawn in tiles; one picture of all of it costs too
         // much for a fade, so it changes without one.
         guard layout.height <= Self.wholeRowBitmapMaximumHeight else { return nil }
-        let scale = window?.backingScaleFactor ?? 2
         let size = NSSize(width: width, height: layout.height)
+        return rasterized(size: size) {
+            NativeTimelineRowPainter.draw(
+                item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
+                isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
+                spoilerRevealStore: spoilerRevealStore
+            )
+            if let editor = row.editor {
+                editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            }
+        }
+    }
+
+    /// A bitmap at the window's scale of what `draw` draws in a flipped
+    /// context of `size`, so the picture holds on to nothing it drew.
+    private func rasterized(size: NSSize, draw: () -> Void) -> NSImage? {
+        let scale = window?.backingScaleFactor ?? 2
         guard size.height >= 1,
               let representation = NSBitmapImageRep(
                   bitmapDataPlanes: nil,
-                  pixelsWide: max(1, Int(ceil(width * scale))),
+                  pixelsWide: max(1, Int(ceil(size.width * scale))),
                   pixelsHigh: max(1, Int(ceil(size.height * scale))),
                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
@@ -98,14 +113,7 @@ extension NativeTimelineCanvasView {
         graphics.cgContext.translateBy(x: 0, y: size.height)
         graphics.cgContext.scaleBy(x: 1, y: -1)
         NSGraphicsContext.current = NSGraphicsContext(cgContext: graphics.cgContext, flipped: true)
-        NativeTimelineRowPainter.draw(
-            item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
-            isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
-            spoilerRevealStore: spoilerRevealStore
-        )
-        if let editor = row.editor {
-            editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-        }
+        draw()
         representation.size = size
         let image = NSImage(size: size)
         image.addRepresentation(representation)
@@ -113,14 +121,16 @@ extension NativeTimelineCanvasView {
     }
 
     /// What a row shows partway through `running`: its old picture fading
-    /// out under `picture`, the row's content before this update.
-    func shownCrossfade(_ running: NativeTimelineRowFade, over picture: NSImage) -> NSImage {
+    /// out under `picture`, the row's content before this update. Drawn
+    /// once into a bitmap, so a run of interrupting edits keeps no chain
+    /// of earlier pictures.
+    func shownCrossfade(_ running: NativeTimelineRowFade, over picture: NSImage) -> NSImage? {
         let remaining = running.remaining(at: ProcessInfo.processInfo.systemUptime)
         let size = NSSize(
             width: max(running.image.size.width, picture.size.width),
             height: max(running.image.size.height, picture.size.height)
         )
-        return NSImage(size: size, flipped: true) { _ in
+        return rasterized(size: size) {
             running.image.draw(
                 in: CGRect(origin: .zero, size: running.image.size), from: .zero, operation: .sourceOver,
                 fraction: remaining, respectFlipped: true, hints: nil
@@ -129,7 +139,6 @@ extension NativeTimelineCanvasView {
                 in: CGRect(origin: .zero, size: picture.size), from: .zero, operation: .sourceOver,
                 fraction: 1 - remaining, respectFlipped: true, hints: nil
             )
-            return true
         }
     }
 
