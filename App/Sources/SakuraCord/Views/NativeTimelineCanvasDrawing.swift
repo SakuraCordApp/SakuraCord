@@ -821,6 +821,7 @@ extension NativeTimelineCanvasView {
             drawTimelineRow(at: index, rowFrame: rowFrame, dirtyRect: dirtyRect, visibleMediaKeys: visibleMediaKeys)
             context.restoreGState()
         }
+        drawDepartedRows(in: dirtyRect)
     }
 
     /// Blocked and ignored areas span several rows, so they are drawn beneath
@@ -872,7 +873,42 @@ extension NativeTimelineCanvasView {
         )
         // A shrinking row is taller on screen than its pictures.
         guard paintFrame.intersects(dirtyRect) else { return }
-        if reactionBandTop != nil,
+        if rowFades.isEmpty {
+            drawRowPicture(
+                item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
+                preparedMediaKeys: preparedMediaKeys, revealState: revealState
+            )
+        } else {
+            drawCrossfadingRow(at: index, rowFrame: rowFrame) {
+                drawRowPicture(
+                    item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
+                    preparedMediaKeys: preparedMediaKeys, revealState: revealState
+                )
+            }
+        }
+        if item.messageID == editingMessageID, let editingRowScrollSnapshot {
+            editingRowScrollSnapshot.draw(
+                in: editingOverlayFrame(at: index), from: .zero, operation: .sourceOver,
+                fraction: 1, respectFlipped: true, hints: nil
+            )
+        }
+        clearSendTransitionBubble(for: item, layout: layouts[index], rowFrame: rowFrame)
+        if !unreadDividerFades.isEmpty {
+            clearHeldUnreadDivider(for: item, layout: layouts[index], rowFrame: rowFrame)
+        }
+    }
+
+    /// Draws a row from its bitmap or directly, whichever its state needs.
+    private func drawRowPicture(
+        _ item: NativeMessageTimelineItem,
+        at index: Int,
+        rowFrame: CGRect,
+        paintFrame: CGRect,
+        dirtyRect: CGRect,
+        preparedMediaKeys: Set<NativeTimelineMediaKey>,
+        revealState: NativeTimelineTextSpoilerRevealState
+    ) {
+        if reactionTransitions[item.identifier] != nil,
            !timelineRowRequiresDirectPresentation(item: item, index: index, revealState: revealState),
            let image = reactionTransitionBitmap(for: item, width: rowFrame.width)
         {
@@ -893,16 +929,6 @@ extension NativeTimelineCanvasView {
                 item, at: index, rowFrame: paintFrame, dirtyRect: dirtyRect,
                 preparedMediaKeys: preparedMediaKeys, revealState: revealState
             )
-        }
-        if item.messageID == editingMessageID, let editingRowScrollSnapshot {
-            editingRowScrollSnapshot.draw(
-                in: editingOverlayFrame(at: index), from: .zero, operation: .sourceOver,
-                fraction: 1, respectFlipped: true, hints: nil
-            )
-        }
-        clearSendTransitionBubble(for: item, layout: layouts[index], rowFrame: rowFrame)
-        if !unreadDividerFades.isEmpty {
-            clearHeldUnreadDivider(for: item, layout: layouts[index], rowFrame: rowFrame)
         }
     }
 

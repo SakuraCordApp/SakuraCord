@@ -309,6 +309,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionMotionShift: CGFloat = 0
     var reactionMotionSteps: [(index: Int, cumulative: CGFloat)] = []
     var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
+    var rowFades: [NativeTimelineRowFade] = []
     let reactionTicker = NativeTimelineDisplayLinkTicker()
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]

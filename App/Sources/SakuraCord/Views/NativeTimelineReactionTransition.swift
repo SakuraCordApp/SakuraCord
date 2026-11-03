@@ -109,11 +109,27 @@ struct NativeTimelineReactionBaseline {
         let top: CGFloat
         let item: NativeMessageTimelineItem
         let layout: NativeTimelineRowLayout
+        /// The row's cached bitmap, if it had one, for a fade without a raster.
+        let bitmap: NativeTimelineCanvasView.CachedRowBitmap?
     }
 
     /// The canvas width the rows were laid out at.
     let width: CGFloat
     let rows: [NativeMessageTimelineItem.Identifier: Row]
+    let rowsByIndex: [Int: Row]
+    /// The row being edited inline; its editor already shows the new text.
+    let editedIdentifier: NativeMessageTimelineItem.Identifier?
+
+    init(
+        width: CGFloat,
+        rows: [NativeMessageTimelineItem.Identifier: Row],
+        editedIdentifier: NativeMessageTimelineItem.Identifier?
+    ) {
+        self.width = width
+        self.rows = rows
+        self.editedIdentifier = editedIdentifier
+        rowsByIndex = Dictionary(uniqueKeysWithValues: rows.values.map { ($0.index, $0) })
+    }
 }
 
 extension MessageRowPresentation {
@@ -169,20 +185,30 @@ extension NativeTimelineCanvasView {
         let originY = contentOriginY - viewportMinY
         var rows: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBaseline.Row] = [:]
         forEachDisplayedRow(in: reactionBaselineRect) { index in
-            rows[items[index].identifier] = .init(
+            let item = items[index]
+            rows[item.identifier] = .init(
                 index: index,
                 top: originY + rowOrigins[index],
-                item: items[index],
-                layout: layouts[index]
+                item: item,
+                layout: layouts[index],
+                // A bitmap leaves animated media to live overlays, so it is
+                // no picture of such a row.
+                bitmap: animatedMediaRows[item.identifier] == nil ? bitmapCache[item.identifier] : nil
             )
         }
-        if !rows.isEmpty { pendingReactionBaseline = NativeTimelineReactionBaseline(width: bounds.width, rows: rows) }
+        if !rows.isEmpty {
+            pendingReactionBaseline = NativeTimelineReactionBaseline(
+                width: bounds.width, rows: rows, editedIdentifier: editingRowIndex.map { items[$0].identifier }
+            )
+        }
     }
 
     /// Starts the motion of the update just applied, after the coordinator
     /// has settled the scroll position. Rows whose only change is their
-    /// reactions animate; any other change near the viewport, such as a new
-    /// or edited message, applies instantly as before.
+    /// reactions animate their chips; an edited message crossfades into its
+    /// new content and a deleted one fades in the gap its neighbours close.
+    /// Any other change near the viewport, such as a new message, applies
+    /// instantly as before.
     func beginReactionTransitions() {
         guard let baseline = pendingReactionBaseline else { return }
         pendingReactionBaseline = nil
@@ -196,73 +222,110 @@ extension NativeTimelineCanvasView {
         refreshReactionMotionGeometry()
         let now = ProcessInfo.processInfo.systemUptime
         let originY = contentOriginY - viewportMinY
-        var shift: CGFloat?
-        var steps: [NativeTimelineReactionRowMotion.Step] = []
-        var expectedShift: CGFloat?
-        var previousIndex: Int?
-        var describesUpdate = true
-        var startedChips = false
-        var pausesMedia = false
-        var droppedMotion = false
+        var followed = Set<NativeMessageTimelineItem.Identifier>()
+        forEachDisplayedRow(in: reactionBaselineRect) { followed.insert(items[$0].identifier) }
+        // Only rows that left the followed area can have left the timeline.
+        let gone = baseline.rows.values.filter {
+            !followed.contains($0.item.identifier) && rowIndex(forIdentifier: $0.item.identifier) == nil
+        }
+        var update = NativeTimelineUpdateMotion(departedOldIndices: Set(gone.map(\.index)))
         forEachDisplayedRow(in: reactionBaselineRect) { index in
-            let identifier = items[index].identifier
-            // Rows entering the followed area have no earlier place. One
-            // inserted between followed rows fails the shift check below.
-            guard let old = baseline.rows[identifier] else { return }
-            // Rows removed or moved between two followed rows, or any height
-            // change the steps do not explain, end the motion.
-            let rowShift = old.top - (originY + rowOrigins[index])
-            if let previousIndex, old.index != previousIndex + 1 { describesUpdate = false }
-            if let expectedShift, abs(rowShift - expectedShift) >= 0.5 { describesUpdate = false }
-            previousIndex = old.index
-            shift = shift ?? rowShift
-            let delta = layouts[index].height - old.layout.height
-            expectedShift = rowShift - delta
-            let changed = old.item != items[index]
-            guard changed,
-                  case let .message(oldRow, oldUnread, oldHighlighted) = old.item,
-                  case let .message(row, unread, highlighted) = items[index],
-                  unread == oldUnread, highlighted == oldHighlighted,
-                  row.differsOnlyInReactions(from: oldRow)
-            else {
-                if abs(delta) >= 0.5 { describesUpdate = false }
-                // Its chips belong to a row that changed in another way.
-                if changed {
-                    endReactionTransition(identifier)
-                    let motionCount = reactionRowMotions.count
-                    reactionRowMotions.removeAll { $0.steps.contains { $0.identifier == identifier } }
-                    droppedMotion = droppedMotion || reactionRowMotions.count != motionCount
-                }
-                return
-            }
-            if abs(delta) >= 0.5 {
-                steps.append(.init(identifier: identifier, rowIndex: index, delta: delta))
-            }
-            if rowFrame(at: index).intersects(visibleRect),
-               beginReactionTransition(at: index, from: old, now: now)
-            {
-                startedChips = true
-                pausesMedia = pausesMedia || animatedMediaRows[identifier] != nil
-            }
+            followRow(at: index, from: baseline, originY: originY, now: now, into: &update)
+        }
+        // Rows deleted after the last followed row close from below.
+        if let previous = update.plan.previous {
+            let departed = baseline.trailingDepartedRows(after: previous.oldIndex, in: update.departedOldIndices)
+            if !departed.isEmpty { closeGap(departed, in: &update) }
         }
         // A row that changed in another way lands where the update put it.
-        if droppedMotion {
+        if update.droppedMotion {
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
         }
         // Live reaction media pauses on its still while the chips move.
-        if pausesMedia { positionAnimatedMediaOverlays() }
-        if describesUpdate, let shift, !steps.isEmpty {
-            reactionRowMotions.append(.init(shift: shift, steps: steps))
+        if update.pausesMedia { positionAnimatedMediaOverlays() }
+        if let motion = update.plan.motion {
+            reactionRowMotions.append(motion)
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
-        } else if !startedChips {
-            return
         }
+        // A deleted row's fade belongs to the motion closing its gap; an
+        // edit's crossfade stands on its own.
+        // A newer fade takes over a running one's place, which now shows
+        // the content the newer one starts from.
+        let fades = update.fades.filter { update.plan.describesUpdate || $0.isReplacement }
+        rowFades.removeAll { running in fades.contains { $0.placement.anchor == running.placement.anchor } }
+        rowFades.append(contentsOf: fades)
+        guard update.startedChips || !rowFades.isEmpty || update.plan.motion != nil else { return }
         reactionTransitionWidth = bounds.width
         if reactionTicker.displayLink == nil {
             reactionTicker.start(on: self) { [weak self] in self?.stepReactionTransitions() }
         }
+    }
+
+    /// Follows one displayed row from where it was before the update.
+    private func followRow(
+        at index: Int,
+        from baseline: NativeTimelineReactionBaseline,
+        originY: CGFloat,
+        now: TimeInterval,
+        into update: inout NativeTimelineUpdateMotion
+    ) {
+        let identifier = items[index].identifier
+        // Rows entering the followed area have no earlier place. One
+        // inserted between followed rows fails the plan's shift check.
+        guard let old = baseline.rows[identifier] else { return }
+        if let previous = update.plan.previous, old.index != previous.oldIndex + 1 {
+            let departed = baseline.departedRows(after: previous.oldIndex, before: old.index, in: update.departedOldIndices)
+            closeGap(departed, in: &update)
+        }
+        let row = NativeTimelineRowMotionPlan.FollowedRow(oldIndex: old.index, index: index, identifier: identifier)
+        let delta = layouts[index].height - old.layout.height
+        update.plan.follow(row, rowShift: old.top - (originY + rowOrigins[index]), delta: delta)
+        switch items[index].change(from: old.item) {
+        case .none:
+            if abs(delta) >= 0.5 { update.plan.invalidate() }
+        case .reactions:
+            update.plan.addStep(for: row, delta: delta)
+            if rowFrame(at: index).intersects(visibleRect), beginReactionTransition(at: index, from: old, now: now) {
+                update.startedChips = true
+                update.pausesMedia = update.pausesMedia || animatedMediaRows[identifier] != nil
+            }
+        case .regroup where !update.departedOldIndices.isDisjoint(with: [old.index - 1, old.index + 1]),
+             .content:
+            update.plan.addStep(for: row, delta: delta)
+            if identifier != baseline.editedIdentifier, rowFrame(at: index).intersects(visibleRect),
+               let image = rowFadeImage(old, width: baseline.width) {
+                update.fades.append(.init(placement: .replaced(identifier), image: image))
+            }
+            update.droppedMotion = dropReactionMotion(of: identifier) || update.droppedMotion
+        case .regroup, .other:
+            if abs(delta) >= 0.5 { update.plan.invalidate() }
+            update.droppedMotion = dropReactionMotion(of: identifier) || update.droppedMotion
+        }
+    }
+
+    /// Deleted rows close their gap as a step of the followed row before
+    /// them, fading out inside it.
+    private func closeGap(_ rows: [NativeTimelineReactionBaseline.Row]?, in update: inout NativeTimelineUpdateMotion) {
+        guard let rows, let previous = update.plan.previous else {
+            update.plan.invalidate()
+            return
+        }
+        let height = rows.reduce(0) { $0 + $1.layout.height }
+        update.plan.closeGap(height: height)
+        if let image = departedRowsImage(rows) {
+            update.fades.append(.init(placement: .departed(after: previous.identifier, height: height), image: image))
+        }
+    }
+
+    /// Ends a row's chips and the motions it takes part in, for a row that
+    /// changed in another way. True when a motion was dropped.
+    private func dropReactionMotion(of identifier: NativeMessageTimelineItem.Identifier) -> Bool {
+        endReactionTransition(identifier)
+        let motionCount = reactionRowMotions.count
+        reactionRowMotions.removeAll { $0.steps.contains { $0.identifier == identifier } }
+        return reactionRowMotions.count != motionCount
     }
 
     /// Installs a row's chip transition, continuing a running one from what
@@ -356,6 +419,11 @@ extension NativeTimelineCanvasView {
             reactionRowMotions[index].startUptime = now
         }
         reactionRowMotions.removeAll { $0.progress(at: now) >= 1 }
+        let fadeFrame = rowFadeFrame
+        for index in rowFades.indices where rowFades[index].startUptime == nil {
+            rowFades[index].startUptime = now
+        }
+        rowFades.removeAll { $0.remaining(at: now) <= 0 }
         // Frames that move no row by a whole pixel redraw only the chips; the
         // last one also hands hover back to the rows where they landed.
         let moved = refreshReactionMotionGeometry(at: now)
@@ -375,8 +443,9 @@ extension NativeTimelineCanvasView {
             }
         }
         if redrawsRows { redrawForRowMotion(invalidating: reactionMotionFrame) }
+        if !fadeFrame.isNull { setNeedsDisplay(fadeFrame.union(rowFadeFrame)) }
         if reconcilesMedia { reconcileAnimatedMediaOverlays(reduceMotion: false) }
-        if reactionTransitions.isEmpty, reactionRowMotions.isEmpty { reactionTicker.stop() }
+        if reactionTransitions.isEmpty, reactionRowMotions.isEmpty, rowFades.isEmpty { reactionTicker.stop() }
     }
 
     /// Lands every reaction motion on the static layout, for another motion
@@ -385,8 +454,9 @@ extension NativeTimelineCanvasView {
         pendingReactionBaseline = nil
         reactionTicker.stop()
         let hadMotion = !reactionRowMotions.isEmpty
-        let hadChips = !reactionTransitions.isEmpty
+        let hadChips = !reactionTransitions.isEmpty || !rowFades.isEmpty
         reactionRowMotions.removeAll()
+        rowFades.removeAll()
         for identifier in reactionTransitions.keys { endReactionTransition(identifier) }
         refreshReactionMotionGeometry()
         if hadMotion {
