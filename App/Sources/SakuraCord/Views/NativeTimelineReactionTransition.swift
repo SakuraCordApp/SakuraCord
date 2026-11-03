@@ -246,10 +246,12 @@ extension NativeTimelineCanvasView {
         }
         // A deleted row's fade belongs to the motion closing its gap; an
         // edit's crossfade stands on its own.
-        // A newer fade takes over a running one's place, which now shows
-        // the content the newer one starts from.
+        // A newer fade takes over a running one of its kind on the same
+        // row, whose place now shows the content the newer one starts from.
         let fades = update.fades.filter { update.plan.describesUpdate || $0.isReplacement }
-        rowFades.removeAll { running in fades.contains { $0.placement.anchor == running.placement.anchor } }
+        rowFades.removeAll { running in
+            fades.contains { $0.placement.anchor == running.placement.anchor && $0.isReplacement == running.isReplacement }
+        }
         rowFades.append(contentsOf: fades)
         guard update.startedChips || !rowFades.isEmpty || update.plan.motion != nil else { return }
         reactionTransitionWidth = bounds.width

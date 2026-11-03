@@ -124,9 +124,12 @@ extension NativeTimelineCanvasView {
         for fade in rowFades {
             guard case let .departed(after, height) = fade.placement,
                   let index = rowIndex(forIdentifier: after),
+                  case let gap = height * fade.remaining(at: now),
+                  // The gap is the end of the row's displayed height, which
+                  // may also be easing from a change of the row's own.
                   case let frame = CGRect(
-                      x: 0, y: displayedRowOrigin(at: index) + layouts[index].height,
-                      width: bounds.width, height: height * fade.remaining(at: now)
+                      x: 0, y: displayedRowOrigin(at: index) + displayedRowHeight(at: index) - gap,
+                      width: bounds.width, height: gap
                   ),
                   frame.intersects(dirtyRect)
             else { continue }
@@ -149,7 +152,7 @@ extension NativeTimelineCanvasView {
                 guard let index = rowIndex(forIdentifier: after) else { return frame }
                 return frame.union(CGRect(
                     x: 0, y: displayedRowOrigin(at: index), width: bounds.width,
-                    height: layouts[index].height + height * fade.remaining(at: now)
+                    height: max(displayedRowHeight(at: index), layouts[index].height + height * fade.remaining(at: now))
                 ))
             case let .replaced(identifier):
                 guard let index = rowIndex(forIdentifier: identifier) else { return frame }
