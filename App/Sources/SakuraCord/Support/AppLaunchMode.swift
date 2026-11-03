@@ -1,3 +1,4 @@
+import DiscordProtocol
 import Foundation
 
 nonisolated enum AppLaunchMode: Equatable, Sendable {
@@ -31,6 +32,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let runsPinsPerformanceAutoScroll: Bool
     /// A 1,000-friend list, presence churn and a scroll and section-switch benchmark.
     let runsFriendsPerformanceBenchmark: Bool
+    /// A 150-server rail scrolled, selected and updated with mention badges.
+    let runsServerRailPerformanceBenchmark: Bool
     /// Mentions arriving in other servers while main-thread time is measured.
     let runsUnreadChurnBenchmark: Bool
 #if SAKURACORD_MOTION_BENCHMARK
@@ -107,6 +110,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             arguments.contains("--offline-chat-performance-live-autoscroll")
         runsPinsPerformanceAutoScroll = includesPinsPerformanceFixture
         runsFriendsPerformanceBenchmark = arguments.contains("--offline-friends-performance")
+        runsServerRailPerformanceBenchmark = arguments.contains("--offline-server-rail-performance")
 #if SAKURACORD_MOTION_BENCHMARK
         let isMotionBenchmarkLaunch = arguments.contains("--offline-side-chat-motion")
         runsSideChatMotionBenchmark = isMotionBenchmarkLaunch
@@ -132,8 +136,14 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             "--offline-chat-files-performance-open",
             "--offline-pins-performance-autoscroll",
             "--offline-incoming-private-call", "--offline-friends-performance", "--offline-unread-churn",
+            "--offline-server-rail-performance",
         ]
         mode = isMotionBenchmarkLaunch || arguments.contains(where: testingFlags.contains) ? .offlineTesting : .normal
+    }
+
+    var mockServerList: MockServerList {
+        if runsServerRailPerformanceBenchmark { return .performance }
+        return includesLongServerList ? .long : .standard
     }
 
     var runsAnyReadOnlyPerformanceBenchmark: Bool {
@@ -142,6 +152,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || runsForumPerformanceAutoScroll
             || runsPinsPerformanceAutoScroll
             || runsFriendsPerformanceBenchmark
+            || runsServerRailPerformanceBenchmark
             || runsUnreadChurnBenchmark
             || runsMemberListPerformanceAutoScroll
             || runsAuthenticatedNavigationBenchmark

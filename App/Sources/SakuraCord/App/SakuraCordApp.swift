@@ -92,7 +92,7 @@ struct SakuraCordApp: App {
             )
         let mockProvider = configuration.mode == .offlineTesting
             ? MockChatProvider(
-                includesLongServerList: configuration.includesLongServerList,
+                serverList: configuration.mockServerList,
                 forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
                 forumPreviewsHydrateLate: configuration.includesForumPerformanceFixture,
                 timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
@@ -207,6 +207,9 @@ struct SakuraCordApp: App {
 #endif
                     if runsFriendsPerformanceBenchmark {
                         await FriendsPerformanceBenchmark.run(model: model, provider: performanceMockProvider)
+                    }
+                    if AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments).runsServerRailPerformanceBenchmark {
+                        await ServerRailPerformanceBenchmark.run(model: model)
                     }
                     if AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments).runsUnreadChurnBenchmark {
                         await UnreadChurnBenchmark.run(model: model, provider: performanceMockProvider)
