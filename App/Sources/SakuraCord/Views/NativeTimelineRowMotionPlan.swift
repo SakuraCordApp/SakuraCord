@@ -111,7 +111,7 @@ struct NativeTimelineUpdateMotion {
     let departedOldIndices: Set<Int>
     /// The runs still closing below rows this update deleted, now below
     /// the row before each of them.
-    var inheritedRuns: [Identifier: (anchor: Identifier, run: NativeTimelineDepartedRun)] = [:]
+    var inheritedRuns: [Identifier: NativeTimelineCanvasView.HandedOverRun]
     var plan = NativeTimelineRowMotionPlan()
     var crossfades: [NativeTimelineRowFade] = []
     /// A piece joining the run below a row. A new one belongs to this

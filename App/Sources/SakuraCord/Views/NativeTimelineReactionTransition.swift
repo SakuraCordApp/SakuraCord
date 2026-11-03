@@ -208,13 +208,18 @@ extension NativeTimelineCanvasView {
     func beginReactionTransitions() {
         guard let baseline = pendingReactionBaseline else { return }
         pendingReactionBaseline = nil
+        let inheritedRuns = handedOverRuns
+        handedOverRuns = [:]
         guard AppMotionPolicy.animatesUncategorized,
               abs(baseline.width - bounds.width) < 0.5,
               editingRowIndex == nil,
               rowDisclosure == nil,
               unreadDividerGap == nil,
               !sendTransitionBlocksInteractions
-        else { return }
+        else {
+            for (anchor, run) in inheritedRuns.values { departedRuns[anchor, default: .init()].pieces += run.pieces }
+            return
+        }
         var followed = Set<NativeMessageTimelineItem.Identifier>()
         forEachDisplayedRow(in: reactionBaselineRect) { followed.insert(items[$0].identifier) }
         // Only rows that left the followed area can have left the timeline,
@@ -222,8 +227,7 @@ extension NativeTimelineCanvasView {
         let gone = baseline.rows.values.filter {
             !followed.contains($0.item.identifier) && rowIndex(forIdentifier: $0.item.identifier) == nil
         }
-        var update = NativeTimelineUpdateMotion(departedOldIndices: Set(gone.map(\.index)))
-        handOverDepartedMotion(of: gone, in: baseline, into: &update)
+        var update = NativeTimelineUpdateMotion(departedOldIndices: Set(gone.map(\.index)), inheritedRuns: inheritedRuns)
         refreshReactionMotionGeometry()
         let now = ProcessInfo.processInfo.systemUptime
         let originY = contentOriginY - viewportMinY
@@ -332,20 +336,22 @@ extension NativeTimelineCanvasView {
 
     /// A deleted row hands its steps, and the run still closing below it,
     /// to the row before it, so that gap keeps closing from where it is
-    /// instead of lapsing with the row.
-    private func handOverDepartedMotion(
-        of gone: [NativeTimelineReactionBaseline.Row],
-        in baseline: NativeTimelineReactionBaseline,
-        into update: inout NativeTimelineUpdateMotion
-    ) {
-        guard !reactionRowMotions.isEmpty else { return }
-        for row in gone.sorted(by: { $0.index < $1.index }) {
-            var anchorIndex = row.index - 1
-            while update.departedOldIndices.contains(anchorIndex) { anchorIndex -= 1 }
+    /// instead of lapsing with the row. Runs when the update lands, before
+    /// motions whose rows are gone are dropped; the update that follows
+    /// places the handed-over runs.
+    private func handOverDepartedMotion(in baseline: NativeTimelineReactionBaseline) {
+        let gone = Set(reactionRowMotions.flatMap(\.steps).compactMap { step in
+            rowIndex(forIdentifier: step.identifier, hint: step.rowIndex) == nil ? baseline.rows[step.identifier] : nil
+        }.map(\.index))
+        for oldIndex in gone.sorted() {
+            guard let identifier = baseline.rowsByIndex[oldIndex]?.item.identifier else { continue }
+            var anchorIndex = oldIndex - 1
+            while let row = baseline.rowsByIndex[anchorIndex], rowIndex(forIdentifier: row.item.identifier) == nil {
+                anchorIndex -= 1
+            }
             guard let anchor = baseline.rowsByIndex[anchorIndex]?.item.identifier,
                   let index = rowIndex(forIdentifier: anchor)
             else { continue }
-            let identifier = row.item.identifier
             for motion in reactionRowMotions.indices {
                 for step in reactionRowMotions[motion].steps.indices
                     where reactionRowMotions[motion].steps[step].identifier == identifier {
@@ -354,7 +360,7 @@ extension NativeTimelineCanvasView {
                 }
             }
             if let run = departedRuns.removeValue(forKey: identifier) {
-                update.inheritedRuns[identifier] = (anchor, run)
+                handedOverRuns[identifier] = (anchor, run)
             }
         }
     }
@@ -513,6 +519,7 @@ extension NativeTimelineCanvasView {
         reactionRowMotions.removeAll()
         rowFades.removeAll()
         departedRuns.removeAll()
+        handedOverRuns.removeAll()
         for identifier in reactionTransitions.keys { endReactionTransition(identifier) }
         refreshReactionMotionGeometry()
         if hadMotion {
@@ -529,6 +536,7 @@ extension NativeTimelineCanvasView {
     @discardableResult
     func refreshReactionMotionGeometry(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         guard !reactionRowMotions.isEmpty || !reactionMotionSteps.isEmpty else { return false }
+        if let pendingReactionBaseline { handOverDepartedMotion(in: pendingReactionBaseline) }
         // A motion whose row is gone no longer describes the layout.
         removeReactionMotions { motion in
             motion.steps.contains { rowIndex(forIdentifier: $0.identifier, hint: $0.rowIndex) == nil }
