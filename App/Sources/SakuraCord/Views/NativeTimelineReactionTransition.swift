@@ -215,7 +215,13 @@ extension NativeTimelineCanvasView {
               unreadDividerGap == nil,
               !sendTransitionBlocksInteractions
         else { return }
-        let gone = baseline.rows.values.filter { rowIndex(forIdentifier: $0.item.identifier) == nil }
+        var followed = Set<NativeMessageTimelineItem.Identifier>()
+        forEachDisplayedRow(in: reactionBaselineRect) { followed.insert(items[$0].identifier) }
+        // Only rows that left the followed area can have left the timeline,
+        // and only those pay for a search of it.
+        let gone = baseline.rows.values.filter {
+            !followed.contains($0.item.identifier) && rowIndex(forIdentifier: $0.item.identifier) == nil
+        }
         var update = NativeTimelineUpdateMotion(departedOldIndices: Set(gone.map(\.index)))
         handOverDepartedMotion(of: gone, in: baseline, into: &update)
         refreshReactionMotionGeometry()
