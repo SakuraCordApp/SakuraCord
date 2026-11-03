@@ -826,29 +826,38 @@ enum MessageEditLayoutMetrics {
     /// The timeline's plain message text, so a draft is set in the font,
     /// colour and line height the row drew the message in.
     static func textStyle(isOnOutgoingBubble: Bool) -> ComposerTextStyle {
-        let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
-        if let cached = textStyles[isOnOutgoingBubble], cached.font.pointSize == fontSize { return cached }
-        var attributes = DiscordMarkdown.appKitAttributed(
-            DiscordMarkdown.appKitPlan("x"), baseFontSize: fontSize, usesMessageLineHeight: true
-        ).attributes(at: 0, effectiveRange: nil)
+        let style = messageText.style
+        guard isOnOutgoingBubble else { return style }
         // The timeline sets an outgoing bubble's text in white.
-        if isOnOutgoingBubble { attributes[.foregroundColor] = NSColor.white }
-        let style = ComposerTextStyle(
-            font: attributes[.font] as? NSFont ?? .interfaceSystemFont(ofSize: fontSize), attributes: attributes
-        )
-        textStyles[isOnOutgoingBubble] = style
-        return style
+        var attributes = style.attributes
+        attributes[.foregroundColor] = NSColor.white
+        return ComposerTextStyle(font: style.font, attributes: attributes)
     }
-
-    private static var textStyles: [Bool: ComposerTextStyle] = [:]
 
     /// How much lower TextKit sets a draft's first baseline than CoreText
     /// sets the message's: TextKit puts a line's extra height above the
     /// text. Raising the editor by it sets every line where it was drawn.
-    static var editorBaselineShift: CGFloat {
-        let style = textStyle(isOnOutgoingBubble: false)
-        if let cached = baselineShift, cached.font == style.font { return cached.shift }
-        let sample = NSAttributedString(string: "Edit", attributes: style.attributes)
+    static var editorBaselineShift: CGFloat { messageText.baselineShift }
+
+    /// The message text style and its baseline shift at one interface size.
+    private struct MessageText {
+        let fontSize: CGFloat
+        let style: ComposerTextStyle
+        let baselineShift: CGFloat
+    }
+
+    /// The message text at the current interface size, worked out once per size.
+    private static var messageText: MessageText {
+        let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
+        if let cached = messageTextCache, cached.fontSize == fontSize { return cached }
+        let attributes = DiscordMarkdown.appKitAttributed(
+            DiscordMarkdown.appKitPlan("x"), baseFontSize: fontSize, usesMessageLineHeight: true
+        ).attributes(at: 0, effectiveRange: nil)
+        guard let font = attributes[.font] as? NSFont else {
+            preconditionFailure("The markdown renderer sets a font on message text.")
+        }
+        let style = ComposerTextStyle(font: font, attributes: attributes)
+        let sample = NSAttributedString(string: "Edit", attributes: attributes)
         let height: CGFloat = 100
         let frame = CTFramesetterCreateFrame(
             CTFramesetterCreateWithAttributedString(sample), CFRange(),
@@ -865,11 +874,12 @@ enum MessageEditLayoutMetrics {
         let editorBaseline = layoutManager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil).minY
             + layoutManager.location(forGlyphAt: 0).y
         let shift = editorBaseline - (height - origin.y)
-        baselineShift = (style.font, shift)
-        return shift
+        let measured = MessageText(fontSize: fontSize, style: style, baselineShift: shift)
+        messageTextCache = measured
+        return measured
     }
 
-    private static var baselineShift: (font: NSFont, shift: CGFloat)?
+    private static var messageTextCache: MessageText?
 
     nonisolated static var actionHeight: CGFloat { InterfaceScale.metric(22) }
     nonisolated static var actionHorizontalPadding: CGFloat { InterfaceScale.metric(5) }

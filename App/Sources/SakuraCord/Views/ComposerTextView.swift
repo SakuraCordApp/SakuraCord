@@ -168,7 +168,7 @@ enum ComposerEmojiAttributedText {
                 )
             )
         }
-        ComposerMarkdownPresentation.apply(to: result, attributes: style.attributes)
+        ComposerMarkdownPresentation.apply(to: result, style: style)
         return result
     }
 
@@ -286,9 +286,6 @@ enum ComposerEmojiAttributedText {
         return max(0, offset - reduction)
     }
 
-    static func textAttributes(_ font: NSFont) -> [NSAttributedString.Key: Any] {
-        ComposerTextStyle.composer(font).attributes
-    }
 }
 
 /// How a draft's plain text looks: the composer's own style, or the style
@@ -437,7 +434,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.textColor = textStyle.attributes[.foregroundColor] as? NSColor ?? .labelColor
         textView.applySakuraCordTextSelectionAppearance()
         if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
-        textView.plainTypingAttributes = textAttributes
+        textView.plainTextStyle = textStyle
         textView.restorePlainTypingAttributes()
         textView.setAccessibilityLabel(placeholder)
         textView.onReturn = { [weak coordinator = context.coordinator] event in
@@ -485,7 +482,7 @@ struct ComposerTextView: NSViewRepresentable {
     private func restyleDraft(in textView: ComposerNSTextView) {
         let selectedRange = textView.selectedRange()
         textView.font = font
-        textView.plainTypingAttributes = textAttributes
+        textView.plainTextStyle = textStyle
         textView.typingAttributes = textAttributes
         textView.textStorage?.setAttributedString(
             ComposerEmojiAttributedText.make(
@@ -598,7 +595,7 @@ struct ComposerTextView: NSViewRepresentable {
                 textView.setSelectedRange(displayed)
             }
         }
-        textView.plainTypingAttributes = textAttributes
+        textView.plainTextStyle = textStyle
         textView.restorePlainTypingAttributes()
 
         context.coordinator.applyFocus(to: textView)
@@ -902,7 +899,8 @@ final class ComposerNSTextView: ComposerFocusReportingTextView {
     var onDropTargetChanged: ((_ isTargeted: Bool, _ isInstant: Bool) -> Void)?
     var onReceiveAttachments: ((_ attachments: ComposerIncomingAttachments, _ isInstant: Bool) -> Bool)?
     var canReceiveAttachments: (() -> Bool)?
-    var plainTypingAttributes: [NSAttributedString.Key: Any] = [:]
+    var plainTextStyle: ComposerTextStyle = .composer
+    var plainTypingAttributes: [NSAttributedString.Key: Any] { plainTextStyle.attributes }
     var capturesUnfocusedTyping = false {
         didSet {
             unfocusedTypingMonitor.synchronize(
@@ -1029,7 +1027,7 @@ final class ComposerNSTextView: ComposerFocusReportingTextView {
         restorePlainTypingAttributes()
         if let attributed = insertString as? NSAttributedString {
             let normalized = NSMutableAttributedString(attributedString: attributed)
-            ComposerMarkdownPresentation.apply(to: normalized, attributes: plainTypingAttributes)
+            ComposerMarkdownPresentation.apply(to: normalized, style: plainTextStyle)
             super.insertText(normalized, replacementRange: replacementRange)
         } else {
             super.insertText(insertString, replacementRange: replacementRange)

@@ -228,12 +228,7 @@ extension NativeTimelineCanvasView {
             setHoveredMention(nil)
             return
         }
-        guard !editingOverlayContains(point) else {
-            // The editor and its suggestions cover the rows under them.
-            clearPointerHoverTargets()
-            setHoveredRow(editingRowIndex)
-            return
-        }
+        guard !hoversEditingOverlay(at: point) else { return }
         setHoveredRow(index)
         setHoveredPollTarget(pollPointerHit(at: point)?.target)
         setHoveredCompactTimestampRow(
@@ -280,12 +275,7 @@ extension NativeTimelineCanvasView {
             setHoveredMention(nil)
             return
         }
-        guard !editingOverlayContains(point) else {
-            // The editor and its suggestions cover the rows under them.
-            clearPointerHoverTargets()
-            setHoveredRow(editingRowIndex)
-            return
-        }
+        guard !hoversEditingOverlay(at: point) else { return }
         setHoveredPollTarget(pollPointerHit(at: point)?.target)
         updateVoiceMessageHover(at: point)
         synchronizeHoveredRow(at: point)
@@ -1230,12 +1220,7 @@ extension NativeTimelineCanvasView {
             setHoveredMention(nil)
             return
         }
-        guard !editingOverlayContains(point) else {
-            // The editor and its suggestions cover the rows under them.
-            clearPointerHoverTargets()
-            setHoveredRow(editingRowIndex)
-            return
-        }
+        guard !hoversEditingOverlay(at: point) else { return }
         synchronizeHoveredRow(at: point)
         setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
         updateVoiceMessageHover(at: visibleRect.contains(point) ? point : nil, measuresDuration: false)
@@ -1284,6 +1269,15 @@ extension NativeTimelineCanvasView {
             reactionPointerHit(at: point),
             mouseLocationInScreen: NSEvent.mouseLocation
         )
+    }
+
+    /// The editor and its suggestions cover the rows under them, so
+    /// pointing at them points at the edited row. True when they do.
+    private func hoversEditingOverlay(at point: CGPoint) -> Bool {
+        guard editingOverlayContains(point) else { return false }
+        clearPointerHoverTargets()
+        setHoveredRow(editingRowIndex)
+        return true
     }
 
     /// Whether the inline editor, its suggestions or its controls are under `point`.

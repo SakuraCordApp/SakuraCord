@@ -208,6 +208,11 @@ final class NativeTimelineEditingSession {
         messageID != nil
     }
 
+    /// Whether the draft still says what `message` does.
+    func draftMatches(_ message: Message) -> Bool {
+        draft?.text == message.content
+    }
+
     func clear() {
         host?.removeFromSuperview()
         host = nil

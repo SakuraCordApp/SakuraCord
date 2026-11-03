@@ -1097,7 +1097,7 @@ extension NativeTimelineCanvasView {
             },
             draftDidChange: { [weak self] in
                 guard let self, self.editingMessageID == row.id,
-                      self.editing.keepsRenderedHeight != (draft.text == row.message.content)
+                      self.editing.keepsRenderedHeight != self.editing.draftMatches(row.message)
                 else { return }
                 self.relayoutEditingRow()
             }
@@ -1160,7 +1160,7 @@ extension NativeTimelineCanvasView {
         // A message's own rendering, such as a heading or jumbo emoji, can
         // be taller than its raw text; until the draft changes, the row
         // keeps its height, with the room below the draft.
-        editing.keepsRenderedHeight = editing.draft?.text == row.message.content
+        editing.keepsRenderedHeight = editing.draftMatches(row.message)
         let shortfall = storage.layouts[index].height - layout.height
         if editing.keepsRenderedHeight, shortfall > 0.5,
            let tallerLayout = makeEditingLayout?(item, (layout.contentFrame?.height ?? draftHeight) + shortfall) {

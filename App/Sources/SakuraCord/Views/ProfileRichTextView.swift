@@ -181,7 +181,7 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
         }
         context.coordinator.images = emojiImages
         context.coordinator.wasActive = editing?.isActive
-        textView.typingAttributes = ComposerEmojiAttributedText.textAttributes(.interfaceSystemFont(ofSize: 14))
+        textView.typingAttributes = ComposerTextStyle.composer(.interfaceSystemFont(ofSize: 14)).attributes
         textView.invalidateIntrinsicContentSize()
     }
 
@@ -225,7 +225,7 @@ private struct ProfileTextRepresentable: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard parent.editing != nil, let textView = notification.object as? NSTextView else { return }
-            textView.typingAttributes = ComposerEmojiAttributedText.textAttributes(.interfaceSystemFont(ofSize: 14))
+            textView.typingAttributes = ComposerTextStyle.composer(.interfaceSystemFont(ofSize: 14)).attributes
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -323,7 +323,7 @@ enum ProfileInlineAttributedText {
         font: NSFont,
         color: NSColor
     ) -> NSAttributedString {
-        var attributes = ComposerEmojiAttributedText.textAttributes(font)
+        var attributes = ComposerTextStyle.composer(font).attributes
         attributes[.foregroundColor] = color
         return NSAttributedString(string: text, attributes: attributes)
     }
