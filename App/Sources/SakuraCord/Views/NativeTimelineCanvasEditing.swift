@@ -1132,7 +1132,9 @@ extension NativeTimelineCanvasView {
         }
         guard let index = editingRowIndex else { return }
         // A saved edit has arrived; the row now draws what the editor showed.
-        if let committed = editing.committedContent, items[index].messageRow?.message.content == committed {
+        if let committed = editing.committedContent, let current = items[index].messageRow?.message,
+           current.content == committed
+            || editing.savedEditTimestamp.map({ (current.editedTimestamp ?? .distantPast) >= $0 }) == true {
             return finishEditing(at: index)
         }
         // The update may bring a new message or a new width; either changes
@@ -1238,9 +1240,9 @@ extension NativeTimelineCanvasView {
             // Only this save's session; a later edit of the message has its own draft.
             guard let self, let draft, self.editing.draft === draft, self.editing.committedContent != nil else { return }
             guard let saved else { return self.finishEditing(at: self.editingRowIndex) }
-            // The server may normalize the text; wait for what it saved, which
-            // the timeline may already show.
-            self.editing.committedContent = saved
+            // The timeline may already show the save, or a later edit from
+            // elsewhere, whose text can differ from what was typed.
+            self.editing.savedEditTimestamp = saved.editedTimestamp ?? .distantPast
             self.reconcileEditingRow()
         }
     }

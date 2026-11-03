@@ -196,6 +196,8 @@ final class NativeTimelineEditingSession {
     var draft: NativeTimelineInlineEditDraft?
     /// The saved text, while the timeline has yet to show it.
     var committedContent: String?
+    /// When the save succeeded, the time it marked the message edited.
+    var savedEditTimestamp: Date?
     var overlayLocalFrame: CGRect?
     var scrollSnapshot: NSImage?
 
@@ -215,6 +217,7 @@ final class NativeTimelineEditingSession {
         item = nil
         editorHeight = 0
         committedContent = nil
+        savedEditTimestamp = nil
         draft = nil
         overlayLocalFrame = nil
         scrollSnapshot = nil

@@ -8,8 +8,8 @@ struct NativeTimelineRowActions {
     var reply: ((Message) -> Void)?
     var forward: ((Message) -> Void)?
     var retry: (Message) -> Void
-    /// Saves an edit; the saved message's content, or nil when it failed.
-    var edit: (Message, String) async -> String?
+    /// Saves an edit; the saved message, or nil when it failed.
+    var edit: (Message, String) async -> Message?
     var markUnread: (Message) -> Void
     var delete: (Message) -> Void
     var togglePin: (Message) -> Void
@@ -33,7 +33,7 @@ struct NativeTimelineRowActions {
         reply: ((Message) -> Void)?,
         forward: ((Message) -> Void)? = nil,
         retry: @escaping (Message) -> Void,
-        edit: @escaping (Message, String) async -> String?,
+        edit: @escaping (Message, String) async -> Message?,
         markUnread: @escaping (Message) -> Void,
         delete: @escaping (Message) -> Void,
         togglePin: @escaping (Message) -> Void = { _ in },
@@ -108,7 +108,7 @@ extension NativeMessageTimelineCoordinator {
                 Task { await model.retrySending(message) }
             },
             edit: { [weak model = parent.model] message, content in
-                await model?.edit(message, content: content)?.content
+                await model?.edit(message, content: content)
             },
             markUnread: { [weak model = parent.model] message in
                 guard let model else { return }
