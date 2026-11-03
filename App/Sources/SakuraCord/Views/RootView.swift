@@ -146,13 +146,8 @@ struct RootView: View {
                 SakuraCordOnboardingStore.complete()
             }
         }
-        .onChange(of: model.showInspector) { _, isVisible in
-            if !isVisible, model.selectedChannel?.kind != .directMessage {
-                model.dismissInspectorProfile()
-            }
-            GeneralWindowRestorationStore.shared.recordMemberListVisibility(
-                isVisible
-            )
+        .onChange(of: model.inspectorVisibility) { _, visibility in
+            GeneralWindowRestorationStore.shared.recordInspectorVisibility(visibility)
         }
         .onChange(of: model.selectedChannelID) { _, _ in
             guard let activeAccountID = model.activeAccountID,
@@ -1145,7 +1140,7 @@ private struct ChatRootView: View {
                 : (model.showInspector ? "person.2.fill" : "person.2")
         )
         .symbolVariant(.none)
-        .animation(.smooth(duration: 0.24), value: model.showInspector)
+        .animation(.smooth(duration: 0.24), value: model.inspectorVisibility)
     }
 
     /// The selected DM or group whose call buttons show; a message request
