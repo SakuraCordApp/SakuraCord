@@ -196,6 +196,8 @@ extension AppModel {
         return MessageAuthorPresentation(
             user: cosmeticPolicy.user(user),
             roleColorHex: presentation.roleColorHex,
+            roleSecondaryColorHex: presentation.roleSecondaryColorHex,
+            roleTertiaryColorHex: presentation.roleTertiaryColorHex,
             topRoleWithIcon: presentation.topRoleWithIcon
         )
     }
@@ -215,6 +217,8 @@ extension AppModel {
         return MessageAuthorPresentation(
             user: cosmeticPolicy.user(privateConversationUser(presentation.user, in: guildID)),
             roleColorHex: presentation.roleColorHex,
+            roleSecondaryColorHex: presentation.roleSecondaryColorHex,
+            roleTertiaryColorHex: presentation.roleTertiaryColorHex,
             topRoleWithIcon: presentation.topRoleWithIcon
         )
     }

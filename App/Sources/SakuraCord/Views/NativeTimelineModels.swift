@@ -363,14 +363,19 @@ enum NativeTimelineBeginning: Equatable {
         }
     }
 
+    /// The channel's own topic, if it has one.
+    var topic: String? {
+        guard case let .channel(channel, _) = self,
+              let topic = channel.topic?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !topic.isEmpty
+        else { return nil }
+        return topic
+    }
+
     var description: String {
+        if let topic { return topic }
         switch self {
         case let .channel(channel, _):
-            if let topic = channel.topic?.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ), !topic.isEmpty {
-                return topic
-            }
             switch channel.kind {
             case .directMessage, .groupDirectMessage:
                 return "This is the beginning of your direct message history."
@@ -470,6 +475,17 @@ enum NativeMessageTimelineItem: Equatable {
     var messageRow: MessageRowPresentation? {
         guard case let .message(row, _, _) = self else { return nil }
         return row
+    }
+
+    var beginning: NativeTimelineBeginning? {
+        guard case let .beginning(beginning) = self else { return nil }
+        return beginning
+    }
+
+    /// The ID that keys this row's text state, such as revealed spoilers: its
+    /// message's, or for a channel's beginning, the channel's.
+    var textOwnerID: MessageID? {
+        messageID ?? beginning.map { MessageID(rawValue: $0.id.rawValue) }
     }
 
     var identifier: Identifier {

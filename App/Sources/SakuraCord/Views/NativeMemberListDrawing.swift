@@ -62,36 +62,25 @@ extension NativeMemberListCanvasView {
         )
         let color = NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7)
         let labelY = origins[index] + InterfaceScale.metric(16)
-        let labelX = InterfaceScale.metric(14)
+        var labelX = InterfaceScale.metric(14)
         if let role = section.role, role.hasIcon {
-            let titleLine = cachedSectionHeaderLine(section.title, font: font, color: color)
-            var titleAscent: CGFloat = 0
-            let titleWidth = ceil(CGFloat(CTLineGetTypographicBounds(titleLine, &titleAscent, nil, nil)))
-            Self.draw(line: titleLine, at: CGPoint(x: labelX, y: labelY), context: context)
-
             let iconSize = InterfaceScale.metric(14)
             let spacing = InterfaceScale.metric(4)
-            let iconX = labelX + titleWidth + spacing
-            let iconY = labelY + (titleAscent - iconSize) / 2
-            let iconRect = CGRect(x: iconX, y: iconY, width: iconSize, height: iconSize)
+            let iconY = labelY + (font.ascender - iconSize) / 2
+            let iconRect = CGRect(x: labelX, y: iconY, width: iconSize, height: iconSize)
             drawMemberRoleIcon(role, in: iconRect, at: index, context: context)
-
-            let countLabel = "— \(section.totalCount)"
-            let countLine = cachedSectionHeaderLine(countLabel, font: font, color: color)
-            let countX = iconX + iconSize + spacing
-            Self.draw(line: countLine, at: CGPoint(x: countX, y: labelY), context: context)
-        } else {
-            let label = "\(section.title) — \(section.totalCount)"
-            let line = cachedSectionHeaderLine(label, font: font, color: color)
-            Self.draw(
-                line: line,
-                at: CGPoint(
-                    x: labelX,
-                    y: labelY
-                ),
-                context: context
-            )
+            labelX += iconSize + spacing
         }
+        let label = "\(section.title) — \(section.totalCount)"
+        let line = cachedSectionHeaderLine(label, font: font, color: color)
+        Self.draw(
+            line: line,
+            at: CGPoint(
+                x: labelX,
+                y: labelY
+            ),
+            context: context
+        )
     }
 
     func skeletonDrawingStyle() -> SkeletonDrawingStyle {

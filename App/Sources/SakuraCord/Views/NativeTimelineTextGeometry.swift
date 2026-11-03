@@ -4,6 +4,7 @@ import Combine
 import CoreText
 import ImageIO
 import Lottie
+import MessageRendering
 import QuartzCore
 import SakuraCordModels
 import SwiftUI
@@ -100,13 +101,41 @@ enum NativeTimelineBeginningText {
     }
 
     static func description(
-        _ beginning: NativeTimelineBeginning
+        _ beginning: NativeTimelineBeginning,
+        source: AppModel? = nil,
+        relativeTo date: Date = .now
     ) -> NativeTimelineAttributedTextBox {
-        box(
-            beginning.description,
-            font: .interfacePreferredFont(forTextStyle: .body),
-            color: .secondaryLabelColor
+        let font = NSFont.interfacePreferredFont(forTextStyle: .body)
+        // Only a channel's own topic is Markdown; generated descriptions embed
+        // names that must render literally.
+        guard let topic = beginning.topic else {
+            return box(beginning.description, font: font, color: .secondaryLabelColor)
+        }
+        let baseFontSize = font.pointSize
+        let prepared = RichMessageAttributedText.prepare(source: topic)
+        let resolver = source.map { MessageMentionResolver(model: $0, message: nil) }
+        var mentions = prepared.tokens.reduce(into: [String: MentionPresentation]()) { result, token in
+            guard case let .mention(mention) = token else { return }
+            result[mention.rawToken] =
+                resolver?.presentation(mention)
+                ?? MentionPresentation.fallback(for: mention)
+        }
+        mentions = TimestampMentionPresentation.refreshed(mentions, source: topic, at: date)
+        let emojiSize = InterfaceScale.metric(22)
+        let attributed = NSMutableAttributedString(
+            attributedString: NativeTimelineCoreText.make(
+                prepared: prepared,
+                emojiSize: emojiSize,
+                baseFontSize: baseFontSize,
+                mentionPresentations: mentions
+            )
         )
+        attributed.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributed.length)) { value, range, _ in
+            if let color = value as? NSColor, color == NSColor.labelColor {
+                attributed.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
+            }
+        }
+        return NativeTimelineAttributedTextBox(attributed)
     }
 
     static func box(

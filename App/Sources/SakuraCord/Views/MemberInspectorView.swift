@@ -411,12 +411,12 @@ private struct MemberSectionHeader: View {
 
     var body: some View {
         HStack(spacing: InterfaceScale.metric(4)) {
-            Text(section.title)
-                .font(.interface(.body).weight(.semibold))
-                .foregroundStyle(headerColor)
             if case .role = section.id, let role = section.role, role.hasIcon {
                 RoleIconView(role: role, size: InterfaceScale.metric(14))
             }
+            Text(section.title)
+                .font(.interface(.body).weight(.semibold))
+                .foregroundStyle(headerColor)
             Text("— \(section.totalCount)")
                 .font(.interface(.body).weight(.semibold))
                 .foregroundStyle(headerColor)
@@ -486,15 +486,15 @@ struct MemberRow: View {
                                         .foregroundStyle(nameColor)
                                         .lineLimit(1)
                                 }
-                                if member.user.isBot {
-                                    AppIdentityBadge()
-                                }
                                 if !cosmeticPolicy.disables(.serverTag, for: member.id),
                                    let identity = member.user.primaryGuild, identity.tag != nil {
                                     PrimaryGuildTag(identity: identity)
                                 }
                                 if let role = MessageAuthorPresentation.topRoleWithIcon(in: member.roles) {
                                     RoleIconView(role: role, size: InterfaceScale.metric(14))
+                                }
+                                if member.user.isBot {
+                                    AppIdentityBadge()
                                 }
                             }
                             if let activity = member.memberListActivityText, !activity.isEmpty {

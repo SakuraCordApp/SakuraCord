@@ -156,7 +156,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             gradient,
             start: CGPoint(x: 0, y: 0),
             end: CGPoint(x: min(width, frame.width), y: 0),
-            options: []
+            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
         )
         context.restoreGState()
 

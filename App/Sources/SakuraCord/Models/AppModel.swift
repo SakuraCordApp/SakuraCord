@@ -843,7 +843,7 @@ final class AppModel {
     var oversizedAttachmentPrompt: OversizedAttachmentPrompt?
     var attachmentCompactionPresentation: OversizedAttachmentPrompt?
     var externalAttachmentUploadPresentation: ExternalAttachmentUploadPresentation?
-    var showInspector = true
+    var inspectorVisibility = InspectorVisibility()
     var errorMessage: String?
 
     @ObservationIgnored var provider: any ChatProvider

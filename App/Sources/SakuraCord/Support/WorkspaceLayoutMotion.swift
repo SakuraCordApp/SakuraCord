@@ -148,6 +148,8 @@ enum WorkspaceLayoutMotion {
     /// (`afterCommit`), and the settling that waits for them to start.
     private static var pendingStarts = 0
     private static var startWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Whether a motion's change is committing, before its columns move.
+    static var isStartingMotion: Bool { pendingStarts > 0 }
 
     /// Keeps the running motion from settling until a spring's duration
     /// from now, for a column whose motion started late
@@ -186,7 +188,7 @@ enum WorkspaceLayoutMotion {
             // spring, as it builds a pane for the first time. Settling before
             // the columns started let go of the one leaving before the
             // arriving one came in.
-            if pendingStarts > 0 {
+            if isStartingMotion {
                 await withCheckedContinuation { startWaiters.append($0) }
             }
             await untilSettled()

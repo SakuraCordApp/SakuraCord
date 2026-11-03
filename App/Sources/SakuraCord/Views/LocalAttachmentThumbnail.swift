@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct LocalAttachmentThumbnail: View {
     let url: URL
     var maximumPixelDimension = 256
+    var contentMode: ContentMode = .fill
     var cachedImage: NSImage?
     var onImageLoaded: ((NSImage) -> Void)?
     @State private var image: NSImage?
@@ -17,7 +18,7 @@ struct LocalAttachmentThumbnail: View {
             if let displayImage {
                 Image(nsImage: displayImage)
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: contentMode)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
                 if isVideoFile {
                     Image(systemName: "play.fill")

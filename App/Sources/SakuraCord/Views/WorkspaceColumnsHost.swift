@@ -365,18 +365,7 @@ final class WorkspaceColumnsView: NSView {
         for column in spec.columns {
             let root = hosted(column)
             if var island = islands.first(where: { $0.column.id == column.id }) {
-                // A column marked leaving before the change stays so until
-                // it comes back in or the motion settles: updates within the
-                // change can run before the column is listed as departing.
-                let isLeaving = column.isDeparting || island.host.isLeaving && isMoving
-                island.host.setContent(root, isLeaving: isLeaving)
-                if island.column.isDeparting != column.isDeparting
-                    || island.column.isFullWidth != column.isFullWidth
-                {
-                    needsMeasurement = true
-                }
-                island.host.showsFullWidth(column.isSideConversation && column.isFullWidth)
-                island.column = column
+                update(&island, to: column, root: root, isMoving: isMoving, at: now)
                 updated.append(island)
             } else {
                 let reveal = WorkspaceMotionPhase.shared.reveal[column.id] ?? (columnsAreChanging ? 0 : 1)
@@ -418,6 +407,37 @@ final class WorkspaceColumnsView: NSView {
             layoutColumns(at: now)
         }
         if isAnimating(at: now) { startMotion() }
+    }
+
+    /// Updates a column that stays listed, or is listed again.
+    private func update(
+        _ island: inout Island,
+        to column: WorkspaceColumnsHost.Column,
+        root: AnyView,
+        isMoving: Bool,
+        at time: CFTimeInterval
+    ) {
+        // Navigation can list a leaving column again, as a DM shows the
+        // sidebar a server just hid; like any navigation, it appears at once
+        // rather than finishing the hiding motion. A motion that brings it
+        // back moves it instead.
+        let returns = island.column.isDeparting && !column.isDeparting && !WorkspaceLayoutMotion.isStartingMotion
+        if returns {
+            WorkspaceMotionPhase.shared.reveal[column.id] = nil
+            island.reveal.move(to: 1, at: time, animated: false)
+        }
+        // A column marked leaving before the change stays so until it comes
+        // back in or the motion settles: updates within the change can run
+        // before the column is listed as departing.
+        let isLeaving = column.isDeparting || island.host.isLeaving && isMoving && !returns
+        island.host.setContent(root, isLeaving: isLeaving)
+        if island.column.isDeparting != column.isDeparting
+            || island.column.isFullWidth != column.isFullWidth
+        {
+            needsMeasurement = true
+        }
+        island.host.showsFullWidth(column.isSideConversation && column.isFullWidth)
+        island.column = column
     }
 
     /// A hosting view for a column that arrives: the pooled pane, for a

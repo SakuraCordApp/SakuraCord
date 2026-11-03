@@ -853,6 +853,7 @@ final class SakuraCordThemeStore {
     private func commit() {
         deferredPersistenceTask?.cancel()
         committedTheme = activeTheme
+        AppAccentColorController.shared.apply()
         save()
         NotificationCenter.default.post(name: .sakuraCordThemeDidCommit, object: nil)
     }

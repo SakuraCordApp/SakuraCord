@@ -31,7 +31,7 @@ struct ProfilePersonalWidgetCard: View {
             ForEach(Array(widget.sections.enumerated()), id: \.offset) { index, section in
                 switch section {
                 case let .cover(cover):
-                    if !cover.isEmpty || editor?.canEditPersonalWidget == true {
+                    if !cover.isEmpty || editor?.showsEditablePersonalWidget == true {
                         ProfilePersonalWidgetCover(id: id, section: index, cover: cover, animates: animates, editor: editor)
                     }
                 case let .fields(fields):
@@ -102,9 +102,9 @@ private struct ProfilePersonalWidgetCover: View {
         .padding(.top, cover.image != nil || editor != nil ? InterfaceScale.metric(56) : 0)
         .foregroundStyle(cover.image == nil ? Color.primary : .white)
         .background {
-            if cover.image != nil || editor?.canEditPersonalWidget == true {
+            if cover.image != nil || editor?.showsEditablePersonalWidget == true {
                 GeometryReader { geometry in
-                    ProfileWidgetEditableImage(image: cover.image, purpose: .widgetCover, animates: animates, editor: editor,
+                    ProfileWidgetEditableImage(image: cover.image, slot: "\(id)/\(section)", purpose: .widgetCover, animates: animates, editor: editor,
                                                aspectRatio: geometry.size.width / max(geometry.size.height, 1),
                                                isCoverHovered: isHovered && !isTitleHovered && !isSubtitleHovered) { image in
                         editor?.updateWidgetCover(id: id, section: section) { $0.image = image }
@@ -164,8 +164,11 @@ private struct ProfilePersonalWidgetFields: View {
             alignment: .leading,
             spacing: InterfaceScale.metric(16)
         ) {
-            ForEach(fields.filter { !$0.isEmpty || editor?.canEditPersonalWidget == true }) { field in
-                ProfilePersonalWidgetField(id: id, section: section, field: field, animates: animates, editor: editor, imageVisibilityOverrides: $imageVisibilityOverrides)
+            ForEach(fields.filter { !$0.isEmpty || editor?.showsEditablePersonalWidget == true }) { field in
+                // Field IDs are regenerated when the profile reloads; positions aren't.
+                let position = fields.firstIndex { $0.id == field.id } ?? 0
+                ProfilePersonalWidgetField(id: id, section: section, slot: "\(id)/\(section)/\(position)", field: field, animates: animates, editor: editor,
+                                           imageVisibilityOverrides: $imageVisibilityOverrides)
             }
             if let editor, editor.canEditPersonalWidget, fields.count % 2 == 1, fields.count < 4 {
                 ProfileWidgetAddField { editor.addWidgetFields(id: id, section: section, count: 1) }
@@ -182,6 +185,8 @@ private struct ProfilePersonalWidgetFields: View {
 private struct ProfilePersonalWidgetField: View {
     let id: String
     let section: Int
+    /// The editor's key for this field's image slot.
+    let slot: String
     let field: ProfileWidgetField
     let animates: Bool
     let editor: ProfileEditorState?
@@ -191,6 +196,11 @@ private struct ProfilePersonalWidgetField: View {
     @State private var isImageHovered = false
 
     private var showsActions: Bool { (isHovered || isActionHovered) && !isImageHovered }
+
+    /// A slot with an image in flight or a failure to show stays, even where the field would hide its image.
+    private var hasPendingUpload: Bool {
+        editor.map { $0.preparingWidgetImageSlots.contains(slot) || $0.widgetImageFailure(for: slot) != nil } ?? false
+    }
 
     private var hidesImage: Bool {
         if let hidden = imageVisibilityOverrides[field.id] { return hidden }
@@ -206,8 +216,9 @@ private struct ProfilePersonalWidgetField: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: InterfaceScale.metric(12)) {
-            if field.image != nil || (editor?.canEditPersonalWidget == true && !hidesImage) {
-                ProfileWidgetEditableImage(image: field.image, purpose: .widgetField, animates: animates, editor: editor, aspectRatio: 1, onHoverChange: { isImageHovered = $0 }, removeImage: {
+            if field.image != nil || (editor?.showsEditablePersonalWidget == true && (!hidesImage || hasPendingUpload)) {
+                ProfileWidgetEditableImage(image: field.image, slot: slot, purpose: .widgetField, animates: animates, editor: editor,
+                                           aspectRatio: 1, onHoverChange: { isImageHovered = $0 }, removeImage: {
                     imageVisibilityOverrides[field.id] = true
                     editor?.updateWidgetField(id: id, section: section, fieldID: field.id) { $0.image = nil }
                 }, update: { image in
