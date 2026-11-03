@@ -163,13 +163,17 @@ extension NativeTimelineCanvasView {
     }
 
     /// Finds the rows the running fades are drawn against again, from
-    /// where they were.
+    /// where they were, and drops the fades of rows that are gone.
     func refreshRowFadeIndices() {
-        for index in rowFades.indices {
-            rowFades[index].rowIndex = rowIndex(forIdentifier: rowFades[index].identifier, hint: rowFades[index].rowIndex)
+        rowFades = rowFades.compactMap { fade in
+            var fade = fade
+            fade.rowIndex = rowIndex(forIdentifier: fade.identifier, hint: fade.rowIndex)
+            return fade.rowIndex == nil ? nil : fade
         }
-        for (anchor, run) in departedRuns {
-            departedRuns[anchor]?.anchorIndex = rowIndex(forIdentifier: anchor, hint: run.anchorIndex)
+        departedRuns = departedRuns.reduce(into: [:]) { runs, entry in
+            var run = entry.value
+            run.anchorIndex = rowIndex(forIdentifier: entry.key, hint: run.anchorIndex)
+            if run.anchorIndex != nil { runs[entry.key] = run }
         }
     }
 

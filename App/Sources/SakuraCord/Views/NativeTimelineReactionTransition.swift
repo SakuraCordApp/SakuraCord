@@ -223,7 +223,9 @@ extension NativeTimelineCanvasView {
               unreadDividerGap == nil,
               !sendTransitionBlocksInteractions
         else {
-            for handOver in handOvers.values { departedRuns[handOver.anchor, default: .init()].pieces += handOver.run?.pieces ?? [] }
+            placeDepartedPieces(handOvers.values.flatMap { handOver in
+                (handOver.run?.pieces ?? []).map { (handOver.anchor, $0) }
+            })
             return
         }
         var followed = Set<NativeMessageTimelineItem.Identifier>()
@@ -263,12 +265,12 @@ extension NativeTimelineCanvasView {
         }
         // A deleted row's piece belongs to the motion closing its gap; an
         // edit's crossfade stands on its own.
-        for entry in update.departedPieces where update.plan.describesUpdate || !entry.isNew {
-            departedRuns[entry.anchor, default: .init()].pieces.append(entry.piece)
-        }
-        for handOver in update.handOvers.values {
-            departedRuns[handOver.anchor, default: .init()].pieces += handOver.run?.pieces ?? []
-        }
+        placeDepartedPieces(
+            update.departedPieces.filter { update.plan.describesUpdate || !$0.isNew }.map { ($0.anchor, $0.piece) }
+                + update.handOvers.values.flatMap { handOver in
+                    (handOver.run?.pieces ?? []).map { (handOver.anchor, $0) }
+                }
+        )
         // A newer crossfade takes over a running one, whose row now shows
         // the content the newer one starts from.
         rowFades.removeAll { running in update.crossfades.contains { $0.identifier == running.identifier } }
@@ -278,6 +280,15 @@ extension NativeTimelineCanvasView {
         reactionTransitionWidth = bounds.width
         if reactionTicker.displayLink == nil {
             reactionTicker.start(on: self) { [weak self] in self?.stepReactionTransitions() }
+        }
+    }
+
+    /// Adds pieces to the runs below their rows, in order. A piece whose
+    /// motion was dropped meanwhile has no gap left to fade in.
+    private func placeDepartedPieces(_ pieces: [(anchor: NativeMessageTimelineItem.Identifier, piece: NativeTimelineDepartedRun.Piece)]) {
+        let motionIDs = Set(reactionRowMotions.map(\.id))
+        for (anchor, piece) in pieces where motionIDs.contains(piece.motionID) {
+            departedRuns[anchor, default: .init()].pieces.append(piece)
         }
     }
 
