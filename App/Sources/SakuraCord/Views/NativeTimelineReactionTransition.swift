@@ -315,11 +315,18 @@ extension NativeTimelineCanvasView {
     /// changed in another way. True when a motion was dropped.
     private func dropReactionMotion(of identifier: NativeMessageTimelineItem.Identifier) -> Bool {
         endReactionTransition(identifier)
-        let dropped = reactionRowMotions.filter { $0.steps.contains { $0.identifier == identifier } }
-        guard !dropped.isEmpty else { return false }
-        reactionRowMotions.removeAll { $0.steps.contains { $0.identifier == identifier } }
-        // Their gaps close at once, so the deleted rows fading in them go too.
-        let anchors = Set(dropped.flatMap { $0.steps.map(\.identifier) })
+        return removeReactionMotions { $0.steps.contains { $0.identifier == identifier } }
+    }
+
+    /// Removes motions, and the fades drawn against their rows: their gaps
+    /// close at once, so the deleted rows fading in them go too. True when
+    /// any was removed.
+    @discardableResult
+    private func removeReactionMotions(where shouldRemove: (NativeTimelineReactionRowMotion) -> Bool) -> Bool {
+        let removed = reactionRowMotions.filter(shouldRemove)
+        guard !removed.isEmpty else { return false }
+        reactionRowMotions.removeAll(where: shouldRemove)
+        let anchors = Set(removed.flatMap { $0.steps.map(\.identifier) })
         rowFades.removeAll { anchors.contains($0.placement.anchor) }
         return true
     }
@@ -470,7 +477,7 @@ extension NativeTimelineCanvasView {
     func refreshReactionMotionGeometry(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         guard !reactionRowMotions.isEmpty || !reactionMotionSteps.isEmpty else { return false }
         // A motion whose row is gone no longer describes the layout.
-        reactionRowMotions.removeAll { motion in
+        removeReactionMotions { motion in
             motion.steps.contains { rowIndex(forIdentifier: $0.identifier, hint: $0.rowIndex) == nil }
         }
         var shift: CGFloat = 0
