@@ -140,43 +140,26 @@ struct ForwardMessageOverlay: View {
         .accessibilityLabel("Forward To")
     }
 
+    /// The pickers' inline search header; Cancel and Escape close the picker.
     private var header: some View {
-        VStack(spacing: InterfaceScale.metric(12)) {
-            HStack(spacing: InterfaceScale.metric(12)) {
-                Image(systemName: "arrowshape.turn.up.right.fill")
-                    .font(.interface(.title3).weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: InterfaceScale.metric(40), height: InterfaceScale.metric(40))
-                    .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(1)) {
-                    Text("Forward To")
-                        .font(.interface(.title3).weight(.semibold))
-                    Text(selectedDestinationIDs.count >= ForwardDestinationSearchPolicy.maximumSelections
-                        ? "Maximum 5 places at once."
-                        : "Select where you want to share this message.")
-                        .font(.interface(.callout))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                HoverCloseButton(help: "Close", accessibilityIdentifier: "forward-close", diameter: InterfaceScale.metric(40)) {
-                    dismiss?()
-                }
-            }
-            PickerSearchHeader(text: $query, focus: { focus = .search }, input: {
-                TextField("Search", text: $query)
-                    .textFieldStyle(.plain)
-                    .tint(SakuraCordAccentColor.color)
-                    .focused($focus, equals: .search)
-            })
-            .background(.quaternary.opacity(0.5), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(12)))
-            .accessibilityIdentifier("forward-search")
-        }
-        .padding(InterfaceScale.metric(12))
+        PickerSearchHeader(text: $query, focus: { focus = .search }, input: {
+            TextField(searchPlaceholder, text: $query)
+                .textFieldStyle(.plain)
+                .font(.interfaceSystem(size: ChatChromeMetrics.pickerSearchHeaderFontSize))
+                .tint(SakuraCordAccentColor.color)
+                .focused($focus, equals: .search)
+        })
+        .accessibilityIdentifier("forward-search")
         .task {
             await Task.yield()
             focus = .search
         }
+    }
+
+    private var searchPlaceholder: String {
+        selectedDestinationIDs.count >= ForwardDestinationSearchPolicy.maximumSelections
+            ? "Maximum 5 places at once"
+            : "Forward to…"
     }
 
     private var destinationList: some View {
