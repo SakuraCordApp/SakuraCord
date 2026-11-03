@@ -139,6 +139,13 @@ struct ActivityShelfView: View {
         let store = model.embeddedActivities
         let shelf = store.shelves[channel.guildID]
         VStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
+            HStack {
+                Text("Start an Activity")
+                    .font(.interface(.title3).weight(.semibold))
+                Spacer()
+                Button("Done", action: dismiss)
+                    .keyboardShortcut(.cancelAction)
+            }
             TextField("Search Activities", text: $query)
                 .textFieldStyle(.roundedBorder)
             if let shelf {
@@ -165,7 +172,7 @@ struct ActivityShelfView: View {
             }
         }
         .padding(InterfaceScale.metric(14))
-        .frame(width: InterfaceScale.metric(460), height: InterfaceScale.metric(520))
+        .frame(width: InterfaceScale.metric(560), height: InterfaceScale.metric(560))
         .task(id: channel.guildID) { await model.loadActivityShelf(guildID: channel.guildID) }
     }
 

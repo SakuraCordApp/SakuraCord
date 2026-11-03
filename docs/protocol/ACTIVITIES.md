@@ -36,7 +36,7 @@ session from the previous instance without a separate leave request.
 configuration), `applications` and per-application `assets`; the shelf tile uses
 the `embedded_cover` asset, otherwise the application cover.
 
-Launching or joining runs the application's entry-point command (application
+Launching, and joining an instance already running in the channel, runs the application's entry-point command (application
 command type 4) from the command indexes: `POST /interactions` type 2 with the
 command's `data` envelope, empty `options` and `attachments`,
 `analytics_location: "app_launcher"` and, in a guild, `source: "VOICE"`. Discord
@@ -49,20 +49,24 @@ with `{session_id}`. All three are single attempts.
 
 ## Hosting
 
-The official client loads `https://APPLICATION.discordsays.com/` in an iframe with
-`instance_id` (composite), `location_id`, `launch_id`, `guild_id`, `channel_id`,
-`frame_id`, `platform=desktop`, `discord_shim=1`, display preferences and
+The official client loads `https://APPLICATION.discordsays.com/` in an iframe
+(sandbox `allow-pointer-lock allow-scripts allow-same-origin allow-forms`,
+`allow="autoplay; encrypted-media"`, referrer policy `origin`) with `instance_id`
+(composite), `location_id`, `launch_id`, `guild_id`, `channel_id`, `frame_id`,
+`platform=desktop`, `discord_shim=1`, display preferences and
 `discord_proxy_ticket` from `POST /applications/{application}/proxy-tickets`
-(`{use_stateless_ticket: true, channel_id}`; valid for five minutes). The proxy
-then authenticates by cookie, so SakuraCord loads the Activity as a top-level page
-where those cookies are first-party, in a non-persistent data store.
+(`{use_stateless_ticket: true, channel_id}`; valid for five minutes). On load it
+posts `[HELLO, parameters]` to the frame. SakuraCord does the same from a
+discord.com-origin page that relays the SDK's `[opcode, payload]` frames between
+the iframe and the host; the proxy's partitioned cookies work in WebKit's
+third-party context. The page holds no Discord credential.
 
-With no parent window the SDK posts its `[opcode, payload]` frames to its own
-window. A document-start script forwards exactly those to the host; replies are
-dispatched as `message` events from `https://discord.com`, which the SDK accepts.
 The handshake must name the launching application and frame; READY follows.
 Commands answer with the same `cmd` and `nonce`; unsupported ones fail with
 `INVALID_COMMAND` (4002) rather than staying unanswered, so Activities degrade.
+
+Participation follows the voice session: when another client of the same account
+takes over voice, Discord removes this session from the instance.
 
 `AUTHORIZE` reads `GET /oauth2/authorize` (client ID, `response_type=code`,
 scopes, state, `integration_type=1`). When it reports `authorized: true` no consent

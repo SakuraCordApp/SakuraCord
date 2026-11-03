@@ -643,7 +643,7 @@ struct VoiceCallControlDock: View {
                 showActivities.toggle()
             }
             .disabled(model.voiceSessionState != .connected)
-            .escapeDismissiblePopover(isPresented: $showActivities, arrowEdge: .bottom) {
+            .sheet(isPresented: $showActivities) {
                 ActivityShelfView(model: model, channel: channel) { showActivities = false }
             }
         }

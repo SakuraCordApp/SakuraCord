@@ -5,11 +5,9 @@ import WebKit
 
 /// Hosts one Activity as the parent side of Discord's Embedded App SDK.
 ///
-/// The Activity loads as the web view's top-level document, so its proxy
-/// cookies are first-party. With no parent window the SDK posts its RPC frames
-/// to its own window; a document-start script hands those to this host, and
-/// replies arrive as `message` events from discord.com, as they would inside
-/// Discord's iframe. The account credential never enters the page.
+/// Like Discord's client, a discord.com-origin page frames the Activity and
+/// relays the SDK's `postMessage` frames between that iframe and this host.
+/// The page holds no Discord credential; only replies the host builds reach it.
 @MainActor
 final class EmbeddedActivityHost: NSObject {
     private enum Opcode: Int {
@@ -50,11 +48,7 @@ final class EmbeddedActivityHost: NSObject {
         configuration.preferences.isElementFullscreenEnabled = true
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
-        let controller = configuration.userContentController
-        controller.addUserScript(WKUserScript(
-            source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page
-        ))
-        controller.add(WeakMessageHandler(self), contentWorld: .page, name: Self.handlerName)
+        configuration.userContentController.add(WeakMessageHandler(self), contentWorld: .page, name: Self.handlerName)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.underPageBackgroundColor = .black
@@ -63,7 +57,7 @@ final class EmbeddedActivityHost: NSObject {
         #endif
         voiceStates = currentVoiceStates()
         observeVoice()
-        webView.load(URLRequest(url: launchURL(proxyTicket: proxyTicket)))
+        webView.loadHTMLString(hostPage(proxyTicket: proxyTicket), baseURL: Self.hostURL)
     }
 
     func stop() {
@@ -74,34 +68,55 @@ final class EmbeddedActivityHost: NSObject {
         webView.loadHTMLString("", baseURL: nil)
     }
 
-    private func launchURL(proxyTicket: String) -> URL {
-        var components = URLComponents(url: application.activityURL, resolvingAgainstBaseURL: false)!
+    private static let hostURL = URL(string: "https://discord.com/activities")!
+
+    /// The Activity iframe with the official client's sandbox, permissions and
+    /// launch parameters, and the relay between it and this host.
+    private func hostPage(proxyTicket: String) -> String {
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        var items = [
-            URLQueryItem(name: "instance_id", value: instance.compositeInstanceID),
-            URLQueryItem(name: "location_id", value: instance.location.id),
-            URLQueryItem(name: "launch_id", value: instance.instanceID),
-            URLQueryItem(name: "theme", value: isDark ? "dark" : "light"),
-            URLQueryItem(name: "discord_proxy_ticket", value: proxyTicket),
+        var parameters = [
+            "instance_id": instance.compositeInstanceID,
+            "location_id": instance.location.id,
+            "launch_id": instance.instanceID,
+            "theme": isDark ? "dark" : "light",
+            "channel_id": instance.location.channelID.description,
+            "frame_id": frameID,
+            "platform": "desktop",
+            "discord_shim": "1",
         ]
-        if let guildID = instance.location.guildID {
-            items.append(URLQueryItem(name: "guild_id", value: guildID.description))
-        }
-        items += [
-            URLQueryItem(name: "channel_id", value: instance.location.channelID.description),
-            URLQueryItem(name: "frame_id", value: frameID),
-            URLQueryItem(name: "platform", value: "desktop"),
-            URLQueryItem(name: "discord_shim", value: "1"),
-        ]
-        components.queryItems = items
-        return components.url!
+        parameters["guild_id"] = instance.location.guildID?.description
+        var components = URLComponents(url: application.activityURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = parameters.sorted { $0.key < $1.key }.map(URLQueryItem.init)
+            + [URLQueryItem(name: "discord_proxy_ticket", value: proxyTicket)]
+        let literals = (try? JSONSerialization.data(withJSONObject: [
+            "source": components.url!.absoluteString,
+            "origin": "https://\(application.activityURL.host() ?? "")",
+            "hello": parameters,
+        ])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        return """
+        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>html,body{margin:0;height:100%;overflow:hidden;background:#000}iframe{display:block;border:0;width:100%;height:100%}</style>
+        </head><body><iframe id="activity" allow="autoplay; encrypted-media; fullscreen" referrerpolicy="origin"
+        sandbox="allow-pointer-lock allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+        <script>
+        const config = \(literals);
+        const frame = document.getElementById('activity');
+        const handler = window.webkit.messageHandlers.\(Self.handlerName);
+        window.addEventListener('message', event => {
+            if (event.source !== frame.contentWindow || event.origin !== config.origin) return;
+            try { handler.postMessage(JSON.parse(JSON.stringify(event.data))); } catch (error) {}
+        });
+        window.deliver = message => frame.contentWindow.postMessage(message, config.origin);
+        frame.addEventListener('load', () => window.deliver([3, config.hello]));
+        frame.src = config.source;
+        </script></body></html>
+        """
     }
 
     // MARK: Transport
 
     fileprivate func receive(_ message: WKScriptMessage) {
-        guard !isStopped, message.frameInfo.isMainFrame,
-              message.frameInfo.securityOrigin.host == application.activityURL.host(),
+        guard !isStopped, message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == Self.hostURL.host(),
               let tuple = message.body as? [Any], tuple.count >= 2,
               let opcode = (tuple[0] as? NSNumber).flatMap({ Opcode(rawValue: $0.intValue) }),
               let payload = tuple[1] as? [String: Any]
@@ -130,7 +145,7 @@ final class EmbeddedActivityHost: NSObject {
     private func send(_ opcode: Opcode, _ payload: [String: Any]) {
         guard !isStopped else { return }
         webView.callAsyncJavaScript(
-            "window.dispatchEvent(new MessageEvent('message', {data: [opcode, payload], origin: 'https://discord.com', source: window}));",
+            "window.deliver([opcode, payload]);",
             arguments: ["opcode": opcode.rawValue, "payload": payload], in: nil, in: .page
         )
     }
@@ -195,7 +210,7 @@ final class EmbeddedActivityHost: NSObject {
             reply(command, nonce, activity)
         case "SET_CONFIG":
             reply(command, nonce, ["use_interactive_pip": false])
-        case "SET_ORIENTATION_LOCK_STATE", "CAPTURE_LOG":
+        case "SET_ORIENTATION_LOCK_STATE", "CAPTURE_LOG", "SEND_ANALYTICS_EVENT":
             reply(command, nonce, nil)
         case "GET_PLATFORM_BEHAVIORS":
             reply(command, nonce, [String: Any]())
@@ -234,7 +249,9 @@ final class EmbeddedActivityHost: NSObject {
         let request = EmbeddedActivityAuthorizationRequest(
             applicationID: application.id,
             scopes: scopes,
-            state: args["state"] as? String,
+            // Like Discord's client, bind the grant to a state of our own when
+            // the Activity supplies none.
+            state: (args["state"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString,
             codeChallenge: args["code_challenge"] as? String,
             codeChallengeMethod: args["code_challenge_method"] as? String,
             location: instance.location
@@ -407,23 +424,6 @@ final class EmbeddedActivityHost: NSObject {
         else { return NSNull() }
         return object
     }
-
-    /// Forwards the SDK's `[opcode, payload]` frames; every other message keeps
-    /// the page's own `postMessage`.
-    private static let bridgeScript = """
-    (() => {
-        const handler = window.webkit.messageHandlers.\(handlerName);
-        const post = window.postMessage.bind(window);
-        window.postMessage = function (message, targetOrigin, transfer) {
-            if (Array.isArray(message) && Number.isInteger(message[0]) && message[0] >= 0 && message[0] <= 3
-                && message[1] !== null && typeof message[1] === 'object') {
-                try { handler.postMessage(JSON.parse(JSON.stringify(message))); } catch (error) {}
-                return;
-            }
-            return post(message, targetOrigin, transfer);
-        };
-    })();
-    """
 }
 
 extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
@@ -431,11 +431,10 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
         _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
-        // Embedded players and the Activity itself stay inside; a top-level
-        // navigation away from the Activity opens in the browser instead.
+        // The Activity and its embeds navigate freely inside the iframe; the
+        // relay page itself never leaves, and links aimed at it open in the browser.
         guard navigationAction.targetFrame?.isMainFrame == true,
-              let url = navigationAction.request.url,
-              url.host() != application.activityURL.host(), url.scheme != "about"
+              let url = navigationAction.request.url, url != Self.hostURL
         else { return decisionHandler(.allow) }
         decisionHandler(.cancel)
         if navigationAction.navigationType == .linkActivated { NSWorkspace.shared.open(url) }

@@ -24,8 +24,9 @@ struct NativeServerCardContent {
         iconURL = invite.activity?.iconURL ?? invite.iconURL
         inviter = invite.inviter
         brandColor = invite.brandColor
-        description = invite.description
-        traits = invite.traits
+        // An Activity invite describes the Activity, not the server.
+        description = invite.activity == nil ? invite.description : nil
+        traits = invite.activity == nil ? invite.traits : []
         memberCount = invite.memberCount
         onlineCount = invite.onlineCount
     }
