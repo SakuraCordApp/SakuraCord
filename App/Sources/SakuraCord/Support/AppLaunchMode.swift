@@ -34,6 +34,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let runsFriendsPerformanceBenchmark: Bool
     /// A 150-server rail scrolled, selected and updated with mention badges.
     let runsServerRailPerformanceBenchmark: Bool
+    /// Mentions arriving in other servers while main-thread time is measured.
+    let runsUnreadChurnBenchmark: Bool
 #if SAKURACORD_MOTION_BENCHMARK
     /// Fixture threads opened, closed and widened while every frame is recorded.
     let runsSideChatMotionBenchmark: Bool
@@ -76,9 +78,11 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             runsMemberListPerformanceAutoScroll = false
         #endif
         includesSignInFixture = arguments.contains("--offline-sign-in")
-        includesLongServerList = arguments.contains("--offline-long-server-list")
+        runsUnreadChurnBenchmark = arguments.contains("--offline-unread-churn")
+        includesLongServerList = arguments.contains("--offline-long-server-list") || runsUnreadChurnBenchmark
         runsForumPerformanceAutoScroll =
             arguments.contains("--offline-forum-performance-autoscroll")
+            || arguments.contains("--offline-forum-gallery-resize")
         includesForumPerformanceFixture =
             arguments.contains("--offline-forum-performance") || runsForumPerformanceAutoScroll
         includesChatMediaPerformanceFixture =
@@ -123,7 +127,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || includesPinsPerformanceFixture
         let testingFlags: Set = [
             "--offline", "--offline-sign-in", "--offline-long-server-list", "--offline-forum-performance",
-            "--offline-forum-performance-autoscroll",
+            "--offline-forum-performance-autoscroll", "--offline-forum-gallery-resize",
             "--offline-chat-performance", "--offline-chat-performance-autoscroll",
             "--offline-chat-performance-live-autoscroll",
             "--offline-chat-media-performance-autoscroll",
@@ -131,7 +135,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             "--offline-chat-files-performance", "--offline-chat-files-performance-autoscroll",
             "--offline-chat-files-performance-open",
             "--offline-pins-performance-autoscroll",
-            "--offline-incoming-private-call", "--offline-friends-performance",
+            "--offline-incoming-private-call", "--offline-friends-performance", "--offline-unread-churn",
             "--offline-server-rail-performance",
         ]
         mode = isMotionBenchmarkLaunch || arguments.contains(where: testingFlags.contains) ? .offlineTesting : .normal
@@ -149,6 +153,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || runsPinsPerformanceAutoScroll
             || runsFriendsPerformanceBenchmark
             || runsServerRailPerformanceBenchmark
+            || runsUnreadChurnBenchmark
             || runsMemberListPerformanceAutoScroll
             || runsAuthenticatedNavigationBenchmark
             || runsAuthenticatedAccountSwitchBenchmark

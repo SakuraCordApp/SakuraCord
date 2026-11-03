@@ -124,7 +124,6 @@ struct ChannelSidebarView: View {
     let guild: Guild?
     let channels: [Channel]
     let channelGroups: [ChannelGroup]
-    let unreadCategoryIDs: Set<ChannelID>
     @Binding var selection: ChannelID?
     let currentUser: User?
     let connectionState: ConnectionState
@@ -179,7 +178,9 @@ struct ChannelSidebarView: View {
                             activeVoiceChannelID: activeVoiceChannelID,
                             hiddenChannelIDs: hiddenChannelIDs,
                             checkingChannelIDs: checkingChannelIDs,
-                            unreadCategoryIDs: unreadCategoryIDs,
+                            // Read here so another server's unread categories
+                            // do not invalidate the workspace around the sidebar.
+                            unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
                             sidebarSelection: guildSelection,
                             threadsByParentID: threads.threadsByParentID,
                             bottomContentInset: accountControlHeight

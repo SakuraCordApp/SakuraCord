@@ -211,6 +211,9 @@ struct SakuraCordApp: App {
                     if AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments).runsServerRailPerformanceBenchmark {
                         await ServerRailPerformanceBenchmark.run(model: model)
                     }
+                    if AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments).runsUnreadChurnBenchmark {
+                        await UnreadChurnBenchmark.run(model: model, provider: performanceMockProvider)
+                    }
                     if runsChannelOpenBenchmark {
                         await ChannelOpenBenchmark.run(model: model, channelID: ChannelID(rawValue: 210))
                     }
