@@ -13,9 +13,7 @@ struct AppearanceSettingsPage: View {
     private var isUsingDefaults: Bool {
         value.colorScheme == AppearanceSettingsSnapshot.defaults.colorScheme
             && value.windowOpacity == AppearanceSettingsSnapshot.defaults.windowOpacity
-            && value.overrideMacOSAccent == AppearanceSettingsSnapshot.defaults.overrideMacOSAccent
-            && value.matchBackgroundToPrimaryColor == AppearanceSettingsSnapshot.defaults.matchBackgroundToPrimaryColor
-            && themeStore.isUsingDefaultTheme
+            && themeStore.activeTheme == .defaultTheme
     }
 
     private var windowOpacityHelp: String {
@@ -76,9 +74,7 @@ struct AppearanceSettingsPage: View {
                     presentation: .settings(
                         appearance: value.colorScheme,
                         windowOpacity: value.windowOpacity
-                    ),
-                    overrideMacOSAccent: $value.overrideMacOSAccent,
-                    matchBackgroundToPrimaryColor: $value.matchBackgroundToPrimaryColor
+                    )
                 )
                     .settingsControlAnchor(.themeDesigner, state: state)
 
@@ -96,7 +92,7 @@ struct AppearanceSettingsPage: View {
             "Reset Theme?",
             isPresented: $showsResetConfirmation,
             resetTitle: "Reset Theme",
-            message: "This resets your theme, appearance, accent override, and window opacity to their defaults. Are you sure you want to do this?",
+            message: "This resets your theme, appearance, and window opacity to their defaults. Are you sure you want to do this?",
             reset: resetTheme
         )
         .task {
@@ -111,8 +107,6 @@ struct AppearanceSettingsPage: View {
     }
 
     private func resetTheme() {
-        value.matchBackgroundToPrimaryColor = AppearanceSettingsSnapshot.defaults.matchBackgroundToPrimaryColor
-        value.overrideMacOSAccent = AppearanceSettingsSnapshot.defaults.overrideMacOSAccent
         value.colorScheme = AppearanceSettingsSnapshot.defaults.colorScheme
         value.windowOpacity = AppearanceSettingsSnapshot.defaults.windowOpacity
         themeStore.apply(.defaultTheme)

@@ -4,7 +4,7 @@ struct SakuraCordSignInBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let colors = SakuraCordThemeStore.shared.backgroundTheme.colors(for: colorScheme)
+        let colors = SakuraCordThemeStore.shared.activeTheme.colors(for: colorScheme)
         SakuraCordAuthenticationTimeline { elapsed in
             Rectangle()
                 .fill(colorScheme == .dark ? Color(hex: 0x101018) : Color(hex: 0xF6F5FA))
