@@ -85,7 +85,7 @@ extension NativeTimelineRowLayout {
         }
 
         private func mediaBubbleContentWidth(of layout: NativeTimelineRowLayout) -> CGFloat? {
-            guard usesBubbles, layout.bubbleRegion != nil,
+            guard usesBubbles, editingTextHeight == nil, layout.bubbleRegion != nil,
                   layout.pollLayout == nil, layout.pollResultFrame == nil,
                   layout.translationRegion == nil, layout.threadFrame == nil,
                   layout.forwardedSourceRegion == nil, layout.forwardedHeaderFrame == nil,
@@ -94,7 +94,6 @@ extension NativeTimelineRowLayout {
                   layout.embedRegions.allSatisfy({ $0.kind == .bareMedia })
             else { return nil }
             var extent = InterfaceScale.metric(28)
-            // The message's own text, which an inline edit hides from the layout.
             if let attributedContent = contentPresentation.attributedContent {
                 extent = max(extent, NativeTimelineBubbleLayout.measuredTextWidth(
                     contentPresentation.framesetter,
@@ -151,15 +150,18 @@ extension NativeTimelineRowLayout {
             translationPresentation = NativeTimelineTranslationPresentation.make(
                 row: row, source: source, isOutgoingBubble: isOutgoingBubble
             )
-            let preferredBubbleContentWidth = fittedBubbleContentWidth ??
-                NativeTimelineBubbleLayout.preferredContentWidth(
+            // An edit can outgrow the text it replaces, so its bubble opens
+            // to full width instead of wrapping the draft in the old one.
+            let preferredBubbleContentWidth = fittedBubbleContentWidth ?? (usesBubbles && editingTextHeight != nil
+                ? NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width)
+                : NativeTimelineBubbleLayout.preferredContentWidth(
                     for: message,
                     row: row,
                     content: contentPresentation,
                     availableWidth: width,
                     isEnabled: usesBubbles,
                     translation: translationPresentation
-                )
+                ))
             let bubbleColumn = NativeTimelineBubbleLayout.column(
                 availableWidth: width,
                 horizontalInset: horizontalInset,
