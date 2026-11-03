@@ -723,7 +723,18 @@ private struct ChatRootView: View {
     }
 
     /// The conversation's actions, which stay beside it whatever opens.
+    @ViewBuilder
     private func conversationTitlebarActions(presentsPanels: Bool) -> some View {
+        if selectedVoiceChannel != nil {
+            // Inbox, pins and members belong to text conversations; a voice
+            // channel only offers its chat.
+            conversationCallActions.titlebarButtons()
+        } else {
+            textConversationTitlebarActions(presentsPanels: presentsPanels)
+        }
+    }
+
+    private func textConversationTitlebarActions(presentsPanels: Bool) -> some View {
         let pinsChannelID = model.selectedChannelSupportsPins ? model.selectedChannelID : nil
         let offersThreads = model.canBrowseThreadsInSelectedChannel
         // A narrow conversation keeps Members and gathers the rest into "»".
@@ -737,9 +748,7 @@ private struct ChatRootView: View {
                 if offersThreads {
                     ThreadsToolbarButton(model: model, presentsPanel: presentsPanels)
                 }
-                if selectedVoiceChannel == nil {
-                    MemberInspectorToolbarButton(model: model)
-                }
+                MemberInspectorToolbarButton(model: model)
             }
             HStack(spacing: ChatChromeMetrics.toolbarItemEdgeInset) {
                 conversationCallActions
@@ -749,9 +758,7 @@ private struct ChatRootView: View {
                     offersThreads: offersThreads,
                     presentsPanels: presentsPanels
                 )
-                if selectedVoiceChannel == nil {
-                    MemberInspectorToolbarButton(model: model)
-                }
+                MemberInspectorToolbarButton(model: model)
             }
         }
         .titlebarButtons()
@@ -1376,11 +1383,11 @@ private struct ChatRootView: View {
         return supplementaryPaneFrame.minX - columnEdges.detailMinX >= required
     }
 
-    /// Inbox belongs beside a conversation, not on a server's own pages or
-    /// Friends.
+    /// Inbox belongs beside a text conversation, not on a server's own
+    /// pages, Friends or a voice channel.
     private var showsInboxToolbarItem: Bool {
         !model.isSwitchingAccounts && model.onboardingEntryGuildID == nil
-            && model.guildWorkspacePage == nil && !model.isFriendsPresented
+            && model.guildWorkspacePage == nil && !model.isFriendsPresented && selectedVoiceChannel == nil
     }
 
     private var selectedGuild: Guild? {

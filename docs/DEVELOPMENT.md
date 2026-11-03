@@ -62,6 +62,7 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-long-server-list` | Extended server rail |
 | `./script/build_and_run.sh --offline-forum-performance` | Large forum; post previews arrive 1.2 s after each page |
 | `./script/build_and_run.sh --offline-forum-performance-autoscroll` | Same forum, then a 15-second, 2,000-point/second scroll; writes frame timing and layout-jump counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` and logs a `ForumBenchmark:` line |
+| `./script/build_and_run.sh --offline-forum-gallery-resize` | Same forum in gallery mode while the window narrows by up to 700 points and back twice, then while the channel sidebar hides and shows twice; logs a `FORUM_RESIZE_BENCHMARK` line with frame timing and hitch counts for each |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-chat-voice-performance` | Large native timeline where every fifth message is a voice message |
 | `./script/build_and_run.sh --offline-chat-files-performance` | Large native timeline where three messages in four upload files of every kind |
