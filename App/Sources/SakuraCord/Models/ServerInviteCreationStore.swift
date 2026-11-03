@@ -166,7 +166,8 @@ extension AppModel {
                     in: presentation.channelID, guildID: presentation.guildID, settings: settings
                 )
                 // Discord can return an existing link with identical settings; keep one row per code.
-                try? await account.database?.saveCreatedInvite(invite)
+                // The rail lists stored links as server invites, so an Activity's link isn't kept.
+                if settings.targetApplicationID == nil { try? await account.database?.saveCreatedInvite(invite) }
                 guard isCurrent() else { return }
                 store.invites.removeAll { $0.id == invite.id }
                 store.invites.insert(invite, at: 0)
