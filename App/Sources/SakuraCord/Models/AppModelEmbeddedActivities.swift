@@ -117,7 +117,7 @@ extension AppModel {
     func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel) async {
         let store = embeddedActivities
         let account = accountSession()
-        if store.session != nil { await leaveActivity() }
+        if store.session != nil { leaveActivity() }
         if channel.guildID != nil, activeVoiceChannel?.id != channel.id {
             await joinVoice(channel)
             guard isCurrentAccountSession(account), activeVoiceChannel?.id == channel.id else { return }
@@ -128,7 +128,9 @@ extension AppModel {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
             try await account.provider.launchEmbeddedActivity(application.id, channelID: channel.id, guildID: channel.guildID)
         } catch {
-            guard isCurrentAccountSession(account), store.session?.location == location else { return }
+            // The instance update can arrive before a lost launch response.
+            guard isCurrentAccountSession(account), store.session?.location == location,
+                  store.session?.instance == nil else { return }
             store.session?.phase = .failed(error.localizedDescription)
             return
         }
@@ -144,12 +146,19 @@ extension AppModel {
         }
     }
 
-    func leaveActivity() async {
+    /// Closes the hosted Activity now; Discord is told in the background. A
+    /// launch left before its instance arrives is left when it does.
+    func leaveActivity() {
         let store = embeddedActivities
         let instance = store.session?.instance
         store.endSession()
-        guard let instance else { return }
-        try? await accountSession().provider.leaveEmbeddedActivity(instance)
+        if let instance { leaveEmbeddedActivity(instance) }
+    }
+
+    private func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
+        startAccountChildTask(account: accountSession()) { _, account in
+            try? await account.provider.leaveEmbeddedActivity(instance)
+        }
     }
 
     /// Players in the instance an Activity invite points to.
@@ -199,7 +208,15 @@ extension AppModel {
         guard let session = store.session,
               session.application.id == instance.applicationID,
               session.location.id == instance.location.id
-        else { return }
+        else {
+            // This client is in an instance it no longer hosts, such as a launch
+            // that was left before Discord confirmed it.
+            if store.session?.instance?.compositeInstanceID != instance.compositeInstanceID,
+               instance.participants.contains(where: { $0.sessionID == store.gatewaySessionID }) {
+                leaveEmbeddedActivity(instance)
+            }
+            return
+        }
         guard isOwnInstance(instance, application: session.application.id, location: session.location) else {
             // Discord removed this session from the instance it was in.
             if session.instance?.compositeInstanceID == instance.compositeInstanceID { store.endSession() }
@@ -224,6 +241,8 @@ extension AppModel {
                 )
                 model.embeddedActivities.session?.phase = .running
             } catch {
+                guard model.embeddedActivities.session?.instance?.compositeInstanceID == instance.compositeInstanceID
+                else { return }
                 model.embeddedActivities.session?.phase = .failed(error.localizedDescription)
             }
         }

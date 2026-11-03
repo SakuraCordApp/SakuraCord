@@ -63,7 +63,7 @@ struct EmbeddedActivityStage: View {
             }
             Spacer()
             Button("Leave Activity", systemImage: "xmark") {
-                Task { await model.leaveActivity() }
+                model.leaveActivity()
             }
             .buttonStyle(.glass)
         }

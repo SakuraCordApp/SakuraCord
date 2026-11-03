@@ -209,7 +209,7 @@ final class EmbeddedActivityHost: NSObject {
             guard let string = args["url"] as? String, let url = URL(string: string),
                   url.scheme == "https" || url.scheme == "http"
             else { return fail(command, nonce, .invalidPayload, "Invalid URL") }
-            let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name)
+            let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name) && !isStopped
             if opened { NSWorkspace.shared.open(url) }
             reply(command, nonce, ["opened": opened])
         case "REQUEST_PROXY_TICKET_REFRESH":
@@ -242,8 +242,10 @@ final class EmbeddedActivityHost: NSObject {
         let provider = model.accountSession().provider
         do {
             let preview = try await provider.embeddedActivityAuthorizationPreview(request)
+            guard !isStopped else { return }
             if !preview.isAuthorized {
-                guard await model.embeddedActivities.ask(.authorize(scopes: scopes), applicationName: preview.applicationName)
+                guard await model.embeddedActivities.ask(.authorize(scopes: scopes), applicationName: preview.applicationName),
+                      !isStopped
                 else { return fail("AUTHORIZE", nonce, .oauth2, "User cancelled authorization") }
             }
             let code = try await provider.authorizeEmbeddedActivity(request)
