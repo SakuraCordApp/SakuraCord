@@ -116,8 +116,8 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             context.saveGState()
             context.setShadow(
                 offset: .zero,
-                blur: InterfaceScale.metric(6),
-                color: color.withAlphaComponent(0.65).cgColor
+                blur: InterfaceScale.metric(2.5),
+                color: color.withAlphaComponent(0.35).cgColor
             )
             context.setFillColor(color.cgColor)
             context.textPosition = CGPoint(x: 0, y: baseline)
@@ -127,14 +127,36 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         context.setFillColor(color.cgColor)
         context.textPosition = CGPoint(x: 0, y: baseline)
         CTLineDraw(line, context)
+
         if isUnderlined {
+            let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
+            let textWidth = min(width, frame.width)
+            let highlightX = textWidth * (phase * 1.6 - 0.3)
+            let bandWidth = max(InterfaceScale.metric(28), textWidth * 0.4)
+            let shimmerColors = [
+                NSColor.white.withAlphaComponent(0).cgColor,
+                NSColor.white.withAlphaComponent(0.55).cgColor,
+                NSColor.white.withAlphaComponent(0).cgColor,
+            ] as CFArray
+            let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+            if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
+                context.saveGState()
+                context.setTextDrawingMode(.clip)
+                context.textPosition = CGPoint(x: 0, y: baseline)
+                CTLineDraw(line, context)
+                context.setBlendMode(.plusLighter)
+                context.drawLinearGradient(
+                    shimmerGradient,
+                    start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
+                    end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
+                    options: []
+                )
+                context.restoreGState()
+            }
+
             context.saveGState()
-            context.setShadow(
-                offset: .zero,
-                blur: InterfaceScale.metric(4),
-                color: color.withAlphaComponent(0.65).cgColor
-            )
-            context.setStrokeColor(color.cgColor)
+            context.setStrokeColor(color.withAlphaComponent(0.85).cgColor)
             context.setLineWidth(1)
             context.move(to: CGPoint(x: 0, y: baseline - InterfaceScale.metric(1.5)))
             context.addLine(to: CGPoint(x: min(width, frame.width), y: baseline - InterfaceScale.metric(1.5)))
@@ -172,10 +194,10 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             let primary = gradientColors[0]
             context.setShadow(
                 offset: .zero,
-                blur: InterfaceScale.metric(6),
-                color: primary.withAlphaComponent(0.65).cgColor
+                blur: InterfaceScale.metric(2.5),
+                color: primary.withAlphaComponent(0.35).cgColor
             )
-            context.setFillColor(primary.withAlphaComponent(0.5).cgColor)
+            context.setFillColor(primary.withAlphaComponent(0.35).cgColor)
             context.textPosition = CGPoint(x: 0, y: baseline)
             CTLineDraw(line, context)
             context.restoreGState()
@@ -191,16 +213,32 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             end: CGPoint(x: min(width, frame.width), y: 0),
             options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
         )
+
+        if isUnderlined {
+            let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
+            let textWidth = min(width, frame.width)
+            let highlightX = textWidth * (phase * 1.6 - 0.3)
+            let bandWidth = max(InterfaceScale.metric(28), textWidth * 0.4)
+            let shimmerColors = [
+                NSColor.white.withAlphaComponent(0).cgColor,
+                NSColor.white.withAlphaComponent(0.6).cgColor,
+                NSColor.white.withAlphaComponent(0).cgColor,
+            ] as CFArray
+            let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
+            if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
+                context.setBlendMode(.plusLighter)
+                context.drawLinearGradient(
+                    shimmerGradient,
+                    start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
+                    end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
+                    options: []
+                )
+            }
+        }
         context.restoreGState()
 
         if isUnderlined {
             context.saveGState()
-            let primary = gradientColors[0]
-            context.setShadow(
-                offset: .zero,
-                blur: InterfaceScale.metric(4),
-                color: primary.withAlphaComponent(0.65).cgColor
-            )
             let underlineRect = CGRect(
                 x: 0,
                 y: baseline - InterfaceScale.metric(1.5),

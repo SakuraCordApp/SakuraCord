@@ -198,6 +198,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var unreadDividerFades: [NativeMessageTimelineItem.Identifier: NativeTimelineUnreadDividerFade] = [:]
     var unreadDividerGap: NativeTimelineUnreadDividerGap?
     let unreadDividerGapTicker = NativeTimelineDisplayLinkTicker()
+    let authorHoverTicker = NativeTimelineDisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
@@ -471,6 +472,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
             unreadDividerGapTicker.stop()
+            authorHoverTicker.stop()
             reactionTicker.stop()
             for fade in unreadDividerFades.values {
                 fade.finishTask?.cancel()

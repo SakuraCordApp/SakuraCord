@@ -25,6 +25,13 @@ extension NativeTimelineCanvasView {
         guard hoveredAuthorMessageID != value else { return }
         let old = hoveredAuthorMessageID
         hoveredAuthorMessageID = value
+        if value != nil {
+            authorHoverTicker.start(on: self) { [weak self] in
+                self?.stepAuthorHover()
+            }
+        } else {
+            authorHoverTicker.stop()
+        }
         updateAvatarPlayback()
         for messageID in [old, value].compactMap({ $0 }) {
             guard let index = items.firstIndex(where: {
@@ -32,6 +39,16 @@ extension NativeTimelineCanvasView {
             }) else { continue }
             setNeedsDisplay(rowFrame(at: index))
         }
+    }
+
+    private func stepAuthorHover() {
+        guard let messageID = hoveredAuthorMessageID,
+              let index = items.firstIndex(where: { $0.messageID == messageID })
+        else {
+            authorHoverTicker.stop()
+            return
+        }
+        setNeedsDisplay(rowFrame(at: index))
     }
 
     func setHoveredMention(

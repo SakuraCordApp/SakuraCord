@@ -498,7 +498,7 @@ nonisolated struct MessageAuthorPresentation: Equatable {
         }
         let roleIDs = guildMember.map { Set($0.roleIDs) } ?? []
         let memberRoles = roles.filter { roleIDs.contains($0.id) }
-        let colorRole = roleColorRole(for: guildMember, roles: roles)
+        let colorRole = topRoleWithColor(in: memberRoles)
         return Self(
             user: user,
             roleColorHex: colorRole?.colorHex,
@@ -506,22 +506,6 @@ nonisolated struct MessageAuthorPresentation: Equatable {
             roleTertiaryColorHex: colorRole?.tertiaryColorHex,
             topRoleWithIcon: topRoleWithIcon(in: memberRoles)
         )
-    }
-
-    private static func roleColorRole(
-        for guildMember: MessageGuildMember?,
-        roles: [GuildRole]
-    ) -> GuildRole? {
-        guard let guildMember else { return nil }
-        let roleIDs = Set(guildMember.roleIDs)
-        return topRoleWithColor(in: roles.filter { roleIDs.contains($0.id) })
-    }
-
-    private static func roleColor(
-        for guildMember: MessageGuildMember?,
-        roles: [GuildRole]
-    ) -> UInt32? {
-        roleColorRole(for: guildMember, roles: roles)?.colorHex
     }
 
     static func topRoleWithColor(in roles: [GuildRole]) -> GuildRole? {

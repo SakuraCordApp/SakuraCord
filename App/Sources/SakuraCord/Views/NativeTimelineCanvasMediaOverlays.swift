@@ -719,7 +719,17 @@ extension NativeTimelineCanvasView {
             }
             overlay.frame = hostFrame
             let activeStarter = activeStarterIdentifier()
-            let isHoverActive = !item.key.role.playsOnHover || (activeStarter != nil && item.key.row == activeStarter)
+            let isHoverActive: Bool
+            if !item.key.role.playsOnHover {
+                isHoverActive = true
+            } else {
+                switch item.key.role {
+                case .authorAvatar, .authorAvatarDecoration:
+                    isHoverActive = activeStarter != nil && item.key.row == activeStarter
+                default:
+                    isHoverActive = hoveredRow == rowIndex
+                }
+            }
             overlay.setHoverPlaybackEnabled(isHoverActive)
             overlay.setPlaybackSuppressed(suppressesHoverPresentation)
             overlay.display(
@@ -790,8 +800,17 @@ extension NativeTimelineCanvasView {
 
     func updateAvatarPlayback() {
         let activeStarter = activeStarterIdentifier()
+        let hoveredIdentifier = hoveredRow.flatMap {
+            items.indices.contains($0) ? items[$0].identifier : nil
+        }
         for (key, overlay) in animatedMediaOverlays where key.role.playsOnHover {
-            let isHoverActive = activeStarter != nil && key.row == activeStarter
+            let isHoverActive: Bool
+            switch key.role {
+            case .authorAvatar, .authorAvatarDecoration:
+                isHoverActive = activeStarter != nil && key.row == activeStarter
+            default:
+                isHoverActive = hoveredIdentifier != nil && key.row == hoveredIdentifier
+            }
             overlay.setHoverPlaybackEnabled(isHoverActive && !suppressesHoverPresentation)
         }
     }

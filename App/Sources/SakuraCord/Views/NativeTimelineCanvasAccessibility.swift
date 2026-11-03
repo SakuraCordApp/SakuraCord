@@ -707,6 +707,17 @@ extension NativeTimelineCanvasView {
                     children.append(accessibilityElement(role: .staticText, label: label, frame: frame, parent: parent))
                 }
             }
+            if let roleRegion = layout.roleIconRegion {
+                let label = "Role \(roleRegion.role.name)"
+                let frame = accessibilityChildFrame(roleRegion.frame, rowIndex: rowIndex)
+                children.append(accessibilityElement(role: .button, label: label,
+                    help: "Shows the role", frame: frame, parent: parent) { [weak self] in
+                    guard let self else { return false }
+                    let anchor = self.accessibilityChildFrame(roleRegion.frame, rowIndex: rowIndex)
+                    self.showRoleIconPopover(role: roleRegion.role, messageID: message.id, anchor: anchor)
+                    return true
+                })
+            }
             if accessibilitySettings.announcesTimestamps,
                let frame = layout.timestampFrame
             {
