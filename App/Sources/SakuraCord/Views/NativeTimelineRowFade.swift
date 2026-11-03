@@ -117,14 +117,26 @@ extension NativeTimelineCanvasView {
         context.restoreGState()
     }
 
+    /// How much of a row's displayed height is the gap of a deleted run
+    /// still fading below it.
+    func departedGapHeight(
+        below identifier: NativeMessageTimelineItem.Identifier,
+        at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> CGFloat {
+        rowFades.reduce(0) { total, fade in
+            guard case let .departed(after, height) = fade.placement, after == identifier else { return total }
+            return total + height * fade.remaining(at: uptime)
+        }
+    }
+
     /// Draws deleted rows in the gaps closing after the rows they followed.
     func drawDepartedRows(in dirtyRect: CGRect) {
         guard !rowFades.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
         let now = ProcessInfo.processInfo.systemUptime
         for fade in rowFades {
-            guard case let .departed(after, height) = fade.placement,
+            guard case let .departed(after, _) = fade.placement,
                   let index = rowIndex(forIdentifier: after),
-                  case let gap = height * fade.remaining(at: now),
+                  case let gap = departedGapHeight(below: after, at: now),
                   // The gap is the end of the row's displayed height, which
                   // may also be easing from a change of the row's own.
                   case let frame = CGRect(

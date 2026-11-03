@@ -859,7 +859,9 @@ extension NativeTimelineCanvasView {
         // one still changing height stays within the height it has so far.
         let reactionBandTop = reactionBandTop(for: item, rowFrame: rowFrame)
         if let reactionBandTop, dirtyRect.maxY > reactionBandTop { drawReactionBand(at: index, rowFrame: rowFrame) }
-        let clipMaxY = reactionBandTop ?? (reactionMotionRemainingHeight(at: index) == 0 ? nil : rowFrame.maxY)
+        // A deleted run fading below the row keeps its own part of the gap.
+        let clipMaxY = reactionBandTop ?? (reactionMotionRemainingHeight(at: index) == 0
+            ? nil : rowFrame.maxY - departedGapHeight(below: item.identifier))
         if let clipMaxY {
             guard dirtyRect.minY < clipMaxY, let context = NSGraphicsContext.current?.cgContext else { return }
             context.saveGState()
