@@ -52,7 +52,7 @@ public actor MockChatProvider: ChatProvider {
 #endif
 
     public init(
-        includesLongServerList: Bool = false,
+        serverList: MockServerList = .standard,
         forumPostCount: Int? = nil,
         forumPreviewsHydrateLate: Bool = false,
         timelineMessageCount: Int? = nil,
@@ -65,7 +65,7 @@ public actor MockChatProvider: ChatProvider {
         friendCount: Int? = nil
     ) {
         let fixture = MockChatFixture.make(
-            includesLongServerList: includesLongServerList,
+            serverList: serverList,
             timelineMessageCount: timelineMessageCount,
             timelineIncludesAnimatedMedia: timelineIncludesAnimatedMedia,
             timelineIncludesVoiceMessages: timelineIncludesVoiceMessages,
