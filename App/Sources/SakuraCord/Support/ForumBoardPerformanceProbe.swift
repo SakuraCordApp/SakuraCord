@@ -290,7 +290,16 @@ enum ForumBoardBenchmark {
         var sampler = ForumFrameTimingSampler()
         let start = ProcessInfo.processInfo.systemUptime
         var previous = start
+        let completion = ForumBenchmarkCompletion()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            completion.continuation = continuation
+            // The display link stops firing if the board leaves the window,
+            // so a wall-clock deadline also ends the run.
+            completion.deadline = Task { @MainActor in
+                guard (try? await Task.sleep(for: .seconds(seconds + 5))) != nil else { return }
+                ticker.stop()
+                completion.finish()
+            }
             ticker.start(on: view) {
                 let now = ProcessInfo.processInfo.systemUptime
                 sampler.record(interval: now - previous)
@@ -299,7 +308,7 @@ enum ForumBoardBenchmark {
                 step(CGFloat(0.5 - 0.5 * cos(elapsed * .pi / 2)))
                 if elapsed >= seconds {
                     ticker.stop()
-                    continuation.resume()
+                    completion.finish()
                 }
             }
         }

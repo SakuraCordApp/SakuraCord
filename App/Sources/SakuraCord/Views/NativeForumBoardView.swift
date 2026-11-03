@@ -196,6 +196,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     /// waits for them, since hits use the destination frames.
     private var glidingIDs = Set<ForumBoardItem.Identifier>()
     var glideEndTime: CFTimeInterval = 0
+    private var glideFinishTask: Task<Void, Never>?
     let menuBuilder = ForumPostMenuBuilder()
     var accessibilityProxies: [ForumBoardItem.Identifier: ForumBoardAccessibilityProxyView] = [:]
     /// A page request is in flight from this board; the model also guards.
@@ -247,6 +248,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     func tearDown() {
         settledWorkTask?.cancel()
         resizeSettleTask?.cancel()
+        glideFinishTask?.cancel()
         minuteTimer?.invalidate()
         minuteTimer = nil
         NativeTimelineMediaStore.shared.releaseVisibleImages(owner: mediaOwner)
@@ -409,6 +411,17 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         }
     }
 
+    /// Once cards land, those that glided out of view retire and the pointer
+    /// takes the card now under it.
+    private func scheduleGlideFinish() {
+        glideFinishTask?.cancel()
+        glideFinishTask = Task { @MainActor [weak self] in
+            guard (try? await Task.sleep(for: .seconds(Self.glideDuration))) != nil, let self else { return }
+            refreshVisibleCards(transition: .none)
+            updateHoverFromCurrentPointer()
+        }
+    }
+
     @objc func clipViewBoundsDidChange(_: Notification) {
         refreshVisibleCards(transition: .none)
         updateHoverFromCurrentPointer()
@@ -485,6 +498,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         if !reflowingFrames.isEmpty {
             glidingIDs.formUnion(reflowingFrames.keys)
             glideEndTime = CACurrentMediaTime() + Self.glideDuration
+            scheduleGlideFinish()
         }
         if scrollsToTop {
             scrollToTop()
