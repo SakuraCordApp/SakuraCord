@@ -111,16 +111,35 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         context.translateBy(x: frame.minX, y: frame.maxY)
         context.scaleBy(x: 1, y: -1)
         context.textMatrix = .identity
-        context.setFillColor(color.cgColor)
         let baseline = frame.height / 2 - glyphBounds.midY
+        if isUnderlined {
+            context.saveGState()
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(6),
+                color: color.withAlphaComponent(0.65).cgColor
+            )
+            context.setFillColor(color.cgColor)
+            context.textPosition = CGPoint(x: 0, y: baseline)
+            CTLineDraw(line, context)
+            context.restoreGState()
+        }
+        context.setFillColor(color.cgColor)
         context.textPosition = CGPoint(x: 0, y: baseline)
         CTLineDraw(line, context)
         if isUnderlined {
+            context.saveGState()
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(4),
+                color: color.withAlphaComponent(0.65).cgColor
+            )
             context.setStrokeColor(color.cgColor)
             context.setLineWidth(1)
             context.move(to: CGPoint(x: 0, y: baseline - InterfaceScale.metric(1.5)))
             context.addLine(to: CGPoint(x: min(width, frame.width), y: baseline - InterfaceScale.metric(1.5)))
             context.strokePath()
+            context.restoreGState()
         }
         context.restoreGState()
     }
@@ -148,6 +167,20 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             return
         }
 
+        if isUnderlined {
+            context.saveGState()
+            let primary = gradientColors[0]
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(6),
+                color: primary.withAlphaComponent(0.65).cgColor
+            )
+            context.setFillColor(primary.withAlphaComponent(0.5).cgColor)
+            context.textPosition = CGPoint(x: 0, y: baseline)
+            CTLineDraw(line, context)
+            context.restoreGState()
+        }
+
         context.saveGState()
         context.setTextDrawingMode(.clip)
         context.textPosition = CGPoint(x: 0, y: baseline)
@@ -162,6 +195,12 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
 
         if isUnderlined {
             context.saveGState()
+            let primary = gradientColors[0]
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(4),
+                color: primary.withAlphaComponent(0.65).cgColor
+            )
             let underlineRect = CGRect(
                 x: 0,
                 y: baseline - InterfaceScale.metric(1.5),

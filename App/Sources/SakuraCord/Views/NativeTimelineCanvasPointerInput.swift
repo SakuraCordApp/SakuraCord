@@ -1119,10 +1119,15 @@ extension NativeTimelineCanvasView {
             x: point.x,
             y: point.y - displayedRowOrigin(at: index)
         )
+        let layout = layouts[index]
         guard NativeTimelineHoverHitTesting.contains(
             local,
-            in: layouts[index].highlightFrame
-        ) else {
+            in: layout.highlightFrame
+        ) || layout.authorFrame?.contains(local) == true
+          || layout.avatarFrame?.contains(local) == true
+          || layout.roleIconRegion?.frame.contains(local) == true
+          || layout.serverTagRegion?.frame.contains(local) == true
+        else {
             return nil
         }
         return index

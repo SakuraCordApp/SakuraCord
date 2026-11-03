@@ -58,37 +58,100 @@ extension NativeMemberListCanvasView {
         ))
     }
 
-    static func draw(line: CTLine, at point: CGPoint, context: CGContext) {
+    static func draw(line: CTLine, at point: CGPoint, context: CGContext, color: NSColor? = nil, isHovered: Bool = false) {
         var ascent: CGFloat = 0
         CTLineGetTypographicBounds(line, &ascent, nil, nil)
         context.saveGState()
         context.textMatrix = .identity
         context.translateBy(x: point.x, y: point.y + ascent)
         context.scaleBy(x: 1, y: -1)
+        if isHovered, let color {
+            context.saveGState()
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(6),
+                color: color.withAlphaComponent(0.6).cgColor
+            )
+            context.setFillColor(color.cgColor)
+            CTLineDraw(line, context)
+            context.restoreGState()
+        }
         CTLineDraw(line, context)
+        if isHovered, let color {
+            let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            context.saveGState()
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(4),
+                color: color.withAlphaComponent(0.6).cgColor
+            )
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(1)
+            context.move(to: CGPoint(x: 0, y: -InterfaceScale.metric(1.5)))
+            context.addLine(to: CGPoint(x: width, y: -InterfaceScale.metric(1.5)))
+            context.strokePath()
+            context.restoreGState()
+        }
         context.restoreGState()
     }
 
-    static func draw(line: CTLine, at point: CGPoint, gradientColors: [NSColor], width: CGFloat, context: CGContext) {
+    static func draw(line: CTLine, at point: CGPoint, gradientColors: [NSColor], width: CGFloat, context: CGContext, isHovered: Bool = false) {
         var ascent: CGFloat = 0
         CTLineGetTypographicBounds(line, &ascent, nil, nil)
         context.saveGState()
         context.textMatrix = .identity
         context.translateBy(x: point.x, y: point.y + ascent)
         context.scaleBy(x: 1, y: -1)
-        context.setTextDrawingMode(.clip)
-        CTLineDraw(line, context)
         let cgColors = gradientColors.map(\.cgColor) as CFArray
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         let count = gradientColors.count
         let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
-        if let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) {
+        let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations)
+
+        if isHovered, let primary = gradientColors.first {
+            context.saveGState()
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(6),
+                color: primary.withAlphaComponent(0.65).cgColor
+            )
+            context.setFillColor(primary.withAlphaComponent(0.4).cgColor)
+            CTLineDraw(line, context)
+            context.restoreGState()
+        }
+
+        context.saveGState()
+        context.setTextDrawingMode(.clip)
+        CTLineDraw(line, context)
+        if let gradient {
             context.drawLinearGradient(
                 gradient,
                 start: CGPoint(x: 0, y: 0),
                 end: CGPoint(x: max(1, width), y: 0),
                 options: []
             )
+        }
+        context.restoreGState()
+
+        if isHovered, let gradient {
+            context.saveGState()
+            if let primary = gradientColors.first {
+                context.setShadow(
+                    offset: .zero,
+                    blur: InterfaceScale.metric(4),
+                    color: primary.withAlphaComponent(0.65).cgColor
+                )
+            }
+            let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            let underlineRect = CGRect(x: 0, y: -InterfaceScale.metric(1.5), width: min(width, lineWidth), height: 1)
+            context.clip(to: underlineRect)
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 0, y: 0),
+                end: CGPoint(x: max(1, width), y: 0),
+                options: []
+            )
+            context.restoreGState()
         }
         context.restoreGState()
     }

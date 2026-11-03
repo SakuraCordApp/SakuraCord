@@ -12,6 +12,7 @@ struct RoleIconView: View {
                 url: iconURL,
                 animates: false,
                 maximumPixelDimension: 48,
+                contentMode: .fit,
                 usesSwiftUIRendering: true
             )
             .frame(width: size, height: size)

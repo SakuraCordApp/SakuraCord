@@ -479,11 +479,15 @@ struct MemberRow: View {
                                     Text(member.user.displayName)
                                         .font(.interface(.body).weight(.semibold))
                                         .foregroundStyle(gradient)
+                                        .shadow(color: isHovered ? nameColor.opacity(0.65) : .clear, radius: InterfaceScale.metric(4))
+                                        .underline(isHovered, color: nameColor)
                                         .lineLimit(1)
                                 } else {
                                     Text(member.user.displayName)
                                         .font(.interface(.body).weight(.semibold))
                                         .foregroundStyle(nameColor)
+                                        .shadow(color: isHovered ? nameColor.opacity(0.65) : .clear, radius: InterfaceScale.metric(4))
+                                        .underline(isHovered, color: nameColor)
                                         .lineLimit(1)
                                 }
                                 if !cosmeticPolicy.disables(.serverTag, for: member.id),

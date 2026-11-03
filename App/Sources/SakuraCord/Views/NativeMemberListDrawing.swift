@@ -66,7 +66,8 @@ extension NativeMemberListCanvasView {
         if let role = section.role, role.hasIcon {
             let iconSize = InterfaceScale.metric(14)
             let spacing = InterfaceScale.metric(4)
-            let iconY = labelY + (font.ascender - iconSize) / 2
+            let textCenterY = labelY + font.ascender - font.capHeight / 2.0
+            let iconY = (textCenterY - iconSize / 2.0).rounded()
             let iconRect = CGRect(x: labelX, y: iconY, width: iconSize, height: iconSize)
             drawMemberRoleIcon(role, in: iconRect, at: index, context: context)
             labelX += iconSize + spacing
@@ -312,16 +313,24 @@ extension NativeMemberListCanvasView {
                 token: prepared.nameTruncationToken,
                 maximumWidth: nameLayout.nameWidth
             )
+            let isHovered = hoveredIndex == index || rowOverlayIndex == index
             if presentation.roleColorDisplay == .inNames, let gradientColors = prepared.gradientColors {
                 Self.draw(
                     line: visibleName,
                     at: CGPoint(x: nameX, y: nameY),
                     gradientColors: gradientColors,
                     width: nameLayout.nameWidth,
-                    context: context
+                    context: context,
+                    isHovered: isHovered
                 )
             } else {
-                Self.draw(line: visibleName, at: CGPoint(x: nameX, y: nameY), context: context)
+                Self.draw(
+                    line: visibleName,
+                    at: CGPoint(x: nameX, y: nameY),
+                    context: context,
+                    color: presentation.roleColorDisplay == .inNames ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil,
+                    isHovered: isHovered
+                )
             }
         }
 
@@ -348,7 +357,7 @@ extension NativeMemberListCanvasView {
             drawMemberRoleIcon(role, in: frame, at: index, context: context)
         }
         if let frame = geometry.botBadgeFrame {
-            drawBotBadge(at: frame.minX, nameY: nameY, context: context)
+            NativeAppBadgePresentation.draw(in: frame, color: .systemIndigo, context: context)
         }
         if let activity = prepared.activity,
            let truncationToken = prepared.activityTruncationToken
@@ -595,8 +604,14 @@ extension NativeMemberListCanvasView {
                 requestImageIfNeeded(url: iconURL, index: index, priority: .visible, maximumPixelDimension: 32)
             }
         } else if let emoji = role.unicodeEmoji, !emoji.isEmpty {
-            let emojiLine = Self.line(emoji, font: .systemFont(ofSize: frame.height * 0.85), color: .labelColor)
-            Self.draw(line: emojiLine, at: CGPoint(x: frame.minX, y: frame.minY), context: context)
+            let emojiFont = NSFont.systemFont(ofSize: frame.height * 0.85)
+            let emojiLine = Self.line(emoji, font: emojiFont, color: .labelColor)
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(emojiLine, &ascent, &descent, nil))
+            let emojiX = frame.midX - width / 2
+            let emojiY = frame.midY - (ascent - descent) / 2
+            Self.draw(line: emojiLine, at: CGPoint(x: emojiX, y: emojiY), context: context)
         }
     }
 

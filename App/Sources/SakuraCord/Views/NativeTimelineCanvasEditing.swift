@@ -25,6 +25,7 @@ extension NativeTimelineCanvasView {
         guard hoveredAuthorMessageID != value else { return }
         let old = hoveredAuthorMessageID
         hoveredAuthorMessageID = value
+        updateAvatarPlayback()
         for messageID in [old, value].compactMap({ $0 }) {
             guard let index = items.firstIndex(where: {
                 $0.messageID == messageID

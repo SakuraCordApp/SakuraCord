@@ -718,9 +718,9 @@ extension NativeTimelineCanvasView {
                 didCreateOverlay = true
             }
             overlay.frame = hostFrame
-            overlay.setHoverPlaybackEnabled(
-                !item.key.role.playsOnHover || hoveredRow == rowIndex
-            )
+            let activeStarter = activeStarterIdentifier()
+            let isHoverActive = !item.key.role.playsOnHover || (activeStarter != nil && item.key.row == activeStarter)
+            overlay.setHoverPlaybackEnabled(isHoverActive)
             overlay.setPlaybackSuppressed(suppressesHoverPresentation)
             overlay.display(
                 item.image,
@@ -763,12 +763,36 @@ extension NativeTimelineCanvasView {
 
     }
 
-    func updateAvatarPlayback() {
-        let hoveredIdentifier = hoveredRow.flatMap {
-            items.indices.contains($0) ? items[$0].identifier : nil
+    func activeStarterIdentifier() -> NativeMessageTimelineItem.Identifier? {
+        let activeHoverRow = hoveredRow ?? hoveredAuthorMessageID.flatMap { targetID in
+            items.firstIndex(where: { $0.messageID == targetID })
         }
+        return activeHoverRow.flatMap { groupStarterIdentifier(for: $0) }
+    }
+
+    private func groupStarterIdentifier(for index: Int) -> NativeMessageTimelineItem.Identifier? {
+        guard items.indices.contains(index) else { return nil }
+        guard case let .message(row, _, _) = items[index] else {
+            return items[index].identifier
+        }
+        if row.startsGroup {
+            return items[index].identifier
+        }
+        for prevIndex in stride(from: index - 1, through: 0, by: -1) {
+            guard case let .message(prevRow, _, _) = items[prevIndex] else { break }
+            if prevRow.message.author.id != row.message.author.id { break }
+            if prevRow.startsGroup {
+                return items[prevIndex].identifier
+            }
+        }
+        return items[index].identifier
+    }
+
+    func updateAvatarPlayback() {
+        let activeStarter = activeStarterIdentifier()
         for (key, overlay) in animatedMediaOverlays where key.role.playsOnHover {
-            overlay.setHoverPlaybackEnabled(key.row == hoveredIdentifier && !suppressesHoverPresentation)
+            let isHoverActive = activeStarter != nil && key.row == activeStarter
+            overlay.setHoverPlaybackEnabled(isHoverActive && !suppressesHoverPresentation)
         }
     }
 

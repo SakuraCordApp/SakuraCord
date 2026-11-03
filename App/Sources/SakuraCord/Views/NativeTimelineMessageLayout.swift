@@ -417,7 +417,7 @@ extension NativeTimelineRowLayout {
             }
             if let role, roleIconSize > 0 {
                 headerX += InterfaceScale.metric(7)
-                let iconY = (verticalOffset + (headerHeight - roleIconSize) / 2).rounded()
+                let iconY = (baselineY - (authorFont.capHeight + roleIconSize) / 2.0).rounded()
                 result.roleIconRegion = .init(
                     frame: CGRect(
                         x: headerX, y: iconY,

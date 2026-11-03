@@ -64,13 +64,14 @@ extension NativeMemberListCanvasView {
             accessoryWidths: accessoryWidths
         )
         let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
+        let nameCenterY = nameY + prepared.nameFont.ascender - prepared.nameFont.capHeight / 2.0
 
         let tagFrame: CGRect? = if let tagIndex, let tag = prepared.serverTag,
            layout.accessoryFrames.indices.contains(tagIndex),
            layout.accessoryFrames[tagIndex].width >= tag.width {
             CGRect(
                 x: nameX + layout.accessoryFrames[tagIndex].minX,
-                y: nameY + InterfaceScale.metric(8) - NativeServerTagPresentation.height / 2,
+                y: (nameCenterY - NativeServerTagPresentation.height / 2).rounded(),
                 width: tag.width,
                 height: NativeServerTagPresentation.height
             )
@@ -81,7 +82,7 @@ extension NativeMemberListCanvasView {
            layout.accessoryFrames[roleIndex].width >= roleIconSize {
             CGRect(
                 x: nameX + layout.accessoryFrames[roleIndex].minX,
-                y: nameY + InterfaceScale.metric(8) - roleIconSize / 2,
+                y: (nameCenterY - roleIconSize / 2).rounded(),
                 width: roleIconSize,
                 height: roleIconSize
             )
@@ -92,7 +93,7 @@ extension NativeMemberListCanvasView {
            layout.accessoryFrames[botIndex].width >= NativeAppBadgePresentation.width {
             CGRect(
                 x: nameX + layout.accessoryFrames[botIndex].minX,
-                y: nameY,
+                y: (nameCenterY - ServerTagAppearance.height / 2).rounded(),
                 width: NativeAppBadgePresentation.width,
                 height: ServerTagAppearance.height
             )
