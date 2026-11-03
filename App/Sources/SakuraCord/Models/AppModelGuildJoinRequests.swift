@@ -30,6 +30,8 @@ final class GuildJoinRequestStore {
     var isFolderExpanded = false
     var isWorking = false
     var error: String?
+    /// Approvals whose greeting was closed while Discord records the acknowledgement.
+    @ObservationIgnored var acknowledging: Set<JoinRequestID> = []
     /// The invite each application was opened from; Discord's form request carries it.
     @ObservationIgnored var inviteCodes: [GuildID: String] = [:]
     @ObservationIgnored var isLoadingGuilds = false
@@ -54,6 +56,7 @@ final class GuildJoinRequestStore {
         isFolderExpanded = false
         isWorking = false
         error = nil
+        acknowledging = []
         inviteCodes = [:]
         isLoadingGuilds = false
     }
@@ -75,7 +78,9 @@ extension AppModel {
     func showGuildJoinApprovalIfNeeded() {
         let store = guildJoinRequests
         guard store.modal == nil,
-              let approved = store.requests.values.first(where: { $0.status == .approved && !$0.isAcknowledged }) else { return }
+              let approved = store.requests.values.first(where: {
+                  $0.status == .approved && !$0.isAcknowledged && !store.acknowledging.contains($0.id)
+              }) else { return }
         store.modal = .init(guildID: approved.guildID, kind: .welcome)
     }
 
@@ -172,6 +177,7 @@ extension AppModel {
         let store = guildJoinRequests
         store.modal = nil
         if let request = store.requests[guildID], request.status == .approved, !request.isAcknowledged {
+            store.acknowledging.insert(request.id)
             startAccountChildTask(account: accountSession()) { _, account in
                 try? await account.provider.acknowledgeGuildJoinRequest(request)
             }

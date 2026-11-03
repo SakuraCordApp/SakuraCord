@@ -31,29 +31,35 @@ public extension DiscordRESTProvider {
             }
             return .object(object)
         }
+        let startedFrom = cachedGuildJoinRequests[guildID]?.id
         let (data, response) = try await perform(
             "/guilds/\(guildID)/requests/@me", method: "PUT", query: [],
             body: ["version": .string(cached.version), "form_fields": .array(answered)],
             headers: ["X-Context-Properties": Data("{}".utf8).base64EncodedString()], maximumAttempts: 1
         )
         try checkJoinRequestResponse(data, response)
-        try applyJoinRequestResponse(data, replacingStarted: true)
+        try applyJoinRequestResponse(data, startedFrom: startedFrom)
     }
 
     /// Starts a new application after a rejection.
     func reapplyToGuild(_ guildID: GuildID) async throws {
+        let startedFrom = cachedGuildJoinRequests[guildID]?.id
         let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "POST", query: [], body: nil,
                                                  maximumAttempts: 1)
         try checkJoinRequestResponse(data, response)
-        try applyJoinRequestResponse(data, replacingStarted: false)
+        try applyJoinRequestResponse(data, startedFrom: startedFrom)
     }
 
     func withdrawGuildJoinRequest(_ guildID: GuildID) async throws {
+        let startedFrom = cachedGuildJoinRequests[guildID]?.id
         let (data, response) = try await perform("/guilds/\(guildID)/requests/@me", method: "DELETE", query: [], body: nil,
                                                  maximumAttempts: 1)
         try checkJoinRequestResponse(data, response)
         // GUILD_JOIN_REQUEST_DELETE normally arrives first; a lost event must not leave the request shown.
-        if cachedGuildJoinRequests.removeValue(forKey: guildID) != nil { publishGuildJoinRequests() }
+        // A newer application made elsewhere meanwhile is not the one withdrawn.
+        guard let startedFrom, cachedGuildJoinRequests[guildID]?.id == startedFrom else { return }
+        cachedGuildJoinRequests[guildID] = nil
+        publishGuildJoinRequests()
     }
 
     /// Records that the applicant saw an approval, so Discord stops reporting it.
@@ -113,17 +119,13 @@ extension DiscordRESTProvider {
         continuation?.yield(.guildJoinRequestsChanged(Array(cachedGuildJoinRequests.values)))
     }
 
-    /// The Gateway event usually precedes the response, and a review, withdrawal or replacement can follow it
-    /// before the response arrives. A submission therefore only advances the cached STARTED request, and a
-    /// reapplication only adds a request Gateway has not reported yet.
-    private func applyJoinRequestResponse(_ data: Data, replacingStarted: Bool) throws {
+    /// The Gateway event usually precedes the response, and a review, withdrawal or another client's application
+    /// can follow it before the response arrives. The reply therefore applies only while the cached request is
+    /// still the one the write started from, and a submission only while that request is still STARTED.
+    private func applyJoinRequestResponse(_ data: Data, startedFrom: JoinRequestID?) throws {
         guard let request = try JSONDecoder().decode(GuildJoinRequestDTO.self, from: data).domain() else { return }
         let cached = cachedGuildJoinRequests[request.guildID]
-        if replacingStarted {
-            guard cached?.id == request.id, cached?.status == .started else { return }
-        } else if cached?.id == request.id {
-            return
-        }
+        guard cached?.id == startedFrom, cached?.id != request.id || cached?.status == .started else { return }
         cachedGuildJoinRequests[request.guildID] = request
         publishGuildJoinRequests()
     }

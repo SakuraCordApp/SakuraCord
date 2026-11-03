@@ -94,6 +94,7 @@ extension AppModel {
         captcha.cancel()
         serverInvites.reset()
         guildJoinRequests.reset()
+        serverRailPresentation.showsGuildJoinRequest = false
         friends.reset()
         lastDirectMessageSelection = nil
         ignoredUsers.reset()
