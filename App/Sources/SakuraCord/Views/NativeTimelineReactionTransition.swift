@@ -198,7 +198,8 @@ extension NativeTimelineCanvasView {
               editingMessageID == nil || editing.committedContent != nil
         else { return }
         let originY = contentOriginY - viewportMinY
-        let editor = editingHostSnapshot().flatMap { picture in
+        // While scrolling, the editor shows as its snapshot.
+        let editor = (editingRowScrollSnapshot ?? editingHostSnapshot()).flatMap { picture in
             editingOverlayLocalFrame.map { NativeTimelineReactionBaseline.Editor(picture: picture, frame: $0) }
         }
         var rows: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBaseline.Row] = [:]
