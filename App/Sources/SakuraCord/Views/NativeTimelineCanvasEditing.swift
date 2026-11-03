@@ -1144,8 +1144,12 @@ extension NativeTimelineCanvasView {
     }
 
     func relayoutEditingRow() {
-        guard let item = editing.item,
-              let layout = makeEditingLayout?(item, editing.editorHeight)
+        // A message's own rendering, such as a heading or jumbo emoji, can
+        // be taller than its raw text; it keeps its height until the draft
+        // changes, and then follows the draft.
+        guard let item = editing.item, case let .message(row, _, _) = item else { return }
+        let isUnchanged = editing.draft?.text == row.message.content
+        guard let layout = makeEditingLayout?(item, isUnchanged ? 0 : editing.editorHeight)
         else { return }
         applyEditingLayout(layout)
     }
@@ -1559,14 +1563,14 @@ extension NativeMessageTimelineCoordinator {
               let scrollView,
               let index = canvas.editingRowIndex
         else { return }
-        // A message already in sight is edited where it is; one out of
-        // sight is brought just into it, from the side it was on.
+        // A message in sight, even in part, is edited where it is; one out
+        // of sight is brought just into it, from the side it was on.
         let row = canvas.rowFrame(at: index)
         let insets = scrollView.scrollerInsets
         let visible = canvas.visibleRect.divided(atDistance: insets.top, from: .minYEdge).remainder
             .divided(atDistance: insets.bottom, from: .maxYEdge).remainder
-        guard !visible.contains(row) else { return }
-        let fromAbove = row.minY < visible.minY && row.height <= visible.height
+        guard !visible.intersects(row) else { return }
+        let fromAbove = row.maxY <= visible.minY
         _ = scroll(to: .message(request.messageID, anchor: fromAbove ? .top : .bottom), in: scrollView)
     }
 }
