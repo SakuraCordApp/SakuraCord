@@ -234,7 +234,6 @@ private struct ChatRootView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
                 ServerRailContainer(model: model, sidebarWidth: sidebarWidth)
-                .environment(\.reducesSidebarMotion, !model.animates(.sidebar))
                 .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,
@@ -259,6 +258,7 @@ private struct ChatRootView: View {
                     updateStatus: { await model.updateStatus($0) }
                 )
             }
+            .environment(\.reducesSidebarMotion, !model.animates(.sidebar))
             .background {
                 NativeSidebarAnimation(snaps: !model.animates(.sidebar)).frame(width: 0, height: 0)
             }
