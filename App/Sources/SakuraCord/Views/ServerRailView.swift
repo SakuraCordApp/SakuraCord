@@ -164,6 +164,7 @@ struct ServerRailView: View {
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
         }
+        .onScrollPhaseChange { _, phase in drag.isScrolling = phase.isScrolling }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
         // Scrolled icons must not draw beneath the window's traffic lights.
@@ -331,7 +332,7 @@ private struct ReadAllServersButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .accessibilityIdentifier("read-all-servers")
     }
 }
@@ -377,7 +378,7 @@ private struct DirectMessageRailButton: View {
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }
@@ -611,7 +612,7 @@ struct GuildRailButton: View {
             isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
         .onScrollVisibilityChange(threshold: 0.01) { iconIsVisible = $0 }
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }
@@ -678,7 +679,7 @@ private struct HomeRailButton: View {
         }
         .buttonStyle(ServerRailButtonStyle())
         .accessibilityLabel("Direct Messages")
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .help("Direct Messages")
     }
 }
@@ -752,6 +753,25 @@ extension EnvironmentValues {
     @Entry var serverRailMentionBadgesInOverlay = false
     @Entry var serverRailFolderIndicatorsInOverlay = false
     @Entry var serverRailIsDragPreview = false
+}
+
+extension View {
+    /// Hover for a server rail row, which ignores the pointer arriving over
+    /// it while the rail scrolls.
+    func onServerRailHover(perform action: @escaping (Bool) -> Void) -> some View {
+        modifier(ServerRailHover(action: action))
+    }
+}
+
+private struct ServerRailHover: ViewModifier {
+    let action: (Bool) -> Void
+    @Environment(ServerRailDragController.self) private var drag
+
+    func body(content: Content) -> some View {
+        content.onModalHover { isInside in
+            if !isInside || !drag.isScrolling { action(isInside) }
+        }
+    }
 }
 
 /// Rail selection is drawn by the indicator; pressing must not tint the icon.

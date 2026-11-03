@@ -150,6 +150,9 @@ final class ServerRailDragController {
     /// A drag ends with a mouse-up that the row's button would otherwise
     /// treat as a click.
     @ObservationIgnored private(set) var swallowsClick = false
+    /// While the rail scrolls, rows passing under a resting pointer do not
+    /// take hover; following it re-rendered every row the scroll carried by.
+    @ObservationIgnored var isScrolling = false
 
     var isTracking: Bool { draggedID != nil || flight != nil }
 

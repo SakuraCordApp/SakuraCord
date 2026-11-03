@@ -119,7 +119,9 @@ struct ServerFolderRailView: View {
         .environment(\.serverRailMentionBadgesInOverlay, true)
         .onContinuousHover { phase in
             switch phase {
-            case .active(let location): pointerLocation = inputAllowed ? location : nil
+            case .active(let location):
+                let location = inputAllowed && !drag.isScrolling ? location : nil
+                if pointerLocation != location { pointerLocation = location }
             case .ended: pointerLocation = nil
             }
         }
@@ -385,9 +387,7 @@ struct ServerFolderRailHeader: View {
             (isPointerOverHeader ?? isHovering) ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
         .onScrollVisibilityChange(threshold: 0.01) { iconIsVisible = $0 }
-        .onModalHover {
-            isHovering = $0
-        }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
     }
 
