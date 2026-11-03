@@ -1,5 +1,19 @@
 import SakuraCordModels
 
+/// Resumes a benchmark run exactly once, from its last frame or its deadline.
+@MainActor
+final class ForumBenchmarkCompletion {
+    var continuation: CheckedContinuation<Void, Never>?
+    var deadline: Task<Void, Never>?
+
+    func finish() {
+        deadline?.cancel()
+        deadline = nil
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 #if DEBUG
 import AppKit
 import OSLog
@@ -103,20 +117,6 @@ struct ForumFrameTimingSampler {
             hitchCount: sorted.count { $0 > nominalInterval * 1.5 },
             durationSeconds: duration
         )
-    }
-}
-
-/// Resumes a benchmark run exactly once, from its last frame or its deadline.
-@MainActor
-private final class ForumBenchmarkCompletion {
-    var continuation: CheckedContinuation<Void, Never>?
-    var deadline: Task<Void, Never>?
-
-    func finish() {
-        deadline?.cancel()
-        deadline = nil
-        continuation?.resume()
-        continuation = nil
     }
 }
 

@@ -241,9 +241,6 @@ private struct ChatRootView: View {
                     guild: selectedGuild,
                     channels: model.visibleChannels,
                     channelGroups: model.visibleChannelGroups,
-                    unreadCategoryIDs: selectedGuild.map {
-                        model.unreadCategoryIDsByGuild[$0.id] ?? []
-                    } ?? [],
                     selection: $model.channelSidebarSelection,
                     currentUser: model.currentUser,
                     connectionState: model.connectionState,

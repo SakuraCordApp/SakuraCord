@@ -31,6 +31,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
     let runsPinsPerformanceAutoScroll: Bool
     /// A 1,000-friend list, presence churn and a scroll and section-switch benchmark.
     let runsFriendsPerformanceBenchmark: Bool
+    /// Mentions arriving in other servers while main-thread time is measured.
+    let runsUnreadChurnBenchmark: Bool
 #if SAKURACORD_MOTION_BENCHMARK
     /// Fixture threads opened, closed and widened while every frame is recorded.
     let runsSideChatMotionBenchmark: Bool
@@ -73,7 +75,8 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             runsMemberListPerformanceAutoScroll = false
         #endif
         includesSignInFixture = arguments.contains("--offline-sign-in")
-        includesLongServerList = arguments.contains("--offline-long-server-list")
+        runsUnreadChurnBenchmark = arguments.contains("--offline-unread-churn")
+        includesLongServerList = arguments.contains("--offline-long-server-list") || runsUnreadChurnBenchmark
         runsForumPerformanceAutoScroll =
             arguments.contains("--offline-forum-performance-autoscroll")
             || arguments.contains("--offline-forum-gallery-resize")
@@ -128,7 +131,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             "--offline-chat-files-performance", "--offline-chat-files-performance-autoscroll",
             "--offline-chat-files-performance-open",
             "--offline-pins-performance-autoscroll",
-            "--offline-incoming-private-call", "--offline-friends-performance",
+            "--offline-incoming-private-call", "--offline-friends-performance", "--offline-unread-churn",
         ]
         mode = isMotionBenchmarkLaunch || arguments.contains(where: testingFlags.contains) ? .offlineTesting : .normal
     }
@@ -139,6 +142,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || runsForumPerformanceAutoScroll
             || runsPinsPerformanceAutoScroll
             || runsFriendsPerformanceBenchmark
+            || runsUnreadChurnBenchmark
             || runsMemberListPerformanceAutoScroll
             || runsAuthenticatedNavigationBenchmark
             || runsAuthenticatedAccountSwitchBenchmark
