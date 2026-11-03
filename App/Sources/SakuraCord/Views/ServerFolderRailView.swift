@@ -95,14 +95,10 @@ struct ServerFolderRailView: View {
                         height: isExpanded ? max(0, geometry.size.height - verticalInset * 2) : InterfaceScale.metric(ServerFolderRailMetrics.containerSize)
                     )
                     .overlay(alignment: .bottomTrailing) {
-                        if entry.mentionCount > 0 {
-                            ServerRailMentionBadge(count: entry.mentionCount)
-                                .padding(InterfaceScale.metric(2))
-                                .background(.black, in: Capsule())
-                                .offset(x: InterfaceScale.metric(3), y: InterfaceScale.metric(3))
-                                .blendMode(.destinationOut)
-                                .opacity(isExpanded ? 0 : 1)
-                        }
+                        ServerRailMentionBadge(count: entry.mentionCount, isCutout: true)
+                            .offset(x: InterfaceScale.metric(3), y: InterfaceScale.metric(3))
+                            .blendMode(.destinationOut)
+                            .opacity(isExpanded ? 0 : 1)
                     }
                     .compositingGroup()
                     .offset(
@@ -178,7 +174,7 @@ struct ServerFolderRailView: View {
     private func folderMentionBadges(_ anchors: [GuildID: Anchor<CGRect>]) -> some View {
         GeometryReader { geometry in
             ForEach(entry.guildEntries) { guildEntry in
-                if let anchor = anchors[guildEntry.id], let guild = guildEntry.presentation?.guild, guild.mentionCount > 0 {
+                if let anchor = anchors[guildEntry.id], let guild = guildEntry.presentation?.guild {
                     let bounds = geometry[anchor]
                     let hidesBadge = drag.draggedID == entry.id || drag.flight?.id == entry.id
                         || drag.draggedID == .guild(guild.id) || drag.flight?.id == .guild(guild.id)
@@ -192,7 +188,7 @@ struct ServerFolderRailView: View {
                         .position(x: bounds.maxX + InterfaceScale.metric(5), y: bounds.maxY + InterfaceScale.metric(5))
                 }
             }
-            if entry.mentionCount > 0, !isExpanded {
+            if !isExpanded {
                 let mentionedIndex = entry.guildEntries.firstIndex { ($0.presentation?.guild.mentionCount ?? 0) > 0 } ?? 0
                 let badgeTravel = ServerFolderRailMetrics.firstGuildBadgeY - ServerFolderRailMetrics.collapsedBadgeY
                     + CGFloat(mentionedIndex) * ServerFolderRailMetrics.guildStride
@@ -238,14 +234,10 @@ struct ServerFolderRailView: View {
                             )
                     }
                     .overlay(alignment: .bottomTrailing) {
-                        if guild.mentionCount > 0 {
-                            ServerRailMentionBadge(count: guild.mentionCount)
-                                .padding(InterfaceScale.metric(2))
-                                .background(.black, in: Capsule())
-                                .offset(x: InterfaceScale.metric(7), y: InterfaceScale.metric(7))
-                                .blendMode(.destinationOut)
-                                .opacity(isExpanded ? 1 : 0)
-                        }
+                        ServerRailMentionBadge(count: guild.mentionCount, isCutout: true)
+                            .offset(x: InterfaceScale.metric(7), y: InterfaceScale.metric(7))
+                            .blendMode(.destinationOut)
+                            .opacity(isExpanded ? 1 : 0)
                     }
                     .compositingGroup()
                     .frame(width: bounds.width, height: bounds.height)
@@ -257,15 +249,11 @@ struct ServerFolderRailView: View {
 
         }
         .overlay(alignment: .topLeading) {
-            if entry.mentionCount > 0 {
-                ServerRailMentionBadge(count: entry.mentionCount)
-                    .padding(InterfaceScale.metric(2))
-                    .background(.black, in: Capsule())
-                    .frame(width: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), height: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), alignment: .bottomTrailing)
-                    .offset(x: InterfaceScale.metric(11), y: InterfaceScale.metric(4))
-                    .blendMode(.destinationOut)
-                    .opacity(isExpanded ? 0 : 1)
-            }
+            ServerRailMentionBadge(count: entry.mentionCount, isCutout: true)
+                .frame(width: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), height: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), alignment: .bottomTrailing)
+                .offset(x: InterfaceScale.metric(11), y: InterfaceScale.metric(4))
+                .blendMode(.destinationOut)
+                .opacity(isExpanded ? 0 : 1)
         }
         .compositingGroup()
         .opacity(collapsedSourceOpacity)

@@ -395,40 +395,52 @@ struct ServerRailBadgedIcon<Icon: View>: View {
     }
 
     var body: some View {
-        if mentionCount > 0 {
-            icon
-                .overlay(alignment: .bottomTrailing) {
+        // One structure with or without a badge, so the icon keeps its
+        // identity while a badge comes and goes.
+        icon
+            .overlay(alignment: .bottomTrailing) {
+                ServerRailMentionBadge(count: mentionCount, isCutout: true)
+                    .offset(x: InterfaceScale.metric(badgeOffset + 2), y: InterfaceScale.metric(badgeOffset + 2))
+                    .blendMode(.destinationOut)
+                    .accessibilityHidden(true)
+            }
+            .compositingGroup()
+            .overlay(alignment: .bottomTrailing) {
+                ServerRailMentionBadge(count: mentionCount)
+                    .opacity(drawsBadgeInOverlay ? 0 : 1)
+                    .offset(x: InterfaceScale.metric(badgeOffset), y: InterfaceScale.metric(badgeOffset))
+            }
+    }
+}
+
+/// A rail icon's mention count, empty at zero. A cutout is the badge's
+/// slightly larger silhouette, which `.destinationOut` cuts from the icon
+/// behind the badge; both run the same motion, so they stay in step.
+struct ServerRailMentionBadge: View {
+    let count: Int
+    var isCutout = false
+
+    var body: some View {
+        ZStack {
+            if count > 0 {
+                let badge = Text(count, format: .number)
+                    .font(.interfaceSystem(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText(value: Double(count)))
+                    .padding(.horizontal, InterfaceScale.metric(5))
+                    .frame(minWidth: InterfaceScale.metric(18), minHeight: InterfaceScale.metric(18))
+                    .background(Color(hex: MentionRed.hex), in: Capsule())
+                if isCutout {
                     badge
                         .padding(InterfaceScale.metric(2))
                         .background(.black, in: Capsule())
-                        .offset(x: InterfaceScale.metric(badgeOffset + 2), y: InterfaceScale.metric(badgeOffset + 2))
-                        .blendMode(.destinationOut)
-                        .accessibilityHidden(true)
+                        .transition(MentionBadgeMotion.transition)
+                } else {
+                    badge.transition(MentionBadgeMotion.transition)
                 }
-                .compositingGroup()
-                .overlay(alignment: .bottomTrailing) {
-                    badge
-                        .opacity(drawsBadgeInOverlay ? 0 : 1)
-                        .offset(x: InterfaceScale.metric(badgeOffset), y: InterfaceScale.metric(badgeOffset))
-                }
-        } else {
-            icon
+            }
         }
-    }
-
-    private var badge: some View { ServerRailMentionBadge(count: mentionCount) }
-}
-
-struct ServerRailMentionBadge: View {
-    let count: Int
-
-    var body: some View {
-        Text(count, format: .number)
-            .font(.interfaceSystem(size: 10, weight: .bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, InterfaceScale.metric(5))
-            .frame(minWidth: InterfaceScale.metric(18), minHeight: InterfaceScale.metric(18))
-            .background(Color(hex: 0xF23F43), in: Capsule())
+        .mentionBadgeMotion(count)
     }
 }
 
