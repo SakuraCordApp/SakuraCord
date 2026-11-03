@@ -450,6 +450,9 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             reconfigureRealizedExcerpts()
         }
         let anchor = restoring ?? (transition == .none && !scrollsToTop ? scrollAnchor() : nil)
+        let previousColumns = layoutState?.columns
+        let previousFrames = cards.mapValues(\.frame)
+        let previousScrollY = scrollView.contentView.bounds.minY
         let counter = titleCounter
         let signpost = AppPerformanceSignposts.signposter.beginInterval("ForumBoardLayout")
         let newLayout = ForumBoardLayout.make(
@@ -479,6 +482,14 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         // Geometry changed under the same cards: rebuild settled state too.
         realizedRange = nil
         refreshVisibleCards(transition: transition)
+        if widthChanged, previousColumns.map({ $0 != newLayout.columns }) == true {
+            // Cards change slots: each glides from where it was on screen.
+            let scrollShift = scrollView.contentView.bounds.minY - previousScrollY
+            for (id, card) in cards {
+                guard let oldFrame = previousFrames[id] else { continue }
+                animateReflow(card, from: oldFrame.offsetBy(dx: 0, dy: scrollShift))
+            }
+        }
         window?.invalidateCursorRects(for: self)
         // A page that leaves the end of the board on screen asks for the next.
         requestNextPageIfNeeded()

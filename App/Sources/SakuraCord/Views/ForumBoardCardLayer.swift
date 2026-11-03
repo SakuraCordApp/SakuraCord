@@ -63,6 +63,11 @@ final class ForumBoardCard {
         }
     }
 
+    /// The layers that fill the card, which a resize moves together.
+    var boundsLayers: [CALayer] {
+        [chrome, content, shimmerMask] + (shimmer.map { [$0.layer] } ?? [])
+    }
+
     func configure(kind: Kind, cornerRadius: CGFloat) {
         self.kind = kind
         chrome.cornerRadius = cornerRadius
