@@ -344,11 +344,10 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let swapsBoard = !isFirstPopulation && (queryChanged || modeChanged)
         if swapsBoard {
             crossFadeBoard()
-            // A move or entrance still running from a live update would carry
+            // Motion still running from a live update or a resize would carry
             // its card across the new board after the fade.
             for card in cards.values {
-                card.layer.removeAnimation(forKey: "move")
-                card.layer.removeAnimation(forKey: "entrance")
+                card.layer.removeAllAnimations()
             }
         }
         drawsArrivalsNow = swapsBoard
@@ -450,9 +449,6 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             reconfigureRealizedExcerpts()
         }
         let anchor = restoring ?? (transition == .none && !scrollsToTop ? scrollAnchor() : nil)
-        let previousColumns = layoutState?.columns
-        let previousFrames = cards.mapValues(\.frame)
-        let previousScrollY = scrollView.contentView.bounds.minY
         let counter = titleCounter
         let signpost = AppPerformanceSignposts.signposter.beginInterval("ForumBoardLayout")
         let newLayout = ForumBoardLayout.make(
@@ -464,6 +460,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         )
         AppPerformanceSignposts.signposter.endInterval("ForumBoardLayout", signpost)
         let widthChanged = abs(width - lastLayoutWidth) > 0.5
+        // A width change that alters the column count moves cards to new
+        // slots; those realized now glide there from where they are.
+        let reflowingFrames = widthChanged && layoutState.map { $0.columns != newLayout.columns } == true
+            ? cards.mapValues(\.frame) : [:]
+        let previousScrollY = scrollView.contentView.bounds.minY
         lastLayoutWidth = width
         layoutState = newLayout
         if widthChanged { regions.removeAll() }
@@ -481,14 +482,15 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         if transition != .reflow { cancelExits() }
         // Geometry changed under the same cards: rebuild settled state too.
         realizedRange = nil
-        refreshVisibleCards(transition: transition)
-        if widthChanged, previousColumns.map({ $0 != newLayout.columns }) == true {
-            // Cards change slots: each glides from where it was on screen.
-            let scrollShift = scrollView.contentView.bounds.minY - previousScrollY
-            for (id, card) in cards {
-                guard let oldFrame = previousFrames[id] else { continue }
-                animateReflow(card, from: oldFrame.offsetBy(dx: 0, dy: scrollShift))
-            }
+        // Gliding cards stay realized at their destinations, even past the
+        // viewport, so none vanishes before its neighbours arrive.
+        refreshVisibleCards(
+            transition: transition,
+            alsoRealizing: reflowingFrames.keys.reduce(CGRect.null) { $0.union(newLayout.entry(for: $1)?.frame ?? .null) }
+        )
+        let scrollShift = scrollView.contentView.bounds.minY - previousScrollY
+        for (id, oldFrame) in reflowingFrames {
+            if let card = cards[id] { animateReflow(card, from: oldFrame.offsetBy(dx: 0, dy: scrollShift)) }
         }
         window?.invalidateCursorRects(for: self)
         // A page that leaves the end of the board on screen asks for the next.
@@ -531,10 +533,10 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         return visible.insetBy(dx: 0, dy: -overscan)
     }
 
-    private func refreshVisibleCards(transition: ForumBoardTransition) {
+    private func refreshVisibleCards(transition: ForumBoardTransition, alsoRealizing extra: CGRect = .null) {
         guard let layoutState else { return }
         let visible = visibleRect
-        let realized = layoutState.entries(intersecting: realizationRect(for: visible))
+        let realized = layoutState.entries(intersecting: realizationRect(for: visible).union(extra))
         // Scrolling within the same entries changes nothing.
         guard transition != .none || realized.indices != realizedRange else { return }
         realizedRange = realized.indices

@@ -26,46 +26,32 @@ extension ForumBoardView {
             card.layer.add(fade, forKey: "move")
             return
         }
-        let spring = CASpringAnimation(keyPath: "position")
+        let spring = Self.spring("position")
         spring.fromValue = NSValue(point: CGPoint(
             x: oldFrame.minX + oldFrame.width * card.layer.anchorPoint.x,
             y: oldFrame.minY + oldFrame.height * card.layer.anchorPoint.y
         ))
         spring.toValue = NSValue(point: card.layer.position)
-        spring.damping = 26
-        spring.stiffness = 260
-        spring.mass = 1
-        spring.duration = min(spring.settlingDuration, 0.55)
         card.layer.add(spring, forKey: "move")
     }
 
     /// A resize that changes the gallery's column count moves cards to new
-    /// slots and sizes. The motion is additive, an offset from the card's
-    /// frame decaying to zero, so a resize still under way keeps moving the
-    /// frame without the card jumping when its motion ends.
+    /// slots. Each glides from where it was, already at its new size so its
+    /// bitmap fits. The motion is additive, an offset decaying to zero, so a
+    /// resize still under way keeps moving the frame without a jump when the
+    /// motion ends.
     func animateReflow(_ card: ForumBoardCard, from oldFrame: CGRect) {
         let frame = card.frame
-        guard oldFrame != frame, !reducesMotion else { return }
-        card.layer.add(
-            Self.reflowSpring("position", from: NSValue(point: CGPoint(x: oldFrame.minX - frame.minX, y: oldFrame.minY - frame.minY))),
-            forKey: nil
-        )
-        let sizeChange = CGSize(width: oldFrame.width - frame.width, height: oldFrame.height - frame.height)
-        guard sizeChange != .zero else { return }
-        for layer in card.boundsLayers {
-            layer.add(Self.reflowSpring("bounds.size", from: NSValue(size: sizeChange)), forKey: nil)
-            layer.add(
-                Self.reflowSpring("position", from: NSValue(point: CGPoint(x: sizeChange.width / 2, y: sizeChange.height / 2))),
-                forKey: nil
-            )
-        }
+        guard oldFrame.origin != frame.origin, !reducesMotion else { return }
+        let spring = Self.spring("position")
+        spring.isAdditive = true
+        spring.fromValue = NSValue(point: CGPoint(x: oldFrame.minX - frame.minX, y: oldFrame.minY - frame.minY))
+        spring.toValue = NSValue(point: .zero)
+        card.layer.add(spring, forKey: nil)
     }
 
-    private static func reflowSpring(_ keyPath: String, from offset: NSValue) -> CASpringAnimation {
+    private static func spring(_ keyPath: String) -> CASpringAnimation {
         let spring = CASpringAnimation(keyPath: keyPath)
-        spring.isAdditive = true
-        spring.fromValue = offset
-        spring.toValue = keyPath == "bounds.size" ? NSValue(size: .zero) : NSValue(point: .zero)
         spring.damping = 26
         spring.stiffness = 260
         spring.mass = 1
