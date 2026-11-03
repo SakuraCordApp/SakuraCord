@@ -18,6 +18,8 @@ final class EmbeddedActivityStore {
         var location: EmbeddedActivityLocation
         var instance: EmbeddedActivityInstance?
         var phase: Phase
+        /// Tells this launch's late results apart from a newer one in the same place.
+        let launchID = UUID()
     }
 
     /// A question the Activity's host must ask before acting for it.
@@ -42,6 +44,8 @@ final class EmbeddedActivityStore {
     @ObservationIgnored var host: EmbeddedActivityHost?
     @ObservationIgnored var gatewaySessionID: String?
     @ObservationIgnored var launchTimeout: Task<Void, Never>?
+    /// Leaves still on their way to Discord, by composite instance ID.
+    @ObservationIgnored var pendingLeaves: [String: Task<Void, Never>] = [:]
 
     func upsert(_ instance: EmbeddedActivityInstance) {
         instances[instance.compositeInstanceID] = instance.participants.isEmpty ? nil : instance
@@ -88,6 +92,7 @@ final class EmbeddedActivityStore {
         shelves = [:]
         shelfError = nil
         gatewaySessionID = nil
+        pendingLeaves = [:]
     }
 }
 
@@ -122,26 +127,30 @@ extension AppModel {
             await joinVoice(channel)
             guard isCurrentAccountSession(account), activeVoiceChannel?.id == channel.id else { return }
         }
+        // A rejoin must not race the leave Discord has not yet seen.
+        for leave in store.pendingLeaves.values { await leave.value }
         let location = EmbeddedActivityLocation.of(channel)
-        store.session = .init(application: application, channel: channel, location: location, phase: .launching)
+        let session = EmbeddedActivityStore.Session(application: application, channel: channel, location: location, phase: .launching)
+        store.session = session
         do {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
             try await account.provider.launchEmbeddedActivity(application.id, channelID: channel.id, guildID: channel.guildID)
         } catch {
             // The instance update can arrive before a lost launch response.
-            guard isCurrentAccountSession(account), store.session?.location == location,
+            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID,
                   store.session?.instance == nil else { return }
             store.session?.phase = .failed(error.localizedDescription)
             return
         }
-        guard isCurrentAccountSession(account), store.session?.location == location else { return }
+        guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
         if let instance = store.instances.values.first(where: { isOwnInstance($0, application: application.id, location: location) }) {
             consumeEmbeddedActivity(instance)
         }
         store.launchTimeout?.cancel()
         store.launchTimeout = Task { @MainActor [weak store] in
             try? await Task.sleep(for: .seconds(20))
-            guard !Task.isCancelled, store?.session?.phase == .launching, store?.session?.location == location else { return }
+            guard !Task.isCancelled, store?.session?.phase == .launching, store?.session?.launchID == session.launchID
+            else { return }
             store?.session?.phase = .failed("\(application.name) did not start. Try again.")
         }
     }
@@ -156,8 +165,10 @@ extension AppModel {
     }
 
     private func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
-        startAccountChildTask(account: accountSession()) { _, account in
+        let id = instance.compositeInstanceID
+        embeddedActivities.pendingLeaves[id] = startAccountChildTask(account: accountSession()) { model, account in
             try? await account.provider.leaveEmbeddedActivity(instance)
+            model.embeddedActivities.pendingLeaves[id] = nil
         }
     }
 
@@ -196,6 +207,12 @@ extension AppModel {
         case .embeddedActivitiesReceived(let instances):
             embeddedActivities.replaceInstances(instances)
             instances.forEach(consumeEmbeddedActivity)
+            // The snapshot lists every guild instance; one that ended while
+            // disconnected is simply absent.
+            if let hosted = embeddedActivities.session?.instance, hosted.location.guildID != nil,
+               !instances.contains(where: { $0.compositeInstanceID == hosted.compositeInstanceID }) {
+                embeddedActivities.endSession()
+            }
         default:
             return
         }

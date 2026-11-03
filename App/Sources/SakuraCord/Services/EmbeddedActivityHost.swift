@@ -227,6 +227,13 @@ final class EmbeddedActivityHost: NSObject {
             let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name) && !isStopped
             if opened { NSWorkspace.shared.open(url) }
             reply(command, nonce, ["opened": opened])
+        case "OPEN_INVITE_DIALOG":
+            guard let guild = instance.location.guildID.flatMap({ model.serverRailGuildsByID[$0] }) else {
+                return fail(command, nonce, .invalidChannel, "Invites are unavailable in this channel")
+            }
+            // The invite sheet uses the selected channel: the voice channel the Activity runs in.
+            model.presentServerInviteCreation(for: guild)
+            reply(command, nonce, nil)
         case "REQUEST_PROXY_TICKET_REFRESH":
             do {
                 let ticket = try await model.accountSession().provider.embeddedActivityProxyTicket(
