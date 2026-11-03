@@ -177,6 +177,8 @@ struct SelectableMessageTextView: NSViewRepresentable {
     var isSelectable = true
     var foregroundColor: NSColor?
     let mentionPresentations: [String: MentionPresentation]
+    var revealedSpoilerLocations: Set<Int> = []
+    var onRevealSpoiler: (Int) -> Void = { _ in }
     var onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }
     var onURLClick: (URL) -> Bool = { _ in false }
 
@@ -206,6 +208,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
+        textView.onRevealSpoiler = onRevealSpoiler
         textView.model = model
         return textView
     }
@@ -213,6 +216,7 @@ struct SelectableMessageTextView: NSViewRepresentable {
     func updateNSView(_ textView: RichMessageNSTextView, context: Context) {
         textView.onMentionClick = onMentionClick
         textView.onURLClick = onURLClick
+        textView.onRevealSpoiler = onRevealSpoiler
         textView.model = model
         textView.isSelectable = isSelectable
         textView.applySakuraCordTextSelectionAppearance()
@@ -241,7 +245,8 @@ struct SelectableMessageTextView: NSViewRepresentable {
             maximumNumberOfLines: maximumNumberOfLines,
             isSelectable: isSelectable,
             foregroundColor: foregroundColor.map(String.init(describing:)),
-            mentionPresentations: currentMentions
+            mentionPresentations: currentMentions,
+            revealedSpoilerLocations: revealedSpoilerLocations
         )
         guard textView.renderSignature != signature else { return }
         textView.clearHoveredLink()
@@ -263,7 +268,10 @@ struct SelectableMessageTextView: NSViewRepresentable {
                 range: NSRange(location: 0, length: rendered.length)
             )
         }
-        RichMessageAttributedText.concealSpoilers(in: rendered)
+        RichMessageAttributedText.concealSpoilers(
+            in: rendered,
+            revealedLocations: revealedSpoilerLocations
+        )
         textView.textStorage?.setAttributedString(rendered)
         let validRanges = selectedRanges.filter { NSMaxRange($0.rangeValue) <= rendered.length }
         if !validRanges.isEmpty { textView.selectedRanges = validRanges }
@@ -369,6 +377,7 @@ private struct RichMessageRenderSignature: Equatable {
     let isSelectable: Bool
     let foregroundColor: String?
     let mentionPresentations: [String: MentionPresentation]
+    let revealedSpoilerLocations: Set<Int>
 }
 
 nonisolated enum RichMessageAttributedText {
@@ -516,16 +525,21 @@ nonisolated enum RichMessageAttributedText {
         return output
     }
 
-    /// Text views cannot reveal spoilers, so every spoiler stays concealed:
-    /// its glyphs, link styling, and inline attachments are hidden behind a
-    /// spoiler background.
+    /// Spoilers are concealed behind a background cover unless revealed by the user.
     @MainActor
-    static func concealSpoilers(in value: NSMutableAttributedString) {
+    static func concealSpoilers(
+        in value: NSMutableAttributedString,
+        revealedLocations: Set<Int> = []
+    ) {
         value.enumerateAttribute(
             .discordMarkdownSpoiler,
             in: NSRange(location: 0, length: value.length)
         ) { rawValue, range, _ in
             guard rawValue != nil else { return }
+            if revealedLocations.contains(range.location) {
+                value.removeAttribute(.discordMarkdownSpoiler, range: range)
+                return
+            }
             NativeTimelineSpoilerAppearance.concealText(in: value, range: range)
             value.removeAttribute(.link, range: range)
             value.enumerateAttribute(.attachment, in: range) { rawAttachment, attachmentRange, _ in
@@ -636,6 +650,7 @@ final class RichMessageNSTextView: NSTextView {
     weak var model: AppModel?
     var onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void = { _, _ in }
     var onURLClick: (URL) -> Bool = { _ in false }
+    var onRevealSpoiler: (Int) -> Void = { _ in }
     private var hoveredMentionLocation: Int?
     private var hoveredLinkRange: NSRange?
     private var mentionTrackingArea: NSTrackingArea?
@@ -742,7 +757,7 @@ final class RichMessageNSTextView: NSTextView {
     }
 
     private func updateCursor(at point: NSPoint) {
-        if mentionAttachment(at: point) == nil, link(at: point) == nil {
+        if mentionAttachment(at: point) == nil, link(at: point) == nil, hiddenSpoiler(at: point) == nil {
             NSCursor.iBeam.set()
         } else {
             NSCursor.pointingHand.set()
@@ -751,15 +766,24 @@ final class RichMessageNSTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         claimSelectionOwnership()
-        if event.modifierFlags.isDisjoint(with: [.command, .shift, .option, .control]),
-           let (index, attachment) = mentionAttachment(at: convert(event.locationInWindow, from: nil))
-        {
-            let rawToken = attachment.presentation.rawToken
-            guard let anchor = mentionPopoverAnchor(at: index, rawToken: rawToken) else { return }
-            onMentionClick(attachment.presentation, anchor)
-            return
+        let point = convert(event.locationInWindow, from: nil)
+        if event.modifierFlags.isDisjoint(with: [.command, .shift, .option, .control]) {
+            if let spoiler = hiddenSpoiler(at: point) {
+                onRevealSpoiler(spoiler.location)
+                return
+            }
+            if let (index, attachment) = mentionAttachment(at: point) {
+                let rawToken = attachment.presentation.rawToken
+                guard let anchor = mentionPopoverAnchor(at: index, rawToken: rawToken) else { return }
+                onMentionClick(attachment.presentation, anchor)
+                return
+            }
         }
         super.mouseDown(with: event)
+    }
+
+    private func hiddenSpoiler(at point: NSPoint) -> NSRange? {
+        SelectableTextSpoilerGeometry.hiddenSpoilerRange(at: point, in: self)
     }
 
     private func mentionAttachment(at point: NSPoint) -> (Int, MentionTextAttachment)? {

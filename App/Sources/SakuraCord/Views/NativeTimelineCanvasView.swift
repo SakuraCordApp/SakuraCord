@@ -504,14 +504,16 @@ enum NativeTimelineRowPainter {
     static func selectionOverlayImage(
         _ box: NativeTimelineAttributedTextBox,
         size: CGSize,
-        selectionRange: NSRange
+        selectionRange: NSRange,
+        revealedSpoilerLocations: Set<Int> = []
     ) -> NSImage {
         NSImage(size: size, flipped: true) { frame in
             attributedText(
                 box,
                 in: frame,
                 model: nil,
-                selectionRange: selectionRange
+                selectionRange: selectionRange,
+                revealedSpoilerLocations: revealedSpoilerLocations
             )
             return true
         }
@@ -597,7 +599,9 @@ enum NativeTimelineRowPainter {
             drawBeginning(
                 beginning,
                 layout: layout,
-                textSelection: textSelection
+                textSelection: textSelection,
+                revealedTextSpoilerState: revealedTextSpoilerState,
+                model: model
             )
         case let .loader(isLoading, kind):
             drawLoader(
@@ -731,7 +735,9 @@ enum NativeTimelineRowPainter {
     static func drawBeginning(
         _ beginning: NativeTimelineBeginning,
         layout rowLayout: NativeTimelineRowLayout,
-        textSelection: NativeTimelineTextSelection?
+        textSelection: NativeTimelineTextSelection?,
+        revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState = .init(),
+        model: AppModel? = nil
     ) {
         guard let layout = rowLayout.beginningLayout else { return }
         NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
@@ -789,24 +795,13 @@ enum NativeTimelineRowPainter {
                 lineBreakMode: .byWordWrapping
             )
         }
-        if selectedRegion == .beginningDescription,
-           let selectionRange = textSelection?.range
-        {
-            attributedText(
-                NativeTimelineBeginningText.description(beginning),
-                in: layout.descriptionFrame,
-                model: nil,
-                selectionRange: selectionRange
-            )
-        } else {
-            text(
-                beginning.description,
-                in: layout.descriptionFrame,
-                font: .interfacePreferredFont(forTextStyle: .body),
-                color: .secondaryLabelColor,
-                lineBreakMode: .byWordWrapping
-            )
-        }
+        attributedText(
+            layout.descriptionBox,
+            in: layout.descriptionFrame,
+            model: model,
+            selectionRange: selectedRegion == .beginningDescription ? textSelection?.range : nil,
+            revealedSpoilerLocations: revealedTextSpoilerState.locations(in: .beginningDescription)
+        )
         if let date = beginning.startedAt,
            let frame = layout.dateSeparatorFrame
         {

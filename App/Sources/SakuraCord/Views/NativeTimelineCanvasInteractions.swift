@@ -585,7 +585,7 @@ extension NativeTimelineCanvasView {
 
     func handleTextClick(
         in layout: NativeTimelineRowLayout,
-        message: Message,
+        message: Message?,
         point: CGPoint,
         rowIdentifier: NativeMessageTimelineItem.Identifier
     ) -> Bool {
@@ -712,12 +712,23 @@ extension NativeTimelineCanvasView {
                 }
             }
         }
+        if let beginning = layout.beginningLayout,
+           let hit = NativeTimelineTextHitTester.hit(
+               box: beginning.descriptionBox,
+               frame: beginning.descriptionFrame,
+               point: point
+           ), hit.mention != nil
+               || hit.url != nil
+               || hit.spoilerRange != nil
+        {
+            return TextPointerHit(hit: hit, region: .beginningDescription)
+        }
         return nil
     }
 
     func activateTextHit(
         _ hit: NativeTimelineTextHit,
-        message: Message,
+        message: Message?,
         rowIdentifier: NativeMessageTimelineItem.Identifier,
         region: NativeTimelineTextRegion,
         profileAnchor: CGRect? = nil
@@ -751,9 +762,11 @@ extension NativeTimelineCanvasView {
             return true
         }
         guard let url = hit.url else { return false }
-        let presentSystemProfile: ((User) -> Void)? = profileAnchor.map { anchor in
-            { [weak self] user in
-                self?.showMessageProfile(for: user, sourceMessage: message, anchor: anchor)
+        let presentSystemProfile: ((User) -> Void)? = profileAnchor.flatMap { anchor in
+            message.map { sourceMessage in
+                { [weak self] user in
+                    self?.showMessageProfile(for: user, sourceMessage: sourceMessage, anchor: anchor)
+                }
             }
         }
         return MessageLinkActivator.activate(
@@ -800,7 +813,7 @@ extension NativeTimelineCanvasView {
 
     func activateMention(
         _ mention: MentionPresentation,
-        message: Message,
+        message: Message?,
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
@@ -810,7 +823,8 @@ extension NativeTimelineCanvasView {
         case let .game(id):
             model.presentedProfileGame = model.gameMentions.gamesByID[id]
         case let .command(id, name):
-            model.startCommandMention(id: id, name: name, in: message.channelID)
+            guard let channelID = message?.channelID ?? model.selectedChannelID else { break }
+            model.startCommandMention(id: id, name: name, in: channelID)
         case let .user(id):
             let resolver = MessageMentionResolver(
                 model: model,
@@ -854,8 +868,16 @@ extension NativeTimelineCanvasView {
         let layout = layouts[index]
         let localFrame: CGRect?
         switch region {
-        case .beginningTitle, .beginningDescription:
+        case .beginningTitle:
             return nil
+        case .beginningDescription:
+            guard let beginning = layout.beginningLayout else { return nil }
+            localFrame = NativeTimelineTextHitTester.mentionAnchorFrame(
+                box: beginning.descriptionBox,
+                frame: beginning.descriptionFrame,
+                characterIndex: characterIndex,
+                rawToken: rawToken
+            )
         case .content:
             guard let value = layout.attributedContent,
                   let framesetter = layout.contentFramesetter,
@@ -953,9 +975,11 @@ extension NativeTimelineCanvasView {
     }
 
     func spoilerRevealStateDidChange(messageID: MessageID) {
-        guard let rowIndex = items.firstIndex(where: {
-            $0.messageID == messageID
-        }) else { return }
+        // A forum post's starter message shares the post's ID with the
+        // beginning row above it, so a message row takes precedence.
+        guard let rowIndex = items.firstIndex(where: { $0.messageID == messageID })
+            ?? items.firstIndex(where: { $0.beginning?.id.rawValue == messageID.rawValue })
+        else { return }
         let identifier = items[rowIndex].identifier
         visibleMediaProjection = nil
         mediaKeysByIdentifier[identifier] = nil

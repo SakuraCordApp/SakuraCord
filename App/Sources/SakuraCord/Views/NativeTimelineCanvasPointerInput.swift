@@ -687,27 +687,31 @@ extension NativeTimelineCanvasView {
               let actions
         else { return }
         let item = items[index]
+        let layout = layouts[index]
         let local = CGPoint(
             x: point.x,
             y: point.y - displayedRowOrigin(at: index)
         )
         if case let .suppressedMessages(group) = item {
-            if layouts[index].suppressedHeader?.toggleFrame.contains(local) == true {
+            if layout.suppressedHeader?.toggleFrame.contains(local) == true {
                 toggleSuppressedGroup(group)
             }
             return
         }
         if case let .loader(isLoading, _) = item {
             if !isLoading,
-               layouts[index].loaderLayout?.controlFrame.contains(local)
+               layout.loaderLayout?.controlFrame.contains(local)
                     == true
             {
                 actions.loadEarlier()
             }
             return
         }
+        if case .beginning = item {
+            _ = handleTextClick(in: layout, message: nil, point: local, rowIdentifier: item.identifier)
+            return
+        }
         guard case let .message(row, _, _) = item else { return }
-        let layout = layouts[index]
         if handleComponentClick(
             in: layout,
             message: row.message,
@@ -993,7 +997,7 @@ extension NativeTimelineCanvasView {
 
     func showMentionProfile(
         for user: User,
-        sourceMessage: Message,
+        sourceMessage: Message?,
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
@@ -1014,12 +1018,12 @@ extension NativeTimelineCanvasView {
 
     func showMentionRole(
         _ roleID: RoleID,
-        sourceMessage: Message,
+        sourceMessage: Message?,
         anchor: StablePopoverAnchor
     ) {
         guard let model else { return }
         closeMessageProfilePopover()
-        let guildID = model.messagePresentationGuildID(for: sourceMessage)
+        let guildID = sourceMessage.flatMap { model.messagePresentationGuildID(for: $0) } ?? model.selectedGuildID
         model.showMembers(withRole: roleID, in: guildID)
         showMentionPopover(
             AnyView(
@@ -1287,7 +1291,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
               layouts.indices.contains(index),
-              case .message = items[index]
+              items[index].textOwnerID != nil
         else { return nil }
         for mention in mentionPointerRegions(at: index)
         where mention.frame.contains(point) {
@@ -1323,7 +1327,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
               layouts.indices.contains(index),
-              items[index].messageID != nil
+              items[index].textOwnerID != nil
         else { return nil }
         let local = CGPoint(
             x: point.x,
@@ -1347,7 +1351,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y),
               items.indices.contains(index),
               layouts.indices.contains(index),
-              items[index].messageID != nil
+              items[index].textOwnerID != nil
         else { return nil }
         let local = CGPoint(
             x: point.x,
@@ -1490,11 +1494,19 @@ extension NativeTimelineCanvasView {
             else { return nil }
             return .loader
         }
+        if case .beginning = item, let messageID = item.textOwnerID {
+            return textActivationTarget(
+                messageID: messageID,
+                itemIdentifier: item.identifier,
+                layout: layout,
+                point: local
+            )
+        }
         guard case let .message(row, _, _) = item else { return nil }
         let message = row.message
         return componentActivationTarget(message: message, layout: layout, point: local)
             ?? textActivationTarget(
-                message: message,
+                messageID: message.id,
                 itemIdentifier: item.identifier,
                 layout: layout,
                 point: local
@@ -1558,7 +1570,7 @@ extension NativeTimelineCanvasView {
     }
 
     private func textActivationTarget(
-        message: Message,
+        messageID: MessageID,
         itemIdentifier: NativeMessageTimelineItem.Identifier,
         layout: NativeTimelineRowLayout,
         point: CGPoint
@@ -1571,7 +1583,7 @@ extension NativeTimelineCanvasView {
                     rangeLocation: spoilerRange.location
                 ), !spoilerRevealStore.isTextRevealed(key) {
                     return .textSpoiler(
-                        message.id,
+                        messageID,
                         text.region,
                         rangeLocation: spoilerRange.location
                     )
@@ -1579,7 +1591,7 @@ extension NativeTimelineCanvasView {
             }
             if let mention = text.hit.mention, mention.isInteractive {
                 return .textMention(
-                    message.id,
+                    messageID,
                     text.region,
                     characterIndex: text.hit.characterIndex,
                     rawToken: mention.rawToken
@@ -1587,7 +1599,7 @@ extension NativeTimelineCanvasView {
             }
             if let url = text.hit.url {
                 return .textURL(
-                    message.id,
+                    messageID,
                     text.region,
                     characterIndex: text.hit.characterIndex,
                     url: url

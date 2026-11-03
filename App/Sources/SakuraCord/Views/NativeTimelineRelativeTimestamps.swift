@@ -3,8 +3,12 @@ import AppKit
 extension NativeMessageTimelineCoordinator {
     func updateTimestampObservation() {
         timestampSources = items.reduce(into: [:]) { sources, item in
-            guard let row = item.messageRow else { return }
-            let content = TimestampMentionPresentation.sources(in: row.message, replyContent: row.replyPreview?.content)
+            let content = if let row = item.messageRow {
+                TimestampMentionPresentation.sources(in: row.message, replyContent: row.replyPreview?.content)
+            } else {
+                // The beginning row shows the channel topic, which can hold timestamps too.
+                item.beginning?.topic.flatMap { TimestampMentionPresentation.tokens(in: $0).isEmpty ? nil : [$0] } ?? []
+            }
             guard !content.isEmpty else { return }
             sources[item.identifier] = content
         }
