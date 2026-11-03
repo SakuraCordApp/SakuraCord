@@ -80,8 +80,9 @@ extension NativeTimelineCanvasView {
                 textSelectionGesture = nil
             }
         }
-        // Rows laid out at another width no longer match the chips' frames.
-        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty,
+        // Rows laid out at another width no longer match the chips' frames
+        // or the fading pictures.
+        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty || !rowFades.isEmpty,
            abs(reactionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
             finishReactionTransitions()
         }
