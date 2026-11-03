@@ -171,13 +171,6 @@ nonisolated enum NativeTimelineAccessibilityPolicy {
         )
     }
 
-    static func showsMessageBody(
-        messageID: MessageID,
-        editingMessageID: MessageID?
-    ) -> Bool {
-        messageID != editingMessageID
-    }
-
     static func editingOverlayInsertionIndex(
         in rowIdentifiers: [NativeMessageTimelineItem.Identifier],
         editingItemIdentifier: NativeMessageTimelineItem.Identifier?

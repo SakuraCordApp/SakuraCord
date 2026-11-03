@@ -491,13 +491,6 @@ extension NativeTimelineCanvasView {
                 parent: element
             )
         )
-        guard NativeTimelineAccessibilityPolicy.showsMessageBody(
-            messageID: message.id,
-            editingMessageID: editingMessageID
-        ) else {
-            element.setAccessibilityChildren(children)
-            return element
-        }
         appendMessageBodyAccessibility(
             to: &children,
             message: message,
@@ -749,7 +742,8 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex,
                 parent: parent
             ))
-        } else if let frame = layout.contentFrame {
+        } else if let frame = layout.contentFrame, message.id != editingMessageID {
+            // While editing, the editor over the text reads it instead.
             let content = accessibilityMessageText(message)
             if !content.isEmpty {
                 children.append(accessibilityElement(

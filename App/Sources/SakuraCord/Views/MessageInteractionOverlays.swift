@@ -267,6 +267,8 @@ nonisolated enum MessageOutboxPresentation {
 @Observable
 final class NativeTimelineInlineEditDraft {
     var text: String
+    /// Saved, and waiting for the timeline to show it.
+    var isSaving = false
 
     init(text: String) {
         self.text = text
@@ -298,6 +300,7 @@ struct NativeTimelineEditingMessageContent: View {
             cancel: cancel,
             editorHeightDidChange: editorHeightDidChange
         )
+        .disabled(draft.isSaving)
     }
 }
 

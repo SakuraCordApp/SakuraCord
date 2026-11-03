@@ -1041,6 +1041,7 @@ extension NativeTimelineCanvasView {
         editing.item = items[index]
         editingRowScrollSnapshot = nil
         let draft = NativeTimelineInlineEditDraft(text: row.message.content)
+        editing.draft = draft
         let host = makeEditingHost(for: row, model: model, draft: draft)
         editingRowHost = host
         addSubview(host, positioned: .above, relativeTo: nil)
@@ -1074,7 +1075,6 @@ extension NativeTimelineCanvasView {
         model: AppModel,
         draft: NativeTimelineInlineEditDraft
     ) -> NativeTimelineEditingHost {
-        var host: NativeTimelineEditingHost?
         let root = NativeTimelineEditingMessageContent(
             model: model,
             message: row.message,
@@ -1086,13 +1086,12 @@ extension NativeTimelineCanvasView {
                 self?.endEditing(commit: nil)
             },
             editorHeightDidChange: { [weak self] height in
-                guard let self, let host, self.editingRowHost === host else { return }
+                guard let self, self.editingMessageID == row.id else { return }
                 self.editing.editorHeight = ceil(height)
                 self.relayoutEditingRow()
             }
         )
         let editingHost = NativeTimelineEditingHost(rootView: AnyView(root))
-        host = editingHost
         editingHost.setAccessibilityIdentifier("message-editing-row-\(row.id)")
         editingHost.fittingHeightDidChange = { [weak self, weak editingHost] _ in
             guard let self, self.editingRowHost === editingHost else { return }
@@ -1120,23 +1119,21 @@ extension NativeTimelineCanvasView {
     func reconcileEditingRow() {
         guard let messageID = editingMessageID else { return }
         if editingRowIndex == nil {
+            // A message deleted mid-edit, or mid-save, takes its editor with it.
             guard let index = items.firstIndex(where: { $0.messageID == messageID }) else {
-                endEditing(commit: nil)
-                return
+                return finishEditing(at: nil)
             }
             editingRowIndexCache = index
         }
         guard let index = editingRowIndex else { return }
-        if items[index] != editing.item {
-            // A saved edit has arrived; the row now draws what the editor showed.
-            if let committed = editing.committedContent, items[index].messageRow?.message.content == committed {
-                return finishEditing(at: index)
-            }
-            editing.item = items[index]
-            relayoutEditingRow()
-        } else {
-            positionEditingRow()
+        // A saved edit has arrived; the row now draws what the editor showed.
+        if let committed = editing.committedContent, items[index].messageRow?.message.content == committed {
+            return finishEditing(at: index)
         }
+        // The update may bring a new message or a new width; either changes
+        // the row around the editor.
+        editing.item = items[index]
+        relayoutEditingRow()
     }
 
     func relayoutEditingRow() {
@@ -1167,7 +1164,10 @@ extension NativeTimelineCanvasView {
               let index = editingRowIndex,
               let content = editing.layout?.contentFrame
         else { return }
-        let height = max(content.height, host.lastReportedFittingHeight)
+        // The row keeps at least the original text's height, which can be
+        // taller than the editor; only the host's own extra height is
+        // suggestions.
+        let height = host.lastReportedFittingHeight > 0 ? host.lastReportedFittingHeight : content.height
         let suggestionsHeight = editing.editorHeight > 0 ? max(0, height - editing.editorHeight) : 0
         let localFrame = CGRect(
             x: content.minX,
@@ -1215,7 +1215,7 @@ extension NativeTimelineCanvasView {
     /// moment.
     private func awaitEditedMessage(_ message: Message, value: String) {
         editing.committedContent = value
-        editingTextView?.isEditable = false
+        editing.draft?.isSaving = true
         editing.controlsHost?.removeFromSuperview()
         editing.controlsHost = nil
         actions?.edit(message, value)

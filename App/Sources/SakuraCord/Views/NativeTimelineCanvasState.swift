@@ -193,6 +193,7 @@ final class NativeTimelineEditingSession {
     /// The item `layout` was made from, so an update to the message relays it out.
     var item: NativeMessageTimelineItem?
     var editorHeight: CGFloat = 0
+    var draft: NativeTimelineInlineEditDraft?
     /// The saved text, while the timeline has yet to show it.
     var committedContent: String?
     var overlayLocalFrame: CGRect?
@@ -214,6 +215,7 @@ final class NativeTimelineEditingSession {
         item = nil
         editorHeight = 0
         committedContent = nil
+        draft = nil
         overlayLocalFrame = nil
         scrollSnapshot = nil
     }
