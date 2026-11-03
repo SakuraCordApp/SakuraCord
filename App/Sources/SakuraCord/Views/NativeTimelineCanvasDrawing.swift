@@ -844,6 +844,11 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// The scale the timeline draws row pictures at.
+    var rowBitmapScale: CGFloat {
+        window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+    }
+
     func drawTimelineRow(
         at index: Int,
         rowFrame: CGRect,
@@ -1062,7 +1067,7 @@ extension NativeTimelineCanvasView {
             estimatedBitmapCost: Self.estimatedBitmapCost(
                 width: rowFrame.width,
                 height: layouts[index].height,
-                scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+                scale: rowBitmapScale
             ),
             cacheCostLimit: Self.bitmapCostLimit
         )
@@ -1361,12 +1366,7 @@ extension NativeTimelineCanvasView {
             width: width,
             height: tileIndex < 0 ? layout.height : min(Self.bitmapTileHeight, layout.height - tileOrigin)
         )
-        let scale = max(
-            1,
-            window?.backingScaleFactor
-                ?? NSScreen.main?.backingScaleFactor
-                ?? 2
-        )
+        let scale = max(1, rowBitmapScale)
         let pixelWidth = max(1, Int(ceil(width * scale)))
         let pixelHeight = max(1, Int(ceil(size.height * scale)))
         guard let representation = NSBitmapImageRep(

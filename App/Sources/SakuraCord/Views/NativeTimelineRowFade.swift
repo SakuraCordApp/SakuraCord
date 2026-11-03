@@ -81,7 +81,7 @@ extension NativeTimelineCanvasView {
         // much for a fade, so it changes without one.
         guard layout.height <= Self.wholeRowBitmapMaximumHeight else { return nil }
         let size = NSSize(width: width, height: layout.height)
-        return rasterized(size: size) {
+        return NativeTimelineSendTransitionSnapshot.render(size: size, scale: rowBitmapScale) {
             NativeTimelineRowPainter.draw(
                 item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
                 isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
@@ -91,33 +91,6 @@ extension NativeTimelineCanvasView {
                 editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
-    }
-
-    /// A bitmap at the window's scale of what `draw` draws in a flipped
-    /// context of `size`, so the picture holds on to nothing it drew.
-    private func rasterized(size: NSSize, draw: () -> Void) -> NSImage? {
-        let scale = window?.backingScaleFactor ?? 2
-        guard size.height >= 1,
-              let representation = NSBitmapImageRep(
-                  bitmapDataPlanes: nil,
-                  pixelsWide: max(1, Int(ceil(size.width * scale))),
-                  pixelsHigh: max(1, Int(ceil(size.height * scale))),
-                  bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                  colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-              ),
-              let graphics = NSGraphicsContext(bitmapImageRep: representation)
-        else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        graphics.cgContext.scaleBy(x: scale, y: scale)
-        graphics.cgContext.translateBy(x: 0, y: size.height)
-        graphics.cgContext.scaleBy(x: 1, y: -1)
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: graphics.cgContext, flipped: true)
-        draw()
-        representation.size = size
-        let image = NSImage(size: size)
-        image.addRepresentation(representation)
-        return image
     }
 
     /// What a row shows partway through `running`: its old picture fading
@@ -130,7 +103,7 @@ extension NativeTimelineCanvasView {
             width: max(running.image.size.width, picture.size.width),
             height: max(running.image.size.height, picture.size.height)
         )
-        return rasterized(size: size) {
+        return NativeTimelineSendTransitionSnapshot.render(size: size, scale: rowBitmapScale) {
             running.image.draw(
                 in: CGRect(origin: .zero, size: running.image.size), from: .zero, operation: .sourceOver,
                 fraction: remaining, respectFlipped: true, hints: nil
