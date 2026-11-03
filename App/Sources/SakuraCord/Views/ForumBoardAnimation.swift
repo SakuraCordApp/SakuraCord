@@ -50,12 +50,14 @@ extension ForumBoardView {
         card.layer.add(spring, forKey: nil)
     }
 
+    static let glideDuration: CFTimeInterval = 0.55
+
     private static func spring(_ keyPath: String) -> CASpringAnimation {
         let spring = CASpringAnimation(keyPath: keyPath)
         spring.damping = 26
         spring.stiffness = 260
         spring.mass = 1
-        spring.duration = min(spring.settlingDuration, 0.55)
+        spring.duration = min(spring.settlingDuration, glideDuration)
         return spring
     }
 

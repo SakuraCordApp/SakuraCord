@@ -191,6 +191,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     var observationGeneration = 0
     private var minuteTimer: Timer?
     private var lastLayoutWidth: CGFloat = 0
+    /// Cards gliding to new slots after a column change, and when they land.
+    /// They stay realized at their destinations until then, and the pointer
+    /// waits for them, since hits use the destination frames.
+    private var glidingIDs = Set<ForumBoardItem.Identifier>()
+    var glideEndTime: CFTimeInterval = 0
     let menuBuilder = ForumPostMenuBuilder()
     var accessibilityProxies: [ForumBoardItem.Identifier: ForumBoardAccessibilityProxyView] = [:]
     /// A page request is in flight from this board; the model also guards.
@@ -482,12 +487,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         if transition != .reflow { cancelExits() }
         // Geometry changed under the same cards: rebuild settled state too.
         realizedRange = nil
-        // Gliding cards stay realized at their destinations, even past the
-        // viewport, so none vanishes before its neighbours arrive.
-        refreshVisibleCards(
-            transition: transition,
-            alsoRealizing: reflowingFrames.keys.reduce(CGRect.null) { $0.union(newLayout.entry(for: $1)?.frame ?? .null) }
-        )
+        if !reflowingFrames.isEmpty {
+            glidingIDs.formUnion(reflowingFrames.keys)
+            glideEndTime = CACurrentMediaTime() + Self.glideDuration
+        }
+        refreshVisibleCards(transition: transition)
         let scrollShift = scrollView.contentView.bounds.minY - previousScrollY
         for (id, oldFrame) in reflowingFrames {
             if let card = cards[id] { animateReflow(card, from: oldFrame.offsetBy(dx: 0, dy: scrollShift)) }
@@ -533,10 +537,14 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         return visible.insetBy(dx: 0, dy: -overscan)
     }
 
-    private func refreshVisibleCards(transition: ForumBoardTransition, alsoRealizing extra: CGRect = .null) {
+    private func refreshVisibleCards(transition: ForumBoardTransition) {
         guard let layoutState else { return }
         let visible = visibleRect
-        let realized = layoutState.entries(intersecting: realizationRect(for: visible).union(extra))
+        if CACurrentMediaTime() >= glideEndTime { glidingIDs.removeAll() }
+        // Gliding cards stay realized at their destinations, even past the
+        // viewport, so none vanishes before it arrives.
+        let gliding = glidingIDs.reduce(CGRect.null) { $0.union(layoutState.entry(for: $1)?.frame ?? .null) }
+        let realized = layoutState.entries(intersecting: realizationRect(for: visible).union(gliding))
         // Scrolling within the same entries changes nothing.
         guard transition != .none || realized.indices != realizedRange else { return }
         realizedRange = realized.indices
