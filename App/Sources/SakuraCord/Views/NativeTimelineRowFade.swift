@@ -80,7 +80,10 @@ extension NativeTimelineCanvasView {
 
     /// Deleted rows stacked as they were, for the gap they leave.
     func departedRowsImage(_ rows: [NativeTimelineReactionBaseline.Row]) -> NSImage? {
+        // Each picture keeps its place in the gap, so one missing picture,
+        // as a tall row's is, leaves the whole run without one.
         let images = rows.compactMap { rowFadeImage($0, width: bounds.width) }
+        guard images.count == rows.count else { return nil }
         guard images.count > 1 else { return images.first }
         let size = NSSize(width: bounds.width, height: images.reduce(0) { $0 + $1.size.height })
         return NSImage(size: size, flipped: true) { _ in
