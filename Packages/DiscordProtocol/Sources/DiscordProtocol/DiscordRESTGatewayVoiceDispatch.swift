@@ -25,6 +25,10 @@ extension DiscordRESTProvider {
             await handleVoiceChannelStatusUpdateDispatch(name: name, body: body)
         case "VOICE_STATE_UPDATE":
             await handleVoiceStateUpdateDispatch(name: name, body: body)
+        case "EMBEDDED_ACTIVITY_UPDATE_V2":
+            if let instance = (try? JSONValueDecoder().decode(GatewayActivityInstanceDTO.self, from: body))?.domain() {
+                continuation?.yield(.embeddedActivityChanged(instance))
+            }
         default:
             return false
         }

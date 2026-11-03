@@ -673,21 +673,76 @@ struct GuildVoiceStateSnapshotDTO: Decodable {
 
 struct GatewayActivityParticipantDTO: Decodable {
     var member: GuildMemberDTO?
+    var userID: String?
+    var sessionID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case member
+        case userID = "user_id"
+        case sessionID = "session_id"
+    }
 }
 
+/// `EMBEDDED_ACTIVITY_UPDATE_V2` and the guild `activity_instances` entries.
 struct GatewayActivityInstanceDTO: Decodable {
+    struct Location: Decodable {
+        var id: String
+        var channelID: String
+        var guildID: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case channelID = "channel_id"
+            case guildID = "guild_id"
+        }
+    }
+
+    var applicationID: String?
+    var instanceID: String?
+    var compositeInstanceID: String?
+    var location: Location?
     var participants: [GatewayActivityParticipantDTO]
 
     private enum CodingKeys: String, CodingKey {
-        case participants
+        case participants, location
+        case applicationID = "application_id"
+        case instanceID = "instance_id"
+        case compositeInstanceID = "composite_instance_id"
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        applicationID = try? container.decode(String.self, forKey: .applicationID)
+        instanceID = try? container.decode(String.self, forKey: .instanceID)
+        compositeInstanceID = try? container.decode(String.self, forKey: .compositeInstanceID)
+        location = try? container.decode(Location.self, forKey: .location)
         participants = (try? container.decode(
             LossyList<GatewayActivityParticipantDTO>.self,
             forKey: .participants
         ))?.elements ?? []
+    }
+
+    func domain() -> EmbeddedActivityInstance? {
+        guard let applicationID = applicationID.flatMap(ApplicationID.init),
+              let instanceID, let compositeInstanceID, let location,
+              let channelID = ChannelID(location.channelID)
+        else { return nil }
+        return EmbeddedActivityInstance(
+            applicationID: applicationID,
+            instanceID: instanceID,
+            compositeInstanceID: compositeInstanceID,
+            location: EmbeddedActivityLocation(
+                id: location.id,
+                channelID: channelID,
+                guildID: location.guildID.flatMap(GuildID.init)
+            ),
+            participants: participants.compactMap { participant in
+                guard let userID = (participant.userID ?? participant.member?.user.id).flatMap(UserID.init),
+                      let sessionID = participant.sessionID
+                else { return nil }
+                return EmbeddedActivityParticipant(userID: userID, sessionID: sessionID)
+            }
+        )
     }
 }
 

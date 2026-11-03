@@ -509,6 +509,7 @@ struct VoiceCallControlDock: View {
     @State private var showCameraControls = false
     @State private var showScreenShareControls = false
     @State private var showSoundboard = false
+    @State private var showActivities = false
 
     var body: some View {
         GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
@@ -628,10 +629,24 @@ struct VoiceCallControlDock: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
+                activitiesButton(showsTitle: showsTitles)
+
                 CallDockLeaveButton(showsTitle: showsTitles) {
                     Task { await model.leaveVoice() }
                 }
             }
+    }
+
+    @ViewBuilder private func activitiesButton(showsTitle: Bool) -> some View {
+        if let channel = model.activeVoiceChannel {
+            CallDockButton(title: "Activities", systemImage: "gamecontroller.fill", showsTitle: showsTitle) {
+                showActivities.toggle()
+            }
+            .disabled(model.voiceSessionState != .connected)
+            .escapeDismissiblePopover(isPresented: $showActivities, arrowEdge: .bottom) {
+                ActivityShelfView(model: model, channel: channel) { showActivities = false }
+            }
+        }
     }
 
     @ViewBuilder private var cameraMenu: some View {

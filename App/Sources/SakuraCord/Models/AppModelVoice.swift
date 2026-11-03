@@ -505,6 +505,9 @@ extension AppModel {
         let channel = activeVoiceChannel
         let guildID = channel?.guildID
         let hadActiveVoice = channel != nil
+        if let channelID = channel?.id, embeddedActivities.session?.location.channelID == channelID {
+            await leaveActivity()
+        }
         let departingSession = voiceSession
         if let channelID = channel?.id {
             endLocalOutgoingPrivateCallRing(channelID: channelID)

@@ -176,6 +176,14 @@ private struct ServerInviteDTO: Decodable {
     var approximatePresenceCount: Int?
     var flags: Int?
     var targetType: Int?
+    var targetApplication: TargetApplication?
+
+    struct TargetApplication: Decodable {
+        var id: String
+        var name: String
+        var icon: String?
+        var coverImage: String?
+    }
 
     struct Inviter: Decodable {
         var id: String
@@ -199,7 +207,7 @@ private struct ServerInviteDTO: Decodable {
         var description: String?
         var features: Set<String>?
     }
-    struct InviteChannel: Decodable { var id: String; var type: Int? }
+    struct InviteChannel: Decodable { var id: String; var type: Int?; var name: String? }
     struct Profile: Decodable {
         var name: String?
         var iconHash: String?
@@ -236,7 +244,17 @@ private struct ServerInviteDTO: Decodable {
                 })
             }, memberCount: approximateMemberCount, onlineCount: approximatePresenceCount,
             expiresAt: expiresAt.flatMap(DiscordRESTProvider.inviteDate),
-            features: features, requiresSpecialAcceptance: (flags ?? 0) & 1 != 0 || targetType != nil
+            features: features, requiresSpecialAcceptance: (flags ?? 0) & 1 != 0 || targetType != nil,
+            activity: targetType == 2 ? targetApplication.flatMap { application in
+                ApplicationID(application.id).map { id in
+                    ServerInvite.Activity(
+                        applicationID: id, name: application.name,
+                        iconURL: application.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=128") },
+                        coverURL: application.coverImage.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=512") },
+                        channelName: channel?.name
+                    )
+                }
+            } : nil
         )
     }
 }

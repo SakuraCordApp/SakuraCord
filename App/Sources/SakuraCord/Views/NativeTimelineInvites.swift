@@ -57,6 +57,12 @@ extension NativeTimelineCanvasView {
             return
         }
         guard !card.isDisabled else { return }
+        if let invite = card.invite, invite.activity != nil, model.presentationGuild(invite.guildID) != nil {
+            model.startAccountChildTask(account: model.accountSession()) { model, _ in
+                await model.joinActivityInvite(invite)
+            }
+            return
+        }
         if card.invite?.unsupportedJoinReason != nil,
            card.invite.flatMap({ model.serverRailGuildsByID[$0.guildID] }) == nil {
             NSWorkspace.shared.open(reference.url)

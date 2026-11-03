@@ -351,6 +351,8 @@ extension AppModel {
             consumeCurrentUserRoleEvent(event)
         case .voiceStateChanged, .voiceStatesReceived:
             consumeVoiceStateEvent(event)
+        case .embeddedActivityChanged, .embeddedActivitiesReceived:
+            consumeEmbeddedActivityEvent(event)
         case .privateCallChanged(var call):
             consumePrivateCallChanged(&call)
         case .privateCallDeleted(let channelID, let unavailable):

@@ -12,11 +12,16 @@ struct NativeServerCardContent {
     let traits: [ServerInvite.Trait]
     let memberCount: Int?
     let onlineCount: Int?
+    let activity: ServerInvite.Activity?
+    /// Server name shown beside an Activity's voice channel.
+    let guildName: String
 
     init(invite: ServerInvite) {
         guildID = invite.guildID
-        name = invite.name
-        iconURL = invite.iconURL
+        activity = invite.activity
+        guildName = invite.name
+        name = invite.activity?.name ?? invite.name
+        iconURL = invite.activity?.iconURL ?? invite.iconURL
         inviter = invite.inviter
         brandColor = invite.brandColor
         description = invite.description
@@ -27,6 +32,8 @@ struct NativeServerCardContent {
 
     init(profile: GuildProfile, iconURL: URL?, adaptiveColor: UInt32? = nil) {
         guildID = profile.id
+        activity = nil
+        guildName = profile.name
         name = profile.name
         self.iconURL = iconURL
         inviter = nil
@@ -113,12 +120,12 @@ struct NativeTimelineInviteLayout {
         isExpanded = preview != nil || reference.map { source?.isInviteExpanded($0) == true } == true
         let width = fillsWidth || integratesWithBubble ? maximumWidth : min(isUnavailable ? InterfaceScale.metric(432) : InterfaceScale.metric(302), maximumWidth)
         let inset = integratesWithBubble ? 0 : InterfaceScale.metric(16)
-        let originX = origin.x, originY = origin.y, inner = max(1, width - inset * 2)
-        bannerFrame = CGRect(x: originX, y: originY, width: width, height: content == nil || integratesWithBubble ? 0 : InterfaceScale.metric(72))
+        let originX = origin.x, originY = origin.y, inner = max(1, width - inset * 2), bannerHeight = integratesWithBubble ? 0 : Self.bannerHeight(content, width: width)
+        bannerFrame = CGRect(x: originX, y: originY, width: width, height: bannerHeight)
         iconFrame = integratesWithBubble
             ? CGRect(x: originX, y: originY, width: InterfaceScale.metric(content == nil ? 32 : 48), height: InterfaceScale.metric(content == nil ? 32 : 48))
             : isUnavailable ? CGRect(x: originX + InterfaceScale.metric(16), y: originY + InterfaceScale.metric(46), width: InterfaceScale.metric(48), height: InterfaceScale.metric(48))
-            : CGRect(x: originX + InterfaceScale.metric(19), y: originY + InterfaceScale.metric(41), width: InterfaceScale.metric(64), height: InterfaceScale.metric(64))
+            : CGRect(x: originX + InterfaceScale.metric(19), y: originY + bannerHeight - InterfaceScale.metric(31), width: InterfaceScale.metric(64), height: InterfaceScale.metric(64))
         var labels: [Label] = []
         var traits: [Trait] = []
         var hiddenTraits = false
@@ -126,12 +133,12 @@ struct NativeTimelineInviteLayout {
         var countDots: [CGRect] = []
         var cursor = originY + inset
         if let invite = content {
-            cursor = originY + (integratesWithBubble ? 0 : InterfaceScale.metric(116))
+            cursor = originY + (integratesWithBubble ? 0 : bannerHeight + InterfaceScale.metric(44))
             let identityInset = integratesWithBubble ? InterfaceScale.metric(60) : inset
             inviterAvatar = Self.appendIdentity(invite, currentUserID: source?.currentUserID,
                                                 originX: originX + identityInset, width: inner - (integratesWithBubble ? identityInset : 0), cursor: &cursor, labels: &labels)
             if integratesWithBubble { cursor = max(cursor, iconFrame.maxY) + InterfaceScale.metric(8) }
-            Self.appendCounts(invite, originX: originX + inset, width: inner, cursor: &cursor, labels: &labels, dots: &countDots)
+            Self.appendCounts(invite, playing: reference.flatMap { source?.activityInvitePlayers($0) } ?? 0, originX: originX + inset, width: inner, cursor: &cursor, labels: &labels, dots: &countDots)
             if let description = invite.description, !description.isEmpty {
                 cursor += InterfaceScale.metric(12)
                 let height = Self.height(description, width: inner, size: 14)
@@ -179,7 +186,7 @@ struct NativeTimelineInviteLayout {
             labels.append(.init(text: error, frame: CGRect(x: originX + inset, y: cursor, width: inner, height: height), size: 13))
             cursor += height
         }
-        let canCollapse = preview == nil && invite != nil && cursor - originY > InterfaceScale.metric(292) && error == nil
+        let canCollapse = preview == nil && invite.map { $0.activity == nil } == true && cursor - originY > InterfaceScale.metric(292) && error == nil
         let collapsed = canCollapse && !isExpanded
         hasCollapsedContent = collapsed
         if collapsed { cursor = originY + InterfaceScale.metric(230) }
@@ -207,8 +214,9 @@ struct NativeTimelineInviteLayout {
         labels.append(.init(text: invite.name, frame: CGRect(x: originX, y: cursor, width: width, height: nameHeight), size: 16, bold: true))
         cursor += nameHeight
         guard let inviter = invite.inviter else { return nil }
-        let text = inviter.id == currentUserID ? "You sent an invite to join \(invite.name)"
-            : "\(inviter.displayName) invited you to \(invite.name)"
+        let action = invite.activity == nil ? "join" : "play"
+        let text = inviter.id == currentUserID ? "You sent an invite to \(action) \(invite.name)"
+            : "\(inviter.displayName) invited you to \(invite.activity == nil ? "" : "play ")\(invite.name)"
         let textHeight = height(text, width: width - InterfaceScale.metric(20), size: 14, lineHeight: 18)
         labels.append(.init(
             text: text,
@@ -221,8 +229,21 @@ struct NativeTimelineInviteLayout {
         return avatar
     }
 
-    private static func appendCounts(_ invite: NativeServerCardContent, originX: CGFloat, width: CGFloat, cursor: inout CGFloat,
-                                     labels: inout [Label], dots: inout [CGRect]) {
+    private static func appendCounts(_ invite: NativeServerCardContent, playing: Int, originX: CGFloat, width: CGFloat,
+                                     cursor: inout CGFloat, labels: inout [Label], dots: inout [CGRect]) {
+        if let activity = invite.activity {
+            let place = activity.channelName.map { "\($0) in \(invite.guildName)" } ?? invite.guildName
+            let placeHeight = height(place, width: width, size: 14)
+            labels.append(.init(text: place, frame: CGRect(x: originX, y: cursor, width: width, height: placeHeight), secondary: true))
+            cursor += placeHeight
+            guard playing > 0 else { return }
+            dots.append(CGRect(x: originX, y: cursor + InterfaceScale.metric(6), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8)))
+            labels.append(.init(text: "\(playing) Playing", frame: CGRect(x: originX + InterfaceScale.metric(12), y: cursor,
+                                                                        width: width - InterfaceScale.metric(12), height: InterfaceScale.metric(20)),
+                                secondary: true))
+            cursor += InterfaceScale.metric(20)
+            return
+        }
         var countX = originX
         for count in [invite.onlineCount.map { "\($0.formatted()) Online" },
                       invite.memberCount.map { "\($0.formatted()) \($0 == 1 ? "Member" : "Members")" }].compactMap({ $0 }) {
@@ -242,8 +263,18 @@ struct NativeTimelineInviteLayout {
         cursor += InterfaceScale.metric(20)
     }
 
+    /// Activity invites show a 16:9 cover; server invites a short banner.
+    private static func bannerHeight(_ content: NativeServerCardContent?, width: CGFloat) -> CGFloat {
+        guard let content else { return 0 }
+        return content.activity == nil ? InterfaceScale.metric(72) : (width * 9 / 16).rounded()
+    }
+
     private static func action(for invite: ServerInvite?, entry: NativeTimelineInviteEntry?, source: AppModel?)
         -> (String, Bool) {
+        if let invite, invite.activity != nil, let source, source.presentationGuild(invite.guildID) != nil {
+            if source.isInActivityInvite(invite) { return ("Joined", true) }
+            return (source.activityInvitePlayers(invite.reference) > 0 ? "Join Activity" : "Play", false)
+        }
         if let invite, source?.isLeavingInviteGuild(invite.guildID) == true { return ("Leaving…", true) }
         if let invite, source?.isJoiningInviteGuild(invite.guildID) == true { return ("Joining…", true) }
         if let member = invite.flatMap({ source?.presentationGuild($0.guildID) }) {
