@@ -198,21 +198,34 @@ extension AppModel {
     /// The launch message's button: join a running instance, or show it joined or ended.
     func activityInstanceAction(_ instanceID: String) -> (String, Bool) {
         if embeddedActivities.session?.instance?.compositeInstanceID == instanceID { return ("Joined", true) }
-        return embeddedActivities.instances[instanceID] == nil ? ("Ended", true) : ("Join", false)
+        guard let instance = embeddedActivities.instances[instanceID] else { return ("Ended", true) }
+        return ("Join", activityChannel(instance) == nil)
+    }
+
+    /// Where this client can host the instance: a voice channel, or a DM or
+    /// group call. An application's own DM has no call to host it in.
+    private func activityChannel(_ instance: EmbeddedActivityInstance) -> Channel? {
+        guard let channel = knownRootChannel(instance.location.channelID),
+              channel.guildID != nil || channel.recipients.contains(where: { !$0.isBot })
+        else { return nil }
+        return channel
     }
 
     /// Joins the instance an application's launch message announced, joining
     /// the call first in a DM or group, where the Activity lives in the call.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
-        guard let instance = embeddedActivities.instances[instanceID],
-              let channel = knownRootChannel(instance.location.channelID)
-        else { return }
+        guard let instance = embeddedActivities.instances[instanceID], let channel = activityChannel(instance) else { return }
         let application = embeddedActivities.application(instance.applicationID) ?? EmbeddedActivityApplication(
             id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL
         )
-        if channel.guildID == nil, channel.recipients.contains(where: { !$0.isBot }), activeVoiceChannel?.id != channel.id {
+        if channel.guildID == nil, activeVoiceChannel?.id != channel.id {
+            let launchID = embeddedActivities.session?.launchID
             await joinPrivateCall(in: channel)
-            guard activeVoiceChannel?.id == channel.id else { return }
+            // An Activity chosen while the call connected wins; leaving voice
+            // for the call may have ended the earlier one.
+            guard activeVoiceChannel?.id == channel.id,
+                  embeddedActivities.session.map({ $0.launchID == launchID }) ?? true
+            else { return }
         }
         await startActivity(application, in: channel)
     }
