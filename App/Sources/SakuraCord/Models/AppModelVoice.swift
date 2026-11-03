@@ -936,6 +936,25 @@ extension AppModel {
         }
     }
 
+    func consumeVoiceEvent(_ event: ClientEvent) -> Bool {
+        switch event {
+        case .voiceStateChanged, .voiceStatesReceived:
+            consumeVoiceStateEvent(event)
+        case .embeddedActivityChanged, .embeddedActivitiesReceived:
+            consumeEmbeddedActivityEvent(event)
+        case .privateCallChanged(var call):
+            consumePrivateCallChanged(&call)
+        case .privateCallDeleted(let channelID, let unavailable):
+            consumePrivateCallDeleted(channelID: channelID, unavailable: unavailable)
+        case .voiceServerChanged(let info):
+            recordVoiceServerUpdateReceived(info)
+            scheduleVoiceServerMigration(to: info)
+        default:
+            return false
+        }
+        return true
+    }
+
     func consumeVoiceStateEvent(_ event: ClientEvent) {
         switch event {
         case .voiceStateChanged(let state):
