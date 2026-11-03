@@ -10,6 +10,8 @@ import SwiftUI
 
 extension NativeTimelineCanvasView {
     static let bitmapTileHeight: CGFloat = 128
+    /// Taller rows are rasterized in tiles, only where exposed.
+    static let wholeRowBitmapMaximumHeight: CGFloat = 256
 
     func apply(
         storage: NativeTimelineCanvasStorage,
@@ -1025,7 +1027,7 @@ extension NativeTimelineCanvasView {
         enqueueVisibleMediaRequests(identifier: item.identifier, keys: preparedMediaKeys)
         // Only rasterize the exposed slices of tall messages. A one-pixel
         // reveal must not synchronously draw an entire attachment gallery.
-        if rowFrame.height > 256 {
+        if rowFrame.height > Self.wholeRowBitmapMaximumHeight {
             let exposed = rowFrame.intersection(dirtyRect)
             let firstTile = max(0, Int(floor((exposed.minY - rowFrame.minY) / Self.bitmapTileHeight)))
             let lastTile = max(firstTile, Int(ceil((exposed.maxY - rowFrame.minY) / Self.bitmapTileHeight)) - 1)

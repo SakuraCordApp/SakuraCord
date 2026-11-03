@@ -47,6 +47,9 @@ extension NativeTimelineCanvasView {
         }
         let item = row.item
         let layout = row.layout
+        // A tall row is drawn in tiles; one picture of all of it costs too
+        // much for a fade, so it changes without one.
+        guard layout.height <= Self.wholeRowBitmapMaximumHeight else { return nil }
         let scale = window?.backingScaleFactor ?? 2
         let size = NSSize(width: width, height: layout.height)
         guard size.height >= 1,

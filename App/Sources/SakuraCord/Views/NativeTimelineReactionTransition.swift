@@ -117,17 +117,10 @@ struct NativeTimelineReactionBaseline {
     let width: CGFloat
     let rows: [NativeMessageTimelineItem.Identifier: Row]
     let rowsByIndex: [Int: Row]
-    /// The row being edited inline; its editor already shows the new text.
-    let editedIdentifier: NativeMessageTimelineItem.Identifier?
 
-    init(
-        width: CGFloat,
-        rows: [NativeMessageTimelineItem.Identifier: Row],
-        editedIdentifier: NativeMessageTimelineItem.Identifier?
-    ) {
+    init(width: CGFloat, rows: [NativeMessageTimelineItem.Identifier: Row]) {
         self.width = width
         self.rows = rows
-        self.editedIdentifier = editedIdentifier
         rowsByIndex = Dictionary(uniqueKeysWithValues: rows.values.map { ($0.index, $0) })
     }
 }
@@ -181,7 +174,9 @@ extension NativeTimelineCanvasView {
     /// them in the shared storage.
     func captureReactionBaseline() {
         pendingReactionBaseline = nil
-        guard AppMotionPolicy.animatesUncategorized, window != nil, !items.isEmpty else { return }
+        // An update during an inline edit, including the saved edit itself,
+        // lands at once: the editor already shows its result.
+        guard AppMotionPolicy.animatesUncategorized, window != nil, !items.isEmpty, editingMessageID == nil else { return }
         let originY = contentOriginY - viewportMinY
         var rows: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBaseline.Row] = [:]
         forEachDisplayedRow(in: reactionBaselineRect) { index in
@@ -196,11 +191,7 @@ extension NativeTimelineCanvasView {
                 bitmap: animatedMediaRows[item.identifier] == nil ? bitmapCache[item.identifier] : nil
             )
         }
-        if !rows.isEmpty {
-            pendingReactionBaseline = NativeTimelineReactionBaseline(
-                width: bounds.width, rows: rows, editedIdentifier: editingRowIndex.map { items[$0].identifier }
-            )
-        }
+        if !rows.isEmpty { pendingReactionBaseline = NativeTimelineReactionBaseline(width: bounds.width, rows: rows) }
     }
 
     /// Starts the motion of the update just applied, after the coordinator
@@ -294,7 +285,8 @@ extension NativeTimelineCanvasView {
         case .regroup where !update.departedOldIndices.isDisjoint(with: [old.index - 1, old.index + 1]),
              .content:
             update.plan.addStep(for: row, delta: delta)
-            if identifier != baseline.editedIdentifier, rowFrame(at: index).intersects(visibleRect),
+            // Live animated media would sit at its new place over the fade.
+            if rowFrame(at: index).intersects(visibleRect), animatedMediaRows[identifier] == nil,
                let image = rowFadeImage(old, width: baseline.width) {
                 update.fades.append(.init(placement: .replaced(identifier), image: image))
             }
@@ -323,9 +315,13 @@ extension NativeTimelineCanvasView {
     /// changed in another way. True when a motion was dropped.
     private func dropReactionMotion(of identifier: NativeMessageTimelineItem.Identifier) -> Bool {
         endReactionTransition(identifier)
-        let motionCount = reactionRowMotions.count
+        let dropped = reactionRowMotions.filter { $0.steps.contains { $0.identifier == identifier } }
+        guard !dropped.isEmpty else { return false }
         reactionRowMotions.removeAll { $0.steps.contains { $0.identifier == identifier } }
-        return reactionRowMotions.count != motionCount
+        // Their gaps close at once, so the deleted rows fading in them go too.
+        let anchors = Set(dropped.flatMap { $0.steps.map(\.identifier) })
+        rowFades.removeAll { anchors.contains($0.placement.anchor) }
+        return true
     }
 
     /// Installs a row's chip transition, continuing a running one from what
