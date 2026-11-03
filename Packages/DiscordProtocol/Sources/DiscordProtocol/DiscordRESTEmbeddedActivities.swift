@@ -31,6 +31,7 @@ public extension DiscordRESTProvider {
             // Applications without an entry point keep the older channel launch.
             var body: [String: JSONValue] = ["session_id": .string(sessionID)]
             if let guildID { body["guild_id"] = .string(guildID.description) }
+            try Task.checkCancellation()
             let (data, response) = try await perform(
                 "/activities/\(channelID)/\(applicationID)", method: "POST", query: [], body: body,
                 maximumAttempts: 1
@@ -54,6 +55,8 @@ public extension DiscordRESTProvider {
             body["guild_id"] = .string(guildID.description)
             body["source"] = .string("VOICE")
         }
+        // A launch superseded while its command was looked up stops here.
+        try Task.checkCancellation()
         let (data, response) = try await perform("/interactions", method: "POST", query: [], body: body)
         guard response.statusCode == 204 else { throw interactionTransportError(data, response) }
     }

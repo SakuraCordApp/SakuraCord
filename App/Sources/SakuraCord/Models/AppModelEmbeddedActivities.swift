@@ -43,6 +43,7 @@ final class EmbeddedActivityStore {
     var prompt: Prompt?
     @ObservationIgnored var host: EmbeddedActivityHost?
     @ObservationIgnored var gatewaySessionID: String?
+    @ObservationIgnored var launch: Task<Void, any Error>?
     @ObservationIgnored var launchTimeout: Task<Void, Never>?
     /// Leaves still on their way to Discord, by composite instance ID.
     @ObservationIgnored var pendingLeaves: [String: Task<Void, Never>] = [:]
@@ -82,6 +83,8 @@ final class EmbeddedActivityStore {
     }
 
     func endSession() {
+        launch?.cancel()
+        launch = nil
         launchTimeout?.cancel()
         launchTimeout = nil
         host?.stop()
@@ -131,14 +134,20 @@ extension AppModel {
             await joinVoice(channel)
             guard isCurrentAccountSession(account), activeVoiceChannel?.id == channel.id else { return }
         }
-        // A rejoin must not race the leave Discord has not yet seen.
-        for leave in store.pendingLeaves.values { await leave.value }
         let location = EmbeddedActivityLocation.of(channel)
         let session = EmbeddedActivityStore.Session(application: application, channel: channel, location: location, phase: .launching)
         store.session = session
-        do {
+        // A rejoin must not race the leave Discord has not yet seen.
+        for leave in store.pendingLeaves.values { await leave.value }
+        guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+        // Ending the session cancels a launch that has not reached Discord yet.
+        let launch = Task {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
             try await account.provider.launchEmbeddedActivity(application.id, channelID: channel.id, guildID: channel.guildID)
+        }
+        store.launch = launch
+        do {
+            try await launch.value
         } catch {
             // The instance update can arrive before a lost launch response.
             guard isCurrentAccountSession(account), store.session?.launchID == session.launchID,
@@ -170,6 +179,7 @@ extension AppModel {
 
     private func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
         let id = instance.compositeInstanceID
+        guard embeddedActivities.pendingLeaves[id] == nil else { return }
         embeddedActivities.pendingLeaves[id] = startAccountChildTask(account: accountSession()) { model, account in
             try? await account.provider.leaveEmbeddedActivity(instance)
             model.embeddedActivities.pendingLeaves[id] = nil
@@ -278,15 +288,13 @@ extension AppModel {
                 let ticket = try await account.provider.embeddedActivityProxyTicket(
                     instance.applicationID, channelID: instance.location.channelID
                 )
-                guard model.embeddedActivities.session?.instance?.compositeInstanceID == instance.compositeInstanceID
-                else { return }
+                guard model.embeddedActivities.session?.launchID == session.launchID else { return }
                 model.embeddedActivities.host = EmbeddedActivityHost(
                     model: model, instance: instance, application: session.application, proxyTicket: ticket
                 )
                 model.embeddedActivities.session?.phase = .running
             } catch {
-                guard model.embeddedActivities.session?.instance?.compositeInstanceID == instance.compositeInstanceID
-                else { return }
+                guard model.embeddedActivities.session?.launchID == session.launchID else { return }
                 model.embeddedActivities.session?.phase = .failed(error.localizedDescription)
             }
         }
