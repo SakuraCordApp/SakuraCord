@@ -1169,9 +1169,16 @@ extension NativeTimelineCanvasView {
         // suggestions.
         let height = host.lastReportedFittingHeight > 0 ? host.lastReportedFittingHeight : content.height
         let suggestionsHeight = editing.editorHeight > 0 ? max(0, height - editing.editorHeight) : 0
+        // Near the top of the timeline there is no room above; they open below.
+        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
+        let opensBelow = suggestionsHeight > 0
+            && displayedRowOrigin(at: index) + content.minY - suggestionsHeight < unobscuredMinY
+        if let draft = editing.draft, suggestionsHeight > 0, draft.showsSuggestionsBelow != opensBelow {
+            draft.showsSuggestionsBelow = opensBelow
+        }
         let localFrame = CGRect(
             x: content.minX,
-            y: content.minY - suggestionsHeight,
+            y: editing.draft?.showsSuggestionsBelow == true ? content.minY : content.minY - suggestionsHeight,
             width: content.width,
             height: height
         )
@@ -1219,8 +1226,9 @@ extension NativeTimelineCanvasView {
         editing.controlsHost?.removeFromSuperview()
         editing.controlsHost = nil
         actions?.edit(message, value)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self, self.editing.committedContent != nil, self.editingMessageID == message.id else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak draft = editing.draft] in
+            // Only this save's session; a later edit of the message has its own draft.
+            guard let self, let draft, self.editing.draft === draft, self.editing.committedContent != nil else { return }
             self.finishEditing(at: self.editingRowIndex)
         }
     }

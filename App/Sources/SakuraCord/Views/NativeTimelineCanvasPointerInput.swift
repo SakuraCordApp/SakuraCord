@@ -1078,8 +1078,7 @@ extension NativeTimelineCanvasView {
             guard let self,
                   event.window === self.window,
                   !self.overlayBlocksInteractions,
-                  !self.sendTransitionBlocksInteractions,
-                  self.editingMessageID == nil
+                  !self.sendTransitionBlocksInteractions
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
             guard let hit = self.reactionPointerHit(at: point) else {

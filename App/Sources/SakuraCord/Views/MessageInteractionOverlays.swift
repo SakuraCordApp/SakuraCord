@@ -269,6 +269,8 @@ final class NativeTimelineInlineEditDraft {
     var text: String
     /// Saved, and waiting for the timeline to show it.
     var isSaving = false
+    /// Emoji suggestions open below the editor when there is no room above.
+    var showsSuggestionsBelow = false
 
     init(text: String) {
         self.text = text
@@ -298,6 +300,7 @@ struct NativeTimelineEditingMessageContent: View {
                 save(value)
             },
             cancel: cancel,
+            suggestionsBelow: draft.showsSuggestionsBelow,
             editorHeightDidChange: editorHeightDidChange
         )
         .disabled(draft.isSaving)
@@ -862,6 +865,7 @@ private struct InlineMessageEditor: View {
     let canEdit: Bool
     let save: () -> Void
     let cancel: () -> Void
+    let suggestionsBelow: Bool
     let editorHeightDidChange: (CGFloat) -> Void
     @State private var selection: NSRange?
     @State private var isFocused = true
@@ -887,14 +891,7 @@ private struct InlineMessageEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
-            if let context, !suggestions.isEmpty {
-                EmojiAutocompleteList(
-                    suggestions: suggestions,
-                    selectedIndex: autocompleteIndex,
-                    highlight: { autocompleteIndex = $0 },
-                    select: { accept($0, context: context) }
-                )
-            }
+            if !suggestionsBelow { suggestionList }
             ComposerTextView(
                 text: text,
                 placeholder: "Edit message",
@@ -915,6 +912,7 @@ private struct InlineMessageEditor: View {
                 .accessibilityLabel("Message text")
                 .accessibilityHint("Press Return to save, Shift-Return for a new line, or Escape to cancel.")
                 .onExitCommand(perform: cancel)
+            if suggestionsBelow { suggestionList }
         }
         .onChange(of: text) { _, _ in
             isAutocompleteDismissed = false
@@ -923,6 +921,18 @@ private struct InlineMessageEditor: View {
         .onChange(of: selection) { _, _ in
             isAutocompleteDismissed = false
             autocompleteIndex = 0
+        }
+    }
+
+    @ViewBuilder
+    private var suggestionList: some View {
+        if let context, !suggestions.isEmpty {
+            EmojiAutocompleteList(
+                suggestions: suggestions,
+                selectedIndex: autocompleteIndex,
+                highlight: { autocompleteIndex = $0 },
+                select: { accept($0, context: context) }
+            )
         }
     }
 
