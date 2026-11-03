@@ -348,9 +348,17 @@ public actor MockChatProvider: ChatProvider {
     }
 
     public func serverInvite(_ reference: ServerInviteReference) async throws -> ServerInvite {
-        guard reference.code == "offline-showcase",
+        guard reference.code == "offline-showcase" || reference.code == "offline-activity",
               let guild = snapshot.guilds.first(where: { $0.id == GuildID(rawValue: 100) })
         else { throw ServerInviteError.unavailable }
+        if reference.code == "offline-activity" {
+            return ServerInvite(
+                reference: reference, guildID: guild.id, channelID: ChannelID(rawValue: 230), channelType: 2,
+                name: guild.name, iconURL: guild.iconURL, inviter: currentUser, requiresSpecialAcceptance: true,
+                activity: .init(applicationID: ApplicationID(rawValue: 880_218_394_199_220_334), name: "Watch Together",
+                                channelName: "Studio Lounge")
+            )
+        }
         return ServerInvite(
             reference: reference, guildID: guild.id, channelID: ChannelID(rawValue: 216), channelType: 0,
             name: guild.name, iconURL: guild.iconURL, inviter: currentUser, brandColor: guild.accentHex,

@@ -143,6 +143,7 @@ extension MockMessageFixtureBuilder {
             showcaseMessage(317, content: "https://sakuracord.app/settings/appearance/messages"),
             showcaseMessage(318, author: nova, content: "https://sakuracord.app/update"),
             showcaseMessage(319, content: "https://discord.gg/offline-showcase"),
+            showcaseMessage(326, content: "https://discord.gg/offline-activity"),
             showcaseMessage(320, content: "https://discord.com/channels/100/216/600101"),
             showcaseMessage(321, content: "https://discord.gg/offline-expired"),
             showcaseMessage(322, content: "https://sakuracord.app/report?type=bug"),
