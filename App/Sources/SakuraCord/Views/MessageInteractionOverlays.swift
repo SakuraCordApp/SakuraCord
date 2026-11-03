@@ -333,6 +333,8 @@ struct NativeTimelineInlineEditControls: View {
                 .disabled(!canSave)
         }
         .padding(InterfaceScale.metric(4))
+        // The buttons' highlights follow the capsule at their inset.
+        .containerShape(Capsule())
         .glassEffect(.regular, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .contain)
@@ -819,16 +821,32 @@ enum MessageReplySummary {
 }
 
 enum MessageEditLayoutMetrics {
-    /// How far below the editor's first baseline the timeline draws a
-    /// message's: CoreText sets message lines 22/16 of the font size tall,
-    /// with the extra space above the text, while the editor's lines take
-    /// the font's natural height. Insetting the editor by the difference
-    /// keeps an edited line where it was drawn.
-    static var editorTopInset: CGFloat {
-        let font = NSFont.interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize)
-        let timelineStyle = NSMutableParagraphStyle()
-        timelineStyle.minimumLineHeight = font.pointSize / 16 * 22
-        let sample = NSAttributedString(string: "Edit", attributes: [.font: font, .paragraphStyle: timelineStyle])
+    /// The timeline's plain message text, so a draft is set in the font,
+    /// colour and line height the row drew the message in.
+    static func textStyle(isOnOutgoingBubble: Bool) -> ComposerTextStyle {
+        let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
+        if let cached = textStyles[isOnOutgoingBubble], cached.font.pointSize == fontSize { return cached }
+        var attributes = DiscordMarkdown.appKitAttributed(
+            DiscordMarkdown.appKitPlan("x"), baseFontSize: fontSize, usesMessageLineHeight: true
+        ).attributes(at: 0, effectiveRange: nil)
+        // The timeline sets an outgoing bubble's text in white.
+        if isOnOutgoingBubble { attributes[.foregroundColor] = NSColor.white }
+        let style = ComposerTextStyle(
+            font: attributes[.font] as? NSFont ?? .interfaceSystemFont(ofSize: fontSize), attributes: attributes
+        )
+        textStyles[isOnOutgoingBubble] = style
+        return style
+    }
+
+    private static var textStyles: [Bool: ComposerTextStyle] = [:]
+
+    /// How much lower TextKit sets a draft's first baseline than CoreText
+    /// sets the message's: TextKit puts a line's extra height above the
+    /// text. Raising the editor by it sets every line where it was drawn.
+    static var editorBaselineShift: CGFloat {
+        let style = textStyle(isOnOutgoingBubble: false)
+        if let cached = baselineShift, cached.font == style.font { return cached.shift }
+        let sample = NSAttributedString(string: "Edit", attributes: style.attributes)
         let height: CGFloat = 100
         let frame = CTFramesetterCreateFrame(
             CTFramesetterCreateWithAttributedString(sample), CFRange(),
@@ -836,9 +854,7 @@ enum MessageEditLayoutMetrics {
         )
         var origin = CGPoint.zero
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 1), &origin)
-        let storage = NSTextStorage(
-            attributedString: NSAttributedString(string: "Edit", attributes: ComposerEmojiAttributedText.textAttributes(font))
-        )
+        let storage = NSTextStorage(attributedString: sample)
         let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: CGSize(width: 200, height: height))
         container.lineFragmentPadding = 0
@@ -846,8 +862,12 @@ enum MessageEditLayoutMetrics {
         layoutManager.addTextContainer(container)
         let editorBaseline = layoutManager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil).minY
             + layoutManager.location(forGlyphAt: 0).y
-        return max(0, (height - origin.y) - editorBaseline)
+        let shift = editorBaseline - (height - origin.y)
+        baselineShift = (style.font, shift)
+        return shift
     }
+
+    private static var baselineShift: (font: NSFont, shift: CGFloat)?
 
     nonisolated static var actionHeight: CGFloat { InterfaceScale.metric(22) }
     nonisolated static var actionHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
@@ -908,17 +928,18 @@ private struct InlineMessageEditor: View {
                 onEscape: composerActions.onEscape,
                 onAutocompleteCommand: handleAutocomplete,
                 capturesUnfocusedTyping: true,
+                maximumHeight: .greatestFiniteMagnitude,
                 insertionPointColor: isOnOutgoingBubble ? .white : nil,
+                textStyle: MessageEditLayoutMetrics.textStyle(isOnOutgoingBubble: isOnOutgoingBubble),
+                scrolls: false,
+                accessibilityHint: "Press Return to save, Shift-Return for a new line, or Escape to cancel.",
                 selection: $selection,
                 isFocused: $isFocused
             )
                 // The timeline sets an outgoing bubble's text in white.
                 .environment(\.colorScheme, isOnOutgoingBubble ? .dark : colorScheme)
                 .disabled(!canEdit)
-                .padding(.top, MessageEditLayoutMetrics.editorTopInset)
                 .onGeometryChange(for: CGFloat.self, of: \.size.height, action: editorHeightDidChange)
-                .accessibilityLabel("Message text")
-                .accessibilityHint("Press Return to save, Shift-Return for a new line, or Escape to cancel.")
                 .onExitCommand(perform: cancel)
             if suggestionsBelow { suggestionList }
         }
@@ -1002,16 +1023,25 @@ private struct InlineEditTextButton: View {
             .foregroundStyle(isHovering && isEnabled ? .primary : .secondary)
             .padding(.horizontal, MessageEditLayoutMetrics.actionHorizontalPadding)
             .frame(height: MessageEditLayoutMetrics.actionHeight)
-            .background {
-                ConcentricRectangle(cornerRadius: InterfaceScale.metric(5), style: .continuous)
-                    .fill(Color.primary.opacity(isHovering && isEnabled ? 0.09 : 0))
-            }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(InlineEditButtonStyle(isHovering: isHovering && isEnabled))
         .onModalHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
         .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
+/// A highlight concentric with the capsule around the button, stronger
+/// while pressed.
+private struct InlineEditButtonStyle: ButtonStyle {
+    let isHovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.background {
+            ConcentricRectangle(cornerRadius: InterfaceScale.metric(5), style: .continuous)
+                .fill(Color.primary.opacity(configuration.isPressed ? 0.16 : isHovering ? 0.09 : 0))
+        }
     }
 }
 

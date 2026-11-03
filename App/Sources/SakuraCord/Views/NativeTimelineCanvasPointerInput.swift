@@ -216,7 +216,6 @@ extension NativeTimelineCanvasView {
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard tracksHover,
               !overlayBlocksInteractions,
-              editingMessageID == nil,
               event.trackingArea?.userInfo?["nativeTimelineTrackingKind"]
                 as? String == "row",
               let index = event.trackingArea?.userInfo?[
@@ -268,12 +267,7 @@ extension NativeTimelineCanvasView {
             return
         }
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        guard tracksHover,
-              !overlayBlocksInteractions,
-              editingMessageID == nil
-        else {
-            return
-        }
+        guard tracksHover, !overlayBlocksInteractions else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard !actionCapsuleContains(point) else {
             // The capsule covers the row's text, so its mentions stop being hovered.
@@ -1217,7 +1211,6 @@ extension NativeTimelineCanvasView {
             return
         }
         guard WindowModalCoordinator.allowsInput(for: self), !overlayBlocksInteractions, tracksHover,
-              editingMessageID == nil,
               window?.isKeyWindow == true
         else { return }
         let point = currentMouseLocationInCanvas()

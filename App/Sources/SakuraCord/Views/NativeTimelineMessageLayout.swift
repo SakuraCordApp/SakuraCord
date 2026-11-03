@@ -573,16 +573,19 @@ extension NativeTimelineRowLayout {
             }
         }
 
-        /// The editor takes the text's place and never ends above it, so
-        /// the rest of the row only moves when the edit outgrows the text.
+        /// The editor takes the text's place.
         private mutating func appendEditingText(height: CGFloat) {
-            let textHeight = contentPresentation.attributedContent.map { value in
+            // The editor sets the draft as the row set the text, so the row
+            // follows the draft as it grows and shrinks. Until the editor has
+            // measured it, the text keeps its own height.
+            let height = height > 0
+                ? NativeTimelineRowLayout.messageTextHeight(suggested: height)
+                : contentPresentation.attributedContent.map { value in
                 NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: value)
                     + NativeTimelineRowLayout.measuredTextHeight(
                         contentPresentation.framesetter, value: value, length: value.length, width: contentWidth
                     )
             } ?? 0
-            let height = max(height, textHeight)
             result.contentFrame = CGRect(
                 x: editingTextColumn?.contentX ?? contentX, y: verticalOffset,
                 width: editingTextColumn?.contentWidth ?? contentWidth, height: height

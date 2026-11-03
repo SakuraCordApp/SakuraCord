@@ -110,10 +110,11 @@ enum ComposerEmojiAttributedText {
 
     static func make(
         _ source: String,
-        font: NSFont = .interfaceSystemFont(ofSize: 15),
+        style: ComposerTextStyle = .composer,
         mentionPresentations: [String: MentionPresentation] = [:],
         imageProvider: (String) -> NSImage? = { ComposerEmojiImageStore.shared.cachedImage(for: $0) }
     ) -> NSAttributedString {
+        let font = style.font
         let result = NSMutableAttributedString()
         var cursor = 0
         for match in attachmentMatches(in: source) {
@@ -123,7 +124,7 @@ enum ComposerEmojiAttributedText {
                         string: (source as NSString).substring(
                             with: NSRange(location: cursor, length: match.range.location - cursor)
                         ),
-                        attributes: textAttributes(font)
+                        attributes: style.attributes
                     )
                 )
             }
@@ -151,7 +152,7 @@ enum ComposerEmojiAttributedText {
                 height: font.pointSize * 1.15
             )
             let attributedAttachment = NSMutableAttributedString(attachment: attachment)
-            var attachmentAttributes = textAttributes(font)
+            var attachmentAttributes = style.attributes
             attachmentAttributes[.discordEmojiToken] = token
             attributedAttachment.addAttributes(
                 attachmentAttributes,
@@ -163,11 +164,11 @@ enum ComposerEmojiAttributedText {
         if cursor < (source as NSString).length {
             result.append(
                 NSAttributedString(
-                    string: (source as NSString).substring(from: cursor), attributes: textAttributes(font)
+                    string: (source as NSString).substring(from: cursor), attributes: style.attributes
                 )
             )
         }
-        ComposerMarkdownPresentation.apply(to: result, font: font)
+        ComposerMarkdownPresentation.apply(to: result, attributes: style.attributes)
         return result
     }
 
@@ -286,15 +287,38 @@ enum ComposerEmojiAttributedText {
     }
 
     static func textAttributes(_ font: NSFont) -> [NSAttributedString.Key: Any] {
+        ComposerTextStyle.composer(font).attributes
+    }
+}
+
+/// How a draft's plain text looks: the composer's own style, or the style
+/// of the text an inline edit replaces, so the editor matches it.
+struct ComposerTextStyle {
+    let font: NSFont
+    let attributes: [NSAttributedString.Key: Any]
+
+    static var composer: Self { composer(.interfaceSystemFont(ofSize: 15)) }
+
+    static func composer(_ font: NSFont) -> Self {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.minimumLineHeight = NSLayoutManager().defaultLineHeight(for: font)
-        return [
+        return Self(font: font, attributes: [
             .font: font,
             .foregroundColor: NSColor.labelColor,
             .paragraphStyle: paragraphStyle
-        ]
+        ])
     }
 
+    /// The height of a line with no text.
+    var emptyLineHeight: CGFloat {
+        max(
+            NSLayoutManager().defaultLineHeight(for: font),
+            (attributes[.paragraphStyle] as? NSParagraphStyle)?.minimumLineHeight ?? 0
+        )
+    }
+}
+
+extension ComposerEmojiAttributedText {
     nonisolated static func attachmentOriginY(
         font: NSFont,
         size: CGFloat
@@ -311,6 +335,20 @@ enum ComposerEmojiAttributedText {
         ) ?? NSImage(size: NSSize(width: size, height: size))
         image.isTemplate = true
         return image
+    }
+}
+
+/// The composer's scroll view, which an editor that never scrolls leaves
+/// the wheel to its enclosing scroll view.
+final class ComposerScrollView: NSScrollView {
+    var scrolls = true
+
+    override func scrollWheel(with event: NSEvent) {
+        if scrolls {
+            super.scrollWheel(with: event)
+        } else {
+            (superview?.enclosingScrollView ?? nextResponder)?.scrollWheel(with: event)
+        }
     }
 }
 
@@ -339,10 +377,15 @@ struct ComposerTextView: NSViewRepresentable {
     /// Overrides the accent caret, for text set on an accent fill.
     var insertionPointColor: NSColor?
     var sendTransitionAnchor: ComposerSendTransitionAnchor?
+    var textStyle: ComposerTextStyle = .composer
+    /// False for an editor exactly as tall as its text, as inline edits
+    /// are: it never scrolls, and the wheel scrolls whatever holds it.
+    var scrolls = true
+    var accessibilityHint: String?
     @Binding var selection: NSRange?
     @Binding var isFocused: Bool
 
-    private let font = NSFont.interfaceSystemFont(ofSize: 15)
+    private var font: NSFont { textStyle.font }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -391,7 +434,7 @@ struct ComposerTextView: NSViewRepresentable {
         )
         textView.autoresizingMask = [.width]
         textView.font = font
-        textView.textColor = .labelColor
+        textView.textColor = textStyle.attributes[.foregroundColor] as? NSColor ?? .labelColor
         textView.applySakuraCordTextSelectionAppearance()
         if let insertionPointColor { textView.insertionPointColor = insertionPointColor }
         textView.plainTypingAttributes = textAttributes
@@ -420,7 +463,12 @@ struct ComposerTextView: NSViewRepresentable {
         textView.capturesUnfocusedTyping = capturesUnfocusedTyping && context.environment.acceptsComposerInput
         ComposerTextCheckingConfiguration.apply(generalInputSettings, to: textView)
 
-        let scrollView = NSScrollView()
+        let scrollView = ComposerScrollView()
+        scrollView.scrolls = scrolls
+        // The text view alone is the control; a fixed container is no scroll area.
+        scrollView.setAccessibilityElement(scrolls)
+        if !scrolls { scrollView.verticalScrollElasticity = .none }
+        textView.setAccessibilityHelp(accessibilityHint)
         scrollView.documentView = textView
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
@@ -442,7 +490,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.textStorage?.setAttributedString(
             ComposerEmojiAttributedText.make(
                 text,
-                font: font,
+                style: textStyle,
                 mentionPresentations: mentionPresentations
             )
         )
@@ -519,7 +567,7 @@ struct ComposerTextView: NSViewRepresentable {
             )
         {
             let replacement = ComposerEmojiAttributedText.make(
-                text, font: font, mentionPresentations: mentionPresentations
+                text, style: textStyle, mentionPresentations: mentionPresentations
             )
             if isTranslationEdit {
                 textView.breakUndoCoalescing()
@@ -573,19 +621,17 @@ struct ComposerTextView: NSViewRepresentable {
 
         layoutManager.ensureLayout(for: textContainer)
 
-        let lineHeight = layoutManager.defaultLineHeight(for: font)
+        let lineHeight = textStyle.emptyLineHeight
         let contentHeight = ceil(
             max(lineHeight, layoutManager.usedRect(for: textContainer).height)
                 + textView.textContainerInset.height * 2
         )
 
-        scrollView.hasVerticalScroller = contentHeight > maximumHeight
+        scrollView.hasVerticalScroller = scrolls && contentHeight > maximumHeight
         return CGSize(width: proposedWidth, height: min(contentHeight, maximumHeight))
     }
 
-    private var textAttributes: [NSAttributedString.Key: Any] {
-        ComposerEmojiAttributedText.textAttributes(font)
-    }
+    private var textAttributes: [NSAttributedString.Key: Any] { textStyle.attributes }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerTextView
@@ -633,6 +679,7 @@ struct ComposerTextView: NSViewRepresentable {
                 )
                 let normalized = ComposerEmojiAttributedText.make(
                     raw,
+                    style: parent.textStyle,
                     mentionPresentations: parent.mentionPresentations
                 )
                 if normalized.string != textView.attributedString().string
@@ -982,8 +1029,7 @@ final class ComposerNSTextView: ComposerFocusReportingTextView {
         restorePlainTypingAttributes()
         if let attributed = insertString as? NSAttributedString {
             let normalized = NSMutableAttributedString(attributedString: attributed)
-            let baseFont = plainTypingAttributes[.font] as? NSFont ?? .interfaceSystemFont(ofSize: 15)
-            ComposerMarkdownPresentation.apply(to: normalized, font: baseFont)
+            ComposerMarkdownPresentation.apply(to: normalized, attributes: plainTypingAttributes)
             super.insertText(normalized, replacementRange: replacementRange)
         } else {
             super.insertText(insertString, replacementRange: replacementRange)

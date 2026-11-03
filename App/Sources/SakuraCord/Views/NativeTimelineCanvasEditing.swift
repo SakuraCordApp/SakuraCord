@@ -360,8 +360,9 @@ extension NativeTimelineCanvasView {
             removeActionCapsule()
         }
         if actionCapsuleState?.isPresentationActive == true {
-            guard editingMessageID == nil,
-                  let messageID = actionCapsuleMessageID,
+            // An edited row shows Cancel and Save where its actions would be.
+            guard let messageID = actionCapsuleMessageID,
+                  messageID != editingMessageID,
                   let index = items.firstIndex(where: {
                       $0.messageID == messageID
                   }),
@@ -377,16 +378,15 @@ extension NativeTimelineCanvasView {
             positionActionCapsule(at: index)
             return
         }
-        guard editingMessageID == nil,
-              let index = hoveredRow
+        guard let index = hoveredRow
                 ?? mediaViewerHighlightedMessageID.flatMap({ messageID in
                     items.firstIndex(where: {
                         $0.messageID == messageID
                     })
                 }),
-
               items.indices.contains(index),
               case let .message(row, _, _) = items[index],
+              row.message.id != editingMessageID,
               MessageOutboxPresentation.interactionMode(
                 for: row.message
               ).allowsHoverActions,
@@ -1171,9 +1171,7 @@ extension NativeTimelineCanvasView {
               let index = editingRowIndex,
               let content = editing.layout?.contentFrame
         else { return }
-        // The row keeps at least the original text's height, which can be
-        // taller than the editor; only the host's own extra height is
-        // suggestions.
+        // Only the host's height beyond the editor's own is suggestions.
         let height = host.lastReportedFittingHeight > 0 ? host.lastReportedFittingHeight : content.height
         let suggestionsHeight = editing.editorHeight > 0 ? max(0, height - editing.editorHeight) : 0
         // Near the top of the timeline there is no room above; they open below.
@@ -1185,7 +1183,8 @@ extension NativeTimelineCanvasView {
         }
         let localFrame = CGRect(
             x: content.minX,
-            y: editing.draft?.showsSuggestionsBelow == true ? content.minY : content.minY - suggestionsHeight,
+            y: (editing.draft?.showsSuggestionsBelow == true ? content.minY : content.minY - suggestionsHeight)
+                - MessageEditLayoutMetrics.editorBaselineShift,
             width: content.width,
             height: height
         )
@@ -1557,11 +1556,17 @@ extension NativeMessageTimelineCoordinator {
         else { return }
         lastEditRequestID = request.id
         guard canvas.beginEditingCurrentUserMessage(request.messageID),
-              let scrollView
+              let scrollView,
+              let index = canvas.editingRowIndex
         else { return }
-        _ = scroll(
-            to: .message(request.messageID, anchor: .center),
-            in: scrollView
-        )
+        // A message already in sight is edited where it is; one out of
+        // sight is brought just into it, from the side it was on.
+        let row = canvas.rowFrame(at: index)
+        let insets = scrollView.scrollerInsets
+        let visible = canvas.visibleRect.divided(atDistance: insets.top, from: .minYEdge).remainder
+            .divided(atDistance: insets.bottom, from: .maxYEdge).remainder
+        guard !visible.contains(row) else { return }
+        let fromAbove = row.minY < visible.minY && row.height <= visible.height
+        _ = scroll(to: .message(request.messageID, anchor: fromAbove ? .top : .bottom), in: scrollView)
     }
 }
