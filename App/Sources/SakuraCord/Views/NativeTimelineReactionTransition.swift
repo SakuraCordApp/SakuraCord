@@ -119,6 +119,15 @@ struct NativeTimelineReactionBaseline {
         /// The row's cached bitmap, if it had one, for a fade without a raster.
         let bitmap: NativeTimelineCanvasView.CachedRowBitmap?
         let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
+        /// The inline editor over a saved edit's row, which shows the row
+        /// in place of its text.
+        var editor: Editor?
+    }
+
+    struct Editor {
+        let picture: NSImage
+        /// Where the editor sits in the row.
+        let frame: CGRect
     }
 
     /// The canvas width the rows were laid out at.
@@ -182,24 +191,32 @@ extension NativeTimelineCanvasView {
     /// them in the shared storage.
     func captureReactionBaseline() {
         pendingReactionBaseline = nil
-        // An update during an inline edit, including the saved edit itself,
-        // lands at once: the editor already shows its result.
-        guard AppMotionPolicy.animatesUncategorized, window != nil, !items.isEmpty, editingMessageID == nil else { return }
+        // An update during an inline edit lands at once: the editor already
+        // shows its result. The saved edit hands the editor over to its row
+        // as a remote edit would change it.
+        guard AppMotionPolicy.animatesUncategorized, window != nil, !items.isEmpty,
+              editingMessageID == nil || editing.committedContent != nil
+        else { return }
         let originY = contentOriginY - viewportMinY
+        let editor = editingHostSnapshot().flatMap { picture in
+            editingOverlayLocalFrame.map { NativeTimelineReactionBaseline.Editor(picture: picture, frame: $0) }
+        }
         var rows: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBaseline.Row] = [:]
         forEachDisplayedRow(in: reactionBaselineRect) { index in
             let item = items[index]
             let revealState = textSpoilerRevealState(at: index)
+            let isEdited = item.messageID == editingMessageID
             rows[item.identifier] = .init(
                 index: index,
-                top: originY + rowOrigins[index],
+                top: originY + transientRowOrigin(at: index),
                 item: item,
                 layout: layouts[index],
                 // A bitmap leaves animated media to live overlays and keeps
                 // spoilers hidden, so it is no picture of such a row.
-                bitmap: animatedMediaRows[item.identifier] == nil && revealState.isEmpty
+                bitmap: animatedMediaRows[item.identifier] == nil && revealState.isEmpty && !isEdited
                     ? bitmapCache[item.identifier] : nil,
-                revealedTextSpoilerState: revealState
+                revealedTextSpoilerState: revealState,
+                editor: isEdited ? editor : nil
             )
         }
         if !rows.isEmpty { pendingReactionBaseline = NativeTimelineReactionBaseline(width: bounds.width, rows: rows) }
@@ -311,7 +328,8 @@ extension NativeTimelineCanvasView {
         let row = NativeTimelineRowMotionPlan.FollowedRow(oldIndex: old.index, index: index, identifier: identifier)
         let delta = layouts[index].height - old.layout.height
         update.plan.follow(row, rowShift: old.top - (originY + rowOrigins[index]), delta: delta)
-        switch items[index].change(from: old.item) {
+        // A saved edit's editor gives way to the row as an edit's content does.
+        switch old.editor == nil ? items[index].change(from: old.item) : .content {
         case .none:
             if abs(delta) >= 0.5 { update.plan.invalidate() }
         case .reactions:
@@ -325,8 +343,10 @@ extension NativeTimelineCanvasView {
             update.plan.addStep(for: row, delta: delta)
             // Live animated media would sit at its new place over the fade.
             if rowFrame(at: index).intersects(visibleRect), animatedMediaRows[identifier] == nil,
-               let image = rowFadeImage(old, width: baseline.width) {
-                update.crossfades.append(.init(identifier: identifier, rowIndex: index, image: image))
+               let picture = rowFadeImage(old, width: baseline.width) {
+                // A crossfade still running starts the new one from the blend it shows.
+                let image = rowFades.first { $0.identifier == identifier }.map { shownCrossfade($0, over: picture) }
+                update.crossfades.append(.init(identifier: identifier, rowIndex: index, image: image ?? picture))
             }
             // A motion still running from an earlier change keeps going, so
             // this one starts from the height the row shows now.

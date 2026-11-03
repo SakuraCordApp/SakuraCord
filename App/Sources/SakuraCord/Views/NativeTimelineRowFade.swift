@@ -103,10 +103,34 @@ extension NativeTimelineCanvasView {
             isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
             spoilerRevealStore: spoilerRevealStore
         )
+        if let editor = row.editor {
+            editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
         representation.size = size
         let image = NSImage(size: size)
         image.addRepresentation(representation)
         return image
+    }
+
+    /// What a row shows partway through `running`: its old picture fading
+    /// out under `picture`, the row's content before this update.
+    func shownCrossfade(_ running: NativeTimelineRowFade, over picture: NSImage) -> NSImage {
+        let remaining = running.remaining(at: ProcessInfo.processInfo.systemUptime)
+        let size = NSSize(
+            width: max(running.image.size.width, picture.size.width),
+            height: max(running.image.size.height, picture.size.height)
+        )
+        return NSImage(size: size, flipped: true) { _ in
+            running.image.draw(
+                in: CGRect(origin: .zero, size: running.image.size), from: .zero, operation: .sourceOver,
+                fraction: remaining, respectFlipped: true, hints: nil
+            )
+            picture.draw(
+                in: CGRect(origin: .zero, size: picture.size), from: .zero, operation: .sourceOver,
+                fraction: 1 - remaining, respectFlipped: true, hints: nil
+            )
+            return true
+        }
     }
 
     /// Draws a replaced row's new content fading in over the old picture.
