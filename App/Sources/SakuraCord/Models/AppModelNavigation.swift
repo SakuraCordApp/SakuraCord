@@ -87,6 +87,7 @@ extension AppModel {
         operation: @escaping @MainActor (AppModel, AppModelAccountSession) async -> Void
     ) {
         cancelConversationNavigation()
+        if guildJoinRequests.selectedGuildID != nil { selectGuildJoinRequest(nil) }
         let account = accountSession()
         let task = startAccountChildTask(account: account) { model, account in
             // A task cancelled before it starts never opens a history transaction.

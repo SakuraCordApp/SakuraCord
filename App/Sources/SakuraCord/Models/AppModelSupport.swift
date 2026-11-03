@@ -93,6 +93,7 @@ extension AppModel {
         resetMessageSearches()
         captcha.cancel()
         serverInvites.reset()
+        guildJoinRequests.reset()
         friends.reset()
         lastDirectMessageSelection = nil
         ignoredUsers.reset()

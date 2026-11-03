@@ -121,6 +121,7 @@ final class ChannelSidebarSelectionCommitter<Selection: Equatable> {
 
 struct ChannelSidebarView: View {
     let voiceModel: AppModel
+    var showsConversations = true
     let guild: Guild?
     let channels: [Channel]
     let channelGroups: [ChannelGroup]
@@ -142,7 +143,9 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if guild == nil {
+            if !showsConversations {
+                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if guild == nil {
                 DirectMessageInboxView(
                     model: voiceModel,
                     channels: channels,

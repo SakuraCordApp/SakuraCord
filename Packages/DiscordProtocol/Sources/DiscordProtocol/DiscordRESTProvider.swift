@@ -287,6 +287,10 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var resolvingHistoryMemberIDs: [GuildID: Set<UserID>] = [:]
     var cachedGuildOnboarding: [GuildID: GuildOnboarding] = [:]
     var cachedGuilds: [GuildID: Guild] = [:]
+    /// The current account's applications, one per server, from READY and Gateway join-request events.
+    var cachedGuildJoinRequests: [GuildID: GuildJoinRequest] = [:]
+    /// The last loaded application per server: its version and fields as Discord sent them.
+    var cachedJoinApplicationForms: [GuildID: (version: String, fields: [JSONValue])] = [:]
     var cachedGuildRailItems: [GuildRailItem] = []
     var cachedGuildLayout: DiscordGuildLayout?
     var guildFoldersSettings: Data?
