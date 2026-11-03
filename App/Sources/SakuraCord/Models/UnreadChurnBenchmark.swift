@@ -86,7 +86,16 @@ enum UnreadChurnBenchmark {
         var previous = ProcessInfo.processInfo.systemUptime
         let start = previous
         let cpuStart = NativeTimelineBenchmarkArtifact.currentThreadCPUTime()
+        let completion = ForumBenchmarkCompletion()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            completion.continuation = continuation
+            // The display link stops firing if the window closes, so a
+            // wall-clock deadline also ends the phase.
+            completion.deadline = Task { @MainActor in
+                guard (try? await Task.sleep(for: .seconds(seconds + 5))) != nil else { return }
+                ticker.stop()
+                completion.finish()
+            }
             ticker.start(on: view) {
                 let now = ProcessInfo.processInfo.systemUptime
                 intervals.append((now - previous) * 1_000)
@@ -94,7 +103,7 @@ enum UnreadChurnBenchmark {
                 tick(now)
                 if now - start >= seconds {
                     ticker.stop()
-                    continuation.resume()
+                    completion.finish()
                 }
             }
         }
