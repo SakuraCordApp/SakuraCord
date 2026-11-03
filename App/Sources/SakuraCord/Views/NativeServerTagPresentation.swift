@@ -103,12 +103,17 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         height / 2 + glyphBounds.midY
     }
 
-    private func glyphPath(baseline: CGFloat) -> CGPath {
+    private func glyphPathAndColorRuns(baseline: CGFloat) -> (path: CGPath, colorRuns: [CTRun]) {
         let runs = (CTLineGetGlyphRuns(line) as [AnyObject]) as? [CTRun] ?? []
         let path = CGMutablePath()
+        var colorRuns: [CTRun] = []
         for run in runs {
             let runAttributes = CTRunGetAttributes(run) as NSDictionary
             guard let nsFont = runAttributes[kCTFontAttributeName] as? NSFont else { continue }
+            if CTFontGetSymbolicTraits(nsFont).contains(.traitColorGlyphs) {
+                colorRuns.append(run)
+                continue
+            }
             let runFont = nsFont as CTFont
             let glyphCount = CTRunGetGlyphCount(run)
             var glyphs = [CGGlyph](repeating: 0, count: glyphCount)
@@ -122,7 +127,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
                 }
             }
         }
-        return path
+        return (path, colorRuns)
     }
 
     @MainActor
@@ -165,7 +170,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
                 let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
                 if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
                     context.saveGState()
-                    let path = glyphPath(baseline: baseline)
+                    let (path, _) = glyphPathAndColorRuns(baseline: baseline)
                     context.addPath(path)
                     context.clip()
                     context.setBlendMode(.plusLighter)
@@ -213,6 +218,8 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             return
         }
 
+        let (path, colorRuns) = glyphPathAndColorRuns(baseline: baseline)
+
         if isUnderlined {
             context.saveGState()
             let primary = gradientColors[0]
@@ -222,14 +229,12 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
                 color: primary.withAlphaComponent(0.45).cgColor
             )
             context.setFillColor(primary.withAlphaComponent(0.45).cgColor)
-            let path = glyphPath(baseline: baseline)
             context.addPath(path)
             context.fillPath()
             context.restoreGState()
         }
 
         context.saveGState()
-        let path = glyphPath(baseline: baseline)
         context.addPath(path)
         context.clip()
         context.drawLinearGradient(
@@ -261,6 +266,15 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             }
         }
         context.restoreGState()
+
+        if !colorRuns.isEmpty {
+            context.saveGState()
+            context.textPosition = CGPoint(x: 0, y: baseline)
+            for run in colorRuns {
+                CTRunDraw(run, context, CFRange())
+            }
+            context.restoreGState()
+        }
 
         if isUnderlined {
             context.saveGState()

@@ -425,6 +425,13 @@ extension NativeMemberListCanvasView {
         foreground.frame = host.frame
         foreground.layer?.zPosition = 12
         foreground.needsDisplay = true
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            memberHoverTicker.start(on: self) { [weak self] in
+                self?.rowForegroundOverlay?.needsDisplay = true
+            }
+        } else {
+            memberHoverTicker.stop()
+        }
     }
 
     func installProfileAnchorIfNeeded() {
@@ -493,6 +500,7 @@ extension NativeMemberListCanvasView {
     }
 
     func removeRowOverlay() {
+        memberHoverTicker.stop()
         let previousIndex = rowOverlayIndex
         rowOverlay?.removeFromSuperview()
         rowOverlay = nil

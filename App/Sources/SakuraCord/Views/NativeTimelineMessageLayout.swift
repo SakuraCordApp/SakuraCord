@@ -371,9 +371,11 @@ extension NativeTimelineRowLayout {
                 for: message.timestamp, settings: source?.interfaceSettings ?? .defaults
             )
             let timestampWidth = NativeTimelineRowLayout.measuredTextWidth(timestamp, font: metrics.timestampFont)
-            // Keep the adjacent controls visible while long decorative names
-            // truncate. At narrow widths the tag is omitted before the name.
-            let timestampReserve = min(timestampWidth, availableWidth / 3) + 7
+            let editedWidth: CGFloat = message.editedTimestamp != nil
+                ? NativeTimelineRowLayout.measuredTextWidth("(edited)", font: metrics.editedFont) + InterfaceScale.metric(7)
+                : 0
+            // Keep the adjacent controls and full timestamp/edited labels visible while long decorative names truncate.
+            let timestampReserve = timestampWidth + editedWidth + InterfaceScale.metric(7)
             let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
             let botText = badge.map { NativeIdentityTextPresentation(
                 $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
@@ -436,10 +438,25 @@ extension NativeTimelineRowLayout {
                 )
                 headerX += botWidth
             }
+            appendTimestampAndEdited(
+                headerX: &headerX,
+                baselineY: baselineY,
+                headerHeight: headerHeight,
+                timestamp: timestamp
+            )
+        }
+
+        private mutating func appendTimestampAndEdited(
+            headerX: inout CGFloat,
+            baselineY: CGFloat,
+            headerHeight: CGFloat,
+            timestamp: String
+        ) {
+            let maxHeaderX = contentX + ordinaryContentWidth
             headerX += InterfaceScale.metric(7)
             let timestampText = NativeIdentityTextPresentation(
                 timestamp, font: metrics.timestampFont,
-                maximumWidth: max(0, contentX + contentWidth - headerX)
+                maximumWidth: max(0, maxHeaderX - headerX)
             )
             result.timestampText = timestampText
             result.timestampFrame = CGRect(
@@ -451,7 +468,7 @@ extension NativeTimelineRowLayout {
                 headerX += InterfaceScale.metric(7)
                 let editedText = NativeIdentityTextPresentation(
                     "(edited)", font: metrics.editedFont,
-                    maximumWidth: max(0, contentX + contentWidth - headerX)
+                    maximumWidth: max(0, maxHeaderX - headerX)
                 )
                 result.editedText = editedText
                 result.editedFrame = CGRect(

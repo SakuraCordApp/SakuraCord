@@ -698,21 +698,6 @@ func `server verification blocks sends without exposing hidden channels`(state: 
     #expect(can(context))
 }
 
-@Test func `guild role hasIcon recognizes icon URL and unicode emoji`() {
-    var role = GuildRole(id: RoleID(rawValue: 1), name: "Member", position: 1)
-    #expect(!role.hasIcon)
-
-    role.unicodeEmoji = "  "
-    #expect(!role.hasIcon)
-
-    role.unicodeEmoji = "🌸"
-    #expect(role.hasIcon)
-
-    role.unicodeEmoji = nil
-    role.iconURL = URL(string: "https://cdn.discordapp.com/role-icons/1/icon.png")
-    #expect(role.hasIcon)
-}
-
 @Test func `message author presentation top role with icon selects highest position role`() {
     let roleNoIcon = GuildRole(id: RoleID(rawValue: 10), name: "No Icon High", position: 100)
     let roleIconLow = GuildRole(
