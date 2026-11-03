@@ -4,6 +4,8 @@ import AppKit
 /// while the motion its update started runs.
 struct NativeTimelineRowFade {
     let identifier: NativeMessageTimelineItem.Identifier
+    /// Where the row was last found, so finding it again is cheap.
+    var rowIndex: Int?
     let image: NSImage
     /// Set on the first frame, as for a row motion.
     var startUptime: TimeInterval?
@@ -28,6 +30,8 @@ struct NativeTimelineDepartedRun {
         /// space blank.
         let image: NSImage?
         let height: CGFloat
+        /// The motion whose step closes this piece's height.
+        let motionID: Int
         var startUptime: TimeInterval?
 
         func remaining(at uptime: TimeInterval) -> CGFloat {
@@ -36,6 +40,8 @@ struct NativeTimelineDepartedRun {
     }
 
     var pieces: [Piece] = []
+    /// Where the row above the run was last found.
+    var anchorIndex: Int?
 
     /// The height the run still takes below its row.
     func gap(at uptime: TimeInterval) -> CGFloat {
@@ -49,7 +55,14 @@ struct NativeTimelineDepartedRun {
         for index in run.pieces.indices where run.pieces[index].startUptime == nil {
             run.pieces[index].startUptime = uptime
         }
-        run.pieces.removeAll { $0.remaining(at: uptime) <= 0 }
+        return run.removingPieces { $0.remaining(at: uptime) <= 0 }
+    }
+
+    /// The run without the pieces matching `shouldRemove`; nil once none
+    /// is left.
+    func removingPieces(where shouldRemove: (Piece) -> Bool) -> Self? {
+        var run = self
+        run.pieces.removeAll(where: shouldRemove)
         return run.pieces.isEmpty ? nil : run
     }
 }
@@ -129,7 +142,7 @@ extension NativeTimelineCanvasView {
         guard !departedRuns.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
         let now = ProcessInfo.processInfo.systemUptime
         for (anchor, run) in departedRuns {
-            guard let index = rowIndex(forIdentifier: anchor) else { continue }
+            guard let index = rowIndex(forIdentifier: anchor, hint: run.anchorIndex) else { continue }
             // The gap is the end of the row's displayed height, which may
             // also be easing from a change of the row's own.
             var originY = displayedRowOrigin(at: index) + displayedRowHeight(at: index) - run.gap(at: now)
@@ -149,15 +162,26 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// Finds the rows the running fades are drawn against again, from
+    /// where they were.
+    func refreshRowFadeIndices() {
+        for index in rowFades.indices {
+            rowFades[index].rowIndex = rowIndex(forIdentifier: rowFades[index].identifier, hint: rowFades[index].rowIndex)
+        }
+        for (anchor, run) in departedRuns {
+            departedRuns[anchor]?.anchorIndex = rowIndex(forIdentifier: anchor, hint: run.anchorIndex)
+        }
+    }
+
     /// The region every running fade draws in, for the next frame.
     var rowFadeFrame: CGRect {
         let crossfades = rowFades.reduce(CGRect.null) { frame, fade in
-            guard let index = rowIndex(forIdentifier: fade.identifier) else { return frame }
+            guard let index = rowIndex(forIdentifier: fade.identifier, hint: fade.rowIndex) else { return frame }
             return frame.union(rowFrame(at: index)).union(CGRect(origin: rowFrame(at: index).origin, size: fade.image.size))
         }
         let now = ProcessInfo.processInfo.systemUptime
         return departedRuns.reduce(crossfades) { frame, entry in
-            guard let index = rowIndex(forIdentifier: entry.key) else { return frame }
+            guard let index = rowIndex(forIdentifier: entry.key, hint: entry.value.anchorIndex) else { return frame }
             return frame.union(CGRect(
                 x: 0, y: displayedRowOrigin(at: index), width: bounds.width,
                 height: max(displayedRowHeight(at: index), layouts[index].height + entry.value.gap(at: now))

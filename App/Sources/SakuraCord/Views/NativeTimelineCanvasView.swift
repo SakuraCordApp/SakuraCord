@@ -311,10 +311,18 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
     var rowFades: [NativeTimelineRowFade] = []
     var departedRuns: [NativeMessageTimelineItem.Identifier: NativeTimelineDepartedRun] = [:]
-    typealias HandedOverRun = (anchor: NativeMessageTimelineItem.Identifier, run: NativeTimelineDepartedRun)
-    /// Runs whose rows were deleted by the update landing now, by deleted
-    /// row, for that update's motion to place.
-    var handedOverRuns: [NativeMessageTimelineItem.Identifier: HandedOverRun] = [:]
+    /// What a row deleted by the update landing now was still showing:
+    /// the run closing below it and the part of its own height change
+    /// still to come, both now the row before it's.
+    struct HandOver {
+        let anchor: NativeMessageTimelineItem.Identifier
+        var run: NativeTimelineDepartedRun?
+        var residualHeight: CGFloat = 0
+    }
+
+    /// By deleted row, for the update that deleted it to place.
+    var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
+    var nextReactionMotionID = 1
     let reactionTicker = NativeTimelineDisplayLinkTicker()
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]

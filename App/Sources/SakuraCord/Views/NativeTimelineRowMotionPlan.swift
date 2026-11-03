@@ -84,17 +84,18 @@ struct NativeTimelineRowMotionPlan {
         expectedShift = rowShift - delta
     }
 
-    mutating func addStep(for row: FollowedRow, delta: CGFloat) {
+    mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false) {
         guard abs(delta) >= 0.5 else { return }
-        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta))
+        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap))
     }
 
-    /// Deleted rows after the last followed row: it keeps their height and
-    /// gives it up as the motion runs, so the rows after it close the gap.
-    mutating func closeGap(height: CGFloat) {
+    /// Deleted rows after the last followed row: it keeps the height they
+    /// showed and gives it up as the motion runs, so the rows after it
+    /// close the gap. `height` is what the rows took in the layout.
+    mutating func closeGap(height: CGFloat, shown: CGFloat) {
         guard let previous else { return }
         expectedShift = expectedShift.map { $0 + height }
-        addStep(for: previous, delta: -height)
+        addStep(for: previous, delta: -shown, closesGap: true)
     }
 
     mutating func invalidate() {
@@ -109,9 +110,11 @@ struct NativeTimelineUpdateMotion {
 
     /// Where the rows that left the timeline stood before the update.
     let departedOldIndices: Set<Int>
-    /// The runs still closing below rows this update deleted, now below
-    /// the row before each of them.
-    var inheritedRuns: [Identifier: NativeTimelineCanvasView.HandedOverRun]
+    /// What rows this update deleted were still showing, now handed to the
+    /// row before each of them.
+    var handOvers: [Identifier: NativeTimelineCanvasView.HandOver]
+    /// The motion this update starts, for the pieces that belong to it.
+    let motionID: Int
     var plan = NativeTimelineRowMotionPlan()
     var crossfades: [NativeTimelineRowFade] = []
     /// A piece joining the run below a row. A new one belongs to this
