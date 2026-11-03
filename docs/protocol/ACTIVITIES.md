@@ -30,6 +30,8 @@ names a Gateway `session_id`, so one account can take part from one client while
 another of its sessions does not. `EMBEDDED_ACTIVITY_UPDATE_V2` carries the whole
 roster; an empty roster ends the instance. Starting another Activity removes the
 session from the previous instance without a separate leave request.
+READY_SUPPLEMENTAL lists the running instances of each guild under
+`activity_instances`; private-channel instances arrive only as updates.
 
 ## Shelf and launch
 

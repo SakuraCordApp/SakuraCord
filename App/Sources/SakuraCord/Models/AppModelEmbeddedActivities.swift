@@ -53,8 +53,9 @@ final class EmbeddedActivityStore {
         instances[instance.compositeInstanceID] = instance.participants.isEmpty ? nil : instance
     }
 
+    /// Replaces the guild instances; the snapshot never lists private ones.
     func replaceInstances(_ instances: [EmbeddedActivityInstance]) {
-        self.instances = Dictionary(
+        self.instances = self.instances.filter { $0.value.location.guildID == nil }.merging(
             instances.filter { !$0.participants.isEmpty }.map { ($0.compositeInstanceID, $0) },
             uniquingKeysWith: { _, latest in latest }
         )
@@ -127,13 +128,17 @@ extension AppModel {
         let store = embeddedActivities
         let account = accountSession()
         if store.session != nil { leaveActivity() }
-        if channel.guildID != nil, activeVoiceChannel?.id != channel.id {
-            await joinVoice(channel)
-            guard isCurrentAccountSession(account), activeVoiceChannel?.id == channel.id else { return }
-        }
         let location = EmbeddedActivityLocation.of(channel)
         let session = EmbeddedActivityStore.Session(application: application, channel: channel, phase: .launching)
         store.session = session
+        if channel.guildID != nil, activeVoiceChannel?.id != channel.id {
+            await joinVoice(channel)
+            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            guard activeVoiceChannel?.id == channel.id else {
+                store.endSession()
+                return
+            }
+        }
         // A rejoin must not race the leave Discord has not yet seen.
         for leave in store.pendingLeaves.values { await leave.value }
         guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
@@ -197,7 +202,7 @@ extension AppModel {
     }
 
     /// Joins the instance an application's launch message announced, joining
-    /// the call first in a private channel, where the Activity lives in the call.
+    /// the call first in a DM or group, where the Activity lives in the call.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
         guard let instance = embeddedActivities.instances[instanceID],
               let channel = knownRootChannel(instance.location.channelID)
@@ -205,7 +210,7 @@ extension AppModel {
         let application = embeddedActivities.application(instance.applicationID) ?? EmbeddedActivityApplication(
             id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL
         )
-        if channel.guildID == nil, activeVoiceChannel?.id != channel.id {
+        if channel.guildID == nil, channel.recipients.contains(where: { !$0.isBot }), activeVoiceChannel?.id != channel.id {
             await joinPrivateCall(in: channel)
             guard activeVoiceChannel?.id == channel.id else { return }
         }
