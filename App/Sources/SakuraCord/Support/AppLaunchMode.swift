@@ -76,6 +76,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
         includesLongServerList = arguments.contains("--offline-long-server-list")
         runsForumPerformanceAutoScroll =
             arguments.contains("--offline-forum-performance-autoscroll")
+            || arguments.contains("--offline-forum-gallery-resize")
         includesForumPerformanceFixture =
             arguments.contains("--offline-forum-performance") || runsForumPerformanceAutoScroll
         includesChatMediaPerformanceFixture =
@@ -119,7 +120,7 @@ nonisolated struct AppLaunchConfiguration: Equatable, Sendable {
             || includesPinsPerformanceFixture
         let testingFlags: Set = [
             "--offline", "--offline-sign-in", "--offline-long-server-list", "--offline-forum-performance",
-            "--offline-forum-performance-autoscroll",
+            "--offline-forum-performance-autoscroll", "--offline-forum-gallery-resize",
             "--offline-chat-performance", "--offline-chat-performance-autoscroll",
             "--offline-chat-performance-live-autoscroll",
             "--offline-chat-media-performance-autoscroll",
