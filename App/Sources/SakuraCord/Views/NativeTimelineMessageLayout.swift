@@ -478,6 +478,11 @@ extension NativeTimelineRowLayout {
             }
 
             if message.forwardedSnapshot != nil {
+                // The bar takes the column's leading edge and the forwarded
+                // content moves right of it, so the bar stays clear of the
+                // avatar gutter and a bubble's rim.
+                contentX += MessageRowLayoutMetrics.forwardedContentInset
+                contentWidth -= MessageRowLayoutMetrics.forwardedContentInset
                 result.forwardedHeaderFrame = CGRect(
                     x: contentX,
                     y: verticalOffset,
@@ -881,8 +886,10 @@ extension NativeTimelineRowLayout {
                 hasRichContent = true
             }
             if let forwardedBarStartY {
+                contentX -= MessageRowLayoutMetrics.forwardedContentInset
+                contentWidth += MessageRowLayoutMetrics.forwardedContentInset
                 result.forwardedBarFrame = CGRect(
-                    x: contentX - InterfaceScale.metric(11),
+                    x: contentX,
                     y: forwardedBarStartY,
                     width: InterfaceScale.metric(3),
                     height: max(InterfaceScale.metric(18), verticalOffset - forwardedBarStartY)

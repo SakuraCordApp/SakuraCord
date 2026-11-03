@@ -1,44 +1,18 @@
 import SakuraCordModels
 import SwiftUI
 
-struct ForwardSelectionControl: View {
-    let isSelected: Bool
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(isSelected ? SakuraCordAccentColor.color : .clear)
-            Circle()
-                .stroke(
-                    isSelected ? SakuraCordAccentColor.color : Color.secondary,
-                    lineWidth: 1.8
-                )
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .font(.interfaceSystem(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-        }
-        .frame(
-            width: ForwardPickerLayoutMetrics.selectionDiameter,
-            height: ForwardPickerLayoutMetrics.selectionDiameter
-        )
-        .accessibilityHidden(true)
-    }
-}
-
+/// Rows sit 8 points inside the 32-point panel. Their 24-point corners stay
+/// concentric with it, as the 32-point avatar and check do 8 points inside them.
 struct ForwardDestinationRow: View {
     let destination: ForwardDestination
     let isSelected: Bool
     let action: () -> Void
 
-    @State private var isHovered = false
-
     var body: some View {
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(12)) {
+            HStack(spacing: InterfaceScale.metric(10)) {
                 ForwardDestinationAvatar(destination: destination)
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                VStack(alignment: .leading, spacing: InterfaceScale.metric(1)) {
                     Text(destination.title)
                         .font(.interface(.body).weight(.medium))
                         .foregroundStyle(.primary)
@@ -52,29 +26,23 @@ struct ForwardDestinationRow: View {
                             .lineLimit(1)
                     }
                 }
-                Spacer()
-                ForwardSelectionControl(isSelected: isSelected)
+                Spacer(minLength: 0)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.interfaceSystem(size: 20))
+                    .foregroundStyle(isSelected ? SakuraCordAccentColor.color : Color.secondary.opacity(0.6))
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: ForwardPickerLayoutMetrics.iconSize, height: ForwardPickerLayoutMetrics.iconSize)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, InterfaceScale.metric(16))
-            .frame(height: ForwardPickerLayoutMetrics.rowHeight)
-            .contentShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous))
-            .background {
-                RoundedRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous)
-                    .fill(rowBackground)
-            }
+            .padding(InterfaceScale.metric(8))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PopoverRowButtonStyle(isSelected: isSelected, cornerRadius: InterfaceScale.metric(24)))
         .disabled(destination.unavailableReason != nil)
         .opacity(destination.unavailableReason == nil ? 1 : 0.62)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(destination.id.accessibilityIdentifier)
-        .onModalHover { hovering in
-            isHovered = hovering
-        }
-    }
-
-    private var rowBackground: Color {
-        .primary.opacity(isSelected || isHovered ? 0.075 : 0.001)
     }
 
     private var accessibilityLabel: String {
@@ -96,7 +64,7 @@ private struct ForwardDestinationAvatar: View {
             AvatarView(
                 name: destination.title,
                 url: destination.avatarURL,
-                size: InterfaceScale.metric(28)
+                size: ForwardPickerLayoutMetrics.iconSize
             )
         }
     }
@@ -107,14 +75,14 @@ private struct ForwardDestinationAvatar: View {
                 GuildIconView(
                     name: destination.guild?.name ?? destination.title,
                     iconURL: destination.guild?.iconURL,
-                    size: InterfaceScale.metric(28),
-                    cornerRadius: InterfaceScale.metric(9),
+                    size: ForwardPickerLayoutMetrics.iconSize,
+                    cornerRadius: ForwardPickerLayoutMetrics.iconSize / 2,
                     animates: false
                 )
             } else {
-                ConcentricRectangle(cornerRadius: InterfaceScale.metric(9), style: .continuous)
+                Circle()
                     .fill(Color.secondary.opacity(0.16))
-                    .frame(width: InterfaceScale.metric(28), height: InterfaceScale.metric(28))
+                    .frame(width: ForwardPickerLayoutMetrics.iconSize, height: ForwardPickerLayoutMetrics.iconSize)
                     .overlay {
                         Text(guildInitials)
                             .font(.interfaceSystem(size: 10, weight: .medium))
@@ -133,9 +101,9 @@ private struct ForwardDestinationAvatar: View {
                 .overlay {
                     Circle().stroke(.black.opacity(0.12), lineWidth: 0.5)
                 }
-                .offset(x: InterfaceScale.metric(4), y: InterfaceScale.metric(4))
+                .offset(x: InterfaceScale.metric(3), y: InterfaceScale.metric(3))
         }
-        .frame(width: InterfaceScale.metric(34), height: InterfaceScale.metric(34))
+        .frame(width: ForwardPickerLayoutMetrics.iconSize, height: ForwardPickerLayoutMetrics.iconSize)
         .accessibilityHidden(true)
     }
 
