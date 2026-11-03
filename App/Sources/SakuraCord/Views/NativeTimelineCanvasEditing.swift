@@ -26,8 +26,12 @@ extension NativeTimelineCanvasView {
         let old = hoveredAuthorMessageID
         hoveredAuthorMessageID = value
         if value != nil {
-            authorHoverTicker.start(on: self) { [weak self] in
-                self?.stepAuthorHover()
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                authorHoverTicker.start(on: self) { [weak self] in
+                    self?.stepAuthorHover()
+                }
+            } else {
+                authorHoverTicker.stop()
             }
         } else {
             authorHoverTicker.stop()
@@ -42,6 +46,10 @@ extension NativeTimelineCanvasView {
     }
 
     private func stepAuthorHover() {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            authorHoverTicker.stop()
+            return
+        }
         guard let messageID = hoveredAuthorMessageID,
               let index = items.firstIndex(where: { $0.messageID == messageID })
         else {

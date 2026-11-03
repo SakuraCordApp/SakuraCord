@@ -103,6 +103,28 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         height / 2 + glyphBounds.midY
     }
 
+    private func glyphPath(baseline: CGFloat) -> CGPath {
+        let runs = (CTLineGetGlyphRuns(line) as [AnyObject]) as? [CTRun] ?? []
+        let path = CGMutablePath()
+        for run in runs {
+            let runAttributes = CTRunGetAttributes(run) as NSDictionary
+            guard let nsFont = runAttributes[kCTFontAttributeName] as? NSFont else { continue }
+            let runFont = nsFont as CTFont
+            let glyphCount = CTRunGetGlyphCount(run)
+            var glyphs = [CGGlyph](repeating: 0, count: glyphCount)
+            var positions = [CGPoint](repeating: .zero, count: glyphCount)
+            CTRunGetGlyphs(run, CFRangeMake(0, glyphCount), &glyphs)
+            CTRunGetPositions(run, CFRangeMake(0, glyphCount), &positions)
+            for glyphIndex in 0 ..< glyphCount {
+                if let subPath = CTFontCreatePathForGlyph(runFont, glyphs[glyphIndex], nil) {
+                    let transform = CGAffineTransform(translationX: positions[glyphIndex].x, y: positions[glyphIndex].y + baseline)
+                    path.addPath(subPath, transform: transform)
+                }
+            }
+        }
+        return path
+    }
+
     @MainActor
     func draw(in frame: CGRect, color: NSColor, context: CGContext, isUnderlined: Bool = false) {
         guard frame.width > 0, frame.height > 0 else { return }
@@ -116,8 +138,8 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             context.saveGState()
             context.setShadow(
                 offset: .zero,
-                blur: InterfaceScale.metric(2.5),
-                color: color.withAlphaComponent(0.35).cgColor
+                blur: InterfaceScale.metric(3.5),
+                color: color.withAlphaComponent(0.45).cgColor
             )
             context.setFillColor(color.cgColor)
             context.textPosition = CGPoint(x: 0, y: baseline)
@@ -129,30 +151,32 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         CTLineDraw(line, context)
 
         if isUnderlined {
-            let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
-            let textWidth = min(width, frame.width)
-            let highlightX = textWidth * (phase * 1.6 - 0.3)
-            let bandWidth = max(InterfaceScale.metric(28), textWidth * 0.4)
-            let shimmerColors = [
-                NSColor.white.withAlphaComponent(0).cgColor,
-                NSColor.white.withAlphaComponent(0.55).cgColor,
-                NSColor.white.withAlphaComponent(0).cgColor,
-            ] as CFArray
-            let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
-            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-            if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
-                context.saveGState()
-                context.setTextDrawingMode(.clip)
-                context.textPosition = CGPoint(x: 0, y: baseline)
-                CTLineDraw(line, context)
-                context.setBlendMode(.plusLighter)
-                context.drawLinearGradient(
-                    shimmerGradient,
-                    start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
-                    end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
-                    options: []
-                )
-                context.restoreGState()
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
+                let textWidth = min(width, frame.width)
+                let highlightX = textWidth * (phase * 1.6 - 0.3)
+                let bandWidth = max(InterfaceScale.metric(28), textWidth * 0.4)
+                let shimmerColors = [
+                    NSColor.white.withAlphaComponent(0).cgColor,
+                    NSColor.white.withAlphaComponent(0.55).cgColor,
+                    NSColor.white.withAlphaComponent(0).cgColor,
+                ] as CFArray
+                let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
+                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+                if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
+                    context.saveGState()
+                    let path = glyphPath(baseline: baseline)
+                    context.addPath(path)
+                    context.clip()
+                    context.setBlendMode(.plusLighter)
+                    context.drawLinearGradient(
+                        shimmerGradient,
+                        start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
+                        end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
+                        options: []
+                    )
+                    context.restoreGState()
+                }
             }
 
             context.saveGState()
@@ -194,19 +218,20 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             let primary = gradientColors[0]
             context.setShadow(
                 offset: .zero,
-                blur: InterfaceScale.metric(2.5),
-                color: primary.withAlphaComponent(0.35).cgColor
+                blur: InterfaceScale.metric(3.5),
+                color: primary.withAlphaComponent(0.45).cgColor
             )
-            context.setFillColor(primary.withAlphaComponent(0.35).cgColor)
-            context.textPosition = CGPoint(x: 0, y: baseline)
-            CTLineDraw(line, context)
+            context.setFillColor(primary.withAlphaComponent(0.45).cgColor)
+            let path = glyphPath(baseline: baseline)
+            context.addPath(path)
+            context.fillPath()
             context.restoreGState()
         }
 
         context.saveGState()
-        context.setTextDrawingMode(.clip)
-        context.textPosition = CGPoint(x: 0, y: baseline)
-        CTLineDraw(line, context)
+        let path = glyphPath(baseline: baseline)
+        context.addPath(path)
+        context.clip()
         context.drawLinearGradient(
             gradient,
             start: CGPoint(x: 0, y: 0),
@@ -214,7 +239,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
         )
 
-        if isUnderlined {
+        if isUnderlined, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
             let textWidth = min(width, frame.width)
             let highlightX = textWidth * (phase * 1.6 - 0.3)
