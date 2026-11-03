@@ -7,6 +7,8 @@ enum MessageRowLayoutMetrics {
     nonisolated static var horizontalInset: CGFloat { InterfaceScale.metric(14) }
     nonisolated static var avatarDiameter: CGFloat { InterfaceScale.metric(38) }
     nonisolated static var avatarColumnGap: CGFloat { InterfaceScale.metric(12) }
+    /// Forwarded content's indent past its 3-point bar.
+    nonisolated static var forwardedContentInset: CGFloat { InterfaceScale.metric(11) }
     nonisolated static var compactContentHeight: CGFloat { InterfaceScale.metric(18) }
     nonisolated static var authorLineHeight: CGFloat { InterfaceScale.metric(16) }
     nonisolated static var authorContentSpacing: CGFloat { InterfaceScale.metric(2) }
