@@ -281,8 +281,7 @@ struct NativeTimelineInviteLayout {
         }
         if countX > originX { cursor += InterfaceScale.metric(20) }
         guard let guildID = invite.guildID else { return }
-        let created = Date(timeIntervalSince1970: Double((guildID.rawValue >> 22) + 1_420_070_400_000) / 1_000)
-        labels.append(.init(text: "Est. \(created.formatted(.dateTime.month(.abbreviated).year()))",
+        labels.append(.init(text: "Est. \(guildID.createdAt.formatted(.dateTime.month(.abbreviated).year()))",
                             frame: CGRect(x: originX, y: cursor, width: width, height: InterfaceScale.metric(20)), secondary: true))
         cursor += InterfaceScale.metric(20)
     }

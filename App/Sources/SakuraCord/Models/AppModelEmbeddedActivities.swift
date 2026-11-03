@@ -15,11 +15,12 @@ final class EmbeddedActivityStore {
 
         var application: EmbeddedActivityApplication
         var channel: Channel
-        var location: EmbeddedActivityLocation
         var instance: EmbeddedActivityInstance?
         var phase: Phase
         /// Tells this launch's late results apart from a newer one in the same place.
         let launchID = UUID()
+
+        var location: EmbeddedActivityLocation { .of(channel) }
     }
 
     /// A question the Activity's host must ask before acting for it.
@@ -57,10 +58,6 @@ final class EmbeddedActivityStore {
             instances.filter { !$0.participants.isEmpty }.map { ($0.compositeInstanceID, $0) },
             uniquingKeysWith: { _, latest in latest }
         )
-    }
-
-    func instance(_ compositeInstanceID: String) -> EmbeddedActivityInstance? {
-        instances[compositeInstanceID]
     }
 
     func instances(in channelID: ChannelID) -> [EmbeddedActivityInstance] {
@@ -135,7 +132,7 @@ extension AppModel {
             guard isCurrentAccountSession(account), activeVoiceChannel?.id == channel.id else { return }
         }
         let location = EmbeddedActivityLocation.of(channel)
-        let session = EmbeddedActivityStore.Session(application: application, channel: channel, location: location, phase: .launching)
+        let session = EmbeddedActivityStore.Session(application: application, channel: channel, phase: .launching)
         store.session = session
         // A rejoin must not race the leave Discord has not yet seen.
         for leave in store.pendingLeaves.values { await leave.value }
@@ -188,7 +185,7 @@ extension AppModel {
 
     /// Players in the instance an Activity invite or launch message points to.
     func activityPlayers(reference: ServerInviteReference?, instanceID: String?) -> Int {
-        let instance = instanceID.flatMap { embeddedActivities.instance($0) }
+        let instance = instanceID.flatMap { embeddedActivities.instances[$0] }
             ?? reference.flatMap { inviteEntry(for: $0)?.invite }.flatMap(activityInstance(for:))
         return instance?.participants.count ?? 0
     }
@@ -196,13 +193,13 @@ extension AppModel {
     /// The launch message's button: join a running instance, or show it joined or ended.
     func activityInstanceAction(_ instanceID: String) -> (String, Bool) {
         if embeddedActivities.session?.instance?.compositeInstanceID == instanceID { return ("Joined", true) }
-        return embeddedActivities.instance(instanceID) == nil ? ("Ended", true) : ("Join", false)
+        return embeddedActivities.instances[instanceID] == nil ? ("Ended", true) : ("Join", false)
     }
 
     /// Joins the instance an application's launch message announced, joining
     /// the call first in a private channel, where the Activity lives in the call.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
-        guard let instance = embeddedActivities.instance(instanceID),
+        guard let instance = embeddedActivities.instances[instanceID],
               let channel = knownRootChannel(instance.location.channelID)
         else { return }
         let application = embeddedActivities.application(instance.applicationID) ?? EmbeddedActivityApplication(
@@ -233,7 +230,9 @@ extension AppModel {
 
     private func activityInstance(for invite: ServerInvite) -> EmbeddedActivityInstance? {
         guard let activity = invite.activity, let channelID = invite.channelID else { return nil }
-        return embeddedActivities.instances(in: channelID).first { $0.applicationID == activity.applicationID }
+        return embeddedActivities.instances.values.first {
+            $0.location.channelID == channelID && $0.applicationID == activity.applicationID
+        }
     }
 
     func consumeEmbeddedActivityEvent(_ event: ClientEvent) {

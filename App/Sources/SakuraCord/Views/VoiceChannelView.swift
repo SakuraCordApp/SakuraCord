@@ -18,7 +18,7 @@ struct VoiceChannelView: View {
 
     @ViewBuilder private var connectedContent: some View {
         if let channel, model.embeddedActivities.session?.location.channelID == channel.id {
-            EmbeddedActivityStage(model: model, channel: channel)
+            EmbeddedActivityStage(model: model)
         } else if model.voiceSessionState == .connecting || model.voiceSessionState == .reconnecting {
             ZStack {
                 VoiceVideoGrid(model: model)

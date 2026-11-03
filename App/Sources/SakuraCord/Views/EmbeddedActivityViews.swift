@@ -28,11 +28,10 @@ struct EmbeddedActivityView: NSViewRepresentable {
 /// state, or an offer to join one already running in the channel.
 struct EmbeddedActivityStage: View {
     let model: AppModel
-    let channel: Channel
 
     var body: some View {
         let store = model.embeddedActivities
-        if let session = store.session, session.location.channelID == channel.id {
+        if let session = store.session {
             VStack(spacing: 0) {
                 header(session)
                 switch session.phase {
@@ -57,7 +56,7 @@ struct EmbeddedActivityStage: View {
             Text(session.application.name)
                 .font(.interface(.headline))
             if let count = session.instance?.participants.count {
-                Text(count == 1 ? "1 playing" : "\(count) playing")
+                Text("\(count) playing")
                     .font(.interface(.callout))
                     .foregroundStyle(.secondary)
             }
@@ -111,7 +110,7 @@ struct EmbeddedActivityJoinBanner: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(application?.name ?? "Activity")
                     .font(.interface(.callout).weight(.semibold))
-                Text(instance.participants.count == 1 ? "1 playing" : "\(instance.participants.count) playing")
+                Text("\(instance.participants.count) playing")
                     .font(.interface(.caption))
                     .foregroundStyle(.secondary)
             }

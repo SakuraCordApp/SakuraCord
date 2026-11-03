@@ -154,7 +154,7 @@ private struct DirectMessageCallRegion: View {
         VStack(spacing: 0) {
             Group {
                 if model.embeddedActivities.session?.location.channelID == channel.id {
-                    EmbeddedActivityStage(model: model, channel: channel)
+                    EmbeddedActivityStage(model: model)
                 } else {
                     VStack(spacing: 0) {
                         if isConnectedHere { EmbeddedActivityJoinBanner(model: model, channel: channel) }

@@ -195,7 +195,7 @@ final class EmbeddedActivityHost: NSObject {
             }
             reply(command, nonce, channelPayload(model: model))
         case "GET_CHANNEL_PERMISSIONS":
-            let permissions = activityChannel(model).flatMap(model.effectiveMessagePermissions) ?? 0
+            let permissions = model.embeddedActivities.session.flatMap { model.effectiveMessagePermissions(in: $0.channel) } ?? 0
             reply(command, nonce, ["permissions": String(instance.location.guildID == nil ? 0 : permissions)])
         case "GET_ACTIVITY_INSTANCE_CONNECTED_PARTICIPANTS":
             reply(command, nonce, ["participants": participantsPayload()])
@@ -341,14 +341,8 @@ final class EmbeddedActivityHost: NSObject {
 
     // MARK: Payloads
 
-    private func activityChannel(_ model: AppModel) -> Channel? {
-        model.activeVoiceChannel?.id == instance.location.channelID
-            ? model.activeVoiceChannel
-            : model.embeddedActivities.session?.channel
-    }
-
     private func channelPayload(model: AppModel) -> [String: Any] {
-        let channel = activityChannel(model)
+        let channel = model.embeddedActivities.session?.channel
         let type = switch channel?.kind {
         case .directMessage: 1
         case .groupDirectMessage: 3
@@ -416,7 +410,7 @@ final class EmbeddedActivityHost: NSObject {
         guard let model else { return nil }
         if model.currentUser?.id == userID { return model.currentUser }
         return model.membersByID[userID]?.user
-            ?? activityChannel(model)?.recipients.first { $0.id == userID }
+            ?? model.embeddedActivities.session?.channel.recipients.first { $0.id == userID }
     }
 
     private static func avatarHash(_ url: URL) -> String? {

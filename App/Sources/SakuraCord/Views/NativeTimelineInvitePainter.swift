@@ -36,8 +36,8 @@ extension NativeTimelineRowPainter {
             let color: NSColor = card.isUnavailable && label.bold && !outgoing ? .systemRed : label.secondary ? secondary : foreground
             attributedText(label.attributedText(color: color), in: label.frame, model: nil)
         }
+        let isLive = card.content?.onlineCount != nil || card.content?.activity != nil
         for (index, dot) in card.countDots.enumerated() {
-            let isLive = card.content?.onlineCount != nil || card.content?.activity != nil
             (index == 0 && isLive ? NSColor.systemGreen : secondary).setFill()
             NSBezierPath(ovalIn: dot).fill()
         }
