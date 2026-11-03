@@ -873,20 +873,23 @@ extension NativeTimelineCanvasView {
         let paintFrame = clipMaxY == nil ? rowFrame : CGRect(
             x: rowFrame.minX, y: rowFrame.minY, width: rowFrame.width, height: layouts[index].height
         )
-        // A shrinking row is taller on screen than its pictures.
-        guard paintFrame.intersects(dirtyRect) else { return }
-        if rowFades.isEmpty {
-            drawRowPicture(
-                item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
-                preparedMediaKeys: preparedMediaKeys, revealState: revealState
-            )
-        } else {
-            drawCrossfadingRow(at: index, rowFrame: rowFrame) {
+        // A shrinking row is taller on screen than its new picture, though
+        // not than the old one fading out over it.
+        let fade = rowFades.isEmpty ? nil : rowFades.first { $0.placement == .replaced(item.identifier) }
+        let picturesFrame = fade.map { paintFrame.union(CGRect(origin: rowFrame.origin, size: $0.image.size)) }
+        guard (picturesFrame ?? paintFrame).intersects(dirtyRect) else { return }
+        if let fade {
+            drawCrossfadingRow(fade, rowFrame: rowFrame) {
                 drawRowPicture(
                     item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
                     preparedMediaKeys: preparedMediaKeys, revealState: revealState
                 )
             }
+        } else {
+            drawRowPicture(
+                item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
+                preparedMediaKeys: preparedMediaKeys, revealState: revealState
+            )
         }
         if item.messageID == editingMessageID, let editingRowScrollSnapshot {
             editingRowScrollSnapshot.draw(

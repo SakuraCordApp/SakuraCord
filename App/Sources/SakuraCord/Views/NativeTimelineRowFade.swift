@@ -70,7 +70,8 @@ extension NativeTimelineCanvasView {
         NSGraphicsContext.current = NSGraphicsContext(cgContext: graphics.cgContext, flipped: true)
         NativeTimelineRowPainter.draw(
             item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
-            isHovered: false, spoilerRevealStore: spoilerRevealStore
+            isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
+            spoilerRevealStore: spoilerRevealStore
         )
         representation.size = size
         let image = NSImage(size: size)
@@ -98,11 +99,8 @@ extension NativeTimelineCanvasView {
     }
 
     /// Draws a replaced row's new content fading in over the old picture.
-    func drawCrossfadingRow(at index: Int, rowFrame: CGRect, drawRow: () -> Void) {
-        let identifier = items[index].identifier
-        guard let fade = rowFades.first(where: { $0.placement == .replaced(identifier) }),
-              let context = NSGraphicsContext.current?.cgContext
-        else {
+    func drawCrossfadingRow(_ fade: NativeTimelineRowFade, rowFrame: CGRect, drawRow: () -> Void) {
+        guard let context = NSGraphicsContext.current?.cgContext else {
             drawRow()
             return
         }

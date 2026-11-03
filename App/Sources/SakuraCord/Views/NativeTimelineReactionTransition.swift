@@ -111,6 +111,7 @@ struct NativeTimelineReactionBaseline {
         let layout: NativeTimelineRowLayout
         /// The row's cached bitmap, if it had one, for a fade without a raster.
         let bitmap: NativeTimelineCanvasView.CachedRowBitmap?
+        let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
     }
 
     /// The canvas width the rows were laid out at.
@@ -181,14 +182,17 @@ extension NativeTimelineCanvasView {
         var rows: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBaseline.Row] = [:]
         forEachDisplayedRow(in: reactionBaselineRect) { index in
             let item = items[index]
+            let revealState = textSpoilerRevealState(at: index)
             rows[item.identifier] = .init(
                 index: index,
                 top: originY + rowOrigins[index],
                 item: item,
                 layout: layouts[index],
-                // A bitmap leaves animated media to live overlays, so it is
-                // no picture of such a row.
-                bitmap: animatedMediaRows[item.identifier] == nil ? bitmapCache[item.identifier] : nil
+                // A bitmap leaves animated media to live overlays and keeps
+                // spoilers hidden, so it is no picture of such a row.
+                bitmap: animatedMediaRows[item.identifier] == nil && revealState.isEmpty
+                    ? bitmapCache[item.identifier] : nil,
+                revealedTextSpoilerState: revealState
             )
         }
         if !rows.isEmpty { pendingReactionBaseline = NativeTimelineReactionBaseline(width: bounds.width, rows: rows) }
@@ -290,7 +294,9 @@ extension NativeTimelineCanvasView {
                let image = rowFadeImage(old, width: baseline.width) {
                 update.fades.append(.init(placement: .replaced(identifier), image: image))
             }
-            update.droppedMotion = dropReactionMotion(of: identifier) || update.droppedMotion
+            // A motion still running from an earlier change keeps going, so
+            // this one starts from the height the row shows now.
+            endReactionTransition(identifier)
         case .regroup, .other:
             if abs(delta) >= 0.5 { update.plan.invalidate() }
             update.droppedMotion = dropReactionMotion(of: identifier) || update.droppedMotion
