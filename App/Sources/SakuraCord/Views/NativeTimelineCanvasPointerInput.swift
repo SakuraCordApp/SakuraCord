@@ -1081,8 +1081,10 @@ extension NativeTimelineCanvasView {
                   !self.sendTransitionBlocksInteractions
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            // An inline editor's suggestions can lie over reactions.
+            // An inline editor's suggestions and its Cancel and Save can
+            // lie over reactions.
             guard self.editingRowHost?.frame.contains(point) != true,
+                  self.editing.controlsHost?.frame.contains(point) != true,
                   let hit = self.reactionPointerHit(at: point)
             else {
                 return event
