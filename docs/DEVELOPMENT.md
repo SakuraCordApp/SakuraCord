@@ -69,6 +69,7 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-chat-files-performance-open` | Same timeline opened 11 times from #welcome; writes each open's milliseconds to its first drawn frame to `SAKURACORD_PERFORMANCE_RESULT_PATH` (the first open is cold) |
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
 | `./script/build_and_run.sh --offline-friends-performance` | 1,000 friends plus 200 requests; 20-second scroll with 20 presence updates/second, then 80 category switches |
+| `./script/build_and_run.sh --offline-unread-churn` | Long server list; 10 quiet seconds, then 10 seconds of five mentions/second arriving in other servers; logs an `UNREAD_BENCHMARK` line with late frames and main-thread milliseconds per mention |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
 | `./script/build_and_run.sh --offline-chat-reaction-storm-autoscroll` | Large timeline scroll benchmark with 40 reaction adds and removals per second, mostly on the newest messages; writes frame timing, main-thread CPU and timeline update counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` |
 | `./script/build_and_run.sh --offline-chat-reaction-storm-idle` | The same reaction traffic and measurements on a still timeline pinned to the newest message |
