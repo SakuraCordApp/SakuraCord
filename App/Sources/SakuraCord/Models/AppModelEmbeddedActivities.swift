@@ -207,7 +207,9 @@ extension AppModel {
         }
         store.session?.instance = instance
         store.host?.participantsChanged()
-        guard session.phase == .launching else { return }
+        // The update can arrive before and after the launch request returns;
+        // only the first one starts the Activity.
+        guard session.phase == .launching, session.instance == nil else { return }
         store.launchTimeout?.cancel()
         let account = accountSession()
         startAccountChildTask(account: account) { model, account in

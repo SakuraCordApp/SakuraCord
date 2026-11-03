@@ -152,13 +152,20 @@ private struct DirectMessageCallRegion: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VoiceVideoGrid(
-                model: model,
-                channel: channel,
-                isCompact: true,
-                ringingUserIDs: animatedRingingUserIDs
-            )
+            Group {
+                if model.embeddedActivities.session?.location.channelID == channel.id {
+                    EmbeddedActivityStage(model: model, channel: channel)
+                } else {
+                    VoiceVideoGrid(
+                        model: model,
+                        channel: channel,
+                        isCompact: true,
+                        ringingUserIDs: animatedRingingUserIDs
+                    )
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .embeddedActivityPrompts(model.embeddedActivities)
 
             if isConnectedHere {
                 VoiceCallControlDock(model: model)
