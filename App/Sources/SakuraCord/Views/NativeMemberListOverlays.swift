@@ -425,7 +425,11 @@ extension NativeMemberListCanvasView {
         foreground.frame = host.frame
         foreground.layer?.zPosition = 12
         foreground.needsDisplay = true
-        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        let hasMovingHighlight = presentation.roleColorDisplay == .inNames && (
+            preparedText[items[index].id]?.gradientColors != nil
+                || MessageAuthorPresentation.topRoleColor(in: member.roles) != nil
+        )
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, hasMovingHighlight {
             memberHoverTicker.start(on: self) { [weak self] in
                 self?.rowForegroundOverlay?.needsDisplay = true
             }

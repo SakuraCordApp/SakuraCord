@@ -103,7 +103,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         height / 2 + glyphBounds.midY
     }
 
-    private func glyphPathAndColorRuns(baseline: CGFloat) -> (path: CGPath, colorRuns: [CTRun]) {
+    static func glyphPathAndColorRuns(line: CTLine, baseline: CGFloat = 0) -> (path: CGPath, colorRuns: [CTRun]) {
         let runs = (CTLineGetGlyphRuns(line) as [AnyObject]) as? [CTRun] ?? []
         let path = CGMutablePath()
         var colorRuns: [CTRun] = []
@@ -128,6 +128,10 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             }
         }
         return (path, colorRuns)
+    }
+
+    private func glyphPathAndColorRuns(baseline: CGFloat) -> (path: CGPath, colorRuns: [CTRun]) {
+        Self.glyphPathAndColorRuns(line: line, baseline: baseline)
     }
 
     @MainActor

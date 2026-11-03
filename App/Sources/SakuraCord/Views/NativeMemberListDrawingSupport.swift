@@ -58,33 +58,6 @@ extension NativeMemberListCanvasView {
         ))
     }
 
-    static func glyphPathAndColorRuns(line: CTLine) -> (path: CGPath, colorRuns: [CTRun]) {
-        let runs = (CTLineGetGlyphRuns(line) as [AnyObject]) as? [CTRun] ?? []
-        let path = CGMutablePath()
-        var colorRuns: [CTRun] = []
-        for run in runs {
-            let runAttributes = CTRunGetAttributes(run) as NSDictionary
-            guard let nsFont = runAttributes[kCTFontAttributeName] as? NSFont else { continue }
-            if CTFontGetSymbolicTraits(nsFont).contains(.traitColorGlyphs) {
-                colorRuns.append(run)
-                continue
-            }
-            let runFont = nsFont as CTFont
-            let glyphCount = CTRunGetGlyphCount(run)
-            var glyphs = [CGGlyph](repeating: 0, count: glyphCount)
-            var positions = [CGPoint](repeating: .zero, count: glyphCount)
-            CTRunGetGlyphs(run, CFRangeMake(0, glyphCount), &glyphs)
-            CTRunGetPositions(run, CFRangeMake(0, glyphCount), &positions)
-            for glyphIndex in 0 ..< glyphCount {
-                if let subPath = CTFontCreatePathForGlyph(runFont, glyphs[glyphIndex], nil) {
-                    let transform = CGAffineTransform(translationX: positions[glyphIndex].x, y: positions[glyphIndex].y)
-                    path.addPath(subPath, transform: transform)
-                }
-            }
-        }
-        return (path, colorRuns)
-    }
-
     static func draw(line: CTLine, at point: CGPoint, context: CGContext, color: NSColor? = nil, isHovered: Bool = false) {
         var ascent: CGFloat = 0
         CTLineGetTypographicBounds(line, &ascent, nil, nil)
@@ -122,7 +95,7 @@ extension NativeMemberListCanvasView {
                 let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
                 if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
                     context.saveGState()
-                    let (path, _) = glyphPathAndColorRuns(line: line)
+                    let (path, _) = NativeIdentityTextPresentation.glyphPathAndColorRuns(line: line)
                     context.addPath(path)
                     context.clip()
                     context.setBlendMode(.plusLighter)
@@ -170,7 +143,7 @@ extension NativeMemberListCanvasView {
 
         let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         let effectiveWidth = min(width, lineWidth)
-        let (path, colorRuns) = glyphPathAndColorRuns(line: line)
+        let (path, colorRuns) = NativeIdentityTextPresentation.glyphPathAndColorRuns(line: line)
 
         if isHovered, let primary = gradientColors.first {
             context.saveGState()
