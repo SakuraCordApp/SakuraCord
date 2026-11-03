@@ -142,10 +142,12 @@ extension AppModel {
         let store = guildJoinRequests
         guard let form = store.form, form.fields.allSatisfy(\.isSatisfied) else { return }
         runGuildJoinRequestAction { try await $0.submitGuildJoinApplication(form.guildID, fields: form.fields) } completion: { [weak self] in
+            guard let self, store.modal?.guildID == form.guildID else { return }
             store.form = nil
             store.modal = nil
+            showGuildJoinApprovalIfNeeded()
             // A screened member continues in the server; an applicant waits on the status page.
-            if self?.serverRailGuildsByID[form.guildID] == nil { self?.selectGuildJoinRequest(form.guildID) }
+            if serverRailGuildsByID[form.guildID] == nil { selectGuildJoinRequest(form.guildID) }
         }
     }
 

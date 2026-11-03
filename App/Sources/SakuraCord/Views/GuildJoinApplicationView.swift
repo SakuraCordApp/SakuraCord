@@ -94,6 +94,7 @@ struct GuildJoinApplicationView: View {
             ModalGlassButton(symbol: "xmark", label: "Cancel") {
                 if hasAnswers { confirmsDiscard = true } else { close() }
             }
+            .disabled(store.isWorking && store.form != nil)
             Spacer(minLength: InterfaceScale.metric(16))
             ModalGlassButton(symbol: "paperplane", label: "Submit", primary: true, isLoading: store.isWorking && store.form != nil) {
                 model.submitGuildJoinApplication()
