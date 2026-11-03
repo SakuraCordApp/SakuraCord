@@ -42,7 +42,7 @@ extension ForumBoardView {
     /// motion ends.
     func animateReflow(_ card: ForumBoardCard, from oldFrame: CGRect) {
         let frame = card.frame
-        guard oldFrame.origin != frame.origin, !reducesMotion else { return }
+        guard oldFrame.origin != frame.origin else { return }
         let spring = Self.spring("position")
         spring.isAdditive = true
         spring.fromValue = NSValue(point: CGPoint(x: oldFrame.minX - frame.minX, y: oldFrame.minY - frame.minY))

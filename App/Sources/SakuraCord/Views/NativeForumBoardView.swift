@@ -354,6 +354,8 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             for card in cards.values {
                 card.layer.removeAllAnimations()
             }
+            glidingIDs.removeAll()
+            glideEndTime = 0
         }
         drawsArrivalsNow = swapsBoard
         defer { drawsArrivalsNow = false }
@@ -467,7 +469,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let widthChanged = abs(width - lastLayoutWidth) > 0.5
         // A width change that alters the column count moves cards to new
         // slots; those realized now glide there from where they are.
-        let reflowingFrames = widthChanged && layoutState.map { $0.columns != newLayout.columns } == true
+        let reflowingFrames = widthChanged && !reducesMotion && layoutState.map { $0.columns != newLayout.columns } == true
             ? cards.mapValues(\.frame) : [:]
         let previousScrollY = scrollView.contentView.bounds.minY
         lastLayoutWidth = width
@@ -479,6 +481,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         setFrameSize(NSSize(width: width, height: height))
         cardsLayer.frame = CGRect(origin: .zero, size: CGSize(width: width, height: height))
         CATransaction.commit()
+        // Before the scroll restore, whose refresh must keep them realized too.
+        if !reflowingFrames.isEmpty {
+            glidingIDs.formUnion(reflowingFrames.keys)
+            glideEndTime = CACurrentMediaTime() + Self.glideDuration
+        }
         if scrollsToTop {
             scrollToTop()
         } else if let anchor {
@@ -487,10 +494,6 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         if transition != .reflow { cancelExits() }
         // Geometry changed under the same cards: rebuild settled state too.
         realizedRange = nil
-        if !reflowingFrames.isEmpty {
-            glidingIDs.formUnion(reflowingFrames.keys)
-            glideEndTime = CACurrentMediaTime() + Self.glideDuration
-        }
         refreshVisibleCards(transition: transition)
         let scrollShift = scrollView.contentView.bounds.minY - previousScrollY
         for (id, oldFrame) in reflowingFrames {
@@ -542,8 +545,13 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let visible = visibleRect
         if CACurrentMediaTime() >= glideEndTime { glidingIDs.removeAll() }
         // Gliding cards stay realized at their destinations, even past the
-        // viewport, so none vanishes before it arrives.
-        let gliding = glidingIDs.reduce(CGRect.null) { $0.union(layoutState.entry(for: $1)?.frame ?? .null) }
+        // viewport, so none vanishes before it arrives; destinations far from
+        // a viewport that has jumped elsewhere are not worth the rows between.
+        let reach = visible.insetBy(dx: 0, dy: -visible.height * 2)
+        let gliding = glidingIDs.reduce(CGRect.null) { rect, id in
+            guard let frame = layoutState.entry(for: id)?.frame, frame.intersects(reach) else { return rect }
+            return rect.union(frame)
+        }
         let realized = layoutState.entries(intersecting: realizationRect(for: visible).union(gliding))
         // Scrolling within the same entries changes nothing.
         guard transition != .none || realized.indices != realizedRange else { return }
