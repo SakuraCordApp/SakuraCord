@@ -1217,24 +1217,31 @@ extension NativeTimelineCanvasView {
             awaitEditedMessage(message, value: value)
         } else {
             finishEditing(at: index)
-            if let value, let message { actions?.edit(message, value) }
+            if let value, let message, let edit = actions?.edit {
+                Task { _ = await edit(message, value) }
+            }
         }
     }
 
-    /// Keeps the saved text in the editor until the timeline shows it, so
-    /// the row never falls back to the old text in between. An edit that
-    /// never arrives, such as a rejected one, gives the row back after a
-    /// moment.
+    /// Keeps the saved text in the editor until the timeline shows the
+    /// saved message, so the row never falls back to the old text in
+    /// between, however long the save takes. A failed save gives the row
+    /// back.
     private func awaitEditedMessage(_ message: Message, value: String) {
         editing.committedContent = value
         editing.draft?.isSaving = true
         editing.controlsHost?.removeFromSuperview()
         editing.controlsHost = nil
-        actions?.edit(message, value)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak draft = editing.draft] in
+        guard let edit = actions?.edit else { return finishEditing(at: editingRowIndex) }
+        Task { [weak self, weak draft = editing.draft] in
+            let saved = await edit(message, value)
             // Only this save's session; a later edit of the message has its own draft.
             guard let self, let draft, self.editing.draft === draft, self.editing.committedContent != nil else { return }
-            self.finishEditing(at: self.editingRowIndex)
+            guard let saved else { return self.finishEditing(at: self.editingRowIndex) }
+            // The server may normalize the text; wait for what it saved, which
+            // the timeline may already show.
+            self.editing.committedContent = saved
+            self.reconcileEditingRow()
         }
     }
 

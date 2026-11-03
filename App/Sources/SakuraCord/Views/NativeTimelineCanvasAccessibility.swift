@@ -119,9 +119,13 @@ extension NativeTimelineCanvasView {
                        }
                    )
         {
-            let editingChild = additionalChildren.remove(at: hostIndex)
+            // The editor, then its Cancel and Save, read right after the row.
+            var editingChildren = [additionalChildren.remove(at: hostIndex)]
+            if let controlsIndex = additionalChildren.firstIndex(where: { ($0 as? NSView) === editing.controlsHost }) {
+                editingChildren.append(additionalChildren.remove(at: controlsIndex))
+            }
             orderedChildren.insert(
-                editingChild,
+                contentsOf: editingChildren,
                 at: min(insertionIndex, orderedChildren.endIndex)
             )
         }
