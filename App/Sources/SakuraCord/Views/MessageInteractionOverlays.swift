@@ -288,6 +288,7 @@ struct NativeTimelineEditingMessageContent: View {
     let save: (String) -> Void
     let cancel: () -> Void
     let editorHeightDidChange: (CGFloat) -> Void
+    let draftDidChange: () -> Void
 
     var body: some View {
         InlineMessageEditor(
@@ -307,6 +308,7 @@ struct NativeTimelineEditingMessageContent: View {
             editorHeightDidChange: editorHeightDidChange
         )
         .disabled(draft.isSaving)
+        .onChange(of: draft.text) { draftDidChange() }
     }
 }
 

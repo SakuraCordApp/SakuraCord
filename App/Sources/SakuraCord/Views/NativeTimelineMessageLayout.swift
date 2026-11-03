@@ -575,12 +575,9 @@ extension NativeTimelineRowLayout {
 
         /// The editor takes the text's place.
         private mutating func appendEditingText(height: CGFloat) {
-            // The editor sets the draft as the row set the text, so the row
-            // follows the draft as it grows and shrinks. Until the editor has
-            // measured it, the text keeps its own height.
-            let height = height > 0
-                ? NativeTimelineRowLayout.messageTextHeight(suggested: height)
-                : contentPresentation.attributedContent.map { value in
+            // The row follows the draft as it grows and shrinks. Until the
+            // editor has measured it, the text keeps its own height.
+            let height = height > 0 ? height : contentPresentation.attributedContent.map { value in
                 NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: value)
                     + NativeTimelineRowLayout.measuredTextHeight(
                         contentPresentation.framesetter, value: value, length: value.length, width: contentWidth

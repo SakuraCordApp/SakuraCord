@@ -1094,6 +1094,12 @@ extension NativeTimelineCanvasView {
                 guard let self, self.editingMessageID == row.id else { return }
                 self.editing.editorHeight = ceil(height)
                 self.relayoutEditingRow()
+            },
+            draftDidChange: { [weak self] in
+                guard let self, self.editingMessageID == row.id,
+                      self.editing.keepsRenderedHeight != (draft.text == row.message.content)
+                else { return }
+                self.relayoutEditingRow()
             }
         )
         let editingHost = NativeTimelineEditingHost(rootView: AnyView(root))
@@ -1144,13 +1150,19 @@ extension NativeTimelineCanvasView {
     }
 
     func relayoutEditingRow() {
-        // A message's own rendering, such as a heading or jumbo emoji, can
-        // be taller than its raw text; it keeps its height until the draft
-        // changes, and then follows the draft.
-        guard let item = editing.item, case let .message(row, _, _) = item else { return }
-        let isUnchanged = editing.draft?.text == row.message.content
-        guard let layout = makeEditingLayout?(item, isUnchanged ? 0 : editing.editorHeight)
+        guard let item = editing.item, case let .message(row, _, _) = item,
+              let index = editingRowIndex
         else { return }
+        // The editor reports its draft's height as CoreText suggests it.
+        let draftHeight = editing.editorHeight > 0
+            ? NativeTimelineRowLayout.messageTextHeight(suggested: editing.editorHeight) : 0
+        // A message's own rendering, such as a heading or jumbo emoji, can
+        // be taller than its raw text; until the draft changes, the row
+        // keeps that height as well as making room for the raw text.
+        editing.keepsRenderedHeight = editing.draft?.text == row.message.content
+        let height = editing.keepsRenderedHeight
+            ? max(draftHeight, storage.layouts[index].contentFrame?.height ?? 0) : draftHeight
+        guard let layout = makeEditingLayout?(item, height) else { return }
         applyEditingLayout(layout)
     }
 
