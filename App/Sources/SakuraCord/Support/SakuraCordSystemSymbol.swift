@@ -11,12 +11,7 @@ enum SakuraCordSystemSymbol {
         path: "/System/Library/PrivateFrameworks/SFSymbols.framework/Resources/CoreGlyphsPrivate.bundle"
     )
 
-    static var emojiFaceGrinningImage: Image {
-        guard let privateSymbolsBundle else {
-            return Image(systemName: emojiFaceGrinning)
-        }
-        return Image(emojiFaceGrinning, bundle: privateSymbolsBundle)
-    }
+    static var emojiFaceGrinningImage: Image { Image(systemName: emojiFaceGrinning) }
 
     static var stickerImage: Image {
         guard let privateSymbolsBundle else {
