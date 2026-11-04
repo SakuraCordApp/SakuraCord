@@ -265,8 +265,8 @@ public enum DiscordMarkdown {
 
         forEachSourceLine(source) { rawLine, kind in
             switch kind {
-            case let .fence(language, opensBlock):
-                unclosedFence = opensBlock ? "```" + (language ?? "") : nil
+            case let .fence(opening):
+                unclosedFence = opening
                 list = ListNesting()
             case let .code(language, isFirstLine):
                 lines.append(AppKitPlan.Line(
@@ -310,8 +310,9 @@ public enum DiscordMarkdown {
 
     /// How message rendering reads one line of source.
     private enum SourceLine {
-        /// A fence opens a block, with its language, or closes one.
-        case fence(language: String?, opensBlock: Bool)
+        /// A fence that opens a block, as its literal opening with the
+        /// language, or that closes one.
+        case fence(opening: String?)
         case code(language: String?, isFirstLine: Bool)
         /// Text after any quote prefix.
         case text(Substring, isQuoted: Bool)
@@ -328,7 +329,7 @@ public enum DiscordMarkdown {
                 startsCodeFence = isInCodeFence
                 let suffix = rawLine.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
                 codeLanguage = isInCodeFence && !suffix.isEmpty ? suffix.lowercased() : nil
-                body(rawLine, .fence(language: codeLanguage, opensBlock: isInCodeFence))
+                body(rawLine, .fence(opening: isInCodeFence ? "```" + (codeLanguage ?? "") : nil))
             } else if isInCodeFence {
                 body(rawLine, .code(language: codeLanguage, isFirstLine: startsCodeFence))
                 startsCodeFence = false
@@ -1353,14 +1354,15 @@ public extension DiscordMarkdown {
         let syntaxColor = textColor?.withAlphaComponent(0.5) ?? .tertiaryLabelColor
         var lines: [AppKitPlan.Line] = []
         var line = AppKitPlan.Line(runs: [], block: .paragraph)
-        var linkLabels: [NSRange] = []
+        var linkLabel: NSRange?
 
         func style(_ range: NSRange, as traits: AppKitPlan.InlineTraits = [], color: AppKitPlan.SemanticColor? = nil) {
             let run = AppKitPlan.InlineRun(text: "", traits: traits, link: nil, color: color)
             text.addAttributes(DiscordMarkdown.attributes(for: run, in: line, metrics: metrics), range: range)
-            // A format inside a link's label keeps the link's colour.
-            for label in linkLabels where NSIntersectionRange(label, range).length > 0 {
-                text.addAttribute(.foregroundColor, value: NSColor.linkColor, range: NSIntersectionRange(label, range))
+            // A format inside a link's label, which arrives right after the
+            // link, keeps the link's colour.
+            if let linkLabel, NSIntersectionRange(linkLabel, range).length > 0 {
+                text.addAttribute(.foregroundColor, value: NSColor.linkColor, range: NSIntersectionRange(linkLabel, range))
             }
         }
         func dim(_ range: NSRange) {
@@ -1377,7 +1379,7 @@ public extension DiscordMarkdown {
         }
         collector.collectLink = { label, end in
             let labelRange = NSRange(label, in: source)
-            linkLabels.append(labelRange)
+            linkLabel = labelRange
             text.addAttribute(.foregroundColor, value: NSColor.linkColor, range: labelRange)
             dim(NSRange(source.index(before: label.lowerBound) ..< label.lowerBound, in: source))
             dim(NSRange(label.upperBound ..< end, in: source))
@@ -1387,10 +1389,10 @@ public extension DiscordMarkdown {
             let range = NSRange(rawLine.startIndex ..< rawLine.endIndex, in: source)
             var spacingAdjustment: CGFloat = 0
             switch kind {
-            case let .fence(_, opensBlock):
+            case let .fence(opening):
                 // A closing fence's line takes the place of the empty line
                 // message rendering leaves after a code block.
-                if !opensBlock, case .code? = lines.last?.block { spacingAdjustment = -metrics.emptyLineHeight }
+                if opening == nil, case .code? = lines.last?.block { spacingAdjustment = -metrics.emptyLineHeight }
                 line = AppKitPlan.Line(runs: [], block: .paragraph)
                 text.addAttribute(.font, value: appKitFont(block: .code(language: nil, isFirstLine: false), traits: [], metrics: metrics), range: range)
                 dim(range)
@@ -1416,16 +1418,18 @@ public extension DiscordMarkdown {
             lines.append(line)
             // A paragraph's newline carries its paragraph's attributes.
             let paragraphRange = NSRange(location: range.location, length: min(range.length + 1, text.length - range.location))
+            let paragraph: NSParagraphStyle
             if line.block == .paragraph, !line.isQuoted {
                 let spacing = metrics.spacingBefore(lines.count - 1, in: lines) + spacingAdjustment
                 guard spacing != 0 else { return }
-                let paragraph = NSMutableParagraphStyle()
-                paragraph.setParagraphStyle(plainParagraph)
-                paragraph.paragraphSpacingBefore = spacing
-                text.addAttribute(.paragraphStyle, value: paragraph, range: paragraphRange)
-                return
+                let spaced = NSMutableParagraphStyle()
+                spaced.setParagraphStyle(plainParagraph)
+                spaced.paragraphSpacingBefore = spacing
+                paragraph = spaced
+            } else {
+                paragraph = paragraphStyle(for: line, index: lines.count - 1, in: lines, metrics: metrics)
             }
-            text.addAttribute(.paragraphStyle, value: paragraphStyle(for: line, index: lines.count - 1, in: lines, metrics: metrics), range: paragraphRange)
+            text.addAttribute(.paragraphStyle, value: paragraph, range: paragraphRange)
             if let blockName = blockName(for: line) {
                 text.addAttributes([.discordMarkdownBlock: blockName, .discordMarkdownEm: NSNumber(value: metrics.em)], range: paragraphRange)
             }

@@ -1510,6 +1510,11 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
 
     static var codeBlockCornerRadius: CGFloat { InterfaceScale.metric(4) }
 
+    /// Discord's 4 px quote bar, at the quote's text size.
+    static func quoteBarWidth(in value: NSAttributedString, at location: Int) -> CGFloat {
+        4 * em(in: value, at: location)
+    }
+
     /// The copy button's inset from its block's top and trailing edges:
     /// Discord's 4 px from the trailing edge.
     static var codeCopyButtonInset: CGFloat { InterfaceScale.metric(4) }

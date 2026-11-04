@@ -576,8 +576,7 @@ extension NativeTimelineRowPainter {
             }
         }
         result.quotes = quoteRanges.compactMap { range in
-            // Discord's bar is 4 px wide.
-            let width = 4 * NativeTimelineMarkdownChromeMetrics.em(in: attributedText, at: range.location)
+            let width = NativeTimelineMarkdownChromeMetrics.quoteBarWidth(in: attributedText, at: range.location)
             return NativeTimelineTextSelectionGeometry.rects(
                 in: textFrame,
                 outerFrame: outerFrame,

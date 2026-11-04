@@ -443,7 +443,7 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
     /// for its font. Room before the run is reserved mid-line and at a
     /// paragraph's start, but not on a wrapped line, so there the run's
     /// rect starts at its glyphs.
-    func rects(of key: NSAttributedString.Key, forGlyphRange glyphsToShow: NSRange, padding: (NSFont) -> CGFloat) -> [NSRect] {
+    func rects(of key: NSAttributedString.Key, forGlyphRange glyphsToShow: NSRange, padding: (NSFont) -> CGFloat = { _ in 0 }) -> [NSRect] {
         guard let textStorage else { return [] }
         var rects: [NSRect] = []
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)

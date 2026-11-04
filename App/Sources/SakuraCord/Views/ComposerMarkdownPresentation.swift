@@ -37,7 +37,7 @@ enum ComposerMarkdownPresentation {
 nonisolated final class ComposerLayoutManager: MarkdownLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         let blocks = blockRects().map { ($0.rect.offsetBy(dx: origin.x, dy: origin.y), $0.isCode) }
-        let spoilers = rects(of: .discordMarkdownSpoiler, forGlyphRange: glyphsToShow) { _ in 0 }
+        let spoilers = rects(of: .discordMarkdownSpoiler, forGlyphRange: glyphsToShow)
             .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         // AppKit draws text on the main thread.
         MainActor.assumeIsolated {
@@ -46,9 +46,8 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager {
             }
             // A draft's spoilers stay readable, as a revealed one does.
             NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
-            let radius = NativeTimelineSpoilerAppearance.textCornerRadius
             for rect in spoilers {
-                NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+                NSBezierPath(concentricRoundedRect: rect, cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
             }
         }
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
@@ -67,7 +66,6 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager {
                 extent = extent?.union(line) ?? line
             }
             guard let extent else { return }
-            let em = NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location)
             if name == "code" {
                 var box = extent.insetBy(dx: 0, dy: -NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location))
                 // A block still awaiting its closing fence ends the draft,
@@ -77,8 +75,8 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager {
                 }
                 result.append((box, true))
             } else {
-                // Discord's bar is 4 px wide.
-                result.append((NSRect(x: extent.minX, y: extent.minY, width: 4 * em, height: extent.height), false))
+                let width = NativeTimelineMarkdownChromeMetrics.quoteBarWidth(in: textStorage, at: range.location)
+                result.append((NSRect(x: extent.minX, y: extent.minY, width: width, height: extent.height), false))
             }
         }
         return result
