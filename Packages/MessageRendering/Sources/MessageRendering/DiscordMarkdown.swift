@@ -161,9 +161,8 @@ public enum DiscordMarkdown {
             inCodeFence.toggle()
             segmentStart = line.endIndex
         }
-        if !inCodeFence {
-            _ = inlineRuns(source[segmentStart...], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
-        }
+        // Text after a fence that never closes is text, as Discord shows it.
+        _ = inlineRuns(source[segmentStart...], inheritedTraits: [], inheritedLink: nil, sourceCollector: collector)
         return formats
     }
 
@@ -1425,9 +1424,7 @@ public extension DiscordMarkdown {
                 guard let openFence, rawLine.startIndex >= openFence else {
                     return styleLine(rawLine, kind: kind, collector: collector)
                 }
-                if rawLine.startIndex > openFence {
-                    styleLine(rawLine, kind: .text(rawLine, isQuoted: false), collector: collector)
-                }
+                styleLine(rawLine, kind: .text(rawLine, isQuoted: false), collector: collector, isLiteral: rawLine.startIndex == openFence)
             }
             for fence in fences {
                 markSyntax(fence, of: fence)
@@ -1439,7 +1436,8 @@ public extension DiscordMarkdown {
             }
         }
 
-        private func styleLine(_ rawLine: Substring, kind: SourceLine, collector: SourceFormatCollector) {
+        /// A literal line is a plain paragraph with no syntax, as an open fence is.
+        private func styleLine(_ rawLine: Substring, kind: SourceLine, collector: SourceFormatCollector, isLiteral: Bool = false) {
             let range = NSRange(rawLine.startIndex ..< rawLine.endIndex, in: source)
             // A paragraph's newline carries its paragraph's attributes.
             let paragraphRange = NSRange(location: range.location, length: min(range.length + 1, text.length - range.location))
@@ -1466,6 +1464,8 @@ public extension DiscordMarkdown {
                     if run.color != nil { style(NSRange(location: location, length: length), color: run.color) }
                     location += length
                 }
+            case .text where isLiteral:
+                line = AppKitPlan.Line(runs: [], block: .paragraph)
             case let .text(content, isQuoted):
                 let item = listItemContent(content)
                 let prefix = item == nil ? blockPrefixes.first(where: { content.hasPrefix($0.prefix) }) : nil
