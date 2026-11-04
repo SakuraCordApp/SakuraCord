@@ -1285,13 +1285,7 @@ extension NativeTimelineCanvasView {
         }
         reconcileInlinePlayers()
         setNeedsDisplay(visibleRect)
-        // The row under the pointer shows its hover actions again, as after
-        // a storage update.
-        if !suppressesHoverPresentation {
-            synchronizeHoverWithCurrentPointer()
-        }
-        reconcileHoverTooltips()
-        reconcileActionCapsule()
+        refreshHoverPresentation()
     }
 
     var editingRowIndex: Int? {
@@ -1407,7 +1401,6 @@ extension NativeTimelineCanvasView {
         )
         applyDocumentSize(size)
         enclosingScrollView?.tile()
-        positionEditingRow()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         updateTrackingAreas()

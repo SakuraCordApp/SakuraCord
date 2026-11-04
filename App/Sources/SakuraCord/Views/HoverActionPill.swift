@@ -126,8 +126,8 @@ struct HoverActionControlLabel<Content: View>: View {
             .frame(minWidth: diameter)
             .frame(height: diameter)
             .background(backgroundColor, in: Capsule())
-            // Hover tracks the square frame, so clicks and the pointer cover
-            // it too instead of only the circle.
+            // Hover tracks the whole frame, so clicks and the pointer cover
+            // its corners too, outside the capsule.
             .contentShape(Rectangle())
             .pointerStyle(isEnabled ? .link : nil)
             .onModalHover {

@@ -24,21 +24,17 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
     func reveal(around selection: NSRange) {
         self.selection = selection
         guard let textStorage else { return }
-        var changes: [NSRange] = []
+        var changes = IndexSet()
         textStorage.enumerateAttribute(.discordMarkdownSyntax, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
             guard value != nil else { return }
             for index in range.location ..< NSMaxRange(range)
             where (propertyForGlyph(at: glyphIndexForCharacter(at: index)) == .controlCharacter) != isHidden(index, in: textStorage) {
-                if let last = changes.last, NSMaxRange(last) == index {
-                    changes[changes.count - 1].length += 1
-                } else {
-                    changes.append(NSRange(location: index, length: 1))
-                }
+                changes.insert(index)
             }
         }
-        for range in changes {
-            invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
-            invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+        for range in changes.rangeView {
+            invalidateGlyphs(forCharacterRange: NSRange(range), changeInLength: 0, actualCharacterRange: nil)
+            invalidateLayout(forCharacterRange: NSRange(range), actualCharacterRange: nil)
         }
     }
 
@@ -152,6 +148,7 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
     /// as their lines and as tall as their text, without its paragraph spacing.
     private func blockRects() -> [(rect: NSRect, isCode: Bool)] {
         guard let textStorage else { return [] }
+        let usedBottom = textContainers.first.map { usedRect(for: $0).maxY }
         var result: [(NSRect, Bool)] = []
         textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
             guard let name = value as? String, name != "fence" else { return }
@@ -165,8 +162,8 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
                 var box = extent.insetBy(dx: 0, dy: -NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location))
                 // A block still awaiting its closing fence ends the draft,
                 // whose view is only as tall as its text.
-                if let container = textContainers.first {
-                    box.size.height = min(box.height, usedRect(for: container).maxY - box.minY)
+                if let usedBottom {
+                    box.size.height = min(box.height, usedBottom - box.minY)
                 }
                 result.append((box, true))
             } else {

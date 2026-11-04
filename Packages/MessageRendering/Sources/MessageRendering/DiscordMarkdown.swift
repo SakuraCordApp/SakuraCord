@@ -1418,11 +1418,11 @@ public extension DiscordMarkdown {
                 styleLine(rawLine, kind: kind, collector: collector)
             }
             // An unclosed fence stays literal text, as message rendering shows it.
-            for fence in fences.dropLast(fences.count % 2) {
-                markSyntax(fence, of: fence)
-            }
-            if fences.count % 2 == 1, let unclosed = fences.last {
+            if fences.count % 2 == 1, let unclosed = fences.popLast() {
                 text.addAttribute(.foregroundColor, value: syntaxColor, range: unclosed)
+            }
+            for fence in fences {
+                markSyntax(fence, of: fence)
             }
             if let textColor {
                 text.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: text.length)) { value, range, _ in
@@ -1476,11 +1476,8 @@ public extension DiscordMarkdown {
             if line.block == .paragraph, !line.isQuoted {
                 setParagraph(spacing: spacing, firstLineIndent: codeIndent, for: paragraphRange)
             } else {
-                let paragraph = NSMutableParagraphStyle()
-                paragraph.setParagraphStyle(paragraphStyle(for: line, index: lines.count - 1, in: lines, metrics: metrics))
-                paragraph.paragraphSpacingBefore = spacing
-                paragraph.firstLineHeadIndent += codeIndent
-                text.addAttribute(.paragraphStyle, value: paragraph, range: paragraphRange)
+                let base = paragraphStyle(for: line, index: lines.count - 1, in: lines, metrics: metrics)
+                setParagraph(base: base, spacing: spacing, firstLineIndent: codeIndent, for: paragraphRange)
             }
             if let blockName = blockName(for: line) {
                 text.addAttributes([.discordMarkdownBlock: blockName, .discordMarkdownEm: NSNumber(value: metrics.em)], range: paragraphRange)
@@ -1507,10 +1504,12 @@ public extension DiscordMarkdown {
             }
         }
 
-        private func setParagraph(spacing: CGFloat, firstLineIndent: CGFloat = 0, for range: NSRange) {
-            guard spacing != 0 || firstLineIndent != 0 else { return }
+        /// Sets `base`, or the plain style the text already has, with the
+        /// line's spacing before it and its code indent.
+        private func setParagraph(base: NSParagraphStyle? = nil, spacing: CGFloat, firstLineIndent: CGFloat = 0, for range: NSRange) {
+            guard base != nil || spacing != 0 || firstLineIndent != 0 else { return }
             let paragraph = NSMutableParagraphStyle()
-            paragraph.setParagraphStyle(plainParagraph)
+            paragraph.setParagraphStyle(base ?? plainParagraph)
             paragraph.paragraphSpacingBefore = spacing
             paragraph.firstLineHeadIndent += firstLineIndent
             text.addAttribute(.paragraphStyle, value: paragraph, range: range)
