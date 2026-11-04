@@ -183,7 +183,13 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var isPreviewingWidth = false
     var storage = NativeTimelineCanvasStorage()
     var baseContentOriginY: CGFloat = 0
-    var contentOriginY: CGFloat = 0
+    /// Moving the content, as a growing composer does to a short
+    /// conversation, carries the inline editor with its row.
+    var contentOriginY: CGFloat = 0 {
+        didSet {
+            if contentOriginY != oldValue { positionEditingRow() }
+        }
+    }
     var historySkeleton:
         TimelineHistorySkeletonPresentation?
     let historySkeletonShimmer = SkeletonShimmer()

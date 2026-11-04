@@ -1009,13 +1009,19 @@ extension NativeTimelineCanvasView {
         at index: Int
     ) {
         guard !sendTransitionBlocksInteractions,
-              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editingMessageID == nil,
+              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editingMessageID != row.id,
               items.indices.contains(index),
               items[index].messageID == row.id,
               let model,
               model.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil,
               let editingLayout = makeEditingLayout?(items[index], 0)
         else { return }
+        // Editing another message discards that edit, as Cancel does; one
+        // still saving keeps its editor.
+        if editingMessageID != nil {
+            endEditing(commit: nil)
+            guard editingMessageID == nil else { return }
+        }
         finishReactionTransitions()
         removeActionCapsule()
         setTextSelection(nil)
@@ -1113,8 +1119,7 @@ extension NativeTimelineCanvasView {
 
     @discardableResult
     func beginEditingCurrentUserMessage(_ messageID: MessageID) -> Bool {
-        guard editingMessageID == nil,
-              let currentUserID = model?.currentUser?.id,
+        guard let currentUserID = model?.currentUser?.id,
               let index = items.firstIndex(where: {
                   $0.messageID == messageID
               }),
@@ -1202,8 +1207,7 @@ extension NativeTimelineCanvasView {
         }
         let localFrame = CGRect(
             x: content.minX,
-            y: (editing.draft?.showsSuggestionsBelow == true ? content.minY : content.minY - suggestionsHeight)
-                - MessageEditLayoutMetrics.editorBaselineShift,
+            y: editing.draft?.showsSuggestionsBelow == true ? content.minY : content.minY - suggestionsHeight,
             width: content.width,
             height: height
         )
@@ -1281,6 +1285,7 @@ extension NativeTimelineCanvasView {
         }
         reconcileInlinePlayers()
         setNeedsDisplay(visibleRect)
+        refreshHoverPresentation()
     }
 
     var editingRowIndex: Int? {
@@ -1396,7 +1401,6 @@ extension NativeTimelineCanvasView {
         )
         applyDocumentSize(size)
         enclosingScrollView?.tile()
-        positionEditingRow()
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         updateTrackingAreas()

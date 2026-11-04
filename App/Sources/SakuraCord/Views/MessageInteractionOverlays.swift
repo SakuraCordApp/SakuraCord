@@ -322,7 +322,7 @@ struct NativeTimelineInlineEditControls: View {
     let cancel: () -> Void
 
     var body: some View {
-        HStack(spacing: InterfaceScale.metric(2)) {
+        HoverActionPill {
             InlineEditTextButton(title: "Cancel", key: "esc", action: cancel)
                 .keyboardShortcut(.cancelAction)
                 .accessibilityHint("Discards your changes. Keyboard shortcut: Escape.")
@@ -336,10 +336,6 @@ struct NativeTimelineInlineEditControls: View {
                 )
                 .disabled(!canSave)
         }
-        .padding(InterfaceScale.metric(4))
-        // The buttons' highlights follow the capsule at their inset.
-        .containerShape(Capsule())
-        .glassEffect(.regular, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Edit message")
@@ -828,62 +824,31 @@ enum MessageEditLayoutMetrics {
     /// The timeline's plain message text, so a draft is set in the font,
     /// colour and line height the row drew the message in.
     static func textStyle(isOnOutgoingBubble: Bool) -> ComposerTextStyle {
-        let style = messageText.style
+        let style = messageTextStyle
         guard isOnOutgoingBubble else { return style }
         // The timeline sets an outgoing bubble's text in white.
         var attributes = style.attributes
         attributes[.foregroundColor] = NSColor.white
-        return ComposerTextStyle(font: style.font, attributes: attributes)
+        return ComposerTextStyle(font: style.font, attributes: attributes, usesMessageLineHeight: true)
     }
 
-    /// How much lower TextKit sets a draft's first baseline than CoreText
-    /// sets the message's: TextKit puts a line's extra height above the
-    /// text. Raising the editor by it sets every line where it was drawn.
-    static var editorBaselineShift: CGFloat { messageText.baselineShift }
-
-    /// The message text style and its baseline shift at one interface size.
-    private struct MessageText {
-        let fontSize: CGFloat
-        let style: ComposerTextStyle
-        let baselineShift: CGFloat
-    }
-
-    /// The message text at the current interface size, worked out once per size.
-    private static var messageText: MessageText {
+    /// The message text style at the current interface size, worked out once per size.
+    private static var messageTextStyle: ComposerTextStyle {
         let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
-        if let cached = messageTextCache, cached.fontSize == fontSize { return cached }
+        if let cached = messageTextCache, cached.fontSize == fontSize { return cached.style }
         let attributes = DiscordMarkdown.appKitAttributed(
             DiscordMarkdown.appKitPlan("x"), baseFontSize: fontSize, usesMessageLineHeight: true
         ).attributes(at: 0, effectiveRange: nil)
         guard let font = attributes[.font] as? NSFont else {
             preconditionFailure("The markdown renderer sets a font on message text.")
         }
-        let style = ComposerTextStyle(font: font, attributes: attributes)
-        let sample = NSAttributedString(string: "Edit", attributes: attributes)
-        let height: CGFloat = 100
-        let frame = CTFramesetterCreateFrame(
-            CTFramesetterCreateWithAttributedString(sample), CFRange(),
-            CGPath(rect: CGRect(x: 0, y: 0, width: 200, height: height), transform: nil), nil
-        )
-        var origin = CGPoint.zero
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 1), &origin)
-        let storage = NSTextStorage(attributedString: sample)
-        let layoutManager = NSLayoutManager()
-        let container = NSTextContainer(size: CGSize(width: 200, height: height))
-        container.lineFragmentPadding = 0
-        storage.addLayoutManager(layoutManager)
-        layoutManager.addTextContainer(container)
-        let editorBaseline = layoutManager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil).minY
-            + layoutManager.location(forGlyphAt: 0).y
-        let shift = editorBaseline - (height - origin.y)
-        let measured = MessageText(fontSize: fontSize, style: style, baselineShift: shift)
-        messageTextCache = measured
-        return measured
+        let style = ComposerTextStyle(font: font, attributes: attributes, usesMessageLineHeight: true)
+        messageTextCache = (fontSize, style)
+        return style
     }
 
-    private static var messageTextCache: MessageText?
+    private static var messageTextCache: (fontSize: CGFloat, style: ComposerTextStyle)?
 
-    nonisolated static var actionHeight: CGFloat { InterfaceScale.metric(22) }
     nonisolated static var actionHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
     nonisolated static var keycapHorizontalPadding: CGFloat { InterfaceScale.metric(5) }
     nonisolated static var keycapVerticalPadding: CGFloat { InterfaceScale.metric(1) }
@@ -1020,57 +985,32 @@ private struct InlineMessageEditor: View {
     }
 }
 
+/// A text action drawn as the row's hover actions are.
 private struct InlineEditTextButton: View {
     let title: LocalizedStringKey
     let key: LocalizedStringKey
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: InterfaceScale.metric(4)) {
-                Text(title)
-                    .font(.interface(.caption).weight(.semibold))
-                InlineEditKeycap(key: key, isActive: isHovering && isEnabled)
+            HoverActionControlLabel {
+                HStack(spacing: InterfaceScale.metric(4)) {
+                    Text(title)
+                        .font(.interface(.caption).weight(.semibold))
+                    Text(key)
+                        .font(.interface(.caption2).monospaced().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, MessageEditLayoutMetrics.keycapHorizontalPadding)
+                        .padding(.vertical, MessageEditLayoutMetrics.keycapVerticalPadding)
+                        .background(.quaternary, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous))
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, MessageEditLayoutMetrics.actionHorizontalPadding)
             }
-            .foregroundStyle(isHovering && isEnabled ? .primary : .secondary)
-            .padding(.horizontal, MessageEditLayoutMetrics.actionHorizontalPadding)
-            .frame(height: MessageEditLayoutMetrics.actionHeight)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(InlineEditButtonStyle(isHovering: isHovering && isEnabled))
-        .onModalHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.45)
-    }
-}
-
-/// A highlight concentric with the capsule around the button, stronger
-/// while pressed.
-private struct InlineEditButtonStyle: ButtonStyle {
-    let isHovering: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.background {
-            ConcentricRectangle(cornerRadius: InterfaceScale.metric(5), style: .continuous)
-                .fill(Color.primary.opacity(configuration.isPressed ? 0.16 : isHovering ? 0.09 : 0))
-        }
-    }
-}
-
-private struct InlineEditKeycap: View {
-    let key: LocalizedStringKey
-    let isActive: Bool
-
-    var body: some View {
-        Text(key)
-            .font(.interface(.caption2).monospaced().weight(.semibold))
-            .foregroundStyle(isActive ? .primary : .secondary)
-            .padding(.horizontal, MessageEditLayoutMetrics.keycapHorizontalPadding)
-            .padding(.vertical, MessageEditLayoutMetrics.keycapVerticalPadding)
-            .background(.quaternary, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(4), style: .continuous))
-            .accessibilityHidden(true)
     }
 }
 

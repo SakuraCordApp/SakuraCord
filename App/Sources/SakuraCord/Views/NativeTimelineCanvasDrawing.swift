@@ -128,11 +128,7 @@ extension NativeTimelineCanvasView {
             contentOriginMoved: contentOriginMoved,
             isEnabled: redrawsMovedShortContentSynchronously
         )
-        if !suppressesHoverPresentation {
-            synchronizeHoverWithCurrentPointer()
-        }
-        reconcileHoverTooltips()
-        reconcileActionCapsule()
+        refreshHoverPresentation()
     }
 
     func updateHistorySkeleton(
@@ -225,6 +221,12 @@ extension NativeTimelineCanvasView {
                 abs(oldOriginY - contentOriginY) >= 0.5,
             isEnabled: true
         )
+        refreshHoverPresentation()
+    }
+
+    /// The row under the pointer shows its hover again after content moves
+    /// beneath it.
+    func refreshHoverPresentation() {
         if !suppressesHoverPresentation {
             synchronizeHoverWithCurrentPointer()
         }

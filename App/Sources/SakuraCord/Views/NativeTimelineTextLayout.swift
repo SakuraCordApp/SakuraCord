@@ -512,6 +512,9 @@ nonisolated enum NativeTimelineCoreText {
                     ceil(font.ascender - font.descender + font.leading)
                 )
             }
+            if let existing, existing.maximumLineHeight > 0, existing.minimumLineHeight == existing.maximumLineHeight {
+                lineHeight = existing.maximumLineHeight
+            }
             let lastLocation = NSMaxRange(paragraphRange) - 1
             if containsSpoiler, source.character(at: lastLocation) == 10,
                output.attribute(.font, at: lastLocation, effectiveRange: nil) == nil,
@@ -1509,6 +1512,11 @@ nonisolated enum NativeTimelineMarkdownChromeMetrics {
     }
 
     static var codeBlockCornerRadius: CGFloat { InterfaceScale.metric(4) }
+
+    /// Discord's 4 px quote bar, at the quote's text size.
+    static func quoteBarWidth(in value: NSAttributedString, at location: Int) -> CGFloat {
+        4 * em(in: value, at: location)
+    }
 
     /// The copy button's inset from its block's top and trailing edges:
     /// Discord's 4 px from the trailing edge.
