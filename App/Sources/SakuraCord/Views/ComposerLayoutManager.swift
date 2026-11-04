@@ -87,9 +87,9 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
         guard let textStorage else { return false }
         let characters = characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
         let paragraph = textStorage.attribute(.paragraphStyle, at: characters.location, effectiveRange: nil) as? NSParagraphStyle
-        // A line of only hidden syntax, such as a code fence, keeps just its
-        // spacing: none, or a closing fence's room for its block's padding.
-        if isHiddenLine(characters, in: textStorage) {
+        // A hidden code fence keeps just its spacing: none, or a closing
+        // fence's room for its block's padding.
+        if isHiddenFence(characters, in: textStorage) {
             let height = paragraph?.paragraphSpacingBefore ?? 0
             lineFragmentRect.pointee.size.height = height
             lineFragmentUsedRect.pointee = NSRect(origin: lineFragmentRect.pointee.origin, size: NSSize(width: 0, height: height))
@@ -113,14 +113,9 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
         return true
     }
 
-    private func isHiddenLine(_ characters: NSRange, in text: NSAttributedString) -> Bool {
-        let string = text.string as NSString
-        var hidesSyntax = false
-        for index in characters.location ..< NSMaxRange(characters) where string.character(at: index) != 0x0A {
-            guard isHidden(index, in: text) else { return false }
-            hidesSyntax = true
-        }
-        return hidesSyntax
+    private func isHiddenFence(_ characters: NSRange, in text: NSAttributedString) -> Bool {
+        text.attribute(.discordMarkdownBlock, at: characters.location, effectiveRange: nil) as? String == "fence"
+            && isHidden(characters.location, in: text)
     }
 
     private func maximumAscent(_ characters: NSRange, in text: NSAttributedString) -> CGFloat {
@@ -159,7 +154,7 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
         guard let textStorage else { return [] }
         var result: [(NSRect, Bool)] = []
         textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
-            guard let name = value as? String else { return }
+            guard let name = value as? String, name != "fence" else { return }
             var extent: NSRect?
             enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
                 let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)

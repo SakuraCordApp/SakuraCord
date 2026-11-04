@@ -1435,6 +1435,9 @@ public extension DiscordMarkdown {
             case let .fence(opening):
                 fences.append(range)
                 text.addAttribute(.font, value: appKitFont(block: .code(language: nil, isFirstLine: false), traits: [], metrics: metrics), range: range)
+                // Hidden, a fence's line takes no room; message rendering
+                // has no line for it.
+                text.addAttribute(.discordMarkdownBlock, value: "fence" as NSString, range: paragraphRange)
                 // Shown, a closing fence sits below its block's padding.
                 guard opening == nil, case .code? = lines.last?.block else { return }
                 closingFenceHeight = metrics.codeInset
@@ -1508,24 +1511,24 @@ public extension DiscordMarkdown {
         }
 
         /// Pads the line's inline code as message rendering does: after its
-        /// last character, and before its hidden opening backtick on the
-        /// character the backtick follows or, when the code opens the line,
-        /// by the indent returned.
+        /// last character, and before it on the last character shown ahead
+        /// of it, since hidden syntax takes no room, or, when nothing is
+        /// shown ahead of it on the line, by the indent returned.
         private func padInlineCode(in line: NSRange) -> CGFloat {
             var indent: CGFloat = 0
             let string = text.string as NSString
-            var start = line.location
-            while start < NSMaxRange(line), text.attribute(.discordMarkdownSyntax, at: start, effectiveRange: nil) != nil {
-                start += 1
-            }
             text.enumerateAttribute(.discordMarkdownInlineCode, in: line) { value, range, _ in
                 guard value != nil, let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
                 let padding = inlineCodePadding(font: font)
                 text.addAttribute(.kern, value: padding, range: string.rangeOfComposedCharacterSequence(at: NSMaxRange(range) - 1))
-                if range.location - 1 <= start {
+                var previous = range.location - 1
+                while previous >= line.location, text.attribute(.discordMarkdownSyntax, at: previous, effectiveRange: nil) != nil {
+                    previous -= 1
+                }
+                if previous < line.location {
                     indent = padding
                 } else {
-                    text.addAttribute(.kern, value: padding, range: string.rangeOfComposedCharacterSequence(at: range.location - 2))
+                    text.addAttribute(.kern, value: padding, range: string.rangeOfComposedCharacterSequence(at: previous))
                 }
             }
             return indent
