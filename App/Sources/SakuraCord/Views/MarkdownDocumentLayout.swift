@@ -438,11 +438,11 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
         MainActor.assumeIsolated { rects.forEach(NativeTimelineRowPainter.drawCodeChrome(in:)) }
     }
 
-    /// Each line's run of text marked with `key`, as tall as its font plus
-    /// a point above and below, and as wide as its glyphs plus the padding
+    /// Each line's run of text marked with `key`, as tall as its line, as the
+    /// timeline draws inline code, and as wide as its glyphs plus the padding
     /// for its font. Room before the run is reserved mid-line and at a
-    /// paragraph's start, but not on a wrapped line, so there the run's
-    /// rect starts at its glyphs.
+    /// paragraph's start, but not on a wrapped line, so there the run's rect
+    /// starts at its glyphs.
     func rects(of key: NSAttributedString.Key, forGlyphRange glyphsToShow: NSRange, padding: (NSFont) -> CGFloat = { _ in 0 }) -> [NSRect] {
         guard let textStorage else { return [] }
         var rects: [NSRect] = []
@@ -451,19 +451,18 @@ nonisolated class MarkdownLayoutManager: NSLayoutManager {
             guard value != nil, let font = textStorage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
             let padding = padding(font)
             let runGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            enumerateLineFragments(forGlyphRange: runGlyphs) { line, _, container, lineGlyphs, _ in
+            enumerateLineFragments(forGlyphRange: runGlyphs) { _, line, container, lineGlyphs, _ in
                 let glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
                 guard glyphs.length > 0 else { return }
                 let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
-                let baseline = line.minY + self.location(forGlyphAt: glyphs.location).y
                 let start = self.characterIndexForGlyph(at: glyphs.location)
                 let isWrapped = glyphs.location == lineGlyphs.location
                     && (textStorage.string as NSString).paragraphRange(for: NSRange(location: start, length: 0)).location != start
                 let leading = isWrapped ? 0 : padding
-                rects.append(NSRect(
-                    x: bounds.minX - leading, y: baseline - font.ascender - InterfaceScale.metric(1),
-                    width: bounds.width + leading, height: font.ascender - font.descender + InterfaceScale.metric(2)
-                ))
+                // The timeline's text rect for the line, half a point beyond
+                // its bounds, inset by its inline code's point.
+                rects.append(NSRect(x: bounds.minX - leading, y: line.minY - 0.5, width: bounds.width + leading, height: line.height + 1)
+                    .insetBy(dx: 0, dy: InterfaceScale.metric(1)))
             }
         }
         return rects

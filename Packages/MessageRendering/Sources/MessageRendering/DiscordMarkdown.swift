@@ -1414,12 +1414,20 @@ public extension DiscordMarkdown {
                 markSyntax(NSRange(location: span.location, length: 1), of: span)
                 markSyntax(NSRange(location: NSMaxRange(labelRange), length: NSMaxRange(span) - NSMaxRange(labelRange)), of: span)
             }
-            forEachSourceLine(source) { rawLine, kind in
-                styleLine(rawLine, kind: kind, collector: collector)
+            // Until its closing fence is typed, a code block is plain text, as
+            // Discord shows it: the open fence literal and the lines after it
+            // as text.
+            var openFence: String.Index?
+            for line in source.split(separator: "\n", omittingEmptySubsequences: false) where line.hasPrefix("```") {
+                openFence = openFence == nil ? line.startIndex : nil
             }
-            // An unclosed fence stays literal text, as message rendering shows it.
-            if fences.count % 2 == 1, let unclosed = fences.popLast() {
-                text.addAttribute(.foregroundColor, value: syntaxColor, range: unclosed)
+            forEachSourceLine(source) { rawLine, kind in
+                guard let openFence, rawLine.startIndex >= openFence else {
+                    return styleLine(rawLine, kind: kind, collector: collector)
+                }
+                if rawLine.startIndex > openFence {
+                    styleLine(rawLine, kind: .text(rawLine, isQuoted: false), collector: collector)
+                }
             }
             for fence in fences {
                 markSyntax(fence, of: fence)

@@ -148,7 +148,6 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
     /// as their lines and as tall as their text, without its paragraph spacing.
     private func blockRects() -> [(rect: NSRect, isCode: Bool)] {
         guard let textStorage else { return [] }
-        let usedBottom = textContainers.first.map { usedRect(for: $0).maxY }
         var result: [(NSRect, Bool)] = []
         textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
             guard let name = value as? String, name != "fence" else { return }
@@ -159,13 +158,8 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager, NSLayoutMa
             }
             guard let extent else { return }
             if name == "code" {
-                var box = extent.insetBy(dx: 0, dy: -NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location))
-                // A block still awaiting its closing fence ends the draft,
-                // whose view is only as tall as its text.
-                if let usedBottom {
-                    box.size.height = min(box.height, usedBottom - box.minY)
-                }
-                result.append((box, true))
+                let inset = NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location)
+                result.append((extent.insetBy(dx: 0, dy: -inset), true))
             } else {
                 let width = NativeTimelineMarkdownChromeMetrics.quoteBarWidth(in: textStorage, at: range.location)
                 result.append((NSRect(x: extent.minX, y: extent.minY, width: width, height: extent.height), false))
