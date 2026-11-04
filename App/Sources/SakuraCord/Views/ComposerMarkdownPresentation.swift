@@ -69,7 +69,13 @@ nonisolated final class ComposerLayoutManager: MarkdownLayoutManager {
             guard let extent else { return }
             let em = NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location)
             if name == "code" {
-                result.append((extent.insetBy(dx: 0, dy: -NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location)), true))
+                var box = extent.insetBy(dx: 0, dy: -NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location))
+                // A block still awaiting its closing fence ends the draft,
+                // whose view is only as tall as its text.
+                if let container = textContainers.first {
+                    box.size.height = min(box.height, usedRect(for: container).maxY - box.minY)
+                }
+                result.append((box, true))
             } else {
                 // Discord's bar is 4 px wide.
                 result.append((NSRect(x: extent.minX, y: extent.minY, width: 4 * em, height: extent.height), false))

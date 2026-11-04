@@ -1353,10 +1353,15 @@ public extension DiscordMarkdown {
         let syntaxColor = textColor?.withAlphaComponent(0.5) ?? .tertiaryLabelColor
         var lines: [AppKitPlan.Line] = []
         var line = AppKitPlan.Line(runs: [], block: .paragraph)
+        var linkLabels: [NSRange] = []
 
         func style(_ range: NSRange, as traits: AppKitPlan.InlineTraits = [], color: AppKitPlan.SemanticColor? = nil) {
             let run = AppKitPlan.InlineRun(text: "", traits: traits, link: nil, color: color)
             text.addAttributes(DiscordMarkdown.attributes(for: run, in: line, metrics: metrics), range: range)
+            // A format inside a link's label keeps the link's colour.
+            for label in linkLabels where NSIntersectionRange(label, range).length > 0 {
+                text.addAttribute(.foregroundColor, value: NSColor.linkColor, range: NSIntersectionRange(label, range))
+            }
         }
         func dim(_ range: NSRange) {
             text.addAttribute(.foregroundColor, value: syntaxColor, range: range)
@@ -1371,7 +1376,9 @@ public extension DiscordMarkdown {
             dim(NSRange(location: NSMaxRange(content), length: width))
         }
         collector.collectLink = { label, end in
-            text.addAttribute(.foregroundColor, value: NSColor.linkColor, range: NSRange(label, in: source))
+            let labelRange = NSRange(label, in: source)
+            linkLabels.append(labelRange)
+            text.addAttribute(.foregroundColor, value: NSColor.linkColor, range: labelRange)
             dim(NSRange(source.index(before: label.lowerBound) ..< label.lowerBound, in: source))
             dim(NSRange(label.upperBound ..< end, in: source))
         }
