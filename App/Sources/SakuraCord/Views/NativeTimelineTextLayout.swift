@@ -512,6 +512,9 @@ nonisolated enum NativeTimelineCoreText {
                     ceil(font.ascender - font.descender + font.leading)
                 )
             }
+            if let existing, existing.maximumLineHeight > 0, existing.minimumLineHeight == existing.maximumLineHeight {
+                lineHeight = existing.maximumLineHeight
+            }
             let lastLocation = NSMaxRange(paragraphRange) - 1
             if containsSpoiler, source.character(at: lastLocation) == 10,
                output.attribute(.font, at: lastLocation, effectiveRange: nil) == nil,

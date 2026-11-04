@@ -1394,10 +1394,11 @@ public extension DiscordMarkdown {
         }
 
         func run() {
-            // Formats arrive parents first, so a nested format's traits
-            // replace its parent's, and its delimiters are marked after the
-            // parent's content.
-            let collector = SourceFormatCollector(source: source) { [self] range, traits, delimiter in
+            // Delimiters pair as message rendering pairs them, so a draft
+            // hides exactly the syntax the timeline hides. Formats arrive
+            // parents first, so a nested format's traits replace its
+            // parent's, and its delimiters are marked after the parent's content.
+            let collector = SourceFormatCollector(source: source, matchesComposerDelimiters: false) { [self] range, traits, delimiter in
                 let content = NSRange(range, in: source)
                 let width = delimiter.utf16.count
                 let span = NSRange(location: content.location - width, length: content.length + 2 * width)
