@@ -428,29 +428,31 @@ nonisolated final class MarkdownQuoteBox: NSTextTableBlock {
 
 /// Draws inline code's chrome behind its glyphs, which a text view's
 /// square background colour can't round or outline.
-nonisolated final class MarkdownLayoutManager: NSLayoutManager {
+nonisolated class MarkdownLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
-        let rects = inlineCodeRects(forGlyphRange: glyphsToShow).map { $0.offsetBy(dx: origin.x, dy: origin.y) }
+        let rects = rects(of: .discordMarkdownInlineCode, forGlyphRange: glyphsToShow, padding: DiscordMarkdown.inlineCodePadding)
+            .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         guard !rects.isEmpty else { return }
         // AppKit draws text on the main thread.
         MainActor.assumeIsolated { rects.forEach(NativeTimelineRowPainter.drawCodeChrome(in:)) }
     }
 
-    /// Each line's run of inline code, as tall as its font plus a point
-    /// above and below, and as wide as its glyphs plus their padding. Room
-    /// before the code is reserved mid-line and at a paragraph's start, but
-    /// not on a wrapped line, so there the chrome starts at its glyphs.
-    private func inlineCodeRects(forGlyphRange glyphsToShow: NSRange) -> [NSRect] {
+    /// Each line's run of text marked with `key`, as tall as its font plus
+    /// a point above and below, and as wide as its glyphs plus the padding
+    /// for its font. Room before the run is reserved mid-line and at a
+    /// paragraph's start, but not on a wrapped line, so there the run's
+    /// rect starts at its glyphs.
+    func rects(of key: NSAttributedString.Key, forGlyphRange glyphsToShow: NSRange, padding: (NSFont) -> CGFloat) -> [NSRect] {
         guard let textStorage else { return [] }
         var rects: [NSRect] = []
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        textStorage.enumerateAttribute(.discordMarkdownInlineCode, in: characters) { value, range, _ in
+        textStorage.enumerateAttribute(key, in: characters) { value, range, _ in
             guard value != nil, let font = textStorage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
-            let padding = DiscordMarkdown.inlineCodePadding(font: font)
-            let codeGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            enumerateLineFragments(forGlyphRange: codeGlyphs) { line, _, container, lineGlyphs, _ in
-                let glyphs = NSIntersectionRange(lineGlyphs, codeGlyphs)
+            let padding = padding(font)
+            let runGlyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            enumerateLineFragments(forGlyphRange: runGlyphs) { line, _, container, lineGlyphs, _ in
+                let glyphs = NSIntersectionRange(lineGlyphs, runGlyphs)
                 guard glyphs.length > 0 else { return }
                 let bounds = self.boundingRect(forGlyphRange: glyphs, in: container)
                 let baseline = line.minY + self.location(forGlyphAt: glyphs.location).y

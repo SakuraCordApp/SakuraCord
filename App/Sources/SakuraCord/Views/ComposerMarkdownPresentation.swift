@@ -11,10 +11,13 @@ enum ComposerMarkdownPresentation {
 
     static func rendered(_ original: NSAttributedString, style: ComposerTextStyle) -> NSAttributedString {
         let fullRange = NSRange(location: 0, length: original.length)
-        let font = style.font
-        let text = NSMutableAttributedString(string: original.string, attributes: style.attributes)
-        // Start with one plain run rather than resetting every previous style run.
+        let text = DiscordMarkdown.appKitSourceAttributed(
+            original.string, attributes: style.attributes,
+            baseFontSize: style.font.pointSize, usesMessageLineHeight: style.usesMessageLineHeight
+        )
         // Only app-owned token attachments survive incoming rich-text formatting.
+        // They are single characters here, so the source keeps their ranges
+        // even while a newly typed token is awaiting normalization.
         original.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
             guard let attachment = value as? NSTextAttachment else { return }
             original.enumerateAttributes(in: range) { attributes, tokenRange, _ in
@@ -25,22 +28,54 @@ enum ComposerMarkdownPresentation {
                 }
             }
         }
-        // Token attachments are single characters here, so these ranges remain
-        // correct even while a newly typed token is awaiting normalization.
-        var fonts: [UInt: NSFont] = [0: font]
-        for format in DiscordMarkdown.sourceFormats(text.string) {
-            let range = format.range
-            var traits: NSFontTraitMask = []
-            if format.isBold { traits.insert(.boldFontMask) }
-            if format.isItalic { traits.insert(.italicFontMask) }
-            let styledFont = fonts[traits.rawValue] ?? NSFontManager.shared.convert(font, toHaveTrait: traits)
-            fonts[traits.rawValue] = styledFont
-            text.addAttribute(.font, value: styledFont, range: range)
-            if format.isUnderlined {
-                text.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+        return text
+    }
+}
+
+/// Draws a draft's code blocks, quotes and spoilers as the timeline draws
+/// them, beneath the selection.
+nonisolated final class ComposerLayoutManager: MarkdownLayoutManager {
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        let blocks = blockRects().map { ($0.rect.offsetBy(dx: origin.x, dy: origin.y), $0.isCode) }
+        let spoilers = rects(of: .discordMarkdownSpoiler, forGlyphRange: glyphsToShow) { _ in 0 }
+            .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
+        // AppKit draws text on the main thread.
+        MainActor.assumeIsolated {
+            for (rect, isCode) in blocks {
+                if isCode { NativeTimelineRowPainter.drawCodeChrome(in: rect) } else { NativeTimelineRowPainter.drawQuoteBar(in: rect) }
+            }
+            // A draft's spoilers stay readable, as a revealed one does.
+            NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
+            let radius = NativeTimelineSpoilerAppearance.textCornerRadius
+            for rect in spoilers {
+                NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
             }
         }
-        return text
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    /// Each code block's padded background and each quote's bar, as wide
+    /// as their lines and as tall as their text, without its paragraph spacing.
+    private func blockRects() -> [(rect: NSRect, isCode: Bool)] {
+        guard let textStorage else { return [] }
+        var result: [(NSRect, Bool)] = []
+        textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
+            guard let name = value as? String else { return }
+            var extent: NSRect?
+            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
+                let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)
+                extent = extent?.union(line) ?? line
+            }
+            guard let extent else { return }
+            let em = NativeTimelineMarkdownChromeMetrics.em(in: textStorage, at: range.location)
+            if name == "code" {
+                result.append((extent.insetBy(dx: 0, dy: -NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location)), true))
+            } else {
+                // Discord's bar is 4 px wide.
+                result.append((NSRect(x: extent.minX, y: extent.minY, width: 4 * em, height: extent.height), false))
+            }
+        }
+        return result
     }
 }
 

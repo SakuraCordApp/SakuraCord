@@ -833,7 +833,7 @@ enum MessageEditLayoutMetrics {
         // The timeline sets an outgoing bubble's text in white.
         var attributes = style.attributes
         attributes[.foregroundColor] = NSColor.white
-        return ComposerTextStyle(font: style.font, attributes: attributes)
+        return ComposerTextStyle(font: style.font, attributes: attributes, usesMessageLineHeight: true)
     }
 
     /// How much lower TextKit sets a draft's first baseline than CoreText
@@ -858,7 +858,7 @@ enum MessageEditLayoutMetrics {
         guard let font = attributes[.font] as? NSFont else {
             preconditionFailure("The markdown renderer sets a font on message text.")
         }
-        let style = ComposerTextStyle(font: font, attributes: attributes)
+        let style = ComposerTextStyle(font: font, attributes: attributes, usesMessageLineHeight: true)
         let sample = NSAttributedString(string: "Edit", attributes: attributes)
         let height: CGFloat = 100
         let frame = CTFramesetterCreateFrame(

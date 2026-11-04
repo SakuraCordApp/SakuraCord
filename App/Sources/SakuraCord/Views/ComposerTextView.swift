@@ -293,6 +293,9 @@ enum ComposerEmojiAttributedText {
 struct ComposerTextStyle {
     let font: NSFont
     let attributes: [NSAttributedString.Key: Any]
+    /// Sets Markdown blocks in Discord's message line heights, as the
+    /// timeline does, rather than in the text's natural lines.
+    var usesMessageLineHeight = false
 
     static var composer: Self { composer(.interfaceSystemFont(ofSize: 15)) }
 
@@ -390,7 +393,7 @@ struct ComposerTextView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let textStorage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
+        let layoutManager = ComposerLayoutManager()
         textStorage.addLayoutManager(layoutManager)
 
         let textContainer = NSTextContainer()
