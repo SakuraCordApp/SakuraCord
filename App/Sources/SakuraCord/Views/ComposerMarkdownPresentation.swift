@@ -32,67 +32,17 @@ enum ComposerMarkdownPresentation {
     }
 }
 
-/// Draws a draft's code blocks, quotes and spoilers as the timeline draws
-/// them, beneath the selection.
-nonisolated final class ComposerLayoutManager: MarkdownLayoutManager {
-    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        let blocks = blockRects().map { ($0.rect.offsetBy(dx: origin.x, dy: origin.y), $0.isCode) }
-        let spoilers = rects(of: .discordMarkdownSpoiler, forGlyphRange: glyphsToShow)
-            .map { $0.offsetBy(dx: origin.x, dy: origin.y) }
-        // AppKit draws text on the main thread.
-        MainActor.assumeIsolated {
-            for (rect, isCode) in blocks {
-                if isCode { NativeTimelineRowPainter.drawCodeChrome(in: rect) } else { NativeTimelineRowPainter.drawQuoteBar(in: rect) }
-            }
-            // A draft's spoilers stay readable, as a revealed one does.
-            NativeTimelineSpoilerAppearance.revealedTextColor.setFill()
-            for rect in spoilers {
-                NSBezierPath(concentricRoundedRect: rect, cornerRadius: NativeTimelineSpoilerAppearance.textCornerRadius).fill()
-            }
-        }
-        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
-    }
-
-    /// Each code block's padded background and each quote's bar, as wide
-    /// as their lines and as tall as their text, without its paragraph spacing.
-    private func blockRects() -> [(rect: NSRect, isCode: Bool)] {
-        guard let textStorage else { return [] }
-        var result: [(NSRect, Bool)] = []
-        textStorage.enumerateAttribute(.discordMarkdownBlock, in: NSRange(location: 0, length: textStorage.length)) { value, range, _ in
-            guard let name = value as? String else { return }
-            var extent: NSRect?
-            enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: range, actualCharacterRange: nil)) { rect, used, _, _, _ in
-                let line = NSRect(x: rect.minX, y: used.minY, width: rect.width, height: used.height)
-                extent = extent?.union(line) ?? line
-            }
-            guard let extent else { return }
-            if name == "code" {
-                var box = extent.insetBy(dx: 0, dy: -NativeTimelineMarkdownChromeMetrics.codeBlockInset(in: textStorage, at: range.location))
-                // A block still awaiting its closing fence ends the draft,
-                // whose view is only as tall as its text.
-                if let container = textContainers.first {
-                    box.size.height = min(box.height, usedRect(for: container).maxY - box.minY)
-                }
-                result.append((box, true))
-            } else {
-                let width = NativeTimelineMarkdownChromeMetrics.quoteBarWidth(in: textStorage, at: range.location)
-                result.append((NSRect(x: extent.minX, y: extent.minY, width: width, height: extent.height), false))
-            }
-        }
-        return result
-    }
-}
-
 extension ComposerNSTextView {
     func refreshMarkdownPresentation() {
         guard !hasMarkedText(), let textStorage else { return }
         let rendered = ComposerMarkdownPresentation.rendered(textStorage, style: plainTextStyle)
         // Only changed runs should invalidate layout. Most keystrokes leave all
         // existing attributes intact, even though delimiter recognition is global.
-        guard !rendered.isEqual(to: textStorage) else {
+        defer {
             restorePlainTypingAttributes()
-            return
+            revealMarkdownSyntax()
         }
+        guard !rendered.isEqual(to: textStorage) else { return }
         var updates: [(NSRange, [NSAttributedString.Key: Any])] = []
         rendered.enumerateAttributes(in: NSRange(location: 0, length: rendered.length)) { attributes, range, _ in
             textStorage.enumerateAttributes(in: range) { current, subrange, _ in
@@ -106,7 +56,18 @@ extension ComposerNSTextView {
             for (range, attributes) in updates { textStorage.setAttributes(attributes, range: range) }
             textStorage.endEditing()
         }
-        restorePlainTypingAttributes()
+    }
+
+    /// Shows the Markdown syntax around the selection, once the text it
+    /// marks is settled.
+    func revealMarkdownSyntax() {
+        guard !hasMarkedText(), let textStorage, textStorage.editedMask.isEmpty else { return }
+        (layoutManager as? ComposerLayoutManager)?.reveal(around: selectedRange())
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        revealMarkdownSyntax()
     }
 
     override func didChangeText() {
