@@ -1356,9 +1356,10 @@ public extension DiscordMarkdown {
         let text = NSMutableAttributedString(string: source, attributes: attributes)
         // No styled syntax can begin without one of these ASCII markers.
         guard source.utf8.contains(where: { "*_~|`[#><".utf8.contains($0) }) else { return text }
+        // A message's code blocks keep room for the timeline's copy button.
         SourceStyler(source: source, text: text, attributes: attributes, metrics: BlockMetrics(
             baseFontSize: baseFontSize, usesMessageLineHeight: usesMessageLineHeight,
-            reservesCodeCopyButton: false, codeAppearance: nil
+            reservesCodeCopyButton: usesMessageLineHeight, codeAppearance: nil
         )).run()
         return text
     }
@@ -1377,6 +1378,8 @@ public extension DiscordMarkdown {
         var line = AppKitPlan.Line(runs: [], block: .paragraph)
         var linkLabel: NSRange?
         var fences: [NSRange] = []
+        /// Whether the previous source line was code, inside a fence.
+        var followsCode = false
         /// The room a closing fence keeps for its block's bottom padding,
         /// which the next line's spacing then leaves out.
         var closingFenceHeight: CGFloat = 0
@@ -1431,6 +1434,7 @@ public extension DiscordMarkdown {
             let range = NSRange(rawLine.startIndex ..< rawLine.endIndex, in: source)
             // A paragraph's newline carries its paragraph's attributes.
             let paragraphRange = NSRange(location: range.location, length: min(range.length + 1, text.length - range.location))
+            defer { followsCode = if case .code = kind { true } else { false } }
             switch kind {
             case let .fence(opening):
                 fences.append(range)
@@ -1438,8 +1442,9 @@ public extension DiscordMarkdown {
                 // Hidden, a fence's line takes no room; message rendering
                 // has no line for it.
                 text.addAttribute(.discordMarkdownBlock, value: "fence" as NSString, range: paragraphRange)
-                // Shown, a closing fence sits below its block's padding.
-                guard opening == nil, case .code? = lines.last?.block else { return }
+                // Shown, a closing fence sits below its block's padding; an
+                // empty block has none.
+                guard opening == nil, followsCode else { return }
                 closingFenceHeight = metrics.codeInset
                 setParagraph(spacing: closingFenceHeight, for: paragraphRange)
                 return
