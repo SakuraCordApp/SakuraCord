@@ -293,6 +293,10 @@ nonisolated enum SystemMessagePresentation {
             ]
         case .recipientRemove:
             let recipientUser = message.mentionedUsers.first
+            // Discord records a member leaving as removing themselves.
+            if recipientUser?.id == message.author.id {
+                return [actorRun(message), .secondary(" left the group.")]
+            }
             let recipient = recipientUser?.displayName ?? "someone"
             return [
                 actorRun(message),
