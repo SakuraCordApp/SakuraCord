@@ -192,7 +192,8 @@ struct PullRequestBuildBrowser: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, InterfaceScale.metric(10))
                     .frame(height: InterfaceScale.metric(26))
-                    .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Capsule())
+                    // Glass inside a scroll view escapes its clip as it scrolls.
+                    .background(SakuraCordAccentColor.color, in: Capsule())
             }
             .buttonStyle(.plain)
             .help("Open pull request on GitHub")
