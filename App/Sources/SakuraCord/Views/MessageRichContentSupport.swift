@@ -2,6 +2,7 @@ import AppKit
 import MessageRendering
 import SakuraCordModels
 import Synchronization
+import UniformTypeIdentifiers
 
 enum DiscordRichMessageMetrics {
     static var maximumWidth: CGFloat { InterfaceScale.metric(520) }
@@ -547,6 +548,9 @@ struct RichMediaItem: Identifiable, Hashable {
     var isSpoiler: Bool
     var autoplaysInline: Bool
     var videoPreviewURL: URL?
+    /// The type Discord declares for embed media, whose URL may have no
+    /// extension, such as a tweet's image.
+    var contentType: UTType?
 
     var canSave: Bool {
         if case .youtube = kind { return false }
@@ -607,6 +611,7 @@ struct RichMediaItem: Identifiable, Hashable {
         }
         isSpoiler = false
         self.autoplaysInline = autoplaysInline
+        contentType = media.contentType.flatMap { UTType(mimeType: $0) }
     }
 
     init?(embed: MessageEmbed, attachments: [Attachment]) {
