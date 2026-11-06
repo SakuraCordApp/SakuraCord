@@ -1141,8 +1141,11 @@ extension NativeTimelineCanvasView {
             let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
                 in: message, store: spoilerRevealStore
             )
+            var coveredKeys = Set<NativeTimelineComponentRevealKey>()
+            // A multi-image post's card region spans its grid, so its one
+            // overlay covers every image.
             for region in layouts[index].embedRegions {
-                guard let key = concealedEmbeds[region.embedID] else { continue }
+                guard let key = concealedEmbeds[region.embedID], coveredKeys.insert(key).inserted else { continue }
                 appendDesiredSpoilerOverlay(
                     key,
                     frame: region.frame,
