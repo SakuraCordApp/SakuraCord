@@ -608,9 +608,15 @@ extension NativeTimelineCanvasView {
     /// A late frame, such as one held up by the first draw of a tall row,
     /// delays glides instead of skipping part of them. Chip motions keep
     /// their clock, since Core Animation runs the chips through the stall.
+    /// Runs before anything reads a glide's progress, so an update landing
+    /// after a stall starts from where the rows still are.
     private func deferGlides(pastStallBefore now: TimeInterval) {
-        defer { reactionStepUptime = now }
-        guard let last = reactionStepUptime else { return }
+        guard let last = reactionStepUptime else {
+            reactionStepUptime = now
+            return
+        }
+        guard now > last else { return }
+        reactionStepUptime = now
         let stall = now - last - Self.reactionFrameAllowance
         guard stall > 0 else { return }
         for index in reactionRowMotions.indices where reactionRowMotions[index].timing == .glide {
@@ -654,6 +660,7 @@ extension NativeTimelineCanvasView {
     /// moved.
     @discardableResult
     func refreshReactionMotionGeometry(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        deferGlides(pastStallBefore: uptime)
         guard !reactionRowMotions.isEmpty || !reactionMotionSteps.isEmpty else { return false }
         if let pendingReactionBaseline { handOverDepartedMotion(in: pendingReactionBaseline) }
         // A motion whose row is gone no longer describes the layout.
