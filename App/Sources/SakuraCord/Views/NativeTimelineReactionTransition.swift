@@ -255,6 +255,11 @@ extension NativeTimelineCanvasView {
     func beginReactionTransitions() {
         guard let baseline = pendingReactionBaseline else { return }
         pendingReactionBaseline = nil
+        // The whole update reads glides at one time, so a stall inside it,
+        // such as rasterizing a tall row's picture, is made up on the next
+        // frame as one.
+        let now = ProcessInfo.processInfo.systemUptime
+        deferGlides(pastStallBefore: now)
         let handOvers = self.handOvers
         self.handOvers = [:]
         guard AppMotionPolicy.animatesUncategorized,
@@ -279,8 +284,7 @@ extension NativeTimelineCanvasView {
         var update = NativeTimelineUpdateMotion(
             departedOldIndices: Set(gone.map(\.index)), handOvers: handOvers, motionID: nextReactionMotionID
         )
-        refreshReactionMotionGeometry()
-        let now = ProcessInfo.processInfo.systemUptime
+        refreshReactionMotionGeometry(at: now)
         let originY = contentOriginY - viewportMinY
         forEachDisplayedRow(in: reactionBaselineRect) { index in
             followRow(at: index, from: baseline, originY: originY, now: now, into: &update)
@@ -382,7 +386,7 @@ extension NativeTimelineCanvasView {
             if rowFrame(at: index).intersects(visibleRect), animatedMediaRows[identifier] == nil,
                let picture = rowFadeImage(old, width: baseline.width) {
                 // A crossfade still running starts the new one from the blend it shows.
-                let image = rowFades.first { $0.identifier == identifier }.flatMap { shownCrossfade($0, over: picture) }
+                let image = rowFades.first { $0.identifier == identifier }.flatMap { shownCrossfade($0, over: picture, at: now) }
                 update.crossfades.append(.init(identifier: identifier, rowIndex: index, image: image ?? picture))
             }
             // A motion still running from an earlier change keeps going, so
@@ -424,8 +428,7 @@ extension NativeTimelineCanvasView {
     /// where they are, and the rest of its own height change, which leaves
     /// with it. Runs when the update lands, before motions whose rows are
     /// gone are dropped; the update that follows places what was handed.
-    private func handOverDepartedMotion(in baseline: NativeTimelineReactionBaseline) {
-        let now = ProcessInfo.processInfo.systemUptime
+    private func handOverDepartedMotion(in baseline: NativeTimelineReactionBaseline, at now: TimeInterval) {
         let gone = Set(reactionRowMotions.flatMap(\.steps).compactMap { step in
             rowIndex(forIdentifier: step.identifier, hint: step.rowIndex) == nil ? baseline.rows[step.identifier] : nil
         }.map(\.index))
@@ -625,12 +628,19 @@ extension NativeTimelineCanvasView {
         for index in rowFades.indices where rowFades[index].timing == .glide {
             rowFades[index].startUptime? += stall
         }
-        departedRuns = departedRuns.mapValues { run in
+        func deferring(_ run: NativeTimelineDepartedRun) -> NativeTimelineDepartedRun {
             var run = run
             for index in run.pieces.indices where run.pieces[index].timing == .glide {
                 run.pieces[index].startUptime? += stall
             }
             return run
+        }
+        departedRuns = departedRuns.mapValues(deferring)
+        // Runs handed over by a deleted row wait here for the next update.
+        handOvers = handOvers.mapValues { handOver in
+            var handOver = handOver
+            handOver.run = handOver.run.map(deferring)
+            return handOver
         }
     }
 
@@ -662,7 +672,7 @@ extension NativeTimelineCanvasView {
     func refreshReactionMotionGeometry(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         deferGlides(pastStallBefore: uptime)
         guard !reactionRowMotions.isEmpty || !reactionMotionSteps.isEmpty else { return false }
-        if let pendingReactionBaseline { handOverDepartedMotion(in: pendingReactionBaseline) }
+        if let pendingReactionBaseline { handOverDepartedMotion(in: pendingReactionBaseline, at: uptime) }
         // A motion whose row is gone no longer describes the layout.
         removeReactionMotions { motion in
             motion.steps.contains { rowIndex(forIdentifier: $0.identifier, hint: $0.rowIndex) == nil }

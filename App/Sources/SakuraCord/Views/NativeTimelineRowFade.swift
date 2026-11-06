@@ -104,8 +104,8 @@ extension NativeTimelineCanvasView {
     /// out under `picture`, the row's content before this update. Drawn
     /// once into a bitmap, so a run of interrupting edits keeps no chain
     /// of earlier pictures.
-    func shownCrossfade(_ running: NativeTimelineRowFade, over picture: NSImage) -> NSImage? {
-        let remaining = running.remaining(at: ProcessInfo.processInfo.systemUptime)
+    func shownCrossfade(_ running: NativeTimelineRowFade, over picture: NSImage, at uptime: TimeInterval) -> NSImage? {
+        let remaining = running.remaining(at: uptime)
         let size = NSSize(
             width: max(running.image.size.width, picture.size.width),
             height: max(running.image.size.height, picture.size.height)
