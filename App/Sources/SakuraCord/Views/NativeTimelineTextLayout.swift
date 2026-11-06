@@ -719,7 +719,7 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0.name,
                     font: .interfaceSystemFont(ofSize: 11, weight: .semibold),
-                    color: $0.url == nil ? .labelColor : .linkColor,
+                    color: DiscordEmbedPalette.strongText,
                     link: $0.url
                 )
             }
@@ -727,7 +727,7 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 13, weight: .semibold),
-                    color: embed.url == nil ? .labelColor : .linkColor,
+                    color: embed.url == nil ? DiscordEmbedPalette.strongText : DiscordEmbedPalette.linkText,
                     link: embed.url
                 )
             }
@@ -747,7 +747,7 @@ enum NativeTimelineEmbedLayout {
                     name: plainTextBox(
                         field.name,
                         font: .interfaceSystemFont(ofSize: 11, weight: .bold),
-                        color: .labelColor
+                        color: DiscordEmbedPalette.strongText
                     ),
                     value: resolvedTextBox(
                         prepared: RichMessageAttributedText.prepare(
@@ -765,7 +765,7 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 11),
-                    color: .secondaryLabelColor,
+                    color: embed.provider?.url == nil ? DiscordEmbedPalette.defaultText : DiscordEmbedPalette.providerText,
                     link: embed.provider?.url
                 )
             }
@@ -777,7 +777,7 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 11),
-                    color: .secondaryLabelColor
+                    color: DiscordEmbedPalette.defaultText
                 )
             }
 
@@ -1223,15 +1223,16 @@ enum NativeTimelineEmbedLayout {
             }
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
-            NativeTimelineAttributedTextBox(
-                NativeTimelineCoreText.make(
-                    prepared: prepared,
-                    emojiSize: emojiSize,
-                    baseFontSize: baseFontSize,
-                    mentionPresentations: mentions
-                ),
-                layoutHeightAdjustment: 1
-            )
+            let text = NSMutableAttributedString(attributedString: NativeTimelineCoreText.make(
+                prepared: prepared,
+                emojiSize: emojiSize,
+                baseFontSize: baseFontSize,
+                mentionPresentations: mentions
+            ))
+            text.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: text.length)) { color, range, _ in
+                if color == nil { text.addAttribute(.foregroundColor, value: DiscordEmbedPalette.defaultText, range: range) }
+            }
+            return NativeTimelineAttributedTextBox(text, layoutHeightAdjustment: 1)
         }
     }
 

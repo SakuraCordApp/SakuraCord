@@ -1092,8 +1092,9 @@ extension NativeTimelineRowPainter {
             let alphas = DiscordComponentButtonAppearance.secondaryFillAlphas(isDark: isDark)
             let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
             fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
-            border = discordGrey.withAlphaComponent(isDark ? 0.04 : 0.2)
-            foreground = isDark ? .white : discordLightText
+            border = discordGrey.withAlphaComponent(isDark ? 41 / 255 : 51 / 255)
+            // `--control-secondary-text-default` is the neutral `--text-strong` uses.
+            foreground = DiscordEmbedPalette.strongText
         }
 
         NSGraphicsContext.saveGraphicsState()
@@ -1127,7 +1128,6 @@ extension NativeTimelineRowPainter {
 
     /// The grey behind Discord's secondary buttons and its muted borders.
     private static let discordGrey = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
-    private static let discordLightText = NSColor(srgbRed: 40 / 255, green: 40 / 255, blue: 45 / 255, alpha: 1)
 
     private static func drawComponentButtonContent(
         _ region: NativeTimelineComponentLayout.ButtonRegion,

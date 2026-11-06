@@ -533,7 +533,7 @@ extension NativeTimelineRowPainter {
         for region in layout.embedRegions {
             let isCovered = concealedEmbeds[region.embedID] != nil
             NativeTimelineSpoilerCover.draw(
-                covering: isCovered, in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+                covering: isCovered, in: region.frame, cornerRadius: region.cornerRadius
             ) {
                 drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
                 drawEmbedText(region, input: input)
@@ -1373,42 +1373,27 @@ extension NativeTimelineRowPainter {
         _ frame: CGRect,
         accentColor: UInt32?
     ) {
-        let shape = NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
-        )
+        let cornerRadius = DiscordRichMessageMetrics.embedCornerRadius
+        let barWidth = InterfaceScale.metric(4)
         NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
-        NativeTimelineSemanticColor.opacity(
-            .secondaryLabelColor,
-            0.08
-        ).setFill()
+        NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).addClip()
+        DiscordEmbedPalette.cardFill.setFill()
         frame.fill()
-        (
-            roleColor(accentColor)
-                ?? NativeTimelineSemanticColor.opacity(
-                    .secondaryLabelColor,
-                    0.5
-                )
-        ).setFill()
-        CGRect(
-            x: frame.minX,
-            y: frame.minY,
-            width: InterfaceScale.metric(4),
-            height: frame.height
-        ).fill()
-        NSGraphicsContext.restoreGraphicsState()
-
-        NativeTimelineSemanticColor.opacity(
-            .labelColor,
-            0.08
-        ).setStroke()
+        (roleColor(accentColor) ?? DiscordEmbedPalette.defaultAccent).setFill()
+        CGRect(x: frame.minX, y: frame.minY, width: barWidth, height: frame.height).fill()
+        // The bar is the card's thicker left border, so the 1 pt border
+        // runs along the other three sides only.
+        NSBezierPath(
+            rect: CGRect(x: frame.minX + barWidth, y: frame.minY, width: frame.width - barWidth, height: frame.height)
+        ).addClip()
+        DiscordEmbedPalette.cardBorder.setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5
+            cornerRadius: cornerRadius - 0.5
         )
         border.lineWidth = 1
         border.stroke()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     static func sakuraCordDeepLinkCard(

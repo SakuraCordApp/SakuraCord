@@ -9,6 +9,7 @@ enum DiscordRichMessageMetrics {
     /// Discord lays Components V2 out up to 600 pixels wide.
     static var componentsMaximumWidth: CGFloat { px(600) }
     static var cardCornerRadius: CGFloat { px(8) }
+    static var embedCornerRadius: CGFloat { px(4) }
     /// A container's 16-pixel padding inside its 1-point border.
     static var cardPadding: CGFloat { px(16) + InterfaceScale.metric(1) }
 
@@ -17,6 +18,43 @@ enum DiscordRichMessageMetrics {
     /// so every Discord length keeps its proportion to the text.
     nonisolated static func px(_ value: CGFloat) -> CGFloat {
         InterfaceScale.metric((value * InterfaceTypographyMetrics.messageTextSize / 16 * 2).rounded() / 2)
+    }
+}
+
+/// Discord's embed colours, resolved from its design tokens for the midnight
+/// theme in dark mode, as the spoiler cover assumes, and the light theme
+/// otherwise.
+nonisolated enum DiscordEmbedPalette {
+    /// `--background-surface-high`.
+    static let cardFill = themed(0x0A0A0C, light: 0xFFFFFF)
+    /// `--border-subtle`.
+    static let cardBorder = themed(0x97979F, light: 0x97979F, alpha: 51 / 255, lightAlpha: 71 / 255)
+    /// `--border-normal`, the bar of an embed without a colour.
+    static let defaultAccent = themed(0x97979F, light: 0x97979F, alpha: 61 / 255, lightAlpha: 102 / 255)
+    /// `--text-strong`: titles, author names and field names.
+    static let strongText = themed(0xDCDCDF, light: 0x28282D)
+    /// `--text-default`: descriptions, field values, footers.
+    static let defaultText = themed(0xD4D5D8, light: 0x2E2E34)
+    /// `--text-link`.
+    static let linkText = themed(0x2781E7, light: 0x006DD4)
+    /// `--interactive-text-default`: the provider name.
+    static let providerText = themed(0x96979E, light: 0x595A63)
+
+    private static func themed(
+        _ midnight: UInt32, light: UInt32, alpha: CGFloat = 1, lightAlpha: CGFloat = 1
+    ) -> NSColor {
+        func color(_ hex: UInt32, _ alpha: CGFloat) -> NSColor {
+            NSColor(
+                srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: alpha
+            )
+        }
+        return NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? color(midnight, alpha) : color(light, lightAlpha)
+        }
     }
 }
 

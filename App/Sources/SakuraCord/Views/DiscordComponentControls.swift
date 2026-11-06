@@ -13,9 +13,11 @@ enum DiscordComponentButtonAppearance {
         }
     }
 
-    /// The secondary grey's opacity at rest, hover and press for an appearance.
+    /// The secondary grey's opacity at rest, hover and press for an
+    /// appearance: `--control-secondary-background-*` in Discord's midnight
+    /// and light themes.
     static func secondaryFillAlphas(isDark: Bool) -> [CGFloat] {
-        isDark ? [0.12, 0.16, 0.20] : [0.12, 0.16, 0.24]
+        isDark ? [0.1216, 0.2, 0.2392] : [0.1216, 0.1608, 0.2392]
     }
 }
 

@@ -82,6 +82,11 @@ struct NativeTimelineRowLayout {
         let mediaPosterFillsFrame: Bool
         let accentColor: UInt32?
         let drawsTopSeparator: Bool
+
+        /// Discord rounds a card tighter than the media it otherwise covers.
+        var cornerRadius: CGFloat {
+            kind == .card ? DiscordRichMessageMetrics.embedCornerRadius : DiscordRichMessageMetrics.cardCornerRadius
+        }
     }
 
     struct SakuraCordDeepLinkRegion {
