@@ -122,7 +122,7 @@ enum NativeTimelineRowMotionTiming {
     func progress(at elapsed: TimeInterval) -> CGFloat {
         switch self {
         case .chips:
-            NativeTimelineRowDisclosure.progress(at: elapsed)
+            return NativeTimelineRowDisclosure.progress(at: elapsed)
         case .glide:
             let curve = NativeTimelineSendTransitionTiming.verticalCurve
             return CGFloat(curve.progress(at: elapsed / curve.duration))
