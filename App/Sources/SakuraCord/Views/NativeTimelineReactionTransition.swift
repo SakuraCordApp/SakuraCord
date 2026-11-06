@@ -105,7 +105,7 @@ struct NativeTimelineReactionRowMotion {
     var steps: [Step]
 
     func progress(at uptime: TimeInterval) -> CGFloat {
-        startUptime.map { timing.progress(at: uptime - $0) } ?? 0
+        timing.progress(startedAt: startUptime, at: uptime)
     }
 }
 
@@ -124,10 +124,15 @@ enum NativeTimelineRowMotionTiming {
         case .chips:
             NativeTimelineRowDisclosure.progress(at: elapsed)
         case .glide:
-            CGFloat(NativeTimelineSendTransitionTiming.verticalCurve.progress(
-                at: elapsed / NativeTimelineSendTransitionTiming.verticalCurve.duration
-            ))
+            let curve = NativeTimelineSendTransitionTiming.verticalCurve
+            return CGFloat(curve.progress(at: elapsed / curve.duration))
         }
+    }
+
+    /// Progress at `uptime` of something that started at `startUptime`, or
+    /// none before its first frame.
+    func progress(startedAt startUptime: TimeInterval?, at uptime: TimeInterval) -> CGFloat {
+        startUptime.map { progress(at: uptime - $0) } ?? 0
     }
 }
 
@@ -310,10 +315,8 @@ extension NativeTimelineCanvasView {
             refreshReactionMotionGeometry(at: now)
             redrawForRowMotion()
         }
-        // A deleted row's piece belongs to the motion closing its gap; an
-        // edit's crossfade stands on its own.
-        // A piece's gap closes with its motion's step, so a new one shares
-        // that motion's timing.
+        // A deleted row's piece belongs to the motion closing its gap and
+        // shares its timing; an edit's crossfade stands on its own.
         placeDepartedPieces(
             update.departedPieces.filter { update.plan.describesUpdate || !$0.isNew }.map { entry in
                 var piece = entry.piece
@@ -634,19 +637,18 @@ extension NativeTimelineCanvasView {
         for index in rowFades.indices where rowFades[index].timing == .glide {
             rowFades[index].startUptime? += stall
         }
-        func deferring(_ run: NativeTimelineDepartedRun) -> NativeTimelineDepartedRun {
-            var run = run
-            for index in run.pieces.indices where run.pieces[index].timing == .glide {
-                run.pieces[index].startUptime? += stall
+        for run in departedRuns.values.indices {
+            let pieces = departedRuns.values[run].pieces
+            for index in pieces.indices where pieces[index].timing == .glide {
+                departedRuns.values[run].pieces[index].startUptime? += stall
             }
-            return run
         }
-        departedRuns = departedRuns.mapValues(deferring)
         // Runs handed over by a deleted row wait here for the next update.
-        handOvers = handOvers.mapValues { handOver in
-            var handOver = handOver
-            handOver.run = handOver.run.map(deferring)
-            return handOver
+        for handOver in handOvers.values.indices {
+            guard let pieces = handOvers.values[handOver].run?.pieces else { continue }
+            for index in pieces.indices where pieces[index].timing == .glide {
+                handOvers.values[handOver].run?.pieces[index].startUptime? += stall
+            }
         }
     }
 

@@ -14,15 +14,7 @@ struct NativeTimelineRowFade {
 
     /// How much of the old picture still shows, from 1 down to 0.
     func remaining(at uptime: TimeInterval) -> CGFloat {
-        Self.remaining(startedAt: startUptime, timing: timing, at: uptime)
-    }
-
-    static func remaining(
-        startedAt startUptime: TimeInterval?,
-        timing: NativeTimelineRowMotionTiming,
-        at uptime: TimeInterval
-    ) -> CGFloat {
-        1 - (startUptime.map { timing.progress(at: uptime - $0) } ?? 0)
+        1 - timing.progress(startedAt: startUptime, at: uptime)
     }
 }
 
@@ -42,7 +34,7 @@ struct NativeTimelineDepartedRun {
         var timing = NativeTimelineRowMotionTiming.chips
 
         func remaining(at uptime: TimeInterval) -> CGFloat {
-            NativeTimelineRowFade.remaining(startedAt: startUptime, timing: timing, at: uptime)
+            1 - timing.progress(startedAt: startUptime, at: uptime)
         }
     }
 
