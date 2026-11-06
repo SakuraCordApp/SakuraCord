@@ -1230,7 +1230,7 @@ enum NativeTimelineEmbedLayout {
                 mentionPresentations: mentions
             ))
             text.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: text.length)) { color, range, _ in
-                if color == nil { text.addAttribute(.foregroundColor, value: DiscordEmbedPalette.defaultText, range: range) }
+                if color as? NSColor == .labelColor { text.addAttribute(.foregroundColor, value: DiscordEmbedPalette.defaultText, range: range) }
             }
             return NativeTimelineAttributedTextBox(text, layoutHeightAdjustment: 1)
         }
