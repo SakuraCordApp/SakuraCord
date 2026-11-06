@@ -771,7 +771,7 @@ extension NativeTimelineRowLayout {
                 let visibleEmbeds = MessageEmbedPresentation.visibleEmbeds(for: message)
                 result.embedRegions.reserveCapacity(visibleEmbeds.count)
                 for embeds in MessageEmbedPresentation.groupedEmbeds(visibleEmbeds) {
-                    guard let embed = embeds.first else { continue }
+                    let embed = embeds[0]
                     let embedY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                     if embed.type == "components" {
                         if let region = NativeTimelineComponentLayout.make(

@@ -230,6 +230,8 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         store: NativeTimelineSpoilerRevealStore
     ) -> [String: NativeTimelineComponentRevealKey] {
         let spoileredURLs = spoileredEmbedURLs(in: message)
+        // Rows draw often and almost none link a spoiler.
+        guard !spoileredURLs.isEmpty else { return [:] }
         var result: [String: NativeTimelineComponentRevealKey] = [:]
         var occurrences: [URL: Int] = [:]
         for group in MessageEmbedPresentation.groupedEmbeds(message.embeds) {

@@ -531,12 +531,12 @@ extension NativeTimelineRowPainter {
             NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
         } ?? [:]
         var coveredKeys = Set<NativeTimelineComponentRevealKey>()
-        for region in layout.embedRegions {
+        for (index, region) in layout.embedRegions.enumerated() {
             let key = concealedEmbeds[region.embedID]
-            // A multi-image post's images share their card's key and draw
-            // under the card's one cover, which spans the grid.
+            // A multi-image post's images follow their card, share its key
+            // and draw under the card's one cover, which spans the grid.
             if let key, !coveredKeys.insert(key).inserted { continue }
-            let members = key.map { key in layout.embedRegions.filter { concealedEmbeds[$0.embedID] == key } }
+            let members = key.map { key in layout.embedRegions[index...].prefix { concealedEmbeds[$0.embedID] == key } }
                 ?? [region]
             NativeTimelineSpoilerCover.draw(
                 covering: key != nil, in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius

@@ -368,13 +368,9 @@ public enum DiscordMarkdown {
     private static func quoteContent(_ line: Substring) -> Substring? {
         let scalars = line.unicodeScalars
         guard scalars.first == ">" else { return nil }
-        var rest = scalars.dropFirst()
-        var hasSpacer = false
-        while let first = rest.first, first.properties.isDefaultIgnorableCodePoint {
-            hasSpacer = true
-            rest = rest.dropFirst()
-        }
-        if hasSpacer,
+        let marker = scalars.dropFirst()
+        let rest = marker.drop { $0.properties.isDefaultIgnorableCodePoint }
+        if rest.startIndex != marker.startIndex,
            rest.allSatisfy({ CharacterSet.whitespaces.contains($0) || $0.properties.isDefaultIgnorableCodePoint })
         {
             // Empty, but still a slice of the line: the source styler
@@ -382,11 +378,7 @@ public enum DiscordMarkdown {
             return line[line.endIndex...]
         }
         guard rest.first == " " else { return nil }
-        rest = rest.dropFirst()
-        while let first = rest.first, first.properties.isDefaultIgnorableCodePoint {
-            rest = rest.dropFirst()
-        }
-        return Substring(rest)
+        return Substring(rest.dropFirst().drop { $0.properties.isDefaultIgnorableCodePoint })
     }
 
     /// Gives every item of an ordered list the list's widest marker. A list
@@ -444,13 +436,9 @@ public enum DiscordMarkdown {
                 // then carries the line's height and spacing.
                 let previous = plan.lines[lineIndex - 1]
                 var separator: [NSAttributedString.Key: Any] = [:]
-                if previous.runs.isEmpty {
-                    separator[.font] = NSFont.systemFont(ofSize: baseFontSize)
-                    separator[.paragraphStyle] = previousParagraph
-                    separator[.discordMarkdownBlock] = blockName(for: previous)
-                    separator[.discordMarkdownEm] = NSNumber(value: metrics.em)
-                } else if previous.isQuoted, linePlan.isQuoted {
-                    // Keep one quote range across the line break.
+                // A break between quoted lines keeps one quote range.
+                if previous.runs.isEmpty || previous.isQuoted && linePlan.isQuoted {
+                    if previous.runs.isEmpty { separator[.font] = NSFont.systemFont(ofSize: baseFontSize) }
                     separator[.paragraphStyle] = previousParagraph
                     separator[.discordMarkdownBlock] = blockName(for: previous)
                     separator[.discordMarkdownEm] = NSNumber(value: metrics.em)

@@ -1157,10 +1157,8 @@ enum NativeTimelineEmbedLayout {
             maximumHeight: CGFloat
         ) -> CGSize {
             if mediaCount > 1 {
-                return MediaGalleryPlan.frames(
-                    count: mediaCount, width: maximumWidth, aspectRatios: [],
-                    spacing: InterfaceScale.metric(4), equalWidthColumns: true
-                ).reduce(CGRect.null) { $0.union($1) }.size
+                return NativeTimelineEmbedLayout.groupFrames(count: mediaCount, width: maximumWidth)
+                    .reduce(CGRect.null) { $0.union($1) }.size
             }
             return NativeTimelineEmbedLayout.mediaSize(
                 media,
@@ -1214,34 +1212,28 @@ enum NativeTimelineEmbedLayout {
         drawsTopSeparator: Bool
     ) -> [NativeTimelineRowLayout.EmbedRegion] {
         // Resolve before laying out so an unavailable image leaves no empty tile.
-        guard let first = embeds.first else { return [] }
-        let resolved = [first] + embeds.dropFirst().filter {
-            ($0.image ?? $0.video).flatMap {
-                resolvedURL($0, attachments: message.attachments)
-            } != nil
+        let tiles = embeds.dropFirst().compactMap { embed in
+            embed.image.flatMap { image in
+                resolvedURL(image, attachments: message.attachments).map { (embed, image, $0) }
+            }
         }
         guard var region = make(
-            embed: first, message: message, source: source,
+            embed: embeds[0], message: message, source: source,
             attachments: message.attachments, origin: origin,
             maximumWidth: maximumWidth, integratesWithBubble: integratesWithBubble,
-            drawsTopSeparator: drawsTopSeparator, mediaCount: resolved.count
+            drawsTopSeparator: drawsTopSeparator, mediaCount: tiles.count + 1
         )
         else { return [] }
-        guard resolved.count > 1, let mediaFrame = region.mediaFrame else { return [region] }
-        let frames = MediaGalleryPlan.frames(
-            count: resolved.count, width: mediaFrame.width, aspectRatios: [],
-            spacing: InterfaceScale.metric(4), equalWidthColumns: true
-        ).map { $0.offsetBy(dx: mediaFrame.minX, dy: mediaFrame.minY) }
+        guard !tiles.isEmpty, let mediaFrame = region.mediaFrame else { return [region] }
+        let frames = groupFrames(count: tiles.count + 1, width: mediaFrame.width)
+            .map { $0.offsetBy(dx: mediaFrame.minX, dy: mediaFrame.minY) }
         // The leading region owns the full card and footer. Each image keeps
         // its embed identity for loading, animation, hit testing and accessibility.
         region.mediaFrame = frames[0]
         region.mediaFillsFrame = true
-        var regions = [region]
-        for (embed, frame) in zip(resolved.dropFirst(), frames.dropFirst()) {
-            guard let image = embed.image,
-                  let url = resolvedURL(image, attachments: message.attachments)
-            else { continue }
-            let tile = NativeTimelineRowLayout.EmbedRegion(
+        return [region] + zip(tiles, frames.dropFirst()).map { tile, frame in
+            let (embed, image, url) = tile
+            return NativeTimelineRowLayout.EmbedRegion(
                 embedID: embed.id, kind: .bareMedia, frame: frame,
                 textRegions: [], imageRegions: [], mediaFrame: frame,
                 mediaURL: url, mediaPreviewURL: nil, mediaPlaceholder: .init(image),
@@ -1250,9 +1242,15 @@ enum NativeTimelineEmbedLayout {
                 mediaPosterFillsFrame: false,
                 accentColor: nil, drawsTopSeparator: false
             )
-            regions.append(tile)
         }
-        return regions
+    }
+
+    /// A multi-image post's tiles: equal columns, so no image dominates.
+    private static func groupFrames(count: Int, width: CGFloat) -> [CGRect] {
+        MediaGalleryPlan.frames(
+            count: count, width: width, aspectRatios: [],
+            spacing: InterfaceScale.metric(4), equalWidthColumns: true
+        )
     }
 
     static func resolvedTextBox(
