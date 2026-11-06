@@ -1168,16 +1168,14 @@ extension NativeTimelineRowPainter {
         )
         if region.url != nil {
             let iconSize = NativeTimelineComponentButtonMetrics.linkIconSize
-            systemSymbol(
-                "arrow.up.right.square",
+            DiscordLaunchIcon.draw(
                 in: CGRect(
                     x: labelMaxX + linkAdvance - iconSize,
                     y: region.frame.midY - iconSize / 2,
                     width: iconSize,
                     height: iconSize
                 ),
-                color: color,
-                inset: 0
+                color: color
             )
         }
     }
