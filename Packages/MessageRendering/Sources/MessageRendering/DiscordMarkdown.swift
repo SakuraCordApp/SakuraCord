@@ -377,7 +377,9 @@ public enum DiscordMarkdown {
         if hasSpacer,
            rest.allSatisfy({ CharacterSet.whitespaces.contains($0) || $0.properties.isDefaultIgnorableCodePoint })
         {
-            return ""
+            // Empty, but still a slice of the line: the source styler
+            // measures syntax from the line's start to the content's.
+            return line[line.endIndex...]
         }
         guard rest.first == " " else { return nil }
         rest = rest.dropFirst()
