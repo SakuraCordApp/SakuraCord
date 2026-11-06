@@ -1135,7 +1135,8 @@ enum NativeTimelineEmbedLayout {
         ) -> String? {
             NativeTimelineEmbedLayout.footerText(
                 footer: footer,
-                timestamp: timestamp
+                timestamp: timestamp,
+                settings: source?.interfaceSettings ?? .defaults
             )
         }
 
@@ -1464,16 +1465,17 @@ enum NativeTimelineEmbedLayout {
 
     private static func footerText(
         footer: MessageEmbedFooter?,
-        timestamp: Date?
+        timestamp: Date?,
+        settings: InterfaceSettingsSnapshot
     ) -> String? {
         var values: [String] = []
         if let footer {
             values.append(footer.text)
         }
         if let timestamp {
-            values.append(
-                timestamp.formatted(date: .omitted, time: .shortened)
-            )
+            // Today's time alone, "Yesterday at" the time, or the full date
+            // and time when older, as Discord shows an embed timestamp.
+            values.append(NativeTimelineTimestamp.headerText(for: timestamp, settings: settings))
         }
         guard !values.isEmpty else { return nil }
         return values.joined(separator: " • ")
