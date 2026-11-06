@@ -9,14 +9,20 @@ struct NativeTimelineRowFade {
     let image: NSImage
     /// Set on the first frame, as for a row motion.
     var startUptime: TimeInterval?
+    /// The timing of the motion it is drawn with.
+    var timing = NativeTimelineRowMotionTiming.chips
 
     /// How much of the old picture still shows, from 1 down to 0.
     func remaining(at uptime: TimeInterval) -> CGFloat {
-        Self.remaining(startedAt: startUptime, at: uptime)
+        Self.remaining(startedAt: startUptime, timing: timing, at: uptime)
     }
 
-    static func remaining(startedAt startUptime: TimeInterval?, at uptime: TimeInterval) -> CGFloat {
-        1 - (startUptime.map { NativeTimelineRowDisclosure.progress(at: uptime - $0) } ?? 0)
+    static func remaining(
+        startedAt startUptime: TimeInterval?,
+        timing: NativeTimelineRowMotionTiming,
+        at uptime: TimeInterval
+    ) -> CGFloat {
+        1 - (startUptime.map { timing.progress(at: uptime - $0) } ?? 0)
     }
 }
 
@@ -33,9 +39,10 @@ struct NativeTimelineDepartedRun {
         /// The motion whose step closes this piece's height.
         let motionID: Int
         var startUptime: TimeInterval?
+        var timing = NativeTimelineRowMotionTiming.chips
 
         func remaining(at uptime: TimeInterval) -> CGFloat {
-            NativeTimelineRowFade.remaining(startedAt: startUptime, at: uptime)
+            NativeTimelineRowFade.remaining(startedAt: startUptime, timing: timing, at: uptime)
         }
     }
 

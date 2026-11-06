@@ -324,6 +324,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
     var nextReactionMotionID = 1
     let reactionTicker = NativeTimelineDisplayLinkTicker()
+    /// When the reaction ticker last stepped, to tell a late frame.
+    var reactionStepUptime: TimeInterval?
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
     /// The width the running reaction motions were laid out at.

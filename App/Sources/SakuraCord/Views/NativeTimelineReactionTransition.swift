@@ -100,11 +100,34 @@ struct NativeTimelineReactionRowMotion {
 
     /// Set on the first frame, as for a chip transition.
     var startUptime: TimeInterval?
+    var timing = NativeTimelineRowMotionTiming.chips
     let shift: CGFloat
     var steps: [Step]
 
     func progress(at uptime: TimeInterval) -> CGFloat {
-        startUptime.map { NativeTimelineRowDisclosure.progress(at: uptime - $0) } ?? 0
+        startUptime.map { timing.progress(at: uptime - $0) } ?? 0
+    }
+}
+
+/// How an update's row motion and the fades drawn with it ease.
+enum NativeTimelineRowMotionTiming {
+    /// Chips move on Core Animation's quart curve, so rows moving with them
+    /// keep it.
+    case chips
+    /// An edit or deletion can move rows by hundreds of points, which the
+    /// quart curve covers in its first few frames. These glide as the
+    /// transcript does when a message is sent.
+    case glide
+
+    func progress(at elapsed: TimeInterval) -> CGFloat {
+        switch self {
+        case .chips:
+            NativeTimelineRowDisclosure.progress(at: elapsed)
+        case .glide:
+            CGFloat(NativeTimelineSendTransitionTiming.verticalCurve.progress(
+                at: elapsed / NativeTimelineSendTransitionTiming.verticalCurve.duration
+            ))
+        }
     }
 }
 
@@ -274,8 +297,10 @@ extension NativeTimelineCanvasView {
         }
         // Live reaction media pauses on its still while the chips move.
         if update.pausesMedia { positionAnimatedMediaOverlays() }
+        let timing: NativeTimelineRowMotionTiming = update.startedChips ? .chips : .glide
         if var motion = update.plan.motion {
             motion.id = update.motionID
+            motion.timing = timing
             nextReactionMotionID += 1
             reactionRowMotions.append(motion)
             refreshReactionMotionGeometry(at: now)
@@ -283,8 +308,14 @@ extension NativeTimelineCanvasView {
         }
         // A deleted row's piece belongs to the motion closing its gap; an
         // edit's crossfade stands on its own.
+        // A piece's gap closes with its motion's step, so a new one shares
+        // that motion's timing.
         placeDepartedPieces(
-            update.departedPieces.filter { update.plan.describesUpdate || !$0.isNew }.map { ($0.anchor, $0.piece) }
+            update.departedPieces.filter { update.plan.describesUpdate || !$0.isNew }.map { entry in
+                var piece = entry.piece
+                if entry.isNew { piece.timing = timing }
+                return (entry.anchor, piece)
+            }
                 + update.handOvers.values.flatMap { handOver in
                     (handOver.run?.pieces ?? []).map { (handOver.anchor, $0) }
                 }
@@ -292,11 +323,16 @@ extension NativeTimelineCanvasView {
         // A newer crossfade takes over a running one, whose row now shows
         // the content the newer one starts from.
         rowFades.removeAll { running in update.crossfades.contains { $0.identifier == running.identifier } }
-        rowFades.append(contentsOf: update.crossfades)
+        rowFades.append(contentsOf: update.crossfades.map { fade in
+            var fade = fade
+            fade.timing = timing
+            return fade
+        })
         guard update.startedChips || !rowFades.isEmpty || !departedRuns.isEmpty || update.plan.motion != nil
         else { return }
         reactionTransitionWidth = bounds.width
         if reactionTicker.displayLink == nil {
+            reactionStepUptime = nil
             reactionTicker.start(on: self) { [weak self] in self?.stepReactionTransitions() }
         }
     }
@@ -528,6 +564,7 @@ extension NativeTimelineCanvasView {
 
     private func stepReactionTransitions() {
         let now = ProcessInfo.processInfo.systemUptime
+        deferGlides(pastStallBefore: now)
         let hadMotion = !reactionRowMotions.isEmpty
         for index in reactionRowMotions.indices where reactionRowMotions[index].startUptime == nil {
             reactionRowMotions[index].startUptime = now
@@ -563,6 +600,31 @@ extension NativeTimelineCanvasView {
         if reconcilesMedia { reconcileAnimatedMediaOverlays(reduceMotion: false) }
         if reactionTransitions.isEmpty, reactionRowMotions.isEmpty, rowFades.isEmpty, departedRuns.isEmpty {
             reactionTicker.stop()
+        }
+    }
+
+    private static let reactionFrameAllowance: TimeInterval = 1.0 / 30
+
+    /// A late frame, such as one held up by the first draw of a tall row,
+    /// delays glides instead of skipping part of them. Chip motions keep
+    /// their clock, since Core Animation runs the chips through the stall.
+    private func deferGlides(pastStallBefore now: TimeInterval) {
+        defer { reactionStepUptime = now }
+        guard let last = reactionStepUptime else { return }
+        let stall = now - last - Self.reactionFrameAllowance
+        guard stall > 0 else { return }
+        for index in reactionRowMotions.indices where reactionRowMotions[index].timing == .glide {
+            reactionRowMotions[index].startUptime? += stall
+        }
+        for index in rowFades.indices where rowFades[index].timing == .glide {
+            rowFades[index].startUptime? += stall
+        }
+        departedRuns = departedRuns.mapValues { run in
+            var run = run
+            for index in run.pieces.indices where run.pieces[index].timing == .glide {
+                run.pieces[index].startUptime? += stall
+            }
+            return run
         }
     }
 
