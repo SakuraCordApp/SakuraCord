@@ -625,7 +625,7 @@ extension NativeTimelineRowPainter {
         if let image = mediaImage(for: .media(region.mediaPreviewURL ?? url)) {
             drawImage(
                 image, in: frame, cornerRadius: InterfaceScale.metric(8),
-                fillsFrame: region.mediaPosterFillsFrame
+                fillsFrame: region.mediaFillsFrame || region.mediaPosterFillsFrame
             )
         } else if let placeholder = region.mediaPlaceholder?.image {
             drawImage(placeholder, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)

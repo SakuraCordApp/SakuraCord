@@ -465,7 +465,8 @@ extension NativeTimelineCanvasView {
                     media: .media(mediaURL),
                     frame: mediaFrame,
                     cornerRadius: InterfaceScale.metric(8),
-                    isLooping: true
+                    isLooping: true,
+                    fillsFrame: embed.mediaFillsFrame
                 )
             }
             for (textIndex, textRegion) in embed.textRegions.enumerated() {

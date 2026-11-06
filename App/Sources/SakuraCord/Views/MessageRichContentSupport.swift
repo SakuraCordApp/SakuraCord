@@ -74,6 +74,30 @@ nonisolated enum MessageEmbedPresentation {
         return links
     }
 
+    /// Discord represents a multi-image embed as a leading card followed by
+    /// image-only entries with the same URL. Keep independent embeds separate.
+    static func groupedEmbeds(_ embeds: [MessageEmbed]) -> [[MessageEmbed]] {
+        var groups: [[MessageEmbed]] = []
+        for embed in embeds {
+            if let previous = groups.last,
+               previous.count < 4,
+               let first = previous.first,
+               let url = first.url,
+               first.image != nil, first.video == nil,
+               embed.url == url, embed.image != nil, embed.video == nil,
+               kind(for: embed) == .bareMedia,
+               embed.author == nil, embed.title == nil, embed.description == nil,
+               embed.fields.isEmpty, embed.footer == nil, embed.thumbnail == nil,
+               embed.components == nil
+            {
+                groups[groups.count - 1].append(embed)
+            } else {
+                groups.append([embed])
+            }
+        }
+        return groups
+    }
+
     static func visibleMessageContent(
         for message: Message
     ) -> String {
@@ -111,9 +135,11 @@ nonisolated enum MessageEmbedPresentation {
         let rawURL = trimmed.hasPrefix("<") && trimmed.hasSuffix(">")
             ? String(trimmed.dropFirst().dropLast()) : trimmed
         guard let contentURL = URL(string: rawURL), contentURL.scheme != nil else { return content }
-        let replacesLink = embeds.contains { embed in
-            kind(for: embed) == .bareMedia && embed.url == contentURL
-        }
+        // A multi-image post is a leading card followed by image-only embeds
+        // with the same URL. Only the leading embed decides whether the link
+        // is replaced: a card keeps its link, a direct media link does not.
+        let replacesLink = embeds.first { $0.url == contentURL }
+            .map { kind(for: $0) == .bareMedia } ?? false
         return replacesLink ? "" : content
     }
 }
@@ -760,7 +786,7 @@ nonisolated enum MediaGalleryPlan {
 
     static func frames(
         count: Int, width: CGFloat, aspectRatios: [CGFloat], intrinsicSizes: [CGSize] = [],
-        spacing: CGFloat
+        spacing: CGFloat, equalWidthColumns: Bool = false
     ) -> [CGRect]
     {
         guard count > 0 else { return [] }
@@ -784,7 +810,7 @@ nonisolated enum MediaGalleryPlan {
         }
         if count == 3 {
             let height = min(maximumHeight, width * 7 / 12)
-            let heroWidth = (width - spacing) * 2 / 3
+            let heroWidth = (width - spacing) * (equalWidthColumns ? 1 / 2 : 2 / 3)
             let stackWidth = width - spacing - heroWidth
             let stackHeight = (height - spacing) / 2
             return [

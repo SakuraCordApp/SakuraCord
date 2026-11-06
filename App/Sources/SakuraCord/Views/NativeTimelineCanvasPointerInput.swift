@@ -905,7 +905,7 @@ extension NativeTimelineCanvasView {
                         NativeTimelineMediaKey.media($0)
                     },
                     cornerRadius: InterfaceScale.metric(8),
-                    fillsFrame: false
+                    fillsFrame: embedRegion.mediaFillsFrame
                 )
             } else if let mediaURL = embedRegion.mediaURL {
                 NSWorkspace.shared.open(mediaURL)
