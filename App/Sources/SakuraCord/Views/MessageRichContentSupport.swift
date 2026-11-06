@@ -25,19 +25,21 @@ enum DiscordRichMessageMetrics {
 /// theme in dark mode, as the spoiler cover assumes, and the light theme
 /// otherwise.
 nonisolated enum DiscordEmbedPalette {
+    private static let grey: UInt32 = 0x97979F
+
     /// `--background-surface-high`.
     static let cardFill = themed(0x0A0A0C, light: 0xFFFFFF)
     /// `--border-subtle`.
-    static let cardBorder = themed(0x97979F, light: 0x97979F, alpha: 51 / 255, lightAlpha: 71 / 255)
+    static let cardBorder = themed(grey, light: grey, alpha: 51 / 255, lightAlpha: 71 / 255)
     /// `--border-normal`, the bar of an embed without a colour.
-    static let defaultAccent = themed(0x97979F, light: 0x97979F, alpha: 61 / 255, lightAlpha: 102 / 255)
+    static let defaultAccent = themed(grey, light: grey, alpha: 61 / 255, lightAlpha: 102 / 255)
     /// `--text-strong`: titles, author names and field names.
     static let strongText = themed(0xDCDCDF, light: 0x28282D)
     /// `--text-default`: descriptions, field values, footers.
     static let defaultText = themed(0xD4D5D8, light: 0x2E2E34)
     /// `--text-link`.
     static let linkText = themed(0x2781E7, light: 0x006DD4)
-    /// `--interactive-text-default`: the provider name.
+    /// `--interactive-text-default`: a linked provider name.
     static let providerText = themed(0x96979E, light: 0x595A63)
 
     private static func themed(
@@ -51,9 +53,10 @@ nonisolated enum DiscordEmbedPalette {
                 alpha: alpha
             )
         }
+        let midnightColor = color(midnight, alpha)
+        let lightColor = color(light, lightAlpha)
         return NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? color(midnight, alpha) : color(light, lightAlpha)
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? midnightColor : lightColor
         }
     }
 }

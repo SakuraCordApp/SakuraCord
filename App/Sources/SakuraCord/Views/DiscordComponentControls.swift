@@ -17,7 +17,12 @@ enum DiscordComponentButtonAppearance {
     /// appearance: `--control-secondary-background-*` in Discord's midnight
     /// and light themes.
     static func secondaryFillAlphas(isDark: Bool) -> [CGFloat] {
-        isDark ? [0.1216, 0.2, 0.2392] : [0.1216, 0.1608, 0.2392]
+        [0.1216, isDark ? 0.2 : 0.1608, 0.2392]
+    }
+
+    /// `--border-muted`'s opacity, which hover and press leave alone.
+    static func secondaryBorderAlpha(isDark: Bool) -> CGFloat {
+        isDark ? 0.1608 : 0.2
     }
 }
 

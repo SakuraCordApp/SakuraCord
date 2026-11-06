@@ -1092,7 +1092,7 @@ extension NativeTimelineRowPainter {
             let alphas = DiscordComponentButtonAppearance.secondaryFillAlphas(isDark: isDark)
             let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
             fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
-            border = discordGrey.withAlphaComponent(isDark ? 41 / 255 : 51 / 255)
+            border = discordGrey.withAlphaComponent(DiscordComponentButtonAppearance.secondaryBorderAlpha(isDark: isDark))
             // `--control-secondary-text-default` is the neutral `--text-strong` uses.
             foreground = DiscordEmbedPalette.strongText
         }

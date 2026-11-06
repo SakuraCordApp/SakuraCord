@@ -1383,9 +1383,7 @@ extension NativeTimelineRowPainter {
         CGRect(x: frame.minX, y: frame.minY, width: barWidth, height: frame.height).fill()
         // The bar is the card's thicker left border, so the 1 pt border
         // runs along the other three sides only.
-        NSBezierPath(
-            rect: CGRect(x: frame.minX + barWidth, y: frame.minY, width: frame.width - barWidth, height: frame.height)
-        ).addClip()
+        NSBezierPath.clip(CGRect(x: frame.minX + barWidth, y: frame.minY, width: frame.width - barWidth, height: frame.height))
         DiscordEmbedPalette.cardBorder.setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),

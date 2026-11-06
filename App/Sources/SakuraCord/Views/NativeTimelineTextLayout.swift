@@ -328,6 +328,17 @@ private extension NSParagraphStyle {
     nonisolated var isMessageLine: Bool { maximumLineHeight == 0 && minimumLineHeight > 0 }
 }
 
+extension NSMutableAttributedString {
+    /// Swaps the colour of every run drawn in `color` for `replacement`.
+    func replaceForeground(_ color: NSColor, with replacement: NSColor) {
+        enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: length)) { value, range, _ in
+            if let value = value as? NSColor, value == color {
+                addAttribute(.foregroundColor, value: replacement, range: range)
+            }
+        }
+    }
+}
+
 nonisolated enum NativeTimelineCoreText {
     private static let runDelegateKey = NSAttributedString.Key(
         rawValue: kCTRunDelegateAttributeName as String
@@ -761,12 +772,13 @@ enum NativeTimelineEmbedLayout {
                     )
                 )
             }
+            let providerURL = embed.provider?.url
             let provider = embed.provider?.name.map {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 11),
-                    color: embed.provider?.url == nil ? DiscordEmbedPalette.defaultText : DiscordEmbedPalette.providerText,
-                    link: embed.provider?.url
+                    color: providerURL == nil ? DiscordEmbedPalette.defaultText : DiscordEmbedPalette.providerText,
+                    link: providerURL
                 )
             }
             let footerText = footerText(
@@ -1229,9 +1241,7 @@ enum NativeTimelineEmbedLayout {
                 baseFontSize: baseFontSize,
                 mentionPresentations: mentions
             ))
-            text.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: text.length)) { color, range, _ in
-                if color as? NSColor == .labelColor { text.addAttribute(.foregroundColor, value: DiscordEmbedPalette.defaultText, range: range) }
-            }
+            text.replaceForeground(.labelColor, with: DiscordEmbedPalette.defaultText)
             return NativeTimelineAttributedTextBox(text, layoutHeightAdjustment: 1)
         }
     }
