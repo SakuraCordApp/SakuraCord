@@ -128,7 +128,7 @@ extension NativeTimelineCanvasView {
             drawRow()
             return
         }
-        let remaining = fade.remaining(at: ProcessInfo.processInfo.systemUptime)
+        let remaining = fade.remaining(at: rowMotionUptime)
         fade.image.draw(
             in: CGRect(origin: rowFrame.origin, size: fade.image.size), from: .zero, operation: .sourceOver,
             fraction: remaining, respectFlipped: true, hints: nil
@@ -143,17 +143,14 @@ extension NativeTimelineCanvasView {
 
     /// How much of a row's displayed height is the gap of the deleted run
     /// below it.
-    func departedGapHeight(
-        below identifier: NativeMessageTimelineItem.Identifier,
-        at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
-    ) -> CGFloat {
-        departedRuns[identifier]?.gap(at: uptime) ?? 0
+    func departedGapHeight(below identifier: NativeMessageTimelineItem.Identifier) -> CGFloat {
+        departedRuns[identifier]?.gap(at: rowMotionUptime) ?? 0
     }
 
     /// Draws deleted rows in the gaps closing after the rows they followed.
     func drawDepartedRows(in dirtyRect: CGRect) {
         guard !departedRuns.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
-        let now = ProcessInfo.processInfo.systemUptime
+        let now = rowMotionUptime
         for (anchor, run) in departedRuns {
             guard let index = rowIndex(forIdentifier: anchor, hint: run.anchorIndex) else { continue }
             // The gap is the end of the row's displayed height, which may
@@ -196,7 +193,7 @@ extension NativeTimelineCanvasView {
             guard let index = rowIndex(forIdentifier: fade.identifier, hint: fade.rowIndex) else { return frame }
             return frame.union(rowFrame(at: index)).union(CGRect(origin: rowFrame(at: index).origin, size: fade.image.size))
         }
-        let now = ProcessInfo.processInfo.systemUptime
+        let now = rowMotionUptime
         return departedRuns.reduce(crossfades) { frame, entry in
             guard let index = rowIndex(forIdentifier: entry.key, hint: entry.value.anchorIndex) else { return frame }
             return frame.union(CGRect(

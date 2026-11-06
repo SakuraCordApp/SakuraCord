@@ -608,6 +608,12 @@ extension NativeTimelineCanvasView {
 
     private static let reactionFrameAllowance: TimeInterval = 1.0 / 30
 
+    /// The time row motion was last brought to. Drawing reads fades and
+    /// gaps at it, so they stay with the rows' places when a draw stalls.
+    var rowMotionUptime: TimeInterval {
+        reactionStepUptime ?? ProcessInfo.processInfo.systemUptime
+    }
+
     /// A late frame, such as one held up by the first draw of a tall row,
     /// delays glides instead of skipping part of them. Chip motions keep
     /// their clock, since Core Animation runs the chips through the stall.
