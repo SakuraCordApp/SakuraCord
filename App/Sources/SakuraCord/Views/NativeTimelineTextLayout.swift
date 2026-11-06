@@ -1242,6 +1242,7 @@ enum NativeTimelineEmbedLayout {
                 mentionPresentations: mentions
             ))
             text.replaceForeground(.labelColor, with: DiscordEmbedPalette.defaultText)
+            text.replaceForeground(.linkColor, with: DiscordEmbedPalette.linkText)
             return NativeTimelineAttributedTextBox(text, layoutHeightAdjustment: 1)
         }
     }
