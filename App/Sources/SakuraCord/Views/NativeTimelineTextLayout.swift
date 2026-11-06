@@ -1560,9 +1560,7 @@ enum NativeTimelineEmbedLayout {
         _ media: MessageEmbedMedia,
         attachments: [Attachment]
     ) -> URL? {
-        // An image proxy can supply a flattened preview of the original GIF.
-        let candidate = media.url?.pathExtension.lowercased() == "gif"
-            ? media.url : (media.proxyURL ?? media.url)
+        let candidate = media.proxyURL ?? media.url
         guard let candidate else { return nil }
         guard candidate.scheme?.lowercased() == "attachment" else {
             return candidate
