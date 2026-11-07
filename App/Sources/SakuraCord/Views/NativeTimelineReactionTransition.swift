@@ -146,6 +146,8 @@ struct NativeTimelineReactionBaseline {
         let top: CGFloat
         let item: NativeMessageTimelineItem
         let layout: NativeTimelineRowLayout
+        /// The height the row took, which an inline editor sets while it shows.
+        let height: CGFloat
         /// The row's cached bitmap, if it had one, for a fade without a raster.
         let bitmap: NativeTimelineCanvasView.CachedRowBitmap?
         let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
@@ -245,6 +247,10 @@ extension NativeTimelineCanvasView {
                 top: originY + transientRowOrigin(at: index),
                 item: item,
                 layout: layouts[index],
+                height: NativeTimelineTransientRowGeometry.rowHeight(
+                    base: layouts[index].height, rowIndex: index,
+                    replacementIndex: editingRowIndex, replacementHeight: editingRowHeight
+                ),
                 // A bitmap leaves animated media to live overlays and keeps
                 // spoilers hidden, so it is no picture of such a row.
                 bitmap: animatedMediaRows[item.identifier] == nil && revealState.isEmpty && !isEdited
@@ -369,7 +375,7 @@ extension NativeTimelineCanvasView {
             closeGap(departed, in: &update)
         }
         let row = NativeTimelineRowMotionPlan.FollowedRow(oldIndex: old.index, index: index, identifier: identifier)
-        let delta = layouts[index].height - old.layout.height
+        let delta = layouts[index].height - old.height
         // A row lending height to an edit below it that changes height
         // itself could show less than none: that motion lands first.
         if abs(delta) >= 0.5, reactionRowMotions.contains(where: { $0.steps.contains { $0.identifier == identifier && $0.isLent } }) {

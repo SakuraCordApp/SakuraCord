@@ -415,9 +415,11 @@ extension NativeTimelineCanvasView {
         }
         for (index, remaining) in reactionMotionRemainingHeights
             where remaining > 0 && items.indices.contains(index) && !disclosureRange.contains(index) {
-            let identifier = items[index].identifier
+            let item = items[index]
             let frame = rowFrame(at: index)
-            clips.append((liveViews(of: [identifier]), frame.minY ... max(frame.minY, frame.maxY - departedGapHeight(below: identifier))))
+            let views = liveViews(of: [item.identifier])
+                + spoilerOverlays.filter { $0.key.messageID == item.messageID }.map(\.value)
+            clips.append((views, frame.minY ... max(frame.minY, frame.maxY - departedGapHeight(below: item.identifier))))
         }
         for clip in clips {
             for view in clip.views {
