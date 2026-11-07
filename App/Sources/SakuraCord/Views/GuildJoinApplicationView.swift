@@ -27,9 +27,14 @@ struct GuildJoinApplicationView: View {
             Button("Close Anyway", role: .destructive) { close() }
             Button("Cancel", role: .cancel) {}
         }
+        // Explicit transactions also resize the modal panel, which sizes to this content.
+        .animation(.snappy(duration: 0.25), value: loadPhase)
+        .animation(.snappy(duration: 0.25), value: store.error)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(modal.kind == .form ? "Application to \(guildName)" : "Welcome to \(guildName)")
     }
+
+    private var loadPhase: Int { store.form != nil ? 2 : store.error == nil ? 0 : 1 }
 
     private func close() {
         dismiss?(allowsDisabled: true)
@@ -48,7 +53,7 @@ struct GuildJoinApplicationView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(InterfaceScale.metric(20))
+        .padding(.horizontal, InterfaceScale.metric(18)).padding(.vertical, InterfaceScale.metric(16))
         Divider()
         if let form = store.form {
             ScrollView(.vertical) {
@@ -74,20 +79,23 @@ struct GuildJoinApplicationView: View {
                         .font(.interface(.caption)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(InterfaceScale.metric(20))
+                .padding(.horizontal, InterfaceScale.metric(18)).padding(.vertical, InterfaceScale.metric(16))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: max(160, availableSize.height - 220))
             .fixedSize(horizontal: false, vertical: true)
             .disabled(store.isWorking)
+            .transition(.opacity)
             GuildJoinRequestError(store: store)
         } else if store.error == nil {
             ProgressView().controlSize(.small).frame(maxWidth: .infinity).frame(height: InterfaceScale.metric(140))
+                .transition(.opacity)
         } else {
             ContentUnavailableView("Unable to Load Application", systemImage: "exclamationmark.triangle",
                                    description: Text(store.error ?? ""))
                 .frame(height: InterfaceScale.metric(160))
+                .transition(.opacity)
         }
         Divider()
         HStack {
@@ -120,9 +128,18 @@ struct GuildJoinApplicationView: View {
 
 /// An application's status, shown in place of the workspace while its pending server is selected, as in Discord.
 struct GuildJoinRequestPage: View {
+    private enum Action { case reapply, withdraw }
+
     let model: AppModel
     let guildID: GuildID
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmsWithdraw = false
+    @State private var action: Action?
+
+    /// Buttons keep their 40-point capsules concentric with the card by sharing this inset.
+    private let cardInset = InterfaceScale.metric(16)
+    private var cardRadius: CGFloat { InterfaceScale.metric(20) + cardInset }
+    private var motion: Animation? { reduceMotion ? nil : .snappy(duration: 0.25) }
 
     private var store: GuildJoinRequestStore { model.guildJoinRequests }
     private var request: GuildJoinRequest? { store.requests[guildID] }
@@ -130,6 +147,7 @@ struct GuildJoinRequestPage: View {
 
     var body: some View {
         let rejected = request?.status == .rejected
+        let card = RoundedRectangle(cornerRadius: cardRadius)
         ScrollView(.vertical) {
             VStack(spacing: InterfaceScale.metric(16)) {
                 VStack(spacing: 0) {
@@ -139,39 +157,62 @@ struct GuildJoinRequestPage: View {
                                                : "Your application to join \(guildName) is awaiting review!",
                                detail: rejected ? request?.rejectionReason.map { "Reason: \($0)" }
                                                 : "You’ll get notified when there’s an update.")
-                    HStack(spacing: InterfaceScale.metric(8)) {
-                        if rejected {
-                            ModalGlassButton(symbol: "arrow.clockwise", label: "Reapply", fillsWidth: true) {
-                                model.reapplyToGuild(guildID)
+                    GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
+                        HStack(spacing: InterfaceScale.metric(8)) {
+                            if rejected {
+                                ModalGlassButton(symbol: "arrow.clockwise", label: "Reapply", isLoading: action == .reapply,
+                                                 fillsWidth: true) {
+                                    action = .reapply
+                                    model.reapplyToGuild(guildID)
+                                }
+                                .transition(.opacity)
                             }
+                            ModalGlassButton(symbol: "arrow.uturn.backward", label: "Withdraw", primary: true, destructive: true,
+                                             isLoading: action == .withdraw, fillsWidth: true) { confirmsWithdraw = true }
                         }
-                        ModalGlassButton(symbol: "arrow.uturn.backward", label: "Withdraw", primary: true, destructive: true,
-                                         fillsWidth: true) { confirmsWithdraw = true }
                     }
                     .disabled(store.isWorking)
-                    .padding([.horizontal, .bottom], InterfaceScale.metric(24))
+                    .padding([.horizontal, .bottom], cardInset)
                     GuildJoinRequestError(store: store)
                 }
                 .frame(maxWidth: InterfaceScale.metric(440))
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: InterfaceScale.metric(24)))
-                HStack(spacing: InterfaceScale.metric(20)) {
-                    Button(store.showsAnswers ? "Hide Application" : "View Application") {
-                        model.toggleGuildJoinRequestAnswers(guildID)
-                    }
-                    if let channelID = request?.interviewChannelID {
-                        Button("Open Interview") { model.navigate(to: channelID) }
+                .background(.background.opacity(0.88), in: card)
+                .overlay { card.stroke(.primary.opacity(0.06)) }
+                .containerShape(card)
+                GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
+                    HStack(spacing: InterfaceScale.metric(8)) {
+                        ModalGlassButton(symbol: store.showsAnswers ? "eye.slash" : "eye",
+                                         label: store.showsAnswers ? "Hide Application" : "View Application",
+                                         height: 32) { model.toggleGuildJoinRequestAnswers(guildID) }
+                        if let channelID = request?.interviewChannelID {
+                            ModalGlassButton(symbol: "bubble.left.and.bubble.right", label: "Open Interview", height: 32) {
+                                model.navigate(to: channelID)
+                            }
+                            .transition(.opacity)
+                        }
                     }
                 }
-                .buttonStyle(.link)
                 if store.showsAnswers { answers }
             }
             .padding(InterfaceScale.metric(32))
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .animation(.snappy(duration: 0.2), value: store.showsAnswers)
+        .background { SakuraCordSignInBackdrop().ignoresSafeArea(edges: .top) }
+        .tint(SakuraCordAccentColor.color)
+        .animation(motion, value: store.showsAnswers)
+        .animation(motion, value: request?.status)
+        .animation(motion, value: request?.interviewChannelID)
+        .animation(motion, value: store.error)
+        .animation(motion, value: answersLoaded)
+        .onChange(of: store.isWorking) { _, isWorking in
+            if !isWorking { action = nil }
+        }
         .alert("Are you sure?", isPresented: $confirmsWithdraw) {
-            Button("Yes", role: .destructive) { model.withdrawGuildJoinRequest(guildID) }
+            Button("Yes", role: .destructive) {
+                action = .withdraw
+                model.withdrawGuildJoinRequest(guildID)
+            }
             Button("Never Mind", role: .cancel) {}
         } message: {
             Text("Are you sure you want to withdraw your application from \(guildName)?")
@@ -180,15 +221,20 @@ struct GuildJoinRequestPage: View {
         .accessibilityLabel("Application to \(guildName)")
     }
 
+    private var answersLoaded: Bool { request.flatMap { store.answers[$0.id] } != nil }
+
     @ViewBuilder private var answers: some View {
-        if let fields = request.flatMap({ store.answers[$0.id] }) {
-            VStack(alignment: .leading, spacing: InterfaceScale.metric(16)) {
-                ForEach(fields.indices, id: \.self) { GuildJoinApplicationAnswerRow(field: fields[$0]) }
+        Group {
+            if let fields = request.flatMap({ store.answers[$0.id] }) {
+                VStack(alignment: .leading, spacing: InterfaceScale.metric(16)) {
+                    ForEach(fields.indices, id: \.self) { GuildJoinApplicationAnswerRow(field: fields[$0]) }
+                }
+                .frame(maxWidth: InterfaceScale.metric(440), alignment: .leading)
+            } else if store.isWorking {
+                ProgressView().controlSize(.small)
             }
-            .frame(maxWidth: InterfaceScale.metric(440), alignment: .leading)
-        } else if store.isWorking {
-            ProgressView().controlSize(.small)
         }
+        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
 }
 
@@ -201,7 +247,38 @@ private struct GuildJoinRequestError: View {
             Text(error).font(.interface(.callout)).foregroundStyle(.red)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, InterfaceScale.metric(20)).padding(.bottom, InterfaceScale.metric(12))
+                .transition(.opacity)
         }
+    }
+}
+
+/// A status glyph in a disc on an icon's corner. The icon is cut away around the disc, so whatever surface
+/// the icon rests on shows through, as with the rail's mention badges.
+struct ApplicationStatusBadge: ViewModifier {
+    let symbol: String
+    let tint: Color
+    let diameter: CGFloat
+    let offset: CGFloat
+
+    func body(content: Content) -> some View {
+        let gap = InterfaceScale.metric(2)
+        content
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .frame(width: diameter + gap * 2, height: diameter + gap * 2)
+                    .offset(x: offset + gap, y: offset + gap)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: symbol)
+                    .font(.interfaceSystem(size: diameter * 0.5, weight: .bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: diameter, height: diameter)
+                    .background(tint, in: Circle())
+                    .offset(x: offset, y: offset)
+            }
     }
 }
 
@@ -216,15 +293,9 @@ private struct StatusCard: View {
     var body: some View {
         VStack(spacing: InterfaceScale.metric(12)) {
             GuildIconView(name: guildName, iconURL: iconURL, size: InterfaceScale.metric(64), cornerRadius: InterfaceScale.metric(18))
-                .overlay(alignment: .bottomTrailing) {
-                    Image(systemName: symbol)
-                        .font(.interfaceSystem(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: InterfaceScale.metric(24), height: InterfaceScale.metric(24))
-                        .background(tint, in: Circle())
-                        .overlay { Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 3) }
-                        .offset(x: InterfaceScale.metric(6), y: InterfaceScale.metric(6))
-                }
+                .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(18), style: .continuous))
+                .modifier(ApplicationStatusBadge(symbol: symbol, tint: tint, diameter: InterfaceScale.metric(24),
+                                                 offset: InterfaceScale.metric(6)))
                 .accessibilityHidden(true)
             Text(title).font(.interface(.title3).weight(.semibold)).multilineTextAlignment(.center)
             if let detail {
@@ -240,38 +311,27 @@ private struct StatusCard: View {
 
 private struct GuildJoinApplicationFieldEditor: View {
     @Binding var field: GuildJoinApplicationField
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
             GuildJoinApplicationFieldLabel(field: field)
             switch field.kind {
             case .shortAnswer:
-                TextField(field.placeholder ?? "Enter your answer", text: text)
-                    .textFieldStyle(.plain)
-                    .padding(InterfaceScale.metric(10))
-                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: InterfaceScale.metric(10)))
+                textField(TextField(field.placeholder ?? "Enter your answer", text: text))
             case .paragraph:
-                TextEditor(text: text)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: InterfaceScale.metric(88))
-                    .padding(InterfaceScale.metric(6))
-                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: InterfaceScale.metric(10)))
-                    .overlay(alignment: .topLeading) {
-                        if text.wrappedValue.isEmpty {
-                            Text(field.placeholder ?? "Enter your answer").foregroundStyle(.tertiary)
-                                .padding(InterfaceScale.metric(11)).allowsHitTesting(false)
-                        }
-                    }
+                textField(TextField(field.placeholder ?? "Enter your answer", text: text, axis: .vertical).lineLimit(3 ... 10))
             case .multipleChoice(let choices):
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
+                VStack(spacing: InterfaceScale.metric(4)) {
                     ForEach(choices.indices, id: \.self) { index in
+                        let isSelected = field.answer == .choice(index)
                         Button { field.answer = .choice(index) } label: {
-                            Label(choices[index], systemImage: field.answer == .choice(index) ? "largecircle.fill.circle" : "circle")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
+                            InteractionModalChoiceRow(option: .init(label: choices[index], value: String(index)),
+                                                      symbol: isSelected ? "largecircle.fill.circle" : "circle",
+                                                      isSelected: isSelected)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityAddTraits(field.answer == .choice(index) ? .isSelected : [])
+                        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
                     }
                 }
             case .terms(let rules):
@@ -282,18 +342,30 @@ private struct GuildJoinApplicationFieldEditor: View {
                 }
                 .padding(InterfaceScale.metric(12))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: InterfaceScale.metric(10)))
-                Toggle("I have read and agree to the rules", isOn: Binding(
-                    get: { field.answer == .agreed(true) },
-                    set: { field.answer = $0 ? .agreed(true) : nil }
-                ))
-                .toggleStyle(.checkbox)
+                .modifier(InteractionModalFieldBackground())
+                let agreed = field.answer == .agreed(true)
+                Button { field.answer = agreed ? nil : .agreed(true) } label: {
+                    InteractionModalChoiceRow(option: .init(label: "I have read and agree to the rules", value: "agree"),
+                                              symbol: agreed ? "checkmark.square.fill" : "square", isSelected: agreed)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(agreed ? [.isButton, .isSelected] : .isButton)
             case .unsupported:
                 Text("Answer this question in Discord.").foregroundStyle(.secondary)
             }
             counter
         }
         .font(.interface(.body))
+        .animation(.snappy(duration: 0.2), value: showsCounter)
+    }
+
+    private func textField(_ field: some View) -> some View {
+        field
+            .textFieldStyle(.plain)
+            .tint(SakuraCordAccentColor.color)
+            .focused($isFocused)
+            .padding(.horizontal, InterfaceScale.metric(11)).padding(.vertical, InterfaceScale.metric(9))
+            .modifier(InteractionModalFieldBackground(isFocused: isFocused) { isFocused = true })
     }
 
     /// An emptied field is unanswered again.
@@ -304,14 +376,19 @@ private struct GuildJoinApplicationFieldEditor: View {
         )
     }
 
+    private var showsCounter: Bool {
+        field.characterLimit.map { text.wrappedValue.count > $0 * 4 / 5 } ?? false
+    }
+
     /// Discord limits answers; past the limit the count turns red and Submit stays disabled.
     @ViewBuilder private var counter: some View {
-        if let limit = field.characterLimit, text.wrappedValue.count > limit * 4 / 5 {
+        if showsCounter, let limit = field.characterLimit {
             let count = text.wrappedValue.count
             Text("\(count)/\(limit)")
                 .font(.interface(.caption).monospacedDigit())
                 .foregroundStyle(count > limit ? .red : .secondary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                .transition(.opacity)
         }
     }
 }
@@ -342,7 +419,7 @@ private struct GuildJoinApplicationAnswerRow: View {
                 .symbolRenderingMode(.multicolor)
                 .padding(InterfaceScale.metric(12))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: InterfaceScale.metric(10)))
+                .modifier(InteractionModalFieldBackground())
         } else {
             VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
                 Text(field.label).font(.interface(.callout).weight(.medium)).foregroundStyle(.secondary)
@@ -350,7 +427,7 @@ private struct GuildJoinApplicationAnswerRow: View {
                     .textSelection(.enabled)
                     .padding(InterfaceScale.metric(12))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: InterfaceScale.metric(10)))
+                    .modifier(InteractionModalFieldBackground())
             }
         }
     }

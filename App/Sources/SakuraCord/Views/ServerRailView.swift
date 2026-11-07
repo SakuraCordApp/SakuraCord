@@ -431,7 +431,9 @@ private struct PendingApplicationsRailFolder: View {
     @Binding var isExpanded: Bool
     let select: (GuildID) -> Void
     @State private var isHovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
 
     var body: some View {
         VStack(spacing: InterfaceScale.metric(8)) {
@@ -457,7 +459,7 @@ private struct PendingApplicationsRailFolder: View {
             .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
                 isHovering ? ServerRailHoverItem(name: "Pending Applications", bounds: bounds) : nil
             }
-            .onModalHover { isHovering = $0 }
+            .onServerRailHover { isHovering = $0 }
             if isExpanded {
                 ForEach(entries) { entry in
                     JoinRequestRailButton(entry: entry) { select(entry.id) }
@@ -474,8 +476,7 @@ private struct PendingApplicationsRailFolder: View {
                             .stroke(Color.gray.opacity(0.25), lineWidth: 1)
                     }
                     .frame(width: InterfaceScale.metric(52))
-                    .padding(.leading, InterfaceScale.metric(9))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity)
             }
         }
         .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: isExpanded)
@@ -495,15 +496,9 @@ private struct JoinRequestRailButton: View {
                 GuildIconView(name: entry.name, iconURL: entry.iconURL, size: InterfaceScale.metric(44),
                               cornerRadius: InterfaceScale.metric(13), animates: isHovering, isSelected: entry.isSelected)
                     .saturation(0.4)
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: entry.isRejected ? "xmark" : "hourglass")
-                            .font(.interfaceSystem(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: InterfaceScale.metric(18), height: InterfaceScale.metric(18))
-                            .background(entry.isRejected ? Color(hex: 0xF23F43) : .gray, in: Circle())
-                            .overlay { Circle().stroke(.black, lineWidth: 2) }
-                            .offset(x: InterfaceScale.metric(4), y: InterfaceScale.metric(4))
-                    }
+                    .modifier(ApplicationStatusBadge(symbol: entry.isRejected ? "xmark" : "hourglass",
+                                                     tint: entry.isRejected ? Color(hex: 0xF23F43) : .gray,
+                                                     diameter: InterfaceScale.metric(18), offset: InterfaceScale.metric(4)))
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
             .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
@@ -515,7 +510,7 @@ private struct JoinRequestRailButton: View {
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             isHovering ? ServerRailHoverItem(name: label, bounds: bounds) : nil
         }
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }

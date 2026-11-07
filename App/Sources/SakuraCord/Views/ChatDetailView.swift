@@ -94,7 +94,8 @@ private struct ChatDetailFooter: View {
                     appearance: model.appearanceSettings.composerBarAppearance
                 ) {
                     Button("Complete") { model.openGuildJoinApplication(guildID) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
+                        .tint(SakuraCordAccentColor.color)
                         .controlSize(.small)
                 }
             } else {
