@@ -16,7 +16,9 @@ struct VoiceChannelView: View {
     }
 
     @ViewBuilder private var connectedContent: some View {
-        if model.voiceSessionState == .connecting || model.voiceSessionState == .reconnecting {
+        if let channel, model.embeddedActivities.session?.location.channelID == channel.id {
+            EmbeddedActivityStage(model: model)
+        } else if model.voiceSessionState == .connecting || model.voiceSessionState == .reconnecting {
             ZStack {
                 VoiceVideoGrid(model: model)
                 VStack(spacing: InterfaceScale.metric(10)) {
@@ -50,6 +52,7 @@ struct VoiceChannelView: View {
                 )
             }
         } else {
+            if let channel { EmbeddedActivityJoinBanner(model: model, channel: channel) }
             VoiceVideoGrid(model: model)
         }
 
@@ -82,6 +85,7 @@ struct VoiceChannelView: View {
                 Text(occupancyText)
                     .font(.interface(.callout))
                     .foregroundStyle(.secondary)
+                if let channel { EmbeddedActivityJoinBanner(model: model, channel: channel) }
                 VoiceChannelPreviewGrid(participants: previewParticipants)
 
                 joinButton

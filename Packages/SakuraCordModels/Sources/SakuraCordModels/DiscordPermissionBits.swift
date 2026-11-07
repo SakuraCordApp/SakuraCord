@@ -20,6 +20,7 @@ public enum DiscordPermissionBits {
     public static let createPrivateThreads: UInt64 = 1 << 36
     public static let useExternalStickers: UInt64 = 1 << 37
     public static let sendMessagesInThreads: UInt64 = 1 << 38
+    public static let useEmbeddedActivities: UInt64 = 1 << 39
     public static let useSoundboard: UInt64 = 1 << 42
     public static let sendVoiceMessages: UInt64 = 1 << 46
     public static let useExternalSounds: UInt64 = 1 << 45

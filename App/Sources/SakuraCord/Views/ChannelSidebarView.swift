@@ -889,6 +889,9 @@ private struct AccountControlView: View {
     var body: some View {
         GlassEffectContainer(spacing: SidebarAccountControlMetrics.surfaceSpacing) {
             VStack(spacing: SidebarAccountControlMetrics.surfaceSpacing) {
+                if let session = voiceModel.embeddedActivities.dockedSession {
+                    EmbeddedActivitySidebarPanel(model: voiceModel, session: session)
+                }
                 if voiceModel.activeVoiceChannel != nil {
                     VoiceSidebarControlPanel(model: voiceModel) {
                         guard let channelID = voiceModel.activeVoiceChannel?.id else {

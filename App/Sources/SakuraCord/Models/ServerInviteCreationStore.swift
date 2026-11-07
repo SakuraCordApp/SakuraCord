@@ -141,6 +141,17 @@ extension AppModel {
         }
     }
 
+    /// An Activity's Invite Friends: a new link to its voice channel that opens
+    /// the Activity. Stored links don't target it, so the sheet starts on create.
+    func presentActivityInviteCreation(for instance: EmbeddedActivityInstance) {
+        let store = serverInvites.creation
+        guard !accountTransitionIsActive, let guildID = instance.location.guildID else { return }
+        store.resetPresentation()
+        store.presentation = .init(guildID: guildID, channelID: instance.location.channelID)
+        store.settings.targetApplicationID = instance.applicationID
+        store.page = .create
+    }
+
     func createServerInvite() {
         let store = serverInvites.creation
         guard let presentation = store.presentation, !store.isCreating else { return }
@@ -155,7 +166,8 @@ extension AppModel {
                     in: presentation.channelID, guildID: presentation.guildID, settings: settings
                 )
                 // Discord can return an existing link with identical settings; keep one row per code.
-                try? await account.database?.saveCreatedInvite(invite)
+                // The rail lists stored links as server invites, so an Activity's link isn't kept.
+                if settings.targetApplicationID == nil { try? await account.database?.saveCreatedInvite(invite) }
                 guard isCurrent() else { return }
                 store.invites.removeAll { $0.id == invite.id }
                 store.invites.insert(invite, at: 0)

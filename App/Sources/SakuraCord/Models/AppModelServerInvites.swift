@@ -97,7 +97,8 @@ extension AppModel {
                 do {
                     let invite = try await account.provider.serverInvite(reference)
                     entry.invite = invite
-                    if invite.brandColor == nil, let url = invite.iconURL {
+                    // An Activity card is tinted from its cover, as in Discord.
+                    if let url = invite.activity?.coverURL ?? (invite.brandColor == nil ? invite.iconURL : nil) {
                         entry.adaptiveColor = try? await ProfileAvatarPaletteLoader.shared.colors(url).first
                     }
                 } catch {
@@ -110,6 +111,11 @@ extension AppModel {
                 store.activeLoads -= 1
                 store.changed(reference)
                 model.startServerInviteLoads()
+                // The card shows the shelf's Activity art, as Discord's does.
+                if let invite = entry.invite, invite.activity != nil,
+                   model.embeddedActivities.cardShelfRequests.insert(invite.guildID).inserted {
+                    await model.loadActivityShelf(guildID: invite.guildID)
+                }
             }
         }
     }

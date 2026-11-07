@@ -740,17 +740,33 @@ extension NativeTimelineRowLayout {
             return card.frame
         }
 
+        /// A server or Activity invite card, or the card of an Activity's launch message.
+        private mutating func appendInviteCard(reference: ServerInviteReference?, preview: NativeServerCardContent?, index: Int) {
+            let origin = CGPoint(x: contentX, y: verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0))
+            let activityCard = NativeTimelineInviteLayout.activityContent(reference: reference, preview: preview, source: source)
+            let region = activityCard.flatMap { content in
+                content.activity.map {
+                    NativeTimelineInviteLayout(activityCard: content, activity: $0, reference: reference, index: index,
+                                               origin: origin, maximumWidth: inlineMediaMaximumWidth, source: source,
+                                               integratesWithBubble: usesBubbles)
+                }
+            } ?? NativeTimelineInviteLayout(reference: reference, index: index, origin: origin,
+                                              maximumWidth: inlineMediaMaximumWidth, source: source,
+                                              isOwnMessage: message.author.id == source?.currentUserID,
+                                              integratesWithBubble: usesBubbles)
+            result.inviteRegions.append(region)
+            verticalOffset = region.frame.maxY
+            hasRichContent = true
+        }
+
         private mutating func appendCards() {
             if !usesComponentsV2 {
                 for (index, reference) in row.serverInvites.enumerated() {
-                    let region = NativeTimelineInviteLayout(reference: reference, index: index,
-                        origin: CGPoint(x: contentX, y: verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)),
-                        maximumWidth: inlineMediaMaximumWidth, source: source,
-                        isOwnMessage: message.author.id == source?.currentUserID,
-                        integratesWithBubble: usesBubbles)
-                    result.inviteRegions.append(region)
-                    verticalOffset = region.frame.maxY
-                    hasRichContent = true
+                    appendInviteCard(reference: reference, preview: nil, index: index)
+                }
+                if message.activityInstanceID?.isEmpty == false {
+                    appendInviteCard(reference: nil, preview: NativeServerCardContent(activityMessage: message),
+                                     index: row.serverInvites.count)
                 }
             }
             if !usesComponentsV2 {

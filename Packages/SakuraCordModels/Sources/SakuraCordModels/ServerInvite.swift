@@ -46,6 +46,24 @@ public struct ServerInvite: Equatable, Sendable {
         }
     }
 
+    /// The Activity an invite targets (`target_type` 2), joined in its voice channel.
+    public struct Activity: Equatable, Sendable {
+        public var applicationID: ApplicationID
+        public var name: String
+        public var iconURL: URL?
+        public var coverURL: URL?
+        public var channelName: String?
+
+        public init(applicationID: ApplicationID, name: String, iconURL: URL? = nil, coverURL: URL? = nil,
+                    channelName: String? = nil) {
+            self.applicationID = applicationID
+            self.name = name
+            self.iconURL = iconURL
+            self.coverURL = coverURL
+            self.channelName = channelName
+        }
+    }
+
     public var reference: ServerInviteReference
     public var guildID: GuildID
     public var channelID: ChannelID?
@@ -61,12 +79,13 @@ public struct ServerInvite: Equatable, Sendable {
     public var expiresAt: Date?
     public var features: Set<String>
     public var requiresSpecialAcceptance: Bool
+    public var activity: Activity?
 
     public init(reference: ServerInviteReference, guildID: GuildID, channelID: ChannelID? = nil,
                 channelType: Int? = nil, name: String, iconURL: URL? = nil, inviter: User? = nil,
                 brandColor: UInt32? = nil, description: String? = nil, traits: [Trait] = [],
                 memberCount: Int? = nil, onlineCount: Int? = nil, expiresAt: Date? = nil,
-                features: Set<String> = [], requiresSpecialAcceptance: Bool = false) {
+                features: Set<String> = [], requiresSpecialAcceptance: Bool = false, activity: Activity? = nil) {
         self.reference = reference
         self.guildID = guildID
         self.channelID = channelID
@@ -82,6 +101,7 @@ public struct ServerInvite: Equatable, Sendable {
         self.expiresAt = expiresAt
         self.features = features
         self.requiresSpecialAcceptance = requiresSpecialAcceptance
+        self.activity = activity
     }
 
     public var unsupportedJoinReason: String? {
@@ -167,10 +187,17 @@ public enum ServerInviteMaxUses: Int, CaseIterable, Codable, Hashable, Sendable 
 public struct ServerInviteSettings: Hashable, Sendable {
     public var maxAge: ServerInviteMaxAge
     public var maxUses: ServerInviteMaxUses
+    /// An Activity invite opens this application in the voice channel.
+    public var targetApplicationID: ApplicationID?
 
-    public init(maxAge: ServerInviteMaxAge = .sevenDays, maxUses: ServerInviteMaxUses = .unlimited) {
+    public init(
+        maxAge: ServerInviteMaxAge = .sevenDays,
+        maxUses: ServerInviteMaxUses = .unlimited,
+        targetApplicationID: ApplicationID? = nil
+    ) {
         self.maxAge = maxAge
         self.maxUses = maxUses
+        self.targetApplicationID = targetApplicationID
     }
 }
 

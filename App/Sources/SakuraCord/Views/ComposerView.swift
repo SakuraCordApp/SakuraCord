@@ -22,6 +22,7 @@ struct ComposerView: View {
     @State private var showPhotosPicker = false
     @State private var showComposerActions = false
     @State private var showPollCreator = false
+    @State private var showActivityShelf = false
     @State private var showGIFPicker = false
     @State private var showStickerPicker = false
     @State private var showEmojiPicker = false
@@ -161,6 +162,7 @@ struct ComposerView: View {
                                             .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
                                     }
                                 }
+                                startActivityRow
                                 ComposerTranslateDraftRow(model: model, destination: conversation) {
                                     showComposerActions = false
                                 }
@@ -168,6 +170,7 @@ struct ComposerView: View {
                             .labelStyle(ComposerActionLabelStyle())
                             .buttonStyle(PopoverRowButtonStyle()).padding(InterfaceScale.metric(6)).frame(width: InterfaceScale.metric(200))
                         }
+                        .background { activityShelfPresenter }
                     }
                 }
             },
@@ -1248,7 +1251,8 @@ struct ComposerView: View {
     }
 
     private var hasComposerActions: Bool {
-        canAddAttachments || canCreatePoll || canCreateThread || model.translation.settings.isEnabled
+        canAddAttachments || canCreatePoll || canCreateThread || activityChannel != nil
+            || model.translation.settings.isEnabled
     }
 
     /// The thread pane composes a thread's first message before Discord has
@@ -1786,5 +1790,41 @@ private extension ComposerView {
         focusedColumnPresentation = columnPresentation
         isFocused = false
         await Task.yield()
+    }
+}
+
+extension ComposerView {
+    /// Activities start in the channel itself, never in a thread.
+    private var activityChannel: Channel? {
+        guard conversation == .channel, let channel = model.selectedChannel,
+              [.text, .directMessage, .groupDirectMessage].contains(channel.kind),
+              model.canStartActivity(in: channel)
+        else { return nil }
+        return channel
+    }
+
+    @ViewBuilder private var startActivityRow: some View {
+        if activityChannel != nil {
+            Button {
+                showComposerActions = false
+                showActivityShelf = true
+            } label: {
+                Label("Start an Activity", systemImage: "gamecontroller")
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+            }
+        }
+    }
+
+    /// The emoji and sticker pickers' popover, so the shelf shares their material.
+    private var activityShelfPresenter: some View {
+        StableReactionPickerPresenter(
+            isPresented: $showActivityShelf,
+            preferredEdge: .maxY,
+            accessibilityIdentifier: "composer-activity-shelf"
+        ) {
+            if let activityChannel {
+                ActivityShelfView(model: model, channel: activityChannel) { showActivityShelf = false }
+            }
+        }
     }
 }
