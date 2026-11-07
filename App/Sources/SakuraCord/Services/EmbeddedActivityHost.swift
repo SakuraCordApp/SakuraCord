@@ -224,9 +224,7 @@ final class EmbeddedActivityHost: NSObject {
             guard let string = args["url"] as? String, let url = URL(string: string),
                   url.scheme == "https" || url.scheme == "http"
             else { return fail(command, nonce, .invalidPayload, "Invalid URL") }
-            let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name) && !isStopped
-            if opened { NSWorkspace.shared.open(url) }
-            reply(command, nonce, ["opened": opened])
+            reply(command, nonce, ["opened": await openExternally(url)])
         case "OPEN_INVITE_DIALOG":
             guard instance.location.guildID.flatMap({ model.serverRailGuildsByID[$0] }) != nil else {
                 return fail(command, nonce, .invalidChannel, "Invites are unavailable in this channel")
@@ -448,7 +446,7 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
               let url = navigationAction.request.url, url != Self.hostURL
         else { return decisionHandler(.allow) }
         decisionHandler(.cancel)
-        if navigationAction.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
+        if navigationAction.navigationType == .linkActivated { Task { await openExternally(url) } }
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -460,8 +458,17 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
         _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        if let url = navigationAction.request.url, url.scheme == "https" { NSWorkspace.shared.open(url) }
+        if let url = navigationAction.request.url, url.scheme == "https" { Task { await openExternally(url) } }
         return nil
+    }
+
+    /// Every way an Activity can send a link to the browser asks first, as
+    /// `OPEN_EXTERNAL_LINK` does.
+    private func openExternally(_ url: URL) async -> Bool {
+        guard let model else { return false }
+        let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name) && !isStopped
+        if opened { NSWorkspace.shared.open(url) }
+        return opened
     }
 
     func webView(
