@@ -230,16 +230,20 @@ enum NativeTimelineSpoilerConcealmentPolicy {
         store: NativeTimelineSpoilerRevealStore
     ) -> [String: NativeTimelineComponentRevealKey] {
         let spoileredURLs = spoileredEmbedURLs(in: message)
+        // Rows draw often and almost none link a spoiler.
+        guard !spoileredURLs.isEmpty else { return [:] }
         var result: [String: NativeTimelineComponentRevealKey] = [:]
         var occurrences: [URL: Int] = [:]
-        for embed in message.embeds {
-            guard let url = embed.url, spoileredURLs.contains(url) else { continue }
-            // One link can carry several cards, such as a post's images.
+        for group in MessageEmbedPresentation.groupedEmbeds(message.embeds) {
+            guard let url = group[0].url, spoileredURLs.contains(url) else { continue }
+            // One link can carry several cards. A multi-image post's images
+            // share their card's key, so the grid reveals as one preview.
             let key = NativeTimelineComponentRevealKey.embed(
                 messageID: message.id, url: url, occurrence: occurrences[url, default: 0]
             )
             occurrences[url, default: 0] += 1
-            if !store.isMediaRevealed(key) { result[embed.id] = key }
+            guard !store.isMediaRevealed(key) else { continue }
+            for embed in group { result[embed.id] = key }
         }
         return result
     }

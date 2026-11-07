@@ -211,7 +211,7 @@ extension NativeTimelineCanvasView {
                     key: .media(url),
                     frame: region.mediaFrame,
                     cornerRadius: 8,
-                    fillsFrame: false
+                    fillsFrame: region.mediaFillsFrame
                 )
             }
         }

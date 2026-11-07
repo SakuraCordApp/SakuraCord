@@ -5,10 +5,7 @@ import SwiftUI
 nonisolated enum ForwardPickerLayoutMetrics {
     static var width: CGFloat { InterfaceScale.metric(480) }
     static var height: CGFloat { InterfaceScale.metric(679) }
-    static var outerInset: CGFloat { InterfaceScale.metric(24) }
-    static var cornerRadius: CGFloat { InterfaceScale.metric(16) }
-    static var rowHeight: CGFloat { InterfaceScale.metric(48) }
-    static var selectionDiameter: CGFloat { InterfaceScale.metric(20) }
+    static var iconSize: CGFloat { InterfaceScale.metric(32) }
 }
 
 nonisolated enum ForwardDestinationID: Hashable {
