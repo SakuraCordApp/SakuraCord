@@ -88,20 +88,29 @@ struct MentionAutocompleteTests {
             isArchived: true
         )
 
+        // Even with high usage scores on non-matching channels, they must not appear
+        let usageScores: [String: Int] = [
+            textChannel.id.description: 50,
+            otherThread.id.description: 25
+        ]
+
         let suggestions = MentionAutocompleteSuggestionFactory.channelSuggestions(
             query: "release",
             channels: [forumChannel, textChannel],
             threads: [forumPostThread, otherThread, archivedThread],
-            guilds: [:]
+            guilds: [:],
+            guildAndChannelUsageScores: usageScores
         )
 
-        #expect(!suggestions.isEmpty)
+        #expect(suggestions.count == 1)
         let match = try #require(suggestions.first)
         #expect(match.id == "thread:\(forumPostThread.id)")
         #expect(match.title == "Release Notes")
         #expect(match.detail == "forum-discussion")
         #expect(match.value == "<#\(forumPostThread.id)>")
         #expect(match.systemImage == "bubble.left.fill")
+        #expect(!suggestions.contains { $0.id == "channel:\(textChannel.id)" })
+        #expect(!suggestions.contains { $0.id == "thread:\(otherThread.id)" })
         #expect(!suggestions.contains { $0.id == "thread:\(archivedThread.id)" })
     }
 

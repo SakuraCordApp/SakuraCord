@@ -257,10 +257,10 @@ enum MentionAutocompleteSuggestionFactory {
             query: query,
             terms: terms
         )
+        guard query.isEmpty || score > 0 else { return nil }
         if usageScore > 0 {
             score = min(score + 3, score >= 7 ? 10 : 7)
         }
-        guard query.isEmpty || score > 0 else { return nil }
         return RankedCandidate(
             suggestion: MentionAutocompleteSuggestion(
                 id: "channel:\(channel.id)",
@@ -296,10 +296,10 @@ enum MentionAutocompleteSuggestionFactory {
             query: query,
             terms: terms
         )
+        guard query.isEmpty || score > 0 else { return nil }
         if usageScore > 0 {
             score = min(score + 3, score >= 7 ? 10 : 7)
         }
-        guard query.isEmpty || score > 0 else { return nil }
         let isForum = parent?.kind == .forum
         let detail = parent?.name ?? guild?.name ?? "Thread"
         return RankedCandidate(
