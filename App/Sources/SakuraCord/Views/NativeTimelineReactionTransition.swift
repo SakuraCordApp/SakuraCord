@@ -610,8 +610,8 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private static let reactionFrameAllowance: TimeInterval = 1.0 / 30
-    private static let firstFrameAllowance: TimeInterval = 1.0 / 60
+    /// A late frame moves glides by at most one 60 Hz frame of their curve.
+    private static let reactionFrameAllowance: TimeInterval = 1.0 / 60
 
     /// The time row motion was last brought to. Drawing reads fades and
     /// gaps at it, so they stay with the rows' places when a draw stalls.
@@ -631,31 +631,25 @@ extension NativeTimelineCanvasView {
         }
         guard now > last else { return }
         reactionStepUptime = now
-        // A glide's first draw is often the late one, so one that started
-        // on the last frame moves at most a frame on this one; later frames
-        // allow some jitter before they wait.
-        func deferred(_ start: TimeInterval) -> TimeInterval {
-            start >= last
-                ? max(start, now - Self.firstFrameAllowance)
-                : start + max(0, now - last - Self.reactionFrameAllowance)
-        }
+        let stall = now - last - Self.reactionFrameAllowance
+        guard stall > 0 else { return }
         for index in reactionRowMotions.indices where reactionRowMotions[index].timing == .glide {
-            reactionRowMotions[index].startUptime = reactionRowMotions[index].startUptime.map(deferred)
+            reactionRowMotions[index].startUptime? += stall
         }
         for index in rowFades.indices where rowFades[index].timing == .glide {
-            rowFades[index].startUptime = rowFades[index].startUptime.map(deferred)
+            rowFades[index].startUptime? += stall
         }
         for run in departedRuns.values.indices {
             let pieces = departedRuns.values[run].pieces
             for index in pieces.indices where pieces[index].timing == .glide {
-                departedRuns.values[run].pieces[index].startUptime = pieces[index].startUptime.map(deferred)
+                departedRuns.values[run].pieces[index].startUptime? += stall
             }
         }
         // Runs handed over by a deleted row wait here for the next update.
         for handOver in handOvers.values.indices {
             guard let pieces = handOvers.values[handOver].run?.pieces else { continue }
             for index in pieces.indices where pieces[index].timing == .glide {
-                handOvers.values[handOver].run?.pieces[index].startUptime = pieces[index].startUptime.map(deferred)
+                handOvers.values[handOver].run?.pieces[index].startUptime? += stall
             }
         }
     }
