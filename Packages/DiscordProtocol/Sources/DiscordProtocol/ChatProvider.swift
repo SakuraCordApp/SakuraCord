@@ -739,8 +739,10 @@ public extension ChatProvider {
         return try await members(in: guildID).filter { requested.contains($0.id) }
     }
 
+    /// Providers without a member cache know no one; falling back to
+    /// `resolveMembers` could turn a cache read into a request.
     func knownMembers(in guildID: GuildID, userIDs: [UserID]) async -> [Member] {
-        (try? await resolveMembers(in: guildID, userIDs: userIDs)) ?? []
+        []
     }
 
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member] {

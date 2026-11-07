@@ -16,10 +16,10 @@ struct ServerRailVoicePreview: Equatable {
 
     let participants: [ServerRailVoiceParticipant]
     let overflowCount: Int
-
-    var unresolvedUserIDs: [UserID] {
-        participants.filter { $0.name == nil }.map(\.id)
-    }
+    /// Shown participants the app's member stores do not cover. The card
+    /// rereads them from the provider's cache each time it opens, so a copy
+    /// kept for a server that isn't open does not go stale.
+    let providerUserIDs: [UserID]
 }
 
 /// Users for voice previews of guilds whose members the app has not loaded,
@@ -55,12 +55,17 @@ extension AppModel {
             return lhs < rhs
         }
         let resolved = serverRailVoicePreviewStore.usersByGuildID[guildID] ?? [:]
+        var providerUserIDs: [UserID] = []
         let participants = ordered
             .prefix(ServerRailVoicePreview.maximumAvatarCount)
             .map { userID in
-                let user = userID == currentUser?.id
+                var user = userID == currentUser?.id
                     ? currentUser
-                    : profileMember(userID, in: guildID)?.user ?? resolved[userID]
+                    : profileMember(userID, in: guildID)?.user
+                if user == nil {
+                    providerUserIDs.append(userID)
+                    user = resolved[userID]
+                }
                 return ServerRailVoiceParticipant(
                     id: userID,
                     name: user?.displayName,
@@ -69,7 +74,8 @@ extension AppModel {
             }
         return ServerRailVoicePreview(
             participants: participants,
-            overflowCount: ordered.count - participants.count
+            overflowCount: ordered.count - participants.count,
+            providerUserIDs: providerUserIDs
         )
     }
 
@@ -86,10 +92,13 @@ extension AppModel {
             userIDs: userIDs
         )
         guard isCurrentAccountSession(session), !members.isEmpty else { return }
-        var users = serverRailVoicePreviewStore.usersByGuildID[guildID] ?? [:]
+        let previous = serverRailVoicePreviewStore.usersByGuildID[guildID] ?? [:]
+        var users = previous
         for member in members {
             users[member.id] = member.user
         }
-        serverRailVoicePreviewStore.usersByGuildID[guildID] = users
+        if users != previous {
+            serverRailVoicePreviewStore.usersByGuildID[guildID] = users
+        }
     }
 }

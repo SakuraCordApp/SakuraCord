@@ -681,11 +681,11 @@ private struct ServerRailHoverLabel: View {
                 .regular,
                 in: RoundedRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous)
             )
-            // Keyed by guild too: moving between guilds that show the same
-            // unresolved users must still resolve the new guild's members.
-            .task(id: VoiceResolution(guildID: guildID, userIDs: voice?.unresolvedUserIDs ?? [])) {
-                guard let guildID, let unresolved = voice?.unresolvedUserIDs else { return }
-                await resolveVoiceParticipants(guildID, unresolved)
+            // Runs each time the card opens. Keyed by guild too: moving between
+            // guilds that show the same users must still read the new guild's.
+            .task(id: VoiceResolution(guildID: guildID, userIDs: voice?.providerUserIDs ?? [])) {
+                guard let guildID, let userIDs = voice?.providerUserIDs else { return }
+                await resolveVoiceParticipants(guildID, userIDs)
             }
         } else {
             title
