@@ -1351,8 +1351,7 @@ extension AccountReadStateModel {
     /// client, a read state for a channel the account doesn't list, such as a
     /// closed DM or a left server's channel, has no row and counts nowhere.
     func countsMentions(_ entry: Entry) -> Bool {
-        guard channelByID[entry.channelID] == nil else { return true }
-        return Self.isListedThread(
+        channelByID[entry.channelID] != nil || Self.isListedThread(
             entry,
             parentChannel: entry.parentID.flatMap { channelByID[$0] },
             parentEntry: entry.parentID.flatMap { self[$0] },
