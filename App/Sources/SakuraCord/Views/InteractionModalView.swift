@@ -465,6 +465,16 @@ struct InteractionModalChoiceRow: View {
     let symbol: String
     let isSelected: Bool
 
+    init(option: ComponentSelectOption, symbol: String, isSelected: Bool) {
+        self.option = option
+        self.symbol = symbol
+        self.isSelected = isSelected
+    }
+
+    init(label: String, symbol: String, isSelected: Bool) {
+        self.init(option: .init(label: label, value: label), symbol: symbol, isSelected: isSelected)
+    }
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: InterfaceScale.metric(10)) {
             Image(systemName: symbol)

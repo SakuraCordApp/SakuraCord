@@ -546,6 +546,39 @@ struct ServerRailBadgedIcon<Icon: View>: View {
     }
 }
 
+/// A status glyph in a disc on an icon's corner. The icon is cut away around the disc, so whatever surface
+/// the icon rests on shows through, as with the rail's mention badges.
+struct ApplicationStatusBadge: ViewModifier {
+    let symbol: String
+    let tint: Color
+    /// Unscaled points, like the offset.
+    let diameter: CGFloat
+    let offset: CGFloat
+
+    func body(content: Content) -> some View {
+        let gap = InterfaceScale.metric(2)
+        let diameter = InterfaceScale.metric(diameter)
+        let offset = InterfaceScale.metric(offset)
+        content
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .frame(width: diameter + gap * 2, height: diameter + gap * 2)
+                    .offset(x: offset + gap, y: offset + gap)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: symbol)
+                    .font(.interfaceSystem(size: self.diameter / 2, weight: .bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: diameter, height: diameter)
+                    .background(tint, in: Circle())
+                    .offset(x: offset, y: offset)
+            }
+    }
+}
+
 /// A rail icon's mention count, empty at zero. A cutout is the badge's
 /// slightly larger silhouette, which `.destinationOut` cuts from the icon
 /// behind the badge; both run the same motion, so they stay in step.

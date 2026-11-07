@@ -1,13 +1,17 @@
 import SakuraCordModels
 import SwiftUI
 
+/// SakuraCord's snappy motion, off under macOS Reduce Motion or the app's own animation settings.
+@MainActor private func snappyMotion(_ duration: Double, in category: AppMotionCategory? = nil) -> Animation? {
+    (category.map(AppMotionPolicy.animates) ?? AppMotionPolicy.animatesUncategorized) ? .snappy(duration: duration) : nil
+}
+
 /// The application form and the approval greeting, which the official client presents as modals.
 struct GuildJoinApplicationView: View {
     let model: AppModel
     let modal: GuildJoinRequestStore.Modal
     @Environment(\.windowModalContext) private var dismiss
     @Environment(\.windowModalAvailableSize) private var availableSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmsDiscard = false
 
     private var store: GuildJoinRequestStore { model.guildJoinRequests }
@@ -29,8 +33,8 @@ struct GuildJoinApplicationView: View {
             Button("Cancel", role: .cancel) {}
         }
         // Explicit transactions also resize the modal panel, which sizes to this content.
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: store.form != nil)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: store.error)
+        .animation(snappyMotion(0.25, in: .overlays), value: store.form != nil)
+        .animation(snappyMotion(0.25, in: .overlays), value: store.error)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(modal.kind == .form ? "Application to \(guildName)" : "Welcome to \(guildName)")
     }
@@ -85,16 +89,13 @@ struct GuildJoinApplicationView: View {
             .frame(maxHeight: max(160, availableSize.height - 220))
             .fixedSize(horizontal: false, vertical: true)
             .disabled(store.isWorking)
-            .transition(.opacity)
             GuildJoinRequestError(store: store)
         } else if store.error == nil {
             ProgressView().controlSize(.small).frame(maxWidth: .infinity).frame(height: InterfaceScale.metric(140))
-                .transition(.opacity)
         } else {
             ContentUnavailableView("Unable to Load Application", systemImage: "exclamationmark.triangle",
                                    description: Text(store.error ?? ""))
                 .frame(height: InterfaceScale.metric(160))
-                .transition(.opacity)
         }
         Divider()
         HStack {
@@ -131,14 +132,13 @@ struct GuildJoinRequestPage: View {
 
     let model: AppModel
     let guildID: GuildID
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmsWithdraw = false
     @State private var action: Action?
 
     /// Buttons keep their 40-point capsules concentric with the card by sharing this inset.
     private let cardInset = InterfaceScale.metric(16)
     private var cardRadius: CGFloat { InterfaceScale.metric(20) + cardInset }
-    private var motion: Animation? { reduceMotion ? nil : .snappy(duration: 0.25) }
+    private var motion: Animation? { snappyMotion(0.25) }
 
     private var store: GuildJoinRequestStore { model.guildJoinRequests }
     private var request: GuildJoinRequest? { store.requests[guildID] }
@@ -159,15 +159,14 @@ struct GuildJoinRequestPage: View {
                     GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
                         HStack(spacing: InterfaceScale.metric(8)) {
                             if rejected {
-                                ModalGlassButton(symbol: "arrow.clockwise", label: "Reapply", isLoading: store.isWorking && action == .reapply,
+                                ModalGlassButton(symbol: "arrow.clockwise", label: "Reapply", isLoading: isRunning(.reapply),
                                                  fillsWidth: true) {
                                     action = .reapply
                                     model.reapplyToGuild(guildID)
                                 }
-                                .transition(.opacity)
                             }
                             ModalGlassButton(symbol: "arrow.uturn.backward", label: "Withdraw", primary: true, destructive: true,
-                                             isLoading: store.isWorking && action == .withdraw, fillsWidth: true) { confirmsWithdraw = true }
+                                             isLoading: isRunning(.withdraw), fillsWidth: true) { confirmsWithdraw = true }
                         }
                     }
                     .disabled(store.isWorking)
@@ -182,7 +181,7 @@ struct GuildJoinRequestPage: View {
                     HStack(spacing: InterfaceScale.metric(8)) {
                         ModalGlassButton(symbol: store.showsAnswers ? "eye.slash" : "eye",
                                          label: store.showsAnswers ? "Hide Application" : "View Application",
-                                         isLoading: store.isWorking && action == .answers,
+                                         isLoading: isRunning(.answers),
                                          height: 32) {
                             action = .answers
                             model.toggleGuildJoinRequestAnswers(guildID)
@@ -191,7 +190,6 @@ struct GuildJoinRequestPage: View {
                             ModalGlassButton(symbol: "bubble.left.and.bubble.right", label: "Open Interview", height: 32) {
                                 model.navigate(to: channelID)
                             }
-                            .transition(.opacity)
                         }
                     }
                 }
@@ -222,6 +220,8 @@ struct GuildJoinRequestPage: View {
         .accessibilityLabel("Application to \(guildName)")
     }
 
+    private func isRunning(_ action: Action) -> Bool { store.isWorking && self.action == action }
+
     private var answersLoaded: Bool { request.flatMap { store.answers[$0.id] } != nil }
 
     @ViewBuilder private var answers: some View {
@@ -244,41 +244,7 @@ private struct GuildJoinRequestError: View {
             Text(error).font(.interface(.callout)).foregroundStyle(.red)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, InterfaceScale.metric(20)).padding(.bottom, InterfaceScale.metric(12))
-                .transition(.opacity)
         }
-    }
-}
-
-/// A status glyph in a disc on an icon's corner. The icon is cut away around the disc, so whatever surface
-/// the icon rests on shows through, as with the rail's mention badges.
-struct ApplicationStatusBadge: ViewModifier {
-    let symbol: String
-    let tint: Color
-    /// Unscaled points, like the offset.
-    let diameter: CGFloat
-    let offset: CGFloat
-
-    func body(content: Content) -> some View {
-        let gap = InterfaceScale.metric(2)
-        let diameter = InterfaceScale.metric(diameter)
-        let offset = InterfaceScale.metric(offset)
-        content
-            .overlay(alignment: .bottomTrailing) {
-                Circle()
-                    .frame(width: diameter + gap * 2, height: diameter + gap * 2)
-                    .offset(x: offset + gap, y: offset + gap)
-                    .blendMode(.destinationOut)
-            }
-            .compositingGroup()
-            .overlay(alignment: .bottomTrailing) {
-                Image(systemName: symbol)
-                    .font(.interfaceSystem(size: self.diameter / 2, weight: .bold))
-                    .foregroundStyle(.white)
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: diameter, height: diameter)
-                    .background(tint, in: Circle())
-                    .offset(x: offset, y: offset)
-            }
     }
 }
 
@@ -310,7 +276,6 @@ private struct StatusCard: View {
 
 private struct GuildJoinApplicationFieldEditor: View {
     @Binding var field: GuildJoinApplicationField
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -326,8 +291,7 @@ private struct GuildJoinApplicationFieldEditor: View {
                     ForEach(choices.indices, id: \.self) { index in
                         let isSelected = field.answer == .choice(index)
                         Button { field.answer = .choice(index) } label: {
-                            InteractionModalChoiceRow(option: .init(label: choices[index], value: String(index)),
-                                                      symbol: isSelected ? "largecircle.fill.circle" : "circle",
+                            InteractionModalChoiceRow(label: choices[index], symbol: isSelected ? "largecircle.fill.circle" : "circle",
                                                       isSelected: isSelected)
                         }
                         .buttonStyle(.plain)
@@ -345,7 +309,7 @@ private struct GuildJoinApplicationFieldEditor: View {
                 .modifier(InteractionModalFieldBackground())
                 let agreed = field.answer == .agreed(true)
                 Button { field.answer = agreed ? nil : .agreed(true) } label: {
-                    InteractionModalChoiceRow(option: .init(label: "I have read and agree to the rules", value: "agree"),
+                    InteractionModalChoiceRow(label: "I have read and agree to the rules",
                                               symbol: agreed ? "checkmark.square.fill" : "square", isSelected: agreed)
                 }
                 .buttonStyle(.plain)
@@ -356,7 +320,7 @@ private struct GuildJoinApplicationFieldEditor: View {
             counter
         }
         .font(.interface(.body))
-        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showsCounter)
+        .animation(snappyMotion(0.2, in: .overlays), value: showsCounter)
     }
 
     private func textField(_ field: some View) -> some View {
@@ -388,7 +352,6 @@ private struct GuildJoinApplicationFieldEditor: View {
                 .font(.interface(.caption).monospacedDigit())
                 .foregroundStyle(count > limit ? .red : .secondary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .transition(.opacity)
         }
     }
 }
