@@ -7,6 +7,7 @@ struct GuildJoinApplicationView: View {
     let modal: GuildJoinRequestStore.Modal
     @Environment(\.windowModalContext) private var dismiss
     @Environment(\.windowModalAvailableSize) private var availableSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmsDiscard = false
 
     private var store: GuildJoinRequestStore { model.guildJoinRequests }
@@ -28,13 +29,11 @@ struct GuildJoinApplicationView: View {
             Button("Cancel", role: .cancel) {}
         }
         // Explicit transactions also resize the modal panel, which sizes to this content.
-        .animation(.snappy(duration: 0.25), value: loadPhase)
-        .animation(.snappy(duration: 0.25), value: store.error)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: store.form != nil)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: store.error)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(modal.kind == .form ? "Application to \(guildName)" : "Welcome to \(guildName)")
     }
-
-    private var loadPhase: Int { store.form != nil ? 2 : store.error == nil ? 0 : 1 }
 
     private func close() {
         dismiss?(allowsDisabled: true)
@@ -128,7 +127,7 @@ struct GuildJoinApplicationView: View {
 
 /// An application's status, shown in place of the workspace while its pending server is selected, as in Discord.
 struct GuildJoinRequestPage: View {
-    private enum Action { case reapply, withdraw }
+    private enum Action { case reapply, withdraw, answers }
 
     let model: AppModel
     let guildID: GuildID
@@ -160,7 +159,7 @@ struct GuildJoinRequestPage: View {
                     GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
                         HStack(spacing: InterfaceScale.metric(8)) {
                             if rejected {
-                                ModalGlassButton(symbol: "arrow.clockwise", label: "Reapply", isLoading: action == .reapply,
+                                ModalGlassButton(symbol: "arrow.clockwise", label: "Reapply", isLoading: store.isWorking && action == .reapply,
                                                  fillsWidth: true) {
                                     action = .reapply
                                     model.reapplyToGuild(guildID)
@@ -168,7 +167,7 @@ struct GuildJoinRequestPage: View {
                                 .transition(.opacity)
                             }
                             ModalGlassButton(symbol: "arrow.uturn.backward", label: "Withdraw", primary: true, destructive: true,
-                                             isLoading: action == .withdraw, fillsWidth: true) { confirmsWithdraw = true }
+                                             isLoading: store.isWorking && action == .withdraw, fillsWidth: true) { confirmsWithdraw = true }
                         }
                     }
                     .disabled(store.isWorking)
@@ -183,8 +182,11 @@ struct GuildJoinRequestPage: View {
                     HStack(spacing: InterfaceScale.metric(8)) {
                         ModalGlassButton(symbol: store.showsAnswers ? "eye.slash" : "eye",
                                          label: store.showsAnswers ? "Hide Application" : "View Application",
-                                         isLoading: store.showsAnswers && store.isWorking && !answersLoaded,
-                                         height: 32) { model.toggleGuildJoinRequestAnswers(guildID) }
+                                         isLoading: store.isWorking && action == .answers,
+                                         height: 32) {
+                            action = .answers
+                            model.toggleGuildJoinRequestAnswers(guildID)
+                        }
                         if let channelID = request?.interviewChannelID {
                             ModalGlassButton(symbol: "bubble.left.and.bubble.right", label: "Open Interview", height: 32) {
                                 model.navigate(to: channelID)
@@ -206,9 +208,6 @@ struct GuildJoinRequestPage: View {
         .animation(motion, value: request?.interviewChannelID)
         .animation(motion, value: store.error)
         .animation(motion, value: answersLoaded)
-        .onChange(of: store.isWorking) { _, isWorking in
-            if !isWorking { action = nil }
-        }
         .alert("Are you sure?", isPresented: $confirmsWithdraw) {
             Button("Yes", role: .destructive) {
                 action = .withdraw
@@ -254,11 +253,14 @@ private struct GuildJoinRequestError: View {
 struct ApplicationStatusBadge: ViewModifier {
     let symbol: String
     let tint: Color
+    /// Unscaled points, like the offset.
     let diameter: CGFloat
     let offset: CGFloat
 
     func body(content: Content) -> some View {
         let gap = InterfaceScale.metric(2)
+        let diameter = InterfaceScale.metric(diameter)
+        let offset = InterfaceScale.metric(offset)
         content
             .overlay(alignment: .bottomTrailing) {
                 Circle()
@@ -269,7 +271,7 @@ struct ApplicationStatusBadge: ViewModifier {
             .compositingGroup()
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: symbol)
-                    .font(.interfaceSystem(size: diameter * 0.5, weight: .bold))
+                    .font(.interfaceSystem(size: self.diameter / 2, weight: .bold))
                     .foregroundStyle(.white)
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: diameter, height: diameter)
@@ -291,8 +293,7 @@ private struct StatusCard: View {
         VStack(spacing: InterfaceScale.metric(12)) {
             GuildIconView(name: guildName, iconURL: iconURL, size: InterfaceScale.metric(64), cornerRadius: InterfaceScale.metric(18))
                 .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(18), style: .continuous))
-                .modifier(ApplicationStatusBadge(symbol: symbol, tint: tint, diameter: InterfaceScale.metric(24),
-                                                 offset: InterfaceScale.metric(6)))
+                .modifier(ApplicationStatusBadge(symbol: symbol, tint: tint, diameter: 24, offset: 6))
                 .accessibilityHidden(true)
             Text(title).font(.interface(.title3).weight(.semibold)).multilineTextAlignment(.center)
             if let detail {
@@ -308,6 +309,7 @@ private struct StatusCard: View {
 
 private struct GuildJoinApplicationFieldEditor: View {
     @Binding var field: GuildJoinApplicationField
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -353,7 +355,7 @@ private struct GuildJoinApplicationFieldEditor: View {
             counter
         }
         .font(.interface(.body))
-        .animation(.snappy(duration: 0.2), value: showsCounter)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showsCounter)
     }
 
     private func textField(_ field: some View) -> some View {

@@ -498,7 +498,7 @@ private struct JoinRequestRailButton: View {
                     .saturation(0.4)
                     .modifier(ApplicationStatusBadge(symbol: entry.isRejected ? "xmark" : "hourglass",
                                                      tint: entry.isRejected ? Color(hex: 0xF23F43) : .gray,
-                                                     diameter: InterfaceScale.metric(18), offset: InterfaceScale.metric(4)))
+                                                     diameter: 18, offset: 4))
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
             .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
