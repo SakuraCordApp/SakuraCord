@@ -76,13 +76,14 @@ extension NativeTimelineCanvasView {
         }
         let item = row.item
         let layout = row.layout
-        // A very tall row would cost too much as one picture, so it changes
-        // without one.
-        guard Self.estimatedBitmapCost(width: width, height: layout.height, scale: rowBitmapScale)
-            <= Self.bitmapCostLimit / 4
-        else { return nil }
+        // A tall row's picture is drawn at a lower scale to stay within its
+        // share of the bitmap budget; it only shows while it fades. A row
+        // that would need less than 1x changes without one.
+        let pointCost = Self.estimatedBitmapCost(width: width, height: layout.height, scale: 1)
+        let scale = min(rowBitmapScale, (Double(Self.bitmapCostLimit / 4) / Double(pointCost)).squareRoot())
+        guard scale >= 1 else { return nil }
         let size = NSSize(width: width, height: layout.height)
-        return NativeTimelineSendTransitionSnapshot.render(size: size, scale: rowBitmapScale) {
+        return NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
             NativeTimelineRowPainter.draw(
                 item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
                 isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
