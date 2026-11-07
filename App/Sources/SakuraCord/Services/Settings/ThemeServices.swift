@@ -977,14 +977,15 @@ extension SakuraCordGradientTheme {
     nonisolated func discordTinted(_ token: NSColor, isDark: Bool) -> NSColor {
         let requested = 0.5 * intensityProgress * saturation
         guard requested > 0, let source = token.usingColorSpace(.sRGB) else { return token }
-        let hues = activeColors.map(\.hue)
-        let luminance = { SakuraCordThemeRGB(hue: $0, saturation: 1, brightness: 1).relativeLuminance }
-        guard let hue = isDark ? hues.min(by: { luminance($0) < luminance($1) })
-            : hues.max(by: { luminance($0) < luminance($1) })
+        let luminance = { (color: SakuraCordThemeColor) in
+            SakuraCordThemeRGB(hue: color.hue, saturation: color.saturation, brightness: 1).relativeLuminance
+        }
+        guard let tinting = isDark ? activeColors.min(by: { luminance($0) < luminance($1) })
+            : activeColors.max(by: { luminance($0) < luminance($1) })
         else { return token }
         let base = isDark
-            ? SakuraCordThemeRGB(hue: hue, saturation: 1, brightness: 0.1)
-            : SakuraCordThemeRGB(hue: hue, saturation: 0.2, brightness: 1)
+            ? SakuraCordThemeRGB(hue: tinting.hue, saturation: 1, brightness: 0.1)
+            : SakuraCordThemeRGB(hue: tinting.hue, saturation: 0.2, brightness: 1)
         let mixed = SakuraCordThemeRGB(red: source.redComponent, green: source.greenComponent, blue: source.blueComponent)
             .oklabBlended(toward: base, fraction: requested / (1 + requested))
         return NSColor(srgbRed: mixed.red, green: mixed.green, blue: mixed.blue, alpha: source.alphaComponent)
