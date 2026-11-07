@@ -884,14 +884,16 @@ extension NativeTimelineCanvasView {
         let paintFrame = clipMaxY == nil ? rowFrame : CGRect(
             x: rowFrame.minX, y: rowFrame.minY, width: rowFrame.width, height: layouts[index].height
         )
-        guard paintFrame.intersects(dirtyRect) else { return }
+        // An edited row's gliding text reaches past its final height.
+        let band = editedTextBands[item.identifier]
+        guard band != nil || paintFrame.intersects(dirtyRect) else { return }
         let drawPicture = { (frame: CGRect) in
             self.drawRowPicture(
                 item, at: index, rowFrame: rowFrame, paintFrame: frame, dirtyRect: dirtyRect,
                 preparedMediaKeys: preparedMediaKeys, revealState: revealState
             )
         }
-        if let band = editedTextBands[item.identifier] {
+        if let band {
             drawEditedRow(band, at: index, paintFrame: paintFrame, drawPicture: drawPicture)
         } else {
             drawPicture(paintFrame)

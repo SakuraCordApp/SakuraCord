@@ -37,15 +37,18 @@ extension NativeTimelineCanvasView {
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
             guard abs(oldText.minY - newText.minY) < 0.5, abs(layout.height - newText.maxY - after) < 0.5 else { return nil }
         }
-        let oldHeight = old.layout.height - text.minY - after
-        let newHeight = layout.height - text.minY - after
-        guard oldHeight > -0.5, newHeight > -0.5, abs(oldHeight - newHeight) >= 0.5,
+        // Text on one side only brings the gap before what follows it,
+        // which belongs to its space.
+        let gap = min(0, old.layout.height - text.minY - after, layout.height - text.minY - after)
+        let oldHeight = old.layout.height - text.minY - after - gap
+        let newHeight = layout.height - text.minY - after - gap
+        guard after + gap >= 0, abs(oldHeight - newHeight) >= 0.5,
               rowFrame(at: index).intersects(visibleRect)
         else { return nil }
         let identifier = items[index].identifier
         // A glide this one interrupts starts it from what it shows.
         let running = editedTextBands[identifier]
-        let startHeight = running.map { shownHeight(of: $0, at: index) } ?? max(0, oldHeight)
+        let startHeight = running.map { shownHeight(of: $0, at: index) } ?? oldHeight
         let size = NSSize(width: width, height: startHeight)
         let picture = fadePictureScale(for: size).flatMap { scale in
             NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
@@ -73,20 +76,21 @@ extension NativeTimelineCanvasView {
         }
         return .init(
             identifier: identifier, top: text.minY, oldHeight: startHeight,
-            newHeight: max(0, newHeight), picture: picture
+            newHeight: newHeight, picture: picture
         )
     }
 
     /// How tall the band's text is drawn now: its target less the part of
-    /// the row's text steps still to come.
+    /// the row's text steps still to come, which an interrupted edit's
+    /// step can carry past where this band started.
     private func shownHeight(of band: NativeTimelineEditedTextBand, at index: Int) -> CGFloat {
-        let shown = band.newHeight - (reactionMotionTextRemainingHeights[index] ?? 0)
-        return min(max(shown, min(band.oldHeight, band.newHeight)), max(band.oldHeight, band.newHeight))
+        max(0, band.newHeight - (reactionMotionTextRemainingHeights[index] ?? 0))
     }
 
     /// How far the band's new text has faded in at `shown`.
     private func progress(of band: NativeTimelineEditedTextBand, shown: CGFloat) -> CGFloat {
-        abs(band.newHeight - band.oldHeight) < 0.5 ? 1 : (shown - band.oldHeight) / (band.newHeight - band.oldHeight)
+        guard abs(band.newHeight - band.oldHeight) >= 0.5 else { return 1 }
+        return min(1, max(0, (shown - band.oldHeight) / (band.newHeight - band.oldHeight)))
     }
 
     /// Draws an edited row with its text's space at the height the glide
