@@ -885,10 +885,17 @@ extension NativeTimelineCanvasView {
             x: rowFrame.minX, y: rowFrame.minY, width: rowFrame.width, height: layouts[index].height
         )
         guard paintFrame.intersects(dirtyRect) else { return }
-        drawRowPicture(
-            item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
-            preparedMediaKeys: preparedMediaKeys, revealState: revealState
-        )
+        let drawPicture = { (frame: CGRect) in
+            self.drawRowPicture(
+                item, at: index, rowFrame: rowFrame, paintFrame: frame, dirtyRect: dirtyRect,
+                preparedMediaKeys: preparedMediaKeys, revealState: revealState
+            )
+        }
+        if let band = editedTextBands[item.identifier] {
+            drawEditedRow(band, at: index, paintFrame: paintFrame, drawPicture: drawPicture)
+        } else {
+            drawPicture(paintFrame)
+        }
         if item.messageID == editingMessageID, let editingRowScrollSnapshot {
             editingRowScrollSnapshot.draw(
                 in: editingOverlayFrame(at: index), from: .zero, operation: .sourceOver,

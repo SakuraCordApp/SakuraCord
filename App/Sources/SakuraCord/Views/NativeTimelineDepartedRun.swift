@@ -58,13 +58,8 @@ extension NativeTimelineCanvasView {
         }
         let item = row.item
         let layout = row.layout
-        // A tall row's picture is drawn at a lower scale to stay within its
-        // share of the bitmap budget, since it only shows while it fades. A
-        // row that would need less than 1x closes its gap blank.
-        let pointCost = Self.estimatedBitmapCost(width: width, height: layout.height, scale: 1)
-        let scale = min(rowBitmapScale, (CGFloat(Self.bitmapCostLimit / 4) / CGFloat(pointCost)).squareRoot())
-        guard scale >= 1 else { return nil }
         let size = NSSize(width: width, height: layout.height)
+        guard let scale = fadePictureScale(for: size) else { return nil }
         return NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
             NativeTimelineRowPainter.draw(
                 item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
@@ -75,6 +70,15 @@ extension NativeTimelineCanvasView {
                 editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
+    }
+
+    /// The scale for a fading picture of `size`: a tall one is drawn lower
+    /// to stay within its share of the bitmap budget, since it only shows
+    /// while it fades. Nil when that would be below 1x.
+    func fadePictureScale(for size: NSSize) -> CGFloat? {
+        let pointCost = Self.estimatedBitmapCost(width: size.width, height: size.height, scale: 1)
+        let scale = min(rowBitmapScale, (CGFloat(Self.bitmapCostLimit / 4) / CGFloat(pointCost)).squareRoot())
+        return scale >= 1 ? scale : nil
     }
 
     /// How much of a row's displayed height is the gap of the deleted run

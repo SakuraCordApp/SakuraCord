@@ -389,61 +389,41 @@ extension NativeTimelineCanvasView {
         reconcileActivityIndicators()
         positionSpoilerOverlays()
         positionReactionBandViews()
-        maskClippedSubviews()
+        maskDisclosureSubviews()
     }
 
-    /// Hosted views follow the same clip as their drawn rows: those of a
-    /// disclosure's group, and those of a row shown shorter than its layout
-    /// while a motion runs, as one giving height to an edit below it.
-    private func maskClippedSubviews() {
-        for view in clippedSubviews { view.layer?.mask = nil }
-        clippedSubviews = []
-        var clips: [(views: [NSView], span: ClosedRange<CGFloat>)] = []
-        if rowDisclosure != nil, !disclosureRange.isEmpty {
-            let rows = items[disclosureRange]
-            var views = liveViews(of: Set(rows.map(\.identifier)))
-            for item in rows {
-                switch item {
-                case let .inboxForumPost(post): if let host = inboxForumPostHosts[post.id] { views.append(host) }
-                case let .inboxEvent(event): if let host = inboxEventHosts[event.id] { views.append(host) }
-                default: break
-                }
-            }
-            let messageIDs = Set(rows.compactMap(\.messageID))
-            views += spoilerOverlays.filter { messageIDs.contains($0.key.messageID) }.map(\.value)
-            clips.append((views, disclosureClipMinY ... max(disclosureClipMinY, disclosureClipMaxY)))
-        }
-        // A deleted run below the row widens it, so it is the row's own part
-        // being shorter than its layout that clips its content.
-        for index in reactionMotionRemainingHeights.keys where items.indices.contains(index) && !disclosureRange.contains(index) {
-            let item = items[index]
-            let frame = rowFrame(at: index)
-            let contentMaxY = frame.maxY - departedGapHeight(below: item.identifier)
-            guard contentMaxY - frame.minY < layouts[index].height - 0.5 else { continue }
-            let views = liveViews(of: [item.identifier])
-                + spoilerOverlays.filter { $0.key.messageID == item.messageID }.map(\.value)
-            clips.append((views, frame.minY ... max(frame.minY, contentMaxY)))
-        }
-        for clip in clips {
-            for view in clip.views {
-                view.wantsLayer = true
-                let mask = CALayer()
-                mask.backgroundColor = NSColor.black.cgColor
-                let minY = max(view.frame.minY, clip.span.lowerBound)
-                let maxY = min(view.frame.maxY, clip.span.upperBound)
-                let visible = CGRect(x: view.frame.minX, y: minY, width: view.frame.width, height: max(0, maxY - minY))
-                mask.frame = view.convert(visible, from: self)
-                view.layer?.mask = mask
-                clippedSubviews.append(view)
+    /// Hosted views inside the group follow the same clip as its drawn rows.
+    private func maskDisclosureSubviews() {
+        for view in disclosureMaskedViews { view.layer?.mask = nil }
+        disclosureMaskedViews = []
+        guard rowDisclosure != nil, !disclosureRange.isEmpty else { return }
+        let rows = items[disclosureRange]
+        let identifiers = Set(rows.map(\.identifier))
+        let messageIDs = Set(rows.compactMap(\.messageID))
+        var views: [NSView] = []
+        for item in rows {
+            switch item {
+            case let .inboxForumPost(post): if let host = inboxForumPostHosts[post.id] { views.append(host) }
+            case let .inboxEvent(event): if let host = inboxEventHosts[event.id] { views.append(host) }
+            default: break
             }
         }
-    }
-
-    private func liveViews(of rows: Set<NativeMessageTimelineItem.Identifier>) -> [NSView] {
-        animatedMediaOverlays.filter { rows.contains($0.key.row) }.map(\.value)
-            + inlineVideoOverlays.filter { rows.contains($0.key.row) }.map(\.value)
-            + inlinePlayers.filter { rows.contains($0.key.row) }.map(\.value)
-            + activityIndicators.filter { rows.contains($0.key.row) }.map(\.value)
+        views += animatedMediaOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
+        views += inlineVideoOverlays.filter { identifiers.contains($0.key.row) }.map(\.value)
+        views += inlinePlayers.filter { identifiers.contains($0.key.row) }.map(\.value)
+        views += activityIndicators.filter { identifiers.contains($0.key.row) }.map(\.value)
+        views += spoilerOverlays.filter { messageIDs.contains($0.key.messageID) }.map(\.value)
+        for view in views {
+            view.wantsLayer = true
+            let mask = CALayer()
+            mask.backgroundColor = NSColor.black.cgColor
+            let minY = max(view.frame.minY, disclosureClipMinY)
+            let maxY = min(view.frame.maxY, disclosureClipMaxY)
+            let visible = CGRect(x: view.frame.minX, y: minY, width: view.frame.width, height: max(0, maxY - minY))
+            mask.frame = view.convert(visible, from: self)
+            view.layer?.mask = mask
+            disclosureMaskedViews.append(view)
+        }
     }
 
     private func disclosureContentRange(for key: NativeTimelineRowDisclosure.Key, headerIndex: Int) -> Range<Int> {

@@ -5,8 +5,9 @@ enum NativeTimelineRowChange {
     case none
     /// Only its reactions changed, so its chips animate.
     case reactions
-    /// Its message changed in place, as an edit or new embeds do. The row
-    /// shows its new content at once while its height glides.
+    /// Its message changed in place, as an edit or new embeds do. Its
+    /// height glides, and lines an edit adds or removes fade as their space
+    /// opens or closes.
     case content
     /// Only its grouping with its neighbours changed. Next to a deleted
     /// row it glides like an edit; elsewhere, as when older history
@@ -28,13 +29,6 @@ extension NativeMessageTimelineItem {
         // A send settling is the send transition's to show.
         guard row.message.outboxState == oldRow.message.outboxState else { return .other }
         return row.message == oldRow.message ? .regroup : .content
-    }
-
-    /// Whether an update changed the message's text, which is drawn above
-    /// its attachments, embeds and reactions.
-    func changesText(from old: Self) -> Bool {
-        guard case let .message(oldRow, _, _) = old, case let .message(row, _, _) = self else { return false }
-        return row.message.content != oldRow.message.content
     }
 }
 
@@ -72,7 +66,6 @@ struct NativeTimelineRowMotionPlan {
     }
 
     private(set) var previous: FollowedRow?
-    private var followed: [FollowedRow] = []
     private(set) var describesUpdate = true
     private var shift: CGFloat?
     private var expectedShift: CGFloat?
@@ -88,53 +81,13 @@ struct NativeTimelineRowMotionPlan {
     mutating func follow(_ row: FollowedRow, rowShift: CGFloat, delta: CGFloat) {
         if let expectedShift, abs(rowShift - expectedShift) >= 0.5 { describesUpdate = false }
         previous = row
-        followed.append(row)
         shift = shift ?? rowShift
         expectedShift = rowShift - delta
     }
 
-    /// Whether a row changing height by `delta` keeps the rows below it
-    /// nearer their places than its own top, as when the newest message
-    /// is held at the bottom.
-    func holdsRowsBelow(changingBy delta: CGFloat) -> Bool {
-        guard let shift else { return false }
-        let top = steps.reduce(shift) { $0 - $1.delta }
-        return abs(top - delta) < abs(top)
-    }
-
-    /// Closes a change of `row`'s height on the rows right before it, so
-    /// its new content lands where it ends while they glide to it. A
-    /// shrink widens the row before; a growth takes from each row before in
-    /// turn no more than `height` says it shows. False, with nothing added,
-    /// when those rows, adjacent before and after the update and without
-    /// `excluded` gaps below, cannot take all of it.
-    mutating func closeAbove(
-        _ row: FollowedRow,
-        delta: CGFloat,
-        excluding excluded: Set<NativeMessageTimelineItem.Identifier>,
-        height: (FollowedRow) -> CGFloat
-    ) -> Bool {
-        var pieces: [(FollowedRow, CGFloat)] = []
-        var left = delta
-        var next = row
-        for candidate in followed.dropLast().reversed() {
-            guard abs(left) >= 0.5, candidate.index == next.index - 1, candidate.oldIndex == next.oldIndex - 1,
-                  !excluded.contains(candidate.identifier)
-            else { break }
-            let given = steps.reduce(0) { $1.rowIndex == candidate.index ? $0 + $1.delta : $0 }
-            let piece = delta < 0 ? left : min(left, max(0, height(candidate) - given))
-            pieces.append((candidate, piece))
-            left -= piece
-            next = candidate
-        }
-        guard abs(left) < 0.5 else { return false }
-        for (candidate, piece) in pieces { addStep(for: candidate, delta: piece, isLent: true) }
-        return true
-    }
-
-    mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false, isLent: Bool = false) {
+    mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false) {
         guard abs(delta) >= 0.5 else { return }
-        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap, isLent: isLent))
+        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap))
     }
 
     /// Deleted rows after the last followed row: it keeps the height they
@@ -164,6 +117,8 @@ struct NativeTimelineUpdateMotion {
     /// The motion this update starts, for the pieces that belong to it.
     let motionID: Int
     var plan = NativeTimelineRowMotionPlan()
+    /// The text of edited rows whose lines fade with this motion.
+    var textBands: [NativeTimelineEditedTextBand] = []
     /// A piece joining the run below a row. A new one belongs to this
     /// update's motion; an inherited one keeps its own.
     struct DepartedPiece {

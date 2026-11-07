@@ -256,7 +256,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     /// content-origin change can never leave the clip behind the rows.
     var disclosureRelativeClipMinY = -CGFloat.greatestFiniteMagnitude
     var disclosureRelativeClipMaxY = CGFloat.greatestFiniteMagnitude
-    var clippedSubviews: [NSView] = []
+    var disclosureMaskedViews: [NSView] = []
     /// A header whose viewport position the next structural update keeps.
     var pendingDisclosureScrollAnchor: NativeTimelineRowDisclosure.Key?
     let disclosureTicker = NativeTimelineDisplayLinkTicker()
@@ -315,6 +315,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionMotionShift: CGFloat = 0
     var reactionMotionSteps: [(index: Int, cumulative: CGFloat)] = []
     var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
+    var editedTextBands: [NativeMessageTimelineItem.Identifier: NativeTimelineEditedTextBand] = [:]
     var departedRuns: [NativeMessageTimelineItem.Identifier: NativeTimelineDepartedRun] = [:]
     /// What a row deleted by the update landing now was still showing:
     /// the run closing below it and the part of its own height change
