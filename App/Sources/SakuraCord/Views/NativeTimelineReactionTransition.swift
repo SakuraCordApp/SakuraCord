@@ -147,6 +147,9 @@ struct NativeTimelineReactionBaseline {
         /// The row's cached bitmap, if it had one, for a fade without a raster.
         let bitmap: NativeTimelineCanvasView.CachedRowBitmap?
         let revealedTextSpoilerState: NativeTimelineTextSpoilerRevealState
+        /// Shown results or a choice in progress, which a deleted poll's
+        /// state no longer holds by the time its picture is drawn.
+        let pollPresentation: NativeTimelinePollPresentation
         /// The inline editor over a saved edit's row, which shows the row
         /// in place of its text.
         var editor: Editor?
@@ -245,6 +248,7 @@ extension NativeTimelineCanvasView {
                 bitmap: animatedMediaRows[item.identifier] == nil && revealState.isEmpty && !isEdited
                     ? bitmapCache[item.identifier] : nil,
                 revealedTextSpoilerState: revealState,
+                pollPresentation: pollPresentation(for: item.messageID),
                 editor: isEdited ? editor : nil
             )
         }

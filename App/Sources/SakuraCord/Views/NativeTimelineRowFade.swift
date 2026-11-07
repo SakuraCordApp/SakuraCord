@@ -86,7 +86,7 @@ extension NativeTimelineCanvasView {
             NativeTimelineRowPainter.draw(
                 item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
                 isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
-                spoilerRevealStore: spoilerRevealStore
+                spoilerRevealStore: spoilerRevealStore, pollPresentation: row.pollPresentation
             )
             if let editor = row.editor {
                 editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
