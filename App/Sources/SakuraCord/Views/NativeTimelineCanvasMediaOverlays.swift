@@ -243,18 +243,18 @@ extension NativeTimelineCanvasView {
                 continue
             }
 
+            // While an edit's lines glide, its row draws its media still:
+            // live views would sit at their final places.
+            guard editedTextBands[identifier] == nil else {
+                index += 1
+                continue
+            }
             appendAnimatedAvatarOverlays(
                 row: row,
                 identifier: identifier,
                 layout: layout,
                 accumulator: accumulator
             )
-            // While an edit's lines glide, the rest of its row draws its
-            // media still: live views would sit at their final places.
-            guard editedTextBands[identifier] == nil else {
-                index += 1
-                continue
-            }
 
             appendAnimatedMessageContentOverlays(
                 row: row,

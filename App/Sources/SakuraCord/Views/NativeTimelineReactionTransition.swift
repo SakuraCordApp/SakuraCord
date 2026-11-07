@@ -384,7 +384,10 @@ extension NativeTimelineCanvasView {
             if abs(delta) >= 0.5 { update.plan.invalidate() }
         case .reactions:
             update.plan.addStep(for: row, delta: delta)
-            if rowFrame(at: index).intersects(visibleRect), beginReactionTransition(at: index, from: old, now: now) {
+            // Reactions changing under an edit's gliding lines move with
+            // them instead of starting their chips at the final place.
+            if editedTextBands[identifier] == nil, rowFrame(at: index).intersects(visibleRect),
+               beginReactionTransition(at: index, from: old, now: now) {
                 update.startedChips = true
                 update.pausesMedia = update.pausesMedia || animatedMediaRows[identifier] != nil
             }

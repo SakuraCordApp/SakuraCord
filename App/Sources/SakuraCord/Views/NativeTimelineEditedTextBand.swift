@@ -9,6 +9,8 @@ struct NativeTimelineEditedTextBand {
     let identifier: NativeMessageTimelineItem.Identifier
     /// Where the text starts in the row, the same before and after.
     let top: CGFloat
+    /// The text's height when the glide starts: its old height, or what an
+    /// interrupted glide of an earlier edit showed.
     let oldHeight: CGFloat
     let newHeight: CGFloat
     /// The old text as it was drawn; nil for text too tall for one
@@ -36,6 +38,7 @@ extension NativeTimelineCanvasView {
               rowFrame(at: index).intersects(visibleRect)
         else { return nil }
         let size = NSSize(width: width, height: oldText.height)
+        let identifier = items[index].identifier
         let picture = fadePictureScale(for: size).flatMap { scale in
             NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
                 NativeTimelineRowPainter.draw(
@@ -47,9 +50,17 @@ extension NativeTimelineCanvasView {
             }
         }
         return .init(
-            identifier: items[index].identifier, top: newText.minY,
-            oldHeight: oldText.height, newHeight: newText.height, picture: picture
+            identifier: identifier, top: newText.minY,
+            oldHeight: editedTextBands[identifier].map { shownHeight(of: $0, at: index) } ?? oldText.height,
+            newHeight: newText.height, picture: picture
         )
+    }
+
+    /// How tall the band's text is drawn now. The row's own change still
+    /// to come is its height's; a deleted run below it adds a gap of its own.
+    private func shownHeight(of band: NativeTimelineEditedTextBand, at index: Int) -> CGFloat {
+        let remaining = reactionMotionRemainingHeight(at: index) + departedGapHeight(below: band.identifier)
+        return min(max(band.newHeight - remaining, min(band.oldHeight, band.newHeight)), max(band.oldHeight, band.newHeight))
     }
 
     /// Draws an edited row with its text's space at the height the glide
@@ -65,11 +76,8 @@ extension NativeTimelineCanvasView {
             drawPicture(paintFrame)
             return
         }
-        // The row's own change still to come; a deleted run below it adds
-        // a gap of its own.
-        let remaining = reactionMotionRemainingHeight(at: index) + departedGapHeight(below: band.identifier)
-        let shown = min(max(band.newHeight - remaining, min(band.oldHeight, band.newHeight)), max(band.oldHeight, band.newHeight))
-        let progress = (shown - band.oldHeight) / (band.newHeight - band.oldHeight)
+        let shown = shownHeight(of: band, at: index)
+        let progress = abs(band.newHeight - band.oldHeight) < 0.5 ? 1 : (shown - band.oldHeight) / (band.newHeight - band.oldHeight)
         let textTop = paintFrame.minY + band.top
         func clipped(from minY: CGFloat, to maxY: CGFloat, draw: () -> Void) {
             guard maxY > minY else { return }
@@ -80,10 +88,15 @@ extension NativeTimelineCanvasView {
         }
         clipped(from: paintFrame.minY, to: textTop) { drawPicture(paintFrame) }
         clipped(from: textTop, to: textTop + shown) {
-            band.picture?.draw(
-                in: CGRect(x: paintFrame.minX, y: textTop, width: band.picture?.size.width ?? 0, height: band.oldHeight),
-                from: .zero, operation: .sourceOver, fraction: 1 - progress, respectFlipped: true, hints: nil
-            )
+            if let picture = band.picture {
+                picture.draw(
+                    in: CGRect(origin: CGPoint(x: paintFrame.minX, y: textTop), size: picture.size),
+                    from: .zero, operation: .sourceOver, fraction: 1 - progress, respectFlipped: true, hints: nil
+                )
+            }
+        }
+        // The new text ends where it does: below it, the rest follows.
+        clipped(from: textTop, to: textTop + min(shown, band.newHeight)) {
             context.setAlpha(progress)
             context.beginTransparencyLayer(auxiliaryInfo: nil)
             drawPicture(paintFrame)
