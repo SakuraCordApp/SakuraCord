@@ -858,4 +858,25 @@ extension AppModel {
             messageRowCacheOrder.removeAll { $0 == channelID }
         }
     }
+
+    /// All active threads and forum posts discoverable in the selected guild,
+    /// for mention and channel autocomplete.
+    var mentionAutocompleteThreads: [MessageThreadSummary] {
+        guard let selectedGuildID else { return [] }
+        let forumThreads = (forumCataloguePosts + forumPosts).map(\.thread)
+        let threadCandidates = threads + activeJoinedThreads + forumThreads + Array(inbox.threads.values)
+        var seen = Set<ChannelID>()
+        return threadCandidates.compactMap { thread -> MessageThreadSummary? in
+            guard seen.insert(thread.id).inserted else { return nil }
+            guard !thread.isArchived else { return nil }
+            let threadGuildID = thread.guildID ?? thread.parentID.flatMap { id in
+                messagePresentationChannelsByID[id]?.guildID ?? visibleChannels.first { $0.id == id }?.guildID
+            }
+            guard threadGuildID == selectedGuildID else { return nil }
+            if thread.isPrivate, thread.notificationSettings == nil {
+                return nil
+            }
+            return thread
+        }
+    }
 }
