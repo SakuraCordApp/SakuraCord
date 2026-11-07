@@ -11,7 +11,14 @@ enum SakuraCordSystemSymbol {
         path: "/System/Library/PrivateFrameworks/SFSymbols.framework/Resources/CoreGlyphsPrivate.bundle"
     )
 
-    static var emojiFaceGrinningImage: Image { Image(systemName: emojiFaceGrinning) }
+    /// macOS 27.3 made the emoji face public; 27.2 has it only in the private catalogue.
+    static let emojiFaceGrinningImage =
+        if NSImage(systemSymbolName: emojiFaceGrinning, accessibilityDescription: nil) == nil,
+           let privateSymbolsBundle {
+            Image(emojiFaceGrinning, bundle: privateSymbolsBundle)
+        } else {
+            Image(systemName: emojiFaceGrinning)
+        }
 
     static var stickerImage: Image {
         guard let privateSymbolsBundle else {
