@@ -95,9 +95,10 @@ extension NativeTimelineCanvasView {
     }
 
     /// Whether views of the row's own sit over what it draws: a playing
-    /// video, an audio player, a spoiler cover, a control's loading dots or
-    /// an upload's ring. They keep their final places, so the row moves as
-    /// one piece instead of parting from them.
+    /// video, an audio player, a spoiler cover, a control's loading dots,
+    /// an upload's ring or a hovered code block's copy button. They keep
+    /// their final places, so the row moves as one piece instead of parting
+    /// from them.
     private func hostsLiveViews(at index: Int) -> Bool {
         let identifier = items[index].identifier
         let messageID = items[index].messageID
@@ -106,6 +107,7 @@ extension NativeTimelineCanvasView {
             || spoilerOverlays.keys.contains { $0.messageID == messageID }
             || activityIndicators.keys.contains { $0.row == identifier }
             || uploadRings.keys.contains { $0.row == identifier }
+            || hoveredCodeBlock?.itemIdentifier == identifier
             || [voiceMessageOverlay, voiceMessageHoverOverlay].contains { overlay in
                 overlay.map { overlay in layouts[index].audioPlayers.contains { $0.playbackID == overlay.region.playbackID } } ?? false
             }
