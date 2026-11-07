@@ -43,7 +43,8 @@ final class EmbeddedActivityStore {
     /// Running instances by composite instance ID.
     private(set) var instances: [String: EmbeddedActivityInstance] = [:]
     var shelves: [GuildID?: [EmbeddedActivityApplication]] = [:]
-    @ObservationIgnored var loadingShelves: Set<GuildID?> = []
+    /// Shelf loads in flight, so a second caller waits for the first.
+    @ObservationIgnored var shelfLoads: [GuildID?: Task<Void, Never>] = [:]
     var shelfError: String?
     var session: Session?
     var prompt: Prompt?
@@ -125,7 +126,7 @@ final class EmbeddedActivityStore {
         endSession()
         instances = [:]
         shelves = [:]
-        loadingShelves = []
+        shelfLoads = [:]
         shelfError = nil
         gatewaySessionID = nil
         pendingLeaves = [:]
@@ -156,8 +157,14 @@ extension AppModel {
 
     func loadActivityShelf(guildID: GuildID?) async {
         let store = embeddedActivities
-        guard store.loadingShelves.insert(guildID).inserted else { return }
-        defer { store.loadingShelves.remove(guildID) }
+        if let load = store.shelfLoads[guildID] { return await load.value }
+        let load = Task { await fetchActivityShelf(guildID: guildID) }
+        store.shelfLoads[guildID] = load
+        await load.value
+        if store.shelfLoads[guildID] == load { store.shelfLoads[guildID] = nil }
+    }
+
+    private func fetchActivityShelf(guildID: GuildID?) async {
         let account = accountSession()
         do {
             let shelf = try await account.provider.embeddedActivityShelf(guildID: guildID)
