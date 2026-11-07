@@ -48,6 +48,7 @@ extension NativeTimelineCanvasView {
             guard abs(newAfter - after) < 0.5
                 || textChange * (newAfter - after) < 0
                 && abs(newAfter - after) <= min(abs(textChange), MessageRowLayoutMetrics.avatarDiameter)
+                && Self.sizesAfterText(old.layout) == Self.sizesAfterText(layout)
             else { return nil }
             after = min(after, newAfter)
             top = min(top, oldText.minY, newText.minY)
@@ -96,6 +97,13 @@ extension NativeTimelineCanvasView {
             identifier: identifier, top: top, oldHeight: startHeight,
             newHeight: newHeight, picture: picture
         )
+    }
+
+    /// The sizes of what a row draws after its text, which an edit that
+    /// only changes the text leaves as they were.
+    private static func sizesAfterText(_ layout: NativeTimelineRowLayout) -> [CGSize] {
+        (layout.embedFrames + layout.attachmentRegions.map(\.frame) + layout.componentFrames
+            + layout.stickerFrames + layout.reactionRegions.map(\.frame)).map(\.size)
     }
 
     /// How tall the band's text is drawn now: its target less the part of
