@@ -21,7 +21,10 @@ public extension DiscordRESTProvider {
     /// Counts a launch in the application frecency the shelf's Recents read,
     /// as the official client does when an Activity opens.
     func recordEmbeddedActivityLaunch(_ applicationID: ApplicationID) async throws {
-        let current = try await frecencySettingsProto()
+        let fetched = try await frecencySettingsProto()
+        // Read and update the cache without suspending, like sticker uses, so
+        // a launch overlapping an earlier save still counts.
+        let current = cachedFrecencySettingsProto ?? fetched
         var history = DiscordSettingsProto.frecencyHistory(from: current, field: DiscordSettingsProto.applicationFrecencyField)
             ?? DiscordFrecencyHistory()
         let key = applicationID.description
@@ -33,9 +36,11 @@ public extension DiscordRESTProvider {
         } else {
             history.entries.append(DiscordFrecencyEntry(key: key, totalUses: 1, recentUses: [now]))
         }
-        _ = try await persistFrecencySettingsPatch(DiscordSettingsProto.frecencyPatch(
+        let patch = DiscordSettingsProto.frecencyPatch(
             history, field: DiscordSettingsProto.applicationFrecencyField, limit: 100, preserving: current
-        ))
+        )
+        cachedFrecencySettingsProto = DiscordSettingsProto.mergingPartialFrecencySettings(patch, into: current)
+        _ = try await persistFrecencySettingsPatch(patch)
     }
 
     /// The Gateway session that owns this account's Activity participation.
