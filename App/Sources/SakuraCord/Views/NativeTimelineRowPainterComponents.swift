@@ -1061,7 +1061,10 @@ extension NativeTimelineRowPainter {
             let alphas = DiscordComponentButtonAppearance.secondaryFillAlphas(isDark: isDark)
             let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
             fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
-            border = discordGrey.withAlphaComponent(DiscordComponentButtonAppearance.secondaryBorderAlpha(isDark: isDark))
+            border = SakuraCordThemeStore.shared.committedTheme.discordTinted(
+                discordGrey.withAlphaComponent(DiscordComponentButtonAppearance.secondaryBorderAlpha(isDark: isDark)),
+                isDark: isDark
+            )
             foreground = .labelColor
         }
 

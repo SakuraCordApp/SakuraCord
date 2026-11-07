@@ -23,16 +23,17 @@ enum DiscordRichMessageMetrics {
 
 /// Discord's card colours, shared by embeds and component containers,
 /// resolved from its design tokens for the midnight theme in dark mode, as
-/// the spoiler cover assumes, and the light theme otherwise.
-nonisolated enum DiscordEmbedPalette {
+/// the spoiler cover assumes, and the light theme otherwise, then tinted the
+/// way a gradient theme tints them.
+enum DiscordEmbedPalette {
     private static let grey: UInt32 = 0x97979F
 
     /// `--background-surface-high`.
-    static let cardFill = themed(0x0A0A0C, light: 0xFFFFFF)
+    static var cardFill: NSColor { themed(0x0A0A0C, light: 0xFFFFFF) }
     /// `--border-subtle`.
-    static let cardBorder = themed(grey, light: grey, alpha: 51 / 255, lightAlpha: 71 / 255)
+    static var cardBorder: NSColor { themed(grey, light: grey, alpha: 51 / 255, lightAlpha: 71 / 255) }
     /// `--border-normal`, the bar of an embed without a colour.
-    static let defaultAccent = themed(grey, light: grey, alpha: 61 / 255, lightAlpha: 102 / 255)
+    static var defaultAccent: NSColor { themed(grey, light: grey, alpha: 61 / 255, lightAlpha: 102 / 255) }
 
     private static func themed(
         _ midnight: UInt32, light: UInt32, alpha: CGFloat = 1, lightAlpha: CGFloat = 1
@@ -47,8 +48,10 @@ nonisolated enum DiscordEmbedPalette {
         }
         let midnightColor = color(midnight, alpha)
         let lightColor = color(light, lightAlpha)
+        let theme = SakuraCordThemeStore.shared.committedTheme
         return NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? midnightColor : lightColor
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return theme.discordTinted(isDark ? midnightColor : lightColor, isDark: isDark)
         }
     }
 }
