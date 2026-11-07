@@ -1166,10 +1166,7 @@ extension NativeTimelineCanvasView {
             for: row.message
         )
         guard interactionMode.allowsMessageContextMenu else { return nil }
-        let localPoint = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let localPoint = rowLocalPoint(point, at: index)
         if let menu = userContextMenu(for: row, index: index, localPoint: localPoint) {
             return menu
         }

@@ -99,7 +99,7 @@ extension NativeTimelineCanvasView {
     /// an upload's ring or a hovered code block's copy button. They keep
     /// their final places, so the row moves as one piece instead of parting
     /// from them.
-    private func hostsLiveViews(at index: Int) -> Bool {
+    func hostsLiveViews(at index: Int) -> Bool {
         let identifier = items[index].identifier
         let messageID = items[index].messageID
         return inlinePlayers.keys.contains { $0.row == identifier }
@@ -111,6 +111,22 @@ extension NativeTimelineCanvasView {
             || [voiceMessageOverlay, voiceMessageHoverOverlay].contains { overlay in
                 overlay.map { overlay in layouts[index].audioPlayers.contains { $0.playbackID == overlay.region.playbackID } } ?? false
             }
+    }
+
+    /// Where a point in the timeline falls in a row's layout. Below a
+    /// gliding band, what follows the text is drawn where the glide has it,
+    /// and the old lines still fading out stand for the end of the text.
+    func rowLocalPoint(_ point: CGPoint, at index: Int) -> CGPoint {
+        var local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        if let band = editedTextBands[items[index].identifier] {
+            let shown = shownHeight(of: band, at: index)
+            if local.y >= band.top + shown {
+                local.y += band.newHeight - shown
+            } else if local.y >= band.top + band.newHeight {
+                local.y = band.top + band.newHeight - 1
+            }
+        }
+        return local
     }
 
     /// How tall the band's text is drawn now: its target less the part of

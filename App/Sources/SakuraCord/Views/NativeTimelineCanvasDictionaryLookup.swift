@@ -40,7 +40,7 @@ extension NativeTimelineCanvasView {
         else {
             return nil
         }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        let local = rowLocalPoint(point, at: index)
         for text in selectableTextRegions(for: items[index], layout: layouts[index]) {
             guard let hit = NativeTimelineTextHitTester.hit(
                 value: text.value,

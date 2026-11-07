@@ -820,7 +820,7 @@ extension NativeTimelineCanvasView {
         guard WindowModalCoordinator.allowsInput(for: self),
               let index = rowIndex(at: point.y), layouts.indices.contains(index)
         else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        let local = rowLocalPoint(point, at: index)
         let layout = layouts[index]
         guard let card = layout.attachmentRegions.first(where: { $0.attachment.mediaKind == .audio && $0.frame.contains(local) })
         else { return nil }

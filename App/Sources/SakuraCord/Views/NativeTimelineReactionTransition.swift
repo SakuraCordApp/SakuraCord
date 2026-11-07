@@ -584,13 +584,19 @@ extension NativeTimelineCanvasView {
         let fadeFrame = departedRunFrame
         let runningMotionIDs = Set(reactionRowMotions.map(\.id))
         let bandCount = editedTextBands.count
-        editedTextBands = editedTextBands.filter { runningMotionIDs.contains($0.value.motionID) }
+        // A view the row gains over its content mid-glide, such as a hovered
+        // audio player, sits at its final place: the row joins it there.
+        editedTextBands = editedTextBands.filter { identifier, band in
+            runningMotionIDs.contains(band.motionID)
+                && rowIndex(forIdentifier: identifier).map { !hostsLiveViews(at: $0) } == true
+        }
+        let endsBands = editedTextBands.count != bandCount
         departedRuns = departedRuns.compactMapValues { $0.advanced(to: now) }
         // Frames that move no row by a whole pixel redraw only the chips; the
         // last one also hands hover back to the rows where they landed.
         let moved = refreshReactionMotionGeometry(at: now)
-        let redrawsRows = hadMotion && (moved || reactionRowMotions.isEmpty)
-        var reconcilesMedia = editedTextBands.count != bandCount
+        let redrawsRows = hadMotion && (moved || endsBands || reactionRowMotions.isEmpty)
+        var reconcilesMedia = endsBands
         for (identifier, transition) in reactionTransitions {
             guard let index = rowIndex(forIdentifier: identifier, hint: transition.rowIndex) else {
                 endReactionTransition(identifier)

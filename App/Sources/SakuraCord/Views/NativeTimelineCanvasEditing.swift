@@ -691,10 +691,7 @@ extension NativeTimelineCanvasView {
               itemIdentifier == nil
                   || items[index].identifier == itemIdentifier
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let local = rowLocalPoint(point, at: index)
         for selectable in selectableTextRegions(
             for: items[index],
             layout: layouts[index]

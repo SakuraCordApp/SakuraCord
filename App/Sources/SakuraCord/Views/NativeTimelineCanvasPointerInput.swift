@@ -501,7 +501,7 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               let frame = layouts[index].forwardedSourceRegion?.frame
         else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        let local = rowLocalPoint(point, at: index)
         return frame.contains(local) ? items[index].messageID : nil
     }
     private func footerActionPointerHit(at point: CGPoint) -> NativeTimelineFooterActionTarget? {
@@ -509,7 +509,7 @@ extension NativeTimelineCanvasView {
               items.indices.contains(index),
               layouts.indices.contains(index)
         else { return nil }
-        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
+        let local = rowLocalPoint(point, at: index)
         if case let .suppressedMessages(group) = items[index] {
             guard layouts[index].suppressedHeader?.toggleFrame.contains(local) == true else { return nil }
             return .init(messageID: group.id, kind: .suppressedToggle)
@@ -684,10 +684,7 @@ extension NativeTimelineCanvasView {
         else { return }
         let item = items[index]
         let layout = layouts[index]
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let local = rowLocalPoint(point, at: index)
         if case let .suppressedMessages(group) = item {
             if layout.suppressedHeader?.toggleFrame.contains(local) == true {
                 toggleSuppressedGroup(group)
@@ -1100,10 +1097,7 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index)
         else { return nil }
         guard case .message = items[index] else { return index }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let local = rowLocalPoint(point, at: index)
         guard NativeTimelineHoverHitTesting.contains(
             local,
             in: layouts[index].highlightFrame
@@ -1327,10 +1321,7 @@ extension NativeTimelineCanvasView {
               !row.message.type.hasGeneratedContent,
               let authorFrame = layouts[index].authorFrame
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let local = rowLocalPoint(point, at: index)
         return authorFrame.contains(local) ? row.message.id : nil
     }
 
@@ -1342,10 +1333,7 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               items[index].textOwnerID != nil
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let local = rowLocalPoint(point, at: index)
         guard let hit = textPointerHit(
             in: layouts[index],
             point: local
@@ -1366,10 +1354,7 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               items[index].textOwnerID != nil
         else { return nil }
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let local = rowLocalPoint(point, at: index)
         guard let hit = textPointerHit(
             in: layouts[index],
             point: local
@@ -1493,10 +1478,7 @@ extension NativeTimelineCanvasView {
         else { return nil }
         let item = items[index]
         let layout = layouts[index]
-        let local = CGPoint(
-            x: point.x,
-            y: point.y - displayedRowOrigin(at: index)
-        )
+        let local = rowLocalPoint(point, at: index)
         if case let .suppressedMessages(group) = item {
             guard layout.suppressedHeader?.toggleFrame.contains(local) == true else { return nil }
             return .suppressedMessages(group.id)
