@@ -34,14 +34,17 @@ extension NativeTimelineCanvasView {
         let layout = layouts[index]
         guard old.editor == nil, let text = old.layout.contentFrame ?? layout.contentFrame else { return nil }
         let after = old.layout.contentFrame.map { old.layout.height - $0.maxY } ?? layout.height - text.maxY
+        // Text that starts with a block, such as code, starts lower.
+        var top = text.minY
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
-            guard abs(oldText.minY - newText.minY) < 0.5, abs(layout.height - newText.maxY - after) < 0.5 else { return nil }
+            guard abs(layout.height - newText.maxY - after) < 0.5 else { return nil }
+            top = min(oldText.minY, newText.minY)
         }
         // Text on one side only brings the gap before what follows it,
         // which belongs to its space.
-        let gap = min(0, old.layout.height - text.minY - after, layout.height - text.minY - after)
-        let oldHeight = old.layout.height - text.minY - after - gap
-        let newHeight = layout.height - text.minY - after - gap
+        let gap = min(0, old.layout.height - top - after, layout.height - top - after)
+        let oldHeight = old.layout.height - top - after - gap
+        let newHeight = layout.height - top - after - gap
         guard after + gap >= 0, abs(oldHeight - newHeight) >= 0.5,
               rowFrame(at: index).intersects(visibleRect)
         else { return nil }
@@ -66,7 +69,7 @@ extension NativeTimelineCanvasView {
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
                 NativeTimelineRowPainter.draw(
                     item: old.item, layout: old.layout,
-                    in: CGRect(x: 0, y: -text.minY, width: width, height: old.layout.height), model: model,
+                    in: CGRect(x: 0, y: -top, width: width, height: old.layout.height), model: model,
                     isHovered: false, revealedTextSpoilerState: old.revealedTextSpoilerState,
                     spoilerRevealStore: spoilerRevealStore, pollPresentation: old.pollPresentation
                 )
@@ -75,7 +78,7 @@ extension NativeTimelineCanvasView {
             }
         }
         return .init(
-            identifier: identifier, top: text.minY, oldHeight: startHeight,
+            identifier: identifier, top: top, oldHeight: startHeight,
             newHeight: newHeight, picture: picture
         )
     }
