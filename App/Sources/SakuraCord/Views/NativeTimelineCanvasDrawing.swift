@@ -82,7 +82,7 @@ extension NativeTimelineCanvasView {
         }
         // Rows laid out at another width no longer match the chips' frames
         // or the fading pictures.
-        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty || !rowFades.isEmpty || !departedRuns.isEmpty,
+        if !reactionTransitions.isEmpty || !reactionRowMotions.isEmpty || !departedRuns.isEmpty,
            abs(reactionTransitionWidth - max(1, viewportWidth)) >= 0.5 {
             finishReactionTransitions()
         }
@@ -883,26 +883,11 @@ extension NativeTimelineCanvasView {
         let paintFrame = clipMaxY == nil ? rowFrame : CGRect(
             x: rowFrame.minX, y: rowFrame.minY, width: rowFrame.width, height: layouts[index].height
         )
-        // A shrinking row is taller on screen than its new picture, though
-        // not than the old one fading out over it.
-        let fade = rowFades.isEmpty ? nil : rowFades.first { $0.identifier == item.identifier }
-        let picturesFrame = fade.map { paintFrame.union(CGRect(origin: rowFrame.origin, size: $0.image.size)) }
-        guard (picturesFrame ?? paintFrame).intersects(dirtyRect) else { return }
-        if let fade {
-            drawCrossfadingRow(fade, rowFrame: rowFrame) {
-                // Only the old picture may reach a shrinking row's lower part.
-                guard paintFrame.intersects(dirtyRect) else { return }
-                drawRowPicture(
-                    item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
-                    preparedMediaKeys: preparedMediaKeys, revealState: revealState
-                )
-            }
-        } else {
-            drawRowPicture(
-                item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
-                preparedMediaKeys: preparedMediaKeys, revealState: revealState
-            )
-        }
+        guard paintFrame.intersects(dirtyRect) else { return }
+        drawRowPicture(
+            item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
+            preparedMediaKeys: preparedMediaKeys, revealState: revealState
+        )
         if item.messageID == editingMessageID, let editingRowScrollSnapshot {
             editingRowScrollSnapshot.draw(
                 in: editingOverlayFrame(at: index), from: .zero, operation: .sourceOver,

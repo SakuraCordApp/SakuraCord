@@ -257,8 +257,9 @@ extension NativeTimelineCanvasView {
 
     /// Starts the motion of the update just applied, after the coordinator
     /// has settled the scroll position. Rows whose only change is their
-    /// reactions animate their chips; an edited message crossfades into its
-    /// new content and a deleted one fades in the gap its neighbours close.
+    /// reactions animate their chips; an edited message shows its new
+    /// content at once while its neighbours glide to it, and a deleted one
+    /// fades in the gap they close.
     /// Any other change near the viewport, such as a new message, applies
     /// instantly as before.
     func beginReactionTransitions() {
@@ -320,7 +321,7 @@ extension NativeTimelineCanvasView {
             redrawForRowMotion()
         }
         // A deleted row's piece belongs to the motion closing its gap and
-        // shares its timing; an edit's crossfade stands on its own.
+        // shares its timing.
         placeDepartedPieces(
             update.departedPieces.filter { update.plan.describesUpdate || !$0.isNew }.map { entry in
                 var piece = entry.piece
@@ -331,15 +332,7 @@ extension NativeTimelineCanvasView {
                     (handOver.run?.pieces ?? []).map { (handOver.anchor, $0) }
                 }
         )
-        // A newer crossfade takes over a running one, whose row now shows
-        // the content the newer one starts from.
-        rowFades.removeAll { running in update.crossfades.contains { $0.identifier == running.identifier } }
-        rowFades.append(contentsOf: update.crossfades.map { fade in
-            var fade = fade
-            fade.timing = timing
-            return fade
-        })
-        guard update.startedChips || !rowFades.isEmpty || !departedRuns.isEmpty || update.plan.motion != nil
+        guard update.startedChips || !departedRuns.isEmpty || update.plan.motion != nil
         else { return }
         reactionTransitionWidth = bounds.width
         if reactionTicker.displayLink == nil {
@@ -375,6 +368,7 @@ extension NativeTimelineCanvasView {
         }
         let row = NativeTimelineRowMotionPlan.FollowedRow(oldIndex: old.index, index: index, identifier: identifier)
         let delta = layouts[index].height - old.layout.height
+        let previous = update.plan.previous
         update.plan.follow(row, rowShift: old.top - (originY + rowOrigins[index]), delta: delta)
         // A saved edit's editor gives way to the row as an edit's content does.
         switch old.editor == nil ? items[index].change(from: old.item) : .content {
@@ -388,14 +382,14 @@ extension NativeTimelineCanvasView {
             }
         case .regroup where !update.departedOldIndices.isDisjoint(with: [old.index - 1, old.index + 1]),
              .content:
-            update.plan.addStep(for: row, delta: delta)
-            // Live animated media would sit at its new place over the fade.
-            if rowFrame(at: index).intersects(visibleRect),
-               animatedMediaRows[identifier] == nil || animatedMediaStaysPut(identifier, from: old.layout, to: layouts[index]),
-               let picture = rowFadeImage(old, width: baseline.width) {
-                // A crossfade still running starts the new one from the blend it shows.
-                let image = rowFades.first { $0.identifier == identifier }.flatMap { shownCrossfade($0, over: picture, at: now) }
-                update.crossfades.append(.init(identifier: identifier, rowIndex: index, image: image ?? picture))
+            // The new content lands at once against the edge of the row
+            // that stays put: with the rows below it held, as at the newest
+            // message, the step closes above it, on the row before.
+            if let previous, previous.index == index - 1, previous.oldIndex == old.index - 1,
+               departedRuns[previous.identifier] == nil, update.plan.holdsRowsBelow(changingBy: delta) {
+                update.plan.addStep(for: previous, delta: delta)
+            } else {
+                update.plan.addStep(for: row, delta: delta)
             }
             // A motion still running from an earlier change keeps going, so
             // this one starts from the height the row shows now.
@@ -474,16 +468,13 @@ extension NativeTimelineCanvasView {
         return removeReactionMotions { $0.steps.contains { $0.identifier == identifier } }
     }
 
-    /// Removes motions, and the fades drawn against their rows: their gaps
-    /// close at once, so the deleted rows fading in them go too. True when
-    /// any was removed.
+    /// Removes motions, and the deleted rows fading in their gaps: the gaps
+    /// close at once. True when any was removed.
     @discardableResult
     private func removeReactionMotions(where shouldRemove: (NativeTimelineReactionRowMotion) -> Bool) -> Bool {
         let removed = reactionRowMotions.filter(shouldRemove)
         guard !removed.isEmpty else { return false }
         reactionRowMotions.removeAll(where: shouldRemove)
-        let anchors = Set(removed.flatMap { $0.steps.map(\.identifier) })
-        rowFades.removeAll { anchors.contains($0.identifier) }
         let removedIDs = Set(removed.map(\.id))
         departedRuns = departedRuns.compactMapValues { $0.removingPieces { removedIDs.contains($0.motionID) } }
         return true
@@ -581,12 +572,8 @@ extension NativeTimelineCanvasView {
             reactionRowMotions[index].startUptime = now
         }
         reactionRowMotions.removeAll { $0.progress(at: now) >= 1 }
-        refreshRowFadeIndices()
-        let fadeFrame = rowFadeFrame
-        for index in rowFades.indices where rowFades[index].startUptime == nil {
-            rowFades[index].startUptime = now
-        }
-        rowFades.removeAll { $0.remaining(at: now) <= 0 }
+        refreshDepartedRunIndices()
+        let fadeFrame = departedRunFrame
         departedRuns = departedRuns.compactMapValues { $0.advanced(to: now) }
         // Frames that move no row by a whole pixel redraw only the chips; the
         // last one also hands hover back to the rows where they landed.
@@ -607,9 +594,9 @@ extension NativeTimelineCanvasView {
             }
         }
         if redrawsRows { redrawForRowMotion(invalidating: reactionMotionFrame) }
-        if !fadeFrame.isNull { setNeedsDisplay(fadeFrame.union(rowFadeFrame)) }
+        if !fadeFrame.isNull { setNeedsDisplay(fadeFrame.union(departedRunFrame)) }
         if reconcilesMedia { reconcileAnimatedMediaOverlays(reduceMotion: false) }
-        if reactionTransitions.isEmpty, reactionRowMotions.isEmpty, rowFades.isEmpty, departedRuns.isEmpty {
+        if reactionTransitions.isEmpty, reactionRowMotions.isEmpty, departedRuns.isEmpty {
             reactionTicker.stop()
         }
     }
@@ -640,9 +627,6 @@ extension NativeTimelineCanvasView {
         for index in reactionRowMotions.indices where reactionRowMotions[index].timing == .glide {
             reactionRowMotions[index].startUptime? += stall
         }
-        for index in rowFades.indices where rowFades[index].timing == .glide {
-            rowFades[index].startUptime? += stall
-        }
         for run in departedRuns.values.indices {
             let pieces = departedRuns.values[run].pieces
             for index in pieces.indices where pieces[index].timing == .glide {
@@ -664,9 +648,8 @@ extension NativeTimelineCanvasView {
         pendingReactionBaseline = nil
         reactionTicker.stop()
         let hadMotion = !reactionRowMotions.isEmpty
-        let hadChips = !reactionTransitions.isEmpty || !rowFades.isEmpty || !departedRuns.isEmpty
+        let hadChips = !reactionTransitions.isEmpty || !departedRuns.isEmpty
         reactionRowMotions.removeAll()
-        rowFades.removeAll()
         departedRuns.removeAll()
         handOvers.removeAll()
         for identifier in reactionTransitions.keys { endReactionTransition(identifier) }

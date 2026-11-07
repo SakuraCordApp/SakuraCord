@@ -1,23 +1,5 @@
 import AppKit
 
-/// An edited row's previous picture, fading out under its new content
-/// while the motion its update started runs.
-struct NativeTimelineRowFade {
-    let identifier: NativeMessageTimelineItem.Identifier
-    /// Where the row was last found, so finding it again is cheap.
-    var rowIndex: Int?
-    let image: NSImage
-    /// Set on the first frame, as for a row motion.
-    var startUptime: TimeInterval?
-    /// The timing of the motion it is drawn with.
-    var timing = NativeTimelineRowMotionTiming.chips
-
-    /// How much of the old picture still shows, from 1 down to 0.
-    func remaining(at uptime: TimeInterval) -> CGFloat {
-        1 - timing.progress(startedAt: startUptime, at: uptime)
-    }
-}
-
 /// The deleted rows below one row, in their order, each fading and giving
 /// up its height as the step its deletion added to that row runs. Rows
 /// deleted later beside the same row join the run, so every one of them
@@ -76,8 +58,13 @@ extension NativeTimelineCanvasView {
         }
         let item = row.item
         let layout = row.layout
+        // A tall row's picture is drawn at a lower scale to stay within its
+        // share of the bitmap budget, since it only shows while it fades. A
+        // row that would need less than 1x closes its gap blank.
+        let pointCost = Self.estimatedBitmapCost(width: width, height: layout.height, scale: 1)
+        let scale = min(rowBitmapScale, (CGFloat(Self.bitmapCostLimit / 4) / CGFloat(pointCost)).squareRoot())
+        guard scale >= 1 else { return nil }
         let size = NSSize(width: width, height: layout.height)
-        guard let scale = fadePictureScale(for: size) else { return nil }
         return NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
             NativeTimelineRowPainter.draw(
                 item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
@@ -88,71 +75,6 @@ extension NativeTimelineCanvasView {
                 editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
-    }
-
-    /// The scale for a fading picture of `size`: a tall row's is drawn
-    /// lower to stay within its share of the bitmap budget, since it only
-    /// shows while it fades. Nil when that would be below 1x, and the row
-    /// changes without one.
-    private func fadePictureScale(for size: NSSize) -> CGFloat? {
-        let pointCost = Self.estimatedBitmapCost(width: size.width, height: size.height, scale: 1)
-        let scale = min(rowBitmapScale, (CGFloat(Self.bitmapCostLimit / 4) / CGFloat(pointCost)).squareRoot())
-        return scale >= 1 ? scale : nil
-    }
-
-    /// Whether a row's only live media is its author's avatar, which stays
-    /// where it was when the message changes below it.
-    func animatedMediaStaysPut(
-        _ identifier: NativeMessageTimelineItem.Identifier,
-        from old: NativeTimelineRowLayout,
-        to new: NativeTimelineRowLayout
-    ) -> Bool {
-        guard old.avatarFrame == new.avatarFrame else { return false }
-        let overlays = animatedMediaOverlays.keys.filter { $0.row == identifier }
-        return overlays.allSatisfy { $0.role == .authorAvatar || $0.role == .authorAvatarDecoration }
-            && Set(overlays.map(\.media)) == animatedMediaRows[identifier]
-    }
-
-    /// What a row shows partway through `running`: its old picture fading
-    /// out under `picture`, the row's content before this update. Drawn
-    /// once into a bitmap, so a run of interrupting edits keeps no chain
-    /// of earlier pictures.
-    func shownCrossfade(_ running: NativeTimelineRowFade, over picture: NSImage, at uptime: TimeInterval) -> NSImage? {
-        let remaining = running.remaining(at: uptime)
-        let size = NSSize(
-            width: max(running.image.size.width, picture.size.width),
-            height: max(running.image.size.height, picture.size.height)
-        )
-        guard let scale = fadePictureScale(for: size) else { return nil }
-        return NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
-            running.image.draw(
-                in: CGRect(origin: .zero, size: running.image.size), from: .zero, operation: .sourceOver,
-                fraction: remaining, respectFlipped: true, hints: nil
-            )
-            picture.draw(
-                in: CGRect(origin: .zero, size: picture.size), from: .zero, operation: .sourceOver,
-                fraction: 1 - remaining, respectFlipped: true, hints: nil
-            )
-        }
-    }
-
-    /// Draws a replaced row's new content fading in over the old picture.
-    func drawCrossfadingRow(_ fade: NativeTimelineRowFade, rowFrame: CGRect, drawRow: () -> Void) {
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            drawRow()
-            return
-        }
-        let remaining = fade.remaining(at: rowMotionUptime)
-        fade.image.draw(
-            in: CGRect(origin: rowFrame.origin, size: fade.image.size), from: .zero, operation: .sourceOver,
-            fraction: remaining, respectFlipped: true, hints: nil
-        )
-        context.saveGState()
-        context.setAlpha(1 - remaining)
-        context.beginTransparencyLayer(auxiliaryInfo: nil)
-        drawRow()
-        context.endTransparencyLayer()
-        context.restoreGState()
     }
 
     /// How much of a row's displayed height is the gap of the deleted run
@@ -186,14 +108,9 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// Finds the rows the running fades are drawn against again, from
-    /// where they were, and drops the fades of rows that are gone.
-    func refreshRowFadeIndices() {
-        rowFades = rowFades.compactMap { fade in
-            var fade = fade
-            fade.rowIndex = rowIndex(forIdentifier: fade.identifier, hint: fade.rowIndex)
-            return fade.rowIndex == nil ? nil : fade
-        }
+    /// Finds the rows the deleted rows fade after again, from where they
+    /// were, and drops the runs of rows that are gone.
+    func refreshDepartedRunIndices() {
         departedRuns = departedRuns.reduce(into: [:]) { runs, entry in
             var run = entry.value
             run.anchorIndex = rowIndex(forIdentifier: entry.key, hint: run.anchorIndex)
@@ -201,14 +118,10 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    /// The region every running fade draws in, for the next frame.
-    var rowFadeFrame: CGRect {
-        let crossfades = rowFades.reduce(CGRect.null) { frame, fade in
-            guard let index = rowIndex(forIdentifier: fade.identifier, hint: fade.rowIndex) else { return frame }
-            return frame.union(rowFrame(at: index)).union(CGRect(origin: rowFrame(at: index).origin, size: fade.image.size))
-        }
+    /// The region the deleted rows fade in, for the next frame.
+    var departedRunFrame: CGRect {
         let now = rowMotionUptime
-        return departedRuns.reduce(crossfades) { frame, entry in
+        return departedRuns.reduce(CGRect.null) { frame, entry in
             guard let index = rowIndex(forIdentifier: entry.key, hint: entry.value.anchorIndex) else { return frame }
             return frame.union(CGRect(
                 x: 0, y: displayedRowOrigin(at: index), width: bounds.width,

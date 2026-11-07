@@ -315,7 +315,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionMotionShift: CGFloat = 0
     var reactionMotionSteps: [(index: Int, cumulative: CGFloat)] = []
     var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
-    var rowFades: [NativeTimelineRowFade] = []
     var departedRuns: [NativeMessageTimelineItem.Identifier: NativeTimelineDepartedRun] = [:]
     /// What a row deleted by the update landing now was still showing:
     /// the run closing below it and the part of its own height change

@@ -6,10 +6,10 @@ enum NativeTimelineRowChange {
     /// Only its reactions changed, so its chips animate.
     case reactions
     /// Its message changed in place, as an edit or new embeds do. The row
-    /// crossfades into its new content.
+    /// shows its new content at once while its height glides.
     case content
     /// Only its grouping with its neighbours changed. Next to a deleted
-    /// row it crossfades like an edit; elsewhere, as when older history
+    /// row it glides like an edit; elsewhere, as when older history
     /// arrives above it, it applies instantly.
     case regroup
     /// Anything else, which applies instantly.
@@ -84,6 +84,15 @@ struct NativeTimelineRowMotionPlan {
         expectedShift = rowShift - delta
     }
 
+    /// Whether a row changing height by `delta` keeps the rows below it
+    /// nearer their places than its own top, as when the newest message
+    /// is held at the bottom.
+    func holdsRowsBelow(changingBy delta: CGFloat) -> Bool {
+        guard let shift else { return false }
+        let top = steps.reduce(shift) { $0 - $1.delta }
+        return abs(top - delta) < abs(top)
+    }
+
     mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false) {
         guard abs(delta) >= 0.5 else { return }
         steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap))
@@ -103,8 +112,8 @@ struct NativeTimelineRowMotionPlan {
     }
 }
 
-/// What one update starts: the row motion, the fades that go with it, and
-/// the chip transitions already installed.
+/// What one update starts: the row motion, the deleted rows fading with it,
+/// and the chip transitions already installed.
 struct NativeTimelineUpdateMotion {
     typealias Identifier = NativeMessageTimelineItem.Identifier
 
@@ -116,7 +125,6 @@ struct NativeTimelineUpdateMotion {
     /// The motion this update starts, for the pieces that belong to it.
     let motionID: Int
     var plan = NativeTimelineRowMotionPlan()
-    var crossfades: [NativeTimelineRowFade] = []
     /// A piece joining the run below a row. A new one belongs to this
     /// update's motion; an inherited one keeps its own.
     struct DepartedPiece {
