@@ -1233,6 +1233,11 @@ extension NativeTimelineCanvasView {
         pressedPollTarget = nil
         hoveredPollTarget = nil
         textSelectionGesture = nil
+        if let press = voiceMessagePress {
+            voiceMessagePress = nil
+            // A scrub paused playback, which its release would resume.
+            if case .waveform = press.control { model?.voiceMessagePlayback.endScrub(press.region.playbackID) }
+        }
         updateCodeCopyControl()
         closeHoverTooltips()
         removeActionCapsule()
