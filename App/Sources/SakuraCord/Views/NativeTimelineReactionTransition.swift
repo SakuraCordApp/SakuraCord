@@ -93,6 +93,8 @@ struct NativeTimelineReactionRowMotion {
         /// A step closing the gap of deleted rows below its row, as
         /// opposed to one of the row's own height.
         var closesGap = false
+        /// A step a row takes for an edit below it.
+        var isLent = false
     }
 
     /// Tells the pieces of departed runs which motion they close with.
@@ -368,6 +370,12 @@ extension NativeTimelineCanvasView {
         }
         let row = NativeTimelineRowMotionPlan.FollowedRow(oldIndex: old.index, index: index, identifier: identifier)
         let delta = layouts[index].height - old.layout.height
+        // A row lending height to an edit below it that changes height
+        // itself could show less than none: that motion lands first.
+        if abs(delta) >= 0.5, reactionRowMotions.contains(where: { $0.steps.contains { $0.identifier == identifier && $0.isLent } }) {
+            update.droppedMotion = dropReactionMotion(of: identifier) || update.droppedMotion
+            update.plan.invalidate()
+        }
         update.plan.follow(row, rowShift: old.top - (originY + rowOrigins[index]), delta: delta)
         // A saved edit's editor gives way to the row as an edit's content does.
         switch old.editor == nil ? items[index].change(from: old.item) : .content {

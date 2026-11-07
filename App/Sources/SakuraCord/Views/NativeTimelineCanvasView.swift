@@ -256,7 +256,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     /// content-origin change can never leave the clip behind the rows.
     var disclosureRelativeClipMinY = -CGFloat.greatestFiniteMagnitude
     var disclosureRelativeClipMaxY = CGFloat.greatestFiniteMagnitude
-    var disclosureMaskedViews: [NSView] = []
+    var clippedSubviews: [NSView] = []
     /// A header whose viewport position the next structural update keeps.
     var pendingDisclosureScrollAnchor: NativeTimelineRowDisclosure.Key?
     let disclosureTicker = NativeTimelineDisplayLinkTicker()

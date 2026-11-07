@@ -128,13 +128,13 @@ struct NativeTimelineRowMotionPlan {
             next = candidate
         }
         guard abs(left) < 0.5 else { return false }
-        for (candidate, piece) in pieces { addStep(for: candidate, delta: piece) }
+        for (candidate, piece) in pieces { addStep(for: candidate, delta: piece, isLent: true) }
         return true
     }
 
-    mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false) {
+    mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false, isLent: Bool = false) {
         guard abs(delta) >= 0.5 else { return }
-        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap))
+        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap, isLent: isLent))
         stepTotals[row.index, default: 0] += delta
     }
 
