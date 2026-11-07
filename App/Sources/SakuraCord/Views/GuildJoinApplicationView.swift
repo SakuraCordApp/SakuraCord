@@ -183,6 +183,7 @@ struct GuildJoinRequestPage: View {
                     HStack(spacing: InterfaceScale.metric(8)) {
                         ModalGlassButton(symbol: store.showsAnswers ? "eye.slash" : "eye",
                                          label: store.showsAnswers ? "Hide Application" : "View Application",
+                                         isLoading: store.showsAnswers && store.isWorking && !answersLoaded,
                                          height: 32) { model.toggleGuildJoinRequestAnswers(guildID) }
                         if let channelID = request?.interviewChannelID {
                             ModalGlassButton(symbol: "bubble.left.and.bubble.right", label: "Open Interview", height: 32) {
@@ -224,17 +225,13 @@ struct GuildJoinRequestPage: View {
     private var answersLoaded: Bool { request.flatMap { store.answers[$0.id] } != nil }
 
     @ViewBuilder private var answers: some View {
-        Group {
-            if let fields = request.flatMap({ store.answers[$0.id] }) {
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(16)) {
-                    ForEach(fields.indices, id: \.self) { GuildJoinApplicationAnswerRow(field: fields[$0]) }
-                }
-                .frame(maxWidth: InterfaceScale.metric(440), alignment: .leading)
-            } else if store.isWorking {
-                ProgressView().controlSize(.small)
+        if let fields = request.flatMap({ store.answers[$0.id] }) {
+            VStack(alignment: .leading, spacing: InterfaceScale.metric(16)) {
+                ForEach(fields.indices, id: \.self) { GuildJoinApplicationAnswerRow(field: fields[$0]) }
             }
+            .frame(maxWidth: InterfaceScale.metric(440), alignment: .leading)
+            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
 }
 
