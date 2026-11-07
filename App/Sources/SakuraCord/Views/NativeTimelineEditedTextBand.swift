@@ -33,12 +33,26 @@ extension NativeTimelineCanvasView {
     ) -> NativeTimelineEditedTextBand? {
         let layout = layouts[index]
         guard old.editor == nil, let text = old.layout.contentFrame ?? layout.contentFrame else { return nil }
-        let after = old.layout.contentFrame.map { old.layout.height - $0.maxY } ?? layout.height - text.maxY
-        // Text that starts with a block, such as code, starts lower.
-        var top = text.minY
+        var after = old.layout.contentFrame.map { old.layout.height - $0.maxY } ?? layout.height - text.maxY
+        // A running glide keeps its origin; text that starts with a block,
+        // such as code, starts lower.
+        let identifier = items[index].identifier
+        let running = editedTextBands[identifier]
+        var top = min(text.minY, running?.top ?? text.minY)
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
-            guard abs(layout.height - newText.maxY - after) < 0.5 else { return nil }
-            top = min(oldText.minY, newText.minY)
+            // A short row is padded to its avatar's height below everything
+            // else; the padding its text grows into belongs to its space.
+            let newAfter = layout.height - newText.maxY
+            guard abs(newAfter - after) < 0.5
+                || abs(newAfter - after) <= MessageRowLayoutMetrics.avatarDiameter
+                && old.layout.embedFrames.count == layout.embedFrames.count
+                && old.layout.attachmentRegions.count == layout.attachmentRegions.count
+                && old.layout.componentFrames.count == layout.componentFrames.count
+                && old.layout.stickerFrames.count == layout.stickerFrames.count
+                && old.layout.reactionRegions.isEmpty && layout.reactionRegions.isEmpty
+            else { return nil }
+            after = min(after, newAfter)
+            top = min(top, oldText.minY, newText.minY)
         }
         // Text on one side only brings the gap before what follows it,
         // which belongs to its space.
@@ -48,23 +62,26 @@ extension NativeTimelineCanvasView {
         guard after + gap >= 0, abs(oldHeight - newHeight) >= 0.5,
               rowFrame(at: index).intersects(visibleRect)
         else { return nil }
-        let identifier = items[index].identifier
-        // A glide this one interrupts starts it from what it shows.
-        let running = editedTextBands[identifier]
-        let startHeight = running.map { shownHeight(of: $0, at: index) } ?? oldHeight
+        // A glide this one interrupts starts it from what it shows, below
+        // its own origin.
+        let runningOffset = running.map { $0.top - top } ?? 0
+        let startHeight = running.map { shownHeight(of: $0, at: index) + runningOffset } ?? oldHeight
         let size = NSSize(width: width, height: startHeight)
         let picture = fadePictureScale(for: size).flatMap { scale in
             NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
                 guard let context = NSGraphicsContext.current?.cgContext else { return }
-                let progress = running.map { progress(of: $0, shown: startHeight) } ?? 1
+                let progress = running.map { progress(of: $0, shown: startHeight - runningOffset) } ?? 1
                 if let picture = running?.picture {
                     picture.draw(
-                        in: CGRect(origin: .zero, size: picture.size), from: .zero, operation: .sourceOver,
-                        fraction: 1 - progress, respectFlipped: true, hints: nil
+                        in: CGRect(origin: CGPoint(x: 0, y: runningOffset), size: picture.size), from: .zero,
+                        operation: .sourceOver, fraction: 1 - progress, respectFlipped: true, hints: nil
                     )
                 }
                 context.saveGState()
-                context.clip(to: CGRect(x: 0, y: 0, width: width, height: min(startHeight, running?.newHeight ?? startHeight)))
+                context.clip(to: CGRect(
+                    x: 0, y: runningOffset, width: width,
+                    height: min(startHeight, runningOffset + (running?.newHeight ?? startHeight)) - runningOffset
+                ))
                 context.setAlpha(progress)
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
                 NativeTimelineRowPainter.draw(
