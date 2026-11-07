@@ -216,7 +216,6 @@ extension NativeTimelineCanvasView {
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard tracksHover,
               !overlayBlocksInteractions,
-              editingMessageID == nil,
               event.trackingArea?.userInfo?["nativeTimelineTrackingKind"]
                 as? String == "row",
               let index = event.trackingArea?.userInfo?[
@@ -229,6 +228,7 @@ extension NativeTimelineCanvasView {
             setHoveredMention(nil)
             return
         }
+        guard !hoversEditingOverlay(at: point) else { return }
         setHoveredRow(index)
         setHoveredPollTarget(pollPointerHit(at: point)?.target)
         setHoveredCompactTimestampRow(
@@ -268,18 +268,14 @@ extension NativeTimelineCanvasView {
             return
         }
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
-        guard tracksHover,
-              !overlayBlocksInteractions,
-              editingMessageID == nil
-        else {
-            return
-        }
+        guard tracksHover, !overlayBlocksInteractions else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard !actionCapsuleContains(point) else {
             // The capsule covers the row's text, so its mentions stop being hovered.
             setHoveredMention(nil)
             return
         }
+        guard !hoversEditingOverlay(at: point) else { return }
         setHoveredPollTarget(pollPointerHit(at: point)?.target)
         updateVoiceMessageHover(at: point)
         synchronizeHoveredRow(at: point)
@@ -909,7 +905,7 @@ extension NativeTimelineCanvasView {
                         NativeTimelineMediaKey.media($0)
                     },
                     cornerRadius: InterfaceScale.metric(8),
-                    fillsFrame: false
+                    fillsFrame: embedRegion.mediaFillsFrame
                 )
             } else if let mediaURL = embedRegion.mediaURL {
                 NSWorkspace.shared.open(mediaURL)
@@ -1078,11 +1074,14 @@ extension NativeTimelineCanvasView {
             guard let self,
                   event.window === self.window,
                   !self.overlayBlocksInteractions,
-                  !self.sendTransitionBlocksInteractions,
-                  self.editingMessageID == nil
+                  !self.sendTransitionBlocksInteractions
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            guard let hit = self.reactionPointerHit(at: point) else {
+            // An inline editor's suggestions and its Cancel and Save can
+            // lie over reactions.
+            guard !self.editingOverlayContains(point),
+                  let hit = self.reactionPointerHit(at: point)
+            else {
                 return event
             }
             self.window?.makeFirstResponder(self)
@@ -1213,7 +1212,6 @@ extension NativeTimelineCanvasView {
             return
         }
         guard WindowModalCoordinator.allowsInput(for: self), !overlayBlocksInteractions, tracksHover,
-              editingMessageID == nil,
               window?.isKeyWindow == true
         else { return }
         let point = currentMouseLocationInCanvas()
@@ -1222,6 +1220,7 @@ extension NativeTimelineCanvasView {
             setHoveredMention(nil)
             return
         }
+        guard !hoversEditingOverlay(at: point) else { return }
         synchronizeHoveredRow(at: point)
         setHoveredPollTarget(visibleRect.contains(point) ? pollPointerHit(at: point)?.target : nil)
         updateVoiceMessageHover(at: visibleRect.contains(point) ? point : nil, measuresDuration: false)
@@ -1270,6 +1269,20 @@ extension NativeTimelineCanvasView {
             reactionPointerHit(at: point),
             mouseLocationInScreen: NSEvent.mouseLocation
         )
+    }
+
+    /// The editor and its suggestions cover the rows under them, so
+    /// pointing at them points at the edited row. True when they do.
+    private func hoversEditingOverlay(at point: CGPoint) -> Bool {
+        guard editingOverlayContains(point) else { return false }
+        clearPointerHoverTargets()
+        setHoveredRow(editingRowIndex)
+        return true
+    }
+
+    /// Whether the inline editor, its suggestions or its controls are under `point`.
+    func editingOverlayContains(_ point: CGPoint) -> Bool {
+        editingRowHost?.frame.contains(point) == true || editing.controlsHost?.frame.contains(point) == true
     }
 
     func actionCapsuleContains(_ point: CGPoint) -> Bool {

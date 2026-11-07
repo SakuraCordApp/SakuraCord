@@ -1,5 +1,19 @@
 import SakuraCordModels
 
+/// Resumes a benchmark run exactly once, from its last frame or its deadline.
+@MainActor
+final class ForumBenchmarkCompletion {
+    var continuation: CheckedContinuation<Void, Never>?
+    var deadline: Task<Void, Never>?
+
+    func finish() {
+        deadline?.cancel()
+        deadline = nil
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 #if DEBUG
 import AppKit
 import OSLog
@@ -106,20 +120,6 @@ struct ForumFrameTimingSampler {
     }
 }
 
-/// Resumes a benchmark run exactly once, from its last frame or its deadline.
-@MainActor
-private final class ForumBenchmarkCompletion {
-    var continuation: CheckedContinuation<Void, Never>?
-    var deadline: Task<Void, Never>?
-
-    func finish() {
-        deadline?.cancel()
-        deadline = nil
-        continuation?.resume()
-        continuation = nil
-    }
-}
-
 /// Offline forum benchmark: after the first page loads, scrolls the board at a
 /// steady speed on the display link, then writes frame timing and layout
 /// stability. The board registers its scroll view with `register(scrollView:)`.
@@ -152,6 +152,10 @@ enum ForumBoardBenchmark {
               let scrollView = await findScrollView()
         else {
             logger.error("ForumBenchmark: the forum did not load or has no scroll view")
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--offline-forum-gallery-resize") {
+            await resizeGallery(model: model, scrollView: scrollView)
             return
         }
         var result = Result(postsAtStart: model.forumPosts.count)
@@ -232,6 +236,83 @@ enum ForumBoardBenchmark {
         result.nominalScrollDistance = Double(scrollSpeed) * scrollDuration
         result.framesAtEndOfContent = framesAtEnd
         result.frames = sampler.summary(nominalInterval: nominalInterval, duration: duration)
+    }
+
+    private struct ResizeResult: Codable {
+        var window = ForumFrameTimingSampler.Summary()
+        var pane = ForumFrameTimingSampler.Summary()
+    }
+
+    /// Gallery mode while the window narrows by up to 700 points and widens
+    /// back twice, then while the sidebar hides and shows twice; both cross
+    /// column counts each way.
+    private static func resizeGallery(model: AppModel, scrollView: NSScrollView) async {
+        model.setForumLayout(.gallery)
+        try? await Task.sleep(for: .seconds(2))
+        guard let window = scrollView.window, let screen = window.screen else { return }
+        let original = window.frame
+        // Start from the screen's width, so narrowing crosses column counts.
+        let frame = screen.visibleFrame
+        window.setFrame(frame, display: true)
+        try? await Task.sleep(for: .seconds(1))
+        var result = ResizeResult()
+        result.window = await oscillate(on: scrollView, seconds: 8) { progress in
+            var resized = frame
+            resized.size.width -= 700 * progress
+            window.setFrame(resized, display: true)
+        }
+        var toggles = 0
+        let paneStart = ProcessInfo.processInfo.systemUptime
+        result.pane = await oscillate(on: scrollView, seconds: 8) { _ in
+            // The sidebar hides and shows every two seconds, sliding the board wider and back.
+            let due = Int((ProcessInfo.processInfo.systemUptime - paneStart) / 2) + 1
+            guard toggles < min(due, 4) else { return }
+            toggles += 1
+            NotificationCenter.default.post(name: .sakuracordToggleChannelSidebar, object: nil)
+        }
+        window.setFrame(original, display: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = (try? encoder.encode(result)) ?? Data()
+        try? data.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("sakuracord-forum-resize-benchmark.json"))
+        logger.notice("FORUM_RESIZE_BENCHMARK \(String(bytes: data, encoding: .utf8) ?? "", privacy: .public)")
+    }
+
+    /// Calls `step` each frame with a progress that eases 0 → 1 → 0 every
+    /// four seconds, sampling frame intervals.
+    private static func oscillate(
+        on view: NSView,
+        seconds: TimeInterval,
+        step: @escaping (CGFloat) -> Void
+    ) async -> ForumFrameTimingSampler.Summary {
+        let ticker = NativeTimelineDisplayLinkTicker()
+        let nominalInterval = 1 / Double(max(view.window?.screen?.maximumFramesPerSecond ?? 60, 1))
+        var sampler = ForumFrameTimingSampler()
+        let start = ProcessInfo.processInfo.systemUptime
+        var previous = start
+        let completion = ForumBenchmarkCompletion()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            completion.continuation = continuation
+            // The display link stops firing if the board leaves the window,
+            // so a wall-clock deadline also ends the run.
+            completion.deadline = Task { @MainActor in
+                guard (try? await Task.sleep(for: .seconds(seconds + 5))) != nil else { return }
+                ticker.stop()
+                completion.finish()
+            }
+            ticker.start(on: view) {
+                let now = ProcessInfo.processInfo.systemUptime
+                sampler.record(interval: now - previous)
+                previous = now
+                let elapsed = now - start
+                step(CGFloat(0.5 - 0.5 * cos(elapsed * .pi / 2)))
+                if elapsed >= seconds {
+                    ticker.stop()
+                    completion.finish()
+                }
+            }
+        }
+        return sampler.summary(nominalInterval: nominalInterval, duration: ProcessInfo.processInfo.systemUptime - start)
     }
 
     private static func report(_ result: Result) {

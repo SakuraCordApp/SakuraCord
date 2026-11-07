@@ -89,11 +89,13 @@ struct GuildCustomizationView: View {
     }
 
     private func questionCard(_ prompt: GuildOnboardingPrompt) -> some View {
-        OnboardingQuestion(model: model, guildID: guildID, prompt: prompt)
+        // A concentric card inherits the window radius and turns oval when tall.
+        let shape = RoundedRectangle(cornerRadius: InterfaceScale.metric(20), style: .continuous)
+        return OnboardingQuestion(model: model, guildID: guildID, prompt: prompt)
             .padding(InterfaceScale.metric(20))
-            .background(.primary.opacity(0.025), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(20)))
-            .overlay { ConcentricRectangle(cornerRadius: InterfaceScale.metric(20)).stroke(.primary.opacity(0.08)) }
-            .containerShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(20)))
+            .background(.primary.opacity(0.025), in: shape)
+            .overlay { shape.stroke(.primary.opacity(0.08)) }
+            .containerShape(shape)
     }
 
     private var profile: some View {

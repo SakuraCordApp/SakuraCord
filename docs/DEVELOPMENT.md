@@ -62,6 +62,7 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-long-server-list` | Extended server rail |
 | `./script/build_and_run.sh --offline-forum-performance` | Large forum; post previews arrive 1.2 s after each page |
 | `./script/build_and_run.sh --offline-forum-performance-autoscroll` | Same forum, then a 15-second, 2,000-point/second scroll; writes frame timing and layout-jump counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` and logs a `ForumBenchmark:` line |
+| `./script/build_and_run.sh --offline-forum-gallery-resize` | Same forum in gallery mode while the window narrows by up to 700 points and back twice, then while the channel sidebar hides and shows twice; logs a `FORUM_RESIZE_BENCHMARK` line with frame timing and hitch counts for each |
 | `./script/build_and_run.sh --offline-chat-performance` | Large native timeline |
 | `./script/build_and_run.sh --offline-chat-voice-performance` | Large native timeline where every fifth message is a voice message |
 | `./script/build_and_run.sh --offline-chat-files-performance` | Large native timeline where three messages in four upload files of every kind |
@@ -69,6 +70,8 @@ contacting Discord:
 | `./script/build_and_run.sh --offline-chat-files-performance-open` | Same timeline opened 11 times from #welcome; writes each open's milliseconds to its first drawn frame to `SAKURACORD_PERFORMANCE_RESULT_PATH` (the first open is cold) |
 | `./script/build_and_run.sh --offline-pins-performance-autoscroll` | Paginated 5,000-message pins timeline benchmark |
 | `./script/build_and_run.sh --offline-friends-performance` | 1,000 friends plus 200 requests; 20-second scroll with 20 presence updates/second, then 80 category switches |
+| `./script/build_and_run.sh --offline-server-rail-performance` | 150-server rail: 20-second scrolls without and with 10 mention-badge changes/second, 10 seconds of badge changes on a still rail, a pointer sweep, then 15 seconds of server switches; logs a `SERVER_RAIL_BENCHMARK` line with frame timing and main-thread CPU |
+| `./script/build_and_run.sh --offline-unread-churn` | Long server list; 10 quiet seconds, then 10 seconds of five mentions/second arriving in other servers; logs an `UNREAD_BENCHMARK` line with late frames and main-thread milliseconds per mention |
 | `./script/build_and_run.sh --offline-incoming-private-call` | Incoming direct-message call |
 | `./script/build_and_run.sh --offline-chat-reaction-storm-autoscroll` | Large timeline scroll benchmark with 40 reaction adds and removals per second, mostly on the newest messages; writes frame timing, main-thread CPU and timeline update counts to `SAKURACORD_PERFORMANCE_RESULT_PATH` |
 | `./script/build_and_run.sh --offline-chat-reaction-storm-idle` | The same reaction traffic and measurements on a still timeline pinned to the newest message |

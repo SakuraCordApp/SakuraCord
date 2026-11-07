@@ -258,7 +258,7 @@ private func verifyAnimatedAndCommandFixtures(
 
 @Test func `mock long server list fixture provides scrollable guild and emoji rails`() async throws
 {
-    let provider = MockChatProvider(includesLongServerList: true)
+    let provider = MockChatProvider(serverList: .long)
     let snapshot = try await provider.bootstrap()
 
     #expect(snapshot.guilds.count == 20)

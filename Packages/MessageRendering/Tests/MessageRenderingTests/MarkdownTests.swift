@@ -485,6 +485,16 @@ import Testing
     )
 }
 
+@Test func `a draft quote with an invisible spacer line styles without crashing`() {
+    let source = "> first\n>\u{FE0F}\n> last"
+    let value = DiscordMarkdown.appKitSourceAttributed(
+        source, attributes: [:], baseFontSize: 14, usesMessageLineHeight: false
+    )
+    #expect(value.string == source)
+    let spacer = (source as NSString).range(of: ">\u{FE0F}")
+    #expect(value.attribute(.discordMarkdownBlock, at: spacer.location, effectiveRange: nil) as? String == "quote")
+}
+
 @Test func `discord markdown renders discord blocks lists code json and ansi`() {
     let source = """
     # Large

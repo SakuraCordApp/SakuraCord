@@ -115,17 +115,21 @@ struct HoverActionControlLabel<Content: View>: View {
     var diameter: CGFloat = InterfaceScale.metric(28)
     var onHoverChanged: ((Bool) -> Void)?
     @ViewBuilder let content: () -> Content
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     var body: some View {
         content()
             .foregroundStyle(iconColor)
-            .frame(width: diameter, height: diameter)
-            .background(backgroundColor, in: Circle())
-            // Hover tracks the square frame, so clicks and the pointer cover
-            // it too instead of only the circle.
+            // A glyph sits in a circle; a wider label, such as text, in a
+            // capsule as tall.
+            .frame(minWidth: diameter)
+            .frame(height: diameter)
+            .background(backgroundColor, in: Capsule())
+            // Hover tracks the whole frame, so clicks and the pointer cover
+            // its corners too, outside the capsule.
             .contentShape(Rectangle())
-            .pointerStyle(.link)
+            .pointerStyle(isEnabled ? .link : nil)
             .onModalHover {
                 isHovering = $0
                 onHoverChanged?($0)
@@ -141,7 +145,7 @@ struct HoverActionControlLabel<Content: View>: View {
     private var backgroundColor: Color {
         // A selected toggle shows in its accent glyph alone, so it can't be
         // mistaken for the control under the pointer.
-        guard isHovering else { return .clear }
+        guard isHovering, isEnabled else { return .clear }
         return role == .destructive ? .red.opacity(0.18) : .primary.opacity(0.14)
     }
 }

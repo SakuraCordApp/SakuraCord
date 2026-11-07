@@ -125,7 +125,6 @@ struct ChannelSidebarView: View {
     let guild: Guild?
     let channels: [Channel]
     let channelGroups: [ChannelGroup]
-    let unreadCategoryIDs: Set<ChannelID>
     @Binding var selection: ChannelID?
     let currentUser: User?
     let connectionState: ConnectionState
@@ -182,7 +181,9 @@ struct ChannelSidebarView: View {
                             activeVoiceChannelID: activeVoiceChannelID,
                             hiddenChannelIDs: hiddenChannelIDs,
                             checkingChannelIDs: checkingChannelIDs,
-                            unreadCategoryIDs: unreadCategoryIDs,
+                            // Read here so another server's unread categories
+                            // do not invalidate the workspace around the sidebar.
+                            unreadCategoryIDs: guild.map { voiceModel.unreadCategoryIDsByGuild[$0.id] ?? [] } ?? [],
                             sidebarSelection: guildSelection,
                             threadsByParentID: threads.threadsByParentID,
                             bottomContentInset: accountControlHeight
@@ -1424,14 +1425,10 @@ private struct ChannelRow: View {
                     .foregroundStyle(Color(hex: 0x5865F2))
             }
             if !isChecking, channel.mentionCount > 0 {
-                Text(channel.mentionCount, format: .number)
-                    .font(.interface(.caption2).bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, InterfaceScale.metric(6))
-                    .padding(.vertical, InterfaceScale.metric(2))
-                    .background(Color(hex: 0xF23F43), in: Capsule())
+                SidebarMentionBadge(count: channel.mentionCount)
             }
         }
+        .mentionBadgeMotion(channel.mentionCount)
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .anchorPreference(key: SidebarUnreadRowAnchors.self, value: .bounds) {
             showsUnread ? [SidebarUnreadRowAnchor(id: channel.id, anchor: $0, color: channelNameForegroundStyle.resolve(in: environment))] : []
@@ -1574,14 +1571,10 @@ private struct ThreadRow: View {
                 .lineLimit(1)
             Spacer()
             if row.mentionCount > 0 {
-                Text(row.mentionCount, format: .number)
-                    .font(.interface(.caption2).bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, InterfaceScale.metric(6))
-                    .padding(.vertical, InterfaceScale.metric(2))
-                    .background(Color(hex: 0xF23F43), in: Capsule())
+                SidebarMentionBadge(count: row.mentionCount)
             }
         }
+        .mentionBadgeMotion(row.mentionCount)
         .frame(minHeight: ChannelSidebarLayoutMetrics.minimumRowHeight)
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .anchorPreference(key: SidebarUnreadRowAnchors.self, value: .bounds) {
