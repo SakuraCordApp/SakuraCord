@@ -1352,7 +1352,8 @@ extension NativeTimelineCanvasView {
                     frame: item.frame,
                     cornerRadius: item.presentation.cornerRadius
                 ) { [weak self] in
-                    self?.reveal(item.key)
+                    guard let self, !glideBlocksPointer else { return }
+                    reveal(item.key)
                 }
                 addSubview(
                     overlay,
