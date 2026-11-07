@@ -18,6 +18,26 @@ public extension DiscordRESTProvider {
         return shelf.domain(frecency: frecency?.entries ?? [])
     }
 
+    /// Counts a launch in the application frecency the shelf's Recents read,
+    /// as the official client does when an Activity opens.
+    func recordEmbeddedActivityLaunch(_ applicationID: ApplicationID) async throws {
+        let current = try await frecencySettingsProto()
+        var history = DiscordSettingsProto.frecencyHistory(from: current, field: DiscordSettingsProto.applicationFrecencyField)
+            ?? DiscordFrecencyHistory()
+        let key = applicationID.description
+        let now = UInt64(Date.now.timeIntervalSince1970 * 1000)
+        if let index = history.entries.firstIndex(where: { $0.key == key }) {
+            history.entries[index].totalUses += 1
+            history.entries[index].recentUses = Array((history.entries[index].recentUses + [now]).suffix(10))
+            history.entries[index].frecency = -1
+        } else {
+            history.entries.append(DiscordFrecencyEntry(key: key, totalUses: 1, recentUses: [now]))
+        }
+        _ = try await persistFrecencySettingsPatch(DiscordSettingsProto.frecencyPatch(
+            history, field: DiscordSettingsProto.applicationFrecencyField, limit: 100, preserving: current
+        ))
+    }
+
     /// The Gateway session that owns this account's Activity participation.
     func embeddedActivitySessionID() async throws -> String {
         try await interactionSessionID()

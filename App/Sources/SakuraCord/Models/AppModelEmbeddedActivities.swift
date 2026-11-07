@@ -401,6 +401,8 @@ extension AppModel {
                     model: model, instance: instance, application: session.application, proxyTicket: ticket
                 )
                 model.embeddedActivities.session?.phase = .running
+                // Recents count each Activity opened; a failed save only loses that count.
+                try? await account.provider.recordEmbeddedActivityLaunch(instance.applicationID)
             } catch {
                 guard model.embeddedActivities.session?.launchID == session.launchID else { return }
                 model.embeddedActivities.session?.phase = .failed(error.localizedDescription)

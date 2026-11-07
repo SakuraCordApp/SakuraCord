@@ -47,7 +47,9 @@ description, and a PROMOTED badge when the application flags include `1 << 29`
 grid, Recents lists Activities from the account's application frecency, field
 9 of the frecency settings proto, ranked as the client's frecency store ranks
 them (uses × the mean age weight of the last ten launches); the first eight show
-with View More for the rest. The official list also includes launched
+with View More for the rest. Opening an Activity counts a use there: one
+frecency settings PATCH carrying field 9, as the official client saves when an
+Activity opens. The official list also includes launched
 Activities that are not on the shelf; SakuraCord lists shelf Activities only. Choosing an Activity opens its details:
 the participant range (`1-N` from `max_participants`, otherwise Unlimited),
 tags, the description, and In-App Purchases when `is_monetized`;
