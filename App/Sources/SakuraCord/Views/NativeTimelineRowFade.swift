@@ -70,16 +70,31 @@ extension NativeTimelineCanvasView {
     /// A row's picture as it was, for a fade that outlives its layout: the
     /// cached bitmap when it had one, otherwise a fresh raster.
     func rowFadeImage(_ row: NativeTimelineReactionBaseline.Row, width: CGFloat) -> NSImage? {
-        if let cached = row.bitmap, cached.item == row.item, abs(cached.width - width) < 0.5,
-           cached.appearanceName == effectiveAppearance.name, let picture = cached.images[-1] {
-            return picture
-        }
         let item = row.item
         let layout = row.layout
-        // A tall row is drawn in tiles; one picture of all of it costs too
-        // much for a fade, so it changes without one.
-        guard layout.height <= Self.wholeRowBitmapMaximumHeight else { return nil }
         let size = NSSize(width: width, height: layout.height)
+        if let cached = row.bitmap, cached.item == item, abs(cached.width - width) < 0.5,
+           cached.appearanceName == effectiveAppearance.name {
+            if let picture = cached.images[-1] { return picture }
+            // A tall row is drawn in tiles. The ones it was last drawn with
+            // make its picture; any it never drew were off screen.
+            if !cached.images.isEmpty,
+               Self.estimatedBitmapCost(width: width, height: layout.height, scale: rowBitmapScale)
+               <= Self.bitmapCostLimit / 4 {
+                return NativeTimelineSendTransitionSnapshot.render(size: size, scale: rowBitmapScale) {
+                    for (tile, image) in cached.images {
+                        let offset = CGFloat(tile) * Self.bitmapTileHeight
+                        image.draw(
+                            in: CGRect(x: 0, y: offset, width: width, height: min(Self.bitmapTileHeight, layout.height - offset)),
+                            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+                        )
+                    }
+                }
+            }
+        }
+        // Rastering all of a tall row costs too much for a fade, so without
+        // its tiles it changes without a picture.
+        guard layout.height <= Self.wholeRowBitmapMaximumHeight else { return nil }
         return NativeTimelineSendTransitionSnapshot.render(size: size, scale: rowBitmapScale) {
             NativeTimelineRowPainter.draw(
                 item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
@@ -90,6 +105,19 @@ extension NativeTimelineCanvasView {
                 editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
+    }
+
+    /// Whether a row's only live media is its author's avatar, which stays
+    /// where it was when the message changes below it.
+    func animatedMediaStaysPut(
+        _ identifier: NativeMessageTimelineItem.Identifier,
+        from old: NativeTimelineRowLayout,
+        to new: NativeTimelineRowLayout
+    ) -> Bool {
+        guard old.avatarFrame == new.avatarFrame else { return false }
+        let overlays = animatedMediaOverlays.keys.filter { $0.row == identifier }
+        return overlays.allSatisfy { $0.role == .authorAvatar || $0.role == .authorAvatarDecoration }
+            && Set(overlays.map(\.media)) == animatedMediaRows[identifier]
     }
 
     /// What a row shows partway through `running`: its old picture fading

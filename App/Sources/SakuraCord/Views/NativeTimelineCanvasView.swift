@@ -334,6 +334,8 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionStepUptime: TimeInterval?
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
+    /// The display scale and colour space reaction pictures are drawn for.
+    var reactionBacking: (scale: CGFloat, colorSpace: NSColorSpace?) = (0, nil)
     /// The width the running reaction motions were laid out at.
     var reactionTransitionWidth: CGFloat = 0
     let timestampHoverCoordinator =
@@ -473,6 +475,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
+        // AppKit also calls this as the window is resized or moved with
+        // neither changed, which would snap a motion mid-update.
+        let backing = (scale: window?.backingScaleFactor ?? 0, colorSpace: window?.colorSpace)
+        guard backing != reactionBacking else { return }
+        reactionBacking = backing
         // Moving chips were drawn for the previous display's scale and colours.
         finishReactionTransitions()
     }
