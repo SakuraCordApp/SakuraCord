@@ -29,6 +29,13 @@ extension NativeMessageTimelineItem {
         guard row.message.outboxState == oldRow.message.outboxState else { return .other }
         return row.message == oldRow.message ? .regroup : .content
     }
+
+    /// Whether an update changed the message's text, which is drawn above
+    /// its attachments, embeds and reactions.
+    func changesText(from old: Self) -> Bool {
+        guard case let .message(oldRow, _, _) = old, case let .message(row, _, _) = self else { return false }
+        return row.message.content != oldRow.message.content
+    }
 }
 
 extension NativeTimelineReactionBaseline {
@@ -65,6 +72,8 @@ struct NativeTimelineRowMotionPlan {
     }
 
     private(set) var previous: FollowedRow?
+    private var followed: [FollowedRow] = []
+    private var stepTotals: [Int: CGFloat] = [:]
     private(set) var describesUpdate = true
     private var shift: CGFloat?
     private var expectedShift: CGFloat?
@@ -80,6 +89,7 @@ struct NativeTimelineRowMotionPlan {
     mutating func follow(_ row: FollowedRow, rowShift: CGFloat, delta: CGFloat) {
         if let expectedShift, abs(rowShift - expectedShift) >= 0.5 { describesUpdate = false }
         previous = row
+        followed.append(row)
         shift = shift ?? rowShift
         expectedShift = rowShift - delta
     }
@@ -93,9 +103,39 @@ struct NativeTimelineRowMotionPlan {
         return abs(top - delta) < abs(top)
     }
 
+    /// Closes a change of `row`'s height on the rows right before it, so
+    /// its new content lands where it ends while they glide to it. A
+    /// shrink widens the row before; a growth takes from each row before in
+    /// turn no more than `height` says it shows. False, with nothing added,
+    /// when those rows, adjacent before and after the update and without
+    /// `excluded` gaps below, cannot take all of it.
+    mutating func closeAbove(
+        _ row: FollowedRow,
+        delta: CGFloat,
+        excluding excluded: Set<NativeMessageTimelineItem.Identifier>,
+        height: (FollowedRow) -> CGFloat
+    ) -> Bool {
+        var pieces: [(FollowedRow, CGFloat)] = []
+        var left = delta
+        var next = row
+        for candidate in followed.dropLast().reversed() {
+            guard abs(left) >= 0.5, candidate.index == next.index - 1, candidate.oldIndex == next.oldIndex - 1,
+                  !excluded.contains(candidate.identifier)
+            else { break }
+            let piece = delta < 0 ? left : min(left, max(0, height(candidate) - (stepTotals[candidate.index] ?? 0)))
+            pieces.append((candidate, piece))
+            left -= piece
+            next = candidate
+        }
+        guard abs(left) < 0.5 else { return false }
+        for (candidate, piece) in pieces { addStep(for: candidate, delta: piece) }
+        return true
+    }
+
     mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false) {
         guard abs(delta) >= 0.5 else { return }
         steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap))
+        stepTotals[row.index, default: 0] += delta
     }
 
     /// Deleted rows after the last followed row: it keeps the height they

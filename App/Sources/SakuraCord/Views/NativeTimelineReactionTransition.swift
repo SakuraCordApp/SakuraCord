@@ -368,7 +368,6 @@ extension NativeTimelineCanvasView {
         }
         let row = NativeTimelineRowMotionPlan.FollowedRow(oldIndex: old.index, index: index, identifier: identifier)
         let delta = layouts[index].height - old.layout.height
-        let previous = update.plan.previous
         update.plan.follow(row, rowShift: old.top - (originY + rowOrigins[index]), delta: delta)
         // A saved edit's editor gives way to the row as an edit's content does.
         switch old.editor == nil ? items[index].change(from: old.item) : .content {
@@ -382,15 +381,16 @@ extension NativeTimelineCanvasView {
             }
         case .regroup where !update.departedOldIndices.isDisjoint(with: [old.index - 1, old.index + 1]),
              .content:
-            // The new content lands at once against the edge of the row
-            // that stays put: with the rows below it held, as at the newest
-            // message, the step closes above it, on the row before.
-            if let previous, previous.index == index - 1, previous.oldIndex == old.index - 1,
-               departedRuns[previous.identifier] == nil, update.plan.holdsRowsBelow(changingBy: delta) {
-                update.plan.addStep(for: previous, delta: delta)
-            } else {
-                update.plan.addStep(for: row, delta: delta)
-            }
+            // New text lands at once where it ends: with the rows below it
+            // held, as at the newest message, what follows the text stays
+            // put and the change closes above the row. A new embed instead
+            // unrolls below the text as the row grows.
+            let closesAbove = (old.editor != nil || items[index].changesText(from: old.item))
+                && update.plan.holdsRowsBelow(changingBy: delta)
+                && update.plan.closeAbove(row, delta: delta, excluding: Set(departedRuns.keys)) {
+                    min(layouts[$0.index].height, displayedRowHeight(at: $0.index))
+                }
+            if !closesAbove { update.plan.addStep(for: row, delta: delta) }
             // A motion still running from an earlier change keeps going, so
             // this one starts from the height the row shows now.
             endReactionTransition(identifier)
