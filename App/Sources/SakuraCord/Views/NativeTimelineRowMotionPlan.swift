@@ -73,7 +73,6 @@ struct NativeTimelineRowMotionPlan {
 
     private(set) var previous: FollowedRow?
     private var followed: [FollowedRow] = []
-    private var stepTotals: [Int: CGFloat] = [:]
     private(set) var describesUpdate = true
     private var shift: CGFloat?
     private var expectedShift: CGFloat?
@@ -122,7 +121,8 @@ struct NativeTimelineRowMotionPlan {
             guard abs(left) >= 0.5, candidate.index == next.index - 1, candidate.oldIndex == next.oldIndex - 1,
                   !excluded.contains(candidate.identifier)
             else { break }
-            let piece = delta < 0 ? left : min(left, max(0, height(candidate) - (stepTotals[candidate.index] ?? 0)))
+            let given = steps.reduce(0) { $1.rowIndex == candidate.index ? $0 + $1.delta : $0 }
+            let piece = delta < 0 ? left : min(left, max(0, height(candidate) - given))
             pieces.append((candidate, piece))
             left -= piece
             next = candidate
@@ -135,7 +135,6 @@ struct NativeTimelineRowMotionPlan {
     mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false, isLent: Bool = false) {
         guard abs(delta) >= 0.5 else { return }
         steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap, isLent: isLent))
-        stepTotals[row.index, default: 0] += delta
     }
 
     /// Deleted rows after the last followed row: it keeps the height they

@@ -247,10 +247,7 @@ extension NativeTimelineCanvasView {
                 top: originY + transientRowOrigin(at: index),
                 item: item,
                 layout: layouts[index],
-                height: NativeTimelineTransientRowGeometry.rowHeight(
-                    base: layouts[index].height, rowIndex: index,
-                    replacementIndex: editingRowIndex, replacementHeight: editingRowHeight
-                ),
+                height: transientRowHeight(at: index),
                 // A bitmap leaves animated media to live overlays and keeps
                 // spoilers hidden, so it is no picture of such a row.
                 bitmap: animatedMediaRows[item.identifier] == nil && revealState.isEmpty && !isEdited
