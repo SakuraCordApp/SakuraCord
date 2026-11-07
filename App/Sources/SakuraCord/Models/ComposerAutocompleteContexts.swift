@@ -43,6 +43,9 @@ struct MentionAutocompleteContext {
     private static let quotedChannelExpression = RegularExpressionFactory.make(
         #"(?:^|\s)(#["“”]([^"“”\v]*["“”]?))$"#
     )
+    private static let quotedSuffixExpression = RegularExpressionFactory.make(
+        #"^([^"“”\v]*["“”])"#
+    )
     private static let expression = RegularExpressionFactory.make(
         #"(?:^|\s)([@#]([^\s@#]*))$"#
     )
@@ -67,10 +70,12 @@ struct MentionAutocompleteContext {
             if let last = rawQuery.last, last == "\"" || last == "”" || last == "“" {
                 rawQuery.removeLast()
             } else if cursor < text.utf16.count {
-                let nextCharRange = NSRange(location: cursor, length: 1)
-                let nextChar = (text as NSString).substring(with: nextCharRange)
-                if nextChar == "\"" || nextChar == "”" || nextChar == "“" {
-                    tokenRange.length += 1
+                let suffix = (text as NSString).substring(from: cursor)
+                if let suffixMatch = Self.quotedSuffixExpression.firstMatch(
+                    in: suffix,
+                    range: NSRange(location: 0, length: (suffix as NSString).length)
+                ) {
+                    tokenRange.length += suffixMatch.range.length
                 }
             }
             range = tokenRange

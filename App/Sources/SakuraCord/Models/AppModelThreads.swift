@@ -874,7 +874,15 @@ extension AppModel {
             }
             guard threadGuildID == selectedGuildID else { return nil }
             if thread.isPrivate, thread.notificationSettings == nil {
-                return nil
+                let parent = thread.parentID.flatMap { id in
+                    messagePresentationChannelsByID[id] ?? visibleChannels.first { $0.id == id }
+                }
+                guard let parent,
+                      let permissions = effectiveMessagePermissions(in: parent),
+                      permissions & DiscordPermissionBits.manageThreads != 0
+                else {
+                    return nil
+                }
             }
             return thread
         }

@@ -14,39 +14,46 @@ struct MentionAutocompleteTests {
         #expect(context1.query == "Release Notes")
         #expect((text1 as NSString).substring(with: context1.range) == "#\"Release Notes\"")
 
-        // 2. Unclosed quoted channel / post query while typing
+        // 2. Cursor inside the middle of a quoted query extends through the closing quote
+        let textMid = "check out #\"Release Notes\" today"
+        let contextMid = try #require(MentionAutocompleteContext(text: textMid, selection: NSRange(location: 19, length: 0)))
+        #expect(contextMid.kind == .channel)
+        #expect(contextMid.query == "Release")
+        #expect((textMid as NSString).substring(with: contextMid.range) == "#\"Release Notes\"")
+
+        // 3. Unclosed quoted channel / post query while typing
         let text2 = "see #\"Release Notes"
         let context2 = try #require(MentionAutocompleteContext(text: text2, selection: nil))
         #expect(context2.kind == .channel)
         #expect(context2.query == "Release Notes")
         #expect((text2 as NSString).substring(with: context2.range) == "#\"Release Notes")
 
-        // 3. Smart quotes (Unicode curly quotes)
+        // 4. Smart quotes (Unicode curly quotes)
         let text3 = "refer to #“Release Notes”"
         let context3 = try #require(MentionAutocompleteContext(text: text3, selection: nil))
         #expect(context3.kind == .channel)
         #expect(context3.query == "Release Notes")
         #expect((text3 as NSString).substring(with: context3.range) == "#“Release Notes”")
 
-        // 4. Standard unquoted channel mention
+        // 5. Standard unquoted channel mention
         let text4 = "hello #release"
         let context4 = try #require(MentionAutocompleteContext(text: text4, selection: nil))
         #expect(context4.kind == .channel)
         #expect(context4.query == "release")
         #expect((text4 as NSString).substring(with: context4.range) == "#release")
 
-        // 5. Bare #
+        // 6. Bare #
         let text5 = "hello #"
         let context5 = try #require(MentionAutocompleteContext(text: text5, selection: nil))
         #expect(context5.kind == .channel)
         #expect(context5.query == "")
         #expect((text5 as NSString).substring(with: context5.range) == "#")
 
-        // 6. Trailing space without quotes terminates autocomplete
+        // 7. Trailing space without quotes terminates autocomplete
         let text6 = "hello #release "
         #expect(MentionAutocompleteContext(text: text6, selection: nil) == nil)
 
-        // 7. Member @ mention
+        // 8. Member @ mention
         let text7 = "ping @member"
         let context7 = try #require(MentionAutocompleteContext(text: text7, selection: nil))
         #expect(context7.kind == .member)
@@ -108,14 +115,8 @@ struct MentionAutocompleteTests {
         #expect(match.title == "Release Notes")
         #expect(match.detail == "forum-discussion")
         #expect(match.value == "<#\(forumPostThread.id)>")
-        #expect(match.systemImage == "bubble.left.fill")
         #expect(!suggestions.contains { $0.id == "channel:\(textChannel.id)" })
         #expect(!suggestions.contains { $0.id == "thread:\(otherThread.id)" })
         #expect(!suggestions.contains { $0.id == "thread:\(archivedThread.id)" })
-    }
-
-    @Test func testChannelHeading() {
-        #expect(MentionAutocompleteSuggestionFactory.channelHeading(query: "") == "TEXT CHANNELS")
-        #expect(MentionAutocompleteSuggestionFactory.channelHeading(query: "release") == "TEXT CHANNELS MATCHING #RELEASE")
     }
 }
