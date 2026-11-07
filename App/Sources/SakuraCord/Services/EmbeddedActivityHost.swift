@@ -465,7 +465,8 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
     /// Every way an Activity can send a link to the browser asks first, as
     /// `OPEN_EXTERNAL_LINK` does.
     private func openExternally(_ url: URL) async -> Bool {
-        guard let model else { return false }
+        // A popup's task can run after the Activity ended; its prompt would be stale.
+        guard let model, !isStopped else { return false }
         let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name) && !isStopped
         if opened { NSWorkspace.shared.open(url) }
         return opened
