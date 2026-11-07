@@ -185,6 +185,11 @@ extension DiscordRESTProvider {
         guard let state = try? JSONValueDecoder().decode(VoiceStateUpdateDTO.self, from: body),
               let participant = state.domain()
         else { return }
+        if participant.channelID != nil, let guildID = participant.guildID,
+           let payload = try? JSONValueDecoder().decode(VoiceStateMemberDTO.self, from: body)
+        {
+            cacheVoiceStateMember(payload.member, guildID: guildID)
+        }
         continuation?.yield(.voiceStateChanged(participant))
         reconcilePrivateCallVoiceState(participant)
         if participant.userID == currentUser?.id {
@@ -200,5 +205,23 @@ extension DiscordRESTProvider {
             pendingVoiceNegotiation?.sessionID = participant.sessionID
             finishVoiceNegotiationIfReady()
         }
+    }
+
+    /// Admits a voice participant's member that is not cached yet, so voice
+    /// presentations outside the selected guild can show who joined. It never
+    /// replaces a cached member or publishes a member-list change.
+    private func cacheVoiceStateMember(_ dto: GuildMemberDTO, guildID: GuildID) {
+        guard let userID = UserID(dto.user.id),
+              cachedMemberIndex(guildID: guildID)[userID] == nil,
+              let member = try? dto.domain(
+                  currentUserID: currentUser?.id,
+                  currentStatus: presenceStatus,
+                  guildRoles: cachedGuildRoles[guildID] ?? [],
+                  guildID: guildID
+              )
+        else { return }
+        cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
+            existing: cachedMembers[guildID] ?? [], updates: [member]
+        )
     }
 }

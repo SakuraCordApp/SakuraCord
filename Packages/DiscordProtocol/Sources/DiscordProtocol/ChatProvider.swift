@@ -51,6 +51,8 @@ public protocol ChatProvider: Sendable {
         visibleRange: ClosedRange<Int>
     ) async throws
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member]
+    /// Members the provider already holds for these users, without a request.
+    func knownMembers(in guildID: GuildID, userIDs: [UserID]) async -> [Member]
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member]
     func requestQuickSwitcherMembers(
         in guildID: GuildID, query: String, limit: Int
@@ -735,6 +737,10 @@ public extension ChatProvider {
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         let requested = Set(userIDs.prefix(100))
         return try await members(in: guildID).filter { requested.contains($0.id) }
+    }
+
+    func knownMembers(in guildID: GuildID, userIDs: [UserID]) async -> [Member] {
+        (try? await resolveMembers(in: guildID, userIDs: userIDs)) ?? []
     }
 
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member] {
