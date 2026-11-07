@@ -41,15 +41,13 @@ extension NativeTimelineCanvasView {
         var top = min(text.minY, running?.top ?? text.minY)
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
             // A short row is padded to its avatar's height below everything
-            // else; the padding its text grows into belongs to its space.
+            // else: the padding its text grows into, or leaves, belongs to
+            // its space, and only takes up part of the text's change.
             let newAfter = layout.height - newText.maxY
+            let textChange = newText.height - oldText.height
             guard abs(newAfter - after) < 0.5
-                || abs(newAfter - after) <= MessageRowLayoutMetrics.avatarDiameter
-                && old.layout.embedFrames.count == layout.embedFrames.count
-                && old.layout.attachmentRegions.count == layout.attachmentRegions.count
-                && old.layout.componentFrames.count == layout.componentFrames.count
-                && old.layout.stickerFrames.count == layout.stickerFrames.count
-                && old.layout.reactionRegions.isEmpty && layout.reactionRegions.isEmpty
+                || textChange * (newAfter - after) < 0
+                && abs(newAfter - after) <= min(abs(textChange), MessageRowLayoutMetrics.avatarDiameter)
             else { return nil }
             after = min(after, newAfter)
             top = min(top, oldText.minY, newText.minY)
