@@ -47,9 +47,7 @@ extension AccountReadStateModel {
         /// Membership comes only from the joined catalogue, so a stale archive
         /// flag cannot hide a joined thread.
         func countsMentions(_ entry: Entry) -> Bool {
-            policy.channelByID[entry.channelID] != nil
-                || entry.guildID == nil
-                || isListedThread(entry)
+            policy.channelByID[entry.channelID] != nil || isListedThread(entry)
         }
 
         func presentedMentionCount(_ entry: Entry) -> Int {

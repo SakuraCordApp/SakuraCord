@@ -1347,9 +1347,11 @@ extension AccountReadStateModel {
     /// still tracked, so it surfaces if a later mention or role ping joins it.
     /// Membership comes only from the active joined catalogue (which already
     /// excludes archived threads), so a stale archive flag from a delayed
-    /// catalogue response cannot hide a joined thread's badge.
+    /// catalogue response cannot hide a joined thread's badge. Like Discord's
+    /// client, a read state for a channel the account doesn't list, such as a
+    /// closed DM or a left server's channel, has no row and counts nowhere.
     func countsMentions(_ entry: Entry) -> Bool {
-        guard channelByID[entry.channelID] == nil, entry.guildID != nil else { return true }
+        guard channelByID[entry.channelID] == nil else { return true }
         return Self.isListedThread(
             entry,
             parentChannel: entry.parentID.flatMap { channelByID[$0] },
