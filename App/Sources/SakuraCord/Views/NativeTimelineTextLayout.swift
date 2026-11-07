@@ -636,6 +636,7 @@ enum NativeTimelineEmbedLayout {
 
     private struct Builder {
         let embed: MessageEmbed
+        let mediaCount: Int
         let message: Message
         let source: AppModel?
         let attachments: [Attachment]
@@ -718,15 +719,15 @@ enum NativeTimelineEmbedLayout {
             let author = embed.author.map {
                 plainTextBox(
                     $0.name,
-                    font: .interfaceSystemFont(ofSize: 11, weight: .semibold),
-                    color: $0.url == nil ? .labelColor : .linkColor,
+                    font: .interfaceSystemFont(ofSize: 14, weight: .medium),
+                    color: .labelColor,
                     link: $0.url
                 )
             }
             let title = embed.title.map {
                 plainTextBox(
                     $0,
-                    font: .interfaceSystemFont(ofSize: 13, weight: .semibold),
+                    font: .interfaceSystemFont(ofSize: 14, weight: .semibold),
                     color: embed.url == nil ? .labelColor : .linkColor,
                     link: embed.url
                 )
@@ -736,6 +737,7 @@ enum NativeTimelineEmbedLayout {
                     prepared: RichMessageAttributedText.prepare(source: $0),
                     scope: "description",
                     emojiSize: 18,
+                    fontSizeAdjustment: -1,
                     embed: embed,
                     message: message,
                     source: source
@@ -874,20 +876,20 @@ enum NativeTimelineEmbedLayout {
                     if hasTextSection {
                         textY += InterfaceScale.metric(7)
                     }
-                    let lineHeight = max(InterfaceScale.metric(20), measuredHeight(
+                    let lineHeight = max(InterfaceScale.metric(22), measuredHeight(
                         author,
-                        width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(26))
+                        width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(28))
                     ))
                     imageRegions.append(
                         .init(
                             frame: CGRect(
                                 x: contentX,
-                                y: textY + (lineHeight - InterfaceScale.metric(20)) / 2,
-                                width: InterfaceScale.metric(20),
-                                height: InterfaceScale.metric(20)
+                                y: textY + (lineHeight - InterfaceScale.metric(22)) / 2,
+                                width: InterfaceScale.metric(22),
+                                height: InterfaceScale.metric(22)
                             ),
                             url: iconURL,
-                            cornerRadius: InterfaceScale.metric(10),
+                            cornerRadius: InterfaceScale.metric(11),
                             fallbackSystemImage: "person.crop.circle",
                             maximumPixelDimension: 64,
                             placeholder: nil
@@ -895,14 +897,14 @@ enum NativeTimelineEmbedLayout {
                     )
                     let authorHeight = measuredHeight(
                         author,
-                        width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(26))
+                        width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(28))
                     )
                     textRegions.append(
                         .init(
                             frame: CGRect(
-                                x: contentX + InterfaceScale.metric(26),
+                                x: contentX + InterfaceScale.metric(28),
                                 y: textY + (lineHeight - authorHeight) / 2,
-                                width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(26)),
+                                width: max(InterfaceScale.metric(20), textWidth - InterfaceScale.metric(28)),
                                 height: authorHeight
                             ),
                             text: author,
@@ -947,7 +949,7 @@ enum NativeTimelineEmbedLayout {
                             height: thumbnailSize
                         ),
                         url: thumbnailURL,
-                        cornerRadius: InterfaceScale.metric(6),
+                        cornerRadius: InterfaceScale.metric(4),
                         fallbackSystemImage: "photo",
                         maximumPixelDimension: 256,
                         placeholder: .init(embed.thumbnail)
@@ -1063,6 +1065,7 @@ enum NativeTimelineEmbedLayout {
             prepared: RichMessageAttributedText.Prepared,
             scope: String,
             emojiSize: CGFloat,
+            fontSizeAdjustment: CGFloat = 0,
             embed: MessageEmbed,
             message: Message,
             source: AppModel?
@@ -1071,6 +1074,7 @@ enum NativeTimelineEmbedLayout {
                 prepared: prepared,
                 scope: scope,
                 emojiSize: emojiSize,
+                fontSizeAdjustment: fontSizeAdjustment,
                 embed: embed,
                 message: message,
                 source: source
@@ -1131,7 +1135,8 @@ enum NativeTimelineEmbedLayout {
         ) -> String? {
             NativeTimelineEmbedLayout.footerText(
                 footer: footer,
-                timestamp: timestamp
+                timestamp: timestamp,
+                settings: source?.interfaceSettings ?? .defaults
             )
         }
 
@@ -1151,7 +1156,11 @@ enum NativeTimelineEmbedLayout {
             maximumWidth: CGFloat,
             maximumHeight: CGFloat
         ) -> CGSize {
-            NativeTimelineEmbedLayout.mediaSize(
+            if mediaCount > 1 {
+                return NativeTimelineEmbedLayout.groupFrames(count: mediaCount, width: maximumWidth)
+                    .reduce(CGRect.null) { $0.union($1) }.size
+            }
+            return NativeTimelineEmbedLayout.mediaSize(
                 media,
                 maximumWidth: maximumWidth,
                 maximumHeight: maximumHeight
@@ -1177,10 +1186,12 @@ enum NativeTimelineEmbedLayout {
         origin: CGPoint,
         maximumWidth: CGFloat,
         integratesWithBubble: Bool = false,
-        drawsTopSeparator: Bool = false
+        drawsTopSeparator: Bool = false,
+        mediaCount: Int = 1
     ) -> NativeTimelineRowLayout.EmbedRegion? {
         Builder(
             embed: embed,
+            mediaCount: mediaCount,
             message: message,
             source: source,
             attachments: attachments,
@@ -1191,10 +1202,62 @@ enum NativeTimelineEmbedLayout {
         ).region
     }
 
+    static func makeGroup(
+        embeds: [MessageEmbed],
+        message: Message,
+        source: AppModel?,
+        origin: CGPoint,
+        maximumWidth: CGFloat,
+        integratesWithBubble: Bool,
+        drawsTopSeparator: Bool
+    ) -> [NativeTimelineRowLayout.EmbedRegion] {
+        // Resolve before laying out so an unavailable image leaves no empty tile.
+        let tiles = embeds.dropFirst().compactMap { embed in
+            embed.image.flatMap { image in
+                resolvedURL(image, attachments: message.attachments).map { (embed, image, $0) }
+            }
+        }
+        guard var region = make(
+            embed: embeds[0], message: message, source: source,
+            attachments: message.attachments, origin: origin,
+            maximumWidth: maximumWidth, integratesWithBubble: integratesWithBubble,
+            drawsTopSeparator: drawsTopSeparator, mediaCount: tiles.count + 1
+        )
+        else { return [] }
+        guard !tiles.isEmpty, let mediaFrame = region.mediaFrame else { return [region] }
+        let frames = groupFrames(count: tiles.count + 1, width: mediaFrame.width)
+            .map { $0.offsetBy(dx: mediaFrame.minX, dy: mediaFrame.minY) }
+        // The leading region owns the full card and footer. Each image keeps
+        // its embed identity for loading, animation, hit testing and accessibility.
+        region.mediaFrame = frames[0]
+        region.mediaFillsFrame = true
+        return [region] + zip(tiles, frames.dropFirst()).map { tile, frame in
+            let (embed, image, url) = tile
+            return NativeTimelineRowLayout.EmbedRegion(
+                embedID: embed.id, kind: .bareMedia, frame: frame,
+                textRegions: [], imageRegions: [], mediaFrame: frame,
+                mediaURL: url, mediaPreviewURL: nil, mediaPlaceholder: .init(image),
+                mediaFillsFrame: true,
+                mediaIsVideo: false, mediaAutoplaysInline: false,
+                mediaPosterFillsFrame: false,
+                accentColor: nil, drawsTopSeparator: false
+            )
+        }
+    }
+
+    /// A multi-image post's tiles: equal columns, so no image dominates.
+    private static func groupFrames(count: Int, width: CGFloat) -> [CGRect] {
+        MediaGalleryPlan.frames(
+            count: count, width: width, aspectRatios: [],
+            spacing: InterfaceScale.metric(4), equalWidthColumns: true
+        )
+    }
+
     static func resolvedTextBox(
         prepared: RichMessageAttributedText.Prepared,
         scope: String,
         emojiSize: CGFloat,
+        fontSizeAdjustment: CGFloat = 0,
         embed: MessageEmbed,
         message: Message,
         source: AppModel?
@@ -1210,7 +1273,9 @@ enum NativeTimelineEmbedLayout {
                 resolver?.presentation(mention)
                 ?? MentionPresentation.fallback(for: mention)
         }
-        let baseFontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
+        let baseFontSize = InterfaceScale.fontSize(
+            InterfaceTypographyMetrics.messageTextSize + fontSizeAdjustment
+        )
         let emojiSize = InterfaceScale.metric(emojiSize)
         let key = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
@@ -1277,7 +1342,7 @@ enum NativeTimelineEmbedLayout {
             provider.map(idealWidth) ?? 0
         )
         if author != nil, authorHasIcon {
-            width = max(width, (author.map(idealWidth) ?? 0) + InterfaceScale.metric(26))
+            width = max(width, (author.map(idealWidth) ?? 0) + InterfaceScale.metric(28))
         }
         for row in fieldRows(fields) {
             if row.count == 1, row[0].field.isInline == false {
@@ -1398,16 +1463,17 @@ enum NativeTimelineEmbedLayout {
 
     private static func footerText(
         footer: MessageEmbedFooter?,
-        timestamp: Date?
+        timestamp: Date?,
+        settings: InterfaceSettingsSnapshot
     ) -> String? {
         var values: [String] = []
         if let footer {
             values.append(footer.text)
         }
         if let timestamp {
-            values.append(
-                timestamp.formatted(date: .omitted, time: .shortened)
-            )
+            // Today's time alone, "Yesterday at" the time, or the full date
+            // and time when older, as Discord shows an embed timestamp.
+            values.append(NativeTimelineTimestamp.headerText(for: timestamp, settings: settings))
         }
         guard !values.isEmpty else { return nil }
         return values.joined(separator: " • ")
