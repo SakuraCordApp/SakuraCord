@@ -172,7 +172,10 @@ private struct ChatWorkspacePrimaryContent: View {
                     }
             } else if let channel = model.selectedChannel,
                       model.embeddedActivities.dockedSession?.channel.id == channel.id {
-                EmbeddedActivityChatWorkspace(model: model)
+                // The Activity docks above the chat, which stays beside it as in Discord.
+                DockedRegionChatWorkspace(model: model, heightKey: "embeddedActivityRegionHeight", defaultHeight: 420) {
+                    EmbeddedActivityStage(model: model)
+                }
             } else {
                 VStack(spacing: 0) {
                     if let channel = model.selectedChannel {

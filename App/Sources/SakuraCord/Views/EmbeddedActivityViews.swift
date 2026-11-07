@@ -105,18 +105,6 @@ struct EmbeddedActivityStage: View {
     }
 }
 
-/// Docks the hosted Activity above a text channel's or DM's chat, which stays
-/// beside it as Discord's client keeps it.
-struct EmbeddedActivityChatWorkspace: View {
-    let model: AppModel
-
-    var body: some View {
-        DockedRegionChatWorkspace(model: model, heightKey: "embeddedActivityRegionHeight", defaultHeight: 420) {
-            EmbeddedActivityStage(model: model)
-        }
-    }
-}
-
 /// While the hosted Activity runs outside a call, the sidebar shows it with a
 /// way back to its channel and out of it, like the voice panel.
 struct EmbeddedActivitySidebarPanel: View {
@@ -145,18 +133,12 @@ struct EmbeddedActivitySidebarPanel: View {
             }
             .buttonStyle(.plain)
             .help("Open \(session.application.name)")
-            Button {
+            SidebarVoiceGlassButton(
+                systemImage: "rectangle.portrait.and.arrow.right", help: "Leave Activity",
+                diameter: InterfaceScale.metric(32), role: .destructive
+            ) {
                 model.leaveActivity()
-            } label: {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.interface(.callout).weight(.semibold))
-                    .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .glassEffect(.regular.tint(Color(hex: 0xDA373C)).interactive(), in: Circle())
-            .help("Leave Activity")
-            .accessibilityLabel("Leave Activity")
         }
         .padding(.leading, InterfaceScale.metric(12))
         .padding(.trailing, InterfaceScale.metric(8))

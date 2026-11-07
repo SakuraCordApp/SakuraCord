@@ -91,7 +91,7 @@ struct ActivityShelfView: View {
                     alignment: .leading, spacing: InterfaceScale.metric(10)
                 ) {
                     ForEach(showsAllRecents ? recents : Array(recents.prefix(8))) { application in
-                        Button { open(application) } label: {
+                        Button { selection = application } label: {
                             ActivityIcon(url: application.iconURL, size: 44)
                         }
                         .buttonStyle(ActivityShelfPressStyle())
@@ -127,7 +127,7 @@ struct ActivityShelfView: View {
                 spacing: InterfaceScale.metric(12)
             ) {
                 ForEach(applications) { application in
-                    ActivityShelfTile(application: application, hover: { warmed = application }, action: { open(application) })
+                    ActivityShelfTile(application: application, hover: { warmed = application }, action: { selection = application })
                 }
             }
             .padding(.horizontal, InterfaceScale.metric(14))
@@ -161,10 +161,6 @@ struct ActivityShelfView: View {
         }
         .padding(.horizontal, InterfaceScale.metric(14))
         .padding(.bottom, InterfaceScale.metric(8))
-    }
-
-    private func open(_ application: EmbeddedActivityApplication) {
-        selection = application
     }
 
     private static func recents(_ shelf: [EmbeddedActivityApplication]) -> [EmbeddedActivityApplication] {
@@ -365,7 +361,7 @@ private struct ActivityShelfPressStyle: ButtonStyle {
     }
 }
 
-/// The soundboard and sticker pickers' tile surface and hover outline.
+/// The soundboard and Activity shelf tiles' surface and hover outline.
 enum PickerTileStyle {
     static func surface(_ scheme: ColorScheme, isHovering: Bool) -> Color {
         scheme == .dark

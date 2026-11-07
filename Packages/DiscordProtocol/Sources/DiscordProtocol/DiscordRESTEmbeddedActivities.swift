@@ -6,12 +6,13 @@ import SakuraCordModels
 /// Activity makes through its host. See docs/protocol/ACTIVITIES.md.
 public extension DiscordRESTProvider {
     func embeddedActivityShelf(guildID: GuildID?) async throws -> [EmbeddedActivityApplication] {
+        // Recents come from the same application frecency the official shelf reads.
+        async let settings = try? frecencySettingsProto()
         let shelf: ActivityShelfDTO = try await request(
             "/activities/shelf",
             query: guildID.map { [URLQueryItem(name: "guild_id", value: $0.description)] } ?? []
         )
-        // Recents come from the same application frecency the official shelf reads.
-        let frecency = (try? await frecencySettingsProto()).flatMap {
+        let frecency = await settings.flatMap {
             DiscordSettingsProto.frecencyHistory(from: $0, field: DiscordSettingsProto.applicationFrecencyField)
         }
         return shelf.domain(frecency: frecency?.entries ?? [])

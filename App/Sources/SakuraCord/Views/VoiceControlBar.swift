@@ -452,7 +452,7 @@ struct VoiceSidebarControlPanel: View {
     }
 }
 
-private struct SidebarVoiceGlassButton: View {
+struct SidebarVoiceGlassButton: View {
     let systemImage: String
     let help: String
     let diameter: CGFloat

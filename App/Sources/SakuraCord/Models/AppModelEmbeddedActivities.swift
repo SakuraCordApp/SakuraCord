@@ -43,8 +43,11 @@ final class EmbeddedActivityStore {
     /// Running instances by composite instance ID.
     private(set) var instances: [String: EmbeddedActivityInstance] = [:]
     var shelves: [GuildID?: [EmbeddedActivityApplication]] = [:]
-    /// Shelf loads in flight, so a second caller waits for the first.
+    /// Shelf reads in flight, shared by every caller. Each is an account child
+    /// task, so account cleanup cancels and drains it.
     @ObservationIgnored var shelfLoads: [GuildID?: Task<Void, Never>] = [:]
+    /// Shelves Activity cards already asked for, so a failed read isn't repeated per card.
+    @ObservationIgnored var cardShelfRequests: Set<GuildID?> = []
     var shelfError: String?
     var session: Session?
     var prompt: Prompt?
@@ -126,7 +129,9 @@ final class EmbeddedActivityStore {
         endSession()
         instances = [:]
         shelves = [:]
+        shelfLoads.values.forEach { $0.cancel() }
         shelfLoads = [:]
+        cardShelfRequests = []
         shelfError = nil
         gatewaySessionID = nil
         pendingLeaves = [:]
@@ -147,7 +152,7 @@ extension AppModel {
     func canStartActivity(in channel: Channel) -> Bool {
         guard channel.guildID != nil else { return true }
         guard let permissions = effectiveMessagePermissions(in: channel) else { return false }
-        return permissions & ((1 << 39) | DiscordPermissionBits.administrator) != 0
+        return permissions & (DiscordPermissionBits.useEmbeddedActivities | DiscordPermissionBits.administrator) != 0
     }
 
     func retryActivity() async {
@@ -155,26 +160,27 @@ extension AppModel {
         await startActivity(session.application, in: session.channel)
     }
 
+    /// Reads the guild's shelf; a caller arriving mid-read waits for that read.
     func loadActivityShelf(guildID: GuildID?) async {
         let store = embeddedActivities
-        if let load = store.shelfLoads[guildID] { return await load.value }
-        let load = Task { await fetchActivityShelf(guildID: guildID) }
+        let load = store.shelfLoads[guildID] ?? startAccountChildTask(account: accountSession()) { model, account in
+            await model.fetchActivityShelf(guildID: guildID, account: account)
+        }
         store.shelfLoads[guildID] = load
         await load.value
         if store.shelfLoads[guildID] == load { store.shelfLoads[guildID] = nil }
     }
 
-    private func fetchActivityShelf(guildID: GuildID?) async {
-        let account = accountSession()
+    private func fetchActivityShelf(guildID: GuildID?, account: AppModelAccountSession) async {
         do {
             let shelf = try await account.provider.embeddedActivityShelf(guildID: guildID)
-            guard isCurrentAccountSession(account) else { return }
+            guard isCurrentAccountSession(account), !Task.isCancelled else { return }
             embeddedActivities.shelves[guildID] = shelf
             embeddedActivities.shelfError = nil
             // Activity cards drawn before the shelf arrived pick up its cover.
             serverInvites.changed()
         } catch {
-            guard isCurrentAccountSession(account) else { return }
+            guard isCurrentAccountSession(account), !Task.isCancelled else { return }
             embeddedActivities.shelfError = error.localizedDescription
         }
     }
@@ -263,8 +269,9 @@ extension AppModel {
     func activityPlayers(reference: ServerInviteReference?, instanceID: String?) -> [UserID] {
         let instance = instanceID.flatMap { embeddedActivities.instances[$0] }
             ?? reference.flatMap { inviteEntry(for: $0)?.invite }.flatMap(activityInstance(for:))
+        guard let instance else { return [] }
         var seen = Set<UserID>()
-        return (instance?.participants ?? []).map(\.userID).filter { seen.insert($0).inserted }
+        return instance.participants.map(\.userID).filter { seen.insert($0).inserted }
     }
 
     func activityPlayerAvatarURL(_ userID: UserID) -> URL? {
@@ -275,18 +282,13 @@ extension AppModel {
     func activityInstanceAction(_ instanceID: String) -> (String, Bool) {
         if embeddedActivities.session?.instance?.compositeInstanceID == instanceID { return ("Joined", true) }
         guard let instance = embeddedActivities.instances[instanceID] else { return ("Ended", true) }
-        return ("Join", activityChannel(instance) == nil)
-    }
-
-    /// Where this client can host the instance. Threads are not hosted yet.
-    private func activityChannel(_ instance: EmbeddedActivityInstance) -> Channel? {
-        knownRootChannel(instance.location.channelID)
+        return ("Join", knownRootChannel(instance.location.channelID) == nil)
     }
 
     /// Joins the instance an application's launch message announced. Outside
     /// a voice channel it needs no call, as in an application's own DM.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
-        guard let instance = embeddedActivities.instances[instanceID], let channel = activityChannel(instance) else { return }
+        guard let instance = embeddedActivities.instances[instanceID], let channel = knownRootChannel(instance.location.channelID) else { return }
         guard let application = await shelfApplication(instance.applicationID, guildID: channel.guildID, fallback: {
             EmbeddedActivityApplication(id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
         }) else { return }
@@ -315,10 +317,11 @@ extension AppModel {
         await startActivity(application, in: channel)
     }
 
-    /// The shelf's details for an Activity a card points to, loading the shelf
-    /// first. Without them the Activity is treated as age-restricted, so a
-    /// card never skips the confirmation the shelf would ask for.
-    /// Nil once the account changed or the caller was cancelled while loading.
+    /// The shelf's details for an Activity a card points to, reading the shelf
+    /// first. If the read failed the Activity is treated as age-restricted, so
+    /// a card never skips a confirmation the shelf would ask for; one missing
+    /// from a loaded shelf has no gate to honour. Nil once the account changed
+    /// or the caller was cancelled while reading.
     private func shelfApplication(
         _ id: ApplicationID, guildID: GuildID?, fallback: () -> EmbeddedActivityApplication
     ) async -> EmbeddedActivityApplication? {
@@ -327,7 +330,7 @@ extension AppModel {
         guard isCurrentAccountSession(account), !Task.isCancelled else { return nil }
         if let application = embeddedActivities.application(id) { return application }
         var application = fallback()
-        application.requiresAgeGate = true
+        application.requiresAgeGate = embeddedActivities.shelves[guildID] == nil
         return application
     }
 
@@ -414,7 +417,7 @@ extension AppModel {
             participant.userID == currentUser?.id && store.commandLaunches.contains { $0.nonce == participant.nonce }
         }), let index = store.commandLaunches.firstIndex(where: { $0.nonce == participant.nonce }) else { return }
         let command = store.commandLaunches.remove(at: index).application
-        guard let channel = activityChannel(instance) else {
+        guard let channel = knownRootChannel(instance.location.channelID) else {
             leaveEmbeddedActivity(instance)
             return
         }
