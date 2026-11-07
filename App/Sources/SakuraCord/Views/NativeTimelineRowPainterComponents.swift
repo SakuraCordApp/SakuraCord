@@ -1060,9 +1060,9 @@ extension NativeTimelineRowPainter {
         } else {
             let alphas = DiscordComponentButtonAppearance.secondaryFillAlphas(isDark: isDark)
             let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
-            fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
+            fill = DiscordEmbedPalette.grey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
             border = SakuraCordThemeStore.shared.committedTheme.discordTinted(
-                discordGrey.withAlphaComponent(DiscordComponentButtonAppearance.secondaryBorderAlpha(isDark: isDark)),
+                DiscordEmbedPalette.grey.withAlphaComponent(DiscordComponentButtonAppearance.secondaryBorderAlpha(isDark: isDark)),
                 isDark: isDark
             )
             foreground = .labelColor
@@ -1096,9 +1096,6 @@ extension NativeTimelineRowPainter {
         if isDimmed { context?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
-
-    /// The grey behind Discord's secondary buttons and its muted borders.
-    private static let discordGrey = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
 
     private static func drawComponentButtonContent(
         _ region: NativeTimelineComponentLayout.ButtonRegion,

@@ -26,32 +26,29 @@ enum DiscordRichMessageMetrics {
 /// the spoiler cover assumes, and the light theme otherwise, then tinted the
 /// way a gradient theme tints them.
 enum DiscordEmbedPalette {
-    private static let grey: UInt32 = 0x97979F
+    /// The grey behind Discord's secondary buttons and its muted borders.
+    static let grey = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
 
     /// `--background-surface-high`.
-    static var cardFill: NSColor { themed(0x0A0A0C, light: 0xFFFFFF) }
-    /// `--border-subtle`.
-    static var cardBorder: NSColor { themed(grey, light: grey, alpha: 51 / 255, lightAlpha: 71 / 255) }
-    /// `--border-normal`, the bar of an embed without a colour.
-    static var defaultAccent: NSColor { themed(grey, light: grey, alpha: 61 / 255, lightAlpha: 102 / 255) }
+    static var cardFill: NSColor {
+        themed(NSColor(srgbRed: 10 / 255, green: 10 / 255, blue: 12 / 255, alpha: 1), light: .white)
+    }
 
-    private static func themed(
-        _ midnight: UInt32, light: UInt32, alpha: CGFloat = 1, lightAlpha: CGFloat = 1
-    ) -> NSColor {
-        func color(_ hex: UInt32, _ alpha: CGFloat) -> NSColor {
-            NSColor(
-                srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
-                green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255,
-                alpha: alpha
-            )
-        }
-        let midnightColor = color(midnight, alpha)
-        let lightColor = color(light, lightAlpha)
+    /// `--border-subtle`.
+    static var cardBorder: NSColor {
+        themed(grey.withAlphaComponent(51 / 255), light: grey.withAlphaComponent(71 / 255))
+    }
+
+    /// `--border-normal`, the bar of an embed without a colour.
+    static var defaultAccent: NSColor {
+        themed(grey.withAlphaComponent(61 / 255), light: grey.withAlphaComponent(102 / 255))
+    }
+
+    private static func themed(_ midnight: NSColor, light: NSColor) -> NSColor {
         let theme = SakuraCordThemeStore.shared.committedTheme
         return NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return theme.discordTinted(isDark ? midnightColor : lightColor, isDark: isDark)
+            return theme.discordTinted(isDark ? midnight : light, isDark: isDark)
         }
     }
 }
