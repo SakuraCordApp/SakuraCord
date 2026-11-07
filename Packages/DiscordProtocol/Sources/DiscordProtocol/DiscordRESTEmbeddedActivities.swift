@@ -266,7 +266,12 @@ private struct ActivityShelfDTO: Decodable {
     func domain(frecency: [DiscordFrecencyEntry], now: Date = .now) -> [EmbeddedActivityApplication] {
         let shelfIDs = Set(activities.elements.map(\.applicationID))
         let recentRanks = Dictionary(uniqueKeysWithValues: frecency.filter { shelfIDs.contains($0.key) }
-            .compactMap { entry in Self.frecency(entry, now: now).map { (entry.key, $0) } }
+            .compactMap { entry in
+                DiscordSettingsProto.frecency(
+                    totalUses: entry.totalUses, recentUses: entry.recentUses.filter { $0 > 0 },
+                    nowMilliseconds: UInt64(now.timeIntervalSince1970 * 1000)
+                ).map { (entry.key, $0.frecency) }
+            }
             .sorted { $0.1 > $1.1 }
             .enumerated().map { ($1.0, $0) })
         let applications = Dictionary(
@@ -295,24 +300,5 @@ private struct ActivityShelfDTO: Decodable {
                     recentRank: recentRanks[application.id]
                 )
             }
-    }
-
-    private static func frecency(_ entry: DiscordFrecencyEntry, now: Date) -> Int? {
-        let samples = entry.recentUses.suffix(10)
-        guard !samples.isEmpty else { return nil }
-        let nowMilliseconds = UInt64(now.timeIntervalSince1970 * 1000)
-        let score = samples.reduce(0) { total, timestamp in
-            let days = timestamp >= nowMilliseconds ? 0 : (nowMilliseconds - timestamp) / 86_400_000
-            let weight = switch days {
-            case ...3: 100
-            case ...15: 70
-            case ...30: 50
-            case ...45: 30
-            case ...80: 10
-            default: 1
-            }
-            return total + weight
-        }
-        return Int((Double(entry.totalUses) * Double(score) / Double(samples.count)).rounded(.up))
     }
 }

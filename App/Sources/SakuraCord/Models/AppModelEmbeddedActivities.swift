@@ -89,13 +89,23 @@ final class EmbeddedActivityStore {
         shelves.values.lazy.flatMap { $0 }.first { $0.id == id }
     }
 
+    /// Asks the person; a cancelled caller, such as one outliving its account,
+    /// is declined so nothing waits on a prompt nobody will answer.
     func ask(_ kind: Prompt.Kind, applicationName: String) async -> Bool {
         prompt?.resolve(false)
-        return await withCheckedContinuation { continuation in
-            prompt = Prompt(applicationName: applicationName, kind: kind) { [weak self] granted in
-                self?.prompt = nil
-                continuation.resume(returning: granted)
+        guard !Task.isCancelled else { return false }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                var isResolved = false
+                prompt = Prompt(applicationName: applicationName, kind: kind) { [weak self] granted in
+                    guard !isResolved else { return }
+                    isResolved = true
+                    self?.prompt = nil
+                    continuation.resume(returning: granted)
+                }
             }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.prompt?.resolve(false) }
         }
     }
 
@@ -265,9 +275,9 @@ extension AppModel {
     /// a voice channel it needs no call, as in an application's own DM.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
         guard let instance = embeddedActivities.instances[instanceID], let channel = activityChannel(instance) else { return }
-        let application = await shelfApplication(instance.applicationID, guildID: channel.guildID) {
+        guard let application = await shelfApplication(instance.applicationID, guildID: channel.guildID, fallback: {
             EmbeddedActivityApplication(id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
-        }
+        }) else { return }
         await startActivity(application, in: channel)
     }
 
@@ -284,11 +294,11 @@ extension AppModel {
 
     func joinActivityInvite(_ invite: ServerInvite) async {
         guard let activity = invite.activity, let channel = activityInviteChannel(invite) else { return }
-        let application = await shelfApplication(activity.applicationID, guildID: channel.guildID) {
+        guard let application = await shelfApplication(activity.applicationID, guildID: channel.guildID, fallback: {
             EmbeddedActivityApplication(
                 id: activity.applicationID, name: activity.name, iconURL: activity.iconURL, coverURL: activity.coverURL
             )
-        }
+        }) else { return }
         navigate(to: channel.id)
         await startActivity(application, in: channel)
     }
@@ -296,10 +306,13 @@ extension AppModel {
     /// The shelf's details for an Activity a card points to, loading the shelf
     /// first. Without them the Activity is treated as age-restricted, so a
     /// card never skips the confirmation the shelf would ask for.
+    /// Nil once the account changed or the caller was cancelled while loading.
     private func shelfApplication(
         _ id: ApplicationID, guildID: GuildID?, fallback: () -> EmbeddedActivityApplication
-    ) async -> EmbeddedActivityApplication {
+    ) async -> EmbeddedActivityApplication? {
+        let account = accountSession()
         if embeddedActivities.application(id) == nil { await loadActivityShelf(guildID: guildID) }
+        guard isCurrentAccountSession(account), !Task.isCancelled else { return nil }
         if let application = embeddedActivities.application(id) { return application }
         var application = fallback()
         application.requiresAgeGate = true
