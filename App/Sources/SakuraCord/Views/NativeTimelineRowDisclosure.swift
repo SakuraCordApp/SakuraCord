@@ -413,13 +413,16 @@ extension NativeTimelineCanvasView {
             views += spoilerOverlays.filter { messageIDs.contains($0.key.messageID) }.map(\.value)
             clips.append((views, disclosureClipMinY ... max(disclosureClipMinY, disclosureClipMaxY)))
         }
-        for (index, remaining) in reactionMotionRemainingHeights
-            where remaining > 0 && items.indices.contains(index) && !disclosureRange.contains(index) {
+        // A deleted run below the row widens it, so it is the row's own part
+        // being shorter than its layout that clips its content.
+        for index in reactionMotionRemainingHeights.keys where items.indices.contains(index) && !disclosureRange.contains(index) {
             let item = items[index]
             let frame = rowFrame(at: index)
+            let contentMaxY = frame.maxY - departedGapHeight(below: item.identifier)
+            guard contentMaxY - frame.minY < layouts[index].height - 0.5 else { continue }
             let views = liveViews(of: [item.identifier])
                 + spoilerOverlays.filter { $0.key.messageID == item.messageID }.map(\.value)
-            clips.append((views, frame.minY ... max(frame.minY, frame.maxY - departedGapHeight(below: item.identifier))))
+            clips.append((views, frame.minY ... max(frame.minY, contentMaxY)))
         }
         for clip in clips {
             for view in clip.views {
