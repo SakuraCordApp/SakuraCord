@@ -82,6 +82,8 @@ public enum ClientEvent: Equatable, Sendable {
     )
     case snapshotChanged(BootstrapSnapshot)
     case guildChanged(Guild)
+    /// Every application of the current account to an apply-to-join server.
+    case guildJoinRequestsChanged([GuildJoinRequest])
     case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])
     case guildLayoutSaveFailed(reason: String)
     case guildRolesChanged(guildID: GuildID, roles: [GuildRole])

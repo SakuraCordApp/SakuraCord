@@ -131,6 +131,12 @@ extension AppModel {
             store.changed(reference)
             return false
         }
+        // Like the official client, an application already under review opens its status instead of the invite.
+        if invite.requiresApplication, guildJoinRequests.requests[invite.guildID]?.isOpen == true {
+            store.showsJoinDialog = false
+            selectGuildJoinRequest(invite.guildID)
+            return true
+        }
         guard store.joining.insert(invite.guildID).inserted else { return false }
         let session = accountSession()
         store.entries[reference]?.error = nil
@@ -145,10 +151,14 @@ extension AppModel {
             let accepted = try await session.provider.acceptServerInvite(reference, messageID: messageID)
             guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
             store.entries[reference]?.invite = accepted.invite
-            if accepted.requiresVerification {
-                throw ServerInviteError.unsupported("Discord requires verification to finish joining. Complete it in Discord, then return to SakuraCord.")
+            // Discord asks for an application only when it reports a verification form for this join.
+            if accepted.invite.requiresApplication, accepted.requiresVerification {
+                store.showsJoinDialog = false
+                openGuildJoinApplication(invite.guildID, inviteCode: reference.code)
+                return true
             }
-            return try await finishJoiningInvite(accepted.invite, account: session)
+            // Member screening admits the account as a pending member that must answer the form.
+            return try await finishJoiningInvite(accepted.invite, screening: accepted.requiresVerification, account: session)
         } catch {
             guard isCurrentAccountSession(session) else { return false }
             if error is CancellationError { return false }
@@ -158,13 +168,18 @@ extension AppModel {
         }
     }
 
-    private func finishJoiningInvite(_ invite: ServerInvite, account session: AppModelAccountSession) async throws -> Bool {
+    private func finishJoiningInvite(_ invite: ServerInvite, screening: Bool,
+                                     account session: AppModelAccountSession) async throws -> Bool {
         guard let guild = try await awaitJoinedGuild(invite.guildID, account: session) else { return false }
         // The onboarding workspace replaces the rail's presentation
         // host. Close its shared state before that host is recreated.
         serverInvites.showsJoinDialog = false
         navigateToInvite(invite)
-        if guild.features.contains("GUILD_ONBOARDING") { openChannelsAndRoles(in: guild.id) }
+        if screening {
+            openGuildJoinApplication(guild.id, inviteCode: invite.reference.code)
+        } else if guild.features.contains("GUILD_ONBOARDING") {
+            openChannelsAndRoles(in: guild.id)
+        }
         loadServerInvite(invite.reference, refresh: true)
         return true
     }
@@ -175,12 +190,8 @@ extension AppModel {
         for _ in 0 ..< 80 {
             guard isCurrentAccountSession(session), !Task.isCancelled else { return nil }
             // A joined server can legitimately have no channels visible to this member.
-            if let guild = serverRailGuildsByID[guildID], !guild.isUnavailable {
-                if conversationPermissionBasis(for: guild.id)?.currentUserIsPending == true {
-                    throw ServerInviteError.unsupported("This server requires member verification. Finish verification in Discord.")
-                }
-                return guild
-            }
+            // A screened member stays pending until it answers the form; the conversation offers it.
+            if let guild = serverRailGuildsByID[guildID], !guild.isUnavailable { return guild }
             try await Task.sleep(for: .milliseconds(250))
         }
         throw ServerInviteError.failed("Discord accepted the join, but server details have not arrived yet. Reconnect and check your server list before trying again.")

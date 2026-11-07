@@ -250,6 +250,7 @@ struct NativeTimelineInviteLayout {
             return (member.isUnavailable ? "Server unavailable" : "Go to Server", member.isUnavailable)
         }
         if invite?.unsupportedJoinReason != nil { return ("Open in Discord", false) }
+        if invite?.requiresApplication == true { return ("Apply to Join", false) }
         return (invite != nil ? "Join Server" : entry?.error != nil ? "Try Again" : "Loading…",
                 entry?.isLoading != false && invite == nil)
     }

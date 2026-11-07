@@ -20,6 +20,8 @@ extension DiscordRESTProvider {
             await handleGuildRoleCreateDispatch(name: name, body: body)
         case "GUILD_ROLE_DELETE":
             await handleGuildRoleDeleteDispatch(name: name, body: body)
+        case "GUILD_JOIN_REQUEST_CREATE", "GUILD_JOIN_REQUEST_UPDATE", "GUILD_JOIN_REQUEST_DELETE":
+            handleGuildJoinRequestDispatch(name: name, body: body)
         default:
             return false
         }

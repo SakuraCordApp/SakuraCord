@@ -320,8 +320,13 @@ final class ServerRailPresentationStore {
         }
     }
 
+    /// An application's status page stands in for the workspace, so Home is not the selection.
+    var showsGuildJoinRequest = false {
+        didSet { refreshHomeSelection() }
+    }
+
     private func refreshHomeSelection() {
-        home.isSelected = selectedGuildID == nil
+        home.isSelected = selectedGuildID == nil && !showsGuildJoinRequest
             && selectedChannelID.flatMap { directMessageEntriesByID[$0] } == nil
     }
 

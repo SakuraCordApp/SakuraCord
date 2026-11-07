@@ -84,10 +84,12 @@ public struct ServerInvite: Equatable, Sendable {
         self.requiresSpecialAcceptance = requiresSpecialAcceptance
     }
 
+    /// Apply-to-join: Discord admits the account only after a moderator approves its application.
+    public var requiresApplication: Bool {
+        features.contains("MEMBER_VERIFICATION_MANUAL_APPROVAL")
+    }
+
     public var unsupportedJoinReason: String? {
-        if features.contains("MEMBER_VERIFICATION_GATE_ENABLED") {
-            return "This server requires member screening. Join it in Discord, then return to SakuraCord."
-        }
         if requiresSpecialAcceptance {
             return "This invitation requires a Discord-specific joining flow. Open it in Discord to continue."
         }

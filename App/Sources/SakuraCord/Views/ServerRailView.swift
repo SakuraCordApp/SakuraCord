@@ -13,10 +13,19 @@ struct ServerRailContainer: View {
 
     var body: some View {
         @Bindable var invites = model.serverInvites
+        let joinRequests = model.guildJoinRequests
         ServerRailView(
             sidebarWidth: sidebarWidth,
             items: model.serverRailPresentation.items,
             directMessages: model.serverRailPresentation.directMessages,
+            joinRequests: joinRequests.railRequests.map { request in
+                ServerRailJoinRequestEntry(id: request.guildID, name: model.joinRequestGuildName(request.guildID),
+                                           iconURL: model.joinRequestGuildIconURL(request.guildID),
+                                           isRejected: request.status == .rejected,
+                                           isSelected: joinRequests.selectedGuildID == request.guildID)
+            },
+            joinRequestsExpanded: Bindable(joinRequests).isFolderExpanded,
+            selectJoinRequest: model.selectGuildJoinRequest,
             home: model.serverRailPresentation.home,
             selectHome: { model.selectGuild(nil) },
             selectDirectMessage: { model.navigate(to: $0) },
@@ -74,6 +83,19 @@ struct ServerRailContainer: View {
         .windowModal(item: Bindable(invites.creation).presentation, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             ServerInviteCreationView(model: model, presentation: $0)
         }
+        .windowModal(item: Binding(
+            get: { joinRequests.modal },
+            set: { modal in
+                // However the approval greeting closes, it is acknowledged like the official one.
+                if modal == nil, let current = joinRequests.modal, current.kind == .welcome {
+                    model.finishGuildJoinApproval(current.guildID)
+                } else {
+                    joinRequests.modal = modal
+                    model.showGuildJoinApprovalIfNeeded()
+                }
+            }
+        ), cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular, isConcealed: { model.captcha.challenge != nil },
+        content: { GuildJoinApplicationView(model: model, modal: $0) })
         .alert("Mark All Servers as Read?",
                isPresented: Binding(get: { readAllConfirmationSession != nil },
                                     set: { if !$0 { readAllConfirmationSession = nil } }),
@@ -112,6 +134,9 @@ struct ServerRailView: View {
     let sidebarWidth: CGFloat
     let items: [ServerRailPresentationItem]
     let directMessages: [ServerRailDirectMessageEntry]
+    var joinRequests: [ServerRailJoinRequestEntry] = []
+    var joinRequestsExpanded: Binding<Bool> = .constant(false)
+    var selectJoinRequest: (GuildID?) -> Void = { _ in }
     let home: ServerRailHomeEntry
     let selectHome: () -> Void
     let selectDirectMessage: (ChannelID) -> Void
@@ -149,6 +174,12 @@ struct ServerRailView: View {
                     .transition(ServerRailAnimations.membershipTransition)
                 }
 
+                if !joinRequests.isEmpty {
+                    PendingApplicationsRailFolder(entries: joinRequests, isExpanded: joinRequestsExpanded,
+                                                  select: { selectJoinRequest($0) })
+                        .transition(ServerRailAnimations.membershipTransition)
+                }
+
                 VStack(spacing: InterfaceScale.metric(showsReadAllButton ? ReadAllServersButton.verticalPadding : 10)) {
                     Divider().padding(.horizontal, InterfaceScale.metric(12))
                     if showsReadAllButton {
@@ -161,6 +192,7 @@ struct ServerRailView: View {
             .padding(.bottom, InterfaceScale.metric(12))
             .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: directMessages.map(\.id))
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: joinRequests.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
         }
@@ -385,6 +417,104 @@ private struct DirectMessageRailButton: View {
     }
 }
 
+struct ServerRailJoinRequestEntry: Identifiable, Equatable {
+    let id: GuildID
+    let name: String
+    let iconURL: URL?
+    let isRejected: Bool
+    let isSelected: Bool
+}
+
+/// Applications under review or rejected, grouped like Discord's Pending Applications folder.
+private struct PendingApplicationsRailFolder: View {
+    let entries: [ServerRailJoinRequestEntry]
+    @Binding var isExpanded: Bool
+    let select: (GuildID) -> Void
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+
+    var body: some View {
+        VStack(spacing: InterfaceScale.metric(8)) {
+            Button { isExpanded.toggle() } label: {
+                HStack(spacing: InterfaceScale.metric(4)) {
+                    ServerRailSelectionIndicator(isSelected: !isExpanded && entries.contains(where: \.isSelected),
+                                                 isHovering: isHovering && !isExpanded, hasNotification: false)
+                    Image(systemName: "hourglass")
+                        .font(.interfaceSystem(size: 19, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
+                        .background(Color.gray.opacity(isExpanded ? 0 : 0.18),
+                                    in: RoundedRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous))
+                        .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+                }
+                .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(ServerRailButtonStyle())
+            .accessibilityLabel("Pending Applications")
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .help("Pending Applications")
+            .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
+                isHovering ? ServerRailHoverItem(name: "Pending Applications", bounds: bounds) : nil
+            }
+            .onServerRailHover { isHovering = $0 }
+            if isExpanded {
+                ForEach(entries) { entry in
+                    JoinRequestRailButton(entry: entry) { select(entry.id) }
+                }
+            }
+        }
+        .padding(.vertical, isExpanded ? InterfaceScale.metric(5) : 0)
+        .background {
+            if isExpanded {
+                RoundedRectangle(cornerRadius: InterfaceScale.metric(17), style: .continuous)
+                    .fill(Color.gray.opacity(0.12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: InterfaceScale.metric(17), style: .continuous)
+                            .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                    }
+                    .frame(width: InterfaceScale.metric(52))
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: isExpanded)
+    }
+}
+
+private struct JoinRequestRailButton: View {
+    let entry: ServerRailJoinRequestEntry
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        let label = entry.isRejected ? "\(entry.name), application denied" : "\(entry.name), application pending"
+        Button(action: action) {
+            HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailSelectionIndicator(isSelected: entry.isSelected, isHovering: isHovering, hasNotification: false)
+                GuildIconView(name: entry.name, iconURL: entry.iconURL, size: InterfaceScale.metric(44),
+                              cornerRadius: InterfaceScale.metric(13), animates: isHovering, isSelected: entry.isSelected)
+                    .saturation(0.4)
+                    .modifier(ApplicationStatusBadge(symbol: entry.isRejected ? "xmark" : "hourglass",
+                                                     tint: entry.isRejected ? Color(hex: 0xF23F43) : .gray,
+                                                     diameter: 18, offset: 4))
+                    .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+            }
+            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ServerRailButtonStyle())
+        .accessibilityLabel(label)
+        .help(label)
+        .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
+            isHovering ? ServerRailHoverItem(name: label, bounds: bounds) : nil
+        }
+        .onServerRailHover { isHovering = $0 }
+        .animation(.snappy(duration: 0.18), value: isHovering)
+    }
+}
+
 struct ServerRailBadgedIcon<Icon: View>: View {
     let mentionCount: Int
     let badgeOffset: CGFloat
@@ -412,6 +542,39 @@ struct ServerRailBadgedIcon<Icon: View>: View {
                 ServerRailMentionBadge(count: mentionCount)
                     .opacity(drawsBadgeInOverlay ? 0 : 1)
                     .offset(x: InterfaceScale.metric(badgeOffset), y: InterfaceScale.metric(badgeOffset))
+            }
+    }
+}
+
+/// A status glyph in a disc on an icon's corner. The icon is cut away around the disc, so whatever surface
+/// the icon rests on shows through, as with the rail's mention badges.
+struct ApplicationStatusBadge: ViewModifier {
+    let symbol: String
+    let tint: Color
+    /// Unscaled points, like the offset.
+    let diameter: CGFloat
+    let offset: CGFloat
+
+    func body(content: Content) -> some View {
+        let gap = InterfaceScale.metric(2)
+        let diameter = InterfaceScale.metric(diameter)
+        let offset = InterfaceScale.metric(offset)
+        content
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .frame(width: diameter + gap * 2, height: diameter + gap * 2)
+                    .offset(x: offset + gap, y: offset + gap)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: symbol)
+                    .font(.interfaceSystem(size: self.diameter / 2, weight: .bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: diameter, height: diameter)
+                    .background(tint, in: Circle())
+                    .offset(x: offset, y: offset)
             }
     }
 }

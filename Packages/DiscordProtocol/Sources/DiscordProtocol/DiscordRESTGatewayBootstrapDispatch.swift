@@ -109,6 +109,7 @@ extension DiscordRESTProvider {
             voiceStateCount: guildProjection.voiceStateCount,
             currentUserRolesByGuild: guildProjection.currentUserRolesByGuild
         )
+        applyReadyGuildJoinRequests(body)
     }
 
     private func resetReadySessionState(

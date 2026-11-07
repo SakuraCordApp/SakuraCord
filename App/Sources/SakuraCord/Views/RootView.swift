@@ -237,6 +237,8 @@ private struct ChatRootView: View {
                 .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,
+                    // A pending server has no channels; Discord shows only the rail beside its status.
+                    showsConversations: model.guildJoinRequests.selectedGuildID == nil,
                     guild: selectedGuild,
                     channels: model.visibleChannels,
                     channelGroups: model.visibleChannelGroups,
@@ -278,6 +280,9 @@ private struct ChatRootView: View {
             Group {
                 if model.isSwitchingAccounts {
                     Color.clear
+                } else if let guildID = model.guildJoinRequests.selectedGuildID {
+                    GuildJoinRequestPage(model: model, guildID: guildID)
+                        .id(guildID)
                 } else if let guildID = model.onboardingEntryGuildID {
                     GuildOnboardingView(model: model, guildID: guildID)
                         .id(guildID)
@@ -662,7 +667,7 @@ private struct ChatRootView: View {
         if !model.isSwitchingAccounts {
             if model.isMessageRequestsPresented {
                 MessageRequestsToolbarTabs(model: model)
-            } else if model.isFriendsPresented {
+            } else if model.isFriendsPresented, model.guildJoinRequests.selectedGuildID == nil {
                 FriendsToolbarSections(model: model)
             }
         }
@@ -1236,6 +1241,10 @@ private struct ChatRootView: View {
     }
 
     private var conversationToolbarPresentation: ConversationToolbarPresentation? {
+        if let guildID = model.guildJoinRequests.selectedGuildID {
+            let isDenied = model.guildJoinRequests.requests[guildID]?.status == .rejected
+            return .init(title: model.joinRequestGuildName(guildID), systemImage: isDenied ? "xmark" : "hourglass")
+        }
         if let conversation = model.presentedSideConversation, conversation.isFullWidth {
             // One line with the thread symbol for threads and forum posts
             // alike, as before side chats were unified.

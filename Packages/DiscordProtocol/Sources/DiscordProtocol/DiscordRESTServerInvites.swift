@@ -67,8 +67,12 @@ public extension DiscordRESTProvider {
         struct Joined: Decodable {
             var id: String?
             var showVerificationForm: Bool?
+            var joinRequest: JoinRequest?
+            struct JoinRequest: Decodable { var guildId: String }
         }
         let joined = try Self.inviteDecoder().decode(Joined.self, from: data)
+        // An apply-to-join server answers with the application it started instead of a membership.
+        if joined.joinRequest?.guildId == guildID.description { return true }
         guard joined.id == guildID.description else {
             throw ServerInviteError.failed("Discord accepted the request but did not confirm the expected server. Check your server list before trying again.")
         }
@@ -149,7 +153,7 @@ public extension DiscordRESTProvider {
         return decoder
     }
 
-    private func checkInviteResponse(_ data: Data, _ response: HTTPURLResponse) throws {
+    func checkInviteResponse(_ data: Data, _ response: HTTPURLResponse) throws {
         guard !(200 ..< 300).contains(response.statusCode) else { return }
         switch Self.discordErrorCode(from: data) {
         case 10006, 50270: throw ServerInviteError.unavailable

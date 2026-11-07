@@ -84,12 +84,15 @@ public struct GuildProfile: Decodable, Equatable, Sendable {
         }.map(\.element)
     }
 
-    /// Without an invite, the first-party card offers Join only for discoverable servers; manual-approval
-    /// screening with visibility 3 (`PUBLIC_WITH_RECRUITMENT`) offers an application instead.
-    public var isDirectlyJoinable: Bool {
-        let appliesToJoin = visibility == 3 && features.contains("MEMBER_VERIFICATION_GATE_ENABLED")
+    /// Manual-approval screening with visibility 3 (`PUBLIC_WITH_RECRUITMENT`): the card offers an application.
+    public var acceptsApplications: Bool {
+        visibility == 3 && features.contains("MEMBER_VERIFICATION_GATE_ENABLED")
             && features.contains("MEMBER_VERIFICATION_MANUAL_APPROVAL")
-        return isDiscoverable && !appliesToJoin
+    }
+
+    /// Without an invite, the first-party card offers Join only for discoverable servers.
+    public var isDirectlyJoinable: Bool {
+        isDiscoverable && !acceptsApplications
     }
 }
 
