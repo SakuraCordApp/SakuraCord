@@ -17,7 +17,9 @@ is the Embedded App SDK parent.
 The contract below was captured from the official desktop client (host 0.0.411,
 web build 660103) on 3 November 2026 launching Watch Together and Chess In The
 Park in a guild voice channel, Wordle in its application DM, and Watch Together
-in a DM call joined by a second account, then cross-checked
+in a DM call joined by a second account, and (web build 667580) on 7 November
+2026 running `/wordle` in a guild text channel and in Wordle's DM and browsing
+the voice shelf and its details, then cross-checked
 against the public [Embedded App SDK](https://github.com/discord/embedded-app-sdk)
 2.5.0 (`b5f4774`). Paicord and Swiftcord v1 have no Activity support.
 
@@ -37,18 +39,41 @@ READY_SUPPLEMENTAL lists the running instances of each guild under
 
 `GET /activities/shelf?guild_id=` returns `activities` (shelf rank and platform
 configuration), `applications` and per-application `assets`; the shelf tile uses
-the `embedded_cover` asset, otherwise the application cover.
+the `embedded_cover` asset, otherwise the application cover. The shelf lists
+Activities by ascending `shelf_rank` and omits those whose `supported_platforms`
+lacks `web`. A tile shows the cover, the icon, the name and one line of the
+description, and a PROMOTED badge when the application flags include `1 << 29`
+(every promoted entry in the capture had it, no other entry did). Above the
+grid, Recents lists shelf Activities from the account's application frecency,
+field 9 of the frecency settings proto. Choosing an Activity opens its details:
+the participant range (`1-N` from `max_participants`, otherwise Unlimited),
+tags, the description, and In-App Purchases when `is_monetized`;
+`requires_age_gate` Activities ask for age confirmation before launch.
 
 Launching, and joining an instance already running in the channel, runs the application's entry-point command (application
 command type 4) from the command indexes: `POST /interactions` type 2 with the
 command's `data` envelope, empty `options` and `attachments`,
-`analytics_location: "app_launcher"` and, in a guild, `source: "VOICE"`. Discord
+`analytics_location: "app_launcher"` and, in a voice channel, `source: "VOICE"`. Discord
 answers with `INTERACTION_SUCCESS` and the instance update containing the
 caller's session. A command whose handler is the application (handler 1, for
 example Wordle) answers through the application instead. An application without
 an entry point uses `POST /activities/{channel}/{application}` with the session ID.
 Leaving is `POST /applications/{application}/activities/{location}/instances/{instance}/leave`
 with `{session_id}`. All three are single attempts.
+
+## Outside voice channels
+
+An Activity can run in a text channel or a DM without a call; its location is
+that channel (`gc-GUILD-CHANNEL` or `pc-CHANNEL`). Its own slash command, such
+as Wordle's `/wordle` (a chat input command), starts it: `POST /interactions`
+with `analytics_location: "slash_ui"` and no `source`, then `INTERACTION_SUCCESS`
+and an `EMBEDDED_ACTIVITY_UPDATE_V2` whose instance ID is the interaction's ID
+and whose participant carries the interaction's `nonce`. No message is posted.
+The official client docks the Activity above that channel's chat, keeps it
+running when another channel is opened, and leaves it with the same leave
+request. SakuraCord recognises its own launch by that nonce, so an instance
+started by another client of the account is not taken over. OAuth from a guild
+text channel sends `channel_type: 0` in the location context.
 
 ## Hosting
 
@@ -95,6 +120,12 @@ runs.
 
 An Activity invite is a channel invite with `target_type: 2` and
 `target_application_id`; the message carries only the invite link. The
+official client renders it as its own card, at most 343 points wide: the
+Activity's 16:9 `embedded_cover` (its preview video plays on hover), the
+Activity's name, the icon beside "Activity Invite" and the voice channel and
+server, the players' avatars with "N Playing" while an instance runs, and a
+full-width Play or Join button, on a 45° gradient taken from the cover's
+colour. Below 270 points the icon is dropped. The
 Activity's invite dialog creates it with `POST /channels/{voice}/invites`, the
 server invite body with those two fields and the context location
 `Stream Invite`.

@@ -97,7 +97,8 @@ extension AppModel {
                 do {
                     let invite = try await account.provider.serverInvite(reference)
                     entry.invite = invite
-                    if invite.brandColor == nil, let url = invite.iconURL {
+                    // An Activity card is tinted from its cover, as in Discord.
+                    if let url = invite.activity?.coverURL ?? (invite.brandColor == nil ? invite.iconURL : nil) {
                         entry.adaptiveColor = try? await ProfileAvatarPaletteLoader.shared.colors(url).first
                     }
                 } catch {

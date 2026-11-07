@@ -7,6 +7,10 @@ extension NativeTimelineRowPainter {
 
     static func inviteCard(_ card: NativeTimelineInviteLayout, bubbleRegion: NativeTimelineBubbleRegion? = nil,
                            isHovered: Bool, pressProgress: CGFloat, isModalPreview: Bool = false) {
+        if card.content?.activity != nil {
+            activityCard(card, bubbleRegion: bubbleRegion, isHovered: isHovered, pressProgress: pressProgress)
+            return
+        }
         let bubble = card.integratesWithBubble ? bubbleRegion : nil
         let outgoing = bubble?.isOutgoing == true
         let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubble)
@@ -36,9 +40,8 @@ extension NativeTimelineRowPainter {
             let color: NSColor = card.isUnavailable && label.bold && !outgoing ? .systemRed : label.secondary ? secondary : foreground
             attributedText(label.attributedText(color: color), in: label.frame, model: nil)
         }
-        let isLive = card.content?.onlineCount != nil || card.content?.activity != nil
         for (index, dot) in card.countDots.enumerated() {
-            (index == 0 && isLive ? NSColor.systemGreen : secondary).setFill()
+            (index == 0 && card.content?.onlineCount != nil ? NSColor.systemGreen : secondary).setFill()
             NSBezierPath(ovalIn: dot).fill()
         }
         for trait in card.traits {
@@ -91,11 +94,7 @@ extension NativeTimelineRowPainter {
         let outgoing = bubble?.isOutgoing == true
         if let invite = card.content {
             if bubble == nil {
-                if let url = invite.activity?.coverURL, let cover = mediaImage(for: .media(url, maximumPixelDimension: 512)) {
-                    drawImage(cover, in: card.bannerFrame, cornerRadius: 0, fillsFrame: true)
-                } else {
-                    inviteGradient(card.gradientColor ?? 0x242424, in: card.bannerFrame)
-                }
+                inviteGradient(card.gradientColor ?? 0x242424, in: card.bannerFrame)
                 background.setFill()
                 NSBezierPath(
                     roundedRect: card.iconFrame.insetBy(dx: -InterfaceScale.metric(3), dy: -InterfaceScale.metric(3)),

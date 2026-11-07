@@ -50,10 +50,9 @@ struct EmbeddedActivityStage: View {
                     case .failed(let message):
                         status(session) {
                             Text(message).multilineTextAlignment(.center)
-                            Button("Try Again") {
+                            ModalGlassButton(symbol: "arrow.clockwise", label: "Try Again", height: 32) {
                                 Task { await model.retryActivity() }
                             }
-                            .buttonStyle(.glass)
                         }
                     }
                 }
@@ -80,11 +79,12 @@ struct EmbeddedActivityStage: View {
                     .contentTransition(.numericText())
             }
             Spacer()
-            Button("Leave Activity", systemImage: "rectangle.portrait.and.arrow.right") {
+            ModalGlassButton(
+                symbol: "rectangle.portrait.and.arrow.right", label: "Leave Activity", primary: true, destructive: true,
+                height: 32
+            ) {
                 model.leaveActivity()
             }
-            .buttonStyle(.glass)
-            .tint(.red)
         }
         .padding(.bottom, InterfaceScale.metric(10))
     }
@@ -210,11 +210,10 @@ struct EmbeddedActivityJoinBanner: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Join Activity") {
+            ModalGlassButton(symbol: "play.fill", label: "Join Activity", primary: true, height: 32) {
                 guard let application else { return }
                 Task { await model.startActivity(application, in: channel) }
             }
-            .buttonStyle(.glassProminent)
             .disabled(application == nil)
         }
         .padding(InterfaceScale.metric(10))

@@ -131,6 +131,8 @@ struct ActivityShelfView: View {
 private struct ActivityShelfTile: View {
     let application: EmbeddedActivityApplication
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -160,17 +162,19 @@ private struct ActivityShelfTile: View {
                 }
                 .padding(InterfaceScale.metric(9))
             }
-            .background(Color.primary.opacity(0.05))
+            .background(PickerTileStyle.surface(colorScheme, isHovering: isHovering))
             .clipShape(ActivityShelfTile.shape)
+            .overlay { ActivityShelfTile.shape.stroke(PickerTileStyle.outline(colorScheme, isHovering: isHovering), lineWidth: 0.5) }
             .contentShape(ActivityShelfTile.shape)
         }
+        .onModalHover { isHovering = $0 }
         .buttonStyle(ActivityShelfPressStyle())
         .help(application.description)
         .accessibilityLabel(application.isPromoted ? "\(application.name), promoted" : application.name)
     }
 
-    static var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous)
+    static var shape: ConcentricRectangle {
+        ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous)
     }
 }
 
@@ -182,13 +186,28 @@ private struct ActivityShelfDetail: View {
     let back: () -> Void
     let launch: () -> Void
     @State private var expandsDescription = false
+    @State private var descriptionHeights = (limited: CGFloat.zero, full: CGFloat.zero)
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
                     ActivityCover(url: application.coverURL)
-                        .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous))
+                        .clipShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(InterfaceScale.metric(12)))))
+                        .overlay(alignment: .topLeading) {
+                            Button(action: back) {
+                                Image(systemName: "chevron.left")
+                                    .font(.interface(.callout).weight(.semibold))
+                                    .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .glassEffect(.regular.interactive(), in: Circle())
+                            .keyboardShortcut(.cancelAction)
+                            .help("Back")
+                            .accessibilityLabel("Back")
+                            .padding(InterfaceScale.metric(10))
+                        }
                         .overlay(alignment: .bottomLeading) {
                             ActivityIcon(url: application.iconURL, size: 56)
                                 .padding(InterfaceScale.metric(3))
@@ -202,14 +221,7 @@ private struct ActivityShelfDetail: View {
                         .font(.interface(.title2).weight(.bold))
                     facts
                     if !application.description.isEmpty {
-                        Text(application.description)
-                            .font(.interface(.body))
-                            .lineLimit(expandsDescription ? nil : 3)
-                            .textSelection(.enabled)
-                        Button(expandsDescription ? "Show Less" : "Show More") {
-                            withAnimation(.smooth(duration: 0.25)) { expandsDescription.toggle() }
-                        }
-                        .buttonStyle(.link)
+                        description
                     }
                     if application.hasInAppPurchases {
                         Label("In-App Purchases", systemImage: "bag")
@@ -220,27 +232,32 @@ private struct ActivityShelfDetail: View {
                 .padding(InterfaceScale.metric(14))
             }
             .scrollIndicators(.never)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                HStack {
-                    Button("Back", systemImage: "chevron.left", action: back)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
-                        .keyboardShortcut(.cancelAction)
-                    Spacer()
-                }
-                .padding(InterfaceScale.metric(10))
-            }
-            Button(action: launch) {
-                Text(players == nil ? "Launch" : "Join")
-                    .font(.interface(.body).weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, InterfaceScale.metric(4))
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(.large)
+            ModalGlassButton(
+                symbol: "play.fill", label: players == nil ? "Launch" : "Join", primary: true, fillsWidth: true, action: launch
+            )
             .keyboardShortcut(.defaultAction)
             .padding(InterfaceScale.metric(14))
+        }
+    }
+
+    /// Three lines, with Show More only when the description runs longer.
+    private var description: some View {
+        let text = Text(application.description).font(.interface(.body))
+        return VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
+            text
+                .lineLimit(expandsDescription ? nil : 3)
+                .textSelection(.enabled)
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { descriptionHeights.limited = $0 }
+                .background {
+                    text.fixedSize(horizontal: false, vertical: true).hidden()
+                        .onGeometryChange(for: CGFloat.self, of: \.size.height) { descriptionHeights.full = $0 }
+                }
+            if expandsDescription || descriptionHeights.full > descriptionHeights.limited + 1 {
+                Button(expandsDescription ? "Show Less" : "Show More") {
+                    withAnimation(.smooth(duration: 0.25)) { expandsDescription.toggle() }
+                }
+                .buttonStyle(.link)
+            }
         }
     }
 
@@ -286,11 +303,25 @@ private struct ActivityCover: View {
     }
 }
 
-/// Scales a shelf control down slightly while pressed.
+/// Presses a shelf control down like the soundboard's buttons.
 private struct ActivityShelfPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.snappy(duration: 0.16), value: configuration.isPressed)
+            .offset(y: configuration.isPressed ? 2 : 0)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+    }
+}
+
+/// The soundboard and sticker pickers' tile surface and hover outline.
+enum PickerTileStyle {
+    static func surface(_ scheme: ColorScheme, isHovering: Bool) -> Color {
+        scheme == .dark
+            ? Color(hex: isHovering ? 0x28292C : 0x202023)
+            : Color(hex: isHovering ? 0xD8D7DC : 0xE2E1E6)
+    }
+
+    static func outline(_ scheme: ColorScheme, isHovering: Bool) -> Color {
+        guard isHovering else { return .clear }
+        return Color(hex: scheme == .dark ? 0x44454A : 0xAFAEB4)
     }
 }

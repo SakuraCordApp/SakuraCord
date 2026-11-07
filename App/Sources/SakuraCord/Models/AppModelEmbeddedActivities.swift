@@ -228,11 +228,17 @@ extension AppModel {
         }
     }
 
-    /// Players in the instance an Activity invite or launch message points to.
-    func activityPlayers(reference: ServerInviteReference?, instanceID: String?) -> Int {
+    /// Players in the instance an Activity invite or launch message points
+    /// to, once per account however many of its sessions take part.
+    func activityPlayers(reference: ServerInviteReference?, instanceID: String?) -> [UserID] {
         let instance = instanceID.flatMap { embeddedActivities.instances[$0] }
             ?? reference.flatMap { inviteEntry(for: $0)?.invite }.flatMap(activityInstance(for:))
-        return instance?.participants.count ?? 0
+        var seen = Set<UserID>()
+        return (instance?.participants ?? []).map(\.userID).filter { seen.insert($0).inserted }
+    }
+
+    func activityPlayerAvatarURL(_ userID: UserID) -> URL? {
+        (currentUser?.id == userID ? currentUser : membersByID[userID]?.user)?.avatarURL
     }
 
     /// The launch message's button: join a running instance, or show it joined or ended.
