@@ -195,6 +195,7 @@ struct GuildJoinRequestPage: View {
                         }
                     }
                 }
+                .disabled(store.isWorking)
                 if store.showsAnswers { answers }
             }
             .padding(InterfaceScale.metric(32))
