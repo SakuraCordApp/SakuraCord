@@ -67,7 +67,8 @@ extension NativeTimelineRowPainter {
 
     private static func drawMessageBubbleTint(_ input: NativeTimelineMessageDrawInput) {
         guard let bubbleRegion = input.layout.bubbleRegion else { return }
-        let integratedSectionFrames = input.layout.inviteRegions.map(\.frame)
+        // An Activity card sits on the bubble itself; its cover tile sets it apart.
+        let integratedSectionFrames = input.layout.inviteRegions.filter { $0.content?.activity == nil }.map(\.frame)
             + input.layout.sakuraCordDeepLinkRegions.map(\.frame)
             + [input.layout.threadFrame, input.layout.pollLayout?.frame].compactMap { $0 }
             + input.layout.embedRegions.compactMap {

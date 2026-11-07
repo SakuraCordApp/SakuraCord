@@ -159,11 +159,6 @@ private struct ChatWorkspacePrimaryContent: View {
     @Binding var presentsForumComposer: Bool
 
     var body: some View {
-        channelContent
-            .embeddedActivityPrompts(model.embeddedActivities)
-    }
-
-    @ViewBuilder private var channelContent: some View {
         switch content {
         case .chat:
             if let channel = model.selectedChannel,

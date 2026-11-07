@@ -39,11 +39,14 @@ struct ActivityCardGeometry {
         let textWidth = max(1, origin.x + inset + inner - textX)
         let title = content.activityInstanceID == nil ? "Activity Invite"
             : content.inviter.map { "\($0.displayName) started an Activity" } ?? "Activity"
-        var textCursor = cursor
+        let players = source?.activityPlayers(reference: reference, instanceID: content.activityInstanceID) ?? []
+        let place = activity.channelName.map { content.guildName.isEmpty ? $0 : "\($0) in \(content.guildName)" }
+        // Discord centres the title and its lines beside the icon.
+        let textHeight = InterfaceScale.metric(20 + (place == nil ? 0 : 18) + (players.isEmpty ? 0 : 18))
+        var textCursor = cursor + max(0, (iconFrame.height - textHeight) / 2)
         labels.append(.init(text: title, frame: CGRect(x: textX, y: textCursor, width: textWidth, height: InterfaceScale.metric(20)),
                             size: 16, bold: true))
         textCursor += InterfaceScale.metric(20)
-        let place = activity.channelName.map { content.guildName.isEmpty ? $0 : "\($0) in \(content.guildName)" }
         if let place {
             symbolFrame = CGRect(x: textX, y: textCursor + InterfaceScale.metric(2), width: InterfaceScale.metric(14),
                                  height: InterfaceScale.metric(14))
@@ -54,7 +57,6 @@ struct ActivityCardGeometry {
         } else {
             symbolFrame = nil
         }
-        let players = source?.activityPlayers(reference: reference, instanceID: content.activityInstanceID) ?? []
         let avatarSize = InterfaceScale.metric(16), overlap = InterfaceScale.metric(4)
         playerAvatars = players.prefix(3).enumerated().map { index, userID in
             (CGRect(x: textX + CGFloat(index) * (avatarSize - overlap), y: textCursor + InterfaceScale.metric(1),
@@ -136,12 +138,8 @@ extension NativeTimelineRowPainter {
             ?? NSBezierPath(roundedRect: card.frame, xRadius: radius, yRadius: radius)
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
-        if let bubble {
-            bubbleIntegratedSection(card.frame, bubbleRegion: bubble, accentColor: nil,
-                                    drawsTopSeparator: card.frame.minY - bubble.frame.minY > 8.5, drawsNeutralRail: false)
-        } else {
-            activityGradient(card.gradientColor ?? 0x3D3D3C, in: card.frame)
-        }
+        // In a bubble the card sits on the bubble itself; its cover tile sets it apart.
+        if bubble == nil { activityGradient(card.gradientColor ?? 0x3D3D3C, in: card.frame) }
         if card.bannerFrame.height > 0, let url = activity.coverURL {
             NSGraphicsContext.saveGraphicsState()
             if bubble != nil {

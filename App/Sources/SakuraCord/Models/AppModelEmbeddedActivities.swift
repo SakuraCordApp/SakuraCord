@@ -43,6 +43,7 @@ final class EmbeddedActivityStore {
     /// Running instances by composite instance ID.
     private(set) var instances: [String: EmbeddedActivityInstance] = [:]
     var shelves: [GuildID?: [EmbeddedActivityApplication]] = [:]
+    @ObservationIgnored var loadingShelves: Set<GuildID?> = []
     var shelfError: String?
     var session: Session?
     var prompt: Prompt?
@@ -124,6 +125,7 @@ final class EmbeddedActivityStore {
         endSession()
         instances = [:]
         shelves = [:]
+        loadingShelves = []
         shelfError = nil
         gatewaySessionID = nil
         pendingLeaves = [:]
@@ -153,6 +155,9 @@ extension AppModel {
     }
 
     func loadActivityShelf(guildID: GuildID?) async {
+        let store = embeddedActivities
+        guard store.loadingShelves.insert(guildID).inserted else { return }
+        defer { store.loadingShelves.remove(guildID) }
         let account = accountSession()
         do {
             let shelf = try await account.provider.embeddedActivityShelf(guildID: guildID)

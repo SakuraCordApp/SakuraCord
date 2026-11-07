@@ -283,7 +283,8 @@ private struct ActivityShelfDTO: Decodable {
             .compactMap { entry in
                 guard let application = applications[entry.applicationID],
                       let id = ApplicationID(application.id) else { return nil }
-                let cover = assets?[application.id]?.elements.first { $0.name == "embedded_cover" }
+                // Discord keys assets by name, so the last of a repeated name wins.
+                let cover = assets?[application.id]?.elements.last { $0.name == "embedded_cover" }
                     .flatMap { URL(string: "https://cdn.discordapp.com/app-assets/\(id)/\($0.id).png?size=512") }
                     ?? application.coverImage.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=512") }
                 return EmbeddedActivityApplication(
