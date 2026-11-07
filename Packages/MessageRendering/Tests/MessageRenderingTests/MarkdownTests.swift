@@ -495,6 +495,33 @@ import Testing
     #expect(value.attribute(.discordMarkdownBlock, at: spacer.location, effectiveRange: nil) as? String == "quote")
 }
 
+@Test func `composer source formatting styles link and markdown syntax with secondary contrast`() {
+    let source = "[example](https://example.com) and **bold**"
+    let value = DiscordMarkdown.appKitSourceAttributed(
+        source, attributes: [:], baseFontSize: 14, usesMessageLineHeight: false
+    )
+    #expect(value.string == source)
+    let string = value.string as NSString
+    let openBracket = string.range(of: "[")
+    let label = string.range(of: "example")
+    let closeTail = string.range(of: "](https://example.com)")
+    let boldSyntax = string.range(of: "**")
+
+    #expect(value.attribute(.foregroundColor, at: openBracket.location, effectiveRange: nil) as? NSColor == NSColor.secondaryLabelColor)
+    #expect(value.attribute(.foregroundColor, at: label.location, effectiveRange: nil) as? NSColor == NSColor.linkColor)
+    #expect(value.attribute(.foregroundColor, at: closeTail.location, effectiveRange: nil) as? NSColor == NSColor.secondaryLabelColor)
+    #expect(value.attribute(.foregroundColor, at: boldSyntax.location, effectiveRange: nil) as? NSColor == NSColor.secondaryLabelColor)
+
+    // With a custom text colour, syntax contrast scales to secondary contrast (0.72 alpha).
+    let customText = DiscordMarkdown.appKitSourceAttributed(
+        source, attributes: [.foregroundColor: NSColor.white], baseFontSize: 14, usesMessageLineHeight: false
+    )
+    let expectedCustomSyntaxColor = NSColor.white.withAlphaComponent(0.72)
+    #expect(customText.attribute(.foregroundColor, at: openBracket.location, effectiveRange: nil) as? NSColor == expectedCustomSyntaxColor)
+    #expect(customText.attribute(.foregroundColor, at: closeTail.location, effectiveRange: nil) as? NSColor == expectedCustomSyntaxColor)
+    #expect(customText.attribute(.foregroundColor, at: boldSyntax.location, effectiveRange: nil) as? NSColor == expectedCustomSyntaxColor)
+}
+
 @Test func `discord markdown renders discord blocks lists code json and ansi`() {
     let source = """
     # Large
