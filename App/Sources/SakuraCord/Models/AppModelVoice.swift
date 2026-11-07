@@ -505,7 +505,7 @@ extension AppModel {
         let channel = activeVoiceChannel
         let guildID = channel?.guildID
         let hadActiveVoice = channel != nil
-        if let channelID = channel?.id, embeddedActivities.session?.location.channelID == channelID {
+        if let session = embeddedActivities.session, session.isInCall, session.location.channelID == channel?.id {
             leaveActivity()
         }
         let departingSession = voiceSession

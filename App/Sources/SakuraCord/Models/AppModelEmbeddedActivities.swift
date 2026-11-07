@@ -17,6 +17,9 @@ final class EmbeddedActivityStore {
         var channel: Channel
         var instance: EmbeddedActivityInstance?
         var phase: Phase
+        /// Runs in the call it started in and ends with it; otherwise it is
+        /// docked in the channel's chat and outlives calls there.
+        var isInCall: Bool
         /// Tells this launch's late results apart from a newer one in the same place.
         let launchID = UUID()
 
@@ -62,7 +65,7 @@ final class EmbeddedActivityStore {
 
     /// The Activity hosted outside a voice channel, docked in its chat.
     var dockedSession: Session? {
-        session.flatMap { $0.channel.kind == .voice ? nil : $0 }
+        session.flatMap { $0.isInCall ? nil : $0 }
     }
 
     func upsert(_ instance: EmbeddedActivityInstance) {
@@ -171,7 +174,10 @@ extension AppModel {
             store.ageConfirmedApplications.insert(application.id)
         }
         if store.session != nil { leaveActivity() }
-        let session = EmbeddedActivityStore.Session(application: application, channel: channel, phase: .launching)
+        let session = EmbeddedActivityStore.Session(
+            application: application, channel: channel, phase: .launching,
+            isInCall: channel.kind == .voice || activeVoiceChannel?.id == channel.id
+        )
         store.session = session
         if channel.kind == .voice, activeVoiceChannel?.id != channel.id {
             await joinVoice(channel)
@@ -394,7 +400,8 @@ extension AppModel {
                 id: instance.applicationID, name: command.name, iconURL: command.displayIconURL
             ),
             channel: channel,
-            phase: .launching
+            phase: .launching,
+            isInCall: activeVoiceChannel?.id == channel.id
         )
     }
 

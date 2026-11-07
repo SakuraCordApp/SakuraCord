@@ -17,7 +17,7 @@ struct ActivityCardGeometry {
     let playerAvatars: [(frame: CGRect, url: URL?)]
 
     init(content: NativeServerCardContent, activity: ServerInvite.Activity, reference: ServerInviteReference?,
-         origin: CGPoint, maximumWidth: CGFloat, source: AppModel?, integratesWithBubble: Bool) {
+         error: String?, origin: CGPoint, maximumWidth: CGFloat, source: AppModel?, integratesWithBubble: Bool) {
         // In a bubble the card spans the bubble, as other integrated cards do.
         let width = integratesWithBubble ? maximumWidth : min(Self.maximumWidth, maximumWidth)
         let inset = integratesWithBubble ? 0 : InterfaceScale.metric(12)
@@ -69,6 +69,13 @@ struct ActivityCardGeometry {
             textCursor += InterfaceScale.metric(18)
         }
         cursor = max(textCursor, iconFrame.maxY) + gap
+        // Why the invite can't be used, such as an expired link.
+        if let error {
+            let height = NativeTimelineInviteLayout.height(error, width: inner, size: 12, lineHeight: 16)
+            labels.append(.init(text: error, frame: CGRect(x: origin.x + inset, y: cursor, width: inner, height: height),
+                                size: 12, secondary: true, lineHeight: 16))
+            cursor += height + gap
+        }
         buttonFrame = CGRect(x: origin.x + inset, y: cursor, width: inner,
                              height: InterfaceScale.metric(integratesWithBubble ? 32 : 40))
         cursor = buttonFrame.maxY + inset
@@ -92,8 +99,12 @@ extension NativeTimelineInviteLayout {
         activity.coverURL = source?.embeddedActivities.application(activity.applicationID)?.coverURL ?? activity.coverURL
         content.activity = activity
         let entry = reference.flatMap { source?.inviteEntry(for: $0) }
-        let card = ActivityCardGeometry(content: content, activity: activity, reference: reference, origin: origin, maximumWidth: maximumWidth,
-                                        source: source, integratesWithBubble: integratesWithBubble)
+        let error = entry?.error ?? entry?.invite.flatMap {
+            source?.presentationGuild($0.guildID) == nil ? $0.unsupportedJoinReason : nil
+        }
+        let card = ActivityCardGeometry(content: content, activity: activity, reference: reference, error: error,
+                                        origin: origin, maximumWidth: maximumWidth, source: source,
+                                        integratesWithBubble: integratesWithBubble)
         self.reference = reference
         self.content = content
         self.integratesWithBubble = integratesWithBubble
@@ -101,7 +112,8 @@ extension NativeTimelineInviteLayout {
         invite = entry?.invite
         // Tinted from the cover, never the server's brand.
         gradientColor = entry?.adaptiveColor
-        (isUnavailable, error, isExpanded, hasCollapsedContent) = (false, nil, true, false)
+        self.error = error
+        (isUnavailable, isExpanded, hasCollapsedContent) = (false, true, false)
         (frame, bannerFrame, iconFrame, symbolFrame, buttonFrame) = (
             card.frame, card.bannerFrame, card.iconFrame, card.symbolFrame, card.buttonFrame
         )

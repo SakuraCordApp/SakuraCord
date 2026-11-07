@@ -321,7 +321,7 @@ struct NativeTimelineInviteLayout {
         return TraitArrangement(regions: regions, height: cursorY + traitHeight - origin.y, overflow: overflow)
     }
 
-    private static func height(_ text: String, width: CGFloat, size: CGFloat, bold: Bool = false, lineHeight: CGFloat = 20) -> CGFloat {
+    static func height(_ text: String, width: CGFloat, size: CGFloat, bold: Bool = false, lineHeight: CGFloat = 20) -> CGFloat {
         let value = Label(text: text, frame: .zero, size: size, bold: bold, lineHeight: lineHeight).attributedText(color: .labelColor)
         let measured = CTFramesetterSuggestFrameSizeWithConstraints(CTFramesetterCreateWithAttributedString(value), CFRange(), nil,
                                                                   CGSize(width: width, height: .greatestFiniteMagnitude), nil).height
