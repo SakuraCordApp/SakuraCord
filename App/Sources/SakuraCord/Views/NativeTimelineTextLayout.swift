@@ -328,17 +328,6 @@ private extension NSParagraphStyle {
     nonisolated var isMessageLine: Bool { maximumLineHeight == 0 && minimumLineHeight > 0 }
 }
 
-extension NSMutableAttributedString {
-    /// Swaps the colour of every run drawn in `color` for `replacement`.
-    func replaceForeground(_ color: NSColor, with replacement: NSColor) {
-        enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: length)) { value, range, _ in
-            if let value = value as? NSColor, value == color {
-                addAttribute(.foregroundColor, value: replacement, range: range)
-            }
-        }
-    }
-}
-
 nonisolated enum NativeTimelineCoreText {
     private static let runDelegateKey = NSAttributedString.Key(
         rawValue: kCTRunDelegateAttributeName as String
@@ -731,7 +720,7 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0.name,
                     font: .interfaceSystemFont(ofSize: 14, weight: .medium),
-                    color: DiscordEmbedPalette.strongText,
+                    color: .labelColor,
                     link: $0.url
                 )
             }
@@ -739,7 +728,7 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 14, weight: .semibold),
-                    color: embed.url == nil ? DiscordEmbedPalette.strongText : DiscordEmbedPalette.linkText,
+                    color: embed.url == nil ? .labelColor : .linkColor,
                     link: embed.url
                 )
             }
@@ -760,7 +749,7 @@ enum NativeTimelineEmbedLayout {
                     name: plainTextBox(
                         field.name,
                         font: .interfaceSystemFont(ofSize: 11, weight: .bold),
-                        color: DiscordEmbedPalette.strongText
+                        color: .labelColor
                     ),
                     value: resolvedTextBox(
                         prepared: RichMessageAttributedText.prepare(
@@ -774,13 +763,12 @@ enum NativeTimelineEmbedLayout {
                     )
                 )
             }
-            let providerURL = embed.provider?.url
             let provider = embed.provider?.name.map {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 11),
-                    color: providerURL == nil ? DiscordEmbedPalette.defaultText : DiscordEmbedPalette.providerText,
-                    link: providerURL
+                    color: .secondaryLabelColor,
+                    link: embed.provider?.url
                 )
             }
             let footerText = footerText(
@@ -791,7 +779,7 @@ enum NativeTimelineEmbedLayout {
                 plainTextBox(
                     $0,
                     font: .interfaceSystemFont(ofSize: 11),
-                    color: DiscordEmbedPalette.defaultText
+                    color: .secondaryLabelColor
                 )
             }
 
@@ -1300,15 +1288,15 @@ enum NativeTimelineEmbedLayout {
             }
         )
         return NativeTimelineResolvedTextCache.shared.box(for: key) {
-            let text = NSMutableAttributedString(attributedString: NativeTimelineCoreText.make(
-                prepared: prepared,
-                emojiSize: emojiSize,
-                baseFontSize: baseFontSize,
-                mentionPresentations: mentions
-            ))
-            text.replaceForeground(.labelColor, with: DiscordEmbedPalette.defaultText)
-            text.replaceForeground(.linkColor, with: DiscordEmbedPalette.linkText)
-            return NativeTimelineAttributedTextBox(text, layoutHeightAdjustment: 1)
+            NativeTimelineAttributedTextBox(
+                NativeTimelineCoreText.make(
+                    prepared: prepared,
+                    emojiSize: emojiSize,
+                    baseFontSize: baseFontSize,
+                    mentionPresentations: mentions
+                ),
+                layoutHeightAdjustment: 1
+            )
         }
     }
 

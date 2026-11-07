@@ -555,7 +555,7 @@ extension NativeTimelineRowPainter {
         bubbleRegion: NativeTimelineBubbleRegion?
     ) {
         if region.kind == .card {
-            embedCard(region.frame, accentColor: region.accentColor)
+            discordCard(region.frame, accent: roleColor(region.accentColor) ?? DiscordEmbedPalette.defaultAccent)
         } else if region.kind == .bubbleIntegratedCard, let bubbleRegion {
             bubbleIntegratedSection(
                 region.frame,
@@ -1377,21 +1377,22 @@ extension NativeTimelineRowPainter {
         edge.stroke()
     }
 
-    static func embedCard(
-        _ frame: CGRect,
-        accentColor: UInt32?
-    ) {
+    /// The card behind both an embed and a component container, so the two
+    /// always look alike: Discord's surface and subtle border, with an
+    /// accent drawn as a thicker left border.
+    static func discordCard(_ frame: CGRect, accent: NSColor?) {
         let cornerRadius = DiscordRichMessageMetrics.embedCornerRadius
-        let barWidth = InterfaceScale.metric(4)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).addClip()
         DiscordEmbedPalette.cardFill.setFill()
         frame.fill()
-        (roleColor(accentColor) ?? DiscordEmbedPalette.defaultAccent).setFill()
-        CGRect(x: frame.minX, y: frame.minY, width: barWidth, height: frame.height).fill()
-        // The bar is the card's thicker left border, so the 1 pt border
-        // runs along the other three sides only.
-        NSBezierPath.clip(CGRect(x: frame.minX + barWidth, y: frame.minY, width: frame.width - barWidth, height: frame.height))
+        if let accent {
+            let barWidth = InterfaceScale.metric(4)
+            accent.setFill()
+            CGRect(x: frame.minX, y: frame.minY, width: barWidth, height: frame.height).fill()
+            // The 1 pt border runs along the other three sides only.
+            NSBezierPath.clip(CGRect(x: frame.minX + barWidth, y: frame.minY, width: frame.width - barWidth, height: frame.height))
+        }
         DiscordEmbedPalette.cardBorder.setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),

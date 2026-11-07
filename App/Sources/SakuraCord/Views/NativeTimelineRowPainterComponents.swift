@@ -469,7 +469,7 @@ extension NativeTimelineRowPainter {
                     )
                 }
             case .card:
-                componentContainer(container.frame, accentColor: container.accentColor)
+                discordCard(container.frame, accent: roleColor(container.accentColor))
             }
             if isHidden {
                 NativeTimelineSpoilerCover.draw(covering: true, in: container.frame, cornerRadius: container.cornerRadius) {
@@ -718,41 +718,6 @@ extension NativeTimelineRowPainter {
                 color: .secondaryLabelColor
             )
         }
-    }
-
-    static func componentContainer(
-        _ frame: CGRect,
-        accentColor: UInt32?,
-        fill: NSColor = .controlBackgroundColor
-    ) {
-        let cornerRadius = DiscordRichMessageMetrics.cardCornerRadius
-        let shape = NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: cornerRadius
-        )
-        // Discord's container surface and border.
-        NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
-        fill.setFill()
-        frame.fill()
-        if let accent = roleColor(accentColor) {
-            accent.setFill()
-            CGRect(
-                x: frame.minX,
-                y: frame.minY,
-                width: DiscordRichMessageMetrics.px(4),
-                height: frame.height
-            ).fill()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-
-        NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
-        let border = NSBezierPath(
-            concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: max(0, cornerRadius - 0.5)
-        )
-        border.lineWidth = 1
-        border.stroke()
     }
 
     static func bubbleIntegratedSection(
@@ -1093,8 +1058,7 @@ extension NativeTimelineRowPainter {
             let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
             fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
             border = discordGrey.withAlphaComponent(DiscordComponentButtonAppearance.secondaryBorderAlpha(isDark: isDark))
-            // `--control-secondary-text-default` is the neutral `--text-strong` uses.
-            foreground = DiscordEmbedPalette.strongText
+            foreground = .labelColor
         }
 
         NSGraphicsContext.saveGraphicsState()

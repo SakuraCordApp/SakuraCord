@@ -130,7 +130,11 @@ enum NativeTimelineBeginningText {
                 mentionPresentations: mentions
             )
         )
-        attributed.replaceForeground(.labelColor, with: .secondaryLabelColor)
+        attributed.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attributed.length)) { value, range, _ in
+            if let color = value as? NSColor, color == NSColor.labelColor {
+                attributed.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
+            }
+        }
         return NativeTimelineAttributedTextBox(attributed)
     }
 

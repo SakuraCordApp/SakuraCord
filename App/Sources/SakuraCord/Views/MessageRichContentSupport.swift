@@ -21,9 +21,9 @@ enum DiscordRichMessageMetrics {
     }
 }
 
-/// Discord's embed colours, resolved from its design tokens for the midnight
-/// theme in dark mode, as the spoiler cover assumes, and the light theme
-/// otherwise.
+/// Discord's card colours, shared by embeds and component containers,
+/// resolved from its design tokens for the midnight theme in dark mode, as
+/// the spoiler cover assumes, and the light theme otherwise.
 nonisolated enum DiscordEmbedPalette {
     private static let grey: UInt32 = 0x97979F
 
@@ -33,14 +33,6 @@ nonisolated enum DiscordEmbedPalette {
     static let cardBorder = themed(grey, light: grey, alpha: 51 / 255, lightAlpha: 71 / 255)
     /// `--border-normal`, the bar of an embed without a colour.
     static let defaultAccent = themed(grey, light: grey, alpha: 61 / 255, lightAlpha: 102 / 255)
-    /// `--text-strong`: titles, author names and field names.
-    static let strongText = themed(0xDCDCDF, light: 0x28282D)
-    /// `--text-default`: descriptions, field values, footers.
-    static let defaultText = themed(0xD4D5D8, light: 0x2E2E34)
-    /// `--text-link`.
-    static let linkText = themed(0x2781E7, light: 0x006DD4)
-    /// `--interactive-text-default`: a linked provider name.
-    static let providerText = themed(0x96979E, light: 0x595A63)
 
     private static func themed(
         _ midnight: UInt32, light: UInt32, alpha: CGFloat = 1, lightAlpha: CGFloat = 1
