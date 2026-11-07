@@ -54,7 +54,7 @@ extension NativeTimelineCanvasView {
         let oldHeight = old.layout.height - top - after - gap
         let newHeight = layout.height - top - after - gap
         guard after + gap >= 0, abs(oldHeight - newHeight) >= 0.5,
-              rowFrame(at: index).intersects(visibleRect), !hostsMediaViews(at: index)
+              rowFrame(at: index).intersects(visibleRect), !hostsLiveViews(at: index)
         else { return nil }
         // A glide this one interrupts starts it from what it shows, below
         // its own origin.
@@ -94,15 +94,18 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    /// Whether views of the row's own sit over its media: a playing video,
-    /// an audio player or a spoiler cover. They keep their final places, so
-    /// the row moves as one piece instead of parting from them.
-    private func hostsMediaViews(at index: Int) -> Bool {
+    /// Whether views of the row's own sit over what it draws: a playing
+    /// video, an audio player, a spoiler cover, a control's loading dots or
+    /// an upload's ring. They keep their final places, so the row moves as
+    /// one piece instead of parting from them.
+    private func hostsLiveViews(at index: Int) -> Bool {
         let identifier = items[index].identifier
         let messageID = items[index].messageID
         return inlinePlayers.keys.contains { $0.row == identifier }
             || inlineVideoOverlays.keys.contains { $0.row == identifier }
             || spoilerOverlays.keys.contains { $0.messageID == messageID }
+            || activityIndicators.keys.contains { $0.row == identifier }
+            || uploadRings.keys.contains { $0.row == identifier }
             || [voiceMessageOverlay, voiceMessageHoverOverlay].contains { overlay in
                 overlay.map { overlay in layouts[index].audioPlayers.contains { $0.playbackID == overlay.region.playbackID } } ?? false
             }
