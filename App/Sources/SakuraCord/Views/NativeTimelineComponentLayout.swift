@@ -1065,7 +1065,7 @@ private enum NodeBuilder {
                         isSpoiler: spoiler,
                         chrome: .card,
                         cornerRadius:
-                            DiscordRichMessageMetrics.embedCornerRadius
+                            DiscordRichMessageMetrics.cardCornerRadius
                     )
                 ]
             )

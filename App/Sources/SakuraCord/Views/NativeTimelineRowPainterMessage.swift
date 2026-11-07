@@ -555,7 +555,11 @@ extension NativeTimelineRowPainter {
         bubbleRegion: NativeTimelineBubbleRegion?
     ) {
         if region.kind == .card {
-            discordCard(region.frame, accent: roleColor(region.accentColor) ?? DiscordEmbedPalette.defaultAccent)
+            discordCard(
+                region.frame,
+                cornerRadius: region.cornerRadius,
+                accent: roleColor(region.accentColor) ?? DiscordEmbedPalette.defaultAccent
+            )
         } else if region.kind == .bubbleIntegratedCard, let bubbleRegion {
             bubbleIntegratedSection(
                 region.frame,
@@ -1379,9 +1383,9 @@ extension NativeTimelineRowPainter {
 
     /// The card behind both an embed and a component container, so the two
     /// always look alike: Discord's surface and subtle border, with an
-    /// accent drawn as a thicker left border.
-    static func discordCard(_ frame: CGRect, accent: NSColor?) {
-        let cornerRadius = DiscordRichMessageMetrics.embedCornerRadius
+    /// accent drawn as a thicker left border. Discord rounds an embed's card
+    /// tighter than a container's, so each passes its own radius.
+    static func discordCard(_ frame: CGRect, cornerRadius: CGFloat, accent: NSColor?) {
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).addClip()
         DiscordEmbedPalette.cardFill.setFill()

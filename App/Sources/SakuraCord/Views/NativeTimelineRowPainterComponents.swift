@@ -469,7 +469,11 @@ extension NativeTimelineRowPainter {
                     )
                 }
             case .card:
-                discordCard(container.frame, accent: roleColor(container.accentColor))
+                discordCard(
+                    container.frame,
+                    cornerRadius: container.cornerRadius,
+                    accent: roleColor(container.accentColor)
+                )
             }
             if isHidden {
                 NativeTimelineSpoilerCover.draw(covering: true, in: container.frame, cornerRadius: container.cornerRadius) {
