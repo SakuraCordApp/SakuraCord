@@ -28,7 +28,7 @@ extension NativeTimelineCanvasView {
     }
 
     func dictionaryLookupAction(at point: CGPoint, usesSelection: Bool = false) -> (() -> Void)? {
-        guard !sendTransitionBlocksInteractions,
+        guard !glideBlocksPointer,
               WindowModalCoordinator.allowsInput(for: self),
               !overlayBlocksInteractions,
               editingMessageID == nil
@@ -40,7 +40,7 @@ extension NativeTimelineCanvasView {
         else {
             return nil
         }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         for text in selectableTextRegions(for: items[index], layout: layouts[index]) {
             guard let hit = NativeTimelineTextHitTester.hit(
                 value: text.value,
@@ -91,7 +91,7 @@ extension NativeTimelineCanvasView {
             // fail for custom-drawn text. Resolve the system dictionary term first.
             return { [weak self] in
                 guard let self,
-                      !self.sendTransitionBlocksInteractions,
+                      !self.glideBlocksPointer,
                       WindowModalCoordinator.allowsInput(for: self),
                       !self.overlayBlocksInteractions,
                       self.editingMessageID == nil

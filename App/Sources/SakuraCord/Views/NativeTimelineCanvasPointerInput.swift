@@ -13,7 +13,7 @@ extension NativeTimelineCanvasView {
         let hit = super.hitTest(point)
         // Subview controls share the canvas's presentation transform, but
         // AppKit hit testing uses their unanimated frames as well.
-        return sendTransitionBlocksInteractions && hit != nil ? self : hit
+        return glideBlocksPointer && hit != nil ? self : hit
     }
 
     /// Whether the pointer's hover is followed: not while scrolling, nor
@@ -25,7 +25,7 @@ extension NativeTimelineCanvasView {
 
     override func updateTrackingAreas() {
         guard tracksHover,
-              !sendTransitionBlocksInteractions,
+              !glideBlocksPointer,
               !overlayBlocksInteractions
         else {
             pointer.removeTrackingAreas(from: self)
@@ -53,7 +53,7 @@ extension NativeTimelineCanvasView {
         removeAllToolTips()
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard !suppressesHoverPresentation,
-              !sendTransitionBlocksInteractions,
+              !glideBlocksPointer,
               !overlayBlocksInteractions
         else { return }
         super.resetCursorRects()
@@ -208,7 +208,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
             clearPointerHoverTargets()
             return
@@ -262,7 +262,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
             clearPointerHoverTargets()
             return
@@ -408,7 +408,7 @@ extension NativeTimelineCanvasView {
 
     override func mouseDown(with event: NSEvent) {
         pointer.didForceClickLookup = false
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
         dismissTimestampHover()
@@ -501,7 +501,7 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               let frame = layouts[index].forwardedSourceRegion?.frame
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         return frame.contains(local) ? items[index].messageID : nil
     }
     private func footerActionPointerHit(at point: CGPoint) -> NativeTimelineFooterActionTarget? {
@@ -509,7 +509,7 @@ extension NativeTimelineCanvasView {
               items.indices.contains(index),
               layouts.indices.contains(index)
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         if case let .suppressedMessages(group) = items[index] {
             guard layouts[index].suppressedHeader?.toggleFrame.contains(local) == true else { return nil }
             return .init(messageID: group.id, kind: .suppressedToggle)
@@ -526,7 +526,7 @@ extension NativeTimelineCanvasView {
 
     override func mouseDragged(with event: NSEvent) {
         guard !pointer.didForceClickLookup else { return }
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         if dragVoiceMessagePress(to: convert(event.locationInWindow, from: nil)) { return }
         if pressedPollTarget != nil {
             setHoveredPollTarget(pollPointerHit(at: convert(event.locationInWindow, from: nil))?.target)
@@ -587,7 +587,7 @@ extension NativeTimelineCanvasView {
             pointer.didForceClickLookup = false
             return
         }
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         if endVoiceMessagePress(at: convert(event.locationInWindow, from: nil)) { return }
         if let pressed = pressedPollTarget {
             pressedPollTarget = nil
@@ -684,7 +684,10 @@ extension NativeTimelineCanvasView {
         else { return }
         let item = items[index]
         let layout = layouts[index]
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         if case let .suppressedMessages(group) = item {
             if layout.suppressedHeader?.toggleFrame.contains(local) == true {
                 toggleSuppressedGroup(group)
@@ -1071,7 +1074,7 @@ extension NativeTimelineCanvasView {
             guard let self,
                   event.window === self.window,
                   !self.overlayBlocksInteractions,
-                  !self.sendTransitionBlocksInteractions
+                  !self.glideBlocksPointer
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
             // An inline editor's suggestions and its Cancel and Save can
@@ -1097,7 +1100,10 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index)
         else { return nil }
         guard case .message = items[index] else { return index }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         guard NativeTimelineHoverHitTesting.contains(
             local,
             in: layouts[index].highlightFrame
@@ -1200,7 +1206,7 @@ extension NativeTimelineCanvasView {
     }
 
     func synchronizeHoverWithCurrentPointer() {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered() else {
             clearPointerHoverTargets()
             return
@@ -1321,7 +1327,10 @@ extension NativeTimelineCanvasView {
               !row.message.type.hasGeneratedContent,
               let authorFrame = layouts[index].authorFrame
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         return authorFrame.contains(local) ? row.message.id : nil
     }
 
@@ -1333,7 +1342,10 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               items[index].textOwnerID != nil
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         guard let hit = textPointerHit(
             in: layouts[index],
             point: local
@@ -1354,7 +1366,10 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               items[index].textOwnerID != nil
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         guard let hit = textPointerHit(
             in: layouts[index],
             point: local
@@ -1478,7 +1493,10 @@ extension NativeTimelineCanvasView {
         else { return nil }
         let item = items[index]
         let layout = layouts[index]
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         if case let .suppressedMessages(group) = item {
             guard layout.suppressedHeader?.toggleFrame.contains(local) == true else { return nil }
             return .suppressedMessages(group.id)

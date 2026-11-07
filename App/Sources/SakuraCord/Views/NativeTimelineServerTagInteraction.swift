@@ -39,7 +39,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y), items.indices.contains(index), layouts.indices.contains(index),
               let tag = layouts[index].serverTagRegion, tag.presentation.identity.guildID != nil
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         return tag.frame.contains(local) ? items[index].messageID : nil
     }
 

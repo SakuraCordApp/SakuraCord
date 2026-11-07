@@ -317,7 +317,12 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
     /// The part of each row's remaining height that its edited text's band still has to glide.
     var reactionMotionTextRemainingHeights: [Int: CGFloat] = [:]
-    var editedTextBands: [NativeMessageTimelineItem.Identifier: NativeTimelineEditedTextBand] = [:]
+    var editedTextBands: [NativeMessageTimelineItem.Identifier: NativeTimelineEditedTextBand] = [:] {
+        didSet {
+            guard oldValue.isEmpty != editedTextBands.isEmpty else { return }
+            if editedTextBands.isEmpty { restorePointerInteractions() } else { suppressPointerInteractions() }
+        }
+    }
     var departedRuns: [NativeMessageTimelineItem.Identifier: NativeTimelineDepartedRun] = [:]
     /// What a row deleted by the update landing now was still showing:
     /// the run closing below it and the part of its own height change

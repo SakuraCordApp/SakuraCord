@@ -943,7 +943,7 @@ extension NativeTimelineCanvasView {
         )
         // Earlier sends keep flying; each hides only its own row.
         sendTransitions.append(transition)
-        suppressSendTransitionInteractions()
+        suppressPointerInteractions()
         // The canvas update already installed media at the destination.
         // Remove those overlays now that their row is held back for flight.
         reconcileAnimatedMedia()
@@ -1100,7 +1100,7 @@ extension NativeTimelineCanvasView {
                 store?.discard(presentedConversationID, animated: false)
             }
             finishSendTransitions(reconcilesHeldMedia: true)
-            restoreSendTransitionInteractions()
+            restorePointerInteractions()
             return
         }
         for transition in sendTransitions {
@@ -1210,7 +1210,7 @@ extension NativeTimelineCanvasView {
         startVisibleInlineVideosImmediately()
         reconcileSpoilerOverlays()
         reconcileActivityIndicators()
-        restoreSendTransitionInteractions()
+        restorePointerInteractions()
     }
 
     func cancelTranscriptGlide() {
@@ -1220,14 +1220,14 @@ extension NativeTimelineCanvasView {
         layer?.removeAnimation(forKey: Self.transcriptGlideKey)
     }
 
-    private func restoreSendTransitionInteractions() {
-        guard !sendTransitionBlocksInteractions else { return }
+    func restorePointerInteractions() {
+        guard !glideBlocksPointer else { return }
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
         synchronizeHoverWithCurrentPointer()
     }
 
-    private func suppressSendTransitionInteractions() {
+    func suppressPointerInteractions() {
         // A press begun before the rows moved must not activate on release.
         clearPointerTargets()
         pressedPollTarget = nil
@@ -1243,6 +1243,12 @@ extension NativeTimelineCanvasView {
 
     var sendTransitionBlocksInteractions: Bool {
         !sendTransitions.isEmpty || isTranscriptGliding
+    }
+
+    /// An edit's lines easing, as a send's glide, leave the pointer nothing
+    /// to hit: the rows' regions sit where they land.
+    var glideBlocksPointer: Bool {
+        sendTransitionBlocksInteractions || !editedTextBands.isEmpty
     }
 
     var isTranscriptGliding: Bool {
@@ -1310,13 +1316,13 @@ extension NativeTimelineCanvasView {
         }
         guard abs(translation) >= 0.5 else {
             cancelTranscriptGlide()
-            restoreSendTransitionInteractions()
+            restorePointerInteractions()
             return
         }
         transcriptGlide = NativeTimelineTranscriptGlide(
             offset: translation, beganAt: now, hold: hold, curve: curve
         )
-        suppressSendTransitionInteractions()
+        suppressPointerInteractions()
         // Rows outside the viewport become visible during the glide.
         setNeedsDisplay(visible.insetBy(dx: 0, dy: -abs(translation)))
         let animation: CAAnimation
@@ -1347,7 +1353,7 @@ extension NativeTimelineCanvasView {
             guard !Task.isCancelled, let self else { return }
             self.transcriptGlideFinishTask = nil
             self.transcriptGlide = nil
-            self.restoreSendTransitionInteractions()
+            self.restorePointerInteractions()
         }
     }
 

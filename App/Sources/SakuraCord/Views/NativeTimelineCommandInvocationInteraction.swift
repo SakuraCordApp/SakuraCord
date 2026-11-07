@@ -15,7 +15,7 @@ extension NativeTimelineCanvasView {
         guard let index = rowIndex(at: point.y), items.indices.contains(index), layouts.indices.contains(index),
               let pill = layouts[index].commandInvocationRegion?.pillFrame
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         return pill.contains(local) ? items[index].messageID : nil
     }
 

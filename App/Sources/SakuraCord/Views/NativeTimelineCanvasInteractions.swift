@@ -1156,7 +1156,7 @@ extension NativeTimelineCanvasView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         dismissTimestampHover()
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return nil }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         guard let index = rowIndex(at: point.y),
               layouts.indices.contains(index),
@@ -1166,7 +1166,10 @@ extension NativeTimelineCanvasView {
             for: row.message
         )
         guard interactionMode.allowsMessageContextMenu else { return nil }
-        let localPoint = rowLocalPoint(point, at: index)
+        let localPoint = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         if let menu = userContextMenu(for: row, index: index, localPoint: localPoint) {
             return menu
         }

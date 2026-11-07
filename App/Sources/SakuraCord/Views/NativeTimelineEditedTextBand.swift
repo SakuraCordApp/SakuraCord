@@ -113,22 +113,6 @@ extension NativeTimelineCanvasView {
             }
     }
 
-    /// Where a point in the timeline falls in a row's layout. Below a
-    /// gliding band, what follows the text is drawn where the glide has it,
-    /// and the old lines still fading out stand for the end of the text.
-    func rowLocalPoint(_ point: CGPoint, at index: Int) -> CGPoint {
-        var local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
-        if let band = editedTextBands[items[index].identifier] {
-            let shown = shownHeight(of: band, at: index)
-            if local.y >= band.top + shown {
-                local.y += band.newHeight - shown
-            } else if local.y >= band.top + band.newHeight {
-                local.y = band.top + band.newHeight - 1
-            }
-        }
-        return local
-    }
-
     /// How tall the band's text is drawn now: its target less the part of
     /// the row's text steps still to come, which an interrupted edit's
     /// step can carry past where this band started.

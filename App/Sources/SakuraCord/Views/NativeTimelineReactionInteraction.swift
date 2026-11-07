@@ -9,7 +9,10 @@ extension NativeTimelineCanvasView {
               layouts.indices.contains(index),
               case let .message(row, _, _) = items[index]
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         let rowOrigin = displayedRowOrigin(at: index)
         let layout = layouts[index]
         let frames = displayedReactionFrames(at: index)

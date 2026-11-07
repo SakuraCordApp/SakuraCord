@@ -144,7 +144,7 @@ extension NativeTimelineCanvasView {
     func view(_: NSView, stringForToolTip _: NSView.ToolTipTag, point: NSPoint, userData _: UnsafeMutableRawPointer?) -> String {
         if codeBlockCopyButtonHit(at: point) != nil { return "Copy Code" }
         guard let index = rowIndex(at: point.y), items.indices.contains(index), let messageID = items[index].messageID else { return "" }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         guard let card = fileCards(at: index, messageID: messageID).first(where: { $0.buttonFrame.contains(local) }) else { return "" }
         return switch model?.attachmentDownloads.states[card.attachment.id] {
         case .downloading: "Cancel Download"

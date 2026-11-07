@@ -11,7 +11,7 @@ extension NativeTimelineCanvasView {
               let frame = layouts[index].threadFrame,
               let messageID = items[index].messageID
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(x: point.x, y: point.y - displayedRowOrigin(at: index))
         return frame.contains(local) ? messageID : nil
     }
 

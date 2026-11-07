@@ -345,7 +345,7 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcileActionCapsule() {
-        guard !sendTransitionBlocksInteractions else {
+        guard !glideBlocksPointer else {
             removeActionCapsule()
             return
         }
@@ -691,7 +691,10 @@ extension NativeTimelineCanvasView {
               itemIdentifier == nil
                   || items[index].identifier == itemIdentifier
         else { return nil }
-        let local = rowLocalPoint(point, at: index)
+        let local = CGPoint(
+            x: point.x,
+            y: point.y - displayedRowOrigin(at: index)
+        )
         for selectable in selectableTextRegions(
             for: items[index],
             layout: layouts[index]
