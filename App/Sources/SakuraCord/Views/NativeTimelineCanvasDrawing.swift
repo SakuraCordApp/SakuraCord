@@ -890,6 +890,8 @@ extension NativeTimelineCanvasView {
         guard (picturesFrame ?? paintFrame).intersects(dirtyRect) else { return }
         if let fade {
             drawCrossfadingRow(fade, rowFrame: rowFrame) {
+                // Only the old picture may reach a shrinking row's lower part.
+                guard paintFrame.intersects(dirtyRect) else { return }
                 drawRowPicture(
                     item, at: index, rowFrame: rowFrame, paintFrame: paintFrame, dirtyRect: dirtyRect,
                     preparedMediaKeys: preparedMediaKeys, revealState: revealState
@@ -1042,6 +1044,7 @@ extension NativeTimelineCanvasView {
         // reveal must not synchronously draw an entire attachment gallery.
         if rowFrame.height > Self.wholeRowBitmapMaximumHeight {
             let exposed = rowFrame.intersection(dirtyRect)
+            guard !exposed.isEmpty else { return }
             let firstTile = max(0, Int(floor((exposed.minY - rowFrame.minY) / Self.bitmapTileHeight)))
             let lastTile = max(firstTile, Int(ceil((exposed.maxY - rowFrame.minY) / Self.bitmapTileHeight)) - 1)
             for tileIndex in firstTile ... lastTile {
