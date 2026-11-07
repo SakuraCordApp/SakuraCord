@@ -45,11 +45,10 @@ extension AccountReadStateModel {
         /// account is a member of the active thread, so a ping in a post the
         /// user has not joined must not reach the server badge or any row.
         /// Membership comes only from the joined catalogue, so a stale archive
-        /// flag cannot hide a joined thread.
+        /// flag cannot hide a joined thread. A channel the account doesn't
+        /// list, such as a closed DM, has no row and counts nowhere.
         func countsMentions(_ entry: Entry) -> Bool {
-            policy.channelByID[entry.channelID] != nil
-                || entry.guildID == nil
-                || isListedThread(entry)
+            policy.channelByID[entry.channelID] != nil || isListedThread(entry)
         }
 
         func presentedMentionCount(_ entry: Entry) -> Int {
