@@ -260,7 +260,8 @@ final class EmbeddedActivityHost: NSObject {
             state: (args["state"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString,
             codeChallenge: args["code_challenge"] as? String,
             codeChallengeMethod: args["code_challenge_method"] as? String,
-            location: instance.location
+            location: instance.location,
+            channelType: channelType
         )
         let provider = model.accountSession().provider
         do {
@@ -316,8 +317,12 @@ final class EmbeddedActivityHost: NSObject {
 
     private func voiceChanged() {
         guard let model, !isStopped else { return }
-        var speaking = Set(model.voiceParticipants.filter(\.isSpeaking).map(\.userID))
-        if model.isLocallySpeaking, let id = model.currentUser?.id { speaking.insert(id.description) }
+        // Speaking belongs to the Activity's channel only when it is the call's.
+        var speaking: Set<String> = []
+        if model.activeVoiceChannel?.id == instance.location.channelID {
+            speaking = Set(model.voiceParticipants.filter(\.isSpeaking).map(\.userID))
+            if model.isLocallySpeaking, let id = model.currentUser?.id { speaking.insert(id.description) }
+        }
         for userID in speaking.subtracting(speakingUserIDs) where subscriptions.contains("SPEAKING_START") {
             dispatch("SPEAKING_START", ["user_id": userID, "channel_id": instance.location.channelID.description])
         }
@@ -340,16 +345,22 @@ final class EmbeddedActivityHost: NSObject {
 
     // MARK: Payloads
 
-    private func channelPayload(model: AppModel) -> [String: Any] {
-        let channel = model.embeddedActivities.session?.channel
-        let type = switch channel?.kind {
+    /// Discord's type for the hosting channel.
+    private var channelType: Int {
+        switch model?.embeddedActivities.session?.channel.kind {
+        case .voice: 2
         case .directMessage: 1
         case .groupDirectMessage: 3
-        default: 2
+        case .announcement: 5
+        default: 0
         }
+    }
+
+    private func channelPayload(model: AppModel) -> [String: Any] {
+        let channel = model.embeddedActivities.session?.channel
         var payload: [String: Any] = [
             "id": instance.location.channelID.description,
-            "type": type,
+            "type": channelType,
             "name": channel?.name ?? "",
             "voice_states": currentVoiceStates().values.map { userVoicePayload($0, model: model) },
             "messages": [Any](),
@@ -438,6 +449,11 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
         else { return decisionHandler(.allow) }
         decisionHandler(.cancel)
         if navigationAction.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard !isStopped else { return }
+        model?.embeddedActivities.session?.phase = .failed("\(application.name) stopped unexpectedly.")
     }
 
     func webView(

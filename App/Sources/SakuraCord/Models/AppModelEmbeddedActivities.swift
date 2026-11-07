@@ -28,6 +28,7 @@ final class EmbeddedActivityStore {
         enum Kind {
             case authorize(scopes: [String])
             case openLink(URL)
+            case confirmAge
         }
 
         let id = UUID()
@@ -48,6 +49,21 @@ final class EmbeddedActivityStore {
     @ObservationIgnored var launchTimeout: Task<Void, Never>?
     /// Leaves still on their way to Discord, by composite instance ID.
     @ObservationIgnored var pendingLeaves: [String: Task<Void, Never>] = [:]
+    /// Recent slash commands from this client by nonce; Discord tags the
+    /// participant an Activity command adds with that nonce.
+    @ObservationIgnored var commandLaunches: [(nonce: String, application: ApplicationCommandApplication)] = []
+    /// Age-gated Activities confirmed this session, as the official client asks once.
+    @ObservationIgnored var ageConfirmedApplications: Set<ApplicationID> = []
+
+    func recordCommand(_ nonce: String, application: ApplicationCommandApplication) {
+        commandLaunches.append((nonce, application))
+        if commandLaunches.count > 16 { commandLaunches.removeFirst() }
+    }
+
+    /// The Activity hosted outside a voice channel, docked in its chat.
+    var dockedSession: Session? {
+        session.flatMap { $0.channel.kind == .voice ? nil : $0 }
+    }
 
     func upsert(_ instance: EmbeddedActivityInstance) {
         instances[instance.compositeInstanceID] = instance.participants.isEmpty ? nil : instance
@@ -98,6 +114,8 @@ final class EmbeddedActivityStore {
         shelfError = nil
         gatewaySessionID = nil
         pendingLeaves = [:]
+        commandLaunches = []
+        ageConfirmedApplications = []
     }
 }
 
@@ -109,6 +127,18 @@ extension EmbeddedActivityLocation {
 }
 
 extension AppModel {
+    /// Whether the account may start Activities in the channel.
+    func canStartActivity(in channel: Channel) -> Bool {
+        guard channel.guildID != nil else { return true }
+        guard let permissions = effectiveMessagePermissions(in: channel) else { return false }
+        return permissions & ((1 << 39) | DiscordPermissionBits.administrator) != 0
+    }
+
+    func retryActivity() async {
+        guard let session = embeddedActivities.session else { return }
+        await startActivity(session.application, in: session.channel)
+    }
+
     func loadActivityShelf(guildID: GuildID?) async {
         let account = accountSession()
         do {
@@ -123,15 +153,25 @@ extension AppModel {
     }
 
     /// Starts the application in the channel, or joins the instance already
-    /// running there. A guild Activity runs alongside voice in that channel.
+    /// running there. A voice channel Activity runs alongside voice; elsewhere
+    /// it docks in the channel's chat.
     func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel) async {
         let store = embeddedActivities
         let account = accountSession()
-        if store.session != nil { leaveActivity() }
         let location = EmbeddedActivityLocation.of(channel)
+        if let current = store.session, current.application.id == application.id, current.location == location,
+           current.phase == .launching || current.phase == .running {
+            return
+        }
+        if application.requiresAgeGate, !store.ageConfirmedApplications.contains(application.id) {
+            guard await store.ask(.confirmAge, applicationName: application.name),
+                  isCurrentAccountSession(account) else { return }
+            store.ageConfirmedApplications.insert(application.id)
+        }
+        if store.session != nil { leaveActivity() }
         let session = EmbeddedActivityStore.Session(application: application, channel: channel, phase: .launching)
         store.session = session
-        if channel.guildID != nil, activeVoiceChannel?.id != channel.id {
+        if channel.kind == .voice, activeVoiceChannel?.id != channel.id {
             await joinVoice(channel)
             guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
             guard activeVoiceChannel?.id == channel.id else {
@@ -145,7 +185,7 @@ extension AppModel {
         // Ending the session cancels a launch that has not reached Discord yet.
         let launch = Task {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
-            try await account.provider.launchEmbeddedActivity(application.id, channelID: channel.id, guildID: channel.guildID)
+            try await account.provider.launchEmbeddedActivity(application.id, in: channel)
         }
         store.launch = launch
         do {
@@ -202,31 +242,18 @@ extension AppModel {
         return ("Join", activityChannel(instance) == nil)
     }
 
-    /// Where this client can host the instance: a voice channel, or a DM or
-    /// group call. An application's own DM has no call to host it in.
+    /// Where this client can host the instance. Threads are not hosted yet.
     private func activityChannel(_ instance: EmbeddedActivityInstance) -> Channel? {
-        guard let channel = knownRootChannel(instance.location.channelID),
-              channel.guildID != nil || channel.recipients.contains(where: { !$0.isBot })
-        else { return nil }
-        return channel
+        knownRootChannel(instance.location.channelID)
     }
 
-    /// Joins the instance an application's launch message announced, joining
-    /// the call first in a DM or group, where the Activity lives in the call.
+    /// Joins the instance an application's launch message announced. Outside
+    /// a voice channel it needs no call, as in an application's own DM.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
         guard let instance = embeddedActivities.instances[instanceID], let channel = activityChannel(instance) else { return }
         let application = embeddedActivities.application(instance.applicationID) ?? EmbeddedActivityApplication(
             id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL
         )
-        if channel.guildID == nil, activeVoiceChannel?.id != channel.id {
-            let launchID = embeddedActivities.session?.launchID
-            await joinPrivateCall(in: channel)
-            // An Activity chosen while the call connected wins; leaving voice
-            // for the call may have ended the earlier one.
-            guard activeVoiceChannel?.id == channel.id,
-                  embeddedActivities.session.map({ $0.launchID == launchID }) ?? true
-            else { return }
-        }
         await startActivity(application, in: channel)
     }
 
@@ -280,6 +307,7 @@ extension AppModel {
 
     private func consumeEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
         let store = embeddedActivities
+        adoptCommandLaunch(instance)
         guard let session = store.session,
               session.application.id == instance.applicationID,
               session.location.id == instance.location.id
@@ -321,6 +349,30 @@ extension AppModel {
                 model.embeddedActivities.session?.phase = .failed(error.localizedDescription)
             }
         }
+    }
+
+    /// Hosts the Activity this client's slash command started, such as
+    /// `/wordle` in a text channel or DM. Discord has already moved this
+    /// session out of any earlier instance, so that one closes without a leave.
+    private func adoptCommandLaunch(_ instance: EmbeddedActivityInstance) {
+        let store = embeddedActivities
+        guard let participant = instance.participants.first(where: { participant in
+            participant.userID == currentUser?.id && store.commandLaunches.contains { $0.nonce == participant.nonce }
+        }), let index = store.commandLaunches.firstIndex(where: { $0.nonce == participant.nonce }) else { return }
+        let command = store.commandLaunches.remove(at: index).application
+        guard let channel = activityChannel(instance) else {
+            leaveEmbeddedActivity(instance)
+            return
+        }
+        store.endSession()
+        store.gatewaySessionID = participant.sessionID
+        store.session = EmbeddedActivityStore.Session(
+            application: store.application(instance.applicationID) ?? EmbeddedActivityApplication(
+                id: instance.applicationID, name: command.name, iconURL: command.displayIconURL
+            ),
+            channel: channel,
+            phase: .launching
+        )
     }
 
     private func isOwnInstance(

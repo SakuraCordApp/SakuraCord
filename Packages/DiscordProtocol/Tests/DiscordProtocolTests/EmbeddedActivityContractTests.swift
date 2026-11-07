@@ -57,7 +57,7 @@ struct EmbeddedActivityContractTests {
 
     private func authorization(state: String) -> EmbeddedActivityAuthorizationRequest {
         .init(applicationID: ApplicationID("880218394199220334")!, scopes: ["identify", "guilds"], state: state,
-              location: Self.location)
+              location: Self.location, channelType: 2)
     }
 
     private func makeProvider(_ accountID: String) -> DiscordRESTProvider {

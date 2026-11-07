@@ -17,10 +17,13 @@ public struct EmbeddedActivityLocation: Hashable, Sendable {
 public struct EmbeddedActivityParticipant: Hashable, Sendable {
     public var userID: UserID
     public var sessionID: String
+    /// The nonce of the interaction that added this participant.
+    public var nonce: String?
 
-    public init(userID: UserID, sessionID: String) {
+    public init(userID: UserID, sessionID: String, nonce: String? = nil) {
         self.userID = userID
         self.sessionID = sessionID
+        self.nonce = nonce
     }
 }
 
@@ -58,6 +61,13 @@ public struct EmbeddedActivityApplication: Identifiable, Hashable, Sendable {
     public var tags: [String]
     /// Nil when unlimited.
     public var maximumParticipants: Int?
+    /// Discord marks sponsored shelf entries as promoted.
+    public var isPromoted: Bool
+    /// Discord asks for age confirmation before launching.
+    public var requiresAgeGate: Bool
+    public var hasInAppPurchases: Bool
+    /// Position among the shelf's Recents, from the account's application frecency.
+    public var recentRank: Int?
 
     public init(
         id: ApplicationID,
@@ -66,7 +76,11 @@ public struct EmbeddedActivityApplication: Identifiable, Hashable, Sendable {
         iconURL: URL? = nil,
         coverURL: URL? = nil,
         tags: [String] = [],
-        maximumParticipants: Int? = nil
+        maximumParticipants: Int? = nil,
+        isPromoted: Bool = false,
+        requiresAgeGate: Bool = false,
+        hasInAppPurchases: Bool = false,
+        recentRank: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -75,6 +89,10 @@ public struct EmbeddedActivityApplication: Identifiable, Hashable, Sendable {
         self.coverURL = coverURL
         self.tags = tags
         self.maximumParticipants = maximumParticipants
+        self.isPromoted = isPromoted
+        self.requiresAgeGate = requiresAgeGate
+        self.hasInAppPurchases = hasInAppPurchases
+        self.recentRank = recentRank
     }
 
     /// The Activity's Discord-proxied origin.
@@ -91,6 +109,8 @@ public struct EmbeddedActivityAuthorizationRequest: Hashable, Sendable {
     public var codeChallenge: String?
     public var codeChallengeMethod: String?
     public var location: EmbeddedActivityLocation
+    /// Discord's type for the channel the Activity runs in.
+    public var channelType: Int
 
     public init(
         applicationID: ApplicationID,
@@ -98,7 +118,8 @@ public struct EmbeddedActivityAuthorizationRequest: Hashable, Sendable {
         state: String? = nil,
         codeChallenge: String? = nil,
         codeChallengeMethod: String? = nil,
-        location: EmbeddedActivityLocation
+        location: EmbeddedActivityLocation,
+        channelType: Int
     ) {
         self.applicationID = applicationID
         self.scopes = scopes
@@ -106,6 +127,7 @@ public struct EmbeddedActivityAuthorizationRequest: Hashable, Sendable {
         self.codeChallenge = codeChallenge
         self.codeChallengeMethod = codeChallengeMethod
         self.location = location
+        self.channelType = channelType
     }
 }
 

@@ -224,7 +224,7 @@ public protocol ChatProvider: Sendable {
     func authorizeOAuth2(_ request: OAuth2AuthorizationRequest) async throws -> OAuth2AuthorizationGrant
     func embeddedActivityShelf(guildID: GuildID?) async throws -> [EmbeddedActivityApplication]
     func embeddedActivitySessionID() async throws -> String
-    func launchEmbeddedActivity(_ applicationID: ApplicationID, channelID: ChannelID, guildID: GuildID?) async throws
+    func launchEmbeddedActivity(_ applicationID: ApplicationID, in channel: Channel) async throws
     func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) async throws
     func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID) async throws -> String
     func embeddedActivityAuthorizationPreview(
@@ -845,7 +845,7 @@ public extension ChatProvider {
         throw ChatProviderError.invalidRequest("Activities are unavailable.")
     }
 
-    func launchEmbeddedActivity(_ applicationID: ApplicationID, channelID: ChannelID, guildID: GuildID?) async throws {
+    func launchEmbeddedActivity(_ applicationID: ApplicationID, in channel: Channel) async throws {
         throw ChatProviderError.invalidRequest("Activities are unavailable.")
     }
 

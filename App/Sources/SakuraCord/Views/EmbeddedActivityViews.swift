@@ -24,8 +24,8 @@ struct EmbeddedActivityView: NSViewRepresentable {
     }
 }
 
-/// The voice-channel stage for an Activity: the running app, its launch
-/// state, or an offer to join one already running in the channel.
+/// The hosted Activity's stage, in a call or docked above a channel's chat:
+/// the running app, its launch progress, or why it stopped.
 struct EmbeddedActivityStage: View {
     let model: AppModel
 
@@ -34,49 +34,144 @@ struct EmbeddedActivityStage: View {
         if let session = store.session {
             VStack(spacing: 0) {
                 header(session)
-                switch session.phase {
-                case .running:
-                    if let host = store.host {
-                        EmbeddedActivityView(host: host)
-                            .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous))
+                ZStack {
+                    switch session.phase {
+                    case .running:
+                        if let host = store.host {
+                            EmbeddedActivityView(host: host)
+                                .clipShape(Self.contentShape)
+                                .transition(.opacity)
+                        }
+                    case .launching:
+                        status(session) {
+                            ProgressView().controlSize(.small)
+                            Text("Starting \(session.application.name)…")
+                        }
+                    case .failed(let message):
+                        status(session) {
+                            Text(message).multilineTextAlignment(.center)
+                            Button("Try Again") {
+                                Task { await model.retryActivity() }
+                            }
+                            .buttonStyle(.glass)
+                        }
                     }
-                case .launching:
-                    status(ProgressView(), "Starting \(session.application.name)…")
-                case .failed(let message):
-                    status(Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange), message)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(.smooth(duration: 0.3), value: session.phase)
             }
-            .padding(InterfaceScale.metric(14))
+            .padding(InterfaceScale.metric(12))
         }
+    }
+
+    private static var contentShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous)
     }
 
     private func header(_ session: EmbeddedActivityStore.Session) -> some View {
         HStack(spacing: InterfaceScale.metric(10)) {
-            ActivityIcon(url: session.application.iconURL, size: 24)
+            ActivityIcon(url: session.application.iconURL, size: 26)
             Text(session.application.name)
                 .font(.interface(.headline))
             if let count = session.instance?.participants.count {
                 Text("\(count) playing")
                     .font(.interface(.callout))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
             }
             Spacer()
-            Button("Leave Activity", systemImage: "xmark") {
+            Button("Leave Activity", systemImage: "rectangle.portrait.and.arrow.right") {
                 model.leaveActivity()
             }
             .buttonStyle(.glass)
+            .tint(.red)
         }
         .padding(.bottom, InterfaceScale.metric(10))
     }
 
-    private func status(_ icon: some View, _ text: String) -> some View {
-        VStack(spacing: InterfaceScale.metric(10)) {
-            icon
-            Text(text)
-                .font(.interface(.callout))
-                .multilineTextAlignment(.center)
+    private func status(
+        _ session: EmbeddedActivityStore.Session,
+        @ViewBuilder content: () -> some View
+    ) -> some View {
+        VStack(spacing: InterfaceScale.metric(12)) {
+            ActivityIcon(url: session.application.iconURL, size: 56)
+            content()
         }
+        .font(.interface(.callout))
+        .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.primary.opacity(0.04), in: Self.contentShape)
+        .transition(.opacity)
+    }
+}
+
+/// Docks the hosted Activity above a text channel's or DM's chat, which stays
+/// beside it as Discord's client keeps it.
+struct EmbeddedActivityChatWorkspace: View {
+    let model: AppModel
+
+    var body: some View {
+        DockedRegionChatWorkspace(model: model, heightKey: "embeddedActivityRegionHeight", defaultHeight: 420) {
+            EmbeddedActivityStage(model: model)
+        }
+    }
+}
+
+/// While the hosted Activity runs outside a call, the sidebar shows it with a
+/// way back to its channel and out of it, like the voice panel.
+struct EmbeddedActivitySidebarPanel: View {
+    let model: AppModel
+    let session: EmbeddedActivityStore.Session
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(9)) {
+            Button {
+                model.navigate(to: session.channel.id)
+            } label: {
+                HStack(spacing: InterfaceScale.metric(9)) {
+                    ActivityIcon(url: session.application.iconURL, size: 28)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(session.application.name)
+                            .font(.interfaceSystem(size: 12, weight: .bold))
+                            .lineLimit(1)
+                        Text(location)
+                            .font(.interface(.caption))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open \(session.application.name)")
+            Button {
+                model.leaveActivity()
+            } label: {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.interface(.callout).weight(.semibold))
+                    .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .glassEffect(.regular.tint(Color(hex: 0xDA373C)).interactive(), in: Circle())
+            .help("Leave Activity")
+            .accessibilityLabel("Leave Activity")
+        }
+        .padding(.leading, InterfaceScale.metric(12))
+        .padding(.trailing, InterfaceScale.metric(8))
+        .frame(minHeight: InterfaceScale.metric(50))
+        .glassEffect(.regular, in: ConcentricRectangle(
+            cornerRadius: SidebarAccountControlMetrics.cornerRadius, style: .continuous
+        ))
+    }
+
+    private var location: String {
+        let channel = session.channel
+        guard let guildID = channel.guildID, let guild = model.serverRailGuildsByID[guildID] else {
+            return channel.name
+        }
+        return "\(channel.name) / \(guild.name)"
     }
 }
 
@@ -127,101 +222,7 @@ struct EmbeddedActivityJoinBanner: View {
     }
 }
 
-/// The Activity shelf, opened from the voice controls.
-struct ActivityShelfView: View {
-    let model: AppModel
-    let channel: Channel
-    let dismiss: () -> Void
-    @State private var query = ""
-
-    var body: some View {
-        let store = model.embeddedActivities
-        let shelf = store.shelves[channel.guildID]
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(10)) {
-            HStack {
-                Text("Start an Activity")
-                    .font(.interface(.title3).weight(.semibold))
-                Spacer()
-                Button("Done", action: dismiss)
-                    .keyboardShortcut(.cancelAction)
-            }
-            TextField("Search Activities", text: $query)
-                .textFieldStyle(.roundedBorder)
-            if let shelf {
-                ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: InterfaceScale.metric(200)), spacing: InterfaceScale.metric(10))],
-                        spacing: InterfaceScale.metric(10)
-                    ) {
-                        ForEach(filtered(shelf)) { application in
-                            ActivityShelfTile(application: application) {
-                                dismiss()
-                                Task { await model.startActivity(application, in: channel) }
-                            }
-                        }
-                    }
-                }
-            } else if let error = store.shelfError {
-                Text(error)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .padding(InterfaceScale.metric(14))
-        .frame(width: InterfaceScale.metric(560), height: InterfaceScale.metric(560))
-        .task(id: channel.guildID) { await model.loadActivityShelf(guildID: channel.guildID) }
-    }
-
-    private func filtered(_ shelf: [EmbeddedActivityApplication]) -> [EmbeddedActivityApplication] {
-        let query = query.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return shelf }
-        return shelf.filter { $0.name.localizedCaseInsensitiveContains(query) }
-    }
-}
-
-private struct ActivityShelfTile: View {
-    let application: EmbeddedActivityApplication
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 0) {
-                Color.primary.opacity(0.06)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .overlay {
-                        if let cover = application.coverURL {
-                            StaticRemoteImage(url: cover, maximumPixelDimension: 512, contentMode: .fill)
-                        }
-                    }
-                    .clipped()
-                HStack(spacing: InterfaceScale.metric(8)) {
-                    ActivityIcon(url: application.iconURL, size: 28)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(application.name)
-                            .font(.interface(.callout).weight(.semibold))
-                            .lineLimit(1)
-                        Text(application.description)
-                            .font(.interface(.caption))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(InterfaceScale.metric(8))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous))
-        .help(application.description)
-        .accessibilityLabel(application.name)
-    }
-}
-
-private struct ActivityIcon: View {
+struct ActivityIcon: View {
     let url: URL?
     let size: CGFloat
 
@@ -243,7 +244,7 @@ extension View {
             isPresented: Binding(get: { store.prompt != nil }, set: { if !$0 { store.prompt?.resolve(false) } }),
             presenting: store.prompt
         ) { prompt in
-            Button(prompt.isAuthorization ? "Authorize" : "Open Link") { prompt.resolve(true) }
+            Button(prompt.confirmTitle) { prompt.resolve(true) }
             Button("Cancel", role: .cancel) { prompt.resolve(false) }
         } message: { prompt in
             switch prompt.kind {
@@ -251,18 +252,27 @@ extension View {
                 Text("\(prompt.applicationName) wants to access your Discord account: \(scopes.joined(separator: ", ")).")
             case .openLink(let url):
                 Text(url.absoluteString)
+            case .confirmAge:
+                Text("\(prompt.applicationName) is age-restricted. Confirm that you are 18 or older to continue.")
             }
         }
     }
 
     private func title(_ prompt: EmbeddedActivityStore.Prompt) -> String {
-        prompt.isAuthorization ? "Authorize \(prompt.applicationName)?" : "Open a link from \(prompt.applicationName)?"
+        switch prompt.kind {
+        case .authorize: "Authorize \(prompt.applicationName)?"
+        case .openLink: "Open a link from \(prompt.applicationName)?"
+        case .confirmAge: "Start \(prompt.applicationName)?"
+        }
     }
 }
 
 private extension EmbeddedActivityStore.Prompt {
-    var isAuthorization: Bool {
-        if case .authorize = kind { return true }
-        return false
+    var confirmTitle: String {
+        switch kind {
+        case .authorize: "Authorize"
+        case .openLink: "Open Link"
+        case .confirmAge: "I’m 18 or Older"
+        }
     }
 }

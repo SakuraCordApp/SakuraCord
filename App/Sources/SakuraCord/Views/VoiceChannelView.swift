@@ -13,7 +13,6 @@ struct VoiceChannelView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .embeddedActivityPrompts(model.embeddedActivities)
     }
 
     @ViewBuilder private var connectedContent: some View {

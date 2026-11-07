@@ -159,6 +159,11 @@ private struct ChatWorkspacePrimaryContent: View {
     @Binding var presentsForumComposer: Bool
 
     var body: some View {
+        channelContent
+            .embeddedActivityPrompts(model.embeddedActivities)
+    }
+
+    @ViewBuilder private var channelContent: some View {
         switch content {
         case .chat:
             if let channel = model.selectedChannel,
@@ -170,8 +175,16 @@ private struct ChatWorkspacePrimaryContent: View {
                     .background {
                         nonTimelineFrameReporter(channel.id)
                     }
+            } else if let channel = model.selectedChannel,
+                      model.embeddedActivities.dockedSession?.channel.id == channel.id {
+                EmbeddedActivityChatWorkspace(model: model)
             } else {
-                ChatDetailView(model: model)
+                VStack(spacing: 0) {
+                    if let channel = model.selectedChannel {
+                        EmbeddedActivityJoinBanner(model: model, channel: channel)
+                    }
+                    ChatDetailView(model: model)
+                }
             }
         case .forum:
             ForumChannelView(model: model, presentsComposer: $presentsForumComposer)

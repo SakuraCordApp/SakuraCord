@@ -10,7 +10,11 @@ public extension DiscordRESTProvider {
             "/activities/shelf",
             query: guildID.map { [URLQueryItem(name: "guild_id", value: $0.description)] } ?? []
         )
-        return shelf.domain()
+        // Recents come from the same application frecency the official shelf reads.
+        let frecency = (try? await frecencySettingsProto()).flatMap {
+            DiscordSettingsProto.frecencyHistory(from: $0, field: DiscordSettingsProto.applicationFrecencyField)
+        }
+        return shelf.domain(frecency: frecency?.entries ?? [])
     }
 
     /// The Gateway session that owns this account's Activity participation.
@@ -18,14 +22,11 @@ public extension DiscordRESTProvider {
         try await interactionSessionID()
     }
 
-    /// Starts or joins the application's Activity in a voice or private channel
-    /// by running its entry-point command, as the official client does. The
-    /// resulting instance arrives as `EMBEDDED_ACTIVITY_UPDATE_V2`.
-    func launchEmbeddedActivity(
-        _ applicationID: ApplicationID,
-        channelID: ChannelID,
-        guildID: GuildID?
-    ) async throws {
+    /// Starts or joins the application's Activity in a channel by running its
+    /// entry-point command, as the official client does. The resulting instance
+    /// arrives as `EMBEDDED_ACTIVITY_UPDATE_V2`.
+    func launchEmbeddedActivity(_ applicationID: ApplicationID, in channel: Channel) async throws {
+        let channelID = channel.id, guildID = channel.guildID
         let sessionID = try await interactionSessionID()
         guard let command = try await entryPointCommand(for: applicationID, channelID: channelID, guildID: guildID) else {
             // Applications without an entry point keep the older channel launch.
@@ -51,10 +52,8 @@ public extension DiscordRESTProvider {
             "nonce": .string(invocation.nonce),
             "analytics_location": .string("app_launcher"),
         ]
-        if let guildID {
-            body["guild_id"] = .string(guildID.description)
-            body["source"] = .string("VOICE")
-        }
+        if let guildID { body["guild_id"] = .string(guildID.description) }
+        if channel.kind == .voice { body["source"] = .string("VOICE") }
         // A launch superseded while its command was looked up stops here.
         try Task.checkCancellation()
         let (data, response) = try await perform("/interactions", method: "POST", query: [], body: body)
@@ -112,7 +111,7 @@ public extension DiscordRESTProvider {
                     // The official client uses the 10000 placeholder outside a guild.
                     "guild_id": .string(location.guildID?.description ?? "10000"),
                     "channel_id": .string(location.channelID.description),
-                    "channel_type": .number(location.guildID == nil ? 1 : 2),
+                    "channel_type": .number(Double(authorization.channelType)),
                 ]),
             ],
             maximumAttempts: 1
@@ -219,10 +218,14 @@ private struct ActivityShelfDTO: Decodable {
     struct Entry: Decodable {
         let applicationID: String
         let shelfRank: Int?
+        let requiresAgeGate: Bool?
+        let supportedPlatforms: [String]?
 
         enum CodingKeys: String, CodingKey {
             case applicationID = "application_id"
             case shelfRank = "shelf_rank"
+            case requiresAgeGate = "requires_age_gate"
+            case supportedPlatforms = "supported_platforms"
         }
     }
 
@@ -234,11 +237,14 @@ private struct ActivityShelfDTO: Decodable {
         let coverImage: String?
         let tags: [String]?
         let maxParticipants: Int?
+        let flags: Int?
+        let isMonetized: Bool?
 
         enum CodingKeys: String, CodingKey {
-            case id, name, description, icon, tags
+            case id, name, description, icon, tags, flags
             case coverImage = "cover_image"
             case maxParticipants = "max_participants"
+            case isMonetized = "is_monetized"
         }
     }
 
@@ -251,11 +257,24 @@ private struct ActivityShelfDTO: Decodable {
     let applications: LossyList<Application>
     let assets: [String: LossyList<Asset>]?
 
-    func domain() -> [EmbeddedActivityApplication] {
+    /// The application flag behind the shelf's PROMOTED badge.
+    private static let promotedFlag = 1 << 29
+
+    /// Shelf order, without Activities the desktop (web) client cannot run.
+    /// Recents are the eight shelf Activities with the highest frecency score,
+    /// most recently launched first.
+    func domain(frecency: [DiscordFrecencyEntry]) -> [EmbeddedActivityApplication] {
+        let shelfIDs = Set(activities.elements.map(\.applicationID))
+        let recentRanks = Dictionary(uniqueKeysWithValues: frecency.filter { shelfIDs.contains($0.key) }
+            .sorted { $0.score > $1.score }
+            .prefix(8)
+            .sorted { ($0.recentUses.max() ?? 0) > ($1.recentUses.max() ?? 0) }
+            .enumerated().map { ($1.key, $0) })
         let applications = Dictionary(
             self.applications.elements.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
         )
         return activities.elements
+            .filter { $0.supportedPlatforms?.contains("web") ?? true }
             .sorted { ($0.shelfRank ?? .max) < ($1.shelfRank ?? .max) }
             .compactMap { entry in
                 guard let application = applications[entry.applicationID],
@@ -270,7 +289,11 @@ private struct ActivityShelfDTO: Decodable {
                     iconURL: application.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=128") },
                     coverURL: cover,
                     tags: application.tags ?? [],
-                    maximumParticipants: application.maxParticipants.flatMap { $0 > 0 ? $0 : nil }
+                    maximumParticipants: application.maxParticipants.flatMap { $0 > 0 ? $0 : nil },
+                    isPromoted: (application.flags ?? 0) & Self.promotedFlag != 0,
+                    requiresAgeGate: entry.requiresAgeGate == true,
+                    hasInAppPurchases: application.isMonetized == true,
+                    recentRank: recentRanks[application.id]
                 )
             }
     }

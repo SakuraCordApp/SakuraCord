@@ -642,9 +642,16 @@ struct VoiceCallControlDock: View {
             CallDockButton(title: "Activities", systemImage: "gamecontroller.fill", showsTitle: showsTitle) {
                 showActivities.toggle()
             }
-            .disabled(model.voiceSessionState != .connected)
-            .sheet(isPresented: $showActivities) {
-                ActivityShelfView(model: model, channel: channel) { showActivities = false }
+            .disabled(model.voiceSessionState != .connected || !model.canStartActivity(in: channel))
+            .background {
+                StableReactionPickerPresenter(
+                    isPresented: $showActivities,
+                    preferredEdge: .maxY,
+                    accessibilityIdentifier: "voice-call-activity-shelf"
+                ) {
+                    ActivityShelfView(model: model, channel: channel) { showActivities = false }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }

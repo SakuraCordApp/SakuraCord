@@ -675,9 +675,10 @@ struct GatewayActivityParticipantDTO: Decodable {
     var member: GuildMemberDTO?
     var userID: String?
     var sessionID: String?
+    var nonce: String?
 
     private enum CodingKeys: String, CodingKey {
-        case member
+        case member, nonce
         case userID = "user_id"
         case sessionID = "session_id"
     }
@@ -740,7 +741,7 @@ struct GatewayActivityInstanceDTO: Decodable {
                 guard let userID = (participant.userID ?? participant.member?.user.id).flatMap(UserID.init),
                       let sessionID = participant.sessionID
                 else { return nil }
-                return EmbeddedActivityParticipant(userID: userID, sessionID: sessionID)
+                return EmbeddedActivityParticipant(userID: userID, sessionID: sessionID, nonce: participant.nonce)
             }
         )
     }
