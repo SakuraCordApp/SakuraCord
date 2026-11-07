@@ -1392,12 +1392,14 @@ extension NativeTimelineCanvasView {
     }
 
     func displayedRowHeight(at index: Int) -> CGFloat {
-        NativeTimelineTransientRowGeometry.rowHeight(
+        // A row's height can shrink while a motion still closes an edit
+        // below it against that row, past what it now has.
+        max(0, NativeTimelineTransientRowGeometry.rowHeight(
             base: layouts[index].height,
             rowIndex: index,
             replacementIndex: editingRowIndex,
             replacementHeight: editingRowHeight
-        ) - reactionMotionRemainingHeight(at: index)
+        ) - reactionMotionRemainingHeight(at: index))
     }
 
     /// Rows after the edited one move with it even when the content origin
