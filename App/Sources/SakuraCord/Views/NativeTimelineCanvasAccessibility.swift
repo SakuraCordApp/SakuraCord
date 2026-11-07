@@ -1254,8 +1254,11 @@ extension NativeTimelineCanvasView {
         let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
             in: message, store: spoilerRevealStore
         )
+        var coveredKeys = Set<NativeTimelineComponentRevealKey>()
         for region in layout.embedRegions {
             if let key = concealedEmbeds[region.embedID] {
+                // A multi-image post's card spans its grid and reveals it whole.
+                guard coveredKeys.insert(key).inserted else { continue }
                 children.append(accessibilityElement(
                     role: .button,
                     label: "Reveal spoiler",

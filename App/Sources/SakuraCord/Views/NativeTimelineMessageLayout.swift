@@ -768,12 +768,10 @@ extension NativeTimelineRowLayout {
                 }
             }
             if !usesComponentsV2 {
-                let visibleEmbeds =
-                    MessageEmbedPresentation.visibleEmbeds(
-                        for: message
-                    )
+                let visibleEmbeds = MessageEmbedPresentation.visibleEmbeds(for: message)
                 result.embedRegions.reserveCapacity(visibleEmbeds.count)
-                for embed in visibleEmbeds {
+                for embeds in MessageEmbedPresentation.groupedEmbeds(visibleEmbeds) {
+                    let embed = embeds[0]
                     let embedY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                     if embed.type == "components" {
                         if let region = NativeTimelineComponentLayout.make(
@@ -791,17 +789,17 @@ extension NativeTimelineRowLayout {
                         }
                         continue
                     }
-                    guard let region = NativeTimelineEmbedLayout.make(
-                        embed: embed,
+                    let regions = NativeTimelineEmbedLayout.makeGroup(
+                        embeds: embeds,
                         message: message,
                         source: source,
-                        attachments: message.attachments,
                         origin: CGPoint(x: contentX, y: embedY),
                         maximumWidth: inlineMediaMaximumWidth,
                         integratesWithBubble: usesBubbles,
                         drawsTopSeparator: usesBubbles && hasRichContent
-                    ) else { continue }
-                    result.embedRegions.append(region)
+                    )
+                    guard let region = regions.first else { continue }
+                    result.embedRegions.append(contentsOf: regions)
                     verticalOffset = region.frame.maxY
                     hasRichContent = true
                 }

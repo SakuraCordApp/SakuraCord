@@ -351,10 +351,34 @@ public enum DiscordMarkdown {
                 } else if !isQuoted, content.hasPrefix("> ") {
                     isQuoted = true
                     content = content.dropFirst(2)
+                } else if !isQuoted, let quoted = quoteContent(content) {
+                    isQuoted = true
+                    content = quoted
                 }
                 body(rawLine, .text(content, isQuoted: isQuoted))
             }
         }
+    }
+
+    /// The text after a `>` quote marker that Swift reads as part of a
+    /// larger character. Embed providers put invisible variation selectors
+    /// beside the marker, which merge with it, so it is read by scalar. A line
+    /// of only the marker and such spacers is a blank line inside the quote.
+    /// A lone `>` is not a quote, as in Discord.
+    private static func quoteContent(_ line: Substring) -> Substring? {
+        let scalars = line.unicodeScalars
+        guard scalars.first == ">" else { return nil }
+        let marker = scalars.dropFirst()
+        let rest = marker.drop { $0.properties.isDefaultIgnorableCodePoint }
+        if rest.startIndex != marker.startIndex,
+           rest.allSatisfy({ CharacterSet.whitespaces.contains($0) || $0.properties.isDefaultIgnorableCodePoint })
+        {
+            // Empty, but still a slice of the line: the source styler
+            // measures syntax from the line's start to the content's.
+            return line[line.endIndex...]
+        }
+        guard rest.first == " " else { return nil }
+        return Substring(rest.dropFirst().drop { $0.properties.isDefaultIgnorableCodePoint })
     }
 
     /// Gives every item of an ordered list the list's widest marker. A list
@@ -412,8 +436,9 @@ public enum DiscordMarkdown {
                 // then carries the line's height and spacing.
                 let previous = plan.lines[lineIndex - 1]
                 var separator: [NSAttributedString.Key: Any] = [:]
-                if previous.runs.isEmpty {
-                    separator[.font] = NSFont.systemFont(ofSize: baseFontSize)
+                // A break between quoted lines keeps one quote range.
+                if previous.runs.isEmpty || previous.isQuoted && linePlan.isQuoted {
+                    if previous.runs.isEmpty { separator[.font] = NSFont.systemFont(ofSize: baseFontSize) }
                     separator[.paragraphStyle] = previousParagraph
                     separator[.discordMarkdownBlock] = blockName(for: previous)
                     separator[.discordMarkdownEm] = NSNumber(value: metrics.em)
@@ -1239,10 +1264,19 @@ public enum DiscordMarkdown {
             switch line.block {
             case .subtext: NSColor.secondaryLabelColor
             case .heading: NSColor.labelColor
-            // Discord mutes quoted text, apart from headings, to its subtext color.
-            default: line.isQuoted ? NSColor.secondaryLabelColor : NSColor.labelColor
+            // Quoted text, apart from headings, is slightly muted.
+            default: line.isQuoted ? quotedTextColor : NSColor.labelColor
             }
         }
+    }
+
+    /// Label color at 0.7 alpha. Resolved per appearance when drawn, so a
+    /// quote built in one appearance stays readable in the other.
+    private static let quotedTextColor = NSColor(name: nil) { appearance in
+        NSColor(
+            white: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 1 : 0,
+            alpha: 0.7
+        )
     }
 
     private static func paragraphStyle(

@@ -530,14 +530,22 @@ extension NativeTimelineRowPainter {
         let concealedEmbeds = input.spoilerRevealStore.map {
             NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
         } ?? [:]
-        for region in layout.embedRegions {
-            let isCovered = concealedEmbeds[region.embedID] != nil
+        var coveredKeys = Set<NativeTimelineComponentRevealKey>()
+        for (index, region) in layout.embedRegions.enumerated() {
+            let key = concealedEmbeds[region.embedID]
+            // A multi-image post's images follow their card, share its key
+            // and draw under the card's one cover, which spans the grid.
+            if let key, !coveredKeys.insert(key).inserted { continue }
+            let members = key.map { key in layout.embedRegions[index...].prefix { concealedEmbeds[$0.embedID] == key } }
+                ?? [region]
             NativeTimelineSpoilerCover.draw(
-                covering: isCovered, in: region.frame, cornerRadius: region.cornerRadius
+                covering: key != nil, in: region.frame, cornerRadius: region.cornerRadius
             ) {
-                drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
-                drawEmbedText(region, input: input)
-                drawEmbedMedia(region, isCovered: isCovered)
+                for member in members {
+                    drawEmbedChrome(member, bubbleRegion: layout.bubbleRegion)
+                    drawEmbedText(member, input: input)
+                    drawEmbedMedia(member, isCovered: key != nil)
+                }
             }
         }
     }
@@ -625,7 +633,7 @@ extension NativeTimelineRowPainter {
         if let image = mediaImage(for: .media(region.mediaPreviewURL ?? url)) {
             drawImage(
                 image, in: frame, cornerRadius: InterfaceScale.metric(8),
-                fillsFrame: region.mediaPosterFillsFrame
+                fillsFrame: region.mediaFillsFrame || region.mediaPosterFillsFrame
             )
         } else if let placeholder = region.mediaPlaceholder?.image {
             drawImage(placeholder, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)

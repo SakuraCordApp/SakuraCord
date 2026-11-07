@@ -73,10 +73,11 @@ struct NativeTimelineRowLayout {
         let frame: CGRect
         let textRegions: [TextRegion]
         let imageRegions: [ImageRegion]
-        let mediaFrame: CGRect?
+        var mediaFrame: CGRect?
         let mediaURL: URL?
         let mediaPreviewURL: URL?
         let mediaPlaceholder: NativeTimelineMediaPlaceholder?
+        var mediaFillsFrame = false
         let mediaIsVideo: Bool
         let mediaAutoplaysInline: Bool
         let mediaPosterFillsFrame: Bool
