@@ -10,25 +10,37 @@ struct ActivityShelfView: View {
     @State private var query = ""
     @State private var searchIsFocused = false
     @State private var selection: EmbeddedActivityApplication?
+    /// The Activity under the pointer, whose details are prepared off-screen.
+    @State private var warmed: EmbeddedActivityApplication?
+    @State private var showsAllRecents = false
 
     var body: some View {
+        let width = InterfaceScale.metric(520)
         ZStack {
+            // The browser stays mounted under the details so going back
+            // doesn't rebuild its grid mid-animation.
+            browser
+                .offset(x: selection == nil ? 0 : -width / 4)
+                .opacity(selection == nil ? 1 : 0)
+                .allowsHitTesting(selection == nil)
+                .accessibilityHidden(selection != nil)
             if let selection {
-                ActivityShelfDetail(
-                    application: selection,
-                    players: model.embeddedActivities.instances(in: channel.id)
-                        .first { $0.applicationID == selection.id }?.participants.count,
-                    back: { self.selection = nil },
-                    launch: { launch(selection) }
-                )
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                detail(selection)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
-                browser
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                if let warmed {
+                    // Decodes the hovered Activity's cover and lays out its
+                    // details before the click, so the push moves on its first frame.
+                    detail(warmed)
+                        .hidden()
+                        // Its Return and Escape shortcuts belong to the real details.
+                        .disabled(true)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .animation(.smooth(duration: 0.3), value: selection?.id)
-        .frame(width: InterfaceScale.metric(520), height: InterfaceScale.metric(600))
+        .frame(width: width, height: InterfaceScale.metric(600))
         .clipped()
         .task(id: channel.guildID) { await model.loadActivityShelf(guildID: channel.guildID) }
         .accessibilityElement(children: .contain)
@@ -73,13 +85,17 @@ struct ActivityShelfView: View {
         if query.isEmpty {
             let recents = Self.recents(shelf)
             if !recents.isEmpty {
-                EmojiPickerHeader(title: "Recents", count: recents.count)
-                HStack(spacing: InterfaceScale.metric(10)) {
-                    ForEach(recents) { application in
-                        Button { selection = application } label: {
+                recentsHeader(count: recents.count)
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.fixed(InterfaceScale.metric(44)), spacing: InterfaceScale.metric(10)), count: 8),
+                    alignment: .leading, spacing: InterfaceScale.metric(10)
+                ) {
+                    ForEach(showsAllRecents ? recents : Array(recents.prefix(8))) { application in
+                        Button { open(application) } label: {
                             ActivityIcon(url: application.iconURL, size: 44)
                         }
                         .buttonStyle(ActivityShelfPressStyle())
+                        .onModalHover { if $0 { warmed = application } }
                         .help(application.name)
                         .accessibilityLabel(application.name)
                     }
@@ -111,11 +127,44 @@ struct ActivityShelfView: View {
                 spacing: InterfaceScale.metric(12)
             ) {
                 ForEach(applications) { application in
-                    ActivityShelfTile(application: application) { selection = application }
+                    ActivityShelfTile(application: application, hover: { warmed = application }, action: { open(application) })
                 }
             }
             .padding(.horizontal, InterfaceScale.metric(14))
         }
+    }
+
+    private func detail(_ application: EmbeddedActivityApplication) -> some View {
+        ActivityShelfDetail(
+            application: application,
+            players: model.embeddedActivities.instances(in: channel.id)
+                .first { $0.applicationID == application.id }?.participants.count,
+            back: { selection = nil },
+            launch: { launch(application) }
+        )
+    }
+
+    /// Discord's Recents header: eight Activities, then View More.
+    private func recentsHeader(count: Int) -> some View {
+        HStack {
+            Text("Recents").font(.interface(.headline))
+            Spacer()
+            if count > 8 {
+                Button(showsAllRecents ? "View Less" : "View More") {
+                    withAnimation(.smooth(duration: 0.25)) { showsAllRecents.toggle() }
+                }
+                .buttonStyle(.link)
+                .font(.interface(.caption))
+            } else {
+                Text(count, format: .number).font(.interface(.caption)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, InterfaceScale.metric(14))
+        .padding(.bottom, InterfaceScale.metric(8))
+    }
+
+    private func open(_ application: EmbeddedActivityApplication) {
+        selection = application
     }
 
     private static func recents(_ shelf: [EmbeddedActivityApplication]) -> [EmbeddedActivityApplication] {
@@ -130,6 +179,7 @@ struct ActivityShelfView: View {
 
 private struct ActivityShelfTile: View {
     let application: EmbeddedActivityApplication
+    let hover: () -> Void
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
@@ -167,7 +217,10 @@ private struct ActivityShelfTile: View {
             .overlay { ActivityShelfTile.shape.stroke(PickerTileStyle.outline(colorScheme, isHovering: isHovering), lineWidth: 0.5) }
             .contentShape(ActivityShelfTile.shape)
         }
-        .onModalHover { isHovering = $0 }
+        .onModalHover { hovering in
+            isHovering = hovering
+            if hovering { hover() }
+        }
         .buttonStyle(ActivityShelfPressStyle())
         .help(application.description)
         .accessibilityLabel(application.isPromoted ? "\(application.name), promoted" : application.name)

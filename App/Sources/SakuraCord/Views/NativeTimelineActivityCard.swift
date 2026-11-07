@@ -18,7 +18,8 @@ struct ActivityCardGeometry {
 
     init(content: NativeServerCardContent, activity: ServerInvite.Activity, reference: ServerInviteReference?,
          origin: CGPoint, maximumWidth: CGFloat, source: AppModel?, integratesWithBubble: Bool) {
-        let width = min(Self.maximumWidth, maximumWidth)
+        // In a bubble the card spans the bubble, as other integrated cards do.
+        let width = integratesWithBubble ? maximumWidth : min(Self.maximumWidth, maximumWidth)
         let inset = integratesWithBubble ? 0 : InterfaceScale.metric(12)
         let gap = InterfaceScale.metric(12)
         let inner = max(1, width - inset * 2)
@@ -115,7 +116,6 @@ extension NativeTimelineRowPainter {
                              isHovered: Bool, pressProgress: CGFloat) {
         guard let content = card.content, let activity = content.activity else { return }
         let bubble = card.integratesWithBubble ? bubbleRegion : nil
-        let outgoing = bubble?.isOutgoing == true
         let foreground = bubble.map { _ in NativeTimelineBubbleDrawing.foregroundColor(for: bubble) } ?? .white
         let secondary = bubble.map { _ in NativeTimelineBubbleDrawing.secondaryForegroundColor(for: bubble) }
             ?? NSColor.white.withAlphaComponent(0.7)
@@ -178,13 +178,10 @@ extension NativeTimelineRowPainter {
             NSGraphicsContext.restoreGraphicsState()
         }
         if card.buttonFrame.height > 0 {
-            // Discord's white Play button; in an incoming bubble the app's accent.
-            let filled = bubble == nil || outgoing
+            // Discord's white button with a dark label reads on any cover tint and bubble colour.
             sakuraCordButton(
                 title: card.buttonTitle, frame: card.buttonFrame, isHovered: isHovered && !card.isDisabled,
-                pressProgress: card.isDisabled ? 0 : pressProgress,
-                colors: [filled ? .white : .sakuraCordAccentColor],
-                foreground: filled ? (bubble == nil ? .black : .sakuraCordAccentColor) : .white,
+                pressProgress: card.isDisabled ? 0 : pressProgress, colors: [.white], foreground: .black,
                 isEnabled: !card.isDisabled
             )
         }

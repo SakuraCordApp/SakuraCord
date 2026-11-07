@@ -44,8 +44,11 @@ Activities by ascending `shelf_rank` and omits those whose `supported_platforms`
 lacks `web`. A tile shows the cover, the icon, the name and one line of the
 description, and a PROMOTED badge when the application flags include `1 << 29`
 (every promoted entry in the capture had it, no other entry did). Above the
-grid, Recents lists shelf Activities from the account's application frecency,
-field 9 of the frecency settings proto. Choosing an Activity opens its details:
+grid, Recents lists Activities from the account's application frecency, field
+9 of the frecency settings proto, ranked as the client's frecency store ranks
+them (uses × the mean age weight of the last ten launches); the first eight show
+with View More for the rest. The official list also includes launched
+Activities that are not on the shelf; SakuraCord lists shelf Activities only. Choosing an Activity opens its details:
 the participant range (`1-N` from `max_participants`, otherwise Unlimited),
 tags, the description, and In-App Purchases when `is_monetized`;
 `requires_age_gate` Activities ask for age confirmation before launch.

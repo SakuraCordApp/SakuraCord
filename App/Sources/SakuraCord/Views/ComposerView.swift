@@ -170,7 +170,7 @@ struct ComposerView: View {
                             .labelStyle(ComposerActionLabelStyle())
                             .buttonStyle(PopoverRowButtonStyle()).padding(InterfaceScale.metric(6)).frame(width: InterfaceScale.metric(200))
                         }
-                        .escapeDismissiblePopover(isPresented: $showActivityShelf, arrowEdge: .top) { activityShelf }
+                        .background { activityShelfPresenter }
                     }
                 }
             },
@@ -1815,9 +1815,16 @@ extension ComposerView {
         }
     }
 
-    @ViewBuilder private var activityShelf: some View {
-        if let activityChannel {
-            ActivityShelfView(model: model, channel: activityChannel) { showActivityShelf = false }
+    /// The emoji and sticker pickers' popover, so the shelf shares their material.
+    private var activityShelfPresenter: some View {
+        StableReactionPickerPresenter(
+            isPresented: $showActivityShelf,
+            preferredEdge: .maxY,
+            accessibilityIdentifier: "composer-activity-shelf"
+        ) {
+            if let activityChannel {
+                ActivityShelfView(model: model, channel: activityChannel) { showActivityShelf = false }
+            }
         }
     }
 }

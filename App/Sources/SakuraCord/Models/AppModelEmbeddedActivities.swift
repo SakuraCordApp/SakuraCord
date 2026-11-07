@@ -146,6 +146,8 @@ extension AppModel {
             guard isCurrentAccountSession(account) else { return }
             embeddedActivities.shelves[guildID] = shelf
             embeddedActivities.shelfError = nil
+            // Activity cards drawn before the shelf arrived pick up its cover.
+            serverInvites.changed()
         } catch {
             guard isCurrentAccountSession(account) else { return }
             embeddedActivities.shelfError = error.localizedDescription
@@ -257,9 +259,9 @@ extension AppModel {
     /// a voice channel it needs no call, as in an application's own DM.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
         guard let instance = embeddedActivities.instances[instanceID], let channel = activityChannel(instance) else { return }
-        let application = embeddedActivities.application(instance.applicationID) ?? EmbeddedActivityApplication(
-            id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL
-        )
+        let application = await shelfApplication(instance.applicationID, guildID: channel.guildID) {
+            EmbeddedActivityApplication(id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
+        }
         await startActivity(application, in: channel)
     }
 
@@ -276,11 +278,26 @@ extension AppModel {
 
     func joinActivityInvite(_ invite: ServerInvite) async {
         guard let activity = invite.activity, let channel = activityInviteChannel(invite) else { return }
-        let application = embeddedActivities.application(activity.applicationID) ?? EmbeddedActivityApplication(
-            id: activity.applicationID, name: activity.name, iconURL: activity.iconURL, coverURL: activity.coverURL
-        )
+        let application = await shelfApplication(activity.applicationID, guildID: channel.guildID) {
+            EmbeddedActivityApplication(
+                id: activity.applicationID, name: activity.name, iconURL: activity.iconURL, coverURL: activity.coverURL
+            )
+        }
         navigate(to: channel.id)
         await startActivity(application, in: channel)
+    }
+
+    /// The shelf's details for an Activity a card points to, loading the shelf
+    /// first. Without them the Activity is treated as age-restricted, so a
+    /// card never skips the confirmation the shelf would ask for.
+    private func shelfApplication(
+        _ id: ApplicationID, guildID: GuildID?, fallback: () -> EmbeddedActivityApplication
+    ) async -> EmbeddedActivityApplication {
+        if embeddedActivities.application(id) == nil { await loadActivityShelf(guildID: guildID) }
+        if let application = embeddedActivities.application(id) { return application }
+        var application = fallback()
+        application.requiresAgeGate = true
+        return application
     }
 
     private func activityInstance(for invite: ServerInvite) -> EmbeddedActivityInstance? {
