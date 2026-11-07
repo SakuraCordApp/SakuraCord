@@ -1131,6 +1131,7 @@ extension NativeTimelineRowLayout {
             )
 
             result.height = rowHeight
+            result.avatarPadding = rowHeight - ceil(visibleContentMaxY + highlightInsets.bottom + searchBottomInset)
             appendPostStarterDivider()
         }
 
