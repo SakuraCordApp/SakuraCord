@@ -61,11 +61,13 @@ extension NativeTimelineCanvasView {
         let size = NSSize(width: width, height: layout.height)
         guard let scale = fadePictureScale(for: size) else { return nil }
         return NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
-            NativeTimelineRowPainter.draw(
-                item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
-                isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
-                spoilerRevealStore: spoilerRevealStore, pollPresentation: row.pollPresentation
-            )
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                NativeTimelineRowPainter.draw(
+                    item: item, layout: layout, in: CGRect(origin: .zero, size: size), model: model,
+                    isHovered: false, revealedTextSpoilerState: row.revealedTextSpoilerState,
+                    spoilerRevealStore: spoilerRevealStore, pollPresentation: row.pollPresentation
+                )
+            }
             if let editor = row.editor {
                 editor.picture.draw(in: editor.frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }

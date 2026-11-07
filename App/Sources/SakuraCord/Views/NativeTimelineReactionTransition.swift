@@ -317,10 +317,7 @@ extension NativeTimelineCanvasView {
         // The lines of an edit fade with the motion that eases its height.
         editedTextBands = editedTextBands.filter { running in !update.textBands.contains { $0.identifier == running.key } }
         if update.plan.motion != nil {
-            for var band in update.textBands {
-                band.motionID = update.motionID
-                editedTextBands[band.identifier] = band
-            }
+            for band in update.textBands { editedTextBands[band.identifier] = band }
             if !update.textBands.isEmpty { positionAnimatedMediaOverlays() }
         }
         if var motion = update.plan.motion {
@@ -395,7 +392,7 @@ extension NativeTimelineCanvasView {
             }
         case .regroup where !update.departedOldIndices.isDisjoint(with: [old.index - 1, old.index + 1]),
              .content:
-            let band = editedTextBand(from: old, at: index, width: baseline.width)
+            let band = editedTextBand(from: old, at: index, width: baseline.width, motionID: update.motionID)
             update.plan.addStep(for: row, delta: delta, movesText: band != nil)
             if let band { update.textBands.append(band) }
             // A motion still running from an earlier change keeps going, so

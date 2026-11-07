@@ -17,7 +17,7 @@ struct NativeTimelineEditedTextBand {
     /// picture, whose old lines then leave at once.
     let picture: NSImage?
     /// The motion easing the row's height.
-    var motionID = 0
+    let motionID: Int
 }
 
 extension NativeTimelineCanvasView {
@@ -29,7 +29,8 @@ extension NativeTimelineCanvasView {
     func editedTextBand(
         from old: NativeTimelineReactionBaseline.Row,
         at index: Int,
-        width: CGFloat
+        width: CGFloat,
+        motionID: Int
     ) -> NativeTimelineEditedTextBand? {
         let layout = layouts[index]
         guard old.editor == nil, let text = old.layout.contentFrame ?? layout.contentFrame else { return nil }
@@ -78,19 +79,21 @@ extension NativeTimelineCanvasView {
                 ))
                 context.setAlpha(progress)
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
-                NativeTimelineRowPainter.draw(
-                    item: old.item, layout: old.layout,
-                    in: CGRect(x: 0, y: -top, width: width, height: old.layout.height), model: model,
-                    isHovered: false, revealedTextSpoilerState: old.revealedTextSpoilerState,
-                    spoilerRevealStore: spoilerRevealStore, pollPresentation: old.pollPresentation
-                )
+                effectiveAppearance.performAsCurrentDrawingAppearance {
+                    NativeTimelineRowPainter.draw(
+                        item: old.item, layout: old.layout,
+                        in: CGRect(x: 0, y: -top, width: width, height: old.layout.height), model: model,
+                        isHovered: false, revealedTextSpoilerState: old.revealedTextSpoilerState,
+                        spoilerRevealStore: spoilerRevealStore, pollPresentation: old.pollPresentation
+                    )
+                }
                 context.endTransparencyLayer()
                 context.restoreGState()
             }
         }
         return .init(
             identifier: identifier, top: top, oldHeight: startHeight,
-            newHeight: newHeight, picture: picture
+            newHeight: newHeight, picture: picture, motionID: motionID
         )
     }
 

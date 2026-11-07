@@ -1462,7 +1462,7 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         rowFrame: CGRect
     ) -> NSImage? {
-        NativeTimelineSendTransitionSnapshot.render(size: frame.size, scale: window?.backingScaleFactor ?? 2) {
+        NativeTimelineSendTransitionSnapshot.render(size: frame.size, scale: rowBitmapScale) {
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             context.translateBy(x: -frame.minX, y: -frame.minY)
             context.clip(to: frame)

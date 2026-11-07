@@ -238,14 +238,9 @@ extension NativeTimelineCanvasView {
             }
             let identifier = items[index].identifier
             let layout = layouts[index]
-            guard animatedMediaRows[identifier] != nil else {
-                index += 1
-                continue
-            }
-
             // While an edit's lines glide, its row draws its media still:
             // live views would sit at their final places.
-            guard editedTextBands[identifier] == nil else {
+            guard animatedMediaRows[identifier] != nil, editedTextBands[identifier] == nil else {
                 index += 1
                 continue
             }
