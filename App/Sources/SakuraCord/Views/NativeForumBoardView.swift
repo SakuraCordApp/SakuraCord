@@ -191,6 +191,12 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     var observationGeneration = 0
     private var minuteTimer: Timer?
     private var lastLayoutWidth: CGFloat = 0
+    /// Cards gliding to new slots after a column change, and when they land.
+    /// They stay realized at their destinations until then, and the pointer
+    /// waits for them, since hits use the destination frames.
+    private var glidingIDs = Set<ForumBoardItem.Identifier>()
+    var glideEndTime: CFTimeInterval = 0
+    private var glideFinishTask: Task<Void, Never>?
     let menuBuilder = ForumPostMenuBuilder()
     var accessibilityProxies: [ForumBoardItem.Identifier: ForumBoardAccessibilityProxyView] = [:]
     /// A page request is in flight from this board; the model also guards.
@@ -242,6 +248,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     func tearDown() {
         settledWorkTask?.cancel()
         resizeSettleTask?.cancel()
+        glideFinishTask?.cancel()
         minuteTimer?.invalidate()
         minuteTimer = nil
         NativeTimelineMediaStore.shared.releaseVisibleImages(owner: mediaOwner)
@@ -344,12 +351,13 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         let swapsBoard = !isFirstPopulation && (queryChanged || modeChanged)
         if swapsBoard {
             crossFadeBoard()
-            // A move or entrance still running from a live update would carry
+            // Motion still running from a live update or a resize would carry
             // its card across the new board after the fade.
             for card in cards.values {
-                card.layer.removeAnimation(forKey: "move")
-                card.layer.removeAnimation(forKey: "entrance")
+                card.layer.removeAllAnimations()
             }
+            glidingIDs.removeAll()
+            glideEndTime = 0
         }
         drawsArrivalsNow = swapsBoard
         defer { drawsArrivalsNow = false }
@@ -400,6 +408,17 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
             for id in ids {
                 cards[id]?.render(scale: backingScale, fading: false)
             }
+        }
+    }
+
+    /// Once cards land, those that glided out of view retire and the pointer
+    /// takes the card now under it.
+    private func scheduleGlideFinish() {
+        glideFinishTask?.cancel()
+        glideFinishTask = Task { @MainActor [weak self] in
+            guard (try? await Task.sleep(for: .seconds(Self.glideDuration))) != nil, let self else { return }
+            refreshVisibleCards(transition: .none)
+            updateHoverFromCurrentPointer()
         }
     }
 
@@ -461,6 +480,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         )
         AppPerformanceSignposts.signposter.endInterval("ForumBoardLayout", signpost)
         let widthChanged = abs(width - lastLayoutWidth) > 0.5
+        // A width change that alters the column count moves cards to new
+        // slots; those realized now glide there from where they are.
+        let reflowingFrames = widthChanged && !reducesMotion && layoutState.map { $0.columns != newLayout.columns } == true
+            ? cards.mapValues(\.frame) : [:]
+        let previousScrollY = scrollView.contentView.bounds.minY
         lastLayoutWidth = width
         layoutState = newLayout
         if widthChanged { regions.removeAll() }
@@ -470,6 +494,12 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         setFrameSize(NSSize(width: width, height: height))
         cardsLayer.frame = CGRect(origin: .zero, size: CGSize(width: width, height: height))
         CATransaction.commit()
+        // Before the scroll restore, whose refresh must keep them realized too.
+        if !reflowingFrames.isEmpty {
+            glidingIDs.formUnion(reflowingFrames.keys)
+            glideEndTime = CACurrentMediaTime() + Self.glideDuration
+            scheduleGlideFinish()
+        }
         if scrollsToTop {
             scrollToTop()
         } else if let anchor {
@@ -479,6 +509,10 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         // Geometry changed under the same cards: rebuild settled state too.
         realizedRange = nil
         refreshVisibleCards(transition: transition)
+        let scrollShift = scrollView.contentView.bounds.minY - previousScrollY
+        for (id, oldFrame) in reflowingFrames {
+            if let card = cards[id] { animateReflow(card, from: oldFrame.offsetBy(dx: 0, dy: scrollShift)) }
+        }
         window?.invalidateCursorRects(for: self)
         // A page that leaves the end of the board on screen asks for the next.
         requestNextPageIfNeeded()
@@ -523,7 +557,16 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
     private func refreshVisibleCards(transition: ForumBoardTransition) {
         guard let layoutState else { return }
         let visible = visibleRect
-        let realized = layoutState.entries(intersecting: realizationRect(for: visible))
+        if CACurrentMediaTime() >= glideEndTime { glidingIDs.removeAll() }
+        // Gliding cards stay realized at their destinations, even past the
+        // viewport, so none vanishes before it arrives; destinations far from
+        // a viewport that has jumped elsewhere are not worth the rows between.
+        let reach = visible.insetBy(dx: 0, dy: -visible.height * 2)
+        let gliding = glidingIDs.reduce(CGRect.null) { rect, id in
+            guard let frame = layoutState.entry(for: id)?.frame, frame.intersects(reach) else { return rect }
+            return rect.union(frame)
+        }
+        let realized = layoutState.entries(intersecting: realizationRect(for: visible).union(gliding))
         // Scrolling within the same entries changes nothing.
         guard transition != .none || realized.indices != realizedRange else { return }
         realizedRange = realized.indices

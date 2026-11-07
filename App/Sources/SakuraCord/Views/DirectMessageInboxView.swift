@@ -102,14 +102,10 @@ private struct DirectMessageHomeRow: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
             if count > 0 {
-                Text(count, format: .number)
-                    .font(.interface(.caption2).bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, InterfaceScale.metric(6))
-                    .padding(.vertical, InterfaceScale.metric(2))
-                    .background(Color(hex: 0xF23F43), in: Capsule())
+                SidebarMentionBadge(count: count)
             }
         }
+        .mentionBadgeMotion(count)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityValue(count == 0 ? "" : count == 1 ? "1 pending \(countedItem)" : "\(count) pending \(countedItem)s")
@@ -227,12 +223,7 @@ private struct DirectMessageInboxRow: View {
             }
 
             if channel.mentionCount > 0 {
-                Text(channel.mentionCount, format: .number)
-                    .font(.interface(.caption2).bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, InterfaceScale.metric(6))
-                    .padding(.vertical, InterfaceScale.metric(2))
-                    .background(Color(hex: 0xF23F43), in: Capsule())
+                SidebarMentionBadge(count: channel.mentionCount)
             } else if channel.unreadCount > 0 {
                 Circle()
                     .fill(.primary)
@@ -246,6 +237,7 @@ private struct DirectMessageInboxRow: View {
                     .accessibilityHidden(true)
             }
         }
+        .mentionBadgeMotion(channel.mentionCount)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityValue(accessibilityValue)

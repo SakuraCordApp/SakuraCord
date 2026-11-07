@@ -26,17 +26,39 @@ extension ForumBoardView {
             card.layer.add(fade, forKey: "move")
             return
         }
-        let spring = CASpringAnimation(keyPath: "position")
+        let spring = Self.spring("position")
         spring.fromValue = NSValue(point: CGPoint(
             x: oldFrame.minX + oldFrame.width * card.layer.anchorPoint.x,
             y: oldFrame.minY + oldFrame.height * card.layer.anchorPoint.y
         ))
         spring.toValue = NSValue(point: card.layer.position)
+        card.layer.add(spring, forKey: "move")
+    }
+
+    /// A resize that changes the gallery's column count moves cards to new
+    /// slots. Each glides from where it was, already at its new size so its
+    /// bitmap fits. The motion is additive, an offset decaying to zero, so a
+    /// resize still under way keeps moving the frame without a jump when the
+    /// motion ends.
+    func animateReflow(_ card: ForumBoardCard, from oldFrame: CGRect) {
+        let frame = card.frame
+        guard oldFrame.origin != frame.origin else { return }
+        let spring = Self.spring("position")
+        spring.isAdditive = true
+        spring.fromValue = NSValue(point: CGPoint(x: oldFrame.minX - frame.minX, y: oldFrame.minY - frame.minY))
+        spring.toValue = NSValue(point: .zero)
+        card.layer.add(spring, forKey: nil)
+    }
+
+    static let glideDuration: CFTimeInterval = 0.55
+
+    private static func spring(_ keyPath: String) -> CASpringAnimation {
+        let spring = CASpringAnimation(keyPath: keyPath)
         spring.damping = 26
         spring.stiffness = 260
         spring.mass = 1
-        spring.duration = min(spring.settlingDuration, 0.55)
-        card.layer.add(spring, forKey: "move")
+        spring.duration = min(spring.settlingDuration, glideDuration)
+        return spring
     }
 
     /// A card inserted live rises into place.

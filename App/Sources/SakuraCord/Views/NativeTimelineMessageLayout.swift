@@ -496,6 +496,11 @@ extension NativeTimelineRowLayout {
             }
 
             if message.forwardedSnapshot != nil {
+                // The bar takes the column's leading edge and the forwarded
+                // content moves right of it, so the bar stays clear of the
+                // avatar gutter and a bubble's rim.
+                contentX += MessageRowLayoutMetrics.forwardedContentInset
+                contentWidth -= MessageRowLayoutMetrics.forwardedContentInset
                 result.forwardedHeaderFrame = CGRect(
                     x: contentX,
                     y: verticalOffset,
@@ -763,12 +768,10 @@ extension NativeTimelineRowLayout {
                 }
             }
             if !usesComponentsV2 {
-                let visibleEmbeds =
-                    MessageEmbedPresentation.visibleEmbeds(
-                        for: message
-                    )
+                let visibleEmbeds = MessageEmbedPresentation.visibleEmbeds(for: message)
                 result.embedRegions.reserveCapacity(visibleEmbeds.count)
-                for embed in visibleEmbeds {
+                for embeds in MessageEmbedPresentation.groupedEmbeds(visibleEmbeds) {
+                    let embed = embeds[0]
                     let embedY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                     if embed.type == "components" {
                         if let region = NativeTimelineComponentLayout.make(
@@ -786,17 +789,17 @@ extension NativeTimelineRowLayout {
                         }
                         continue
                     }
-                    guard let region = NativeTimelineEmbedLayout.make(
-                        embed: embed,
+                    let regions = NativeTimelineEmbedLayout.makeGroup(
+                        embeds: embeds,
                         message: message,
                         source: source,
-                        attachments: message.attachments,
                         origin: CGPoint(x: contentX, y: embedY),
                         maximumWidth: inlineMediaMaximumWidth,
                         integratesWithBubble: usesBubbles,
                         drawsTopSeparator: usesBubbles && hasRichContent
-                    ) else { continue }
-                    result.embedRegions.append(region)
+                    )
+                    guard let region = regions.first else { continue }
+                    result.embedRegions.append(contentsOf: regions)
                     verticalOffset = region.frame.maxY
                     hasRichContent = true
                 }
@@ -919,8 +922,10 @@ extension NativeTimelineRowLayout {
                 hasRichContent = true
             }
             if let forwardedBarStartY {
+                contentX -= MessageRowLayoutMetrics.forwardedContentInset
+                contentWidth += MessageRowLayoutMetrics.forwardedContentInset
                 result.forwardedBarFrame = CGRect(
-                    x: contentX - InterfaceScale.metric(11),
+                    x: contentX,
                     y: forwardedBarStartY,
                     width: InterfaceScale.metric(3),
                     height: max(InterfaceScale.metric(18), verticalOffset - forwardedBarStartY)

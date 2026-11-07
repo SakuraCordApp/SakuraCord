@@ -293,6 +293,9 @@ enum ComposerEmojiAttributedText {
 struct ComposerTextStyle {
     let font: NSFont
     let attributes: [NSAttributedString.Key: Any]
+    /// Sets Markdown blocks in Discord's message line heights, as the
+    /// timeline does, rather than in the text's natural lines.
+    var usesMessageLineHeight = false
 
     static var composer: Self { composer(.interfaceSystemFont(ofSize: 15)) }
 
@@ -390,7 +393,7 @@ struct ComposerTextView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let textStorage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
+        let layoutManager = ComposerLayoutManager()
         textStorage.addLayoutManager(layoutManager)
 
         let textContainer = NSTextContainer()
@@ -618,11 +621,12 @@ struct ComposerTextView: NSViewRepresentable {
 
         layoutManager.ensureLayout(for: textContainer)
 
-        let lineHeight = textStyle.emptyLineHeight
-        let contentHeight = ceil(
-            max(lineHeight, layoutManager.usedRect(for: textContainer).height)
-                + textView.textContainerInset.height * 2
-        )
+        // A draft's lines, such as a smaller subtext line, set its height;
+        // an empty draft keeps a line of the plain text.
+        let textHeight = textView.string.isEmpty
+            ? textStyle.emptyLineHeight
+            : layoutManager.usedRect(for: textContainer).maxY
+        let contentHeight = ceil(textHeight + textView.textContainerInset.height * 2)
 
         scrollView.hasVerticalScroller = scrolls && contentHeight > maximumHeight
         return CGSize(width: proposedWidth, height: min(contentHeight, maximumHeight))
@@ -950,6 +954,15 @@ final class ComposerNSTextView: ComposerFocusReportingTextView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    // As first responder the text view hears every mouse move and shows its
+    // I-beam; a view drawn over it, such as the inline editor's controls,
+    // keeps its own cursor.
+    override func mouseMoved(with event: NSEvent) {
+        guard let hit = window?.contentView?.hitTest(event.locationInWindow), hit !== self, !hit.isDescendant(of: self) else {
+            return super.mouseMoved(with: event)
+        }
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {

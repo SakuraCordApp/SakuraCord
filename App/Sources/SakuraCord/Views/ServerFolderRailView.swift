@@ -11,6 +11,7 @@ struct ServerFolderRailView: View {
     @State private var isAnimatingFolder = false
     @State private var animationGeneration = 0
     @State private var pointerLocation: CGPoint?
+    @State private var pointer = ServerRailPointer()
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
     private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
@@ -95,14 +96,10 @@ struct ServerFolderRailView: View {
                         height: isExpanded ? max(0, geometry.size.height - verticalInset * 2) : InterfaceScale.metric(ServerFolderRailMetrics.containerSize)
                     )
                     .overlay(alignment: .bottomTrailing) {
-                        if entry.mentionCount > 0 {
-                            ServerRailMentionBadge(count: entry.mentionCount)
-                                .padding(InterfaceScale.metric(2))
-                                .background(.black, in: Capsule())
-                                .offset(x: InterfaceScale.metric(3), y: InterfaceScale.metric(3))
-                                .blendMode(.destinationOut)
-                                .opacity(isExpanded ? 0 : 1)
-                        }
+                        ServerRailMentionBadge(count: entry.mentionCount, isCutout: true)
+                            .offset(x: InterfaceScale.metric(3), y: InterfaceScale.metric(3))
+                            .blendMode(.destinationOut)
+                            .opacity(isExpanded ? 0 : 1)
                     }
                     .compositingGroup()
                     .offset(
@@ -123,12 +120,23 @@ struct ServerFolderRailView: View {
         .environment(\.serverRailMentionBadgesInOverlay, true)
         .onContinuousHover { phase in
             switch phase {
-            case .active(let location): pointerLocation = inputAllowed ? location : nil
-            case .ended: pointerLocation = nil
+            case .active(let location):
+                pointer.location = inputAllowed ? location : nil
+                let location = drag.isScrolling ? nil : pointer.location
+                if pointerLocation != location { pointerLocation = location }
+            case .ended:
+                pointer.location = nil
+                pointerLocation = nil
             }
         }
+        .onChange(of: drag.isScrolling) { _, isScrolling in
+            if !isScrolling { pointerLocation = pointer.location }
+        }
         .onChange(of: inputAllowed) { _, allowed in
-            if !allowed { pointerLocation = nil }
+            if !allowed {
+                pointer.location = nil
+                pointerLocation = nil
+            }
         }
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil }
@@ -178,7 +186,7 @@ struct ServerFolderRailView: View {
     private func folderMentionBadges(_ anchors: [GuildID: Anchor<CGRect>]) -> some View {
         GeometryReader { geometry in
             ForEach(entry.guildEntries) { guildEntry in
-                if let anchor = anchors[guildEntry.id], let guild = guildEntry.presentation?.guild, guild.mentionCount > 0 {
+                if let anchor = anchors[guildEntry.id], let guild = guildEntry.presentation?.guild {
                     let bounds = geometry[anchor]
                     let hidesBadge = drag.draggedID == entry.id || drag.flight?.id == entry.id
                         || drag.draggedID == .guild(guild.id) || drag.flight?.id == .guild(guild.id)
@@ -192,7 +200,7 @@ struct ServerFolderRailView: View {
                         .position(x: bounds.maxX + InterfaceScale.metric(5), y: bounds.maxY + InterfaceScale.metric(5))
                 }
             }
-            if entry.mentionCount > 0, !isExpanded {
+            if !isExpanded {
                 let mentionedIndex = entry.guildEntries.firstIndex { ($0.presentation?.guild.mentionCount ?? 0) > 0 } ?? 0
                 let badgeTravel = ServerFolderRailMetrics.firstGuildBadgeY - ServerFolderRailMetrics.collapsedBadgeY
                     + CGFloat(mentionedIndex) * ServerFolderRailMetrics.guildStride
@@ -238,14 +246,10 @@ struct ServerFolderRailView: View {
                             )
                     }
                     .overlay(alignment: .bottomTrailing) {
-                        if guild.mentionCount > 0 {
-                            ServerRailMentionBadge(count: guild.mentionCount)
-                                .padding(InterfaceScale.metric(2))
-                                .background(.black, in: Capsule())
-                                .offset(x: InterfaceScale.metric(7), y: InterfaceScale.metric(7))
-                                .blendMode(.destinationOut)
-                                .opacity(isExpanded ? 1 : 0)
-                        }
+                        ServerRailMentionBadge(count: guild.mentionCount, isCutout: true)
+                            .offset(x: InterfaceScale.metric(7), y: InterfaceScale.metric(7))
+                            .blendMode(.destinationOut)
+                            .opacity(isExpanded ? 1 : 0)
                     }
                     .compositingGroup()
                     .frame(width: bounds.width, height: bounds.height)
@@ -257,15 +261,11 @@ struct ServerFolderRailView: View {
 
         }
         .overlay(alignment: .topLeading) {
-            if entry.mentionCount > 0 {
-                ServerRailMentionBadge(count: entry.mentionCount)
-                    .padding(InterfaceScale.metric(2))
-                    .background(.black, in: Capsule())
-                    .frame(width: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), height: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), alignment: .bottomTrailing)
-                    .offset(x: InterfaceScale.metric(11), y: InterfaceScale.metric(4))
-                    .blendMode(.destinationOut)
-                    .opacity(isExpanded ? 0 : 1)
-            }
+            ServerRailMentionBadge(count: entry.mentionCount, isCutout: true)
+                .frame(width: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), height: InterfaceScale.metric(ServerFolderRailMetrics.containerSize), alignment: .bottomTrailing)
+                .offset(x: InterfaceScale.metric(11), y: InterfaceScale.metric(4))
+                .blendMode(.destinationOut)
+                .opacity(isExpanded ? 0 : 1)
         }
         .compositingGroup()
         .opacity(collapsedSourceOpacity)
@@ -397,9 +397,7 @@ struct ServerFolderRailHeader: View {
             (isPointerOverHeader ?? isHovering) ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
         .onScrollVisibilityChange(threshold: 0.01) { iconIsVisible = $0 }
-        .onModalHover {
-            isHovering = $0
-        }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
     }
 

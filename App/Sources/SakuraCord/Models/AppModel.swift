@@ -178,8 +178,25 @@ final class AppModel {
     @ObservationIgnored let threadActions = ThreadActionStore()
     @ObservationIgnored let voiceSidebarPresentation =
         VoiceSidebarPresentationStore()
-    var serverRailGuildsByID: [GuildID: Guild] = [:] {
-        didSet { updateServerRailMembership(replacing: oldValue) }
+    @ObservationIgnored private var serverRailGuildStorage: [GuildID: Guild] = [:]
+    /// The rail's guilds with their unread and mention counts. Counts change
+    /// with almost every message and reach the rail through its own store, so
+    /// a change of counts alone does not invalidate the many views reading
+    /// guild permissions, features and membership here.
+    var serverRailGuildsByID: [GuildID: Guild] {
+        get {
+            access(keyPath: \.serverRailGuildsByID)
+            return serverRailGuildStorage
+        }
+        set {
+            let previous = serverRailGuildStorage
+            if Self.differOnlyInReadState(previous, newValue) {
+                serverRailGuildStorage = newValue
+            } else {
+                withMutation(keyPath: \.serverRailGuildsByID) { serverRailGuildStorage = newValue }
+            }
+            updateServerRailMembership(replacing: previous)
+        }
     }
     var serverRailItems: [GuildRailItem] = [] {
         didSet {
@@ -1217,6 +1234,15 @@ extension AppModel {
             let previous = snapshotStorage
             withMutation(keyPath: \.snapshot) { snapshotStorage = newValue }
             refreshSnapshotPresentation(replacing: previous)
+        }
+    }
+
+    private static func differOnlyInReadState(_ old: [GuildID: Guild], _ new: [GuildID: Guild]) -> Bool {
+        old.count == new.count && new.allSatisfy { id, guild in
+            guard var previous = old[id] else { return false }
+            previous.unreadCount = guild.unreadCount
+            previous.mentionCount = guild.mentionCount
+            return previous == guild
         }
     }
 
