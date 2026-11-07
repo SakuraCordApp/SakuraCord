@@ -42,9 +42,9 @@ extension NativeTimelineCanvasView {
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
             // A short row is padded to its avatar's height below everything
             // else: the padding its text grows into, or leaves, belongs to
-            // its space.
+            // its space. Each row's height is rounded up to a whole point.
             let newAfter = layout.height - newText.maxY
-            guard abs(newAfter - layout.avatarPadding - after + old.layout.avatarPadding) < 0.5 else { return nil }
+            guard abs(newAfter - layout.avatarPadding - after + old.layout.avatarPadding) < 1 else { return nil }
             after = min(after, newAfter)
             top = min(top, oldText.minY, newText.minY)
         }
