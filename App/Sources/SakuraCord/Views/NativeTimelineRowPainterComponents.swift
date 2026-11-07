@@ -469,7 +469,11 @@ extension NativeTimelineRowPainter {
                     )
                 }
             case .card:
-                componentContainer(container.frame, accentColor: container.accentColor)
+                discordCard(
+                    container.frame,
+                    cornerRadius: container.cornerRadius,
+                    accent: roleColor(container.accentColor)
+                )
             }
             if isHidden {
                 NativeTimelineSpoilerCover.draw(covering: true, in: container.frame, cornerRadius: container.cornerRadius) {
@@ -718,41 +722,6 @@ extension NativeTimelineRowPainter {
                 color: .secondaryLabelColor
             )
         }
-    }
-
-    static func componentContainer(
-        _ frame: CGRect,
-        accentColor: UInt32?,
-        fill: NSColor = .controlBackgroundColor
-    ) {
-        let cornerRadius = DiscordRichMessageMetrics.cardCornerRadius
-        let shape = NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: cornerRadius
-        )
-        // Discord's container surface and border.
-        NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
-        fill.setFill()
-        frame.fill()
-        if let accent = roleColor(accentColor) {
-            accent.setFill()
-            CGRect(
-                x: frame.minX,
-                y: frame.minY,
-                width: DiscordRichMessageMetrics.px(4),
-                height: frame.height
-            ).fill()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-
-        NativeTimelineSemanticColor.opacity(.labelColor, 0.10).setStroke()
-        let border = NSBezierPath(
-            concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: max(0, cornerRadius - 0.5)
-        )
-        border.lineWidth = 1
-        border.stroke()
     }
 
     static func bubbleIntegratedSection(
@@ -1091,9 +1060,12 @@ extension NativeTimelineRowPainter {
         } else {
             let alphas = DiscordComponentButtonAppearance.secondaryFillAlphas(isDark: isDark)
             let settled = alphas[0] + (alphas[1] - alphas[0]) * hover
-            fill = discordGrey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
-            border = discordGrey.withAlphaComponent(isDark ? 0.04 : 0.2)
-            foreground = isDark ? .white : discordLightText
+            fill = DiscordEmbedPalette.grey.withAlphaComponent(settled + (alphas[2] - settled) * pressProgress)
+            border = SakuraCordThemeStore.shared.committedTheme.discordTinted(
+                DiscordEmbedPalette.grey.withAlphaComponent(DiscordComponentButtonAppearance.secondaryBorderAlpha(isDark: isDark)),
+                isDark: isDark
+            )
+            foreground = .labelColor
         }
 
         NSGraphicsContext.saveGraphicsState()
@@ -1124,10 +1096,6 @@ extension NativeTimelineRowPainter {
         if isDimmed { context?.endTransparencyLayer() }
         NSGraphicsContext.restoreGraphicsState()
     }
-
-    /// The grey behind Discord's secondary buttons and its muted borders.
-    private static let discordGrey = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
-    private static let discordLightText = NSColor(srgbRed: 40 / 255, green: 40 / 255, blue: 45 / 255, alpha: 1)
 
     private static func drawComponentButtonContent(
         _ region: NativeTimelineComponentLayout.ButtonRegion,
@@ -1168,16 +1136,14 @@ extension NativeTimelineRowPainter {
         )
         if region.url != nil {
             let iconSize = NativeTimelineComponentButtonMetrics.linkIconSize
-            systemSymbol(
-                "arrow.up.right.square",
+            DiscordLaunchIcon.draw(
                 in: CGRect(
                     x: labelMaxX + linkAdvance - iconSize,
                     y: region.frame.midY - iconSize / 2,
                     width: iconSize,
                     height: iconSize
                 ),
-                color: color,
-                inset: 0
+                color: color
             )
         }
     }
