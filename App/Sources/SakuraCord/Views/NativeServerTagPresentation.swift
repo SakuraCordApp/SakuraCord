@@ -103,6 +103,37 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         height / 2 + glyphBounds.midY
     }
 
+    static func glyphPathAndColorRuns(line: CTLine, baseline: CGFloat = 0) -> (path: CGPath, colorRuns: [CTRun]) {
+        let runs = (CTLineGetGlyphRuns(line) as [AnyObject]) as? [CTRun] ?? []
+        let path = CGMutablePath()
+        var colorRuns: [CTRun] = []
+        for run in runs {
+            let runAttributes = CTRunGetAttributes(run) as NSDictionary
+            guard let nsFont = runAttributes[kCTFontAttributeName] as? NSFont else { continue }
+            if CTFontGetSymbolicTraits(nsFont).contains(.traitColorGlyphs) {
+                colorRuns.append(run)
+                continue
+            }
+            let runFont = nsFont as CTFont
+            let glyphCount = CTRunGetGlyphCount(run)
+            var glyphs = [CGGlyph](repeating: 0, count: glyphCount)
+            var positions = [CGPoint](repeating: .zero, count: glyphCount)
+            CTRunGetGlyphs(run, CFRangeMake(0, glyphCount), &glyphs)
+            CTRunGetPositions(run, CFRangeMake(0, glyphCount), &positions)
+            for glyphIndex in 0 ..< glyphCount {
+                if let subPath = CTFontCreatePathForGlyph(runFont, glyphs[glyphIndex], nil) {
+                    let transform = CGAffineTransform(translationX: positions[glyphIndex].x, y: positions[glyphIndex].y + baseline)
+                    path.addPath(subPath, transform: transform)
+                }
+            }
+        }
+        return (path, colorRuns)
+    }
+
+    private func glyphPathAndColorRuns(baseline: CGFloat) -> (path: CGPath, colorRuns: [CTRun]) {
+        Self.glyphPathAndColorRuns(line: line, baseline: baseline)
+    }
+
     @MainActor
     func draw(in frame: CGRect, color: NSColor, context: CGContext, isUnderlined: Bool = false) {
         guard frame.width > 0, frame.height > 0 else { return }
@@ -111,16 +142,160 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
         context.translateBy(x: frame.minX, y: frame.maxY)
         context.scaleBy(x: 1, y: -1)
         context.textMatrix = .identity
-        context.setFillColor(color.cgColor)
         let baseline = frame.height / 2 - glyphBounds.midY
+        if isUnderlined {
+            context.saveGState()
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(3.5),
+                color: color.withAlphaComponent(0.45).cgColor
+            )
+            context.setFillColor(color.cgColor)
+            context.textPosition = CGPoint(x: 0, y: baseline)
+            CTLineDraw(line, context)
+            context.restoreGState()
+        }
+        context.setFillColor(color.cgColor)
         context.textPosition = CGPoint(x: 0, y: baseline)
         CTLineDraw(line, context)
+
         if isUnderlined {
-            context.setStrokeColor(color.cgColor)
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
+                let textWidth = min(width, frame.width)
+                let highlightX = textWidth * (phase * 1.6 - 0.3)
+                let bandWidth = max(InterfaceScale.metric(28), textWidth * 0.4)
+                let shimmerColors = [
+                    NSColor.white.withAlphaComponent(0).cgColor,
+                    NSColor.white.withAlphaComponent(0.55).cgColor,
+                    NSColor.white.withAlphaComponent(0).cgColor,
+                ] as CFArray
+                let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
+                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+                if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
+                    context.saveGState()
+                    let (path, _) = glyphPathAndColorRuns(baseline: baseline)
+                    context.addPath(path)
+                    context.clip()
+                    context.setBlendMode(.plusLighter)
+                    context.drawLinearGradient(
+                        shimmerGradient,
+                        start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
+                        end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
+                        options: []
+                    )
+                    context.restoreGState()
+                }
+            }
+
+            context.saveGState()
+            context.setStrokeColor(color.withAlphaComponent(0.85).cgColor)
             context.setLineWidth(1)
             context.move(to: CGPoint(x: 0, y: baseline - InterfaceScale.metric(1.5)))
             context.addLine(to: CGPoint(x: min(width, frame.width), y: baseline - InterfaceScale.metric(1.5)))
             context.strokePath()
+            context.restoreGState()
+        }
+        context.restoreGState()
+    }
+
+    @MainActor
+    func draw(in frame: CGRect, gradientColors: [NSColor], context: CGContext, isUnderlined: Bool = false) {
+        guard frame.width > 0, frame.height > 0, !gradientColors.isEmpty else { return }
+        if gradientColors.count == 1 {
+            draw(in: frame, color: gradientColors[0], context: context, isUnderlined: isUnderlined)
+            return
+        }
+        context.saveGState()
+        context.clip(to: frame)
+        context.translateBy(x: frame.minX, y: frame.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.textMatrix = .identity
+
+        let baseline = frame.height / 2 - glyphBounds.midY
+        let cgColors = gradientColors.map(\.cgColor) as CFArray
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let count = gradientColors.count
+        let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
+        guard let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) else {
+            context.restoreGState()
+            return
+        }
+
+        let (path, colorRuns) = glyphPathAndColorRuns(baseline: baseline)
+
+        if isUnderlined {
+            context.saveGState()
+            let primary = gradientColors[0]
+            context.setShadow(
+                offset: .zero,
+                blur: InterfaceScale.metric(3.5),
+                color: primary.withAlphaComponent(0.45).cgColor
+            )
+            context.setFillColor(primary.withAlphaComponent(0.45).cgColor)
+            context.addPath(path)
+            context.fillPath()
+            context.restoreGState()
+        }
+
+        context.saveGState()
+        context.addPath(path)
+        context.clip()
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: 0, y: 0),
+            end: CGPoint(x: min(width, frame.width), y: 0),
+            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+        )
+
+        if isUnderlined, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
+            let textWidth = min(width, frame.width)
+            let highlightX = textWidth * (phase * 1.6 - 0.3)
+            let bandWidth = max(InterfaceScale.metric(28), textWidth * 0.4)
+            let shimmerColors = [
+                NSColor.white.withAlphaComponent(0).cgColor,
+                NSColor.white.withAlphaComponent(0.6).cgColor,
+                NSColor.white.withAlphaComponent(0).cgColor,
+            ] as CFArray
+            let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
+            if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
+                context.setBlendMode(.plusLighter)
+                context.drawLinearGradient(
+                    shimmerGradient,
+                    start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
+                    end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
+                    options: []
+                )
+            }
+        }
+        context.restoreGState()
+
+        if !colorRuns.isEmpty {
+            context.saveGState()
+            context.textPosition = CGPoint(x: 0, y: baseline)
+            for run in colorRuns {
+                CTRunDraw(run, context, CFRange())
+            }
+            context.restoreGState()
+        }
+
+        if isUnderlined {
+            context.saveGState()
+            let underlineRect = CGRect(
+                x: 0,
+                y: baseline - InterfaceScale.metric(1.5),
+                width: min(width, frame.width),
+                height: 1
+            )
+            context.clip(to: underlineRect)
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 0, y: 0),
+                end: CGPoint(x: min(width, frame.width), y: 0),
+                options: []
+            )
+            context.restoreGState()
         }
         context.restoreGState()
     }

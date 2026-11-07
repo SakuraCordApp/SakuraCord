@@ -279,7 +279,8 @@ final class NativeMemberListCoordinator: NSObject {
         let sections = sections.map { section in
             MemberSection(id: section.id, title: section.title, colorHex: section.colorHex,
                           totalCount: section.totalCount, members: section.members.map(parent.cosmeticPolicy.member),
-                          gatewayStartIndex: section.gatewayStartIndex, isLoadingSkeleton: section.isLoadingSkeleton)
+                          gatewayStartIndex: section.gatewayStartIndex, isLoadingSkeleton: section.isLoadingSkeleton,
+                          role: section.role)
         }
         guard requestedSections != sections
             || requestedPresentation != presentation

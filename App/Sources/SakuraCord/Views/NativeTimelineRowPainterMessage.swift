@@ -168,24 +168,71 @@ extension NativeTimelineRowPainter {
                 author?.user
                 ?? message.author
             if let context = NSGraphicsContext.current?.cgContext {
-                input.layout.authorText?.draw(
-                    in: frame,
-                    color: presentedAuthor.isBot
-                        ? .sakuraCordAccentColor
-                        : input.model?.accessibilitySettings.roleColorDisplay != .inNames
-                        ? .labelColor : roleColor(author?.roleColorHex) ?? .labelColor,
-                    context: context, isUnderlined: input.isAuthorHovered
-                )
+                if !presentedAuthor.isBot,
+                   input.model?.accessibilitySettings.roleColorDisplay == .inNames,
+                   let author,
+                   author.hasRoleGradient,
+                   let primary = roleColor(author.roleColorHex),
+                   let secondary = roleColor(author.roleSecondaryColorHex)
+                {
+                    let tertiary = roleColor(author.roleTertiaryColorHex)
+                    let gradientColors = tertiary.map { [primary, secondary, $0] } ?? [primary, secondary]
+                    input.layout.authorText?.draw(
+                        in: frame,
+                        gradientColors: gradientColors,
+                        context: context,
+                        isUnderlined: input.isAuthorHovered
+                    )
+                } else {
+                    input.layout.authorText?.draw(
+                        in: frame,
+                        color: presentedAuthor.isBot
+                            ? .sakuraCordAccentColor
+                            : input.model?.accessibilitySettings.roleColorDisplay != .inNames
+                            ? .labelColor : roleColor(author?.roleColorHex) ?? .labelColor,
+                        context: context, isUnderlined: input.isAuthorHovered
+                    )
+                }
             }
             if input.model?.accessibilitySettings.roleColorDisplay == .nextToNames,
-               let color = roleColor(author?.roleColorHex) {
-                color.setFill()
-                NSBezierPath(ovalIn: CGRect(
+               let color = roleColor(author?.roleColorHex)
+            {
+                let dotRect = CGRect(
                     x: frame.minX - InterfaceScale.metric(15),
                     y: frame.midY - InterfaceScale.metric(4.5),
                     width: InterfaceScale.metric(9),
                     height: InterfaceScale.metric(9)
-                )).fill()
+                )
+                if let author,
+                   author.hasRoleGradient,
+                   let secondary = roleColor(author.roleSecondaryColorHex),
+                   let context = NSGraphicsContext.current?.cgContext
+                {
+                    let tertiary = roleColor(author.roleTertiaryColorHex)
+                    let gradientColors = tertiary.map { [color, secondary, $0] } ?? [color, secondary]
+                    let cgColors = (gradientColors.map(\.cgColor) as [CGColor]) as CFArray
+                    let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+                    let count = gradientColors.count
+                    let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
+                    if let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) {
+                        context.saveGState()
+                        context.addEllipse(in: dotRect)
+                        context.clip()
+                        context.drawLinearGradient(
+                            gradient,
+                            start: CGPoint(x: dotRect.minX, y: 0),
+                            end: CGPoint(x: dotRect.maxX, y: 0),
+                            options: []
+                        )
+                        context.restoreGState()
+                    } else {
+                        color.setFill()
+                        NSBezierPath(ovalIn: dotRect).fill()
+                    }
+                } else {
+                    color.setFill()
+                    NSBezierPath(ovalIn: dotRect).fill()
+                }
             }
         }
         drawMessageIdentityMetadata(input)
@@ -206,6 +253,21 @@ extension NativeTimelineRowPainter {
                let frame = region.presentation.badgeFrame(in: region.frame),
                let image = mediaImage(for: .media(url, maximumPixelDimension: 32)) {
                 drawImage(image, in: frame, cornerRadius: 0, fillsFrame: false)
+            }
+        }
+        if let region = input.layout.roleIconRegion {
+            if let url = region.role.iconURL,
+               let image = mediaImage(for: .media(url, maximumPixelDimension: 48)) {
+                drawImage(image, in: region.frame, cornerRadius: 0, fillsFrame: false)
+            } else if let emoji = region.role.unicodeEmoji, !emoji.isEmpty {
+                text(
+                    emoji,
+                    in: region.frame,
+                    font: .systemFont(ofSize: region.frame.height * 0.85),
+                    color: .labelColor,
+                    alignment: .center,
+                    lineBreakMode: .byClipping
+                )
             }
         }
         if let frame = input.layout.timestampFrame,
@@ -1116,22 +1178,66 @@ extension NativeTimelineRowPainter {
             ),
             height: NativeTimelineReplyMetrics.lineHeight
         )
-        text(
-            displayName,
-            in: authorFrame,
-            font: font,
-            color: foregroundColor ?? (author.isBot
-                ? .sakuraCordAccentColor
-                : model?.accessibilitySettings.roleColorDisplay == .inNames ? roleColor ?? .labelColor : .labelColor)
-        )
+        if foregroundColor == nil,
+           !author.isBot,
+           model?.accessibilitySettings.roleColorDisplay == .inNames,
+           let presentation,
+           presentation.hasRoleGradient,
+           let primary = roleColor,
+           let secondary = Self.roleColor(presentation.roleSecondaryColorHex),
+           let context = NSGraphicsContext.current?.cgContext
+        {
+            let tertiary = Self.roleColor(presentation.roleTertiaryColorHex)
+            let gradientColors = tertiary.map { [primary, secondary, $0] } ?? [primary, secondary]
+            let authorPresentation = NativeIdentityTextPresentation(displayName, font: font, maximumWidth: authorFrame.width)
+            authorPresentation.draw(in: authorFrame, gradientColors: gradientColors, context: context)
+        } else {
+            text(
+                displayName,
+                in: authorFrame,
+                font: font,
+                color: foregroundColor ?? (author.isBot
+                    ? .sakuraCordAccentColor
+                    : model?.accessibilitySettings.roleColorDisplay == .inNames ? roleColor ?? .labelColor : .labelColor)
+            )
+        }
         if showsIndicator, let roleColor {
-            roleColor.setFill()
-            NSBezierPath(ovalIn: CGRect(
+            let dotRect = CGRect(
                 x: authorFrame.minX - indicatorWidth,
                 y: authorFrame.midY - InterfaceScale.metric(5),
                 width: InterfaceScale.metric(10),
                 height: InterfaceScale.metric(10)
-            )).fill()
+            )
+            if let presentation,
+               presentation.hasRoleGradient,
+               let secondary = Self.roleColor(presentation.roleSecondaryColorHex),
+               let context = NSGraphicsContext.current?.cgContext
+            {
+                let tertiary = Self.roleColor(presentation.roleTertiaryColorHex)
+                let gradientColors = tertiary.map { [roleColor, secondary, $0] } ?? [roleColor, secondary]
+                let cgColors = (gradientColors.map(\.cgColor) as [CGColor]) as CFArray
+                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+                let count = gradientColors.count
+                let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
+                if let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) {
+                    context.saveGState()
+                    context.addEllipse(in: dotRect)
+                    context.clip()
+                    context.drawLinearGradient(
+                        gradient,
+                        start: CGPoint(x: dotRect.minX, y: 0),
+                        end: CGPoint(x: dotRect.maxX, y: 0),
+                        options: []
+                    )
+                    context.restoreGState()
+                } else {
+                    roleColor.setFill()
+                    NSBezierPath(ovalIn: dotRect).fill()
+                }
+            } else {
+                roleColor.setFill()
+                NSBezierPath(ovalIn: dotRect).fill()
+            }
         }
         return CGRect(x: authorFrame.minX - indicatorWidth, y: authorFrame.minY, width: authorFrame.width + indicatorWidth, height: authorFrame.height)
     }

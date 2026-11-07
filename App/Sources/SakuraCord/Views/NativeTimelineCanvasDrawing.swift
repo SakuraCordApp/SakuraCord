@@ -51,6 +51,7 @@ extension NativeTimelineCanvasView {
         refreshReactionMotionGeometry()
         positionReactionBandViews()
         reconcileServerTagCardPresentation()
+        reconcileRoleIconCardPresentation()
         contentOriginMoved =
             abs(previousContentOriginY - self.contentOriginY) >= 0.5
         if activeMentionPopoverAnchor?.sourceRect() == nil {
@@ -360,6 +361,7 @@ extension NativeTimelineCanvasView {
         closeHoverTooltips()
         closeMessageProfilePopover()
         closeServerTagPopover()
+        closeRoleIconPopover()
         removeActionCapsule()
         freezeEditingRowForScroll()
         reconcileAccessibilityProxiesIfActive()
@@ -477,6 +479,7 @@ extension NativeTimelineCanvasView {
             closeHoverTooltips()
             closeMessageProfilePopover()
             closeServerTagPopover()
+            closeRoleIconPopover()
             closeMentionPopover()
             closeComponentChoiceOverlay()
             updateCodeCopyControl()

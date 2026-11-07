@@ -72,6 +72,8 @@ struct ComposerView: View {
                             authorName: author.user.displayName,
                             avatarURL: author.user.avatarURL,
                             roleColorHex: author.roleColorHex,
+                            roleSecondaryColorHex: author.roleSecondaryColorHex,
+                            roleTertiaryColorHex: author.roleTertiaryColorHex,
                             mentionsAuthor: activeReplyMentionsAuthor,
                             canMentionAuthor: author.user.id != model.currentUser?.id,
                             toggleMention: toggleReplyMention,

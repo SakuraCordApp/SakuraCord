@@ -1004,7 +1004,7 @@ extension NativeTimelineRowPainter {
     static func roleColor(_ value: UInt32?) -> NSColor? {
         guard let value, value != 0 else { return nil }
         return NSColor(
-            red: CGFloat((value >> 16) & 0xFF) / 255,
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
             green: CGFloat((value >> 8) & 0xFF) / 255,
             blue: CGFloat(value & 0xFF) / 255,
             alpha: 1

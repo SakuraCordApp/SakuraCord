@@ -425,6 +425,17 @@ extension NativeMemberListCanvasView {
         foreground.frame = host.frame
         foreground.layer?.zPosition = 12
         foreground.needsDisplay = true
+        let hasMovingHighlight = presentation.roleColorDisplay == .inNames && (
+            preparedText[items[index].id]?.gradientColors != nil
+                || MessageAuthorPresentation.topRoleColor(in: member.roles) != nil
+        )
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, hasMovingHighlight {
+            memberHoverTicker.start(on: self) { [weak self] in
+                self?.rowForegroundOverlay?.needsDisplay = true
+            }
+        } else {
+            memberHoverTicker.stop()
+        }
     }
 
     func installProfileAnchorIfNeeded() {
@@ -493,6 +504,7 @@ extension NativeMemberListCanvasView {
     }
 
     func removeRowOverlay() {
+        memberHoverTicker.stop()
         let previousIndex = rowOverlayIndex
         rowOverlay?.removeFromSuperview()
         rowOverlay = nil
@@ -507,25 +519,36 @@ extension NativeMemberListCanvasView {
     func prewarmImages(in range: Range<Int>, visible: Range<Int>) {
         var wanted: Set<URL> = []
         for index in range {
-            guard case .member(let member, _) = items[index] else { continue }
             var requests: [(url: URL, maximumPixelDimension: Int)] = []
-            if let url = member.guildAvatarURL ?? member.user.avatarURL {
-                requests.append((url, 96))
+            switch items[index] {
+            case .header(let header):
+                if let url = header.role?.iconURL {
+                    requests.append((url, 32))
+                }
+            case .member(let member, _):
+                if let url = member.guildAvatarURL ?? member.user.avatarURL {
+                    requests.append((url, 96))
+                }
+                if let url = member.user.avatarDecorationURL {
+                    requests.append((url, 96))
+                }
+                if let url = member.user.nameplate?.staticURL {
+                    requests.append((url, 512))
+                }
+                if let url = member.user.primaryGuild?.badgeURL {
+                    requests.append((url, 32))
+                }
+                if let url = MessageAuthorPresentation.topRoleWithIcon(in: member.roles)?.iconURL {
+                    requests.append((url, 32))
+                }
+                requests.append(contentsOf: NativeMemberActivityPresentation.references(
+                    in: member.memberListActivityText
+                ).compactMap(activityEmojiURL).map {
+                    (url: $0, maximumPixelDimension: 64)
+                })
+            case .placeholder:
+                break
             }
-            if let url = member.user.avatarDecorationURL {
-                requests.append((url, 96))
-            }
-            if let url = member.user.nameplate?.staticURL {
-                requests.append((url, 512))
-            }
-            if let url = member.user.primaryGuild?.badgeURL {
-                requests.append((url, 32))
-            }
-            requests.append(contentsOf: NativeMemberActivityPresentation.references(
-                in: member.memberListActivityText
-            ).compactMap(activityEmojiURL).map {
-                (url: $0, maximumPixelDimension: 64)
-            })
             wanted.formUnion(requests.map(\.url))
             let priority: MediaLoadPriority = visible.contains(index) ? .visible : .prefetch
             for request in requests {

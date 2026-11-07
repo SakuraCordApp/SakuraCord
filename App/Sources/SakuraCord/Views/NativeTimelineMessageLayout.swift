@@ -389,9 +389,11 @@ extension NativeTimelineRowLayout {
                 for: message.timestamp, settings: source?.interfaceSettings ?? .defaults
             )
             let timestampWidth = NativeTimelineRowLayout.measuredTextWidth(timestamp, font: metrics.timestampFont)
-            // Keep the adjacent controls visible while long decorative names
-            // truncate. At narrow widths the tag is omitted before the name.
-            let timestampReserve = min(timestampWidth, availableWidth / 3) + 7
+            let editedWidth: CGFloat = message.editedTimestamp != nil
+                ? NativeTimelineRowLayout.measuredTextWidth("(edited)", font: metrics.editedFont) + InterfaceScale.metric(7)
+                : 0
+            // Keep the adjacent controls and full timestamp/edited labels visible while long decorative names truncate.
+            let timestampReserve = timestampWidth + editedWidth + InterfaceScale.metric(7)
             let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
             let botText = badge.map { NativeIdentityTextPresentation(
                 $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)
@@ -399,18 +401,21 @@ extension NativeTimelineRowLayout {
             let naturalBotWidth = botText.map { $0.width + ServerTagAppearance.horizontalPadding * 2 } ?? 0
             let botWidth = availableWidth >= naturalBotWidth + 7 + 12 ? naturalBotWidth : 0
             let botReserve = botWidth > 0 ? botWidth + 7 : 0
+            let role = presentation?.topRoleWithIcon
+            let roleIconSize: CGFloat = role != nil ? InterfaceScale.metric(16) : 0
+            let roleIconReserve: CGFloat = role != nil ? roleIconSize + 7 : 0
             let tag = author.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) }?
-                .fitting(maximumWidth: availableWidth - botReserve - timestampReserve - 32 - 7)
+                .fitting(maximumWidth: availableWidth - botReserve - roleIconReserve - timestampReserve - 32 - 7)
             let tagReserve = tag.map { $0.width + 7 } ?? 0
             let authorText = NativeIdentityTextPresentation(
                 author.displayName, font: authorFont,
-                maximumWidth: max(0, availableWidth - botReserve - tagReserve - timestampReserve)
+                maximumWidth: max(0, availableWidth - botReserve - tagReserve - roleIconReserve - timestampReserve)
             )
             let badgeHeight = ServerTagAppearance.height + InterfaceScale.metric(1)
             let botBaseline = botText?.baselineOffset(inHeight: badgeHeight) ?? 0
             let headerHeight = ceil(max(
                 authorFont.ascender - authorFont.descender,
-                tag == nil && botWidth == 0 ? MessageRowLayoutMetrics.authorLineHeight : badgeHeight
+                tag == nil && botWidth == 0 && role == nil ? MessageRowLayoutMetrics.authorLineHeight : max(badgeHeight, roleIconSize)
             ))
             let baselineY = verticalOffset + authorText.baselineOffset(inHeight: headerHeight)
             result.authorText = authorText
@@ -419,15 +424,6 @@ extension NativeTimelineRowLayout {
                 width: authorText.width, height: headerHeight
             )
             var headerX = contentX + indicatorWidth + authorText.width
-            if botWidth > 0 {
-                headerX += InterfaceScale.metric(7)
-                result.botBadgeText = botText
-                result.botBadgeFrame = CGRect(
-                    x: headerX, y: baselineY - botBaseline,
-                    width: botWidth, height: badgeHeight
-                )
-                headerX += botWidth
-            }
             if let tag {
                 headerX += InterfaceScale.metric(7)
                 result.serverTagRegion = .init(
@@ -439,10 +435,46 @@ extension NativeTimelineRowLayout {
                 )
                 headerX += tag.width
             }
+            if let role, roleIconSize > 0 {
+                headerX += InterfaceScale.metric(7)
+                let iconY = (baselineY - (authorFont.capHeight + roleIconSize) / 2.0).rounded()
+                result.roleIconRegion = .init(
+                    frame: CGRect(
+                        x: headerX, y: iconY,
+                        width: roleIconSize, height: roleIconSize
+                    ),
+                    role: role
+                )
+                headerX += roleIconSize
+            }
+            if botWidth > 0 {
+                headerX += InterfaceScale.metric(7)
+                result.botBadgeText = botText
+                result.botBadgeFrame = CGRect(
+                    x: headerX, y: baselineY - botBaseline,
+                    width: botWidth, height: badgeHeight
+                )
+                headerX += botWidth
+            }
+            appendTimestampAndEdited(
+                headerX: &headerX,
+                baselineY: baselineY,
+                headerHeight: headerHeight,
+                timestamp: timestamp
+            )
+        }
+
+        private mutating func appendTimestampAndEdited(
+            headerX: inout CGFloat,
+            baselineY: CGFloat,
+            headerHeight: CGFloat,
+            timestamp: String
+        ) {
+            let maxHeaderX = contentX + ordinaryContentWidth
             headerX += InterfaceScale.metric(7)
             let timestampText = NativeIdentityTextPresentation(
                 timestamp, font: metrics.timestampFont,
-                maximumWidth: max(0, contentX + contentWidth - headerX)
+                maximumWidth: max(0, maxHeaderX - headerX)
             )
             result.timestampText = timestampText
             result.timestampFrame = CGRect(
@@ -454,7 +486,7 @@ extension NativeTimelineRowLayout {
                 headerX += InterfaceScale.metric(7)
                 let editedText = NativeIdentityTextPresentation(
                     "(edited)", font: metrics.editedFont,
-                    maximumWidth: max(0, contentX + contentWidth - headerX)
+                    maximumWidth: max(0, maxHeaderX - headerX)
                 )
                 result.editedText = editedText
                 result.editedFrame = CGRect(

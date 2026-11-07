@@ -20,6 +20,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let totalCount: Int
         let gatewayStartIndex: Int?
         let isLoadingSkeleton: Bool
+        let role: GuildRole?
 
         init(_ section: MemberSection) {
             id = section.id
@@ -28,6 +29,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
             totalCount = section.totalCount
             gatewayStartIndex = section.gatewayStartIndex
             isLoadingSkeleton = section.isLoadingSkeleton
+            role = section.role
         }
     }
 
@@ -75,6 +77,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
         let name: CTLine
         let nameTruncationToken: CTLine
         let nameWidth: CGFloat
+        let gradientColors: [NSColor]?
         let activity: CTLine?
         let activityTruncationToken: CTLine?
         let activityWidth: CGFloat
@@ -85,6 +88,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
             name: CTLine,
             nameTruncationToken: CTLine,
             nameWidth: CGFloat,
+            gradientColors: [NSColor]? = nil,
             activity: CTLine?,
             activityTruncationToken: CTLine?,
             activityWidth: CGFloat,
@@ -94,6 +98,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
             self.name = name
             self.nameTruncationToken = nameTruncationToken
             self.nameWidth = nameWidth
+            self.gradientColors = gradientColors
             self.activity = activity
             self.activityTruncationToken = activityTruncationToken
             self.activityWidth = activityWidth
@@ -237,6 +242,7 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var rowOverlay: NSHostingView<AnyView>?
     var rowForegroundOverlay: NativeMemberForegroundOverlayView?
     var rowOverlayIndex: Int?
+    let memberHoverTicker = NativeTimelineDisplayLinkTicker()
     var profileAnchorIndex: Int?
     let profilePopoverCoordinator =
         StableAnchoredPopoverPresenter<AnyView>.Coordinator()

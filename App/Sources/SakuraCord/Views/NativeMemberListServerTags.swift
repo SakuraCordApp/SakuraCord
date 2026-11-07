@@ -9,6 +9,9 @@ extension NativeMemberListCanvasView {
         let nameX: CGFloat
         let layout: NativeMemberNameLayout.Result
         let serverTagFrame: CGRect?
+        let roleIconFrame: CGRect?
+        let botBadgeFrame: CGRect?
+        let topRoleWithIcon: GuildRole?
     }
 
     struct ServerTagCardPresentation {
@@ -34,34 +37,76 @@ extension NativeMemberListCanvasView {
         let hasRoleIndicator = presentation.roleColorDisplay == .nextToNames
             && MessageAuthorPresentation.topRoleColor(in: member.roles) != nil
         let nameX = textX + (hasRoleIndicator ? InterfaceScale.metric(13) : 0)
-        let accessoryWidths: [CGFloat] = (member.user.isBot ? [NativeAppBadgePresentation.width] : [])
-            + (prepared.serverTag.map { [$0.width] } ?? [])
+        let role = MessageAuthorPresentation.topRoleWithIcon(in: member.roles)
+        let roleIconSize: CGFloat = role != nil ? InterfaceScale.metric(14) : 0
+
+        var accessoryWidths: [CGFloat] = []
+        var tagIndex: Int?
+        var roleIndex: Int?
+        var botIndex: Int?
+
+        if let tag = prepared.serverTag {
+            tagIndex = accessoryWidths.count
+            accessoryWidths.append(tag.width)
+        }
+        if role != nil {
+            roleIndex = accessoryWidths.count
+            accessoryWidths.append(roleIconSize)
+        }
+        if member.user.isBot {
+            botIndex = accessoryWidths.count
+            accessoryWidths.append(NativeAppBadgePresentation.width)
+        }
+
         let layout = NativeMemberNameLayout.layout(
             measuredNameWidth: prepared.nameWidth,
             availableWidth: max(0, row.maxX - 4 - nameX - InterfaceScale.metric(presentation.trailingAccessoryWidth)),
             accessoryWidths: accessoryWidths
         )
-        let tagIndex = member.user.isBot ? 1 : 0
-        let tagFrame: CGRect?
-        if let tag = prepared.serverTag,
+        let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
+        let nameCenterY = nameY + prepared.nameFont.ascender - prepared.nameFont.capHeight / 2.0
+
+        let tagFrame: CGRect? = if let tagIndex, let tag = prepared.serverTag,
            layout.accessoryFrames.indices.contains(tagIndex),
-           layout.accessoryFrames[tagIndex].width >= tag.width
-        {
-            let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
-            tagFrame = CGRect(
+           layout.accessoryFrames[tagIndex].width >= tag.width {
+            CGRect(
                 x: nameX + layout.accessoryFrames[tagIndex].minX,
-                y: nameY + InterfaceScale.metric(8) - NativeServerTagPresentation.height / 2,
+                y: (nameCenterY - NativeServerTagPresentation.height / 2).rounded(),
                 width: tag.width,
                 height: NativeServerTagPresentation.height
             )
-        } else {
-            tagFrame = nil
-        }
+        } else { nil }
+
+        let roleIconFrame: CGRect? = if let roleIndex,
+           layout.accessoryFrames.indices.contains(roleIndex),
+           layout.accessoryFrames[roleIndex].width >= roleIconSize {
+            CGRect(
+                x: nameX + layout.accessoryFrames[roleIndex].minX,
+                y: (nameCenterY - roleIconSize / 2).rounded(),
+                width: roleIconSize,
+                height: roleIconSize
+            )
+        } else { nil }
+
+        let botBadgeFrame: CGRect? = if let botIndex,
+           layout.accessoryFrames.indices.contains(botIndex),
+           layout.accessoryFrames[botIndex].width >= NativeAppBadgePresentation.width {
+            CGRect(
+                x: nameX + layout.accessoryFrames[botIndex].minX,
+                y: (nameCenterY - ServerTagAppearance.height / 2).rounded(),
+                width: NativeAppBadgePresentation.width,
+                height: ServerTagAppearance.height
+            )
+        } else { nil }
+
         let geometry = MemberNameGeometry(
             viewportWidth: bounds.width,
             nameX: nameX,
             layout: layout,
-            serverTagFrame: tagFrame
+            serverTagFrame: tagFrame,
+            roleIconFrame: roleIconFrame,
+            botBadgeFrame: botBadgeFrame,
+            topRoleWithIcon: role
         )
         memberNameGeometries[itemID] = geometry
         return geometry

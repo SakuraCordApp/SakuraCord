@@ -204,6 +204,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var unreadDividerFades: [NativeMessageTimelineItem.Identifier: NativeTimelineUnreadDividerFade] = [:]
     var unreadDividerGap: NativeTimelineUnreadDividerGap?
     let unreadDividerGapTicker = NativeTimelineDisplayLinkTicker()
+    let authorHoverTicker = NativeTimelineDisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
@@ -290,6 +291,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     let serverTagPopoverCoordinator = StableAnchoredPopoverPresenter<AnyView>.Coordinator()
     var activeServerTagPopoverAnchor: StablePopoverAnchor?
     var serverTagCardPresentation: ServerTagCardPresentation?
+
+    let roleIconPopoverCoordinator = StableAnchoredPopoverPresenter<AnyView>.Coordinator()
+    var activeRoleIconPopoverAnchor: StablePopoverAnchor?
+    var roleIconCardPresentation: RoleIconCardPresentation?
 
     var componentChoiceOverlay: ComponentChoiceOverlayController?
     var activeComponentChoiceTarget: NativeTimelineComponentSelectTarget?
@@ -475,6 +480,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
             unreadDividerGapTicker.stop()
+            authorHoverTicker.stop()
             reactionTicker.stop()
             for fade in unreadDividerFades.values {
                 fade.finishTask?.cancel()
