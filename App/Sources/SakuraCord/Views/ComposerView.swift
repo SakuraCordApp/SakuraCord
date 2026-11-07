@@ -588,7 +588,7 @@ struct ComposerView: View {
                 MentionAutocompleteList(
                     heading: context.kind == .member
                         ? MentionAutocompleteSuggestionFactory.memberHeading(query: context.query)
-                        : "TEXT CHANNELS",
+                        : MentionAutocompleteSuggestionFactory.channelHeading(query: context.query),
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
                     highlight: { autocompleteIndex = $0 },
@@ -859,6 +859,7 @@ struct ComposerView: View {
             return MentionAutocompleteSuggestionFactory.channelSuggestions(
                 query: context.query,
                 channels: model.visibleChannels,
+                threads: model.mentionAutocompleteThreads,
                 guilds: model.serverRailGuildsByID,
                 guildAndChannelUsageScores: model.discordGuildAndChannelUsageScores,
                 currentUserID: model.currentUser?.id,

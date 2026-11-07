@@ -40,6 +40,12 @@ struct ColonAutocompleteContext {
 }
 
 struct MentionAutocompleteContext {
+    private static let quotedChannelExpression = RegularExpressionFactory.make(
+        #"(?:^|\s)(#["“”]([^"“”\v]*["“”]?))$"#
+    )
+    private static let quotedSuffixExpression = RegularExpressionFactory.make(
+        #"^([^"“”\v]*["“”])"#
+    )
     private static let expression = RegularExpressionFactory.make(
         #"(?:^|\s)([@#]([^\s@#]*))$"#
     )
@@ -54,16 +60,39 @@ struct MentionAutocompleteContext {
         let cursor = selection?.location ?? text.utf16.count
         guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
         let prefix = (text as NSString).substring(to: cursor)
-        guard let match = Self.expression.firstMatch(
+        if let match = Self.quotedChannelExpression.firstMatch(
             in: prefix,
             range: NSRange(location: 0, length: (prefix as NSString).length)
         ), match.range(at: 1).location != NSNotFound,
-        match.range(at: 2).location != NSNotFound
-        else { return nil }
-        range = match.range(at: 1)
-        let token = (prefix as NSString).substring(with: range)
-        kind = token.first == "@" ? .member : .channel
-        query = (prefix as NSString).substring(with: match.range(at: 2))
+        match.range(at: 2).location != NSNotFound {
+            var tokenRange = match.range(at: 1)
+            var rawQuery = (prefix as NSString).substring(with: match.range(at: 2))
+            if let last = rawQuery.last, last == "\"" || last == "”" || last == "“" {
+                rawQuery.removeLast()
+            } else if cursor < text.utf16.count {
+                let suffix = (text as NSString).substring(from: cursor)
+                if let suffixMatch = Self.quotedSuffixExpression.firstMatch(
+                    in: suffix,
+                    range: NSRange(location: 0, length: (suffix as NSString).length)
+                ) {
+                    tokenRange.length += suffixMatch.range.length
+                }
+            }
+            range = tokenRange
+            kind = .channel
+            query = rawQuery
+        } else if let match = Self.expression.firstMatch(
+            in: prefix,
+            range: NSRange(location: 0, length: (prefix as NSString).length)
+        ), match.range(at: 1).location != NSNotFound,
+        match.range(at: 2).location != NSNotFound {
+            range = match.range(at: 1)
+            let token = (prefix as NSString).substring(with: range)
+            kind = token.first == "@" ? .member : .channel
+            query = (prefix as NSString).substring(with: match.range(at: 2))
+        } else {
+            return nil
+        }
     }
 }
 
