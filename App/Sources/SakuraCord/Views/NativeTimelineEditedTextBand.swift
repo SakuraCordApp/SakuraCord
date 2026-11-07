@@ -22,45 +22,71 @@ struct NativeTimelineEditedTextBand {
 
 extension NativeTimelineCanvasView {
     /// The band of an edit that only changed its text's height, with the
-    /// row's header and everything after its text the same. Nil for any
-    /// other change, which moves as one piece.
+    /// row's header and everything after its text the same. Text added to
+    /// or removed from an attachment counts, with what follows it taken
+    /// from the side that has text. Nil for any other change, which moves
+    /// as one piece.
     func editedTextBand(
         from old: NativeTimelineReactionBaseline.Row,
         at index: Int,
         width: CGFloat
     ) -> NativeTimelineEditedTextBand? {
         let layout = layouts[index]
-        guard old.editor == nil,
-              let oldText = old.layout.contentFrame, let newText = layout.contentFrame,
-              abs(oldText.height - newText.height) >= 0.5,
-              abs(oldText.minY - newText.minY) < 0.5,
-              abs((old.layout.height - oldText.maxY) - (layout.height - newText.maxY)) < 0.5,
+        guard old.editor == nil, let text = old.layout.contentFrame ?? layout.contentFrame else { return nil }
+        let after = old.layout.contentFrame.map { old.layout.height - $0.maxY } ?? layout.height - text.maxY
+        if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
+            guard abs(oldText.minY - newText.minY) < 0.5, abs(layout.height - newText.maxY - after) < 0.5 else { return nil }
+        }
+        let oldHeight = old.layout.height - text.minY - after
+        let newHeight = layout.height - text.minY - after
+        guard oldHeight > -0.5, newHeight > -0.5, abs(oldHeight - newHeight) >= 0.5,
               rowFrame(at: index).intersects(visibleRect)
         else { return nil }
-        let size = NSSize(width: width, height: oldText.height)
         let identifier = items[index].identifier
+        // A glide this one interrupts starts it from what it shows.
+        let running = editedTextBands[identifier]
+        let startHeight = running.map { shownHeight(of: $0, at: index) } ?? max(0, oldHeight)
+        let size = NSSize(width: width, height: startHeight)
         let picture = fadePictureScale(for: size).flatMap { scale in
             NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
+                guard let context = NSGraphicsContext.current?.cgContext else { return }
+                let progress = running.map { progress(of: $0, shown: startHeight) } ?? 1
+                if let picture = running?.picture {
+                    picture.draw(
+                        in: CGRect(origin: .zero, size: picture.size), from: .zero, operation: .sourceOver,
+                        fraction: 1 - progress, respectFlipped: true, hints: nil
+                    )
+                }
+                context.saveGState()
+                context.clip(to: CGRect(x: 0, y: 0, width: width, height: min(startHeight, running?.newHeight ?? startHeight)))
+                context.setAlpha(progress)
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
                 NativeTimelineRowPainter.draw(
                     item: old.item, layout: old.layout,
-                    in: CGRect(x: 0, y: -oldText.minY, width: width, height: old.layout.height), model: model,
+                    in: CGRect(x: 0, y: -text.minY, width: width, height: old.layout.height), model: model,
                     isHovered: false, revealedTextSpoilerState: old.revealedTextSpoilerState,
                     spoilerRevealStore: spoilerRevealStore, pollPresentation: old.pollPresentation
                 )
+                context.endTransparencyLayer()
+                context.restoreGState()
             }
         }
         return .init(
-            identifier: identifier, top: newText.minY,
-            oldHeight: editedTextBands[identifier].map { shownHeight(of: $0, at: index) } ?? oldText.height,
-            newHeight: newText.height, picture: picture
+            identifier: identifier, top: text.minY, oldHeight: startHeight,
+            newHeight: max(0, newHeight), picture: picture
         )
     }
 
-    /// How tall the band's text is drawn now. The row's own change still
-    /// to come is its height's; a deleted run below it adds a gap of its own.
+    /// How tall the band's text is drawn now: its target less the part of
+    /// the row's text steps still to come.
     private func shownHeight(of band: NativeTimelineEditedTextBand, at index: Int) -> CGFloat {
-        let remaining = reactionMotionRemainingHeight(at: index) + departedGapHeight(below: band.identifier)
-        return min(max(band.newHeight - remaining, min(band.oldHeight, band.newHeight)), max(band.oldHeight, band.newHeight))
+        let shown = band.newHeight - (reactionMotionTextRemainingHeights[index] ?? 0)
+        return min(max(shown, min(band.oldHeight, band.newHeight)), max(band.oldHeight, band.newHeight))
+    }
+
+    /// How far the band's new text has faded in at `shown`.
+    private func progress(of band: NativeTimelineEditedTextBand, shown: CGFloat) -> CGFloat {
+        abs(band.newHeight - band.oldHeight) < 0.5 ? 1 : (shown - band.oldHeight) / (band.newHeight - band.oldHeight)
     }
 
     /// Draws an edited row with its text's space at the height the glide
@@ -77,7 +103,7 @@ extension NativeTimelineCanvasView {
             return
         }
         let shown = shownHeight(of: band, at: index)
-        let progress = abs(band.newHeight - band.oldHeight) < 0.5 ? 1 : (shown - band.oldHeight) / (band.newHeight - band.oldHeight)
+        let progress = progress(of: band, shown: shown)
         let textTop = paintFrame.minY + band.top
         func clipped(from minY: CGFloat, to maxY: CGFloat, draw: () -> Void) {
             guard maxY > minY else { return }

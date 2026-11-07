@@ -93,6 +93,8 @@ struct NativeTimelineReactionRowMotion {
         /// A step closing the gap of deleted rows below its row, as
         /// opposed to one of the row's own height.
         var closesGap = false
+        /// A step of an edited row's text, which its band draws.
+        var movesText = false
     }
 
     /// Tells the pieces of departed runs which motion they close with.
@@ -393,8 +395,9 @@ extension NativeTimelineCanvasView {
             }
         case .regroup where !update.departedOldIndices.isDisjoint(with: [old.index - 1, old.index + 1]),
              .content:
-            update.plan.addStep(for: row, delta: delta)
-            if let band = editedTextBand(from: old, at: index, width: baseline.width) { update.textBands.append(band) }
+            let band = editedTextBand(from: old, at: index, width: baseline.width)
+            update.plan.addStep(for: row, delta: delta, movesText: band != nil)
+            if let band { update.textBands.append(band) }
             // A motion still running from an earlier change keeps going, so
             // this one starts from the height the row shows now.
             endReactionTransition(identifier)
@@ -685,6 +688,7 @@ extension NativeTimelineCanvasView {
         }
         var shift: CGFloat = 0
         var steps: [(index: Int, offset: CGFloat)] = []
+        var textRemaining: [Int: CGFloat] = [:]
         for motionIndex in reactionRowMotions.indices {
             let motion = reactionRowMotions[motionIndex]
             let left = 1 - motion.progress(at: uptime)
@@ -694,6 +698,7 @@ extension NativeTimelineCanvasView {
                 guard let index = rowIndex(forIdentifier: step.identifier, hint: step.rowIndex) else { continue }
                 reactionRowMotions[motionIndex].steps[stepIndex].rowIndex = index
                 steps.append((index, step.delta * left))
+                if step.movesText { textRemaining[index, default: 0] += step.delta * left }
             }
         }
         let scale = window?.backingScaleFactor ?? 2
@@ -717,6 +722,7 @@ extension NativeTimelineCanvasView {
         reactionMotionSteps = cumulative
         reactionMotionShift = snappedShift
         reactionMotionRemainingHeights = remaining
+        reactionMotionTextRemainingHeights = textRemaining
         return moved
     }
 

@@ -85,9 +85,9 @@ struct NativeTimelineRowMotionPlan {
         expectedShift = rowShift - delta
     }
 
-    mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false) {
+    mutating func addStep(for row: FollowedRow, delta: CGFloat, closesGap: Bool = false, movesText: Bool = false) {
         guard abs(delta) >= 0.5 else { return }
-        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap))
+        steps.append(.init(identifier: row.identifier, rowIndex: row.index, delta: delta, closesGap: closesGap, movesText: movesText))
     }
 
     /// Deleted rows after the last followed row: it keeps the height they
