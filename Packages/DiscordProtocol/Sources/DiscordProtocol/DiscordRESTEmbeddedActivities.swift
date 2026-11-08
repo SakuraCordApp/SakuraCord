@@ -6,10 +6,8 @@ import SakuraCordModels
 /// Activity makes through its host. See docs/protocol/ACTIVITIES.md.
 public extension DiscordRESTProvider {
     func embeddedActivityShelf(guildID: GuildID?) async throws -> [EmbeddedActivityApplication] {
-        // Recents are the person's and the server's apps, ranked by the same
-        // application frecency the official shelf reads.
+        // Recents are ranked by the same application frecency the official shelf reads.
         async let settings = try? frecencySettingsProto()
-        async let installed = installedApplicationIDs(guildID: guildID)
         let shelf: ActivityShelfDTO = try await request(
             "/activities/shelf",
             query: guildID.map { [URLQueryItem(name: "guild_id", value: $0.description)] } ?? []
@@ -17,18 +15,21 @@ public extension DiscordRESTProvider {
         let frecency = await settings.flatMap {
             DiscordSettingsProto.frecencyHistory(from: $0, field: DiscordSettingsProto.applicationFrecencyField)
         }
-        return await shelf.domain(frecency: frecency?.entries ?? [], installed: installed)
+        return shelf.domain(frecency: frecency?.entries ?? [])
     }
 
     /// Apps with commands in the person's and the server's command indexes,
-    /// which the official launcher lists as Recents.
-    private func installedApplicationIDs(guildID: GuildID?) async -> Set<String> {
-        var ids = Set<String>()
-        for target in [.user] + (guildID.map { [ApplicationCommandIndexTarget.guild($0)] } ?? []) {
-            guard let catalog = try? await applicationCommandCatalog(for: target) else { continue }
-            ids.formUnion(catalog.commands.filter { [.chatInput, .primaryEntryPoint].contains($0.type) }.map(\.applicationID))
-        }
-        return ids
+    /// which the official launcher lists as Recents. A missing index lists nothing.
+    func installedEmbeddedActivities(guildID: GuildID?) async -> Set<ApplicationID> {
+        async let user = installedApplicationIDs(in: .user)
+        async let guild: Set<ApplicationID> = if let guildID { await installedApplicationIDs(in: .guild(guildID)) } else { [] }
+        return await user.union(guild)
+    }
+
+    private func installedApplicationIDs(in target: ApplicationCommandIndexTarget) async -> Set<ApplicationID> {
+        guard let catalog = try? await applicationCommandCatalog(for: target) else { return [] }
+        return Set(catalog.commands.filter { [.chatInput, .primaryEntryPoint].contains($0.type) }
+            .compactMap { ApplicationID($0.applicationID) })
     }
 
     /// Counts a launch in the application frecency the shelf's Recents read,
@@ -116,11 +117,13 @@ public extension DiscordRESTProvider {
     }
 
     /// A short-lived ticket that authenticates the Activity to Discord's proxy.
-    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID) async throws -> String {
+    /// A ticket for the Activity in a channel, or, without one, for the main
+    /// surface a contextless Activity opens on.
+    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID?) async throws -> String {
+        var body: [String: JSONValue] = ["use_stateless_ticket": .bool(true)]
+        if let channelID { body["channel_id"] = .string(channelID.description) } else { body["surface"] = .number(0) }
         let ticket: ProxyTicketDTO = try await request(
-            "/applications/\(applicationID)/proxy-tickets",
-            method: "POST",
-            body: ["use_stateless_ticket": .bool(true), "channel_id": .string(channelID.description)]
+            "/applications/\(applicationID)/proxy-tickets", method: "POST", body: body
         )
         return ticket.ticket
     }
@@ -372,13 +375,23 @@ private struct ActivityShelfDTO: Decodable {
         let tags: [String]?
         let maxParticipants: Int?
         let flags: Int?
+        let extendedFlags: String?
+        let embeddedSurfaces: [Int]?
         let isMonetized: Bool?
 
         enum CodingKeys: String, CodingKey {
             case id, name, description, icon, tags, flags
             case coverImage = "cover_image"
             case maxParticipants = "max_participants"
+            case extendedFlags = "flags_new"
+            case embeddedSurfaces = "embedded_surfaces"
             case isMonetized = "is_monetized"
+        }
+
+        /// The client's test for a contextless Activity: the
+        /// CONTEXTLESS_ACTIVITY flag and the main embedded surface.
+        var isContextless: Bool {
+            extendedFlags.flatMap(UInt64.init).map { $0 & 1 << 9 != 0 } == true && embeddedSurfaces?.contains(0) == true
         }
     }
 
@@ -395,12 +408,9 @@ private struct ActivityShelfDTO: Decodable {
     private static let promotedFlag = 1 << 29
 
     /// Shelf order, without Activities the desktop (web) client cannot run.
-    /// Recents are the installed apps among them, ranked by the official
-    /// client's application frecency (uses times the mean age weight of the
-    /// last ten launches), then by name.
-    func domain(
-        frecency: [DiscordFrecencyEntry], installed: Set<String>, now: Date = .now
-    ) -> [EmbeddedActivityApplication] {
+    /// Recents order follows the official client's application frecency (uses
+    /// times the mean age weight of the last ten launches), then the name.
+    func domain(frecency: [DiscordFrecencyEntry], now: Date = .now) -> [EmbeddedActivityApplication] {
         let applications = Dictionary(
             self.applications.elements.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
         )
@@ -411,7 +421,6 @@ private struct ActivityShelfDTO: Decodable {
             ).map { (entry.key, $0.frecency) }
         }, uniquingKeysWith: max)
         let recentRanks = Dictionary(uniqueKeysWithValues: Set(activities.elements.map(\.applicationID))
-            .intersection(installed)
             .sorted { lhs, rhs in
                 let (left, right) = (scores[lhs] ?? 0, scores[rhs] ?? 0)
                 guard left == right else { return left > right }
@@ -439,6 +448,7 @@ private struct ActivityShelfDTO: Decodable {
                     isPromoted: (application.flags ?? 0) & Self.promotedFlag != 0,
                     requiresAgeGate: entry.requiresAgeGate == true,
                     hasInAppPurchases: application.isMonetized == true,
+                    isContextless: application.isContextless,
                     recentRank: recentRanks[application.id]
                 )
             }

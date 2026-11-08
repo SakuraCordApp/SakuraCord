@@ -81,16 +81,22 @@ final class EmbeddedActivityHost: NSObject {
     private func hostPage(proxyTicket: String) -> String {
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         var parameters = [
-            "instance_id": instance.compositeInstanceID,
-            "location_id": instance.location.id,
-            "launch_id": instance.instanceID,
             "theme": isDark ? "dark" : "light",
-            "channel_id": instance.location.channelID.description,
             "frame_id": frameID,
             "platform": "desktop",
             "discord_shim": "1",
         ]
-        parameters["guild_id"] = instance.location.guildID?.description
+        if application.isContextless {
+            // The official client's parameters for an Activity on the main surface.
+            parameters["instance_id"] = "example-cl-instance"
+            parameters["surface"] = "0"
+        } else {
+            parameters["instance_id"] = instance.compositeInstanceID
+            parameters["location_id"] = instance.location.id
+            parameters["launch_id"] = instance.instanceID
+            parameters["channel_id"] = instance.location.channelID.description
+            parameters["guild_id"] = instance.location.guildID?.description
+        }
         var components = URLComponents(url: application.activityURL, resolvingAgainstBaseURL: false)!
         components.queryItems = parameters.sorted { $0.key < $1.key }.map(URLQueryItem.init)
             + [URLQueryItem(name: "discord_proxy_ticket", value: proxyTicket)]
@@ -206,8 +212,11 @@ final class EmbeddedActivityHost: NSObject {
         case "GET_ACTIVITY_INSTANCE_CONNECTED_PARTICIPANTS":
             reply(command, nonce, ["participants": participantsPayload()])
         case "GET_CONTEXT":
-            var surface: [String: Any] = ["type": 0, "channel_id": instance.location.channelID.description]
-            surface["guild_id"] = instance.location.guildID?.description
+            var surface: [String: Any] = ["type": 0]
+            if !application.isContextless {
+                surface["channel_id"] = instance.location.channelID.description
+                surface["guild_id"] = instance.location.guildID?.description
+            }
             reply(command, nonce, ["surface": surface, "launch": [String: Any](), "platform": "desktop"])
         case "SET_ACTIVITY":
             var activity = args["activity"] as? [String: Any] ?? [:]
@@ -240,7 +249,7 @@ final class EmbeddedActivityHost: NSObject {
         case "REQUEST_PROXY_TICKET_REFRESH":
             do {
                 let ticket = try await model.accountSession().provider.embeddedActivityProxyTicket(
-                    application.id, channelID: instance.location.channelID
+                    application.id, channelID: application.isContextless ? nil : instance.location.channelID
                 )
                 reply(command, nonce, ["ticket": ticket])
             } catch {

@@ -225,6 +225,7 @@ public protocol ChatProvider: Sendable {
     /// Grants an OAuth2 authorization code after the person explicitly asked to sign in.
     func authorizeOAuth2(_ request: OAuth2AuthorizationRequest) async throws -> OAuth2AuthorizationGrant
     func embeddedActivityShelf(guildID: GuildID?) async throws -> [EmbeddedActivityApplication]
+    func installedEmbeddedActivities(guildID: GuildID?) async -> Set<ApplicationID>
     func embeddedActivitySessionID() async throws -> String
     func recordEmbeddedActivityLaunch(_ applicationID: ApplicationID) async throws
     func launchEmbeddedActivity(
@@ -232,7 +233,7 @@ public protocol ChatProvider: Sendable {
         shelfSection: String?
     ) async throws
     func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) async throws
-    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID) async throws -> String
+    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID?) async throws -> String
     func embeddedActivityAuthorizationPreview(
         _ authorization: EmbeddedActivityAuthorizationRequest
     ) async throws -> EmbeddedActivityAuthorizationPreview
@@ -861,6 +862,8 @@ public extension ChatProvider {
         throw ChatProviderError.invalidRequest("Activities are unavailable.")
     }
 
+    func installedEmbeddedActivities(guildID: GuildID?) async -> Set<ApplicationID> { [] }
+
     func embeddedActivitySessionID() async throws -> String {
         throw ChatProviderError.invalidRequest("Activities are unavailable.")
     }
@@ -876,7 +879,7 @@ public extension ChatProvider {
 
     func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) async throws {}
 
-    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID) async throws -> String {
+    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID?) async throws -> String {
         throw ChatProviderError.invalidRequest("Activities are unavailable.")
     }
 

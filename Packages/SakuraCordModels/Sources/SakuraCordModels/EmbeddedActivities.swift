@@ -66,7 +66,11 @@ public struct EmbeddedActivityApplication: Identifiable, Hashable, Sendable {
     /// Discord asks for age confirmation before launching.
     public var requiresAgeGate: Bool
     public var hasInAppPurchases: Bool
-    /// Position among the shelf's Recents, from the account's application frecency.
+    /// Discord opens it on its own rather than in a channel: no instance, no
+    /// launch message, and the Activity asks for its grant before anything else.
+    public var isContextless: Bool
+    /// Position in the account's application frecency, then by name; Recents
+    /// list the installed Activities in this order.
     public var recentRank: Int?
 
     public init(
@@ -80,6 +84,7 @@ public struct EmbeddedActivityApplication: Identifiable, Hashable, Sendable {
         isPromoted: Bool = false,
         requiresAgeGate: Bool = false,
         hasInAppPurchases: Bool = false,
+        isContextless: Bool = false,
         recentRank: Int? = nil
     ) {
         self.id = id
@@ -92,6 +97,7 @@ public struct EmbeddedActivityApplication: Identifiable, Hashable, Sendable {
         self.isPromoted = isPromoted
         self.requiresAgeGate = requiresAgeGate
         self.hasInAppPurchases = hasInAppPurchases
+        self.isContextless = isContextless
         self.recentRank = recentRank
     }
 

@@ -58,6 +58,8 @@ final class EmbeddedActivityStore {
     /// Running instances by composite instance ID.
     private(set) var instances: [String: EmbeddedActivityInstance] = [:]
     var shelves: [GuildID?: [EmbeddedActivityApplication]] = [:]
+    /// Activities installed for the person or the server, which Recents list.
+    var installedActivities: [GuildID?: Set<ApplicationID>] = [:]
     /// Shelf reads in flight, shared by every caller. Each is an account child
     /// task, so account cleanup cancels and drains it.
     @ObservationIgnored var shelfLoads: [GuildID?: Task<Void, Never>] = [:]
@@ -180,6 +182,7 @@ final class EmbeddedActivityStore {
         prompt?.resolve(false)
         instances = [:]
         shelves = [:]
+        installedActivities = [:]
         shelfLoads.values.forEach { $0.cancel() }
         shelfLoads = [:]
         cardShelfRequests = []
@@ -231,6 +234,8 @@ extension AppModel {
     }
 
     private func fetchActivityShelf(guildID: GuildID?, account: AppModelAccountSession) async {
+        // Command indexes can take a while to be ready; the shelf shows without waiting for them.
+        async let installed = account.provider.installedEmbeddedActivities(guildID: guildID)
         do {
             let shelf = try await account.provider.embeddedActivityShelf(guildID: guildID)
             guard isCurrentAccountSession(account), !Task.isCancelled else { return }
@@ -241,12 +246,16 @@ extension AppModel {
         } catch {
             guard isCurrentAccountSession(account), !Task.isCancelled else { return }
             embeddedActivities.shelfError = error.localizedDescription
+            return
         }
+        let installedActivities = await installed
+        guard isCurrentAccountSession(account), !Task.isCancelled else { return }
+        embeddedActivities.installedActivities[guildID] = installedActivities
     }
 
     /// Starts the application in the channel, or joins the instance already
-    /// running there. A voice channel Activity runs alongside voice; elsewhere
-    /// it docks in the channel's chat.
+    /// running there; a contextless one opens on its own. A voice channel
+    /// Activity runs alongside voice; elsewhere it docks in the channel's chat.
     func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel, launcher: EmbeddedActivityStore.Launcher? = nil) async {
         let store = embeddedActivities
         let account = accountSession()
@@ -258,6 +267,21 @@ extension AppModel {
         guard await confirmLaunch(of: application), isCurrentAccountSession(account) else { return }
         // Discord's client leaves the running Activity before starting another.
         if store.session != nil { leaveActivity() }
+        if application.isContextless {
+            await openContextlessActivity(application, in: channel, launcher: launcher, account: account)
+        } else {
+            await launchInChannel(application, in: channel, launcher: launcher, account: account)
+        }
+    }
+
+    /// Starts the Activity in the channel, or joins its instance there, as
+    /// Discord's client does for an Activity that runs in a place.
+    private func launchInChannel(
+        _ application: EmbeddedActivityApplication, in channel: Channel, launcher: EmbeddedActivityStore.Launcher?,
+        account: AppModelAccountSession
+    ) async {
+        let store = embeddedActivities
+        let location = EmbeddedActivityLocation.of(channel)
         let session = EmbeddedActivityStore.Session(
             application: application, channel: channel, phase: .launching,
             isInCall: channel.kind == .voice || activeVoiceChannel?.id == channel.id, launcher: launcher
@@ -318,6 +342,39 @@ extension AppModel {
             guard !Task.isCancelled, store?.session?.phase == .launching, store?.session?.launchID == session.launchID
             else { return }
             store?.session?.phase = .failed("\(application.name) did not start. Try again.")
+        }
+    }
+
+    /// Discord opens a contextless Activity on its own rather than in the
+    /// channel, whether started or joined: no voice, no launch request or
+    /// message, and no instance to leave. The Activity asks for its grant
+    /// itself, so declining posts nothing else.
+    private func openContextlessActivity(
+        _ application: EmbeddedActivityApplication, in channel: Channel, launcher: EmbeddedActivityStore.Launcher?,
+        account: AppModelAccountSession
+    ) async {
+        let store = embeddedActivities
+        let session = EmbeddedActivityStore.Session(
+            application: application, channel: channel, phase: .launching, isInCall: false, launcher: launcher
+        )
+        store.session = session
+        do {
+            let ticket = try await account.provider.embeddedActivityProxyTicket(application.id, channelID: nil)
+            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            // The channel only places the Activity and names where its grant is asked.
+            let frame = EmbeddedActivityInstance(
+                applicationID: application.id, instanceID: "", compositeInstanceID: "example-cl-instance",
+                location: session.location, participants: []
+            )
+            store.host = EmbeddedActivityHost(
+                model: self, instance: frame, application: application, launchID: session.launchID, proxyTicket: ticket
+            )
+            store.session?.phase = .running
+            // Recents count each Activity opened; a failed save only loses that count.
+            try? await account.provider.recordEmbeddedActivityLaunch(application.id)
+        } catch {
+            guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+            store.session?.phase = .failed(error.localizedDescription)
         }
     }
 

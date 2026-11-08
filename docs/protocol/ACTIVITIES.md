@@ -84,6 +84,17 @@ with `{session_id}`. All three are single attempts, per the mutation budget in
 the protocol baseline; the official client retries the leave twice and the
 channel join three times.
 
+A contextless Activity (`flags_new` bit 9, CONTEXTLESS_ACTIVITY, with embedded
+surface 0, MAIN; most promoted shelf entries) is never started or joined in the
+channel, from the shelf, a card or a banner alike. The official client opens it
+on its own: a proxy ticket `{use_stateless_ticket: true, surface: 0}` with no
+channel, then the Activity with `instance_id=example-cl-instance` and
+`surface=0` instead of the location, launch and channel parameters. No voice
+join, no interaction, no launch message, no instance and no leave. The Activity
+asks for its grant itself before anything else; its AUTHORIZE carries the
+channel it was opened from as `location_context`, and a decline posts only
+`authorize: false` (captured: How to Rob a Bank from a launch card, 2026-11-08).
+
 ## Outside voice channels
 
 An Activity can run in a text channel or a DM without a call; its location is

@@ -87,7 +87,7 @@ struct ActivityShelfView: View {
     @ViewBuilder private func sections(_ shelf: [EmbeddedActivityApplication]) -> some View {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
-            let recents = Self.recents(shelf)
+            let recents = Self.recents(shelf, installed: model.embeddedActivities.installedActivities[channel.guildID] ?? [])
             if !recents.isEmpty {
                 recentsHeader(count: recents.count)
                 LazyVGrid(
@@ -172,8 +172,10 @@ struct ActivityShelfView: View {
         .padding(.bottom, InterfaceScale.metric(8))
     }
 
-    private static func recents(_ shelf: [EmbeddedActivityApplication]) -> [EmbeddedActivityApplication] {
-        shelf.filter { $0.recentRank != nil }.sorted { ($0.recentRank ?? 0) < ($1.recentRank ?? 0) }
+    private static func recents(
+        _ shelf: [EmbeddedActivityApplication], installed: Set<ApplicationID>
+    ) -> [EmbeddedActivityApplication] {
+        shelf.filter { installed.contains($0.id) }.sorted { ($0.recentRank ?? 0) < ($1.recentRank ?? 0) }
     }
 
     private func select(_ application: EmbeddedActivityApplication, section: String) {
