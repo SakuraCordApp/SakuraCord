@@ -877,6 +877,8 @@ private struct InlineMessageEditor: View {
     @State private var isAutocompleteDismissed = false
     @State private var timeQueryDate = Date.now
     @State private var timeQueryNeedsPick = false
+    @State private var timeKeyboardSelectionRevision = 0
+    @State private var timestampClock = RelativeTimestampDisplayClock()
 
     /// Game names and people resolve as they do in the message, and update
     /// as games load.
@@ -885,7 +887,8 @@ private struct InlineMessageEditor: View {
         // The message as it is now: an update while editing can bring newer
         // details for the people it mentions.
         let current = model.retainedMessage(channelID: message.channelID, messageID: message.id) ?? message
-        return MessageMentionResolver(model: model, message: current).presentations(in: text)
+        let values = MessageMentionResolver(model: model, message: current).presentations(in: text)
+        return text.contains(":R>") ? TimestampMentionPresentation.refreshed(values, source: text, at: timestampClock.date) : values
     }
 
     private var composerActions: InlineMessageEditorComposerActions {
@@ -930,6 +933,11 @@ private struct InlineMessageEditor: View {
             autocompleteIndex = 0
         }
         .onChange(of: timeContext?.query) { timeQueryDate = .now }
+        // A relative time counts on while it is edited, as in the composer.
+        .onChange(of: text.contains(":R>"), initial: true) { _, counts in
+            counts ? timestampClock.start() : timestampClock.stop()
+        }
+        .onDisappear { timestampClock.stop() }
         .onChange(of: selection) { _, _ in
             isAutocompleteDismissed = false
             autocompleteIndex = 0
@@ -945,7 +953,7 @@ private struct InlineMessageEditor: View {
                 needsPick: timeQueryNeedsPick,
                 selectedIndex: autocompleteIndex,
                 cornerRadius: ChatChromeMetrics.composerCornerRadius,
-                keyboardSelectionRevision: 0,
+                keyboardSelectionRevision: timeKeyboardSelectionRevision,
                 select: { insertTimestamp($0.token, context: timeContext) },
                 highlight: { autocompleteIndex = $0 }
             )
@@ -989,6 +997,7 @@ private struct InlineMessageEditor: View {
     /// Keys while times match what is typed after `@time `, as in the composer.
     private func handleTimeAutocomplete(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
         let rows = timeRows
+        if command == .previous || command == .next { timeKeyboardSelectionRevision &+= 1 }
         switch command {
         case .previous where !rows.isEmpty:
             autocompleteIndex = (autocompleteIndex - 1 + rows.count) % rows.count

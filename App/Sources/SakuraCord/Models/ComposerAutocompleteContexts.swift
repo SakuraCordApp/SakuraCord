@@ -68,7 +68,8 @@ struct MentionAutocompleteContext {
 }
 
 /// Text typed after the line's last `@game ` or `@time `, which filters
-/// that keyword's menu as a command argument filters its options.
+/// that keyword's menu as a command argument filters its options. A later
+/// keyword starts its own query.
 struct KeywordMentionContext {
     enum Keyword: String, CaseIterable {
         case game, time
@@ -76,7 +77,7 @@ struct KeywordMentionContext {
 
     private static let expressions = Dictionary(uniqueKeysWithValues: Keyword.allCases.map { keyword in
         (keyword, RegularExpressionFactory.make(
-            #"(?:^|\s)(@\#(keyword.rawValue) ((?:(?!(?<=\s)@\#(keyword.rawValue) )[^\v])*))\z"#
+            #"(?:^|\s)(@\#(keyword.rawValue) ((?:(?!(?<=\s)@(?:game|time) )[^\v])*))\z"#
         ))
     })
 

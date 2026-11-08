@@ -28,16 +28,10 @@ public enum DiscordNaturalLanguageTimeParser {
         let parser = Parser(now: now, calendar: calendar)
         // `5pm est` is that wall time in that zone, on the local day.
         if words.count > 1, let abbreviation = words.last?.uppercased(),
-           TimeZone.abbreviationDictionary[abbreviation] != nil, let zone = TimeZone(abbreviation: abbreviation),
-           let local = parser.dated(Array(words.dropLast())) {
-            return local.map { suggestion in
-                let offset = calendar.timeZone.secondsFromGMT(for: suggestion.date) - zone.secondsFromGMT(for: suggestion.date)
-                return DiscordTimeSuggestion(
-                    date: suggestion.date.addingTimeInterval(TimeInterval(offset)),
-                    reading: suggestion.reading,
-                    styles: suggestion.styles
-                )
-            }
+           TimeZone.abbreviationDictionary[abbreviation] != nil, let zone = TimeZone(abbreviation: abbreviation) {
+            var zoned = parser
+            zoned.zoneShift = TimeInterval(calendar.timeZone.secondsFromGMT(for: now) - zone.secondsFromGMT(for: now))
+            if let readings = zoned.dated(Array(words.dropLast())) { return readings }
         }
         return parser.relative(words) ?? parser.period(words) ?? parser.dated(words) ?? []
     }
@@ -62,6 +56,8 @@ private struct TimeOfDay {
 private struct Parser {
     let now: Date
     let calendar: Calendar
+    /// Moves a wall time typed with a zone suffix to that zone.
+    var zoneShift: TimeInterval = 0
 
     /// `in 2 hours`, `in 2h`, `in a week`, `3 days ago`, `in 3 days at 5pm`.
     func relative(_ words: [String]) -> [DiscordTimeSuggestion]? {
@@ -167,7 +163,7 @@ private struct Parser {
             return calendar.date(byAdding: .day, value: 7, to: coming).map { [DiscordNaturalLanguageTimeParser.moment($0)] }
         }
         var readings = [DiscordNaturalLanguageTimeParser.moment(coming, reading: .thisWeek)]
-        if modifier != "this", modifier != "next", ahead != 0,
+        if modifier == "last" || (modifier == nil && ahead != 0),
            let previous = calendar.date(byAdding: .day, value: -7, to: coming) {
             readings.append(DiscordNaturalLanguageTimeParser.moment(previous, reading: .lastWeek))
         }
@@ -184,11 +180,10 @@ private struct Parser {
         let year = parsed.year
         let currentYear = calendar.component(.year, from: now)
         func date(in year: Int) -> Date? {
-            let components = DateComponents(year: year, month: month, day: day, hour: time.hour, minute: time.minute)
-            guard let date = calendar.date(from: components),
+            guard let date = calendar.date(from: DateComponents(year: year, month: month, day: day)),
                   calendar.component(.day, from: date) == day, calendar.component(.month, from: date) == month
             else { return nil }
-            return date
+            return at(time, on: date)
         }
         if let year { return date(in: year).map { [DiscordNaturalLanguageTimeParser.moment($0)] } }
         guard let thisYear = date(in: currentYear) else { return nil }
@@ -280,8 +275,10 @@ private struct Parser {
     private func at(_ time: TimeOfDay?, on day: Date) -> Date? {
         guard let time else { return day }
         let start = calendar.startOfDay(for: day)
-        guard time.hour == 24 else { return calendar.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: start) }
-        return calendar.date(byAdding: .day, value: 1, to: start)
+        let date = time.hour == 24
+            ? calendar.date(byAdding: .day, value: 1, to: start)
+            : calendar.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: start)
+        return date?.addingTimeInterval(zoneShift)
     }
 
     private func minuteStart(_ date: Date) -> Date {
