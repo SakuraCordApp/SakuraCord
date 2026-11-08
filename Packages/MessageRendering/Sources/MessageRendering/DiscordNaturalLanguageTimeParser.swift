@@ -212,19 +212,15 @@ private struct Parser {
     private func weekday(_ words: [String], time: TimeOfDay) -> [DiscordTimeSuggestion]? {
         var words = words
         let modifier = ["this", "next", "last"].contains(words.first) ? words.removeFirst() : nil
-        guard words.count == 1, let weekday = Self.weekdays[words[0]],
-              let today = at(time, on: now)
-        else { return nil }
+        guard words.count == 1, let weekday = Self.weekdays[words[0]] else { return nil }
         let ahead = (weekday - calendar.component(.weekday, from: now) + 7) % 7
-        guard var coming = calendar.date(byAdding: .day, value: ahead, to: today),
-              let previous = calendar.date(byAdding: .day, value: ahead == 0 ? -7 : ahead - 7, to: today)
-        else { return nil }
-        if modifier == "next", ahead == 0, let following = calendar.date(byAdding: .day, value: 7, to: coming) {
-            coming = following
-        }
+        let coming = modifier == "next" && ahead == 0 ? 7 : ahead
         // The previous one is offered too when it is the nearer.
         let offersPrevious = modifier == "last" || (modifier == nil && 7 - ahead < ahead)
-        return labelled(offersPrevious ? [coming, previous] : [coming], in: .weekOfYear)
+        let offsets = offersPrevious ? [coming, ahead == 0 ? -7 : ahead - 7] : [coming]
+        // Pick the day first: a zoned time keeps its offset across a DST change here.
+        let dates = offsets.compactMap { calendar.date(byAdding: .day, value: $0, to: now).flatMap { at(time, on: $0) } }
+        return dates.count == offsets.count ? labelled(dates, in: .weekOfYear) : nil
     }
 
     /// Discord names each reading's day, week or year relative to now;
