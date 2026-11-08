@@ -207,10 +207,15 @@ extension AppModel {
     /// another client discarded or replaced it. Keeping the form would offer the same answers again; anything else,
     /// such as an update that has not arrived, keeps the form and its answers with the error.
     private func submissionLanded(in guildID: GuildID) -> Bool {
-        if serverRailGuildsByID[guildID] != nil { return onboardingMember(in: guildID)?.isPending == false }
+        if serverRailGuildsByID[guildID] != nil { return hasFinishedScreening(in: guildID) }
         let current = guildJoinRequests.requests[guildID]
         return [.submitted, .rejected, .approved].contains(current?.status)
             || guildJoinRequests.submission?.requestID.map { $0 != current?.id } == true
+    }
+
+    /// A member of the server whose screening is done.
+    private func hasFinishedScreening(in guildID: GuildID) -> Bool {
+        serverRailGuildsByID[guildID] != nil && onboardingMember(in: guildID)?.isPending == false
     }
 
     /// Once another client submits, replaces or removes the form's application, finishes the member's screening, or a
@@ -224,7 +229,7 @@ extension AppModel {
             if store.submission?.requestID == nil { store.submission?.requestID = current?.id }
             return
         }
-        if serverRailGuildsByID[modal.guildID] != nil, onboardingMember(in: modal.guildID)?.isPending == false {
+        if hasFinishedScreening(in: modal.guildID) {
             store.form = nil
             store.modal = nil
             return
