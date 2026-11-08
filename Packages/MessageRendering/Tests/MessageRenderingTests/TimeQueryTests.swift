@@ -32,6 +32,8 @@ private let discordReadings: [(String, [String])] = [
     ("2/30", []),
     ("in 2000000000000000000 weeks", []),
     ("in 299999 years", []),
+    ("5pm utc+-999999999999999999999", []),
+    ("dec 25 9999999999", []),
 ]
 
 /// The same moment for an account whose weeks start on Monday.

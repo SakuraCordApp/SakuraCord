@@ -41,6 +41,18 @@ public enum DiscordNaturalLanguageTimeParser {
         return readings
     }
 
+    /// Every number a phrase may contain: ASCII digits, at most one decimal
+    /// point, and at most `digits` digits before it, so no amount, year or
+    /// offset can overflow later arithmetic.
+    static func number(_ text: some StringProtocol, digits: Int, fraction: Bool = false) -> Double? {
+        let parts = text.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let whole = parts.first, (1 ... digits).contains(whole.count),
+              parts.count == 1 || (fraction && !parts[1].isEmpty && parts[1].count <= 6),
+              parts.allSatisfy({ $0.allSatisfy { $0.isASCII && $0.isNumber } })
+        else { return nil }
+        return Double(text)
+    }
+
     /// `est`, `gmt+2`, `utc-5:30`. Abbreviations name fixed offsets, so
     /// `5pm est` is UTC−5 in summer too.
     private static func zoneOffset(_ word: String) -> Double? {
@@ -48,8 +60,8 @@ public enum DiscordNaturalLanguageTimeParser {
         guard word.hasPrefix("gmt") || word.hasPrefix("utc"), let sign = word.dropFirst(3).first, "+-".contains(sign)
         else { return nil }
         let parts = word.dropFirst(4).split(separator: ":", omittingEmptySubsequences: false)
-        guard (1 ... 2).contains(parts.count), let hours = Double(parts[0]), hours <= 14,
-              let minutes = parts.count == 2 ? Double(parts[1]) : 0, minutes < 60
+        guard (1 ... 2).contains(parts.count), let hours = number(parts[0], digits: 2), hours <= 14,
+              let minutes = parts.count == 2 ? number(parts[1], digits: 2) : 0, minutes < 60
         else { return nil }
         return (sign == "-" ? -1 : 1) * (hours + minutes / 60)
     }
@@ -104,12 +116,13 @@ private struct Parser {
         var seconds = 0.0
         var index = 0
         while index + 1 < words.count {
-            var amount = ["a": 1, "an": 1][words[index]] ?? Double(words[index])
+            var amount = ["a": 1, "an": 1][words[index]]
+                ?? DiscordNaturalLanguageTimeParser.number(words[index], digits: 7, fraction: true)
             if words[index] == "half", ["a", "an"].contains(words[index + 1]) {
                 amount = 0.5
                 index += 1
             }
-            guard let amount, amount.isFinite, amount >= 0, amount < 10_000_000, index + 1 < words.count,
+            guard let amount, index + 1 < words.count,
                   let unit = Self.units[words[index + 1]]
             else { break }
             switch unit {
@@ -261,7 +274,8 @@ private struct Parser {
 
     /// `3/4` is March 4, `31/12` December 31, `2026-12-31` year first.
     private static func numericDate(_ word: String) -> DateComponents? {
-        let parts = word.split(whereSeparator: { $0 == "/" || $0 == "-" || $0 == "." }).map { Int($0) }
+        let parts = word.split(whereSeparator: { $0 == "/" || $0 == "-" || $0 == "." })
+            .map { DiscordNaturalLanguageTimeParser.number($0, digits: 6).map(Int.init) }
         guard (2 ... 3).contains(parts.count), !parts.contains(nil) else { return nil }
         let numbers = parts.compactMap { $0 }
         if numbers[0] > 999 {
@@ -280,7 +294,8 @@ private struct Parser {
             if let index = months.firstIndex(where: { word.count >= 3 && $0.hasPrefix(word) }) {
                 guard month == nil else { return nil }
                 month = index + 1
-            } else if let number = Int(word.trimmingCharacters(in: CharacterSet(charactersIn: "stndrh"))) {
+            } else if let number = DiscordNaturalLanguageTimeParser
+                .number(word.trimmingCharacters(in: CharacterSet(charactersIn: "stndrh")), digits: 6).map(Int.init) {
                 if day == nil, number <= 31 { day = number } else if year == nil, number > 999 { year = number } else { return nil }
             } else {
                 return nil
@@ -356,7 +371,7 @@ private struct Parser {
     /// `30m` and `2h` are an amount and a unit.
     private static func splitAmount(_ word: String) -> [String] {
         guard let split = word.firstIndex(where: \.isLetter), split != word.startIndex,
-              Double(word[..<split]) != nil
+              DiscordNaturalLanguageTimeParser.number(word[..<split], digits: 7, fraction: true) != nil
         else { return [word] }
         return [String(word[..<split]), String(word[split...])]
     }
