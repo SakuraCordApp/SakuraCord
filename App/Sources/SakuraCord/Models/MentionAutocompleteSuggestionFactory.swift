@@ -21,7 +21,7 @@ enum MentionAutocompleteSuggestionFactory {
     private struct RankedCandidate {
         let suggestion: MentionAutocompleteSuggestion
         let score: Double
-        let sidebarPosition: Int
+        let position: Int
         let id: ChannelID
         /// The parent channel of a thread or post; nil for a channel.
         let parentID: ChannelID?
@@ -278,7 +278,7 @@ enum MentionAutocompleteSuggestionFactory {
                 )
             ),
             score: score,
-            sidebarPosition: channel.categoryPosition * 100_000 + channel.position,
+            position: channel.position,
             id: channel.id,
             parentID: nil
         )
@@ -309,7 +309,7 @@ enum MentionAutocompleteSuggestionFactory {
                 systemImage: ChannelIconPresentation.systemImage(forThreadInForum: isForum)
             ),
             score: score,
-            sidebarPosition: 0,
+            position: 0,
             id: thread.id,
             parentID: thread.parentID ?? thread.id
         )
@@ -362,13 +362,14 @@ enum MentionAutocompleteSuggestionFactory {
 
     private static func isPreferred(_ lhs: RankedCandidate, over rhs: RankedCandidate) -> Bool {
         if lhs.score != rhs.score { return lhs.score > rhs.score }
-        // On equal scores Discord lists channels before threads and posts,
-        // channels in sidebar order and threads by parent channel, oldest first.
+        // On equal scores Discord lists channels before threads and posts;
+        // channels by their own position (not their category's), then oldest
+        // first; threads by parent channel, then oldest first.
         if (lhs.parentID == nil) != (rhs.parentID == nil) { return lhs.parentID == nil }
         if let lhsParent = lhs.parentID, let rhsParent = rhs.parentID {
             if lhsParent != rhsParent { return lhsParent < rhsParent }
-        } else if lhs.sidebarPosition != rhs.sidebarPosition {
-            return lhs.sidebarPosition < rhs.sidebarPosition
+        } else if lhs.position != rhs.position {
+            return lhs.position < rhs.position
         }
         return lhs.id < rhs.id
     }
