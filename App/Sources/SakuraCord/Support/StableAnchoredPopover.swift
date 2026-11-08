@@ -198,17 +198,6 @@ struct StablePopoverConfiguration {
             stabilizesInitialContentSize: true
         )
     }
-
-    static var roleIcon: StablePopoverConfiguration {
-        StablePopoverConfiguration(
-            preferredEdge: .minY,
-            behavior: .transient,
-            animates: true,
-            ignoresMouseEvents: false,
-            contentSizing: .intrinsic,
-            stabilizesInitialContentSize: false
-        )
-    }
 }
 
 nonisolated struct StablePopoverAnchorSnapshot: Equatable, Sendable {

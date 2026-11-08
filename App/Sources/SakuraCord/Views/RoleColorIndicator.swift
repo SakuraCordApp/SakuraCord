@@ -22,31 +22,14 @@ enum RoleColorIndicatorRenderer {
             color.setStroke()
             circle.lineWidth = max(1.25, rect.width * 0.16)
             circle.stroke()
-        } else if let secondaryColorHex,
-                  let context = NSGraphicsContext.current?.cgContext
-        {
-            let secondary = SakuraCordAccentColor.nsColor(forRoleColorHex: secondaryColorHex)
-            let tertiary = tertiaryColorHex.map { SakuraCordAccentColor.nsColor(forRoleColorHex: $0) }
-            let colors = [color, secondary] + (tertiary.map { [$0] } ?? [])
-            let cgColors = colors.map(\.cgColor) as CFArray
-            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-            let count = colors.count
-            let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
-            if let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) {
-                context.saveGState()
-                context.addEllipse(in: rect)
-                context.clip()
-                context.drawLinearGradient(
-                    gradient,
-                    start: CGPoint(x: rect.minX, y: 0),
-                    end: CGPoint(x: rect.maxX, y: 0),
-                    options: []
-                )
-                context.restoreGState()
-            } else {
-                color.setFill()
-                circle.fill()
-            }
+        } else if let secondaryColorHex, let context = NSGraphicsContext.current?.cgContext {
+            let colors = [colorHex, secondaryColorHex, tertiaryColorHex].compactMap { $0 }
+                .map { SakuraCordAccentColor.nsColor(forRoleColorHex: $0) }
+            context.saveGState()
+            context.addEllipse(in: rect)
+            context.clip()
+            RoleGradientPaint.fill(colors, in: rect, tileWidth: rect.width, context: context)
+            context.restoreGState()
         } else {
             color.setFill()
             circle.fill()
@@ -79,12 +62,8 @@ struct RoleColorIndicator: View {
         )
 
         Group {
-            if !usesAccentFallback, let secondaryColorHex {
-                let secondary = SakuraCordAccentColor.color(forRoleColorHex: secondaryColorHex)
-                let tertiary = tertiaryColorHex.map { SakuraCordAccentColor.color(forRoleColorHex: $0) }
-                let colors = [color, secondary] + (tertiary.map { [$0] } ?? [])
-                Circle()
-                    .fill(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
+            if !usesAccentFallback, let gradient = LinearGradient.role(colorHex, secondaryColorHex, tertiaryColorHex) {
+                Circle().fill(gradient)
             } else {
                 Circle()
                     .fill(usesAccentFallback ? color.opacity(0.14) : color)
@@ -98,6 +77,15 @@ struct RoleColorIndicator: View {
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+    }
+}
+
+extension LinearGradient {
+    /// A role's gradient, returning to its first colour as Discord's does.
+    @MainActor static func role(_ primary: UInt32?, _ secondary: UInt32?, _ tertiary: UInt32?) -> LinearGradient? {
+        guard let primary, let secondary else { return nil }
+        let colors = [primary, secondary] + (tertiary.map { [$0] } ?? []) + [primary]
+        return LinearGradient(colors: colors.map { Color(hex: $0) }, startPoint: .leading, endPoint: .trailing)
     }
 }
 

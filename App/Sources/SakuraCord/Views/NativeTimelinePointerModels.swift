@@ -181,7 +181,6 @@ nonisolated enum NativeTimelinePointerActivationTarget: Hashable {
     case translationAction(MessageID)
     case authorProfile(MessageID)
     case serverTag(MessageID, GuildID)
-    case roleIcon(MessageID, RoleID)
     case invocationProfile(MessageID)
     case commandPill(MessageID)
     case reply(MessageID, MessageID)

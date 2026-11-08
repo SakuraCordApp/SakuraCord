@@ -21,12 +21,8 @@ public struct GuildRole: Identifiable, Codable, Hashable, Sendable {
     public var permissions: UInt64?
     public var isPurchasableSubscription: Bool?
 
-    public var hasGradient: Bool {
-        colorHex != nil && secondaryColorHex != nil
-    }
-
     public var hasIcon: Bool {
-        iconURL != nil || !(unicodeEmoji?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        iconURL != nil || unicodeEmoji != nil
     }
 
     public init(

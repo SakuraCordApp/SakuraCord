@@ -313,24 +313,16 @@ extension NativeMemberListCanvasView {
                 token: prepared.nameTruncationToken,
                 maximumWidth: nameLayout.nameWidth
             )
-            let isHovered = hoveredIndex == index || rowOverlayIndex == index
             if presentation.roleColorDisplay == .inNames, let gradientColors = prepared.gradientColors {
                 Self.draw(
                     line: visibleName,
                     at: CGPoint(x: nameX, y: nameY),
                     gradientColors: gradientColors,
-                    width: nameLayout.nameWidth,
                     context: context,
-                    isHovered: isHovered
+                    isHovered: hoveredIndex == index || rowOverlayIndex == index
                 )
             } else {
-                Self.draw(
-                    line: visibleName,
-                    at: CGPoint(x: nameX, y: nameY),
-                    context: context,
-                    color: presentation.roleColorDisplay == .inNames ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil,
-                    isHovered: isHovered
-                )
+                Self.draw(line: visibleName, at: CGPoint(x: nameX, y: nameY), context: context)
             }
         }
 
@@ -399,27 +391,13 @@ extension NativeMemberListCanvasView {
         gradientColors: [NSColor]?,
         context: CGContext
     ) {
-        if let gradientColors {
-            let cgColors = (gradientColors.map(\.cgColor) as [CGColor]) as CFArray
-            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-            let count = gradientColors.count
-            let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
-            if let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) {
-                context.saveGState()
-                context.addEllipse(in: ovalRect)
-                context.clip()
-                context.drawLinearGradient(
-                    gradient,
-                    start: CGPoint(x: ovalRect.minX, y: 0),
-                    end: CGPoint(x: ovalRect.maxX, y: 0),
-                    options: []
-                )
-                context.restoreGState()
-                return
-            }
-        }
-        context.setFillColor(roleColor.cgColor)
-        context.fillEllipse(in: ovalRect)
+        context.saveGState()
+        context.addEllipse(in: ovalRect)
+        context.clip()
+        RoleGradientPaint.fill(
+            gradientColors ?? [roleColor], in: ovalRect, tileWidth: ovalRect.width, context: context
+        )
+        context.restoreGState()
     }
 
     func drawMemberAvatar(
@@ -614,13 +592,4 @@ extension NativeMemberListCanvasView {
             Self.draw(line: emojiLine, at: CGPoint(x: emojiX, y: emojiY), context: context)
         }
     }
-
-    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, context: CGContext) {
-        let badge = CGRect(
-            x: badgeX, y: nameY + InterfaceScale.metric(8) - ServerTagAppearance.height / 2,
-            width: NativeAppBadgePresentation.width, height: ServerTagAppearance.height
-        )
-        NativeAppBadgePresentation.draw(in: badge, color: .systemIndigo, context: context)
-    }
-
 }

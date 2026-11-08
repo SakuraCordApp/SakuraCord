@@ -58,159 +58,27 @@ extension NativeMemberListCanvasView {
         ))
     }
 
-    static func draw(line: CTLine, at point: CGPoint, context: CGContext, color: NSColor? = nil, isHovered: Bool = false) {
+    static func draw(line: CTLine, at point: CGPoint, context: CGContext) {
         var ascent: CGFloat = 0
         CTLineGetTypographicBounds(line, &ascent, nil, nil)
         context.saveGState()
         context.textMatrix = .identity
         context.translateBy(x: point.x, y: point.y + ascent)
         context.scaleBy(x: 1, y: -1)
-        if isHovered, let color {
-            context.saveGState()
-            context.setShadow(
-                offset: .zero,
-                blur: InterfaceScale.metric(3.5),
-                color: color.withAlphaComponent(0.45).cgColor
-            )
-            context.setFillColor(color.cgColor)
-            CTLineDraw(line, context)
-            context.restoreGState()
-        }
-        if let color {
-            context.setFillColor(color.cgColor)
-        }
         CTLineDraw(line, context)
-        if isHovered, let color {
-            let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
-                let highlightX = width * (phase * 1.6 - 0.3)
-                let bandWidth = max(InterfaceScale.metric(28), width * 0.4)
-                let shimmerColors = [
-                    NSColor.white.withAlphaComponent(0).cgColor,
-                    NSColor.white.withAlphaComponent(0.55).cgColor,
-                    NSColor.white.withAlphaComponent(0).cgColor,
-                ] as CFArray
-                let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
-                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-                if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
-                    context.saveGState()
-                    let (path, _) = NativeIdentityTextPresentation.glyphPathAndColorRuns(line: line)
-                    context.addPath(path)
-                    context.clip()
-                    context.setBlendMode(.plusLighter)
-                    context.drawLinearGradient(
-                        shimmerGradient,
-                        start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
-                        end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
-                        options: []
-                    )
-                    context.restoreGState()
-                }
-            }
-
-            context.saveGState()
-            context.setStrokeColor(color.withAlphaComponent(0.85).cgColor)
-            context.setLineWidth(1)
-            context.move(to: CGPoint(x: 0, y: -InterfaceScale.metric(1.5)))
-            context.addLine(to: CGPoint(x: width, y: -InterfaceScale.metric(1.5)))
-            context.strokePath()
-            context.restoreGState()
-        }
         context.restoreGState()
     }
 
-    static func draw(line: CTLine, at point: CGPoint, gradientColors: [NSColor], width: CGFloat, context: CGContext, isHovered: Bool = false) {
-        guard !gradientColors.isEmpty else { return }
-        if gradientColors.count == 1 {
-            draw(line: line, at: point, context: context, color: gradientColors[0], isHovered: isHovered)
-            return
-        }
+    /// A role gradient name, scrolling and glowing while its row is hovered.
+    @MainActor
+    static func draw(line: CTLine, at point: CGPoint, gradientColors: [NSColor], context: CGContext, isHovered: Bool) {
         var ascent: CGFloat = 0
-        CTLineGetTypographicBounds(line, &ascent, nil, nil)
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, nil, nil))
         context.saveGState()
         context.textMatrix = .identity
         context.translateBy(x: point.x, y: point.y + ascent)
         context.scaleBy(x: 1, y: -1)
-        let cgColors = gradientColors.map(\.cgColor) as CFArray
-        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-        let count = gradientColors.count
-        let locations: [CGFloat] = count == 3 ? [0.0, 0.5, 1.0] : [0.0, 1.0]
-        guard let gradient = CGGradient(colorsSpace: colorSpace, colors: cgColors, locations: locations) else {
-            context.restoreGState()
-            return
-        }
-
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        let effectiveWidth = min(width, lineWidth)
-        let (path, colorRuns) = NativeIdentityTextPresentation.glyphPathAndColorRuns(line: line)
-
-        if isHovered, let primary = gradientColors.first {
-            context.saveGState()
-            context.setShadow(
-                offset: .zero,
-                blur: InterfaceScale.metric(3.5),
-                color: primary.withAlphaComponent(0.45).cgColor
-            )
-            context.setFillColor(primary.withAlphaComponent(0.45).cgColor)
-            context.addPath(path)
-            context.fillPath()
-            context.restoreGState()
-        }
-
-        context.saveGState()
-        context.addPath(path)
-        context.clip()
-        context.drawLinearGradient(
-            gradient,
-            start: CGPoint(x: 0, y: 0),
-            end: CGPoint(x: max(1, effectiveWidth), y: 0),
-            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
-        )
-
-        if isHovered, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let phase = CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4)
-            let highlightX = effectiveWidth * (phase * 1.6 - 0.3)
-            let bandWidth = max(InterfaceScale.metric(28), effectiveWidth * 0.4)
-            let shimmerColors = [
-                NSColor.white.withAlphaComponent(0).cgColor,
-                NSColor.white.withAlphaComponent(0.6).cgColor,
-                NSColor.white.withAlphaComponent(0).cgColor,
-            ] as CFArray
-            let shimmerLocs: [CGFloat] = [0.0, 0.5, 1.0]
-            if let shimmerGradient = CGGradient(colorsSpace: colorSpace, colors: shimmerColors, locations: shimmerLocs) {
-                context.setBlendMode(.plusLighter)
-                context.drawLinearGradient(
-                    shimmerGradient,
-                    start: CGPoint(x: highlightX - bandWidth / 2, y: 0),
-                    end: CGPoint(x: highlightX + bandWidth / 2, y: 0),
-                    options: []
-                )
-            }
-        }
-        context.restoreGState()
-
-        if !colorRuns.isEmpty {
-            context.saveGState()
-            context.textPosition = .zero
-            for run in colorRuns {
-                CTRunDraw(run, context, CFRange())
-            }
-            context.restoreGState()
-        }
-
-        if isHovered {
-            context.saveGState()
-            let underlineRect = CGRect(x: 0, y: -InterfaceScale.metric(1.5), width: max(1, effectiveWidth), height: 1)
-            context.clip(to: underlineRect)
-            context.drawLinearGradient(
-                gradient,
-                start: CGPoint(x: 0, y: 0),
-                end: CGPoint(x: max(1, effectiveWidth), y: 0),
-                options: []
-            )
-            context.restoreGState()
-        }
+        RoleGradientPaint.draw(line, at: .zero, width: width, colors: gradientColors, isHovered: isHovered, context: context)
         context.restoreGState()
     }
 

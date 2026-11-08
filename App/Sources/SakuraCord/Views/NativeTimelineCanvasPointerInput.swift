@@ -124,7 +124,7 @@ extension NativeTimelineCanvasView {
                 if let tag = layouts[index].serverTagRegion, tag.presentation.identity.guildID != nil {
                     addCursorRect(tag.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                 }
-                installRoleIconCursor(at: index, rowOrigin: rowOrigin)
+                installRoleIconToolTip(at: index, rowOrigin: rowOrigin)
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
                 installThreadCardCursor(at: index, rowOrigin: rowOrigin)
                 installReactionCursors(at: index, rowOrigin: rowOrigin)
@@ -200,9 +200,8 @@ extension NativeTimelineCanvasView {
         }
     }
 
-    private func installRoleIconCursor(at index: Int, rowOrigin: CGFloat) {
+    private func installRoleIconToolTip(at index: Int, rowOrigin: CGFloat) {
         guard let roleRegion = layouts[index].roleIconRegion else { return }
-        addCursorRect(roleRegion.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
         addToolTip(roleRegion.frame.offsetBy(dx: 0, dy: rowOrigin), owner: self, userData: nil)
     }
 
@@ -775,10 +774,6 @@ extension NativeTimelineCanvasView {
             showServerTagCard(guildID: guildID, anchor: tag.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex)))
             return true
         }
-        if let roleRegion = layout.roleIconRegion, roleRegion.frame.contains(point) {
-            showRoleIconPopover(role: roleRegion.role, messageID: row.message.id, anchor: roleRegion.frame.offsetBy(dx: 0, dy: displayedRowOrigin(at: rowIndex)))
-            return true
-        }
         if !row.message.type.hasGeneratedContent,
            let authorFrame =
                NativeTimelineAuthorProfileGeometry.hitFrame(
@@ -961,7 +956,6 @@ extension NativeTimelineCanvasView {
         guard let model else { return }
         closeMentionPopover()
         closeServerTagPopover()
-        closeRoleIconPopover()
         // One webhook can post with different names and avatars in adjacent messages.
         let presentationIdentity = sourceMessage.webhookID != nil && user.isWebhookIdentity
             ? AnyHashable(sourceMessage.id)
@@ -1032,7 +1026,6 @@ extension NativeTimelineCanvasView {
         guard let model else { return }
         closeMessageProfilePopover()
         closeServerTagPopover()
-        closeRoleIconPopover()
         let guildID = sourceMessage.flatMap { model.messagePresentationGuildID(for: $0) } ?? model.selectedGuildID
         model.showMembers(withRole: roleID, in: guildID)
         showMentionPopover(
@@ -1659,9 +1652,6 @@ extension NativeTimelineCanvasView {
         if let tag = layout.serverTagRegion, tag.frame.contains(point),
            let guildID = tag.presentation.identity.guildID {
             return .serverTag(message.id, guildID)
-        }
-        if let roleRegion = layout.roleIconRegion, roleRegion.frame.contains(point) {
-            return .roleIcon(message.id, roleRegion.role.id)
         }
         if !message.type.hasGeneratedContent,
            NativeTimelineAuthorProfileGeometry.hitFrame(

@@ -125,7 +125,7 @@ extension DiscordRESTProvider {
             let guildID = GuildID(chunk.guildID)
         else { return }
         let guildRoles = cachedGuildRoles[guildID] ?? []
-        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
+        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles, guildFeatures: cachedGuilds[guildID]?.features)
         let previousMembers = cachedMemberIndex(guildID: guildID)
         let decodedMembers = chunk.members.compactMap {
             try? $0.domain(

@@ -678,6 +678,7 @@ extension NativeTimelineCanvasView {
         }
 
         var didCreateOverlay = false
+        let hoveredGroup = hoveredGroupIdentifiers()
         for item in desired {
             let rowOrigin: CGFloat
             guard let rowIndex = items.firstIndex(where: {
@@ -719,19 +720,11 @@ extension NativeTimelineCanvasView {
                 didCreateOverlay = true
             }
             overlay.frame = hostFrame
-            let activeStarter = activeStarterIdentifier()
-            let isHoverActive: Bool
-            if !item.key.role.playsOnHover {
-                isHoverActive = true
-            } else {
-                switch item.key.role {
-                case .authorAvatar, .authorAvatarDecoration:
-                    isHoverActive = activeStarter != nil && item.key.row == activeStarter
-                default:
-                    isHoverActive = hoveredRow == rowIndex
-                }
+            let isHoverActive = switch item.key.role {
+            case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(item.key.row)
+            default: hoveredRow == rowIndex
             }
-            overlay.setHoverPlaybackEnabled(isHoverActive)
+            overlay.setHoverPlaybackEnabled(!item.key.role.playsOnHover || isHoverActive)
             overlay.setPlaybackSuppressed(suppressesHoverPresentation)
             overlay.display(
                 item.image,
@@ -774,43 +767,40 @@ extension NativeTimelineCanvasView {
 
     }
 
-    func activeStarterIdentifier() -> NativeMessageTimelineItem.Identifier? {
-        let activeHoverRow = hoveredRow ?? hoveredAuthorMessageID.flatMap { targetID in
+    /// The rows of the hovered message group. Its avatar sits on the first
+    /// row, or the last in bubble layout, and plays while any row is hovered.
+    func hoveredGroupIdentifiers() -> Set<NativeMessageTimelineItem.Identifier> {
+        guard let index = hoveredRow ?? hoveredAuthorMessageID.flatMap({ targetID in
             items.firstIndex(where: { $0.messageID == targetID })
+        }), items.indices.contains(index) else { return [] }
+        guard case let .message(row, _, _) = items[index] else { return [items[index].identifier] }
+        var identifiers: Set<NativeMessageTimelineItem.Identifier> = [items[index].identifier]
+        var lower = index
+        var current = row
+        while !current.startsGroup, lower > 0, case let .message(previous, _, _) = items[lower - 1] {
+            lower -= 1
+            current = previous
+            identifiers.insert(items[lower].identifier)
         }
-        return activeHoverRow.flatMap { groupStarterIdentifier(for: $0) }
-    }
-
-    private func groupStarterIdentifier(for index: Int) -> NativeMessageTimelineItem.Identifier? {
-        guard items.indices.contains(index) else { return nil }
-        guard case let .message(row, _, _) = items[index] else {
-            return items[index].identifier
+        var upper = index
+        current = row
+        while !current.endsGroup, upper + 1 < items.count, case let .message(next, _, _) = items[upper + 1] {
+            upper += 1
+            current = next
+            identifiers.insert(items[upper].identifier)
         }
-        if row.startsGroup {
-            return items[index].identifier
-        }
-        for prevIndex in stride(from: index - 1, through: 0, by: -1) {
-            guard case let .message(prevRow, _, _) = items[prevIndex] else { break }
-            if prevRow.message.author.id != row.message.author.id { break }
-            if prevRow.startsGroup {
-                return items[prevIndex].identifier
-            }
-        }
-        return items[index].identifier
+        return identifiers
     }
 
     func updateAvatarPlayback() {
-        let activeStarter = activeStarterIdentifier()
+        let hoveredGroup = hoveredGroupIdentifiers()
         let hoveredIdentifier = hoveredRow.flatMap {
             items.indices.contains($0) ? items[$0].identifier : nil
         }
         for (key, overlay) in animatedMediaOverlays where key.role.playsOnHover {
-            let isHoverActive: Bool
-            switch key.role {
-            case .authorAvatar, .authorAvatarDecoration:
-                isHoverActive = activeStarter != nil && key.row == activeStarter
-            default:
-                isHoverActive = hoveredIdentifier != nil && key.row == hoveredIdentifier
+            let isHoverActive = switch key.role {
+            case .authorAvatar, .authorAvatarDecoration: hoveredGroup.contains(key.row)
+            default: hoveredIdentifier != nil && key.row == hoveredIdentifier
             }
             overlay.setHoverPlaybackEnabled(isHoverActive && !suppressesHoverPresentation)
         }

@@ -68,12 +68,7 @@ struct ComposerReplyHeader: View {
     }
 
     private var authorGradient: LinearGradient? {
-        guard roleColorDisplay == .inNames,
-              let roleColorHex,
-              let roleSecondaryColorHex else { return nil }
-        let colors = [Color(hex: roleColorHex), Color(hex: roleSecondaryColorHex)]
-            + (roleTertiaryColorHex.map { [Color(hex: $0)] } ?? [])
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+        roleColorDisplay == .inNames ? .role(roleColorHex, roleSecondaryColorHex, roleTertiaryColorHex) : nil
     }
 
     private var authorColor: Color {

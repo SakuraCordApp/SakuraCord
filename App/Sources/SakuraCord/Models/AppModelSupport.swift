@@ -1032,7 +1032,8 @@ nonisolated enum TimelineMemberPresentationImpact {
     struct Signature: Equatable {
         let user: User
         let guildAvatarURL: URL?
-        let roleColorHex: UInt32?
+        let colorRole: GuildRole?
+        let iconRole: GuildRole?
     }
 
     static func changedUserIDs(
@@ -1086,14 +1087,16 @@ nonisolated enum TimelineMemberPresentationImpact {
     ) -> Signature? {
         guard let member else { return nil }
         let roleIDs = Set(member.roleIDs)
+        let catalogRoles = guildRoles.filter { roleIDs.contains($0.id) }
+        // Mirrors MessageAuthorPresentation's role resolution.
         return Signature(
             user: member.user,
             guildAvatarURL: member.guildAvatarURL,
-            roleColorHex:
-                MessageAuthorPresentation.topRoleColor(in: member.roles)
-                    ?? MessageAuthorPresentation.topRoleColor(
-                        in: guildRoles.filter { roleIDs.contains($0.id) }
-                    )
+            colorRole: MessageAuthorPresentation.topRoleWithColor(in: member.roles)
+                ?? MessageAuthorPresentation.topRoleWithColor(in: catalogRoles),
+            iconRole: MessageAuthorPresentation.topRoleWithIcon(
+                in: member.roles.isEmpty ? catalogRoles : member.roles
+            )
         )
     }
 }

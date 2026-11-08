@@ -25,13 +25,9 @@ extension NativeTimelineCanvasView {
         guard hoveredAuthorMessageID != value else { return }
         let old = hoveredAuthorMessageID
         hoveredAuthorMessageID = value
-        if value != nil {
-            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                authorHoverTicker.start(on: self) { [weak self] in
-                    self?.stepAuthorHover()
-                }
-            } else {
-                authorHoverTicker.stop()
+        if let index = value.flatMap(visibleMessageRowIndex(for:)), scrollsAuthorGradient(at: index) {
+            authorHoverTicker.start(on: self) { [weak self] in
+                self?.stepAuthorHover()
             }
         } else {
             authorHoverTicker.stop()
@@ -45,18 +41,24 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    /// A hovered gradient name scrolls, as Discord's does; solid names stay still.
+    private func scrollsAuthorGradient(at index: Int) -> Bool {
+        guard RoleGradientPaint.animates, model?.accessibilitySettings.roleColorDisplay == .inNames,
+              case let .message(row, _, _) = items[index]
+        else { return false }
+        let author = model?.authorPresentation(for: row.message)
+        return author?.user.isBot == false && NativeTimelineRowPainter.roleGradientColors(author) != nil
+    }
+
     private func stepAuthorHover() {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            authorHoverTicker.stop()
-            return
-        }
-        guard let messageID = hoveredAuthorMessageID,
-              let index = items.firstIndex(where: { $0.messageID == messageID })
+        guard let index = hoveredAuthorMessageID.flatMap(visibleMessageRowIndex(for:)),
+              let authorFrame = layouts[index].authorFrame
         else {
             authorHoverTicker.stop()
             return
         }
-        setNeedsDisplay(rowFrame(at: index))
+        // The glow reaches a few points past the name.
+        setNeedsDisplay(authorFrame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index)).insetBy(dx: -6, dy: -6))
     }
 
     func setHoveredMention(

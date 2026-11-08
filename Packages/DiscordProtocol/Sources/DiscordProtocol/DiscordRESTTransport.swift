@@ -85,7 +85,7 @@ extension DiscordRESTProvider {
             id: discordPerformanceSignposter.makeSignpostID()
         )
         let guildRoles = cachedGuildRoles[guildID] ?? []
-        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
+        let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles, guildFeatures: cachedGuilds[guildID]?.features)
         discordPerformanceSignposter.endInterval(
             "GatewayMemberListRoleCatalogBuild", roleCatalogBuild
         )

@@ -392,8 +392,9 @@ extension NativeTimelineRowLayout {
             let editedWidth: CGFloat = message.editedTimestamp != nil
                 ? NativeTimelineRowLayout.measuredTextWidth("(edited)", font: metrics.editedFont) + InterfaceScale.metric(7)
                 : 0
-            // Keep the adjacent controls and full timestamp/edited labels visible while long decorative names truncate.
-            let timestampReserve = timestampWidth + editedWidth + InterfaceScale.metric(7)
+            // The timestamp and edited label stay whole beside long names, but
+            // never take more than a third of a narrow header.
+            let timestampReserve = min(timestampWidth + editedWidth, availableWidth / 3) + InterfaceScale.metric(7)
             let badge = author.isSystem ? "OFFICIAL" : author.isBot ? "APP" : nil
             let botText = badge.map { NativeIdentityTextPresentation(
                 $0, font: .interfaceSystemFont(ofSize: ServerTagAppearance.fontSize + 1, weight: .bold)

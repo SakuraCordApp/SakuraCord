@@ -9,9 +9,9 @@ struct GuildMemberRoleCatalog {
 
     private let entriesByID: [String: [Entry]]
 
-    init(_ roles: [GuildRoleDTO]) {
+    init(_ roles: [GuildRoleDTO], guildFeatures: Set<String>?) {
         entriesByID = Dictionary(grouping: roles.enumerated().map { index, role in
-            Entry(sourceIndex: index, dto: role, domain: role.domain)
+            Entry(sourceIndex: index, dto: role, domain: role.domain(guildFeatures: guildFeatures))
         }, by: { $0.dto.id })
     }
 

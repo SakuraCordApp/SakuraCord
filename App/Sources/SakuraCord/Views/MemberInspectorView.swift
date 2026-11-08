@@ -544,13 +544,8 @@ struct MemberRow: View {
     }
 
     private var nameGradient: LinearGradient? {
-        guard roleColorDisplay == .inNames,
-              let topRole,
-              let primary = topRole.colorHex,
-              let secondary = topRole.secondaryColorHex else { return nil }
-        let tertiary = topRole.tertiaryColorHex
-        let colors = [Color(hex: primary), Color(hex: secondary)] + (tertiary.map { [Color(hex: $0)] } ?? [])
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+        roleColorDisplay == .inNames
+            ? .role(topRole?.colorHex, topRole?.secondaryColorHex, topRole?.tertiaryColorHex) : nil
     }
 
     private var nameColor: Color {

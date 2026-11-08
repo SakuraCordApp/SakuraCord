@@ -98,7 +98,7 @@ extension DiscordRESTProvider {
                     .formUnion(catalogMembers.compactMap { UserID($0.user.id) })
                 cacheLiveSearchUsers(catalogMembers.map(\.user))
                 let guildRoles = cachedGuildRoles[guildID] ?? []
-                let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
+                let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles, guildFeatures: cachedGuilds[guildID]?.features)
                 let previousMembers = cachedMemberIndex(guildID: guildID)
                 let members = catalogMembers.compactMap {
                     try? $0.domain(
@@ -178,8 +178,14 @@ extension DiscordRESTProvider {
                 to: cachedGuilds[guildID], currentUserID: currentUser?.id
             )
         else { return }
+        let roleStyleFeatures: Set<String> = ["ENHANCED_ROLE_COLORS", "ROLE_ICONS"]
+        let previousRoleStyles = cachedGuilds[guildID]?.features.intersection(roleStyleFeatures)
         cachedGuilds[guildID] = guild
         continuation?.yield(.guildChanged(guild))
+        // Boosts gained or lost change which role gradients and icons show.
+        if previousRoleStyles != guild.features.intersection(roleStyleFeatures), cachedGuildRoles[guildID] != nil {
+            publishGuildRoles(guildID)
+        }
         if discardInaccessibleMemberLists(guildID: guildID) {
             publishMembers(guildID: guildID, members: [], groups: [])
         }

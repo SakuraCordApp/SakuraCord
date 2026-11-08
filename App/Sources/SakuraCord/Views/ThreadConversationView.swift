@@ -176,12 +176,11 @@ private struct ThreadStarterMessagePreview: View {
     }
 
     private var authorGradient: LinearGradient? {
-        guard authorPresentation.hasRoleGradient,
-              let primary = authorPresentation.roleColorHex,
-              let secondary = authorPresentation.roleSecondaryColorHex else { return nil }
-        let tertiary = authorPresentation.roleTertiaryColorHex
-        let colors = [Color(hex: primary), Color(hex: secondary)] + (tertiary.map { [Color(hex: $0)] } ?? [])
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+        .role(
+            authorPresentation.roleColorHex,
+            authorPresentation.roleSecondaryColorHex,
+            authorPresentation.roleTertiaryColorHex
+        )
     }
 
     var body: some View {

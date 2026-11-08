@@ -409,10 +409,6 @@ nonisolated struct MessageAuthorPresentation: Equatable {
     let roleTertiaryColorHex: UInt32?
     let topRoleWithIcon: GuildRole?
 
-    var hasRoleGradient: Bool {
-        roleColorHex != nil && roleSecondaryColorHex != nil
-    }
-
     init(
         user: User,
         roleColorHex: UInt32?,
