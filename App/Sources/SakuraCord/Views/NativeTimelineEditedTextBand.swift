@@ -169,11 +169,12 @@ extension NativeTimelineCanvasView {
         }
         if let slide = band.slide {
             // The text keeps pace with the row's edge at full strength, and
-            // the rest of the row fades in once the deleted one's has mostly
-            // faded out, so that their headers never show over each other.
+            // the rest of the row fades in once the deleted one's has faded
+            // out, so that their headers never show over each other.
             let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
             clipped(from: textTop, to: paintFrame.maxY) {
-                context.setAlpha(max(0, 2 * progress - 1))
+                let handoffEnd = NativeTimelineDepartedRun.handoffFadeEnd
+                context.setAlpha(max(0, (progress - handoffEnd) / (1 - handoffEnd)))
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
                 drawPicture(frame)
                 context.endTransparencyLayer()

@@ -14,11 +14,22 @@ struct NativeTimelineDepartedRun {
         let motionID: Int
         var startUptime: TimeInterval?
         var timing = NativeTimelineRowMotionTiming.chips
+        /// How far through the motion the piece is fully faded, which a
+        /// header taking its place in the next row waits for.
+        var fadeEnd: CGFloat = 1
 
         func remaining(at uptime: TimeInterval) -> CGFloat {
             1 - timing.progress(startedAt: startUptime, at: uptime)
         }
+
+        func opacity(at uptime: TimeInterval) -> CGFloat {
+            max(0, 1 - (1 - remaining(at: uptime)) / fadeEnd)
+        }
     }
+
+    /// The share of its motion a deleted row takes to fade out before the
+    /// next row's new header fades in.
+    static let handoffFadeEnd: CGFloat = 0.5
 
     var pieces: [Piece] = []
     /// Where the row above the run was last found.
@@ -107,7 +118,7 @@ extension NativeTimelineCanvasView {
                 context.clip(to: frame)
                 image.draw(
                     in: CGRect(origin: frame.origin, size: image.size), from: .zero, operation: .sourceOver,
-                    fraction: remaining, respectFlipped: true, hints: nil
+                    fraction: piece.opacity(at: now), respectFlipped: true, hints: nil
                 )
                 context.restoreGState()
             }

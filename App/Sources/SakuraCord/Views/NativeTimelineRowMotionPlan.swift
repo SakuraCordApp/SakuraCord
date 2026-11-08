@@ -123,7 +123,7 @@ struct NativeTimelineUpdateMotion {
     /// update's motion; an inherited one keeps its own.
     struct DepartedPiece {
         let anchor: Identifier
-        let piece: NativeTimelineDepartedRun.Piece
+        var piece: NativeTimelineDepartedRun.Piece
         let isNew: Bool
     }
 

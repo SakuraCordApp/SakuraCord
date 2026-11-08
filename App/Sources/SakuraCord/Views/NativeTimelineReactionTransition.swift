@@ -370,6 +370,7 @@ extension NativeTimelineCanvasView {
         // Rows entering the followed area have no earlier place. One
         // inserted between followed rows fails the plan's shift check.
         guard let old = baseline.rows[identifier] else { return }
+        let firstDeparted = update.departedPieces.count
         if let previous = update.plan.previous, old.index != previous.oldIndex + 1 {
             let departed = baseline.departedRows(after: previous.oldIndex, before: old.index, in: update.departedOldIndices)
             closeGap(departed, in: &update)
@@ -396,6 +397,11 @@ extension NativeTimelineCanvasView {
             update.plan.addStep(for: row, delta: delta, movesText: band != nil)
             if let band {
                 update.textBands.append(band)
+                if band.slide != nil {
+                    for piece in update.departedPieces.indices.dropFirst(firstDeparted) {
+                        update.departedPieces[piece].piece.fadeEnd = NativeTimelineDepartedRun.handoffFadeEnd
+                    }
+                }
             } else {
                 // A band can't follow this change, and the running one would
                 // part the new layout at the earlier text's end.
