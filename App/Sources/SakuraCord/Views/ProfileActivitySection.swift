@@ -7,6 +7,7 @@ struct ProfileActivitySection: View {
     let member: Member
     var richActivity: MemberRichActivity? = nil
     @Environment(\.colorScheme) private var colorScheme
+    @State private var dynamicArtwork: NSImage? = nil
 
     private var effectiveActivity: MemberRichActivity? {
         richActivity ?? member.richActivity
@@ -79,14 +80,30 @@ struct ProfileActivitySection: View {
     private var resolvedArtworkImage: NSImage? {
         if let imageRef = effectiveActivity?.largeImage {
             if imageRef.hasPrefix("file://"), let url = URL(string: imageRef) {
-                return NSImage(contentsOf: url)
+                if let data = try? Data(contentsOf: url), let img = NSImage(data: data) {
+                    return img
+                }
             }
             if imageRef.hasPrefix("/"), FileManager.default.fileExists(atPath: imageRef) {
-                return NSImage(contentsOfFile: imageRef)
+                if let data = try? Data(contentsOf: URL(fileURLWithPath: imageRef)), let img = NSImage(data: data) {
+                    return img
+                }
             }
         }
-        if isMusic, FileManager.default.fileExists(atPath: AppleMusicPresenceMonitor.artworkPath) {
-            return NSImage(contentsOfFile: AppleMusicPresenceMonitor.artworkPath)
+        if isMusic {
+            if let data = AppleMusicPresenceMonitor.currentArtworkData, let img = NSImage(data: data) {
+                return img
+            }
+            if FileManager.default.fileExists(atPath: AppleMusicPresenceMonitor.artworkPath),
+               let data = try? Data(contentsOf: URL(fileURLWithPath: AppleMusicPresenceMonitor.artworkPath)),
+               let img = NSImage(data: data) {
+                return img
+            }
+            if FileManager.default.fileExists(atPath: AppleMusicPresenceMonitor.fallbackArtworkPath),
+               let data = try? Data(contentsOf: URL(fileURLWithPath: AppleMusicPresenceMonitor.fallbackArtworkPath)),
+               let img = NSImage(data: data) {
+                return img
+            }
         }
         return nil
     }
@@ -154,13 +171,23 @@ struct ProfileActivitySection: View {
             RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
+        .onAppear {
+            refreshArtwork()
+        }
+        .task(id: effectiveActivity) {
+            refreshArtwork()
+        }
+    }
+
+    private func refreshArtwork() {
+        dynamicArtwork = resolvedArtworkImage
     }
 
     @ViewBuilder
     private var artworkView: some View {
         let cornerRadius = InterfaceScale.metric(8)
         let size = InterfaceScale.metric(58)
-        if let image = resolvedArtworkImage {
+        if let image = dynamicArtwork ?? resolvedArtworkImage {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)

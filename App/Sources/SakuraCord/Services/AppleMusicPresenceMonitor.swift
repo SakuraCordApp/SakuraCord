@@ -1,3 +1,4 @@
+import AppKit
 import DiscordProtocol
 import Foundation
 import os
@@ -61,45 +62,72 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private let nowProvider: @Sendable () -> Date
     private let lock = NSLock()
     private var observationTokens: [NSObjectProtocol] = []
+    private var appTerminateToken: NSObjectProtocol?
+    private var pollingTask: Task<Void, Never>?
     private var isMonitoring: Bool = false
     private let logger = Logger(subsystem: "dev.sakuracord", category: "AppleMusicPresenceMonitor")
 
     public static let musicNotificationName = Notification.Name("com.apple.Music.playerInfo")
     public static let legacyiTunesNotificationName = Notification.Name("com.apple.iTunes.playerInfo")
+
+    private static let artworkLock = NSLock()
+    nonisolated(unsafe) private static var _cachedArtworkData: Data?
+
+    public static var currentArtworkData: Data? {
+        get {
+            artworkLock.lock()
+            defer { artworkLock.unlock() }
+            return _cachedArtworkData
+        }
+        set {
+            artworkLock.lock()
+            _cachedArtworkData = newValue
+            artworkLock.unlock()
+        }
+    }
+
     public static let artworkPath: String = {
         (NSTemporaryDirectory() as NSString).appendingPathComponent("sakuracord_applemusic_art.png")
     }()
 
-    private func exportArtworkIfAvailable() {
-        Task.detached(priority: .utility) {
-            let path = Self.artworkPath
-            let scriptSource = """
-            tell application "Music"
-                if it is running then
-                    tell current track
-                        if (count of artworks) > 0 then
-                            set artData to raw data of artwork 1
-                            set artPath to POSIX file "\(path)"
-                            set artFile to (open for access artPath with write permission)
-                            set eof artFile to 0
-                            write artData to artFile
-                            close access artFile
-                            return true
-                        end if
-                    end tell
-                end if
-                return false
-            end tell
-            """
-            var errorInfo: NSDictionary?
-            if let script = NSAppleScript(source: scriptSource) {
-                _ = script.executeAndReturnError(&errorInfo)
-            }
+    public static let fallbackArtworkPath: String = "/tmp/sakuracord_applemusic_art.png"
+
+    public static func fetchCurrentArtworkData() -> Data? {
+        let scriptSource = """
+        tell application "Music"
+            if it is running then
+                tell current track
+                    if (count of artworks) > 0 then
+                        return raw data of artwork 1
+                    end if
+                end tell
+            end if
+            return missing value
+        end tell
+        """
+        var errorInfo: NSDictionary?
+        guard let script = NSAppleScript(source: scriptSource) else { return nil }
+        let descriptor = script.executeAndReturnError(&errorInfo)
+        let data = descriptor.data
+        guard !data.isEmpty, NSImage(data: data) != nil else { return nil }
+        return data
+    }
+
+    public static func updateArtworkCache() {
+        let data = fetchCurrentArtworkData()
+        currentArtworkData = data
+        if let data {
+            try? data.write(to: URL(fileURLWithPath: artworkPath), options: .atomic)
+            try? data.write(to: URL(fileURLWithPath: fallbackArtworkPath), options: .atomic)
+        } else {
+            removeCachedArtwork()
         }
     }
 
-    private func removeCachedArtwork() {
-        try? FileManager.default.removeItem(atPath: Self.artworkPath)
+    public static func removeCachedArtwork() {
+        currentArtworkData = nil
+        try? FileManager.default.removeItem(atPath: artworkPath)
+        try? FileManager.default.removeItem(atPath: fallbackArtworkPath)
     }
 
     public func checkCurrentTrack() {
@@ -124,9 +152,15 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             guard let script = NSAppleScript(source: scriptSource) else { return }
             let descriptor = script.executeAndReturnError(&errorInfo)
             let result = descriptor.stringValue ?? ""
-            guard result != "stopped", !result.isEmpty else { return }
+            guard result != "stopped", !result.isEmpty else {
+                await self?.handleTrackInfo(nil)
+                return
+            }
             let parts = result.components(separatedBy: "|||")
-            guard parts.count >= 6 else { return }
+            guard parts.count >= 6 else {
+                await self?.handleTrackInfo(nil)
+                return
+            }
             let trackInfo = AppleMusicTrackInfo(
                 playerState: parts[0],
                 name: parts[1],
@@ -176,6 +210,32 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             }
             observationTokens.append(token)
         }
+
+        #if os(macOS)
+        let termToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            guard let self else { return }
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+               app.bundleIdentifier == "com.apple.Music" {
+                Task {
+                    await self.handleTrackInfo(nil)
+                }
+            }
+        }
+        self.appTerminateToken = termToken
+        #endif
+
+        pollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled, let self else { break }
+                self.checkCurrentTrack()
+            }
+        }
+
         checkCurrentTrack()
         logger.info("Apple Music presence monitor started observing notifications.")
     }
@@ -185,14 +245,23 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         lock.lock()
         let tokens = observationTokens
         observationTokens.removeAll()
+        pollingTask?.cancel()
+        pollingTask = nil
+        let termToken = appTerminateToken
+        appTerminateToken = nil
         isMonitoring = false
         lock.unlock()
 
         for token in tokens {
             center.removeObserver(token)
         }
+        #if os(macOS)
+        if let termToken {
+            NSWorkspace.shared.notificationCenter.removeObserver(termToken)
+        }
+        #endif
 
-        removeCachedArtwork()
+        Self.removeCachedArtwork()
         Task { [coordinator] in
             await coordinator.clearActivity(for: .appleMusic)
         }
@@ -209,14 +278,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     @discardableResult
     public func handleTrackInfo(_ trackInfo: AppleMusicTrackInfo?) async -> OutgoingActivityPayload? {
         guard let trackInfo else {
-            removeCachedArtwork()
+            Self.removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
             return nil
         }
 
         guard trackInfo.playerState.caseInsensitiveCompare("Playing") == .orderedSame else {
             logger.debug("Apple Music player state is '\(trackInfo.playerState, privacy: .public)'; clearing activity.")
-            removeCachedArtwork()
+            Self.removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
             return nil
         }
@@ -224,12 +293,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard let trackName = trackInfo.name?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trackName.isEmpty else {
             logger.debug("Apple Music playing track missing title; clearing activity.")
-            removeCachedArtwork()
+            Self.removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
             return nil
         }
 
-        exportArtworkIfAvailable()
+        Self.updateArtworkCache()
 
         let artist = trackInfo.artist?.trimmingCharacters(in: .whitespacesAndNewlines)
         let album = trackInfo.album?.trimmingCharacters(in: .whitespacesAndNewlines)
