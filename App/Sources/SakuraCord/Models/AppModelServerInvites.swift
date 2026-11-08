@@ -124,6 +124,11 @@ extension AppModel {
             guard !guild.isUnavailable else { return false }
             store.showsJoinDialog = false
             navigateToInvite(invite)
+            // A member who closed the screening form can finish it from the invite, even without a chat to show
+            // the Complete bar in, such as a server whose only readable channel is a forum.
+            if onboardingMember(in: guild.id)?.isPending == true {
+                openGuildJoinApplication(guild.id, inviteCode: reference.code)
+            }
             return true
         }
         if let reason = invite.unsupportedJoinReason {
