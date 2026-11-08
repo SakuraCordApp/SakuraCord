@@ -3,6 +3,7 @@ import MessageRendering
 import Observation
 import SakuraCordModels
 import SwiftUI
+import WebKit
 
 extension NSAttributedString.Key {
     nonisolated static let discordEmojiToken = NSAttributedString.Key(
@@ -1339,7 +1340,7 @@ final class ComposerUnfocusedTypingMonitor {
                   event.window === window,
                   window.isKeyWindow,
                   window.firstResponder !== textView,
-                  !Self.isEditingText(window.firstResponder)
+                  !Self.handlesOwnTyping(window.firstResponder)
             else { return event }
 
             if let timeline = window.firstResponder as? NativeTimelineCanvasView,
@@ -1398,9 +1399,14 @@ final class ComposerUnfocusedTypingMonitor {
         self.eventMonitor = nil
     }
 
-    private static func isEditingText(_ responder: NSResponder?) -> Bool {
-        guard let textView = responder as? NSTextView else { return false }
-        return textView.isEditable || textView.isFieldEditor
+    /// Text editors and web content, such as a running Activity, take their
+    /// own keys, Return and Escape included, as page content does in Discord.
+    private static func handlesOwnTyping(_ responder: NSResponder?) -> Bool {
+        if let textView = responder as? NSTextView {
+            return textView.isEditable || textView.isFieldEditor
+        }
+        guard let view = responder as? NSView else { return false }
+        return sequence(first: view, next: \.superview).contains { $0 is WKWebView }
     }
 
     nonisolated static func shouldRedirect(
