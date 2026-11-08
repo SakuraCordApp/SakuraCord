@@ -23,7 +23,12 @@ struct RoleMembersPopover: View {
                 if let role, role.hasIcon {
                     RoleIconView(role: role, size: InterfaceScale.metric(16))
                 } else {
-                    RoleColorIndicator(colorHex: role?.colorHex, size: InterfaceScale.metric(10))
+                    RoleColorIndicator(
+                        colorHex: role?.colorHex,
+                        secondaryColorHex: role?.secondaryColorHex,
+                        tertiaryColorHex: role?.tertiaryColorHex,
+                        size: InterfaceScale.metric(10)
+                    )
                 }
                 Text(role.map { "@\($0.name)" } ?? "Role members")
                     .font(.interface(.headline))

@@ -346,12 +346,16 @@ extension NativeMemberListCanvasView {
                     roleIconIDs.insert(id)
                     let view = roleIconToolTipViews[id] ?? {
                         let value = NSView()
+                        value.setAccessibilityElement(true)
+                        value.setAccessibilityRole(.staticText)
                         addSubview(value)
                         roleIconToolTipViews[id] = value
                         return value
                     }()
                     view.frame = frame
                     view.toolTip = role.name
+                    view.setAccessibilityLabel("Role \(role.name)")
+                    children.append(view)
                 }
             }
         }

@@ -807,6 +807,9 @@ extension DiscordRESTProvider {
                 return lhs.id.rawValue > rhs.id.rawValue
             }
         continuation?.yield(.guildRolesChanged(guildID: guildID, roles: roles))
+        for key in cachedProfiles.keys where key.guildID == guildID {
+            cachedProfiles[key]?.refreshRoles(from: roles)
+        }
         reconcileMembersAfterRoleChange(guildID: guildID)
     }
 
