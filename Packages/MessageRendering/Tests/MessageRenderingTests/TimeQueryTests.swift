@@ -69,3 +69,20 @@ private func readings(of query: String, firstWeekday: Int) throws -> [String] {
         return "\(suggestion.reading.map { "\($0)" } ?? "-") \(time)"
     }
 }
+
+/// A relative timestamp that counts months differently from Discord shows
+/// readers a different span than the sender saw.
+@Test(arguments: [
+    ("2026-02-01T12:00:00Z", "2026-03-17T12:00:00Z", "in 2 months"),
+    ("2026-02-28T12:00:00Z", "2026-01-31T12:00:00Z", "1 month ago"),
+    ("2026-11-08T05:10:13Z", "2026-11-08T06:00:13Z", "in 50 minutes"),
+    ("2026-11-08T00:00:00Z", "2028-05-08T00:00:00Z", "in 2 years"),
+])
+func relativeTimestamps(now: String, date: String, expected: String) throws {
+    let parse = { (text: String) in try #require(ISO8601DateFormatter().date(from: text)) }
+    let text = DiscordTimestampFormatter.string(
+        for: try parse(date), style: .relative, relativeTo: try parse(now),
+        locale: Locale(identifier: "en_US"), timeZone: .gmt
+    )
+    #expect(text == expected)
+}
