@@ -61,3 +61,26 @@ func `composer partial formatting preserves other text styles attachments and un
         #expect((view.string as NSString).substring(with: view.selectedRange()) == selected)
     }
 }
+
+// Choosing a suggestion replaces `range` with the mention, so a wrong range
+// would send leftover or deleted message text.
+@MainActor
+@Test(arguments: [
+    ("check out #\"Release Notes\"", nil, "Release Notes", "#\"Release Notes\""),
+    ("check out #\"Release Notes\" today", 19, "Release", "#\"Release Notes\""),
+    ("see #\"Release Notes", nil, "Release Notes", "#\"Release Notes"),
+    ("refer to #“Release Notes”", nil, "Release Notes", "#“Release Notes”"),
+    (##"check #"Release \"Notes\" Updates""##, nil, #"Release "Notes" Updates"#, ##"#"Release \"Notes\" Updates""##),
+    (##"check #"Release \"Notes\" Updates" now"##, 15, "Release", ##"#"Release \"Notes\" Updates""##),
+    ("hello #release", nil, "release", "#release")
+] as [(String, Int?, String, String)])
+func `channel mention autocomplete covers the whole quoted token`(
+    _ text: String, _ cursor: Int?, _ query: String, _ token: String
+) throws {
+    let context = try #require(MentionAutocompleteContext(
+        text: text, selection: cursor.map { NSRange(location: $0, length: 0) }
+    ))
+    #expect(context.kind == .channel)
+    #expect(context.query == query)
+    #expect((text as NSString).substring(with: context.range) == token)
+}

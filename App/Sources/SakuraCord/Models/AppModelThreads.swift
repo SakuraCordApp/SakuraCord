@@ -863,6 +863,6 @@ extension AppModel {
     /// lists only the selected guild's active threads the user has joined.
     var mentionAutocompleteThreads: [MessageThreadSummary] {
         guard let selectedGuildID else { return [] }
-        return activeJoinedThreads.filter { $0.guildID == selectedGuildID }
+        return activeJoinedThreads.filter { $0.guildID == selectedGuildID && !$0.isArchived }
     }
 }

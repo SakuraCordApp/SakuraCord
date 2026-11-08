@@ -212,9 +212,11 @@ enum MentionAutocompleteSuggestionFactory {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = normalized(trimmedQuery)
         let queryTerms = normalizedQuery.split(whereSeparator: \.isWhitespace).map(String.init)
-        let channelsByID = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let channelsByID = threads.isEmpty ? [:] : Dictionary(
+            channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+        )
         var bestMatches: [RankedCandidate] = []
-        bestMatches.reserveCapacity(25)
+        bestMatches.reserveCapacity(channelSuggestionLimit)
         for channel in channels {
             let usage = guildAndChannelUsageScores[channel.id.description, default: 0]
             if let candidate = rankedChannelCandidate(
@@ -258,19 +260,9 @@ enum MentionAutocompleteSuggestionFactory {
         guard isTextChannel else { return nil }
         let guild = channel.guildID.flatMap { guilds[$0] }
         let context = [channel.category, guild?.name].compactMap { $0 }.joined(separator: " ")
-        var score = matchScore(
-            name: channel.name,
-            context: context,
-            query: query,
-            terms: terms
-        )
-        // Discord drops a non-matching channel before its frecency boost, and
-        // its missing parentheses make any positive frecency value a full
-        // three-point boost before the 10/7 cap.
-        guard query.isEmpty || score > 0 else { return nil }
-        if usageScore > 0 {
-            score = min(score + 3, score >= 7 ? 10 : 7)
-        }
+        guard let score = boostedScore(
+            name: channel.name, context: context, usageScore: usageScore, query: query, terms: terms
+        ) else { return nil }
         return RankedCandidate(
             suggestion: MentionAutocompleteSuggestion(
                 id: "channel:\(channel.id)",
@@ -297,19 +289,11 @@ enum MentionAutocompleteSuggestionFactory {
         query: String,
         terms: [String]
     ) -> RankedCandidate? {
-        guard !thread.isArchived else { return nil }
         let guild = (thread.guildID ?? parent?.guildID).flatMap { guilds[$0] }
         let context = [parent?.name, parent?.category, guild?.name].compactMap { $0 }.joined(separator: " ")
-        var score = matchScore(
-            name: thread.name,
-            context: context,
-            query: query,
-            terms: terms
-        )
-        guard query.isEmpty || score > 0 else { return nil }
-        if usageScore > 0 {
-            score = min(score + 3, score >= 7 ? 10 : 7)
-        }
+        guard let score = boostedScore(
+            name: thread.name, context: context, usageScore: usageScore, query: query, terms: terms
+        ) else { return nil }
         let isForum = parent?.kind == .forum
         let detail = parent?.name ?? guild?.name ?? "Thread"
         return RankedCandidate(
@@ -327,15 +311,24 @@ enum MentionAutocompleteSuggestionFactory {
         )
     }
 
-    private static func insertCandidate(
-        _ candidate: RankedCandidate,
-        into matches: inout [RankedCandidate],
-        limit: Int = 25
-    ) {
+    private static let channelSuggestionLimit = 25
+
+    /// Discord drops a non-matching channel before its frecency boost, and its
+    /// missing parentheses make any positive frecency value a full three-point
+    /// boost before the 10/7 cap.
+    private static func boostedScore(
+        name: String, context: String, usageScore: Int, query: String, terms: [String]
+    ) -> Double? {
+        let score = matchScore(name: name, context: context, query: query, terms: terms)
+        guard query.isEmpty || score > 0 else { return nil }
+        return usageScore > 0 ? min(score + 3, score >= 7 ? 10 : 7) : score
+    }
+
+    private static func insertCandidate(_ candidate: RankedCandidate, into matches: inout [RankedCandidate]) {
         if let insertionIndex = matches.firstIndex(where: { isPreferred(candidate, over: $0) }) {
             matches.insert(candidate, at: insertionIndex)
-            if matches.count > limit { matches.removeLast() }
-        } else if matches.count < limit {
+            if matches.count > channelSuggestionLimit { matches.removeLast() }
+        } else if matches.count < channelSuggestionLimit {
             matches.append(candidate)
         }
     }
@@ -442,7 +435,7 @@ enum MentionAutocompleteSuggestionFactory {
 
     private static func matchScore(
         name: String,
-        context: String?,
+        context: String,
         query: String,
         terms: [String]
     ) -> Double {
@@ -465,7 +458,7 @@ enum MentionAutocompleteSuggestionFactory {
 
         // Discord lets remaining terms match category, parent channel or guild context, at
         // half weight, while keeping a contextual result below a direct prefix.
-        if terms.count > 1, let context, !context.isEmpty {
+        if terms.count > 1 {
             let normalizedContext = normalized(context)
             let unmatched = terms.filter { !name.contains($0) }
             if !unmatched.isEmpty, unmatched.allSatisfy({ normalizedContext.contains($0) }) {
