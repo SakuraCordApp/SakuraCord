@@ -18,6 +18,17 @@ struct NativeTimelineEditedTextBand {
     let picture: NSImage?
     /// The motion easing the row's height.
     let motionID: Int
+    /// Set when the text is the same and only its row's header came or went,
+    /// as when a group's first message is deleted: the row then slides with
+    /// the edge of its height, its header fading in, instead of the old and
+    /// new lines crossfading over the header.
+    let slide: Slide?
+
+    /// Where the new text starts in its row, which the header and avatar
+    /// fade in around.
+    struct Slide {
+        let textOrigin: CGPoint
+    }
 }
 
 extension NativeTimelineCanvasView {
@@ -40,14 +51,18 @@ extension NativeTimelineCanvasView {
         let identifier = items[index].identifier
         let running = editedTextBands[identifier]
         var top = min(text.minY, running?.top ?? text.minY)
+        var slide: NativeTimelineEditedTextBand.Slide?
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
+            if abs(newText.minY - oldText.minY) >= 0.5, abs(newText.height - oldText.height) < 0.5 {
+                slide = .init(textOrigin: newText.origin)
+            }
             // A short row is padded to its avatar's height below everything
             // else: the padding its text grows into, or leaves, belongs to
             // its space. Each row's height is rounded up to a whole point.
             let newAfter = layout.height - newText.maxY
             guard abs(newAfter - layout.avatarPadding - after + old.layout.avatarPadding) < 1 else { return nil }
             after = min(after, newAfter)
-            top = min(top, oldText.minY, newText.minY)
+            top = slide == nil ? min(top, oldText.minY, newText.minY) : 0
         }
         // Text on one side only brings the gap before what follows it,
         // which belongs to its space.
@@ -62,7 +77,7 @@ extension NativeTimelineCanvasView {
         let runningOffset = running.map { $0.top - top } ?? 0
         let startHeight = running.map { shownHeight(of: $0, at: index) + runningOffset } ?? oldHeight
         let size = NSSize(width: width, height: startHeight)
-        let picture = fadePictureScale(for: size).flatMap { scale in
+        let picture = slide != nil ? nil : fadePictureScale(for: size).flatMap { scale in
             NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
                 guard let context = NSGraphicsContext.current?.cgContext else { return }
                 let progress = running.map { progress(of: $0, shown: startHeight - runningOffset) } ?? 1
@@ -93,7 +108,7 @@ extension NativeTimelineCanvasView {
         }
         return .init(
             identifier: identifier, top: top, oldHeight: startHeight,
-            newHeight: newHeight, picture: picture, motionID: motionID
+            newHeight: newHeight, picture: picture, motionID: motionID, slide: slide
         )
     }
 
@@ -151,6 +166,26 @@ extension NativeTimelineCanvasView {
             context.clip(to: CGRect(x: paintFrame.minX, y: minY, width: paintFrame.width, height: maxY - minY))
             draw()
             context.restoreGState()
+        }
+        if let slide = band.slide {
+            // The text keeps pace with the row's edge at full strength, and
+            // the rest of the row fades in once the deleted one's has mostly
+            // faded out, so that their headers never show over each other.
+            let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
+            clipped(from: textTop, to: paintFrame.maxY) {
+                context.setAlpha(max(0, 2 * progress - 1))
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
+                drawPicture(frame)
+                context.endTransparencyLayer()
+            }
+            context.saveGState()
+            context.clip(to: CGRect(
+                x: frame.minX + slide.textOrigin.x, y: frame.minY + slide.textOrigin.y,
+                width: frame.width, height: frame.height
+            ))
+            drawPicture(frame)
+            context.restoreGState()
+            return
         }
         clipped(from: paintFrame.minY, to: textTop) { drawPicture(paintFrame) }
         clipped(from: textTop, to: textTop + shown) {
