@@ -64,13 +64,13 @@ struct ActivityShelfView: View {
                     .padding(.vertical, InterfaceScale.metric(12))
                 }
                 .scrollIndicators(.never)
-            } else if store.shelfError != nil {
+            } else if let error = store.shelfErrors[channel.guildID] {
                 VStack(spacing: InterfaceScale.metric(8)) {
                     Text("Couldn’t load Activities.")
                     Button("Retry") { Task { await model.loadActivityShelf(guildID: channel.guildID) } }
                         .buttonStyle(.link)
                 }
-                .help(store.shelfError ?? "")
+                .help(error)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

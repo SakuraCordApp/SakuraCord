@@ -66,7 +66,8 @@ final class EmbeddedActivityStore {
     @ObservationIgnored var shelfLoads: [GuildID?: Task<Void, Never>] = [:]
     /// Shelves Activity cards already asked for, so a failed read isn't repeated per card.
     @ObservationIgnored var cardShelfRequests: Set<GuildID?> = []
-    var shelfError: String?
+    /// Why each place's last shelf read failed, cleared by its next success.
+    var shelfErrors: [GuildID?: String] = [:]
     var session: Session?
     var prompt: Prompt?
     @ObservationIgnored var host: EmbeddedActivityHost?
@@ -189,7 +190,7 @@ final class EmbeddedActivityStore {
         shelfLoads.values.forEach { $0.cancel() }
         shelfLoads = [:]
         cardShelfRequests = []
-        shelfError = nil
+        shelfErrors = [:]
         gatewaySessionID = nil
         pendingLeaves = [:]
         departingInstances = [:]
@@ -248,14 +249,14 @@ extension AppModel {
             }
             guard isCurrentAccountSession(account), !Task.isCancelled else { return }
             embeddedActivities.shelves[guildID] = shelf
-            embeddedActivities.shelfError = nil
+            embeddedActivities.shelfErrors[guildID] = nil
             // Activity cards drawn before the shelf arrived pick up its cover.
             serverInvites.changed()
         } catch {
             guard isCurrentAccountSession(account), !Task.isCancelled else { return }
             // An older shelf can't vouch for what this read would have listed.
             embeddedActivities.shelves[guildID] = nil
-            embeddedActivities.shelfError = error.localizedDescription
+            embeddedActivities.shelfErrors[guildID] = error.localizedDescription
             return
         }
     }
@@ -563,7 +564,7 @@ extension AppModel {
         guard isCurrentAccountSession(account), !Task.isCancelled else { return nil }
         if let application = embeddedActivities.application(id) { return application }
         guard embeddedActivities.shelves[guildID] != nil else {
-            errorMessage = "Couldn’t load Activities: \(embeddedActivities.shelfError ?? "try again.")"
+            errorMessage = "Couldn’t load Activities: \(embeddedActivities.shelfErrors[guildID] ?? "try again.")"
             return nil
         }
         return fallback()
