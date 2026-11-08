@@ -109,10 +109,14 @@ public struct GuildJoinApplicationField: Equatable, Sendable {
     public func limited(_ text: String, replacing previous: String) -> String {
         guard let characterLimit, text.utf16.count > characterLimit else { return text }
         let new = Array(text), old = Array(previous)
+        // Characters compare canonically, so é matches e + ◌́; only identical code units are existing text.
+        func same(_ lhs: Character, _ rhs: Character) -> Bool { lhs.utf16.elementsEqual(rhs.utf16) }
         var prefix = 0
-        while prefix < min(new.count, old.count), new[prefix] == old[prefix] { prefix += 1 }
+        while prefix < min(new.count, old.count), same(new[prefix], old[prefix]) { prefix += 1 }
         var suffix = 0
-        while suffix < min(new.count, old.count) - prefix, new[new.count - 1 - suffix] == old[old.count - 1 - suffix] { suffix += 1 }
+        while suffix < min(new.count, old.count) - prefix, same(new[new.count - 1 - suffix], old[old.count - 1 - suffix]) {
+            suffix += 1
+        }
         let head = String(new[..<prefix]), tail = String(new[(new.count - suffix)...])
         var room = characterLimit - head.utf16.count - tail.utf16.count
         let inserted = new[prefix ..< new.count - suffix].prefix { character in

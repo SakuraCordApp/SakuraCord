@@ -11,4 +11,7 @@ import Testing
     #expect(field.limited(String(repeating: "c", count: 149) + "😀", replacing: "").utf16.count == 149)
     // Typing into the middle of a full answer leaves the answer as it was.
     #expect(field.limited("aaa" + "X" + String(repeating: "a", count: 147), replacing: full) == full)
+    // Pasting decomposed text over its composed twin is new text, not the existing answer.
+    let composed = String(repeating: "\u{E9}", count: 150)
+    #expect(field.limited(String(repeating: "e\u{301}", count: 150), replacing: composed).utf16.count <= 150)
 }
