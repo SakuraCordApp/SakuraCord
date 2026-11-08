@@ -1335,7 +1335,7 @@ private extension ComposerView {
     /// The `@time` menu replaces the mention menu once `@time ` is typed,
     /// and keeps the keys while it is open.
     private var timeMentionContext: KeywordMentionContext? {
-        guard !isAutocompleteDismissed, mentionAutocompleteContext == nil,
+        guard !isAutocompleteDismissed, mentionAutocompleteContext == nil, autocompleteContext == nil,
               !(supportsCommands && commandComposer.isPickerPresented)
         else { return nil }
         return KeywordMentionContext(.time, text: draft, selection: draftSelection)

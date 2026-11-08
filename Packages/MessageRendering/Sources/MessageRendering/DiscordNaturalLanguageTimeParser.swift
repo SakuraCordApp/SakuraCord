@@ -187,7 +187,7 @@ private struct Parser {
     private func timeOfDay(_ time: TimeOfDay) -> [DiscordTimeSuggestion]? {
         guard let today = at(time, on: now) else { return nil }
         let timeOnly = DiscordTimeSuggestion(date: today, reading: .timeOnly, styles: [.shortTime])
-        guard today < now, let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else {
+        guard today < now, let tomorrow = calendar.date(byAdding: .day, value: 1, to: now).flatMap({ at(time, on: $0) }) else {
             return [timeOnly] + labelled([today], in: .day)
         }
         return [timeOnly] + labelled([tomorrow, today], in: .day)

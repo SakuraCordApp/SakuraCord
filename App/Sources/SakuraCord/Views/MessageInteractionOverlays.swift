@@ -985,7 +985,7 @@ private struct InlineMessageEditor: View {
     }
 
     private var timeContext: KeywordMentionContext? {
-        !canEdit || isAutocompleteDismissed ? nil : KeywordMentionContext(.time, text: text, selection: selection)
+        !canEdit || isAutocompleteDismissed || context != nil ? nil : KeywordMentionContext(.time, text: text, selection: selection)
     }
 
     private var timeRows: [ComposerTimeFormatPicker.Row] {
