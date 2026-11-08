@@ -1235,7 +1235,7 @@ extension NativeTimelineRowPainter {
             weight: .semibold
         )
         text(
-            message.interactionMetadata?.displayName ?? "command",
+            NativeTimelineRowLayout.commandLabel(for: message),
             in: region.commandFrame,
             font: .interfaceSystemFont(
                 ofSize: NSFont.preferredFont(
