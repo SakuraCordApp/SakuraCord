@@ -114,9 +114,11 @@ extension AppModel {
             return true
         case .apply:
             // Discord answers 404 to joining or to starting an application from here. The form loads without an
-            // invite, and submitting it creates the application.
+            // invite, and submitting it creates the application, so an earlier invite that may since have expired
+            // is not sent along.
             dismissContextualProfile()
             dismissExpandedProfile()
+            guildJoinRequests.inviteCodes[guildID] = nil
             openGuildJoinApplication(guildID, guild: .init(id: guildID, name: profile.name, iconURL: profile.iconURL))
             return true
         case .join:
