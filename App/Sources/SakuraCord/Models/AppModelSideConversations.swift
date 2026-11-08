@@ -339,9 +339,12 @@ extension AppModel {
 
     // MARK: - Escape
 
+    /// A full-width thread is the conversation itself, so Escape finishes
+    /// reading it, as in the official client, rather than leaving it.
     @discardableResult
     func consumeEscapeForSupplementaryConversation() -> Bool {
-        closeSideConversation()
+        guard !isThreadFullWidth else { return false }
+        return closeSideConversation()
     }
 
     /// Escape in a conversation timeline dismisses the innermost transient
