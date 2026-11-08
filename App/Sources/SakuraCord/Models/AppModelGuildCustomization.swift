@@ -27,8 +27,7 @@ extension AppModel {
         if let cached = profileCache[key] { onboarding.profiles[guildID] = cached; return }
         guard let profile = try? await account.provider.profile(for: user.id, in: guildID),
               isCurrentAccountSession(account), !Task.isCancelled else { return }
-        profileCache[key] = profile
-        onboarding.profiles[guildID] = profile
+        onboarding.profiles[guildID] = cacheLoadedProfile(profile, for: key)
     }
 
     func browsableChannels(in guildID: GuildID) -> [Channel] {

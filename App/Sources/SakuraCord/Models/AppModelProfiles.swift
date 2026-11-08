@@ -293,9 +293,9 @@ extension AppModel {
                 else {
                     return
                 }
-                profileCache[cacheKey] = loaded
+                let profile = cacheLoadedProfile(loaded, for: cacheKey)
                 var value = profilePresentation(for: destination)
-                value?.profile = loaded
+                value?.profile = profile
                 value?.isLoading = false
                 value?.errorMessage = nil
                 setProfilePresentation(value, for: destination)
@@ -389,6 +389,16 @@ extension AppModel {
         }
     }
 
+    /// Caches a profile from the provider with the roles current here, since a
+    /// role change can arrive between the provider returning it and this.
+    @discardableResult
+    func cacheLoadedProfile(_ profile: UserProfile, for key: ProfileCacheKey) -> UserProfile {
+        var profile = profile
+        if let roles = key.guildID.flatMap({ guildRolesByGuildID[$0] }) { profile.refreshRoles(from: roles) }
+        profileCache[key] = profile
+        return profile
+    }
+
     func setProfilePresentation(
         _ value: ProfilePresentationState?,
         for destination: ProfilePresentationDestination
@@ -456,7 +466,7 @@ extension AppModel {
                 guard !Task.isCancelled,
                       model.isCurrentAccountSession(session)
                 else { return }
-                model.profileCache[cacheKey] = profile
+                model.cacheLoadedProfile(profile, for: cacheKey)
                 let invalidation = model.profileInvalidationRevision
                 let baseline = try await session.provider.cachedProfileEditingSnapshot(in: .main)
                 guard !Task.isCancelled, model.isCurrentAccountSession(session), model.profileInvalidationRevision == invalidation else { return }
