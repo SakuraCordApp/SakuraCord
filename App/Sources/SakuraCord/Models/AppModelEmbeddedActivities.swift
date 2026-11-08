@@ -237,17 +237,14 @@ extension AppModel {
     }
 
     private func fetchActivityShelf(guildID: GuildID?, account: AppModelAccountSession) async {
-        let installed = loadInstalledActivities(guildID: guildID)
+        loadInstalledActivities(guildID: guildID)
         do {
             let shelf = try await account.provider.embeddedActivityShelf(guildID: guildID)
             // Recents usually come with the shelf; a short wait keeps them from
             // pushing the grid down once it shows. Slow command indexes don't
-            // hold it, or a launch, any longer.
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await installed.value }
-                group.addTask { try? await Task.sleep(for: .seconds(1)) }
-                await group.next()
-                group.cancelAll()
+            // hold it, or a launch, longer than a second.
+            for _ in 0 ..< 20 where embeddedActivities.installedActivities[guildID] == nil {
+                try? await Task.sleep(for: .milliseconds(50))
             }
             guard isCurrentAccountSession(account), !Task.isCancelled else { return }
             embeddedActivities.shelves[guildID] = shelf
@@ -265,17 +262,14 @@ extension AppModel {
 
     /// The installed Activities Recents list, read again when a command index
     /// they come from changes.
-    @discardableResult
-    func loadInstalledActivities(guildID: GuildID?) -> Task<Void, Never> {
+    func loadInstalledActivities(guildID: GuildID?) {
         let store = embeddedActivities
         store.installedLoads[guildID]?.cancel()
-        let load = startAccountChildTask(account: accountSession()) { model, account in
+        store.installedLoads[guildID] = startAccountChildTask(account: accountSession()) { model, account in
             let installed = await account.provider.installedEmbeddedActivities(guildID: guildID)
             guard model.isCurrentAccountSession(account), !Task.isCancelled else { return }
             model.embeddedActivities.installedActivities[guildID] = installed
         }
-        store.installedLoads[guildID] = load
-        return load
     }
 
     /// Starts the application in the channel, or joins the instance already
