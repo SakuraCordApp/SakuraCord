@@ -178,7 +178,7 @@ extension NativeTimelineCanvasView {
             let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
             let motion = reactionRowMotions.first { $0.id == band.motionID }
             let handoff = motion?.progress(at: rowMotionUptime) ?? progress
-            clipped(from: textTop, to: paintFrame.maxY) {
+            clipped(from: textTop, to: paintFrame.maxY + max(0, shown - band.newHeight)) {
                 let handoffEnd = NativeTimelineDepartedRun.handoffFadeEnd
                 context.setAlpha(max(0, (handoff - handoffEnd) / (1 - handoffEnd)))
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
