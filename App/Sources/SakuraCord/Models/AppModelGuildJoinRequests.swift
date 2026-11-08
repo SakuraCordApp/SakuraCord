@@ -36,6 +36,9 @@ final class GuildJoinRequestStore {
     @ObservationIgnored var acknowledging: Set<JoinRequestID> = []
     /// The invite each application was opened from; Discord's form request carries it.
     @ObservationIgnored var inviteCodes: [GuildID: String] = [:]
+    /// The application a running submission answers: the one open when it began, or, for a form opened from a
+    /// server profile, the first one Discord reports during it.
+    @ObservationIgnored var submittingRequestID: JoinRequestID?
     @ObservationIgnored var isLoadingGuilds = false
 
     func guildName(_ guildID: GuildID) -> String {
@@ -56,6 +59,7 @@ final class GuildJoinRequestStore {
         error = nil
         acknowledging = []
         inviteCodes = [:]
+        submittingRequestID = nil
         isLoadingGuilds = false
     }
 }
@@ -82,10 +86,12 @@ extension AppModel {
         // The form answers the application it was opened for. Once another client submits, replaces or removes it,
         // or a reviewer acts, submitting would send stale answers; this client's own submission is still running.
         // A form opened from a server profile has no application yet, so one that Discord starts for it is not a change.
-        if let modal = store.modal, modal.kind == .form, !store.isWorking {
+        if let modal = store.modal, modal.kind == .form {
             let opened = previous[modal.guildID], current = store.requests[modal.guildID]
-            let changed = current?.id != opened?.id || current?.status != opened?.status
-            if changed, !(opened == nil && current?.status == .started) {
+            if store.isWorking {
+                if store.submittingRequestID == nil { store.submittingRequestID = current?.id }
+            } else if current?.id != opened?.id || current?.status != opened?.status,
+                      !(opened == nil && current?.status == .started) {
                 store.form = nil
                 store.modal = nil
             }
@@ -176,11 +182,11 @@ extension AppModel {
     func submitGuildJoinApplication() {
         let store = guildJoinRequests
         guard let form = store.form, let modal = store.modal, form.fields.allSatisfy(\.isSatisfied) else { return }
-        let opened = store.requests[form.guildID]?.id
+        store.submittingRequestID = store.requests[form.guildID]?.id
         runGuildJoinRequestAction { [weak self] provider in
             do {
                 try await provider.submitGuildJoinApplication(form.guildID, fields: form.fields)
-            } catch where self?.submissionLanded(in: form.guildID, startedFrom: opened) == true {}
+            } catch where self?.submissionLanded(in: form.guildID) == true {}
         } completion: { [weak self] in
             guard let self, store.modal?.id == modal.id else { return }
             store.form = nil
@@ -199,10 +205,11 @@ extension AppModel {
     /// show the result: the screened member is no longer pending, the application was submitted or reviewed, or
     /// another client discarded or replaced it. Keeping the form would offer the same answers again; anything else,
     /// such as an update that has not arrived, keeps the form and its answers with the error.
-    private func submissionLanded(in guildID: GuildID, startedFrom opened: JoinRequestID?) -> Bool {
+    private func submissionLanded(in guildID: GuildID) -> Bool {
         if serverRailGuildsByID[guildID] != nil { return onboardingMember(in: guildID)?.isPending == false }
         let current = guildJoinRequests.requests[guildID]
-        return [.submitted, .rejected, .approved].contains(current?.status) || opened.map { $0 != current?.id } == true
+        return [.submitted, .rejected, .approved].contains(current?.status)
+            || guildJoinRequests.submittingRequestID.map { $0 != current?.id } == true
     }
 
     func withdrawGuildJoinRequest(_ guildID: GuildID) {
