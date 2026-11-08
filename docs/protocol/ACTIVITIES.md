@@ -55,7 +55,7 @@ the participant range (`1-N` from `max_participants`, otherwise Unlimited),
 tags, the description, and In-App Purchases when `is_monetized`;
 `requires_age_gate` Activities ask for age confirmation before launch.
 
-Launching, and joining an instance already running in the channel, runs the application's entry-point command (application
+Launching runs the application's entry-point command (application
 command type 4) from the command indexes: `POST /interactions` type 2 with the
 command's `data` envelope, empty `options` and `attachments`,
 `analytics_location: "app_launcher"` and, in a voice channel, `source: "VOICE"`. Discord
@@ -112,10 +112,10 @@ returned location reaches the Activity. A declined consent is posted too, with
 bearer token with `GET /oauth2/@me` and requires its application and this
 account's user; that token's rejection never ends the account session.
 
-A running instance is joined the same way from the channel. The Join button
-on a launch message instead sends `POST /activities/{channel}/{application}`
-with `{session_id, guild_id}` (no `guild_id` in a private channel), as the
-official client's does; both join the existing instance.
+When an instance of the application already runs in the channel, the official
+client joins it instead, from the shelf, a launch message or any other entry:
+`POST /activities/{channel}/{application}` with `{session_id, guild_id}` (no
+`guild_id` in a private channel), after the proxy ticket.
 
 ## Messages and invites
 

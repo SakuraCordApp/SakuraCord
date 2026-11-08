@@ -195,9 +195,7 @@ extension AppModel {
     /// Starts the application in the channel, or joins the instance already
     /// running there. A voice channel Activity runs alongside voice; elsewhere
     /// it docks in the channel's chat.
-    func startActivity(
-        _ application: EmbeddedActivityApplication, in channel: Channel, joiningAnnounced: Bool = false
-    ) async {
+    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel) async {
         let store = embeddedActivities
         let account = accountSession()
         let location = EmbeddedActivityLocation.of(channel)
@@ -231,10 +229,13 @@ extension AppModel {
         // A rejoin must not race the leave Discord has not yet seen.
         for leave in store.pendingLeaves.values { await leave.value }
         guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+        // Like Discord's client, an instance of the Activity already running
+        // in the channel is joined rather than started again.
+        let joining = store.instances(in: channel.id).contains { $0.applicationID == application.id }
         // Ending the session cancels a launch that has not reached Discord yet.
         let launch = Task {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
-            try await account.provider.launchEmbeddedActivity(application.id, in: channel, joiningAnnounced: joiningAnnounced)
+            try await account.provider.launchEmbeddedActivity(application.id, in: channel, joining: joining)
         }
         store.launch = launch
         do {
@@ -306,7 +307,7 @@ extension AppModel {
         guard let application = await shelfApplication(instance.applicationID, guildID: channel.guildID, fallback: {
             EmbeddedActivityApplication(id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
         }) else { return }
-        await startActivity(application, in: channel, joiningAnnounced: true)
+        await startActivity(application, in: channel)
     }
 
     func isInActivityInvite(_ invite: ServerInvite) -> Bool {

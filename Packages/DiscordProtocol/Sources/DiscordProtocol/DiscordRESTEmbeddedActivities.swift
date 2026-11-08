@@ -48,17 +48,16 @@ public extension DiscordRESTProvider {
         try await interactionSessionID()
     }
 
-    /// Starts or joins the application's Activity in a channel by running its
-    /// entry-point command, as the official client does. Joining the instance a
-    /// launch message announces uses the channel join, as its Join button does.
-    /// The resulting instance arrives as `EMBEDDED_ACTIVITY_UPDATE_V2`.
-    func launchEmbeddedActivity(_ applicationID: ApplicationID, in channel: Channel, joiningAnnounced: Bool) async throws {
+    /// Starts the application's Activity in a channel by running its
+    /// entry-point command, or joins the instance running there with the
+    /// channel join, as the official client does. The resulting instance
+    /// arrives as `EMBEDDED_ACTIVITY_UPDATE_V2`.
+    func launchEmbeddedActivity(_ applicationID: ApplicationID, in channel: Channel, joining: Bool) async throws {
         let channelID = channel.id, guildID = channel.guildID
         let sessionID = try await interactionSessionID()
-        let command = joiningAnnounced
-            ? nil : try await entryPointCommand(for: applicationID, channelID: channelID, guildID: guildID)
+        let command = joining ? nil : try await entryPointCommand(for: applicationID, channelID: channelID, guildID: guildID)
         guard let command else {
-            // Applications without an entry point keep the older channel launch.
+            // Applications without an entry point start with the channel join too.
             var body: [String: JSONValue] = ["session_id": .string(sessionID)]
             if let guildID { body["guild_id"] = .string(guildID.description) }
             try Task.checkCancellation()
