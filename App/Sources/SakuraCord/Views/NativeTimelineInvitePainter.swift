@@ -7,6 +7,10 @@ extension NativeTimelineRowPainter {
 
     static func inviteCard(_ card: NativeTimelineInviteLayout, bubbleRegion: NativeTimelineBubbleRegion? = nil,
                            isHovered: Bool, pressProgress: CGFloat, isModalPreview: Bool = false) {
+        if card.content?.activity != nil {
+            activityCard(card, bubbleRegion: bubbleRegion, isHovered: isHovered, pressProgress: pressProgress)
+            return
+        }
         let bubble = card.integratesWithBubble ? bubbleRegion : nil
         let outgoing = bubble?.isOutgoing == true
         let foreground = NativeTimelineBubbleDrawing.foregroundColor(for: bubble)

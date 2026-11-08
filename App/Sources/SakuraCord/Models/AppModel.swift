@@ -168,6 +168,7 @@ final class AppModel {
         ServerRailVoicePreviewStore()
     @ObservationIgnored let onboarding = GuildOnboardingStore()
     @ObservationIgnored let serverInvites = ServerInvitePresentationStore()
+    @ObservationIgnored let embeddedActivities = EmbeddedActivityStore()
     @ObservationIgnored let captcha = HumanCaptchaStore()
     @ObservationIgnored let friends = FriendsState()
     @ObservationIgnored let ignoredUsers = IgnoredUsersState()

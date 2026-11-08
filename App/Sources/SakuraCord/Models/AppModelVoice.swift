@@ -505,6 +505,9 @@ extension AppModel {
         let channel = activeVoiceChannel
         let guildID = channel?.guildID
         let hadActiveVoice = channel != nil
+        if let session = embeddedActivities.session, session.isInCall, session.location.channelID == channel?.id {
+            leaveActivity()
+        }
         let departingSession = voiceSession
         if let channelID = channel?.id {
             endLocalOutgoingPrivateCallRing(channelID: channelID)
@@ -931,6 +934,25 @@ extension AppModel {
         case .error(let message):
             voiceErrorMessage = message
         }
+    }
+
+    func consumeVoiceEvent(_ event: ClientEvent) -> Bool {
+        switch event {
+        case .voiceStateChanged, .voiceStatesReceived:
+            consumeVoiceStateEvent(event)
+        case .embeddedActivityChanged, .embeddedActivitiesReceived:
+            consumeEmbeddedActivityEvent(event)
+        case .privateCallChanged(var call):
+            consumePrivateCallChanged(&call)
+        case .privateCallDeleted(let channelID, let unavailable):
+            consumePrivateCallDeleted(channelID: channelID, unavailable: unavailable)
+        case .voiceServerChanged(let info):
+            recordVoiceServerUpdateReceived(info)
+            scheduleVoiceServerMigration(to: info)
+        default:
+            return false
+        }
+        return true
     }
 
     func consumeVoiceStateEvent(_ event: ClientEvent) {

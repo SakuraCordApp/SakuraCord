@@ -17,6 +17,7 @@ dated observations establish why a wire shape was chosen.
 | [Friends and relationships](protocol/RELATIONSHIPS.md) | Relationship records, friend presence, requests, blocking, CAPTCHA replay. |
 | [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, closing a 1:1 DM, widgets, status, protobuf updates, folders and favourites. |
 | [Voice and streams](protocol/VOICE.md) | Calls, screen sharing, voice recovery, soundboard. |
+| [Activities](protocol/ACTIVITIES.md) | Activity shelf, launch and leave, instances, the Embedded App SDK host, Activity OAuth and invites. |
 
 Architecture owns [component and persistence boundaries](ARCHITECTURE.md).
 Development owns [launch and verification procedures](DEVELOPMENT.md).

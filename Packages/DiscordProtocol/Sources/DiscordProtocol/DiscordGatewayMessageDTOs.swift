@@ -611,7 +611,10 @@ struct MessageDTO: Decodable {
             poll: poll?.domain,
             hasActivity: activity != nil,
             hasSharedClientTheme: sharedClientTheme != nil,
-            hasActivityInstance: activityInstance != nil,
+            activityInstanceID: activityInstance.map { instance in
+                if case .object(let object) = instance, case .string(let id)? = object["id"] { return id }
+                return ""
+            },
             messageReference: messageReference?.domain,
             forwardedSnapshot: forwardedSnapshot
         )

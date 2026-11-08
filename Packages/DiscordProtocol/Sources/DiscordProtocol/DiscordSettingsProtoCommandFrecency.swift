@@ -1,9 +1,11 @@
 import Foundation
 import SakuraCordModels
 
-/// Shared usage-map encoding for emoji (6), commands (7) and reactions (13).
+/// Shared usage-map encoding for emoji (6), commands (7), applications (9) and reactions (13).
 extension DiscordSettingsProto {
     static let applicationCommandFrecencyField = 7
+    /// Launched applications, which the Activity shelf lists as Recents.
+    static let applicationFrecencyField = 9
     /// Discord keeps at most this many command entries when saving.
     static let maximumApplicationCommandFrecencyEntries = 500
 

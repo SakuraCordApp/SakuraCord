@@ -3,6 +3,10 @@ import Foundation
 import SakuraCordModels
 
 nonisolated enum AppSoundEffect: String, CaseIterable, Sendable {
+    case activityEnd = "activity_end"
+    case activityLaunch = "activity_launch"
+    case activityUserJoin = "activity_user_join"
+    case activityUserLeft = "activity_user_left"
     case callCalling = "call_calling"
     case callRinging = "call_ringing"
     case cameraOff = "camera_off"

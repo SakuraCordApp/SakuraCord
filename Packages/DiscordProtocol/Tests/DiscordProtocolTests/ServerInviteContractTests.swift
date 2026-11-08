@@ -214,6 +214,15 @@ struct ServerInviteContractTests {
         let context = try #require(Data(base64Encoded: request.value(forHTTPHeaderField: "X-Context-Properties")!))
         #expect(try JSONSerialization.jsonObject(with: context) as? [String: String] == ["location": "Guild Context Menu"])
 
+        // An Activity's invite must target the application, or it only opens the channel.
+        let activity = ServerInviteSettings(targetApplicationID: .init(rawValue: 880))
+        _ = try await provider.createServerInvite(in: .init(rawValue: 901), guildID: .init(rawValue: 900), settings: activity)
+        let activityRequest = try #require(capture.requests.last)
+        let activityBody = try #require(JSONSerialization.jsonObject(with: activityRequest.httpBody!) as? [String: Any])
+        #expect(activityBody["target_type"] as? Int == 2 && activityBody["target_application_id"] as? String == "880")
+        let activityContext = try #require(Data(base64Encoded: activityRequest.value(forHTTPHeaderField: "X-Context-Properties")!))
+        #expect(try JSONSerialization.jsonObject(with: activityContext) as? [String: String] == ["location": "Stream Invite"])
+
         await #expect(throws: ServerInviteError.self) {
             _ = try await provider.createServerInvite(in: .init(rawValue: 903), guildID: .init(rawValue: 900), settings: settings)
         }

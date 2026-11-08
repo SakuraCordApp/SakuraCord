@@ -4,13 +4,15 @@
 
 SakuraCord includes the classic Discord client sound effects for message
 notifications, incoming and outgoing calls, voice join and leave, disconnect,
-mute and unmute, deafen and undeafen, camera on and off, and screen-share
-start, end, viewer join, and viewer leave.
+mute and unmute, deafen and undeafen, camera on and off, screen-share
+start, end, viewer join, and viewer leave, and Activity launch, end, player
+join, and player leave.
 
 - Source: Discord's public first-party web-client asset bundle and
   `https://discord.com/assets/`
 - Retrieved: 2026-07-29; screen-share assets re-resolved from the current
-  first-party client on 2026-08-23
+  first-party client on 2026-08-23; Activity assets resolved from the current
+  first-party client on 2026-11-08
 - Verification: the live web-client module names and content-addressed asset
   URLs were resolved directly. The classic assets' HTTP ETags match the
   full-length hashes in the independently archived 2019 asset list; the camera
@@ -18,6 +20,10 @@ start, end, viewer join, and viewer leave.
 
 | File | SHA-256 |
 | --- | --- |
+| `activity_end.mp3` | `08fc43428189ef12225b0de236327a40d2250fd36061d0ea61b7718832fbf1f2` |
+| `activity_launch.mp3` | `c19d79f19983fbd1bb1c8e7e14c98bb3b3f8605c13edae66976037358e4be1dc` |
+| `activity_user_join.mp3` | `cf369e5d94ca6e951f7375f3b284eac38e09d66f9d3e30f9d3227cca512c8bb5` |
+| `activity_user_left.mp3` | `116c39ac986433cd6760d1cd3d14d18772c2a49185f07f06c973ca5b5dd9034d` |
 | `call_calling.mp3` | `c3999dbbbea7fca113d6f396b81d6054dd2dd6df79f442b62dfb74afddd36934` |
 | `call_ringing.mp3` | `a2365a04f839099538271d06889147475ceef0845f8cc010425618f5dc412880` |
 | `camera_off.mp3` | `fe81a2ab7b0581736108c5fc79ab7884ab2e5211a50b69f56badde08d41e7bfb` |

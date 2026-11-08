@@ -362,7 +362,9 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
     public var hasPoll: Bool
     public var hasActivity: Bool
     public var hasSharedClientTheme: Bool
-    public var hasActivityInstance: Bool
+    /// The Activity instance an application's launch message announces.
+    public var activityInstanceID: String?
+    public var hasActivityInstance: Bool { activityInstanceID != nil }
     public var messageReference: DiscordMessageReference?
     public var forwardedSnapshot: ForwardedMessageSnapshot?
 
@@ -401,7 +403,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         poll: MessagePoll? = nil,
         hasActivity: Bool = false,
         hasSharedClientTheme: Bool = false,
-        hasActivityInstance: Bool = false,
+        activityInstanceID: String? = nil,
         messageReference: DiscordMessageReference? = nil,
         forwardedSnapshot: ForwardedMessageSnapshot? = nil
     ) {
@@ -439,7 +441,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         self.poll = poll
         self.hasActivity = hasActivity
         self.hasSharedClientTheme = hasSharedClientTheme
-        self.hasActivityInstance = hasActivityInstance
+        self.activityInstanceID = activityInstanceID
         self.messageReference = messageReference
         self.forwardedSnapshot = forwardedSnapshot
     }
@@ -450,7 +452,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         case attachments, reactions, isPinned, nonce, outboxState, type, flags, applicationID, application
         case interactionMetadata, guildID, webhookID, sendFailure
         case embeds, components, stickers, thread, mentionedUsers, mentionedRoleIDs, mentionsEveryone
-        case call, poll, hasPoll, hasActivity, hasSharedClientTheme, hasActivityInstance
+        case call, poll, hasPoll, hasActivity, hasSharedClientTheme, activityInstanceID
         case messageReference, forwardedSnapshot
     }
 
@@ -496,8 +498,7 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
         hasActivity = try values.decodeIfPresent(Bool.self, forKey: .hasActivity) ?? false
         hasSharedClientTheme =
             try values.decodeIfPresent(Bool.self, forKey: .hasSharedClientTheme) ?? false
-        hasActivityInstance =
-            try values.decodeIfPresent(Bool.self, forKey: .hasActivityInstance) ?? false
+        activityInstanceID = try values.decodeIfPresent(String.self, forKey: .activityInstanceID)
         messageReference = try values.decodeIfPresent(
             DiscordMessageReference.self, forKey: .messageReference
         )

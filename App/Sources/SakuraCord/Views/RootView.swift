@@ -565,6 +565,8 @@ private struct ChatRootView: View {
                 .interfaceScaleRoot()
             }
         }
+        // At the root, so an Activity's question reaches the person wherever they are.
+        .embeddedActivityPrompts(model.embeddedActivities)
         .alert("Whoa there. Way too spicy!", isPresented: $model.isSendQueueFullAlertPresented) {
             Button("Enter the chill zone") {}
         } message: {
