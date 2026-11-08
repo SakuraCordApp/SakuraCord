@@ -858,7 +858,7 @@ struct ComposerView: View {
         case .channel:
             return MentionAutocompleteSuggestionFactory.channelSuggestions(
                 query: context.query,
-                channels: model.visibleChannels,
+                channels: model.visibleChannels.filter { !model.hiddenChannelIDs.contains($0.id) },
                 threads: model.mentionAutocompleteThreads,
                 guilds: model.serverRailGuildsByID,
                 guildAndChannelUsageScores: model.discordGuildAndChannelUsageScores,

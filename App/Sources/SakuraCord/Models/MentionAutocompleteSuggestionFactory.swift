@@ -23,6 +23,7 @@ enum MentionAutocompleteSuggestionFactory {
         let score: Double
         let sidebarPosition: Int
         let id: ChannelID
+        let isThread: Bool
     }
 
     private struct MemberSearchSignature: Equatable {
@@ -277,7 +278,8 @@ enum MentionAutocompleteSuggestionFactory {
             ),
             score: score,
             sidebarPosition: channel.categoryPosition * 100_000 + channel.position,
-            id: channel.id
+            id: channel.id,
+            isThread: false
         )
     }
 
@@ -306,12 +308,14 @@ enum MentionAutocompleteSuggestionFactory {
                 systemImage: ChannelIconPresentation.systemImage(forThreadInForum: isForum)
             ),
             score: score,
-            sidebarPosition: (parent?.categoryPosition ?? 0) * 100_000 + (parent?.position ?? 0) + 1,
-            id: thread.id
+            sidebarPosition: 0,
+            id: thread.id,
+            isThread: true
         )
     }
 
-    private static let channelSuggestionLimit = 25
+    /// The most rows Discord's `#` list shows, channels and threads together.
+    private static let channelSuggestionLimit = 10
 
     /// Discord drops a non-matching channel before its frecency boost, and its
     /// missing parentheses make any positive frecency value a full three-point
@@ -357,6 +361,9 @@ enum MentionAutocompleteSuggestionFactory {
 
     private static func isPreferred(_ lhs: RankedCandidate, over rhs: RankedCandidate) -> Bool {
         if lhs.score != rhs.score { return lhs.score > rhs.score }
+        // On equal scores Discord lists channels before threads and posts,
+        // channels in sidebar order and threads oldest first.
+        if lhs.isThread != rhs.isThread { return !lhs.isThread }
         if lhs.sidebarPosition != rhs.sidebarPosition {
             return lhs.sidebarPosition < rhs.sidebarPosition
         }
