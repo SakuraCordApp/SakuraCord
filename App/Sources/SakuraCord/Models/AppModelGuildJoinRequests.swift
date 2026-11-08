@@ -163,12 +163,20 @@ extension AppModel {
     func submitGuildJoinApplication() {
         let store = guildJoinRequests
         guard let form = store.form, let modal = store.modal, form.fields.allSatisfy(\.isSatisfied) else { return }
-        runGuildJoinRequestAction { provider in
+        runGuildJoinRequestAction { [weak self] provider in
             do {
                 try await provider.submitGuildJoinApplication(form.guildID, fields: form.fields)
-            } catch where store.requests[form.guildID]?.status != .started {
-                // The reply was lost or refused, but Discord already moved the application on (its Gateway update
-                // arrived meanwhile); keeping the form would offer the same answers again.
+            } catch {
+                // A lost reply is done once Discord's Gateway updates already show the result: the screened member
+                // is no longer pending, or the application was submitted or reviewed. Keeping the form would offer
+                // the same answers again. Anything else, such as an update that has not arrived, keeps the form and
+                // its answers with the error.
+                let isDone = if self?.serverRailGuildsByID[form.guildID] != nil {
+                    self?.onboardingMember(in: form.guildID)?.isPending == false
+                } else {
+                    [.submitted, .rejected, .approved].contains(store.requests[form.guildID]?.status)
+                }
+                guard isDone else { throw error }
             }
         } completion: { [weak self] in
             guard let self, store.modal?.id == modal.id else { return }
