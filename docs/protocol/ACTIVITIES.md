@@ -46,13 +46,18 @@ Activities by ascending `shelf_rank` and omits those whose `supported_platforms`
 lacks `web`. A tile shows the cover, the icon, the name and one line of the
 description, and a PROMOTED badge when the application flags include `1 << 29`
 (every promoted entry in the capture had it, no other entry did). Above the
-grid, Recents lists Activities from the account's application frecency, field
-9 of the frecency settings proto, ranked as the client's frecency store ranks
-them (uses × the mean age weight of the last ten launches); the first eight show
-with View More for the rest. Opening an Activity counts a use there: one
-frecency settings PATCH carrying field 9, as the official client saves when an
-Activity opens. The official list also includes launched
-Activities that are not on the shelf; SakuraCord lists shelf Activities only. Choosing an Activity opens its details:
+grid, Recents lists the installed Activities: apps with chat-input or
+entry-point commands in the user's and the server's command indexes (the
+official client also adds apps whose OAuth token has `applications.commands`;
+SakuraCord does not read `/oauth2/tokens`). They are ranked by the account's
+application frecency, field 9 of the frecency settings proto, as the client's
+frecency store ranks them (uses × the mean age weight of the last ten
+launches), then by name; a launched Activity that is not installed is not a
+Recent. The first eight show with View More for the rest. Opening an Activity
+counts a use there: one frecency settings PATCH carrying field 9, as the
+official client saves when an Activity opens. The official list also includes
+installed Activities that are not on the shelf; SakuraCord lists shelf
+Activities only. Choosing an Activity opens its details:
 the participant range (`1-N` from `max_participants`, otherwise Unlimited),
 tags, the description, and In-App Purchases when `is_monetized`;
 `requires_age_gate` Activities ask for age confirmation before launch.

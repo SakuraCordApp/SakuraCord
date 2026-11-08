@@ -6,8 +6,10 @@ import SakuraCordModels
 /// Activity makes through its host. See docs/protocol/ACTIVITIES.md.
 public extension DiscordRESTProvider {
     func embeddedActivityShelf(guildID: GuildID?) async throws -> [EmbeddedActivityApplication] {
-        // Recents come from the same application frecency the official shelf reads.
+        // Recents are the person's and the server's apps, ranked by the same
+        // application frecency the official shelf reads.
         async let settings = try? frecencySettingsProto()
+        async let installed = installedApplicationIDs(guildID: guildID)
         let shelf: ActivityShelfDTO = try await request(
             "/activities/shelf",
             query: guildID.map { [URLQueryItem(name: "guild_id", value: $0.description)] } ?? []
@@ -15,7 +17,18 @@ public extension DiscordRESTProvider {
         let frecency = await settings.flatMap {
             DiscordSettingsProto.frecencyHistory(from: $0, field: DiscordSettingsProto.applicationFrecencyField)
         }
-        return shelf.domain(frecency: frecency?.entries ?? [])
+        return await shelf.domain(frecency: frecency?.entries ?? [], installed: installed)
+    }
+
+    /// Apps with commands in the person's and the server's command indexes,
+    /// which the official launcher lists as Recents.
+    private func installedApplicationIDs(guildID: GuildID?) async -> Set<String> {
+        var ids = Set<String>()
+        for target in [.user] + (guildID.map { [ApplicationCommandIndexTarget.guild($0)] } ?? []) {
+            guard let catalog = try? await applicationCommandCatalog(for: target) else { continue }
+            ids.formUnion(catalog.commands.filter { [.chatInput, .primaryEntryPoint].contains($0.type) }.map(\.applicationID))
+        }
+        return ids
     }
 
     /// Counts a launch in the application frecency the shelf's Recents read,
@@ -382,22 +395,29 @@ private struct ActivityShelfDTO: Decodable {
     private static let promotedFlag = 1 << 29
 
     /// Shelf order, without Activities the desktop (web) client cannot run.
-    /// Recents rank the shelf's Activities by the official client's application
-    /// frecency: uses times the mean age weight of the last ten launches.
-    func domain(frecency: [DiscordFrecencyEntry], now: Date = .now) -> [EmbeddedActivityApplication] {
-        let shelfIDs = Set(activities.elements.map(\.applicationID))
-        let recentRanks = Dictionary(uniqueKeysWithValues: frecency.filter { shelfIDs.contains($0.key) }
-            .compactMap { entry in
-                DiscordSettingsProto.frecency(
-                    totalUses: entry.totalUses, recentUses: entry.recentUses.filter { $0 > 0 },
-                    nowMilliseconds: UInt64(now.timeIntervalSince1970 * 1000)
-                ).map { (entry.key, $0.frecency) }
-            }
-            .sorted { $0.1 > $1.1 }
-            .enumerated().map { ($1.0, $0) })
+    /// Recents are the installed apps among them, ranked by the official
+    /// client's application frecency (uses times the mean age weight of the
+    /// last ten launches), then by name.
+    func domain(
+        frecency: [DiscordFrecencyEntry], installed: Set<String>, now: Date = .now
+    ) -> [EmbeddedActivityApplication] {
         let applications = Dictionary(
             self.applications.elements.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
         )
+        let scores = Dictionary(frecency.compactMap { entry in
+            DiscordSettingsProto.frecency(
+                totalUses: entry.totalUses, recentUses: entry.recentUses.filter { $0 > 0 },
+                nowMilliseconds: UInt64(now.timeIntervalSince1970 * 1000)
+            ).map { (entry.key, $0.frecency) }
+        }, uniquingKeysWith: max)
+        let recentRanks = Dictionary(uniqueKeysWithValues: Set(activities.elements.map(\.applicationID))
+            .intersection(installed)
+            .sorted { lhs, rhs in
+                let (left, right) = (scores[lhs] ?? 0, scores[rhs] ?? 0)
+                guard left == right else { return left > right }
+                return (applications[lhs]?.name ?? "").localizedCompare(applications[rhs]?.name ?? "") == .orderedAscending
+            }
+            .enumerated().map { ($1, $0) })
         return activities.elements
             .filter { $0.supportedPlatforms?.contains("web") ?? true }
             .sorted { ($0.shelfRank ?? .max) < ($1.shelfRank ?? .max) }
