@@ -266,7 +266,12 @@ extension NativeTimelineCanvasView {
                 Task { @MainActor in
                     guard model.isCurrentAccountSession(session) else { return }
                     for reference in references { model.loadServerInvite(reference) }
-                    if message.hasActivityInstance { await model.loadActivityCardShelf(guildID: message.guildID) }
+                    // A launch card is tinted from its icon, as Discord's is.
+                    if message.hasActivityInstance, let icon = message.author.avatarURL,
+                       ProfileAvatarPaletteLoader.shared.cached(icon) == nil,
+                       (try? await ProfileAvatarPaletteLoader.shared.colors(icon)) != nil {
+                        model.serverInvites.changed()
+                    }
                 }
             }
             let rowKeys = mediaKeys(for: items[index], at: index)

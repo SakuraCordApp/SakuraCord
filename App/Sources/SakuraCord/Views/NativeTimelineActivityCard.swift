@@ -1,9 +1,11 @@
 import AppKit
 import SakuraCordModels
 
-/// Discord's Activity card for an Activity invite or launch message: the
-/// 16:9 cover, the Activity's name, its icon beside what the card offers and
-/// where, and one full-width action. Plain cards keep Discord's cover-tinted
+/// Discord's Activity card for an Activity invite or launch message. An
+/// invite shows the 16:9 cover, the Activity's name, its icon beside what the
+/// card offers and where, and one full-width action; a launch message is a
+/// coverless "Game Invitation" with the icon, the name, who is playing or that
+/// the game ended, and Join or Play. Plain cards keep Discord's tinted
 /// surface; in a bubble the card joins the bubble like other integrated cards.
 struct ActivityCardGeometry {
     static var maximumWidth: CGFloat { InterfaceScale.metric(343) }
@@ -23,12 +25,13 @@ struct ActivityCardGeometry {
         let inset = integratesWithBubble ? 0 : InterfaceScale.metric(12)
         let gap = InterfaceScale.metric(12)
         let inner = max(1, width - inset * 2)
-        bannerFrame = CGRect(x: origin.x, y: origin.y, width: width,
-                             height: activity.coverURL == nil ? 0 : (width * 9 / 16).rounded())
-        var cursor = bannerFrame.maxY + (activity.coverURL == nil && integratesWithBubble ? 0 : gap)
+        let instanceID = content.activityInstanceID
+        let showsCover = instanceID == nil && activity.coverURL != nil
+        bannerFrame = CGRect(x: origin.x, y: origin.y, width: width, height: showsCover ? (width * 9 / 16).rounded() : 0)
+        var cursor = bannerFrame.maxY + (!showsCover && integratesWithBubble ? 0 : gap)
         var labels: [NativeTimelineInviteLayout.Label] = []
-        labels.append(.init(text: activity.name, frame: CGRect(x: origin.x + inset, y: cursor, width: inner,
-                                                                height: InterfaceScale.metric(18)),
+        labels.append(.init(text: instanceID == nil ? activity.name : "Game Invitation",
+                            frame: CGRect(x: origin.x + inset, y: cursor, width: inner, height: InterfaceScale.metric(18)),
                             bold: true, secondary: true, lineHeight: 18))
         cursor += InterfaceScale.metric(18) + gap
         // Discord drops the icon once the card is too narrow for it.
@@ -37,10 +40,11 @@ struct ActivityCardGeometry {
         iconFrame = CGRect(x: origin.x + inset, y: cursor, width: showsIcon ? iconSize : 0, height: showsIcon ? iconSize : 0)
         let textX = showsIcon ? iconFrame.maxX + gap : origin.x + inset
         let textWidth = max(1, origin.x + inset + inner - textX)
-        let title = content.activityInstanceID == nil ? "Activity Invite"
-            : content.inviter.map { "\($0.displayName) started an Activity" } ?? "Activity"
-        let players = source?.activityPlayers(reference: reference, instanceID: content.activityInstanceID) ?? []
-        let place = activity.channelName.map { content.guildName.isEmpty ? $0 : "\($0) in \(content.guildName)" }
+        let title = instanceID == nil ? "Activity Invite" : activity.name
+        let players = source?.activityPlayers(reference: reference, instanceID: instanceID) ?? []
+        let hasEnded = instanceID.map { source?.embeddedActivities.instances[$0] == nil } ?? false
+        let place = hasEnded ? "Game ended. Start a new one?"
+            : activity.channelName.map { content.guildName.isEmpty ? $0 : "\($0) in \(content.guildName)" }
         // Discord centres the title and its lines beside the icon.
         let textHeight = InterfaceScale.metric(20 + (place == nil ? 0 : 18) + (players.isEmpty ? 0 : 18))
         var textCursor = cursor + max(0, (iconFrame.height - textHeight) / 2)
@@ -48,10 +52,12 @@ struct ActivityCardGeometry {
                             size: 16, bold: true))
         textCursor += InterfaceScale.metric(20)
         if let place {
-            symbolFrame = CGRect(x: textX, y: textCursor + InterfaceScale.metric(2), width: InterfaceScale.metric(14),
-                                 height: InterfaceScale.metric(14))
-            labels.append(.init(text: place, frame: CGRect(x: textX + InterfaceScale.metric(18), y: textCursor,
-                                                           width: textWidth - InterfaceScale.metric(18), height: InterfaceScale.metric(18)),
+            // Only a voice channel line carries the speaker symbol.
+            let symbolWidth = hasEnded ? 0 : InterfaceScale.metric(18)
+            symbolFrame = hasEnded ? nil : CGRect(x: textX, y: textCursor + InterfaceScale.metric(2),
+                                                  width: InterfaceScale.metric(14), height: InterfaceScale.metric(14))
+            labels.append(.init(text: place, frame: CGRect(x: textX + symbolWidth, y: textCursor,
+                                                           width: textWidth - symbolWidth, height: InterfaceScale.metric(18)),
                                 size: 12, secondary: true, lineHeight: 18))
             textCursor += InterfaceScale.metric(18)
         } else {
@@ -112,8 +118,9 @@ extension NativeTimelineInviteLayout {
         self.integratesWithBubble = integratesWithBubble
         componentID = "activity-card:\(index):\(reference?.code ?? content.activityInstanceID ?? "")"
         invite = entry?.invite
-        // Tinted from the cover, never the server's brand.
+        // Tinted from the cover, or a launch message's icon, never the server's brand.
         gradientColor = entry?.adaptiveColor
+            ?? content.activityInstanceID.flatMap { _ in content.iconURL.flatMap(ProfileAvatarPaletteLoader.shared.cached)?.first }
         self.error = error
         (isUnavailable, isExpanded, hasCollapsedContent) = (false, true, false)
         (frame, bannerFrame, iconFrame, symbolFrame, buttonFrame) = (

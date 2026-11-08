@@ -243,7 +243,7 @@ extension NativeTimelineRowLayout {
                 verticalOffset += NativeTimelineReplyMetrics.lineHeight
             }
 
-            if !usesBubbleReference, message.type == .chatInputCommand {
+            if !usesBubbleReference, message.type.isCommandResponse {
                 result.commandInvocationRegion = NativeTimelineRowLayout.commandInvocation(
                     message,
                     origin: CGPoint(x: horizontalInset, y: verticalOffset),
@@ -275,7 +275,7 @@ extension NativeTimelineRowLayout {
                 appendAuthorHeader()
                 verticalOffset += (result.authorFrame?.height ?? MessageRowLayoutMetrics.authorLineHeight)
                     + MessageRowLayoutMetrics.authorToContentSpacing(
-                        isCommandResponse: message.type == .chatInputCommand
+                        isCommandResponse: message.type.isCommandResponse
                     )
             } else if !isGenerated, !isOutgoingBubble, showsIncomingIdentity,
                       !showsIncomingAvatar
@@ -304,7 +304,7 @@ extension NativeTimelineRowLayout {
         /// standard reference rows, which can show both and fit any width.
         private var usesBubbleReference: Bool {
             let isReply = row.replyMessageID != nil && message.type != .pollResult
-            let isCommand = message.type == .chatInputCommand
+            let isCommand = message.type.isCommandResponse
             return usesBubbles
                 && isReply != isCommand
                 && !(isCommand && isOutgoingBubble)

@@ -36,7 +36,9 @@ extension NativeTimelineRowLayout {
     ) -> CommandInvocationRegion {
         let user = message.interactionMetadata?.user.map(cosmeticPolicy.user)
         let userLabel = user?.displayName ?? "Someone"
-        let commandLabel = message.interactionMetadata?.displayName ?? "command"
+        var commandLabel = message.interactionMetadata?.displayName ?? "command"
+        // Discord titles a launch's entry point ("launch") as "Launch".
+        if message.type == .contextMenuCommand { commandLabel = commandLabel.prefix(1).uppercased() + commandLabel.dropFirst() }
         let userFont = ProfileNameFontLoader.shared.resolvedFont(for: user, fallback: .interfaceSystemFont(
             ofSize: NSFont.preferredFont(
                 forTextStyle: .caption2
