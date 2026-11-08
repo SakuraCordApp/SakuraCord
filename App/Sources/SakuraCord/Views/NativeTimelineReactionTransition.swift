@@ -429,8 +429,11 @@ extension NativeTimelineCanvasView {
             // A row still changing height leaves from the height it shows.
             let height = row.layout.height - (handOver?.residualHeight ?? 0)
             shown += height
+            // A row deleted while still sliding in its header has no picture
+            // of what it showed, so it leaves its space blank.
+            let sliding = editedTextBands[row.item.identifier]?.slide != nil
             let piece = NativeTimelineDepartedRun.Piece(
-                image: rowFadeImage(row, width: bounds.width), height: height, motionID: update.motionID
+                image: sliding ? nil : rowFadeImage(row, width: bounds.width), height: height, motionID: update.motionID
             )
             update.departedPieces.append(.init(anchor: previous.identifier, piece: piece, isNew: true))
             // What was still closing below the row stays below it.
