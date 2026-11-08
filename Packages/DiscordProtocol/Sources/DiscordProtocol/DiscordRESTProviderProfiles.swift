@@ -19,11 +19,13 @@ extension DiscordRESTProvider {
         let revision = profilePresentationRevisions[userID, default: 0]
         profileTasks[key] = task
         do {
-            let profile = try await task.value
+            var profile = try await task.value
             guard generation == profilePresentationGeneration,
                   revision == profilePresentationRevisions[userID, default: 0], !task.isCancelled
             else { throw CancellationError() }
             profileTasks[key] = nil
+            // The server's roles can change while the profile loads.
+            if let guildID { profile.refreshRoles(from: (cachedGuildRoles[guildID] ?? []).compactMap(\.domain)) }
             cachedProfiles[key] = profile
             return profile
         } catch {

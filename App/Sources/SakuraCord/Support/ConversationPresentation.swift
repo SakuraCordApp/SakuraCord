@@ -505,10 +505,7 @@ nonisolated struct MessageAuthorPresentation: Equatable {
     }
 
     static func topRoleWithColor(in roles: [GuildRole]) -> GuildRole? {
-        roles.lazy.filter { $0.colorHex != nil }.max { lhs, rhs in
-            if lhs.position != rhs.position { return lhs.position < rhs.position }
-            return lhs.id.rawValue < rhs.id.rawValue
-        }
+        roles.lazy.filter { $0.colorHex != nil }.max(by: ranksBelow)
     }
 
     static func topRoleColor(in roles: [GuildRole]) -> UInt32? {
@@ -516,10 +513,12 @@ nonisolated struct MessageAuthorPresentation: Equatable {
     }
 
     static func topRoleWithIcon(in roles: [GuildRole]) -> GuildRole? {
-        roles.lazy.filter(\.hasIcon).max { lhs, rhs in
-            if lhs.position != rhs.position { return lhs.position < rhs.position }
-            return lhs.id.rawValue < rhs.id.rawValue
-        }
+        roles.lazy.filter(\.hasIcon).max(by: ranksBelow)
+    }
+
+    /// Discord ranks the older role (smaller ID) higher at an equal position.
+    private static func ranksBelow(_ lhs: GuildRole, _ rhs: GuildRole) -> Bool {
+        lhs.position != rhs.position ? lhs.position < rhs.position : lhs.id.rawValue > rhs.id.rawValue
     }
 }
 
