@@ -189,7 +189,7 @@ extension NativeTimelineCanvasView {
                     x: paintFrame.minX, y: textBottom, width: text.x - paintFrame.minX,
                     height: paintFrame.maxY + max(0, shown - band.newHeight) - textBottom
                 )
-            ].filter { $0.height > 0 }
+            ].filter { $0.size.height > 0 }
             if !faded.isEmpty {
                 context.saveGState()
                 context.clip(to: faded)
