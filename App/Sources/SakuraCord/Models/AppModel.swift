@@ -868,6 +868,7 @@ final class AppModel {
     @ObservationIgnored var provider: any ChatProvider
     @ObservationIgnored let activityCoordinator: ActivityCoordinator
     @ObservationIgnored let ipcServer: DiscordIPCServer
+    @ObservationIgnored let appleMusicMonitor: AppleMusicPresenceMonitor
     @ObservationIgnored var database: SakuraCordDatabase?
     @ObservationIgnored var accountSessionGeneration: UInt64 = 0
     @ObservationIgnored var installedAccountSessionRevision: UInt64 = 0
@@ -1114,7 +1115,8 @@ final class AppModel {
         translation: TranslationState? = nil,
         composerPreferences: SettingsPreferenceStore? = nil,
         activityCoordinator: ActivityCoordinator? = nil,
-        ipcServer: DiscordIPCServer? = nil
+        ipcServer: DiscordIPCServer? = nil,
+        appleMusicMonitor: AppleMusicPresenceMonitor? = nil
     ) {
         self.launchMode = launchMode
         includesOfflineSignIn = launchMode == .offlineTesting && awaitsOfflineSignIn
@@ -1152,6 +1154,11 @@ final class AppModel {
         self.ipcServer = resolvedIPCServer
         if launchMode == .normal {
             try? resolvedIPCServer.start()
+        }
+        let resolvedAppleMusicMonitor = appleMusicMonitor ?? AppleMusicPresenceMonitor(coordinator: resolvedCoordinator)
+        self.appleMusicMonitor = resolvedAppleMusicMonitor
+        if launchMode == .normal {
+            resolvedAppleMusicMonitor.start()
         }
         hasPendingLaunchWelcome = includesOfflineSignIn
         typingState = TypingStateModel()
