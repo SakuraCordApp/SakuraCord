@@ -43,7 +43,7 @@ extension NativeTimelineCanvasView {
 
     /// A hovered gradient name scrolls, as Discord's does; solid names stay still.
     private func scrollsAuthorGradient(at index: Int) -> Bool {
-        guard RoleGradientPaint.animates, model?.accessibilitySettings.roleColorDisplay == .inNames,
+        guard AppMotionPolicy.animatesUncategorized, model?.accessibilitySettings.roleColorDisplay == .inNames,
               case let .message(row, _, _) = items[index]
         else { return false }
         let author = model?.authorPresentation(for: row.message)

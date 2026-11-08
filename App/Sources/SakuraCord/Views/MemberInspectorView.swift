@@ -410,14 +410,11 @@ private struct MemberSectionHeader: View {
     let section: MemberSection
 
     var body: some View {
-        HStack(spacing: InterfaceScale.metric(4)) {
-            if case .role = section.id, let role = section.role, role.hasIcon {
-                RoleIconView(role: role, size: InterfaceScale.metric(14))
+        HStack(spacing: InterfaceScale.metric(6)) {
+            if case .role = section.id {
+                RoleColorIndicator(colorHex: section.colorHex, size: InterfaceScale.metric(8))
             }
-            Text(section.title)
-                .font(.interface(.body).weight(.semibold))
-                .foregroundStyle(headerColor)
-            Text("— \(section.totalCount)")
+            Text("\(section.title) — \(section.totalCount)")
                 .font(.interface(.body).weight(.semibold))
                 .foregroundStyle(headerColor)
         }
@@ -466,39 +463,23 @@ struct MemberRow: View {
                         MemberAvatar(member: member, isHovered: isHovered)
                         VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
                             HStack(spacing: InterfaceScale.metric(5)) {
-                                NameRoleColorIndicator(
-                                    colorHex: topRole?.colorHex,
-                                    secondaryColorHex: topRole?.secondaryColorHex,
-                                    tertiaryColorHex: topRole?.tertiaryColorHex
-                                )
+                                NameRoleColorIndicator(colorHex: MessageAuthorPresentation.topRoleColor(in: member.roles))
                                 if let style = member.user.displayNameStyle {
                                     ProfileDisplayName(name: member.user.displayName, style: style, size: 13,
                                                        showsEffects: false, plainColor: nameColor)
                                         .allowsHitTesting(false)
-                                } else if let gradient = nameGradient {
-                                    Text(member.user.displayName)
-                                        .font(.interface(.body).weight(.semibold))
-                                        .foregroundStyle(gradient)
-                                        .shadow(color: isHovered ? nameColor.opacity(0.45) : .clear, radius: InterfaceScale.metric(3.5))
-                                        .underline(isHovered, color: nameColor)
-                                        .lineLimit(1)
                                 } else {
                                     Text(member.user.displayName)
                                         .font(.interface(.body).weight(.semibold))
                                         .foregroundStyle(nameColor)
-                                        .shadow(color: isHovered ? nameColor.opacity(0.45) : .clear, radius: InterfaceScale.metric(3.5))
-                                        .underline(isHovered, color: nameColor)
                                         .lineLimit(1)
+                                }
+                                if member.user.isBot {
+                                    AppIdentityBadge()
                                 }
                                 if !cosmeticPolicy.disables(.serverTag, for: member.id),
                                    let identity = member.user.primaryGuild, identity.tag != nil {
                                     PrimaryGuildTag(identity: identity)
-                                }
-                                if let role = MessageAuthorPresentation.topRoleWithIcon(in: member.roles) {
-                                    RoleIconView(role: role, size: InterfaceScale.metric(14))
-                                }
-                                if member.user.isBot {
-                                    AppIdentityBadge()
                                 }
                             }
                             if let activity = member.memberListActivityText, !activity.isEmpty {
@@ -539,17 +520,8 @@ struct MemberRow: View {
         .help(member.user.username)
     }
 
-    private var topRole: GuildRole? {
-        MessageAuthorPresentation.topRoleWithColor(in: member.roles)
-    }
-
-    private var nameGradient: LinearGradient? {
-        roleColorDisplay == .inNames
-            ? .role(topRole?.colorHex, topRole?.secondaryColorHex, topRole?.tertiaryColorHex) : nil
-    }
-
     private var nameColor: Color {
-        roleColorDisplay == .inNames ? topRole?.colorHex.map(Color.init(hex:)) ?? .primary : .primary
+        roleColorDisplay == .inNames ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Color.init(hex:)) ?? .primary : .primary
     }
 }
 

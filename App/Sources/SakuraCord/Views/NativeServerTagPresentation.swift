@@ -134,7 +134,7 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
             context.clip(to: CGRect(x: 0, y: baseline - InterfaceScale.metric(1.5) - 0.5, width: visibleWidth, height: 1))
             RoleGradientPaint.fill(
                 gradientColors, in: CGRect(x: 0, y: 0, width: visibleWidth, height: 0),
-                isScrolling: RoleGradientPaint.animates, context: context
+                isScrolling: AppMotionPolicy.animatesUncategorized, context: context
             )
             context.restoreGState()
         }

@@ -30,17 +30,10 @@ struct ComposerReplyHeader: View {
                     secondaryColorHex: roleSecondaryColorHex,
                     tertiaryColorHex: roleTertiaryColorHex
                 )
-                if let authorGradient {
-                    Text(authorName)
-                        .displayNameFont(authorFontID, textStyle: .callout)
-                        .foregroundStyle(authorGradient)
-                        .lineLimit(1)
-                } else {
-                    Text(authorName)
-                        .displayNameFont(authorFontID, textStyle: .callout)
-                        .foregroundStyle(authorColor)
-                        .lineLimit(1)
-                }
+                Text(authorName)
+                    .displayNameFont(authorFontID, textStyle: .callout)
+                    .foregroundStyle(authorStyle)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: InterfaceScale.metric(8))
@@ -67,12 +60,12 @@ struct ComposerReplyHeader: View {
         .background(.primary.opacity(0.035))
     }
 
-    private var authorGradient: LinearGradient? {
-        roleColorDisplay == .inNames ? .role(roleColorHex, roleSecondaryColorHex, roleTertiaryColorHex) : nil
-    }
-
-    private var authorColor: Color {
-        roleColorDisplay == .inNames ? roleColorHex.map(Color.init(hex:)) ?? .primary : .primary
+    private var authorStyle: AnyShapeStyle {
+        guard roleColorDisplay == .inNames else { return AnyShapeStyle(.primary) }
+        if let gradient = LinearGradient.role(roleColorHex, roleSecondaryColorHex, roleTertiaryColorHex) {
+            return AnyShapeStyle(gradient)
+        }
+        return AnyShapeStyle(roleColorHex.map(Color.init(hex:)) ?? .primary)
     }
 }
 

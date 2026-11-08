@@ -25,11 +25,7 @@ enum RoleColorIndicatorRenderer {
         } else if let secondaryColorHex, let context = NSGraphicsContext.current?.cgContext {
             let colors = [colorHex, secondaryColorHex, tertiaryColorHex].compactMap { $0 }
                 .map { SakuraCordAccentColor.nsColor(forRoleColorHex: $0) }
-            context.saveGState()
-            context.addEllipse(in: rect)
-            context.clip()
-            RoleGradientPaint.fill(colors, in: rect, tileWidth: rect.width, context: context)
-            context.restoreGState()
+            RoleGradientPaint.fillDot(colors, in: rect, context: context)
         } else {
             color.setFill()
             circle.fill()

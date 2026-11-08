@@ -450,7 +450,7 @@ extension NativeMemberListCanvasView {
         foreground.needsDisplay = true
         // A hovered gradient name scrolls, as Discord's does; a selected one
         // the pointer has left stays still.
-        if RoleGradientPaint.animates, hoveredIndex == index, presentation.roleColorDisplay == .inNames,
+        if AppMotionPolicy.animatesUncategorized, hoveredIndex == index, presentation.roleColorDisplay == .inNames,
            preparedText[items[index].id]?.gradientColors != nil {
             memberHoverTicker.start(on: self, frameRate: RoleGradientPaint.scrollFrameRate) { [weak self] in
                 self?.rowForegroundOverlay?.needsDisplay = true

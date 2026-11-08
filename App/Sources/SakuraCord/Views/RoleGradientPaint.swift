@@ -17,10 +17,7 @@ nonisolated enum RoleGradientPaint {
         return [primary, secondary] + (tertiary.map { [$0] } ?? [])
     }
 
-    /// Whether a hovered gradient scrolls now; Reduce Motion keeps it still.
-    @MainActor static var animates: Bool {
-        !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }
+    private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
 
     /// Fills the current clip across `rect`'s horizontal extent.
     static func fill(
@@ -29,7 +26,7 @@ nonisolated enum RoleGradientPaint {
     ) {
         let stops = colors + [colors[0]]
         guard tileWidth > 0, let gradient = CGGradient(
-            colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colorsSpace: colorSpace,
             colors: stops.map(\.cgColor) as CFArray,
             locations: stops.indices.map { CGFloat($0) / CGFloat(stops.count - 1) }
         ) else { return }
@@ -43,6 +40,20 @@ nonisolated enum RoleGradientPaint {
             )
             tileX += tileWidth
         }
+    }
+
+    /// A role dot: one colour, or the gradient across the dot.
+    static func fillDot(_ colors: [NSColor], in rect: CGRect, context: CGContext) {
+        context.saveGState()
+        if colors.count == 1 {
+            context.setFillColor(colors[0].cgColor)
+            context.fillEllipse(in: rect)
+        } else {
+            context.addEllipse(in: rect)
+            context.clip()
+            fill(colors, in: rect, tileWidth: rect.width, context: context)
+        }
+        context.restoreGState()
     }
 
     /// Draws `line` with its baseline at `origin` in a flipped-for-text
@@ -60,7 +71,7 @@ nonisolated enum RoleGradientPaint {
             context.setShadow(offset: .zero, blur: 4, color: colors[0].withAlphaComponent(0.7).cgColor)
             context.beginTransparencyLayer(auxiliaryInfo: nil)
             clipped(to: line, at: origin, context: context) {
-                fill(colors, in: bounds, isScrolling: animates, context: context)
+                fill(colors, in: bounds, isScrolling: AppMotionPolicy.animatesUncategorized, context: context)
             }
             context.endTransparencyLayer()
             context.restoreGState()

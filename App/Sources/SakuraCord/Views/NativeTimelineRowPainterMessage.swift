@@ -207,11 +207,7 @@ extension NativeTimelineRowPainter {
 
     private static func roleDot(_ colors: [NSColor], in rect: CGRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.saveGState()
-        context.addEllipse(in: rect)
-        context.clip()
-        RoleGradientPaint.fill(colors, in: rect, tileWidth: rect.width, context: context)
-        context.restoreGState()
+        RoleGradientPaint.fillDot(colors, in: rect, context: context)
     }
 
     private static func drawMessageIdentityMetadata(

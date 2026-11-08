@@ -328,7 +328,7 @@ extension NativeMemberListCanvasView {
 
         if let roleColor {
             let ovalRect = CGRect(x: textX, y: nameY + InterfaceScale.metric(5), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8))
-            drawMemberRoleDot(ovalRect: ovalRect, roleColor: roleColor, gradientColors: prepared.gradientColors, context: context)
+            RoleGradientPaint.fillDot(prepared.gradientColors ?? [roleColor], in: ovalRect, context: context)
         }
         if let tagPresentation, let frame = geometry.serverTagFrame {
             tagPresentation.draw(
@@ -383,21 +383,6 @@ extension NativeMemberListCanvasView {
                 }
             }
         }
-    }
-
-    private func drawMemberRoleDot(
-        ovalRect: CGRect,
-        roleColor: NSColor,
-        gradientColors: [NSColor]?,
-        context: CGContext
-    ) {
-        context.saveGState()
-        context.addEllipse(in: ovalRect)
-        context.clip()
-        RoleGradientPaint.fill(
-            gradientColors ?? [roleColor], in: ovalRect, tileWidth: ovalRect.width, context: context
-        )
-        context.restoreGState()
     }
 
     func drawMemberAvatar(
