@@ -305,9 +305,20 @@ extension NativeTimelineCanvasView {
         at index: Int?
     ) -> Set<NativeTimelineMediaKey> {
         guard let index,
-              layouts.indices.contains(index),
-              case let .message(row, _, _) = item
+              layouts.indices.contains(index)
         else { return [] }
+        if case .beginning = item,
+           let beginningLayout = layouts[index].beginningLayout
+        {
+            var keys: [NativeTimelineMediaKey] = []
+            appendInlineMediaKeys(
+                from: beginningLayout.descriptionBox.value,
+                model: model,
+                into: &keys
+            )
+            return Set(keys)
+        }
+        guard case let .message(row, _, _) = item else { return [] }
         let message = row.message
         let visibleEmbedCount = MessageEmbedPresentation.visibleEmbeds(for: message).count
         var keys: [NativeTimelineMediaKey] = []

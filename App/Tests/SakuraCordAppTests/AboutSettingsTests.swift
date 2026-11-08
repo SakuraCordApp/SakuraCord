@@ -183,20 +183,16 @@ func aboutChangelogLoadsPackagedReleaseNotes() throws {
     ])
 }
 
-@Test("About Markdown rendering materializes native block and inline formatting")
+@Test("Markdown documents materialize native block and inline formatting")
 @MainActor
-func aboutMarkdownMaterializesNativeFormatting() {
-    let document = AboutMarkdownRenderer.render(
-        "# Heading\n\nParagraph with **bold**.\n\n- First\n- Second"
+func markdownDocumentMaterializesNativeFormatting() {
+    let document = MarkdownDocumentText.parse(
+        "# Heading\n\nParagraph with **bold**.\n\n- First\n- Second\n\n| A | B |\n|---|---|\n|  | b |\n| c |  |"
     )
-    let rendered = AboutMarkdownAttributedText.make(document)
+    let rendered = MarkdownDocumentText.make(document, codeBackground: .dark)
 
-    #expect(document.runs.contains { $0.presentationIntent != nil })
-    #expect(document.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
-    #expect(
-        rendered.string
-            == "Heading\nParagraph with bold.\n•\tFirst\n•\tSecond"
-    )
+    // Bullets are drawn discs, each an attachment character.
+    #expect(rendered.string.hasPrefix("Heading\nParagraph with bold.\n\t\u{FFFC}\tFirst\n\t\u{FFFC}\tSecond\n"))
 
     let headingFont = rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
     let bodyIndex = (rendered.string as NSString).range(of: "Paragraph").location
@@ -210,6 +206,19 @@ func aboutMarkdownMaterializesNativeFormatting() {
             NSFontManager.shared.traits(of: $0).contains(.boldFontMask)
         } == true
     )
+
+    // Foundation drops empty cells; without them, later cells shift into the wrong column.
+    var cells: [String: String] = [:]
+    (rendered.string as NSString).enumerateSubstrings(
+        in: NSRange(location: 0, length: rendered.length), options: .byParagraphs
+    ) { text, range, enclosing, _ in
+        let location = range.length > 0 ? range.location : enclosing.location
+        guard let style = rendered.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle,
+              let cell = style.textBlocks.last as? NSTextTableBlock
+        else { return }
+        cells["\(cell.startingRow),\(cell.startingColumn)"] = text ?? ""
+    }
+    #expect(cells == ["0,0": "A", "0,1": "B", "1,0": "", "1,1": "b", "2,0": "c", "2,1": ""])
 }
 
 @Test("About project destinations are canonical HTTPS links")

@@ -30,6 +30,18 @@ struct FeaturesSettingsPage: View {
             }
             FakeNitroSettingsSection(value: value, state: state)
             Section {
+                Toggle("Message hover actions", isOn: value.messageHoverActions)
+                    .tint(SakuraCordAccentColor.color)
+                    .settingsControlAnchor(.messageHoverActions, state: state)
+                    .help("Show the floating reactions and actions menu when hovering a message.")
+                Toggle("Scroll to bottom button", isOn: value.scrollToBottomButton)
+                    .tint(SakuraCordAccentColor.color)
+                    .settingsControlAnchor(.scrollToBottomButton, state: state)
+                    .help("Show the floating button above the composer that jumps to the latest message after scrolling up.")
+            } header: {
+                Text("Timeline", bundle: #bundle)
+            }
+            Section {
                 Toggle("Record voice messages", isOn: value.voiceMessageRecording)
                     .tint(SakuraCordAccentColor.color)
                     .settingsControlAnchor(.voiceMessageRecording, state: state)

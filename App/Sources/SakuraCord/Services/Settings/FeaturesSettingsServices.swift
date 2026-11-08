@@ -11,6 +11,8 @@ nonisolated struct FeaturesSettingsSnapshot: Equatable, Sendable {
     var fakeNitroSoundboard = true
     var fakeNitroStreamQuality = true
     var voiceMessageRecording = true
+    var messageHoverActions = true
+    var scrollToBottomButton = true
 }
 
 @MainActor
@@ -32,6 +34,8 @@ final class FeaturesSettingsStore {
         if case let .bool(saved) = preferences.value(for: .fakeNitroSoundboard) { value.fakeNitroSoundboard = saved }
         if case let .bool(saved) = preferences.value(for: .fakeNitroStreamQuality) { value.fakeNitroStreamQuality = saved }
         if case let .bool(saved) = preferences.value(for: .voiceMessageRecording) { value.voiceMessageRecording = saved }
+        if case let .bool(saved) = preferences.value(for: .messageHoverActions) { value.messageHoverActions = saved }
+        if case let .bool(saved) = preferences.value(for: .scrollToBottomButton) { value.scrollToBottomButton = saved }
         return value
     }
 
@@ -44,6 +48,8 @@ final class FeaturesSettingsStore {
         preferences.set(.bool(value.fakeNitroSoundboard), for: .fakeNitroSoundboard)
         preferences.set(.bool(value.fakeNitroStreamQuality), for: .fakeNitroStreamQuality)
         preferences.set(.bool(value.voiceMessageRecording), for: .voiceMessageRecording)
+        preferences.set(.bool(value.messageHoverActions), for: .messageHoverActions)
+        preferences.set(.bool(value.scrollToBottomButton), for: .scrollToBottomButton)
     }
 }
 

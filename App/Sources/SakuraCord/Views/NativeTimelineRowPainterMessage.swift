@@ -35,7 +35,6 @@ struct NativeTimelineMessageDrawInput {
     let isTranslationActionHovered: Bool
     /// A hovered upload cancel or Retry of a local send.
     let hoveredDeliveryAction: NativeTimelineFooterActionTarget.Kind?
-    let hidesMessageContent: Bool
     let hoveredReactionID: String?
     let isAddReactionHovered: Bool
     let textSelection: NativeTimelineTextSelection?
@@ -52,7 +51,6 @@ extension NativeTimelineRowPainter {
         drawAutoModAlert(input)
         drawMessageIdentity(input)
         drawMessageReplyAndCommand(input)
-        if input.hidesMessageContent { return }
         drawMessageBubbleTint(input)
         drawForwardedHeaderAndSystemIcon(input)
         drawMessageContent(input)
@@ -136,9 +134,7 @@ extension NativeTimelineRowPainter {
         if let frame = input.layout.unreadSeparatorFrame {
             newMessagesSeparator(frame: frame)
         }
-        // While editing, the editor replaces the row's height, so the rule
-        // would sit at the starter's old bottom across later replies.
-        if let frame = input.layout.postStarterDividerFrame, !input.hidesMessageContent {
+        if let frame = input.layout.postStarterDividerFrame {
             NSColor.labelColor.withAlphaComponent(0.16).setFill()
             CGRect(x: frame.minX, y: frame.midY, width: frame.width, height: 1).fill()
         }
@@ -534,14 +530,22 @@ extension NativeTimelineRowPainter {
         let concealedEmbeds = input.spoilerRevealStore.map {
             NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(in: input.row.message, store: $0)
         } ?? [:]
-        for region in layout.embedRegions {
-            let isCovered = concealedEmbeds[region.embedID] != nil
+        var coveredKeys = Set<NativeTimelineComponentRevealKey>()
+        for (index, region) in layout.embedRegions.enumerated() {
+            let key = concealedEmbeds[region.embedID]
+            // A multi-image post's images follow their card, share its key
+            // and draw under the card's one cover, which spans the grid.
+            if let key, !coveredKeys.insert(key).inserted { continue }
+            let members = key.map { key in layout.embedRegions[index...].prefix { concealedEmbeds[$0.embedID] == key } }
+                ?? [region]
             NativeTimelineSpoilerCover.draw(
-                covering: isCovered, in: region.frame, cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
+                covering: key != nil, in: region.frame, cornerRadius: region.cornerRadius
             ) {
-                drawEmbedChrome(region, bubbleRegion: layout.bubbleRegion)
-                drawEmbedText(region, input: input)
-                drawEmbedMedia(region, isCovered: isCovered)
+                for member in members {
+                    drawEmbedChrome(member, bubbleRegion: layout.bubbleRegion)
+                    drawEmbedText(member, input: input)
+                    drawEmbedMedia(member, isCovered: key != nil)
+                }
             }
         }
     }
@@ -551,7 +555,11 @@ extension NativeTimelineRowPainter {
         bubbleRegion: NativeTimelineBubbleRegion?
     ) {
         if region.kind == .card {
-            embedCard(region.frame, accentColor: region.accentColor)
+            discordCard(
+                region.frame,
+                cornerRadius: region.cornerRadius,
+                accent: roleColor(region.accentColor) ?? DiscordEmbedPalette.defaultAccent
+            )
         } else if region.kind == .bubbleIntegratedCard, let bubbleRegion {
             bubbleIntegratedSection(
                 region.frame,
@@ -629,7 +637,7 @@ extension NativeTimelineRowPainter {
         if let image = mediaImage(for: .media(region.mediaPreviewURL ?? url)) {
             drawImage(
                 image, in: frame, cornerRadius: InterfaceScale.metric(8),
-                fillsFrame: region.mediaPosterFillsFrame
+                fillsFrame: region.mediaFillsFrame || region.mediaPosterFillsFrame
             )
         } else if let placeholder = region.mediaPlaceholder?.image {
             drawImage(placeholder, in: frame, cornerRadius: InterfaceScale.metric(8), fillsFrame: true)
@@ -1373,46 +1381,30 @@ extension NativeTimelineRowPainter {
         edge.stroke()
     }
 
-    static func embedCard(
-        _ frame: CGRect,
-        accentColor: UInt32?
-    ) {
-        let shape = NSBezierPath(
-            concentricRoundedRect: frame,
-            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius
-        )
+    /// The card behind both an embed and a component container, so the two
+    /// always look alike: Discord's surface and subtle border, with an
+    /// accent drawn as a thicker left border. Discord rounds an embed's card
+    /// tighter than a container's, so each passes its own radius.
+    static func discordCard(_ frame: CGRect, cornerRadius: CGFloat, accent: NSColor?) {
         NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
-        NativeTimelineSemanticColor.opacity(
-            .secondaryLabelColor,
-            0.08
-        ).setFill()
+        NSBezierPath(concentricRoundedRect: frame, cornerRadius: cornerRadius).addClip()
+        DiscordEmbedPalette.cardFill.setFill()
         frame.fill()
-        (
-            roleColor(accentColor)
-                ?? NativeTimelineSemanticColor.opacity(
-                    .secondaryLabelColor,
-                    0.5
-                )
-        ).setFill()
-        CGRect(
-            x: frame.minX,
-            y: frame.minY,
-            width: InterfaceScale.metric(4),
-            height: frame.height
-        ).fill()
-        NSGraphicsContext.restoreGraphicsState()
-
-        NativeTimelineSemanticColor.opacity(
-            .labelColor,
-            0.08
-        ).setStroke()
+        if let accent {
+            let barWidth = InterfaceScale.metric(4)
+            accent.setFill()
+            CGRect(x: frame.minX, y: frame.minY, width: barWidth, height: frame.height).fill()
+            // The 1 pt border runs along the other three sides only.
+            NSBezierPath.clip(CGRect(x: frame.minX + barWidth, y: frame.minY, width: frame.width - barWidth, height: frame.height))
+        }
+        DiscordEmbedPalette.cardBorder.setStroke()
         let border = NSBezierPath(
             concentricRoundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
-            cornerRadius: DiscordRichMessageMetrics.cardCornerRadius - 0.5
+            cornerRadius: cornerRadius - 0.5
         )
         border.lineWidth = 1
         border.stroke()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     static func sakuraCordDeepLinkCard(

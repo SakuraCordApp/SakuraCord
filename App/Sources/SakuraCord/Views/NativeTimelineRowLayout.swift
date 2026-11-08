@@ -73,15 +73,21 @@ struct NativeTimelineRowLayout {
         let frame: CGRect
         let textRegions: [TextRegion]
         let imageRegions: [ImageRegion]
-        let mediaFrame: CGRect?
+        var mediaFrame: CGRect?
         let mediaURL: URL?
         let mediaPreviewURL: URL?
         let mediaPlaceholder: NativeTimelineMediaPlaceholder?
+        var mediaFillsFrame = false
         let mediaIsVideo: Bool
         let mediaAutoplaysInline: Bool
         let mediaPosterFillsFrame: Bool
         let accentColor: UInt32?
         let drawsTopSeparator: Bool
+
+        /// Discord rounds a card tighter than the media it otherwise covers.
+        var cornerRadius: CGFloat {
+            kind == .card ? DiscordRichMessageMetrics.embedCornerRadius : DiscordRichMessageMetrics.cardCornerRadius
+        }
     }
 
     struct SakuraCordDeepLinkRegion {
@@ -259,7 +265,8 @@ struct NativeTimelineRowLayout {
         width proposedWidth: CGFloat,
         source: AppModel? = nil,
         metrics: Metrics? = nil,
-        relativeTo date: Date = .now
+        relativeTo date: Date = .now,
+        editingTextHeight: CGFloat? = nil
     ) -> Self {
         let width = max(InterfaceScale.metric(220), proposedWidth)
         switch item {
@@ -299,7 +306,9 @@ struct NativeTimelineRowLayout {
         case let .beginning(beginning):
             let beginningLayout = NativeTimelineBeginningLayout.make(
                 beginning: beginning,
-                width: width
+                width: width,
+                source: source,
+                relativeTo: date
             )
             return Self(
                 height: beginningLayout.height,
@@ -312,7 +321,8 @@ struct NativeTimelineRowLayout {
                 width: width,
                 source: source,
                 metrics: metrics ?? Metrics(source: source),
-                relativeTo: date
+                relativeTo: date,
+                editingTextHeight: editingTextHeight
             )
             return builder.make()
         }
@@ -323,12 +333,15 @@ struct NativeTimelineBeginningLayout {
     let iconFrame: CGRect
     let titleFrame: CGRect
     let descriptionFrame: CGRect
+    let descriptionBox: NativeTimelineAttributedTextBox
     let dateSeparatorFrame: CGRect?
     let height: CGFloat
 
     static func make(
         beginning: NativeTimelineBeginning,
-        width: CGFloat
+        width: CGFloat,
+        source: AppModel? = nil,
+        relativeTo date: Date = .now
     ) -> Self {
         let horizontalInset: CGFloat = InterfaceScale.metric(16)
         let contentWidth = max(
@@ -340,7 +353,6 @@ struct NativeTimelineBeginningLayout {
             ofSize: NSFont.preferredFont(forTextStyle: .largeTitle).pointSize,
             weight: .bold
         )
-        let descriptionFont = NSFont.interfacePreferredFont(forTextStyle: .body)
         let titleHeight = legacyLargeTitleHeight(
             beginning.title,
             font: titleFont,
@@ -352,9 +364,13 @@ struct NativeTimelineBeginningLayout {
             width: contentWidth,
             height: titleHeight
         )
+        let descriptionBox = NativeTimelineBeginningText.description(
+            beginning,
+            source: source,
+            relativeTo: date
+        )
         let descriptionHeight = textHeight(
-            beginning.description,
-            font: descriptionFont,
+            for: descriptionBox,
             width: contentWidth
         )
         let descriptionFrame = CGRect(
@@ -371,24 +387,26 @@ struct NativeTimelineBeginningLayout {
             iconFrame: iconFrame,
             titleFrame: titleFrame,
             descriptionFrame: descriptionFrame,
+            descriptionBox: descriptionBox,
             dateSeparatorFrame: dateSeparatorFrame,
             height: dateSeparatorFrame?.maxY ?? contentHeight
         )
     }
 
     private static func textHeight(
-        _ value: String,
-        font: NSFont,
+        for box: NativeTimelineAttributedTextBox,
         width: CGFloat
     ) -> CGFloat {
-        let bounds = (value as NSString).boundingRect(
-            with: CGSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font]
+        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+            box.framesetter,
+            CFRange(location: 0, length: box.value.length),
+            nil,
+            CGSize(width: max(1, width), height: 10_000),
+            nil
         )
         return max(
-            ceil(font.ascender - font.descender + font.leading),
-            ceil(bounds.height)
+            1,
+            ceil(size.height)
         )
     }
 

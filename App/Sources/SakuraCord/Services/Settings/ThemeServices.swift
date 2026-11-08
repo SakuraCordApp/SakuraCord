@@ -140,12 +140,7 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
     }
 
     var relativeLuminance: Double {
-        func linear(_ component: Double) -> Double {
-            component <= 0.04045
-                ? component / 12.92
-                : pow((component + 0.055) / 1.055, 2.4)
-        }
-        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        0.2126 * Self.linear(red) + 0.7152 * Self.linear(green) + 0.0722 * Self.linear(blue)
     }
 
     func contrastRatio(with other: Self) -> Double {
@@ -162,6 +157,49 @@ nonisolated struct SakuraCordThemeRGB: Equatable, Sendable {
 
     func blended(toward target: Self, fraction: Double) -> Self {
         target.composited(over: self, opacity: fraction)
+    }
+
+    /// Interpolates the way CSS `color-mix(in oklab, …)` does.
+    func oklabBlended(toward target: Self, fraction: Double) -> Self {
+        let source = oklab
+        return Self(oklab: source + (target.oklab - source) * fraction)
+    }
+
+    private var oklab: SIMD3<Double> {
+        let linear = SIMD3(Self.linear(red), Self.linear(green), Self.linear(blue))
+        let roots = SIMD3(
+            cbrt((SIMD3(0.4122214708, 0.5363325363, 0.0514459929) * linear).sum()),
+            cbrt((SIMD3(0.2119034982, 0.6806995451, 0.1073969566) * linear).sum()),
+            cbrt((SIMD3(0.0883024619, 0.2817188376, 0.6299787005) * linear).sum())
+        )
+        return SIMD3(
+            (SIMD3(0.2104542553, 0.7936177850, -0.0040720468) * roots).sum(),
+            (SIMD3(1.9779984951, -2.4285922050, 0.4505937099) * roots).sum(),
+            (SIMD3(0.0259040371, 0.7827717662, -0.8086757660) * roots).sum()
+        )
+    }
+
+    private init(oklab: SIMD3<Double>) {
+        let roots = SIMD3(
+            (SIMD3(1, 0.3963377774, 0.2158037573) * oklab).sum(),
+            (SIMD3(1, -0.1055613458, -0.0638541728) * oklab).sum(),
+            (SIMD3(1, -0.0894841775, -1.2914855480) * oklab).sum()
+        )
+        let cones = roots * roots * roots
+        self.init(
+            red: Self.encoded((SIMD3(4.0767416621, -3.3077115913, 0.2309699292) * cones).sum()),
+            green: Self.encoded((SIMD3(-1.2684380046, 2.6097574011, -0.3413193965) * cones).sum()),
+            blue: Self.encoded((SIMD3(-0.0041960863, -0.7034186147, 1.7076147010) * cones).sum())
+        )
+    }
+
+    private static func linear(_ component: Double) -> Double {
+        component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+    }
+
+    private static func encoded(_ component: Double) -> Double {
+        let clamped = component.clamped(to: 0 ... 1)
+        return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * pow(clamped, 1 / 2.4) - 0.055
     }
 
     func adjustedForContrast(
@@ -853,6 +891,7 @@ final class SakuraCordThemeStore {
     private func commit() {
         deferredPersistenceTask?.cancel()
         committedTheme = activeTheme
+        AppAccentColorController.shared.apply()
         save()
         NotificationCenter.default.post(name: .sakuraCordThemeDidCommit, object: nil)
     }
@@ -926,6 +965,30 @@ extension SakuraCordGradientTheme {
     func surfaceTargetColor(for colorScheme: ColorScheme) -> Color {
         let rgb = surfaceTargetRGB(for: colorScheme == .dark ? .dark : .light)
         return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+
+    /// A Discord surface or border token as the theme would tint it. Discord's
+    /// gradient themes mix a fully saturated colour of the gradient into those
+    /// tokens, not into the control fills: the darker end at 5% lightness for
+    /// dark themes, the lighter end at 90% for light ones. It asks for 50% of
+    /// the colour on top of the whole token, which CSS resolves to a third of
+    /// the mix. Here that request grows with how strongly the theme shows, so a
+    /// theme without intensity leaves the token alone.
+    nonisolated func discordTinted(_ token: NSColor, isDark: Bool) -> NSColor {
+        let requested = 0.5 * intensityProgress * saturation
+        guard requested > 0, let source = token.usingColorSpace(.sRGB) else { return token }
+        let luminance = { (color: SakuraCordThemeColor) in
+            SakuraCordThemeRGB(hue: color.hue, saturation: color.saturation, brightness: 1).relativeLuminance
+        }
+        guard let tinting = isDark ? activeColors.min(by: { luminance($0) < luminance($1) })
+            : activeColors.max(by: { luminance($0) < luminance($1) })
+        else { return token }
+        let base = isDark
+            ? SakuraCordThemeRGB(hue: tinting.hue, saturation: 1, brightness: 0.1)
+            : SakuraCordThemeRGB(hue: tinting.hue, saturation: 0.2, brightness: 1)
+        let mixed = SakuraCordThemeRGB(red: source.redComponent, green: source.greenComponent, blue: source.blueComponent)
+            .oklabBlended(toward: base, fraction: requested / (1 + requested))
+        return NSColor(srgbRed: mixed.red, green: mixed.green, blue: mixed.blue, alpha: source.alphaComponent)
     }
 
     nonisolated func backgroundBlendOpacity(

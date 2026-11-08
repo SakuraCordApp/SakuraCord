@@ -339,7 +339,7 @@ private func keyEvent(
     view.isRichText = true
     view.allowsUndo = true
     view.usesFontPanel = true
-    view.plainTypingAttributes = ComposerEmojiAttributedText.textAttributes(.systemFont(ofSize: 15))
+    view.plainTextStyle = .composer(.systemFont(ofSize: 15))
     window.contentView = view
     window.makeFirstResponder(view)
     view.textStorage?.setAttributedString(ComposerEmojiAttributedText.make("hello <@123>"))
@@ -446,7 +446,7 @@ func `composer repeated mixed formatting toggles preserve the selected content`(
     let data = try rich.data(from: NSRange(location: 0, length: rich.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
     pasteboard.setData(data, forType: .rtf)
     let view = ComposerNSTextView()
-    view.plainTypingAttributes = ComposerEmojiAttributedText.textAttributes(.systemFont(ofSize: 15))
+    view.plainTextStyle = .composer(.systemFont(ofSize: 15))
     #expect(view.readSelection(from: pasteboard, type: .rtf))
     #expect(view.string == "**hello**")
     let font = try #require(view.textStorage?.attribute(.font, at: 2, effectiveRange: nil) as? NSFont)

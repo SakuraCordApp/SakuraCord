@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import MessageRendering
 import SakuraCordModels
 import SwiftUI
 
@@ -146,13 +147,8 @@ struct RootView: View {
                 SakuraCordOnboardingStore.complete()
             }
         }
-        .onChange(of: model.showInspector) { _, isVisible in
-            if !isVisible, model.selectedChannel?.kind != .directMessage {
-                model.dismissInspectorProfile()
-            }
-            GeneralWindowRestorationStore.shared.recordMemberListVisibility(
-                isVisible
-            )
+        .onChange(of: model.inspectorVisibility) { _, visibility in
+            GeneralWindowRestorationStore.shared.recordInspectorVisibility(visibility)
         }
         .onChange(of: model.selectedChannelID) { _, _ in
             guard let activeAccountID = model.activeAccountID,
@@ -238,16 +234,12 @@ private struct ChatRootView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             HStack(spacing: 0) {
                 ServerRailContainer(model: model, sidebarWidth: sidebarWidth)
-                .environment(\.reducesSidebarMotion, !model.animates(.sidebar))
                 .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,
                     guild: selectedGuild,
                     channels: model.visibleChannels,
                     channelGroups: model.visibleChannelGroups,
-                    unreadCategoryIDs: selectedGuild.map {
-                        model.unreadCategoryIDsByGuild[$0.id] ?? []
-                    } ?? [],
                     selection: $model.channelSidebarSelection,
                     currentUser: model.currentUser,
                     connectionState: model.connectionState,
@@ -263,6 +255,7 @@ private struct ChatRootView: View {
                     updateStatus: { await model.updateStatus($0) }
                 )
             }
+            .environment(\.reducesSidebarMotion, !model.animates(.sidebar))
             .background {
                 NativeSidebarAnimation(snaps: !model.animates(.sidebar)).frame(width: 0, height: 0)
             }
@@ -309,7 +302,7 @@ private struct ChatRootView: View {
                 // Measures the conversation title outside the toolbar, whose
                 // item may be narrower than the title while it lays out.
                 if let title = conversationToolbarPresentation, model.guildWorkspacePage == .channelsAndRoles {
-                    ConversationToolbarTitle(presentation: title)
+                    ConversationToolbarTitle(presentation: title, model: model)
                         .buttonStyle(.plain)
                         .fixedSize()
                         .hidden()
@@ -651,7 +644,7 @@ private struct ChatRootView: View {
                     .padding(.vertical, 5)
                 }
             } else if let title = conversationToolbarPresentation {
-                ConversationToolbarTitle(presentation: title)
+                ConversationToolbarTitle(presentation: title, model: model)
                     .buttonStyle(.plain)
                     // Remeasure changed text without replacing the toolbar item.
                     .id(title.title)
@@ -699,7 +692,7 @@ private struct ChatRootView: View {
             groups.append(.init(
                 id: WorkspaceTitlebar.conversationID,
                 title: AnyView(
-                    ConversationToolbarTitle(presentation: title)
+                    ConversationToolbarTitle(presentation: title, model: model)
                         .buttonStyle(TitlebarGlassButtonStyle(isTitle: true))
                 ),
                 actions: AnyView(conversationTitlebarActions(presentsPanels: !isCovered))
@@ -730,7 +723,18 @@ private struct ChatRootView: View {
     }
 
     /// The conversation's actions, which stay beside it whatever opens.
+    @ViewBuilder
     private func conversationTitlebarActions(presentsPanels: Bool) -> some View {
+        if selectedVoiceChannel != nil {
+            // Inbox, pins and members belong to text conversations; a voice
+            // channel only offers its chat.
+            conversationCallActions.titlebarButtons()
+        } else {
+            textConversationTitlebarActions(presentsPanels: presentsPanels)
+        }
+    }
+
+    private func textConversationTitlebarActions(presentsPanels: Bool) -> some View {
         let pinsChannelID = model.selectedChannelSupportsPins ? model.selectedChannelID : nil
         let offersThreads = model.canBrowseThreadsInSelectedChannel
         // A narrow conversation keeps Members and gathers the rest into "»".
@@ -744,9 +748,7 @@ private struct ChatRootView: View {
                 if offersThreads {
                     ThreadsToolbarButton(model: model, presentsPanel: presentsPanels)
                 }
-                if selectedVoiceChannel == nil {
-                    MemberInspectorToolbarButton(model: model)
-                }
+                MemberInspectorToolbarButton(model: model)
             }
             HStack(spacing: ChatChromeMetrics.toolbarItemEdgeInset) {
                 conversationCallActions
@@ -756,9 +758,7 @@ private struct ChatRootView: View {
                     offersThreads: offersThreads,
                     presentsPanels: presentsPanels
                 )
-                if selectedVoiceChannel == nil {
-                    MemberInspectorToolbarButton(model: model)
-                }
+                MemberInspectorToolbarButton(model: model)
             }
         }
         .titlebarButtons()
@@ -1145,7 +1145,7 @@ private struct ChatRootView: View {
                 : (model.showInspector ? "person.2.fill" : "person.2")
         )
         .symbolVariant(.none)
-        .animation(.smooth(duration: 0.24), value: model.showInspector)
+        .animation(.smooth(duration: 0.24), value: model.inspectorVisibility)
     }
 
     /// The selected DM or group whose call buttons show; a message request
@@ -1383,11 +1383,11 @@ private struct ChatRootView: View {
         return supplementaryPaneFrame.minX - columnEdges.detailMinX >= required
     }
 
-    /// Inbox belongs beside a conversation, not on a server's own pages or
-    /// Friends.
+    /// Inbox belongs beside a text conversation, not on a server's own
+    /// pages, Friends or a voice channel.
     private var showsInboxToolbarItem: Bool {
         !model.isSwitchingAccounts && model.onboardingEntryGuildID == nil
-            && model.guildWorkspacePage == nil && !model.isFriendsPresented
+            && model.guildWorkspacePage == nil && !model.isFriendsPresented && selectedVoiceChannel == nil
     }
 
     private var selectedGuild: Guild? {
@@ -1790,6 +1790,7 @@ struct ConversationToolbarLabel: View {
 /// Topic availability changes only its action and accessibility traits.
 private struct ConversationToolbarTitle: View {
     let presentation: ConversationToolbarPresentation
+    var model: AppModel?
     @State private var isTopicPresented = false
 
     var body: some View {
@@ -1816,7 +1817,9 @@ private struct ConversationToolbarTitle: View {
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .bottom
         ) {
-            if let topic = presentation.topic { ChannelTopicPopover(topic: topic) }
+            if let topic = presentation.topic {
+                ChannelTopicPopover(topic: topic, model: model)
+            }
         }
         .onChange(of: presentation.title) { isTopicPresented = false }
     }
@@ -1824,15 +1827,25 @@ private struct ConversationToolbarTitle: View {
 
 private struct ChannelTopicPopover: View {
     let topic: String
+    var model: AppModel?
 
     var body: some View {
-        Text(topic)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
-            .tint(SakuraCordAccentColor.color)
-            .padding(InterfaceScale.metric(16))
-            .frame(width: InterfaceScale.metric(320), alignment: .leading)
-            .interfaceScaleRoot()
+        CustomEmojiRichText(
+            model: model,
+            content: topic,
+            emojiSize: InterfaceScale.metric(18),
+            baseFontSize: InterfaceScale.fontSize(14),
+            isSelectable: true,
+            foregroundColor: .labelColor,
+            mentionPresentation: { mention in
+                model.map { MessageMentionResolver(model: $0, message: nil).presentation(mention) }
+                    ?? MentionPresentation.fallback(for: mention)
+            }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(InterfaceScale.metric(16))
+        .frame(width: InterfaceScale.metric(320), alignment: .leading)
+        .interfaceScaleRoot()
     }
 }
 

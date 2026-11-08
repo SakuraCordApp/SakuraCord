@@ -1,6 +1,23 @@
 import Foundation
 import SakuraCordModels
 
+/// The servers an offline launch joins beyond the two demo servers.
+public enum MockServerList: Sendable {
+    case standard
+    /// 18 more servers with letter icons, some in folders.
+    case long
+    /// 150 more servers, most with image icons, for rail benchmarks.
+    case performance
+
+    var extraGuildCount: Int {
+        switch self {
+        case .standard: 0
+        case .long: 18
+        case .performance: 150
+        }
+    }
+}
+
 struct MockChatFixture {
     fileprivate struct TimelineFixtureInput {
         let count: Int
@@ -26,7 +43,7 @@ struct MockChatFixture {
 
     static func make(
         now: Date = .now,
-        includesLongServerList: Bool = false,
+        serverList: MockServerList = .standard,
         timelineMessageCount: Int? = nil,
         timelineIncludesAnimatedMedia: Bool = false,
         timelineIncludesVoiceMessages: Bool = false,
@@ -34,7 +51,7 @@ struct MockChatFixture {
     ) -> Self {
         MockFixtureAssembly(
             now: now,
-            includesLongServerList: includesLongServerList,
+            serverList: serverList,
             timelineMessageCount: timelineMessageCount,
             timelineIncludesAnimatedMedia: timelineIncludesAnimatedMedia,
             timelineIncludesVoiceMessages: timelineIncludesVoiceMessages,
@@ -510,7 +527,7 @@ struct MockChatFixture {
 
 private struct MockFixtureAssembly {
     let now: Date
-    let includesLongServerList: Bool
+    let serverList: MockServerList
     let timelineMessageCount: Int?
     let timelineIncludesAnimatedMedia: Bool
     let timelineIncludesVoiceMessages: Bool
@@ -650,17 +667,20 @@ private struct MockFixtureAssembly {
                 )
             ]
         ]
-        let longListGuilds =
-            includesLongServerList
-                ? (0 ..< 18).map { index in
+        let longListIcons = serverList == .performance
+            ? ["guild-aurora", "guild-native-lab", "avatar-maya", "avatar-theo", "avatar-nova"].map(demoAsset)
+                + [animatedFixture, nil]
+            : []
+        let longListGuilds = (0 ..< serverList.extraGuildCount).map { index in
             Guild(
                 id: GuildID(rawValue: UInt64(1000 + index)),
                 name: String(format: "Scroll Test %02d", index + 1),
+                iconURL: longListIcons.isEmpty ? nil : longListIcons[index % longListIcons.count],
                 accentHex: [0xF97316, 0x22C55E, 0x3B82F6, 0xA855F7][index % 4],
                 unreadCount: index.isMultiple(of: 5) ? index + 1 : 0,
                 currentUserPermissions: textPermissions
             )
-        } : []
+        }
 
         let forumTags = [
             ForumTag(id: ForumTagID(rawValue: 8_001), name: "Visual", emojiName: "🖌️"),
@@ -686,7 +706,10 @@ private struct MockFixtureAssembly {
             ),
             Channel(
                 id: ChannelID(rawValue: 210), guildID: auroraID, name: "general",
-                topic: "A relaxed place for the Aurora Studio community", category: "COMMUNITY",
+                topic: "Welcome to **SakuraCord**! A fast, native Discord client for *macOS*.\n\n"
+                    + "Check out the [Roadmap](https://roadmap.sakuracord.app) and "
+                    + "[Documentation](https://sakuracord.app). Have fun with `SwiftUI`!",
+                category: "COMMUNITY",
                 categoryID: communityCategoryID, position: 0, categoryPosition: 1,
                 unreadCount: 3
             ),
@@ -923,7 +946,7 @@ private struct MockFixtureAssembly {
         }
         let guilds = [aurora, nativeLab] + longListGuilds
         let guildRailItems: [GuildRailItem]
-        if includesLongServerList {
+        if !longListGuilds.isEmpty {
             guildRailItems = [
                 .guild(auroraID),
                 .folder(GuildFolder(

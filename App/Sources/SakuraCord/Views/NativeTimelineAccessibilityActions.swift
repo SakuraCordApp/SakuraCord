@@ -388,7 +388,7 @@ extension NativeTimelineCanvasView {
                     NativeTimelineMediaKey.media($0)
                 },
                 cornerRadius: InterfaceScale.metric(8),
-                fillsFrame: false
+                fillsFrame: region?.mediaFillsFrame ?? false
             )
             return true
         }

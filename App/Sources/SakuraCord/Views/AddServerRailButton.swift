@@ -22,7 +22,7 @@ struct AddServerRailButton: View {
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             isHovering ? ServerRailHoverItem(name: "Add Server", bounds: bounds) : nil
         }
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
         .help("Add Server")
         .accessibilityLabel("Add Server")

@@ -7,6 +7,7 @@ import UserNotifications
 /// Starts the application from the executable while keeping its implementation shared with tests.
 @MainActor
 public func runSakuraCord() {
+    AppAccentColorController.configureSystemAccentOverride()
     SakuraCordApp.main()
 }
 
@@ -91,7 +92,7 @@ struct SakuraCordApp: App {
             )
         let mockProvider = configuration.mode == .offlineTesting
             ? MockChatProvider(
-                includesLongServerList: configuration.includesLongServerList,
+                serverList: configuration.mockServerList,
                 forumPostCount: configuration.includesForumPerformanceFixture ? 5_000 : nil,
                 forumPreviewsHydrateLate: configuration.includesForumPerformanceFixture,
                 timelineMessageCount: configuration.includesChatPerformanceFixture ? 5_000 : nil,
@@ -127,7 +128,7 @@ struct SakuraCordApp: App {
             soundPlayer: soundPlayer,
             notificationPreferences: notificationPreferences
         )
-        appModel.showInspector = GeneralWindowRestorationStore.shared.memberListIsVisible
+        appModel.inspectorVisibility = GeneralWindowRestorationStore.shared.loadInspectorVisibility()
         AppAppearanceController.shared.apply(
             appModel.appearanceSettings.colorScheme
         )
@@ -206,6 +207,12 @@ struct SakuraCordApp: App {
 #endif
                     if runsFriendsPerformanceBenchmark {
                         await FriendsPerformanceBenchmark.run(model: model, provider: performanceMockProvider)
+                    }
+                    if AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments).runsServerRailPerformanceBenchmark {
+                        await ServerRailPerformanceBenchmark.run(model: model)
+                    }
+                    if AppLaunchConfiguration(arguments: ProcessInfo.processInfo.arguments).runsUnreadChurnBenchmark {
+                        await UnreadChurnBenchmark.run(model: model, provider: performanceMockProvider)
                     }
                     if runsChannelOpenBenchmark {
                         await ChannelOpenBenchmark.run(model: model, channelID: ChannelID(rawValue: 210))
@@ -329,6 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateController.start()
         if let model = SakuraCordRuntimeModelHolder.shared.model {
             self.model = model
+            AppAccentColorController.shared.start()
             model.reportApplicationActive(NSApp.isActive)
             Task {
                 await startSession(for: model)

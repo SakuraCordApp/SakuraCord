@@ -12,26 +12,32 @@ enum IssueReportMetrics {
 struct IssueReportRowBackground: ViewModifier {
     var isHighlighted = false
     var padding: CGFloat = InterfaceScale.metric(14)
+    /// Focuses the row's field from a click anywhere in the row, padding
+    /// included, rather than only on the field's own text.
+    var focus: (() -> Void)?
 
     func body(content: Content) -> some View {
-        content
+        let shape = RoundedRectangle(cornerRadius: IssueReportMetrics.rowRadius, style: .continuous)
+        let row = content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                .quaternary.opacity(isHighlighted ? 0.8 : 0.5),
-                in: RoundedRectangle(cornerRadius: IssueReportMetrics.rowRadius, style: .continuous)
-            )
+            .background(.quaternary.opacity(isHighlighted ? 0.8 : 0.5), in: shape)
             .overlay {
-                RoundedRectangle(cornerRadius: IssueReportMetrics.rowRadius, style: .continuous)
+                shape
                     .strokeBorder(SakuraCordAccentColor.color.opacity(isHighlighted ? 0.55 : 0), lineWidth: 1.5)
             }
             .animation(.easeOut(duration: 0.15), value: isHighlighted)
+        if let focus {
+            row.contentShape(shape).onTapGesture(perform: focus)
+        } else {
+            row
+        }
     }
 }
 
 extension View {
-    func issueReportRow(highlighted: Bool = false, padding: CGFloat = 14) -> some View {
-        modifier(IssueReportRowBackground(isHighlighted: highlighted, padding: padding))
+    func issueReportRow(highlighted: Bool = false, padding: CGFloat = 14, focus: (() -> Void)? = nil) -> some View {
+        modifier(IssueReportRowBackground(isHighlighted: highlighted, padding: padding, focus: focus))
     }
 }
 
@@ -95,9 +101,7 @@ struct IssueReportTextArea<Focus: Hashable>: View {
                 Text(description).font(.interface(.caption)).foregroundStyle(.secondary)
             }
         }
-        .contentShape(RoundedRectangle(cornerRadius: IssueReportMetrics.rowRadius, style: .continuous))
-        .onTapGesture { focus.wrappedValue = focusValue }
-        .issueReportRow(highlighted: focus.wrappedValue == focusValue)
+        .issueReportRow(highlighted: focus.wrappedValue == focusValue) { focus.wrappedValue = focusValue }
     }
 }
 

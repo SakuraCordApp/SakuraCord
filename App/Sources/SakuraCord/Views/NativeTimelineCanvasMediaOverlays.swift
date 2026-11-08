@@ -465,7 +465,8 @@ extension NativeTimelineCanvasView {
                     media: .media(mediaURL),
                     frame: mediaFrame,
                     cornerRadius: InterfaceScale.metric(8),
-                    isLooping: true
+                    isLooping: true,
+                    fillsFrame: embed.mediaFillsFrame
                 )
             }
             for (textIndex, textRegion) in embed.textRegions.enumerated() {
@@ -1140,12 +1141,15 @@ extension NativeTimelineCanvasView {
             let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
                 in: message, store: spoilerRevealStore
             )
+            var coveredKeys = Set<NativeTimelineComponentRevealKey>()
+            // A multi-image post's card region spans its grid, so its one
+            // overlay covers every image.
             for region in layouts[index].embedRegions {
-                guard let key = concealedEmbeds[region.embedID] else { continue }
+                guard let key = concealedEmbeds[region.embedID], coveredKeys.insert(key).inserted else { continue }
                 appendDesiredSpoilerOverlay(
                     key,
                     frame: region.frame,
-                    cornerRadius: DiscordRichMessageMetrics.cardCornerRadius,
+                    cornerRadius: region.cornerRadius,
                     rowOrigin: rowOrigin,
                     into: &desired
                 )

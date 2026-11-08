@@ -22,9 +22,9 @@ source "$ROOT_DIR/script/release_metadata.sh"
 source "$ROOT_DIR/script/debug_credentials_config.sh"
 
 case "$MODE" in
-  package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-forum-performance-autoscroll|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-chat-files-performance|--offline-chat-files-performance-autoscroll|--offline-chat-files-performance-open|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
+  package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-forum-performance-autoscroll|--offline-forum-gallery-resize|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-chat-files-performance|--offline-chat-files-performance-autoscroll|--offline-chat-files-performance-open|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-server-rail-performance|--offline-unread-churn|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry) ;;
   *)
-    echo "usage: $0 [package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-forum-performance-autoscroll|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-chat-files-performance|--offline-chat-files-performance-autoscroll|--offline-chat-files-performance-open|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
+    echo "usage: $0 [package|package-release|run|run-release|--offline|--offline-sign-in|--offline-long-server-list|--offline-forum-performance|--offline-forum-performance-autoscroll|--offline-forum-gallery-resize|--offline-chat-performance|--offline-chat-performance-autoscroll|--offline-chat-performance-live-autoscroll|--offline-chat-media-performance-autoscroll|--offline-chat-voice-performance|--offline-chat-voice-performance-autoscroll|--offline-chat-files-performance|--offline-chat-files-performance-autoscroll|--offline-chat-files-performance-open|--offline-pins-performance-autoscroll|--offline-friends-performance|--offline-server-rail-performance|--offline-unread-churn|--offline-incoming-private-call|--media-viewer-benchmark|--verify|--debug|--logs|--telemetry]" >&2
     exit 2
     ;;
 esac
@@ -190,10 +190,12 @@ xcrun actool \
   --platform macosx \
   --minimum-deployment-target 27.0 \
   --app-icon "$APP_ICON_NAME" \
+  --accent-color AccentColor \
   --output-partial-info-plist "$ICON_PARTIAL_PLIST" \
   --warnings --notices --errors \
   "$ICON_STAGING_DIR/$APP_ICON_NAME.icon" \
-  "$ROOT_DIR/App/Packaging/SettingsDocument.xcassets"
+  "$ROOT_DIR/App/Packaging/SettingsDocument.xcassets" \
+  "$ROOT_DIR/App/Packaging/Appearance.xcassets"
 rm -f "$ICON_PARTIAL_PLIST"
 
 cat >"$CONTENTS/Info.plist" <<PLIST
@@ -209,6 +211,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>$DISPLAY_NAME</string>
   <key>CFBundleIconFile</key><string>$APP_ICON_NAME</string>
   <key>CFBundleIconName</key><string>$APP_ICON_NAME</string>
+  <key>NSAccentColorName</key><string>AccentColor</string>
   <key>UTExportedTypeDeclarations</key>
   <array><dict>
     <key>UTTypeIdentifier</key><string>dev.sakuracord.settings</string>
@@ -360,6 +363,7 @@ case "$MODE" in
   --offline-long-server-list) open_offline_long_server_list ;;
   --offline-forum-performance) open_offline_forum_performance ;;
   --offline-forum-performance-autoscroll) open_offline_forum_performance_autoscroll ;;
+  --offline-forum-gallery-resize) open_app --args --offline-forum-gallery-resize ;;
   --offline-chat-performance) open_offline_chat_performance ;;
   --offline-chat-performance-autoscroll) open_offline_chat_performance_autoscroll ;;
   --offline-chat-performance-live-autoscroll) open_offline_chat_performance_live_autoscroll ;;
@@ -372,6 +376,8 @@ case "$MODE" in
       --args "$MODE" ;;
   --offline-pins-performance-autoscroll) open_offline_pins_performance_autoscroll ;;
   --offline-friends-performance) open_app --args --offline-friends-performance ;;
+  --offline-server-rail-performance) open_app --args --offline-server-rail-performance ;;
+  --offline-unread-churn) open_app --args --offline-unread-churn ;;
   --offline-incoming-private-call) open_offline_incoming_private_call ;;
   --media-viewer-benchmark) open_media_viewer_benchmark ;;
 esac

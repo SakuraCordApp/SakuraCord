@@ -294,6 +294,7 @@ extension AppModel {
         hasLoadedDiscordEmojiSettings = false
         didAttemptDiscordEmojiSettings = false
         voiceStates = [:]
+        serverRailVoicePreviewStore.clear()
         privateCallsByChannel = [:]
         reconcilePrivateCallSounds()
         visibleChannels = []

@@ -548,6 +548,22 @@ struct AccountReadStateModelTests {
         #expect(!duplicate.shouldNotify)
     }
 
+    /// A read state for a channel the account doesn't list, such as a closed
+    /// DM, has no row to show its mentions. Counting it left a Dock badge that
+    /// no server, folder or conversation explained.
+    @Test func `mentions in channels the account does not list count nowhere`() {
+        let model = makeModel(latest: 10, acknowledged: 10)
+        let dmID = ChannelID(rawValue: 301)
+        model.merge(channels: [Channel(id: dmID, guildID: nil, name: "DM", kind: .directMessage)])
+        _ = model.replaceReadStates([
+            ChannelReadState(channelID: dmID, lastAcknowledgedMessageID: nil, mentionCount: 2),
+            ChannelReadState(channelID: ChannelID(rawValue: 302), lastAcknowledgedMessageID: nil, mentionCount: 1),
+        ])
+        #expect(model.totalMentions == 2)
+        #expect(model.directMessageMentions == 2)
+        #expect(model.unreadPresentationProjection().totalMentions == 2)
+    }
+
     @Test func `account reset fully isolates state token settings and presentations`() {
         let model = makeModel(latest: 12, acknowledged: 10, mentions: 2)
         _ = model.updatePresentation(

@@ -253,6 +253,16 @@ No catalogue downloads or account requests are needed. Exact entries retain
 their existing semantics, and the link-warning checkbox trusts only its exact
 hostname. Always Ask and Never Ask retain their existing behaviour.
 
+Theme Designer owns the accent: the first active colour through the existing
+readable light/dark recipe. The launcher places `AppleAccentColor = -2` in the
+standard defaults' volatile argument domain before AppKit initializes, so the
+app accent wins over a specific macOS accent for this process only, without
+changing persistent app or system preferences. `AppAccentColorController` then
+applies the committed theme accent through AppKit's private `_setAccentColor:`
+on the main actor, before theme observers invalidate cached presentation, so
+native controls, selections and focus rings follow the theme. The default theme
+restores the dynamic bundled accent.
+
 Platform-owned preferences use their platform services. Download bookmarks are
 usable only when accessible on the receiving Mac.
 

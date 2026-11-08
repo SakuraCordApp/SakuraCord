@@ -52,6 +52,7 @@ struct CustomEmojiRichText: View {
     let onMentionClick: (MentionPresentation, StablePopoverAnchor) -> Void
     let onURLClick: (URL) -> Bool
     @State private var presentedMention: AnchoredMentionPresentation?
+    @State private var revealedSpoilerLocations: Set<Int> = []
 
     init(
         model: AppModel? = nil,
@@ -91,10 +92,17 @@ struct CustomEmojiRichText: View {
             isSelectable: isSelectable,
             foregroundColor: foregroundColor,
             mentionPresentations: mentionPresentations,
+            revealedSpoilerLocations: revealedSpoilerLocations,
+            onRevealSpoiler: { location in
+                revealedSpoilerLocations.insert(location)
+            },
             onMentionClick: handleMentionClick,
             onURLClick: onURLClick
         )
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: content) { _, _ in
+            revealedSpoilerLocations.removeAll()
+        }
         .overlay {
             if let model {
                 AnchoredMentionPopoverLayer(
