@@ -394,7 +394,13 @@ extension NativeTimelineCanvasView {
              .content:
             let band = editedTextBand(from: old, at: index, width: baseline.width, motionID: update.motionID)
             update.plan.addStep(for: row, delta: delta, movesText: band != nil)
-            if let band { update.textBands.append(band) }
+            if let band {
+                update.textBands.append(band)
+            } else {
+                // A band can't follow this change, and the running one would
+                // part the new layout at the earlier text's end.
+                editedTextBands[identifier] = nil
+            }
             // A motion still running from an earlier change keeps going, so
             // this one starts from the height the row shows now.
             endReactionTransition(identifier)
