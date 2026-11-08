@@ -178,18 +178,29 @@ extension NativeTimelineCanvasView {
             let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
             let motion = reactionRowMotions.first { $0.id == band.motionID }
             let handoff = motion?.progress(at: rowMotionUptime) ?? progress
-            clipped(from: textTop, to: paintFrame.maxY + max(0, shown - band.newHeight)) {
-                let handoffEnd = NativeTimelineDepartedRun.handoffFadeEnd
+            let handoffEnd = NativeTimelineDepartedRun.handoffFadeEnd
+            let text = CGPoint(x: frame.minX + slide.textOrigin.x, y: frame.minY + slide.textOrigin.y)
+            let textBottom = max(textTop, text.y)
+            // The fade covers the header above the text and the avatar
+            // beside it, so that no region is painted twice.
+            let faded = [
+                CGRect(x: paintFrame.minX, y: textTop, width: paintFrame.width, height: text.y - textTop),
+                CGRect(
+                    x: paintFrame.minX, y: textBottom, width: text.x - paintFrame.minX,
+                    height: paintFrame.maxY + max(0, shown - band.newHeight) - textBottom
+                )
+            ].filter { $0.height > 0 }
+            if !faded.isEmpty {
+                context.saveGState()
+                context.clip(to: faded)
                 context.setAlpha(max(0, (handoff - handoffEnd) / (1 - handoffEnd)))
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
                 drawPicture(frame)
                 context.endTransparencyLayer()
+                context.restoreGState()
             }
             context.saveGState()
-            context.clip(to: CGRect(
-                x: frame.minX + slide.textOrigin.x, y: frame.minY + slide.textOrigin.y,
-                width: frame.width, height: frame.height
-            ))
+            context.clip(to: CGRect(x: text.x, y: text.y, width: frame.width, height: frame.height))
             drawPicture(frame)
             context.restoreGState()
             return
