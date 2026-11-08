@@ -67,60 +67,28 @@ struct MentionAutocompleteContext {
     }
 }
 
-struct TimeMentionContext: Equatable {
-    private static let expression = RegularExpressionFactory.make(
-        #"(?:^|\s)(@time(?:\s+([^\n]*))?)$"#
-    )
-
-    let range: NSRange
-    let query: String
-    let rawQuery: String
-
-    init?(text: String, selection: NSRange?) {
-        let cursor = selection?.location ?? text.utf16.count
-        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
-        let prefix = (text as NSString).substring(to: cursor)
-        guard let match = Self.expression.firstMatch(
-            in: prefix,
-            range: NSRange(location: 0, length: (prefix as NSString).length)
-        ), match.range(at: 1).location != NSNotFound else { return nil }
-
-        let fullToken = (prefix as NSString).substring(with: match.range(at: 1))
-        guard fullToken == "@time" || fullToken.hasPrefix("@time ") else {
-            return nil
-        }
-        range = match.range(at: 1)
-        if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound {
-            rawQuery = (prefix as NSString).substring(with: match.range(at: 2))
-            query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            rawQuery = ""
-            query = ""
-        }
+/// Text typed after the line's last `@game ` or `@time `, which filters
+/// that keyword's menu as a command argument filters its options.
+struct KeywordMentionContext {
+    enum Keyword: String, CaseIterable {
+        case game, time
     }
 
-    init(range: NSRange, query: String, rawQuery: String) {
-        self.range = range
-        self.query = query
-        self.rawQuery = rawQuery
-    }
-}
-
-/// A game search typed after the line's last `@game `, which filters the
-/// game menu as a command argument filters its options.
-struct GameMentionContext {
-    private static let expression = RegularExpressionFactory.make(
-        #"(?:^|\s)(@game ((?:(?!(?<=\s)@game )[^\v])*))\z"#
-    )
+    private static let expressions = Dictionary(uniqueKeysWithValues: Keyword.allCases.map { keyword in
+        (keyword, RegularExpressionFactory.make(
+            #"(?:^|\s)(@\#(keyword.rawValue) ((?:(?!(?<=\s)@\#(keyword.rawValue) )[^\v])*))\z"#
+        ))
+    })
 
     let query: String
     let range: NSRange
 
-    init?(text: String, selection: NSRange?) {
+    init?(_ keyword: Keyword, text: String, selection: NSRange?) {
         let cursor = selection?.location ?? text.utf16.count
-        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count else { return nil }
+        guard selection?.length ?? 0 == 0, cursor <= text.utf16.count, let expression = Self.expressions[keyword]
+        else { return nil }
         let prefix = (text as NSString).substring(to: cursor)
-        guard let match = Self.expression.firstMatch(
+        guard let match = expression.firstMatch(
             in: prefix,
             range: NSRange(location: 0, length: (prefix as NSString).length)
         ), match.range(at: 1).location != NSNotFound
@@ -131,11 +99,6 @@ struct GameMentionContext {
 }
 
 struct MentionAutocompleteSuggestion: Identifiable {
-    enum Action: Equatable {
-        case insert
-        case chooseTimeFormat
-    }
-
     let id: String
     let title: String
     let detail: String
@@ -145,5 +108,4 @@ struct MentionAutocompleteSuggestion: Identifiable {
     var colorHex: UInt32?
     var member: Member?
     var systemImage: String?
-    var action: Action = .insert
 }

@@ -78,33 +78,6 @@ public struct RenderedMention: Codable, Hashable, Sendable {
     public var messageGuildID: String?
     public var messageChannelID: String?
 
-    public var timestampToken: DiscordTimestampToken? {
-        guard kind == .timestamp else { return nil }
-        return DiscordTimestampToken(rawToken: rawToken)
-    }
-
-    public var timestampDate: Date? {
-        guard kind == .timestamp, let seconds = Int64(id) else { return nil }
-        return Date(timeIntervalSince1970: TimeInterval(seconds))
-    }
-
-    public var timestampStyle: String? {
-        guard kind == .timestamp else { return nil }
-        let inner = rawToken.dropFirst(3).dropLast()
-        let parts = inner.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-        return parts.count > 1 ? String(parts[1]) : nil
-    }
-
-    public var formattedTimestamp: String {
-        guard kind == .timestamp, let seconds = Int64(id) else { return rawToken }
-        return DiscordTimestampFormatter.formatted(seconds: seconds, style: timestampStyle)
-    }
-
-    public var timestampTooltip: String? {
-        guard kind == .timestamp, let seconds = Int64(id) else { return nil }
-        return DiscordTimestampFormatter.tooltip(seconds: seconds, style: timestampStyle)
-    }
-
     /// The full name of a command mention, such as `role add`.
     public var commandName: String? {
         guard kind == .command, let separator = rawToken.lastIndex(of: ":") else { return nil }

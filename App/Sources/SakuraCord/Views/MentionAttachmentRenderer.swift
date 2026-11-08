@@ -1,5 +1,4 @@
 import AppKit
-import MessageRendering
 import SakuraCordModels
 
 extension NSAttributedString.Key {
@@ -9,7 +8,7 @@ extension NSAttributedString.Key {
 }
 
 nonisolated final class MentionTextAttachment: NSTextAttachment {
-    var presentation: MentionPresentation
+    let presentation: MentionPresentation
     let font: NSFont
     private(set) var normalImage: NSImage
     private(set) var hoverImage: NSImage
@@ -49,41 +48,6 @@ nonisolated final class MentionTextAttachment: NSTextAttachment {
         )
         image = normalImage
     }
-
-    @MainActor
-    func updateTimestampIfRelative(relativeTo now: Date = .now) -> Bool {
-        guard case let .timestamp(date, style) = presentation.target, style == "R" else { return false }
-        let currentLabel = DiscordTimestampFormatter.formatted(date: date, style: "R", now: now)
-        if currentLabel == presentation.label { return false }
-        let updatedPresentation = MentionPresentation(
-            rawToken: presentation.rawToken,
-            label: currentLabel,
-            target: presentation.target,
-            avatarURL: presentation.avatarURL,
-            colorHex: presentation.colorHex,
-            systemImage: presentation.systemImage,
-            toolTip: presentation.toolTip
-        )
-        presentation = updatedPresentation
-        normalImage = MentionAttachmentRenderer.image(
-            presentation: updatedPresentation, font: font, avatar: nil, hovered: false
-        )
-        hoverImage = MentionAttachmentRenderer.image(
-            presentation: updatedPresentation, font: font, avatar: nil, hovered: true
-        )
-        image = normalImage
-        let oldWidth = bounds.width
-        bounds = CGRect(
-            x: 0,
-            y: ComposerEmojiAttributedText.attachmentOriginY(
-                font: font, size: normalImage.size.height
-            ),
-            width: normalImage.size.width,
-            height: normalImage.size.height
-        )
-        image?.accessibilityDescription = currentLabel
-        return oldWidth != normalImage.size.width
-    }
 }
 
 @MainActor
@@ -114,9 +78,6 @@ enum MentionAttachmentRenderer {
         avatar: NSImage?,
         hovered: Bool
     ) -> NSImage {
-        if presentation.isTimestamp {
-            return timestampImage(presentation: presentation, font: font, hovered: hovered)
-        }
         let labelFont = NSFont.systemFont(ofSize: font.pointSize, weight: presentation.labelWeight)
         let label = presentation.label as NSString
         let attributes: [NSAttributedString.Key: Any] = [.font: labelFont]
@@ -213,41 +174,7 @@ enum MentionAttachmentRenderer {
         return image
     }
 
-    private static func timestampImage(
-        presentation: MentionPresentation,
-        font: NSFont,
-        hovered: Bool
-    ) -> NSImage {
-        let labelFont = NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: .regular)
-        let label = presentation.label as NSString
-        let attributes: [NSAttributedString.Key: Any] = [.font: labelFont]
-        let labelSize = label.size(withAttributes: attributes)
-        let height = max(21, ceil(font.pointSize + 6))
-        let horizontalPadding: CGFloat = InterfaceScale.metric(6)
-        let width = ceil(horizontalPadding * 2 + labelSize.width)
-        let size = NSSize(width: width, height: height)
-        let image = NSImage(size: size, flipped: false) { bounds in
-            let background = NSColor.white.withAlphaComponent(hovered ? 0.14 : 0.08)
-            let shape = NSBezierPath(
-                concentricRoundedRect: bounds,
-                cornerRadius: InterfaceScale.metric(4.5)
-            )
-            background.setFill()
-            shape.fill()
-
-            let textAttributes: [NSAttributedString.Key: Any] = [
-                .font: labelFont,
-                .foregroundColor: NSColor.labelColor
-            ]
-            let textY = floor((height - labelSize.height) / 2)
-            label.draw(at: NSPoint(x: horizontalPadding, y: textY), withAttributes: textAttributes)
-            return true
-        }
-        image.accessibilityDescription = presentation.label
-        return image
-    }
-
-    static func mentionColor(hex: UInt32?) -> NSColor {
+    private static func mentionColor(hex: UInt32?) -> NSColor {
         guard let hex, hex != 0 else { return .sakuraCordAccentColor }
         return NSColor(
             calibratedRed: CGFloat((hex >> 16) & 0xff) / 255,

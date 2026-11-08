@@ -1,808 +1,322 @@
 import Foundation
 
-public struct DiscordParsedTimeCandidate: Equatable, Sendable {
-    public struct Option: Identifiable, Equatable, Sendable {
-        public let id: String
-        public let style: String?
-        public let displayText: String
-        public let markdownToken: String
-        public let badgeText: String?
-
-        public init(
-            id: String,
-            style: String?,
-            displayText: String,
-            markdownToken: String,
-            badgeText: String? = nil
-        ) {
-            self.id = id
-            self.style = style
-            self.displayText = displayText
-            self.markdownToken = markdownToken
-            self.badgeText = badgeText
-        }
+/// One date the `@time` menu offers, with the formats Discord lists for it.
+public struct DiscordTimeSuggestion: Equatable, Sendable {
+    /// Why a query has more than one reading, shown beside its first format.
+    public enum Reading: Equatable, Sendable {
+        case timeOnly, today, tomorrow, thisWeek, lastWeek, thisYear, nextYear
     }
 
     public let date: Date
-    public let options: [Option]
+    public let reading: Reading?
+    public let styles: [DiscordTimestampToken.Style]
 
-    public init(date: Date, options: [Option]) {
-        self.date = date
-        self.options = options
+    public func token(_ style: DiscordTimestampToken.Style) -> DiscordTimestampToken {
+        DiscordTimestampToken(seconds: Int64(date.timeIntervalSince1970.rounded(.down)), style: style)
     }
 }
 
+/// Reads the English phrases Discord's `@time` accepts: times of day, day
+/// words, weekdays, month days and dates, and `in N units` / `N units ago`.
+/// Anything else has no reading, so the menu stays empty as Discord's does.
 public enum DiscordNaturalLanguageTimeParser {
-    public static func candidates(
-        for query: String,
-        referenceDate: Date? = nil,
-        now: Date = .now,
-        locale: Locale = .autoupdatingCurrent,
-        timeZone: TimeZone = .autoupdatingCurrent,
-        calendar: Calendar = .autoupdatingCurrent
-    ) -> [DiscordParsedTimeCandidate] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if trimmed.isEmpty || trimmed.caseInsensitiveCompare("now") == .orderedSame {
-            let target = referenceDate ?? now
-            return [makeNowCandidate(targetDate: target, now: now, locale: locale, timeZone: timeZone, calendar: calendar)]
-        }
-
-        if let seconds = Int64(trimmed), seconds > 100_000_000, seconds < 100_000_000_000 {
-            let date = Date(timeIntervalSince1970: TimeInterval(seconds))
-            return [makeUnixCandidate(for: date, now: now, locale: locale, timeZone: timeZone, calendar: calendar)]
-        }
-
-        if let combinedDate = parseCombined(query: trimmed, now: referenceDate ?? now, calendar: calendar, timeZone: timeZone) {
-            return [makeStandardCandidate(
-                for: combinedDate,
-                candidateIndex: 0,
-                badgeText: nil,
-                now: now,
-                locale: locale,
-                timeZone: timeZone,
-                calendar: calendar
-            )]
-        }
-
-        if let relativeDate = parseRelative(query: trimmed, now: referenceDate ?? now, calendar: calendar, timeZone: timeZone) {
-            return [makeStandardCandidate(
-                for: relativeDate,
-                candidateIndex: 0,
-                badgeText: nil,
-                now: now,
-                locale: locale,
-                timeZone: timeZone,
-                calendar: calendar
-            )]
-        }
-
-        if let timeItems = parseTimeOfDay(query: trimmed, now: now, calendar: calendar, timeZone: timeZone) {
-            return buildTimeOfDayCandidates(timeItems: timeItems, now: now, locale: locale, timeZone: timeZone, calendar: calendar)
-        }
-
-        let naturalDates = parseNaturalDates(query: trimmed, now: now, calendar: calendar, timeZone: timeZone)
-        return naturalDates.enumerated().map { idx, item in
-            makeStandardCandidate(
-                for: item.date,
-                candidateIndex: idx,
-                badgeText: item.badge,
-                now: now,
-                locale: locale,
-                timeZone: timeZone,
-                calendar: calendar
-            )
-        }
-    }
-
-    private static func makeNowCandidate(
-        targetDate: Date,
-        now: Date,
-        locale: Locale,
-        timeZone: TimeZone,
-        calendar: Calendar
-    ) -> DiscordParsedTimeCandidate {
-        let seconds = Int64(targetDate.timeIntervalSince1970)
-        return DiscordParsedTimeCandidate(
-            date: targetDate,
-            options: [
-                .init(
-                    id: "now-s",
-                    style: "s",
-                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "s", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):s>"
-                ),
-                .init(
-                    id: "now-f",
-                    style: "f",
-                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "f", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):f>"
-                ),
-                .init(
-                    id: "now-F",
-                    style: "F",
-                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "F", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):F>"
-                ),
-                .init(
-                    id: "now-R",
-                    style: "R",
-                    displayText: DiscordTimestampFormatter.formatted(date: targetDate, style: "R", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):R>"
+    public static func suggestions(
+        for query: String, now: Date, calendar: Calendar = .autoupdatingCurrent
+    ) -> [DiscordTimeSuggestion] {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty, words != ["now"] else { return [moment(now)] }
+        let parser = Parser(now: now, calendar: calendar)
+        // `5pm est` is that wall time in that zone, on the local day.
+        if words.count > 1, let abbreviation = words.last?.uppercased(),
+           TimeZone.abbreviationDictionary[abbreviation] != nil, let zone = TimeZone(abbreviation: abbreviation),
+           let local = parser.dated(Array(words.dropLast())) {
+            return local.map { suggestion in
+                let offset = calendar.timeZone.secondsFromGMT(for: suggestion.date) - zone.secondsFromGMT(for: suggestion.date)
+                return DiscordTimeSuggestion(
+                    date: suggestion.date.addingTimeInterval(TimeInterval(offset)),
+                    reading: suggestion.reading,
+                    styles: suggestion.styles
                 )
-            ]
-        )
+            }
+        }
+        return parser.relative(words) ?? parser.period(words) ?? parser.dated(words) ?? []
     }
 
-    private static func makeUnixCandidate(
-        for date: Date,
-        now: Date,
-        locale: Locale,
-        timeZone: TimeZone,
-        calendar: Calendar
-    ) -> DiscordParsedTimeCandidate {
-        let seconds = Int64(date.timeIntervalSince1970)
-        let styles = ["t", "T", "d", "D", "f", "F", "R"]
-        return DiscordParsedTimeCandidate(
+    /// A precise instant keeps its seconds, which Discord shows in the
+    /// first format; a resolved day or time does not.
+    static func moment(_ date: Date, reading: DiscordTimeSuggestion.Reading? = nil) -> DiscordTimeSuggestion {
+        let hasSeconds = Int(date.timeIntervalSince1970.rounded(.down)) % 60 != 0
+        return DiscordTimeSuggestion(
             date: date,
-            options: styles.map { style in
-                .init(
-                    id: "unix-\(style)",
-                    style: style,
-                    displayText: DiscordTimestampFormatter.formatted(date: date, style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):\(style)>"
-                )
-            }
+            reading: reading,
+            styles: [hasSeconds ? .shortDateMediumTime : .shortDateShortTime, .longDateShortTime, .fullDateShortTime, .relative]
         )
     }
+}
 
-    private static func makeStandardCandidate(
-        for date: Date,
-        candidateIndex: Int,
-        badgeText: String?,
-        now: Date,
-        locale: Locale,
-        timeZone: TimeZone,
-        calendar: Calendar
-    ) -> DiscordParsedTimeCandidate {
-        let seconds = Int64(date.timeIntervalSince1970)
-        let prefix = "cand-\(candidateIndex)"
-        return DiscordParsedTimeCandidate(
-            date: date,
-            options: [
-                .init(
-                    id: "\(prefix)-s",
-                    style: "s",
-                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "s", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):s>",
-                    badgeText: badgeText
-                ),
-                .init(
-                    id: "\(prefix)-f",
-                    style: "f",
-                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "f", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):f>"
-                ),
-                .init(
-                    id: "\(prefix)-F",
-                    style: "F",
-                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "F", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):F>"
-                ),
-                .init(
-                    id: "\(prefix)-R",
-                    style: "R",
-                    displayText: DiscordTimestampFormatter.formatted(date: date, style: "R", now: now, locale: locale, timeZone: timeZone, calendar: calendar),
-                    markdownToken: "<t:\(seconds):R>"
-                )
-            ]
-        )
-    }
+private struct TimeOfDay {
+    let hour: Int
+    let minute: Int
+}
 
-    private struct TimeDayItem {
-        let date: Date
-        let badge: String
-    }
+private struct Parser {
+    let now: Date
+    let calendar: Calendar
 
-    private static func buildTimeOfDayCandidates(
-        timeItems: (timeOnly: Date, occurrences: [TimeDayItem]),
-        now: Date,
-        locale: Locale,
-        timeZone: TimeZone,
-        calendar: Calendar
-    ) -> [DiscordParsedTimeCandidate] {
-        var result: [DiscordParsedTimeCandidate] = []
-        let seconds = Int64(timeItems.timeOnly.timeIntervalSince1970)
-        let timeText = DiscordTimestampFormatter.formatted(date: timeItems.timeOnly, style: "t", now: now, locale: locale, timeZone: timeZone, calendar: calendar)
-
-        result.append(DiscordParsedTimeCandidate(
-            date: timeItems.timeOnly,
-            options: [
-                .init(id: "time-only-t", style: "t", displayText: timeText, markdownToken: "<t:\(seconds):t>", badgeText: "Time only")
-            ]
-        ))
-
-        for (idx, item) in timeItems.occurrences.enumerated() {
-            result.append(makeStandardCandidate(
-                for: item.date,
-                candidateIndex: idx + 1,
-                badgeText: item.badge,
-                now: now,
-                locale: locale,
-                timeZone: timeZone,
-                calendar: calendar
-            ))
-        }
-
-        return result
-    }
-
-    private struct ParsedTimeOfDay {
-        let hour: Int
-        let minute: Int
-        let second: Int
-    }
-
-    private static func extractTimeOfDay(
-        from text: String
-    ) -> ParsedTimeOfDay? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleaned = trimmed.lowercased().hasPrefix("at ")
-            ? String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
-            : trimmed
-        let pattern = #"^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(am|pm)?$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned)),
-              let hourRange = Range(match.range(at: 1), in: cleaned),
-              var hour = Int(cleaned[hourRange])
-        else { return nil }
-
-        var minute = 0
-        if match.range(at: 2).location != NSNotFound,
-           let minRange = Range(match.range(at: 2), in: cleaned),
-           let parsedMinute = Int(cleaned[minRange]) {
-            minute = parsedMinute
-        }
-
-        var second = 0
-        if match.range(at: 3).location != NSNotFound,
-           let secRange = Range(match.range(at: 3), in: cleaned),
-           let parsedSecond = Int(cleaned[secRange]) {
-            second = parsedSecond
-        }
-
-        guard minute >= 0, minute <= 59, second >= 0, second <= 59 else {
-            return nil
-        }
-
-        if match.range(at: 4).location != NSNotFound,
-           let ampmRange = Range(match.range(at: 4), in: cleaned) {
-            guard hour >= 1, hour <= 12 else { return nil }
-            let ampm = cleaned[ampmRange].lowercased()
-            if ampm == "pm", hour < 12 { hour += 12 }
-            if ampm == "am", hour == 12 { hour = 0 }
-        } else {
-            guard hour >= 0, hour <= 24 else { return nil }
-            if hour == 24 { hour = 0 }
-        }
-
-        return ParsedTimeOfDay(hour: hour, minute: minute, second: second)
-    }
-
-    private static func parseTimeOfDay(
-        query: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> (timeOnly: Date, occurrences: [TimeDayItem])? {
-        guard let time = extractTimeOfDay(from: query) else { return nil }
-
-        var components = calendar.dateComponents(in: timeZone, from: now)
-        components.hour = time.hour
-        components.minute = time.minute
-        components.second = time.second
-
-        guard let targetToday = calendar.date(from: components) else { return nil }
-
-        if targetToday < now {
-            let tomorrow = calendar.date(byAdding: .day, value: 1, to: targetToday) ?? targetToday
-            return (
-                timeOnly: targetToday,
-                occurrences: [
-                    TimeDayItem(date: tomorrow, badge: "Tomorrow"),
-                    TimeDayItem(date: targetToday, badge: "Today")
-                ]
-            )
-        } else {
-            let yesterday = calendar.date(byAdding: .day, value: -1, to: targetToday) ?? targetToday
-            return (
-                timeOnly: targetToday,
-                occurrences: [
-                    TimeDayItem(date: targetToday, badge: "Today"),
-                    TimeDayItem(date: yesterday, badge: "Yesterday")
-                ]
-            )
-        }
-    }
-
-    private static func parseCombined(
-        query: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        let lower = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        if let date = parseDayWithTime(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
-            return date
-        }
-        if let date = parseYearWithDate(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
-            return date
-        }
-        if let date = parseWeekdayWithTime(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
-            return date
-        }
-        if let date = parseRelativeDayOffsetWithTime(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
-            return date
-        }
-        return nil
-    }
-
-    private static let namedDayPhrases: [(phrase: String, offset: Int)] = [
-        ("day before yesterday", -2),
-        ("day after tomorrow", 2),
-        ("tomorrow", 1),
-        ("yesterday", -1),
-        ("next day", 1),
-        ("last day", -1),
-        ("today", 0)
-    ]
-
-    private static func parseDayWithTime(
-        lower: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        for item in namedDayPhrases {
-            var timeCandidate: String?
-            if lower.hasPrefix(item.phrase + " ") {
-                timeCandidate = String(lower.dropFirst(item.phrase.count))
-            } else if lower.hasSuffix(" " + item.phrase) {
-                timeCandidate = String(lower.dropLast(item.phrase.count))
-            }
-
-            guard let timeStr = timeCandidate,
-                  let time = extractTimeOfDay(from: timeStr)
-            else { continue }
-
-            let baseDate = item.offset == 0
-                ? now
-                : (calendar.date(byAdding: .day, value: item.offset, to: now) ?? now)
-
-            var comp = calendar.dateComponents(in: timeZone, from: baseDate)
-            comp.hour = time.hour
-            comp.minute = time.minute
-            comp.second = time.second
-            return calendar.date(from: comp)
-        }
-        return nil
-    }
-
-    private struct ParsedDateComponents {
-        let month: Int
-        let day: Int
-        let hour: Int?
-        let minute: Int?
-        let second: Int?
-    }
-
-    private static func parseRawDate(from query: String, timeZone: TimeZone) -> Date? {
-        let fallbackFormats = [
-            "d MMMM yyyy", "d MMM yyyy", "MMMM d yyyy", "MMM d yyyy",
-            "d MMMM", "d MMM", "MMMM d", "MMM d",
-            "d/M/yyyy HH:mm:ss", "d/M/yyyy HH:mm", "d/M/yyyy h:mm a", "d/M/yyyy",
-            "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd h:mm a", "yyyy-MM-dd",
-            "d-M-yyyy HH:mm", "d-M-yyyy", "d.M.yyyy", "yyyy/MM/dd", "M/d/yyyy", "M/d",
-            "d MMMM HH:mm", "d MMM HH:mm", "MMMM d HH:mm", "MMM d HH:mm",
-            "d MMMM h:mm a", "d MMM h:mm a", "MMMM d h:mm a", "MMM d h:mm a",
-            "d MMMM ha", "d MMM ha", "MMMM d ha", "MMM d ha"
-        ]
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        for format in fallbackFormats {
-            formatter.dateFormat = format
-            if let date = formatter.date(from: query) {
-                return date
-            }
-        }
-
-        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) {
-            let range = NSRange(query.startIndex..., in: query)
-            return detector.matches(in: query, range: range).first?.date
-        }
-
-        return nil
-    }
-
-    private static func parseDateComponents(
-        from query: String,
-        timeZone: TimeZone
-    ) -> ParsedDateComponents? {
-        guard let date = parseRawDate(from: query, timeZone: timeZone) else { return nil }
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = timeZone
-        let comp = cal.dateComponents([.month, .day, .hour, .minute, .second], from: date)
-        guard let month = comp.month, let day = comp.day else { return nil }
-
-        let hasExplicitTime = query.range(
-            of: #"(?:\b\d{1,2}:\d{2}\b|\b(?:am|pm)\b|\b\d{1,2}(?:am|pm)\b)"#,
-            options: [.regularExpression, .caseInsensitive]
-        ) != nil
-
-        if hasExplicitTime {
-            return ParsedDateComponents(month: month, day: day, hour: comp.hour, minute: comp.minute, second: comp.second)
-        } else {
-            return ParsedDateComponents(month: month, day: day, hour: nil, minute: nil, second: nil)
-        }
-    }
-
-    private static func parseYearWithDate(
-        lower: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        let pattern = #"^(?:(next|last|this)\s+year\s+(.+)|(.+?)\s+(next|last|this)\s+year)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower))
-        else { return nil }
-
-        let modStr: String
-        let datePart: String
-        if match.range(at: 1).location != NSNotFound,
-           let modRange = Range(match.range(at: 1), in: lower),
-           let partRange = Range(match.range(at: 2), in: lower) {
-            modStr = String(lower[modRange]).lowercased()
-            datePart = String(lower[partRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-        } else if match.range(at: 3).location != NSNotFound,
-                  let partRange = Range(match.range(at: 3), in: lower),
-                  let modRange = Range(match.range(at: 4), in: lower) {
-            modStr = String(lower[modRange]).lowercased()
-            datePart = String(lower[partRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+    /// `in 2 hours`, `in 2h`, `in a week`, `3 days ago`, `in 3 days at 5pm`.
+    func relative(_ words: [String]) -> [DiscordTimeSuggestion]? {
+        var words = words
+        let sign: Double
+        if words.first == "in" {
+            sign = 1
+            words.removeFirst()
+        } else if words.last == "ago" {
+            sign = -1
+            words.removeLast()
         } else {
             return nil
         }
-
-        let yearOffset: Int
-        switch modStr {
-        case "next": yearOffset = 1
-        case "last": yearOffset = -1
-        default: yearOffset = 0
+        if let glued = words.first, let split = glued.firstIndex(where: \.isLetter), split != glued.startIndex,
+           Double(glued[..<split]) != nil {
+            words.replaceSubrange(0 ..< 1, with: [String(glued[..<split]), String(glued[split...])])
         }
-
-        guard let parsed = parseDateComponents(from: datePart, timeZone: timeZone) else { return nil }
-        let currentYear = calendar.component(.year, from: now)
-        var comp = DateComponents()
-        comp.year = currentYear + yearOffset
-        comp.month = parsed.month
-        comp.day = parsed.day
-        comp.hour = parsed.hour ?? 12
-        comp.minute = parsed.minute ?? 0
-        comp.second = parsed.second ?? 0
-        comp.timeZone = timeZone
-        return calendar.date(from: comp)
-    }
-
-    private static func parseWeekdayWithTime(
-        lower: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        let prefixPattern = #"^(?:(next|this|last)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(.+)$"#
-        if let regex = try? NSRegularExpression(pattern: prefixPattern, options: .caseInsensitive),
-           let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let dayRange = Range(match.range(at: 2), in: lower),
-           let timeRange = Range(match.range(at: 3), in: lower) {
-            let modifier = match.range(at: 1).location != NSNotFound
-                ? Range(match.range(at: 1), in: lower).map { String(lower[$0]) }
-                : nil
-            let weekdayName = String(lower[dayRange])
-            let weekdayQuery = modifier.map { "\($0) \(weekdayName)" } ?? weekdayName
-            let timeStr = String(lower[timeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-
-            guard let weekdayDate = parseWeekday(lower: weekdayQuery, now: now, calendar: calendar, timeZone: timeZone),
-                  let time = extractTimeOfDay(from: timeStr)
-            else { return nil }
-
-            var comp = calendar.dateComponents(in: timeZone, from: weekdayDate)
-            comp.hour = time.hour
-            comp.minute = time.minute
-            comp.second = time.second
-            return calendar.date(from: comp)
-        }
-
-        let suffixPattern = #"^(.+?)\s+(?:on\s+)?(?:(next|this|last)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$"#
-        if let regex = try? NSRegularExpression(pattern: suffixPattern, options: .caseInsensitive),
-           let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let timeRange = Range(match.range(at: 1), in: lower),
-           let dayRange = Range(match.range(at: 3), in: lower) {
-            let modifier = match.range(at: 2).location != NSNotFound
-                ? Range(match.range(at: 2), in: lower).map { String(lower[$0]) }
-                : nil
-            let weekdayName = String(lower[dayRange])
-            let weekdayQuery = modifier.map { "\($0) \(weekdayName)" } ?? weekdayName
-            let timeStr = String(lower[timeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-
-            guard let weekdayDate = parseWeekday(lower: weekdayQuery, now: now, calendar: calendar, timeZone: timeZone),
-                  let time = extractTimeOfDay(from: timeStr)
-            else { return nil }
-
-            var comp = calendar.dateComponents(in: timeZone, from: weekdayDate)
-            comp.hour = time.hour
-            comp.minute = time.minute
-            comp.second = time.second
-            return calendar.date(from: comp)
-        }
-
-        return nil
-    }
-
-    private static func parseRelativeDayOffsetWithTime(
-        lower: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        let pattern = #"^in\s+(\d+)\s+days?\s+(.+)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-              let daysRange = Range(match.range(at: 1), in: lower),
-              let days = Int(lower[daysRange]),
-              let timeRange = Range(match.range(at: 2), in: lower),
-              let time = extractTimeOfDay(from: String(lower[timeRange]))
+        guard words.count >= 2,
+              let amount = ["a": 1, "an": 1][words[0]] ?? Double(words[0]), amount.isFinite, amount >= 0,
+              let unit = Self.units[words[1]]
         else { return nil }
-
-        guard let baseDate = calendar.date(byAdding: .day, value: days, to: now) else { return nil }
-        var comp = calendar.dateComponents(in: timeZone, from: baseDate)
-        comp.hour = time.hour
-        comp.minute = time.minute
-        comp.second = time.second
-        return calendar.date(from: comp)
-    }
-
-    private static func parseRelative(
-        query: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        let lower = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        if let date = parseNamedRelative(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
-            return date
-        }
-        if let date = parseRelativeOffset(lower: lower, now: now, calendar: calendar) {
-            return date
-        }
-        if let date = parseWeekday(lower: lower, now: now, calendar: calendar, timeZone: timeZone) {
-            return date
-        }
-        return nil
-    }
-
-    private static let namedRelativeDayOffsets: [String: Int] = [
-        "today": 0,
-        "tomorrow": 1,
-        "yesterday": -1,
-        "day after tomorrow": 2,
-        "day before yesterday": -2,
-        "next day": 1,
-        "last day": -1,
-        "next week": 7,
-        "last week": -7,
-        "this week": 0
-    ]
-
-    private static let namedRelativeMonthOffsets: [String: Int] = [
-        "next month": 1,
-        "last month": -1,
-        "this month": 0
-    ]
-
-    private static let namedRelativeYearOffsets: [String: Int] = [
-        "next year": 1,
-        "last year": -1,
-        "this year": 0
-    ]
-
-    private static func parseNamedRelative(
-        lower: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        var target: Date?
-        if let days = namedRelativeDayOffsets[lower] {
-            target = days == 0 ? now : calendar.date(byAdding: .day, value: days, to: now)
-        } else if let months = namedRelativeMonthOffsets[lower] {
-            target = months == 0 ? now : calendar.date(byAdding: .month, value: months, to: now)
-        } else if let years = namedRelativeYearOffsets[lower] {
-            target = years == 0 ? now : calendar.date(byAdding: .year, value: years, to: now)
-        }
-
-        guard let resolved = target else { return nil }
-        var comp = calendar.dateComponents(in: timeZone, from: resolved)
-        comp.hour = 12
-        comp.minute = 0
-        comp.second = 0
-        return calendar.date(from: comp) ?? resolved
-    }
-
-    private static func parseRelativeOffset(
-        lower: String,
-        now: Date,
-        calendar: Calendar
-    ) -> Date? {
-        let inPattern = #"^in\s+(?:(\d+)|(a|an))\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)?$"#
-        let agoPattern = #"^(?:(\d+)|(a|an))\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)?\s+ago$"#
-
-        if let regex = try? NSRegularExpression(pattern: inPattern, options: .caseInsensitive),
-           let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)) {
-            let val = match.range(at: 1).location != NSNotFound
-                ? (Range(match.range(at: 1), in: lower).flatMap { Int(lower[$0]) } ?? 1)
-                : 1
-            let unit = match.range(at: 3).location != NSNotFound
-                ? Range(match.range(at: 3), in: lower).map { String(lower[$0]) } ?? "m"
-                : "m"
-            return resolveOffset(value: val, unit: unit, sign: 1, now: now, calendar: calendar)
-        }
-
-        if let regex = try? NSRegularExpression(pattern: agoPattern, options: .caseInsensitive),
-           let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)) {
-            let val = match.range(at: 1).location != NSNotFound
-                ? (Range(match.range(at: 1), in: lower).flatMap { Int(lower[$0]) } ?? 1)
-                : 1
-            let unit = match.range(at: 3).location != NSNotFound
-                ? Range(match.range(at: 3), in: lower).map { String(lower[$0]) } ?? "m"
-                : "m"
-            return resolveOffset(value: val, unit: unit, sign: -1, now: now, calendar: calendar)
-        }
-
-        return nil
-    }
-
-    private static func parseWeekday(
-        lower: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> Date? {
-        let weekdayPattern = #"^(?:(next|this|last)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$"#
-        guard let regex = try? NSRegularExpression(pattern: weekdayPattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-              let nameRange = Range(match.range(at: 2), in: lower) else {
-            return nil
-        }
-
-        let modifier = match.range(at: 1).location != NSNotFound
-            ? Range(match.range(at: 1), in: lower).map { String(lower[$0]) }
-            : nil
-        let weekdayName = String(lower[nameRange])
-        let weekdays = ["sunday": 1, "monday": 2, "tuesday": 3, "wednesday": 4, "thursday": 5, "friday": 6, "saturday": 7]
-        guard let targetWeekday = weekdays[weekdayName] else { return nil }
-
-        let currentWeekday = calendar.component(.weekday, from: now)
-        var diff = targetWeekday - currentWeekday
-        if modifier == "this" {
-            // "this friday" on Friday is today (diff 0).
-        } else if modifier == "last" {
-            if diff >= 0 { diff -= 7 }
-        } else if modifier == "next" {
-            if diff == 0 {
-                diff = 7
-            } else {
-                if diff < 0 { diff += 7 }
-                diff += 7
-            }
-        } else if diff <= 0 {
-            diff += 7
-        }
-
-        guard let targetDate = calendar.date(byAdding: .day, value: diff, to: now) else { return nil }
-        var comp = calendar.dateComponents(in: timeZone, from: targetDate)
-        comp.hour = 12
-        comp.minute = 0
-        comp.second = 0
-        return calendar.date(from: comp) ?? targetDate
-    }
-
-    private static func resolveOffset(
-        value: Int,
-        unit: String,
-        sign: Int,
-        now: Date,
-        calendar: Calendar
-    ) -> Date? {
-        let delta = sign * value
+        let timeWords = Array(words.dropFirst(words.count > 2 && words[2] == "at" ? 3 : 2))
+        let time = timeWords.isEmpty ? nil : Self.time(timeWords.joined())
+        guard timeWords.isEmpty || time != nil else { return nil }
+        let date: Date?
         switch unit {
-        case "s", "sec", "secs", "second", "seconds":
-            return calendar.date(byAdding: .second, value: delta, to: now)
-        case "m", "min", "mins", "minute", "minutes":
-            return calendar.date(byAdding: .minute, value: delta, to: now)
-        case "h", "hr", "hrs", "hour", "hours":
-            return calendar.date(byAdding: .hour, value: delta, to: now)
-        case "d", "day", "days":
-            return calendar.date(byAdding: .day, value: delta, to: now)
-        case "w", "wk", "wks", "week", "weeks":
-            return calendar.date(byAdding: .day, value: delta * 7, to: now)
-        case "mo", "month", "months":
-            return calendar.date(byAdding: .month, value: delta, to: now)
-        case "y", "yr", "yrs", "year", "years":
-            return calendar.date(byAdding: .year, value: delta, to: now)
+        case .second, .minute, .hour:
+            guard time == nil else { return nil }
+            let seconds = sign * amount * (unit == .second ? 1 : unit == .minute ? 60 : 3_600)
+            date = Self.instant(now.timeIntervalSince1970 + seconds)
+        case .day, .weekOfYear:
+            let days = sign * amount * (unit == .day ? 1 : 7)
+            guard days == days.rounded(), abs(days) < 3_000_000 else { return nil }
+            date = calendar.date(byAdding: .day, value: Int(days), to: minuteStart(now)).flatMap { at(time, on: $0) }
         default:
-            return nil
+            guard time == nil, amount == amount.rounded(), amount < 300_000 else { return nil }
+            date = calendar.date(byAdding: unit, value: Int(sign * amount), to: minuteStart(now))
         }
+        return date.map { [DiscordNaturalLanguageTimeParser.moment($0)] }
     }
 
-    private struct ParsedNaturalDate {
-        let date: Date
-        let badge: String?
+    /// `next week`, `last month`, `this year`.
+    func period(_ words: [String]) -> [DiscordTimeSuggestion]? {
+        guard words.count == 2, let offset = ["next": 1, "last": -1, "this": 0][words[0]],
+              let unit = ["week": Calendar.Component.weekOfYear, "month": .month, "year": .year][words[1]],
+              let date = calendar.date(byAdding: unit, value: offset, to: minuteStart(now))
+        else { return nil }
+        return [DiscordNaturalLanguageTimeParser.moment(date)]
     }
 
-    private static func parseNaturalDates(
-        query: String,
-        now: Date,
-        calendar: Calendar,
-        timeZone: TimeZone
-    ) -> [ParsedNaturalDate] {
-        let lower = query.lowercased()
-        if lower.starts(with: "in ") || lower.hasSuffix(" ago")
-            || lower.contains("yesterday") || lower.contains("tomorrow") || lower.contains("today")
-            || lower.contains("next") || lower.contains("last")
-            || query.range(of: #"^\d{1,2}(?::\d{1,2})*(?:\s*(?:am|pm))?$"#, options: [.caseInsensitive, .regularExpression]) != nil {
-            return []
+    /// A day phrase, weekday or date with an optional time, or a time alone.
+    /// `oct 12` is a date before `12` is a time.
+    func dated(_ words: [String]) -> [DiscordTimeSuggestion]? {
+        for (rest, time) in [(words, nil)] + timeSplits(words) {
+            if let suggestions = rest.isEmpty ? time.flatMap(timeOfDay) : day(rest, time: time) {
+                return suggestions
+            }
         }
+        return nil
+    }
 
-        guard var date = parseRawDate(from: query, timeZone: timeZone) else { return [] }
-        let hasExplicitYear = query.range(of: #"\b(19\d\d|20\d\d)\b"#, options: .regularExpression) != nil
-
-        var comp = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-        comp.timeZone = timeZone
-        if !hasExplicitYear {
-            comp.year = calendar.component(.year, from: now)
+    private func day(_ words: [String], time: TimeOfDay?) -> [DiscordTimeSuggestion]? {
+        if words == ["tonight"], time == nil {
+            return at(TimeOfDay(hour: 22, minute: 0), on: now).map { [DiscordNaturalLanguageTimeParser.moment($0)] }
         }
-
-        let hasExplicitTime = query.range(
-            of: #"(?:\b\d{1,2}:\d{2}\b|\b(?:am|pm)\b)"#,
-            options: [.regularExpression, .caseInsensitive]
-        ) != nil
-        if !hasExplicitTime {
-            comp.hour = 12
-            comp.minute = 0
-            comp.second = 0
+        if let offset = ["today": 0, "tomorrow": 1, "yesterday": -1][words.joined(separator: " ")] {
+            let day = calendar.date(byAdding: .day, value: offset, to: minuteStart(now))
+            return day.flatMap { at(time, on: $0) }.map { [DiscordNaturalLanguageTimeParser.moment($0)] }
         }
+        return weekday(words, time: time ?? Self.noon) ?? monthDay(words, time: time ?? Self.noon)
+    }
 
-        guard let resolvedDate = calendar.date(from: comp) else { return [] }
-        date = resolvedDate
-
-        if hasExplicitYear {
-            return [ParsedNaturalDate(date: date, badge: nil)]
+    /// Discord offers the time alone, then its next and, once passed, its
+    /// earlier occurrence today.
+    private func timeOfDay(_ time: TimeOfDay) -> [DiscordTimeSuggestion]? {
+        guard let today = at(time, on: now) else { return nil }
+        let timeOnly = DiscordTimeSuggestion(date: today, reading: .timeOnly, styles: [.shortTime])
+        if time.hour == 24 {
+            return [timeOnly, DiscordNaturalLanguageTimeParser.moment(today)]
         }
+        guard today < now, let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else {
+            return [timeOnly, DiscordNaturalLanguageTimeParser.moment(today, reading: .today)]
+        }
+        return [
+            timeOnly,
+            DiscordNaturalLanguageTimeParser.moment(tomorrow, reading: .tomorrow),
+            DiscordNaturalLanguageTimeParser.moment(today, reading: .today),
+        ]
+    }
 
-        if date < now {
-            let future = calendar.date(byAdding: .year, value: 1, to: date) ?? date
-            return [
-                ParsedNaturalDate(date: future, badge: "Next year"),
-                ParsedNaturalDate(date: date, badge: "This year")
-            ]
+    /// `friday` reads as this week's and last week's; `next friday` names
+    /// the coming one, a week out when that is today.
+    private func weekday(_ words: [String], time: TimeOfDay) -> [DiscordTimeSuggestion]? {
+        var words = words
+        let modifier = ["this", "next", "last"].contains(words.first) ? words.removeFirst() : nil
+        guard words.count == 1, let weekday = Self.weekdays[words[0]],
+              let today = at(time, on: now)
+        else { return nil }
+        let ahead = (weekday - calendar.component(.weekday, from: now) + 7) % 7
+        guard let coming = calendar.date(byAdding: .day, value: ahead, to: today) else { return nil }
+        if modifier == "next", ahead == 0 {
+            return calendar.date(byAdding: .day, value: 7, to: coming).map { [DiscordNaturalLanguageTimeParser.moment($0)] }
+        }
+        var readings = [DiscordNaturalLanguageTimeParser.moment(coming, reading: .thisWeek)]
+        if modifier != "this", modifier != "next", ahead != 0,
+           let previous = calendar.date(byAdding: .day, value: -7, to: coming) {
+            readings.append(DiscordNaturalLanguageTimeParser.moment(previous, reading: .lastWeek))
+        }
+        return readings
+    }
+
+    /// `dec 25`, `25 december`, `november 8th`, `3/4`, `3/4/2026`,
+    /// `2026-12-31`. A written date already past offers next year first.
+    private func monthDay(_ words: [String], time: TimeOfDay) -> [DiscordTimeSuggestion]? {
+        let isNumeric = words.count == 1
+        guard let parsed = isNumeric ? Self.numericDate(words[0]) : Self.writtenDate(words.filter { $0 != "of" }),
+              let month = parsed.month, let day = parsed.day
+        else { return nil }
+        let year = parsed.year
+        let currentYear = calendar.component(.year, from: now)
+        func date(in year: Int) -> Date? {
+            let components = DateComponents(year: year, month: month, day: day, hour: time.hour, minute: time.minute)
+            guard let date = calendar.date(from: components),
+                  calendar.component(.day, from: date) == day, calendar.component(.month, from: date) == month
+            else { return nil }
+            return date
+        }
+        if let year { return date(in: year).map { [DiscordNaturalLanguageTimeParser.moment($0)] } }
+        guard let thisYear = date(in: currentYear) else { return nil }
+        if thisYear >= now { return [DiscordNaturalLanguageTimeParser.moment(thisYear, reading: .thisYear)] }
+        guard let nextYear = date(in: currentYear + 1) else { return nil }
+        if isNumeric { return [DiscordNaturalLanguageTimeParser.moment(nextYear)] }
+        return [
+            DiscordNaturalLanguageTimeParser.moment(nextYear, reading: .nextYear),
+            DiscordNaturalLanguageTimeParser.moment(thisYear, reading: .thisYear),
+        ]
+    }
+
+    /// `3/4` is March 4, `31/12` December 31, `2026-12-31` year first.
+    private static func numericDate(_ word: String) -> DateComponents? {
+        let parts = word.split(whereSeparator: { $0 == "/" || $0 == "-" || $0 == "." }).map { Int($0) }
+        guard (2 ... 3).contains(parts.count), !parts.contains(nil) else { return nil }
+        let numbers = parts.compactMap { $0 }
+        if numbers[0] > 999 {
+            return numbers.count == 3 ? DateComponents(year: numbers[0], month: numbers[1], day: numbers[2]) : nil
+        }
+        let (month, day) = numbers[0] > 12 ? (numbers[1], numbers[0]) : (numbers[0], numbers[1])
+        return DateComponents(year: numbers.count == 3 ? numbers[2] : nil, month: month, day: day)
+    }
+
+    /// `dec 25`, `25 december 2027`, `november 8th`.
+    private static func writtenDate(_ words: [String]) -> DateComponents? {
+        var month: Int?
+        var day: Int?
+        var year: Int?
+        for word in words {
+            if let index = months.firstIndex(where: { word.count >= 3 && $0.hasPrefix(word) }) {
+                guard month == nil else { return nil }
+                month = index + 1
+            } else if let number = Int(word.trimmingCharacters(in: CharacterSet(charactersIn: "stndrh"))) {
+                if day == nil, number <= 31 { day = number } else if year == nil, number > 999 { year = number } else { return nil }
+            } else {
+                return nil
+            }
+        }
+        return DateComponents(year: year, month: month, day: day)
+    }
+
+    /// Readings of a time of day at either end of the phrase: `5pm`, `5 pm`,
+    /// `at 17:30`, `noon`, `midnight`.
+    private func timeSplits(_ words: [String]) -> [([String], TimeOfDay?)] {
+        var splits: [([String], TimeOfDay?)] = []
+        for count in [2, 1] where words.count >= count {
+            if let time = Self.time(words.suffix(count).joined()) {
+                var rest = Array(words.dropLast(count))
+                if rest.last == "at" { rest.removeLast() }
+                splits.append((rest, time))
+            }
+            if words.count > count, let time = Self.time(words.prefix(count).joined()) {
+                var rest = Array(words.dropFirst(count))
+                if rest.first == "on" { rest.removeFirst() }
+                splits.append((rest, time))
+            }
+        }
+        if words.first == "at", let time = Self.time(words.dropFirst().joined()) { splits.append(([], time)) }
+        return splits
+    }
+
+    private static func time(_ text: String) -> TimeOfDay? {
+        if text == "noon" { return noon }
+        if text == "midnight" { return TimeOfDay(hour: 24, minute: 0) }
+        var digits = Substring(text)
+        var meridiem: String?
+        for suffix in ["am", "pm", "a", "p"] where digits.hasSuffix(suffix) {
+            meridiem = suffix
+            digits = digits.dropLast(suffix.count)
+            break
+        }
+        let parts = digits.split(separator: ":", omittingEmptySubsequences: false)
+        guard (1 ... 2).contains(parts.count), parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }),
+              parts[0].count <= 2, parts.count == 1 || parts[1].count == 2,
+              var hour = Int(parts[0]), let minute = parts.count == 2 ? Int(parts[1]) : 0, minute < 60
+        else { return nil }
+        if let meridiem {
+            guard (1 ... 12).contains(hour) else { return nil }
+            hour = hour % 12 + (meridiem.hasPrefix("p") ? 12 : 0)
         } else {
-            let past = calendar.date(byAdding: .year, value: -1, to: date) ?? date
-            return [
-                ParsedNaturalDate(date: date, badge: "This year"),
-                ParsedNaturalDate(date: past, badge: "Last year")
-            ]
+            guard hour < 24 || (hour == 24 && minute == 0) else { return nil }
         }
+        return TimeOfDay(hour: hour, minute: minute)
     }
 
+    /// `time` on `day`, or `day` itself without one. Hour 24 is the next
+    /// midnight.
+    private func at(_ time: TimeOfDay?, on day: Date) -> Date? {
+        guard let time else { return day }
+        let start = calendar.startOfDay(for: day)
+        guard time.hour == 24 else { return calendar.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: start) }
+        return calendar.date(byAdding: .day, value: 1, to: start)
+    }
+
+    private func minuteStart(_ date: Date) -> Date {
+        calendar.dateInterval(of: .minute, for: date)?.start ?? date
+    }
+
+    /// JavaScript dates, and so Discord timestamps, end 8.64e12 seconds
+    /// either side of 1970.
+    private static func instant(_ seconds: Double) -> Date? {
+        abs(seconds) <= 8.64e12 ? Date(timeIntervalSince1970: seconds) : nil
+    }
+
+    private static let noon = TimeOfDay(hour: 12, minute: 0)
+    private static let months = [
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december",
+    ]
+    private static let weekdays: [String: Int] = [
+        "sunday": 1, "sun": 1, "monday": 2, "mon": 2, "tuesday": 3, "tue": 3, "tues": 3,
+        "wednesday": 4, "wed": 4, "thursday": 5, "thu": 5, "thur": 5, "thurs": 5,
+        "friday": 6, "fri": 6, "saturday": 7, "sat": 7,
+    ]
+    private static let units: [String: Calendar.Component] = {
+        var units: [String: Calendar.Component] = [:]
+        for (names, unit) in [
+            (["s", "sec", "secs", "second", "seconds"], Calendar.Component.second),
+            (["m", "min", "mins", "minute", "minutes"], .minute),
+            (["h", "hr", "hrs", "hour", "hours"], .hour),
+            (["d", "day", "days"], .day),
+            (["w", "wk", "wks", "week", "weeks"], .weekOfYear),
+            (["mo", "month", "months"], .month),
+            (["y", "yr", "yrs", "year", "years"], .year),
+        ] {
+            for name in names { units[name] = unit }
+        }
+        return units
+    }()
 }

@@ -579,23 +579,12 @@ nonisolated enum NativeTimelineCoreText {
         presentation: MentionPresentation,
         font: NSFont
     ) -> (width: CGFloat, height: CGFloat) {
-        let labelFont: NSFont
-        let labelText: String
-        if presentation.isTimestamp {
-            labelFont = NSFont.monospacedDigitSystemFont(
-                ofSize: font.pointSize,
-                weight: presentation.labelWeight
-            )
-            labelText = presentation.label
-        } else {
-            labelFont = NSFont.systemFont(
-                ofSize: font.pointSize,
-                weight: presentation.labelWeight
-            )
-            labelText = presentation.label
-        }
+        let labelFont = NSFont.systemFont(
+            ofSize: font.pointSize,
+            weight: presentation.labelWeight
+        )
         let labelWidth = ceil(
-            (labelText as NSString).size(
+            (presentation.label as NSString).size(
                 withAttributes: [.font: labelFont]
             ).width
         )

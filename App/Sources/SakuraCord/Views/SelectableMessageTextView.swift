@@ -16,7 +16,6 @@ nonisolated enum MentionTarget: Hashable, Sendable {
     case channel(ChannelID)
     case linkedChannel(guildID: GuildID?, channelID: ChannelID)
     case message(guildID: GuildID?, channelID: ChannelID, messageID: MessageID)
-    case timestamp(date: Date, style: String?)
 }
 
 nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
@@ -27,7 +26,6 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     var colorHex: UInt32?
     var systemImage: String?
     var isTimestamp = false
-    var toolTip: String?
 
     var id: String { rawToken }
     var isGame: Bool {
@@ -38,40 +36,11 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
         if case .user = target { return true }
         return false
     }
-    var isInteractive: Bool {
-        switch target {
-        case .unresolved, .timestamp: false
-        default: true
-        }
-    }
+    var isInteractive: Bool { target != .unresolved }
     /// Discord sets timestamps in the message's own weight, unlike mentions.
     var labelWeight: NSFont.Weight { isTimestamp ? .regular : .semibold }
     /// A game's square icon keeps slightly rounded corners; avatars are round.
     func avatarCornerRadius(size: CGFloat) -> CGFloat { isGame ? 3 : size / 2 }
-
-    init(
-        rawToken: String,
-        label: String,
-        target: MentionTarget,
-        avatarURL: URL? = nil,
-        colorHex: UInt32? = nil,
-        systemImage: String? = nil,
-        isTimestamp: Bool = false,
-        toolTip: String? = nil
-    ) {
-        self.rawToken = rawToken
-        self.label = label
-        self.target = target
-        self.avatarURL = avatarURL
-        self.colorHex = colorHex
-        self.systemImage = systemImage
-        if case .timestamp = target {
-            self.isTimestamp = true
-        } else {
-            self.isTimestamp = isTimestamp
-        }
-        self.toolTip = toolTip
-    }
 
     /// A link to a channel, thread or forum post the account does not know.
     static let unknownChannelLinkLabel = "unknown-channel"
@@ -81,31 +50,27 @@ nonisolated struct MentionPresentation: Hashable, Identifiable, Sendable {
     private static func selfContainedPresentation(for mention: RenderedMention) -> MentionPresentation {
         switch mention.kind {
         case .game:
-            return MentionPresentation(
+            MentionPresentation(
                 rawToken: mention.rawToken,
                 label: "Unknown Game",
                 target: .game(mention.id),
                 systemImage: "gamecontroller.fill"
             )
         case .timestamp:
-            let token = DiscordTimestampToken(rawToken: mention.rawToken)
-            let date = token?.date ?? mention.timestampDate ?? .now
-            let style = token?.style.rawValue ?? mention.timestampStyle
-            return MentionPresentation(
+            MentionPresentation(
                 rawToken: mention.rawToken,
-                label: token?.formatted() ?? mention.formattedTimestamp,
-                target: .timestamp(date: date, style: style),
-                isTimestamp: true,
-                toolTip: mention.timestampTooltip
+                label: DiscordTimestampToken(rawToken: mention.rawToken)?.formatted() ?? mention.rawToken,
+                target: .unresolved,
+                isTimestamp: true
             )
         case .command:
             if let name = mention.commandName {
-                return MentionPresentation(rawToken: mention.rawToken, label: "/\(name)", target: .command(id: mention.id, name: name))
+                MentionPresentation(rawToken: mention.rawToken, label: "/\(name)", target: .command(id: mention.id, name: name))
             } else {
-                return unresolved(mention, label: mention.rawToken)
+                unresolved(mention, label: mention.rawToken)
             }
         default:
-            return unresolved(mention, label: mention.rawToken)
+            unresolved(mention, label: mention.rawToken)
         }
     }
 
@@ -783,7 +748,6 @@ final class RichMessageNSTextView: NSTextView {
     override func mouseExited(with event: NSEvent) {
         setHoveredMention(nil)
         clearHoveredLink()
-        toolTip = nil
         super.mouseExited(with: event)
     }
 
@@ -793,10 +757,7 @@ final class RichMessageNSTextView: NSTextView {
     }
 
     private func updateCursor(at point: NSPoint) {
-        let mention = mentionAttachment(at: point)?.1
-        if let mention, !mention.presentation.isInteractive {
-            NSCursor.arrow.set()
-        } else if mention == nil, link(at: point) == nil, hiddenSpoiler(at: point) == nil {
+        if mentionAttachment(at: point) == nil, link(at: point) == nil, hiddenSpoiler(at: point) == nil {
             NSCursor.iBeam.set()
         } else {
             NSCursor.pointingHand.set()
@@ -811,7 +772,7 @@ final class RichMessageNSTextView: NSTextView {
                 onRevealSpoiler(spoiler.location)
                 return
             }
-            if let (index, attachment) = mentionAttachment(at: point), attachment.presentation.isInteractive {
+            if let (index, attachment) = mentionAttachment(at: point) {
                 let rawToken = attachment.presentation.rawToken
                 guard let anchor = mentionPopoverAnchor(at: index, rawToken: rawToken) else { return }
                 onMentionClick(attachment.presentation, anchor)
@@ -834,7 +795,7 @@ final class RichMessageNSTextView: NSTextView {
         let index = layoutManager.characterIndexForGlyph(at: glyph)
         guard index < attributedString().length,
               let attachment = attributedString().attribute(.attachment, at: index, effectiveRange: nil)
-              as? MentionTextAttachment
+              as? MentionTextAttachment, attachment.presentation.isInteractive
         else { return nil }
         return (index, attachment)
     }
@@ -938,13 +899,6 @@ final class RichMessageNSTextView: NSTextView {
             guard let attachment = attributedString().attribute(.attachment, at: index, effectiveRange: nil)
                 as? MentionTextAttachment else { continue }
             attachment.image = index == location ? attachment.hoverImage : attachment.normalImage
-        }
-        if let location,
-           let attachment = attributedString().attribute(.attachment, at: location, effectiveRange: nil) as? MentionTextAttachment,
-           let tip = attachment.presentation.toolTip {
-            toolTip = tip
-        } else {
-            toolTip = nil
         }
         needsDisplay = true
     }

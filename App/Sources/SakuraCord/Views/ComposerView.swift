@@ -3,12 +3,6 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `@time` opens a picker that replaces its query in the draft.
-private struct ComposerMentionPicker {
-    let range: NSRange
-    let seconds: Int64
-}
-
 struct ComposerView: View {
     typealias Conversation = MessageComposerDestination
 
@@ -34,27 +28,29 @@ struct ComposerView: View {
     @State private var showedSendSlotMode = ComposerSendSlot.Mode.send
     @State private var focusedColumnPresentation = 0
     @State private var isComposing = false
-    @State var draftSelection: NSRange?
+    @State private var draftSelection: NSRange?
     @State private var selectionBeforeEmojiPicker: NSRange?
     @State private var isSubmitting = false
     @State private var gifPickerDismissedAt: TimeInterval = -.infinity
     @State private var stickerPickerInitialQuery = ""
     @State private var stickerPickerDismissedAt: TimeInterval = -.infinity
     @State private var emojiPickerDismissedAt: TimeInterval = -.infinity
-    @State var autocompleteIndex = 0
-    @State var autocompleteKeyboardSelectionRevision = 0
+    @State private var autocompleteIndex = 0
+    @State private var autocompleteKeyboardSelectionRevision = 0
     @State private var gameMentionSearch = ComposerGameMentionSearch()
-    @State var isAutocompleteDismissed = false
+    @State private var isAutocompleteDismissed = false
     @State private var commandAwaitingClear: ApplicationCommand?
     @State private var timestampClock = RelativeTimestampDisplayClock()
-    @State private var mentionPicker: ComposerMentionPicker?
+    /// When the `@time` query last changed: its readings and the
+    /// timestamp a pick sends count from then.
+    @State private var timeQueryDate = Date.now
+    /// Return was pressed on an `@time` query with no reading.
+    @State private var timeQueryNeedsPick = false
     @State private var sendTransitionAnchor = ComposerSendTransitionAnchor()
     @State private var holdsPlaceholderForSendTransition = false
     /// A send clears the composer under the message leaving it, so the
     /// composer collapses at once rather than animating.
     @State private var isClearingForSend = false
-    @State var activeTimeEntry: TimeMentionEntry?
-    @State var timeReferenceDate: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -198,35 +194,6 @@ struct ComposerView: View {
                                 get: { hasActiveCommand && isFocused },
                                 set: { if hasActiveCommand { isFocused = $0 } }
                             )
-                        )
-                    } else if let timeEntry = activeTimeEntry {
-                        TimeMentionInputView(
-                            query: Binding(
-                                get: { activeTimeEntry?.query ?? "" },
-                                set: { value in
-                                    guard var entry = activeTimeEntry else { return }
-                                    entry.query = value
-                                    activeTimeEntry = entry
-                                    updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
-                                    autocompleteIndex = 0
-                                    isAutocompleteDismissed = false
-                                }
-                            ),
-                            prefix: timeEntry.prefix,
-                            suffix: timeEntry.suffix,
-                            mentionPresentations: composerMentionPresentations,
-                            onAccept: {
-                                acceptActiveTimeEntry()
-                            },
-                            onCancel: {
-                                cancelTimeEntry()
-                            },
-                            onCommand: { command in
-                                if let context = timeMentionContext {
-                                    return handleTimeAutocomplete(command, context: context)
-                                }
-                                return false
-                            }
                         )
                     } else {
                         ZStack(alignment: .bottomTrailing) {
@@ -494,20 +461,8 @@ struct ComposerView: View {
             }
         }
         .onChange(of: draft) { _, value in
-            mentionPicker = nil
+            timeQueryNeedsPick = false
             if completeClosedEmojiName(in: value) {
-                return
-            }
-            if activeTimeEntry == nil,
-               let rawContext = TimeMentionContext(text: value, selection: draftSelection) {
-                let nsDraft = value as NSString
-                let prefix = nsDraft.substring(to: rawContext.range.location)
-                let suffix = nsDraft.substring(from: rawContext.range.location + rawContext.range.length)
-                let entry = TimeMentionEntry(prefix: prefix, query: rawContext.rawQuery, suffix: suffix)
-                activeTimeEntry = entry
-                updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
-                autocompleteIndex = 0
-                isAutocompleteDismissed = false
                 return
             }
             isAutocompleteDismissed = false
@@ -544,21 +499,17 @@ struct ComposerView: View {
             model.errorMessage = message
             voiceMessage.clearError()
         }
+        .onChange(of: timeMentionContext?.query) { timeQueryDate = .now }
         .task(id: gameMentionContext?.query) { [query = gameMentionContext?.query] in
             await gameMentionSearch.search(query ?? "", model: model)
         }
         .task(id: composerPresentationID) {
-            if let entry = activeTimeEntry {
-                updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
-                activeTimeEntry = nil
-            }
             if !voiceMessage.restoreAfterGuildTimeout(in: activeConversationID) {
                 voiceMessage.discard(playback: model.voiceMessagePlayback)
             }
             sendTransitionAnchor.channelID = activeConversationID
             model.timelineSendTransitionStore.registerComposer(sendTransitionAnchor)
             draftSelection = nil
-            mentionPicker = nil
             selectionBeforeEmojiPicker = nil
             showFileImporter = false
             showGIFPicker = false
@@ -583,16 +534,6 @@ struct ComposerView: View {
             for guild in model.snapshot?.guilds ?? [] {
                 guard !Task.isCancelled else { return }
                 await model.loadEmojis(for: guild.id)
-            }
-        }
-        .onChange(of: timeMentionContext?.query) { _, _ in
-            timeReferenceDate = Date.now
-        }
-        .onChange(of: timeMentionContext != nil) { _, active in
-            if active, timeReferenceDate == nil {
-                timeReferenceDate = Date.now
-            } else if !active {
-                timeReferenceDate = nil
             }
         }
     }
@@ -635,27 +576,17 @@ struct ComposerView: View {
                 ApplicationCommandHelpStrip(draft: draft, issue: commandComposer.fieldIssue, cancel: cancelCommand)
                     .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
             }
-        } else if let context = timeMentionContext {
-            TimeFormatsAutocompleteList(
-                heading: context.query.isEmpty ? "Time formats" : "Time formats for \(context.query.lowercased())",
-                candidates: timeCandidates,
-                selectedIndex: autocompleteIndex,
-                highlight: { autocompleteIndex = $0 },
-                select: { option in
-                    acceptTimeFormat(option, context: context)
-                },
-                cornerRadius: commandPanelCornerRadius,
-                keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
-            )
-        } else if let mentionPicker {
-            mentionPickerMenu(mentionPicker)
+        } else if let context = timeMentionContext, timeQueryNeedsPick || !timeRows(for: context).isEmpty {
+            timeMentionMenu(context)
         } else if let context = gameMentionContext {
             gameMentionMenu(context)
         } else if let context = mentionAutocompleteContext {
             let suggestions = mentionAutocompleteSuggestions(for: context)
             if !suggestions.isEmpty {
                 MentionAutocompleteList(
-                    heading: mentionHeading(for: context, suggestions: suggestions),
+                    heading: context.kind == .member
+                        ? MentionAutocompleteSuggestionFactory.memberHeading(query: context.query)
+                        : "TEXT CHANNELS",
                     suggestions: suggestions,
                     selectedIndex: autocompleteIndex,
                     highlight: { autocompleteIndex = $0 },
@@ -767,7 +698,7 @@ struct ComposerView: View {
         restoreComposerFocus(selection: restoredSelection)
     }
 
-    func restoreComposerFocus(selection: NSRange?) {
+    private func restoreComposerFocus(selection: NSRange?) {
         Task { @MainActor in
             await Task.yield()
             isFocused = true
@@ -884,7 +815,7 @@ struct ComposerView: View {
         }
     }
 
-private var autocompleteContext: ColonAutocompleteContext? {
+    private var autocompleteContext: ColonAutocompleteContext? {
         guard !isAutocompleteDismissed else { return nil }
         return ColonAutocompleteContext(text: draft, selection: draftSelection)
     }
@@ -1115,9 +1046,6 @@ private var autocompleteContext: ColonAutocompleteContext? {
             model.presentIssueReport(kind)
             return
         }
-        if activeTimeEntry != nil {
-            acceptActiveTimeEntry()
-        }
         guard allowsSubmission() else { return }
         if hasActiveCommand {
             model.executeApplicationCommand(in: conversation)
@@ -1148,25 +1076,7 @@ private var autocompleteContext: ColonAutocompleteContext? {
             return handleCommandPickerAutocomplete(command)
         }
         if let context = timeMentionContext {
-            if !allTimeOptions.isEmpty {
-                return handleTimeAutocomplete(command, context: context)
-            } else if command == .accept {
-                if activeTimeEntry != nil {
-                    acceptActiveTimeEntry()
-                    return true
-                }
-                return true
-            } else if command == .dismiss {
-                if activeTimeEntry != nil {
-                    cancelTimeEntry()
-                } else {
-                    isAutocompleteDismissed = true
-                }
-                return true
-            }
-        }
-        if let mentionPicker {
-            return handleMentionPickerCommand(command, picker: mentionPicker)
+            return handleTimeMention(command, context: context)
         }
         if let context = gameMentionContext {
             return handleGameMention(command, context: context)
@@ -1177,9 +1087,7 @@ private var autocompleteContext: ColonAutocompleteContext? {
         guard let context = autocompleteContext, !autocompleteSuggestions.isEmpty else { return false }
         return handleColonAutocomplete(command, context: context)
     }
-}
 
-extension ComposerView {
     /// Keys while a command is active: the panel takes navigation and
     /// acceptance when it lists something, otherwise keys move between fields.
     private func handleActiveCommandAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
@@ -1293,7 +1201,7 @@ extension ComposerView {
     }
 
     @discardableResult
-    func insertInDraft(
+    private func insertInDraft(
         _ insertedText: String,
         replacing selection: NSRange?
     ) -> NSRange {
@@ -1399,7 +1307,7 @@ private extension ComposerView {
     /// Composer menus belong to the active editor. They hide when the window
     /// becomes inactive.
     private var isInputActive: Bool {
-        appearsActive && (isFocused || activeTimeEntry != nil)
+        appearsActive && isFocused
     }
 
     private var composerMentionPresentations: [String: MentionPresentation] {
@@ -1418,70 +1326,81 @@ private extension ComposerView {
         _ suggestion: MentionAutocompleteSuggestion,
         context: MentionAutocompleteContext
     ) {
-        if suggestion.id == "special:time" {
-            let nsDraft = draft as NSString
-            let prefix = nsDraft.substring(to: context.range.location)
-            let suffix = nsDraft.substring(from: context.range.location + context.range.length)
-            let entry = TimeMentionEntry(prefix: prefix, query: "", suffix: suffix)
-            activeTimeEntry = entry
-            updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
-            autocompleteIndex = 0
-            isAutocompleteDismissed = false
-            return
-        }
         autocompleteIndex = 0
         isAutocompleteDismissed = true
-        switch suggestion.action {
-        case .chooseTimeFormat:
-            mentionPicker = ComposerMentionPicker(range: context.range, seconds: Int64(Date.now.timeIntervalSince1970))
-        case .insert:
-            if let member = suggestion.member { model.rememberMentionMember(member) }
-            draftSelection = insertInDraft(suggestion.value + " ", replacing: context.range)
-        }
+        if let member = suggestion.member { model.rememberMentionMember(member) }
+        draftSelection = insertInDraft(suggestion.value + " ", replacing: context.range)
     }
 
-    private func mentionPickerMenu(_ picker: ComposerMentionPicker) -> some View {
+    /// The `@time` menu replaces the mention menu once `@time ` is typed,
+    /// and keeps the keys while it is open.
+    private var timeMentionContext: KeywordMentionContext? {
+        guard !isAutocompleteDismissed, mentionAutocompleteContext == nil,
+              !(supportsCommands && commandComposer.isPickerPresented)
+        else { return nil }
+        return KeywordMentionContext(.time, text: draft, selection: draftSelection)
+    }
+
+    private func timeRows(for context: KeywordMentionContext) -> [ComposerTimeFormatPicker.Row] {
+        ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: context.query, now: timeQueryDate))
+    }
+
+    private func timeMentionMenu(_ context: KeywordMentionContext) -> some View {
         ComposerTimeFormatPicker(
-            seconds: picker.seconds,
+            query: context.query.trimmingCharacters(in: .whitespaces).lowercased(),
+            rows: timeRows(for: context),
+            needsPick: timeQueryNeedsPick,
             selectedIndex: autocompleteIndex,
             cornerRadius: commandPanelCornerRadius,
             keyboardSelectionRevision: autocompleteKeyboardSelectionRevision,
-            select: {
-                insertMentionPickerResult(DiscordTimestampToken(seconds: picker.seconds, style: $0).rawToken, range: picker.range)
-            },
+            select: { insertTimestamp($0.token, context: context) },
             highlight: { autocompleteIndex = $0 }
         )
     }
 
-    private func handleMentionPickerCommand(_ command: ComposerAutocompleteCommand, picker: ComposerMentionPicker) -> Bool {
-        let styles = ComposerTimeFormatPicker.styles
+    /// Keys while times match what is typed after `@time `. Return with no
+    /// match neither sends nor leaves the query, as in Discord.
+    private func handleTimeMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
+        let rows = timeRows(for: context)
+        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
         switch command {
         case .previous:
-            autocompleteIndex = (autocompleteIndex - 1 + styles.count) % styles.count
+            guard !rows.isEmpty else { return false }
+            autocompleteIndex = (autocompleteIndex - 1 + rows.count) % rows.count
         case .next:
-            autocompleteIndex = (autocompleteIndex + 1) % styles.count
+            guard !rows.isEmpty else { return false }
+            autocompleteIndex = (autocompleteIndex + 1) % rows.count
         case .accept, .advance:
-            let token = DiscordTimestampToken(seconds: picker.seconds, style: styles[autocompleteIndex])
-            insertMentionPickerResult(token.rawToken, range: picker.range)
+            guard !rows.isEmpty else {
+                timeQueryNeedsPick = true
+                return true
+            }
+            insertTimestamp(rows[min(autocompleteIndex, rows.count - 1)].token, context: context)
         case .dismiss:
-            dismissMentionPicker()
+            isAutocompleteDismissed = true
         case .previousField, .nextField, .removeField:
             return false
         }
         return true
     }
 
+    private func insertTimestamp(_ token: DiscordTimestampToken, context: KeywordMentionContext) {
+        draftSelection = insertInDraft(token.rawToken + " ", replacing: context.range)
+        autocompleteIndex = 0
+        isFocused = true
+    }
+
     /// A title can contain `@`, but a mention typed after the query is
     /// completed as one. An open slash picker keeps the keys, so the menu
     /// waits for it to close.
-    private var gameMentionContext: GameMentionContext? {
+    private var gameMentionContext: KeywordMentionContext? {
         guard !isAutocompleteDismissed, mentionAutocompleteContext == nil,
               !(supportsCommands && commandComposer.isPickerPresented)
         else { return nil }
-        return GameMentionContext(text: draft, selection: draftSelection)
+        return KeywordMentionContext(.game, text: draft, selection: draftSelection)
     }
 
-    private func gameMentionMenu(_ context: GameMentionContext) -> some View {
+    private func gameMentionMenu(_ context: KeywordMentionContext) -> some View {
         ComposerGameMentionPicker(
             search: gameMentionSearch,
             query: context.query,
@@ -1494,7 +1413,7 @@ private extension ComposerView {
     }
 
     /// Keys while games match what is typed after `@game `.
-    private func handleGameMention(_ command: ComposerAutocompleteCommand, context: GameMentionContext) -> Bool {
+    private func handleGameMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
         let games = gameMentionSearch.games
         if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
         switch command {
@@ -1515,16 +1434,10 @@ private extension ComposerView {
         return true
     }
 
-    private func insertGameMention(_ game: ProfileGame, context: GameMentionContext) {
+    private func insertGameMention(_ game: ProfileGame, context: KeywordMentionContext) {
         model.rememberGameMention(game)
         draftSelection = insertInDraft("<@$\(game.id)> ", replacing: context.range)
         autocompleteIndex = 0
-    }
-
-    private func dismissMentionPicker() {
-        mentionPicker = nil
-        isAutocompleteDismissed = true
-        isFocused = true
     }
 
     /// Starts a clicked command mention once this conversation's commands
@@ -1560,23 +1473,11 @@ private extension ComposerView {
             commandAwaitingClear = command
         }
     }
-
-    private func insertMentionPickerResult(_ token: String, range: NSRange) {
-        mentionPicker = nil
-        draftSelection = insertInDraft(token + " ", replacing: range)
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
-        isFocused = true
-    }
 }
 
 extension ComposerView {
     private func composerDidDisappear() {
         timestampClock.stop()
-        if let entry = activeTimeEntry {
-            updateDraft(TimeMentionCoordinator.restoredDraftText(for: entry))
-            activeTimeEntry = nil
-        }
         if let channelID = sendTransitionAnchor.channelID,
            channelID == activeConversationID,
            model.guildTimeoutUntil(in: channelID) != nil {
@@ -1770,7 +1671,7 @@ extension ComposerView {
     }
 }
 
-extension ComposerView {
+private extension ComposerView {
     var draft: String {
         switch conversation {
         case .channel: model.draft

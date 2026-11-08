@@ -875,9 +875,8 @@ private struct InlineMessageEditor: View {
     @State private var isFocused = true
     @State private var autocompleteIndex = 0
     @State private var isAutocompleteDismissed = false
-    @State private var activeTimeEntry: TimeMentionEntry?
-    @State private var timeReferenceDate: Date?
-    @State private var autocompleteKeyboardSelectionRevision = 0
+    @State private var timeQueryDate = Date.now
+    @State private var timeQueryNeedsPick = false
 
     /// Game names and people resolve as they do in the message, and update
     /// as games load.
@@ -891,211 +890,83 @@ private struct InlineMessageEditor: View {
 
     private var composerActions: InlineMessageEditorComposerActions {
         InlineMessageEditorComposerActions(
-            onSubmit: {
-                if activeTimeEntry != nil {
-                    acceptActiveTimeEntry()
-                }
-                save()
-            },
-            onEscape: cancelEditing
+            onSubmit: save,
+            onEscape: cancel
         )
-    }
-
-    private func cancelEditing() {
-        if let entry = activeTimeEntry {
-            text = TimeMentionCoordinator.restoredDraftText(for: entry)
-            activeTimeEntry = nil
-        }
-        cancel()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
             if !suggestionsBelow { suggestionList }
-            if let timeEntry = activeTimeEntry {
-                TimeMentionInputView(
-                    query: Binding(
-                        get: { activeTimeEntry?.query ?? "" },
-                        set: { value in
-                            guard var entry = activeTimeEntry else { return }
-                            entry.query = value
-                            activeTimeEntry = entry
-                            text = TimeMentionCoordinator.restoredDraftText(for: entry)
-                            autocompleteIndex = 0
-                            isAutocompleteDismissed = false
-                        }
-                    ),
-                    prefix: timeEntry.prefix,
-                    suffix: timeEntry.suffix,
-                    mentionPresentations: mentionPresentations,
-                    onAccept: acceptActiveTimeEntry,
-                    onCancel: cancelTimeEntry,
-                    onCommand: { command in
-                        guard let context = timeMentionContext else { return false }
-                        return handleTimeAutocomplete(command, context: context)
-                    }
-                )
-            } else {
-                ComposerTextView(
-                    text: text,
-                    placeholder: "Edit message",
-                    sendWithReturn: MessageEditInputPolicy.sendsWithReturn,
-                    generalInputSettings: model.generalInputSettings,
-                    mentionPresentations: mentionPresentations,
-                    onTextChange: updateText,
-                    onSubmit: composerActions.onSubmit,
-                    onEscape: composerActions.onEscape,
-                    onAutocompleteCommand: handleAutocomplete,
-                    capturesUnfocusedTyping: true,
-                    maximumHeight: .greatestFiniteMagnitude,
-                    insertionPointColor: isOnOutgoingBubble ? .white : nil,
-                    textStyle: MessageEditLayoutMetrics.textStyle(isOnOutgoingBubble: isOnOutgoingBubble),
-                    scrolls: false,
-                    accessibilityHint: "Press Return to save, Shift-Return for a new line, or Escape to cancel.",
-                    selection: $selection,
-                    isFocused: $isFocused
-                )
-                    // The timeline sets an outgoing bubble's text in white.
-                    .environment(\.colorScheme, isOnOutgoingBubble ? .dark : colorScheme)
-                    .disabled(!canEdit)
-                    .onGeometryChange(for: CGFloat.self, of: \.size.height, action: editorHeightDidChange)
-                    .onExitCommand(perform: cancelEditing)
-            }
+            ComposerTextView(
+                text: text,
+                placeholder: "Edit message",
+                sendWithReturn: MessageEditInputPolicy.sendsWithReturn,
+                generalInputSettings: model.generalInputSettings,
+                mentionPresentations: mentionPresentations,
+                onTextChange: { text = $0 },
+                onSubmit: composerActions.onSubmit,
+                onEscape: composerActions.onEscape,
+                onAutocompleteCommand: handleAutocomplete,
+                capturesUnfocusedTyping: true,
+                maximumHeight: .greatestFiniteMagnitude,
+                insertionPointColor: isOnOutgoingBubble ? .white : nil,
+                textStyle: MessageEditLayoutMetrics.textStyle(isOnOutgoingBubble: isOnOutgoingBubble),
+                scrolls: false,
+                accessibilityHint: "Press Return to save, Shift-Return for a new line, or Escape to cancel.",
+                selection: $selection,
+                isFocused: $isFocused
+            )
+                // The timeline sets an outgoing bubble's text in white.
+                .environment(\.colorScheme, isOnOutgoingBubble ? .dark : colorScheme)
+                .disabled(!canEdit)
+                .onGeometryChange(for: CGFloat.self, of: \.size.height, action: editorHeightDidChange)
+                .onExitCommand(perform: cancel)
             if suggestionsBelow { suggestionList }
         }
+        .onChange(of: text) { _, _ in
+            isAutocompleteDismissed = false
+            timeQueryNeedsPick = false
+            autocompleteIndex = 0
+        }
+        .onChange(of: timeContext?.query) { timeQueryDate = .now }
         .onChange(of: selection) { _, _ in
             isAutocompleteDismissed = false
             autocompleteIndex = 0
-        }
-        .onChange(of: timeMentionContext?.query) { _, _ in
-            timeReferenceDate = Date.now
-        }
-        .onChange(of: timeMentionContext != nil) { _, active in
-            if active, timeReferenceDate == nil {
-                timeReferenceDate = Date.now
-            } else if !active {
-                timeReferenceDate = nil
-            }
-        }
-        .onDisappear {
-            if let entry = activeTimeEntry {
-                text = TimeMentionCoordinator.restoredDraftText(for: entry)
-                activeTimeEntry = nil
-            }
         }
     }
 
     @ViewBuilder
     private var suggestionList: some View {
-        if let context = timeMentionContext {
-            TimeFormatsAutocompleteList(
-                heading: context.query.isEmpty ? "Time formats" : "Time formats for \(context.query.lowercased())",
-                candidates: timeCandidates,
+        if let timeContext, timeQueryNeedsPick || !timeRows.isEmpty {
+            ComposerTimeFormatPicker(
+                query: timeContext.query.trimmingCharacters(in: .whitespaces).lowercased(),
+                rows: timeRows,
+                needsPick: timeQueryNeedsPick,
                 selectedIndex: autocompleteIndex,
-                highlight: { autocompleteIndex = $0 },
-                select: { acceptTimeFormat($0, context: context) },
-                keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
+                cornerRadius: ChatChromeMetrics.composerCornerRadius,
+                keyboardSelectionRevision: 0,
+                select: { insertTimestamp($0.token, context: timeContext) },
+                highlight: { autocompleteIndex = $0 }
             )
-        } else if let context = mentionAutocompleteContext {
-            let suggestions = mentionAutocompleteSuggestions(for: context)
-            if !suggestions.isEmpty {
-                MentionAutocompleteList(
-                    heading: TimeMentionCoordinator.mentionHeading(for: context, suggestions: suggestions),
-                    suggestions: suggestions,
-                    selectedIndex: autocompleteIndex,
-                    highlight: { autocompleteIndex = $0 },
-                    select: { acceptMentionAutocomplete($0, context: context) },
-                    keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
-                )
-            }
-        } else if let context = colonContext, !colonSuggestions.isEmpty {
+        } else if let context, !suggestions.isEmpty {
             EmojiAutocompleteList(
-                suggestions: colonSuggestions,
+                suggestions: suggestions,
                 selectedIndex: autocompleteIndex,
                 highlight: { autocompleteIndex = $0 },
-                select: { acceptColon($0, context: context) },
-                keyboardSelectionRevision: autocompleteKeyboardSelectionRevision
+                select: { accept($0, context: context) }
             )
         }
     }
 
-    private func updateText(_ value: String) {
-        if activeTimeEntry == nil,
-           let rawContext = TimeMentionContext(text: value, selection: selection) {
-            let nsText = value as NSString
-            let prefix = nsText.substring(to: rawContext.range.location)
-            let suffix = nsText.substring(from: rawContext.range.location + rawContext.range.length)
-            let entry = TimeMentionEntry(prefix: prefix, query: rawContext.rawQuery, suffix: suffix)
-            activeTimeEntry = entry
-            text = TimeMentionCoordinator.restoredDraftText(for: entry)
-            autocompleteIndex = 0
-            isAutocompleteDismissed = false
-            return
-        }
-        text = value
-        isAutocompleteDismissed = false
-        autocompleteIndex = 0
-    }
-
-    private var timeMentionContext: TimeMentionContext? {
-        TimeMentionCoordinator.context(
-            entry: activeTimeEntry,
-            text: text,
-            selection: selection,
-            isDismissed: isAutocompleteDismissed
-        )
-    }
-
-    private var timeCandidates: [DiscordParsedTimeCandidate] {
-        TimeMentionCoordinator.candidates(
-            for: timeMentionContext,
-            referenceDate: timeReferenceDate
-        )
-    }
-
-    private var allTimeOptions: [DiscordParsedTimeCandidate.Option] {
-        TimeMentionCoordinator.allOptions(for: timeCandidates)
-    }
-
-    private var mentionAutocompleteContext: MentionAutocompleteContext? {
-        guard !isAutocompleteDismissed else { return nil }
-        return MentionAutocompleteContext(text: text, selection: selection)
-    }
-
-    private func mentionAutocompleteSuggestions(
-        for context: MentionAutocompleteContext
-    ) -> [MentionAutocompleteSuggestion] {
-        switch context.kind {
-        case .member:
-            return MentionAutocompleteSuggestionFactory.memberSuggestions(
-                query: context.query,
-                recentMessages: [],
-                localMembers: model.mentionAutocompleteMembers.filter { !model.isUserIgnored($0.id) },
-                remoteMembers: model.mentionMemberResults.filter { !model.isUserIgnored($0.id) },
-                roles: model.guildRoles,
-                canMentionNonMentionableRoles: false
-            )
-        case .channel:
-            return MentionAutocompleteSuggestionFactory.channelSuggestions(
-                query: context.query,
-                channels: model.visibleChannels,
-                guilds: model.serverRailGuildsByID,
-                guildAndChannelUsageScores: model.discordGuildAndChannelUsageScores,
-                currentUserID: model.currentUser?.id,
-                currentMember: (model.currentUser?.id).flatMap { model.membersByID[$0] },
-                roles: model.guildRoles
-            )
-        }
-    }
-
-    private var colonContext: ColonAutocompleteContext? {
+    private var context: ColonAutocompleteContext? {
         !canEdit || isAutocompleteDismissed ? nil : ColonAutocompleteContext(text: text, selection: selection)
     }
 
-    private var colonSuggestions: [ColonAutocompleteSuggestion] {
-        guard let colonContext else { return [] }
+    private var suggestions: [ColonAutocompleteSuggestion] {
+        guard let context else { return [] }
         return ColonAutocompleteSuggestionFactory.suggestions(
-            query: colonContext.query,
+            query: context.query,
             customEmojis: model.composerCustomEmojis,
             customValue: model.composerText(for:),
             customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
@@ -1105,161 +976,58 @@ private struct InlineMessageEditor: View {
         )
     }
 
-    private func handleAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
-        if let context = timeMentionContext {
-            return handleTimeAutocomplete(command, context: context)
-        }
-        if let context = mentionAutocompleteContext {
-            return handleMentionAutocomplete(command, context: context)
-        }
-        if let context = colonContext {
-            return handleColonAutocomplete(command, context: context)
-        }
-        return false
+    private var timeContext: KeywordMentionContext? {
+        !canEdit || isAutocompleteDismissed ? nil : KeywordMentionContext(.time, text: text, selection: selection)
     }
 
-    private func handleTimeAutocomplete(
-        _ command: ComposerAutocompleteCommand,
-        context: TimeMentionContext
-    ) -> Bool {
-        TimeMentionCoordinator.handleAutocomplete(
-            command,
-            options: allTimeOptions,
-            currentIndex: &autocompleteIndex,
-            keyboardRevision: &autocompleteKeyboardSelectionRevision,
-            onAccept: { acceptTimeFormat($0, context: context) },
-            onDismiss: {
-                if activeTimeEntry != nil {
-                    cancelTimeEntry()
-                } else {
-                    isAutocompleteDismissed = true
-                }
+    private var timeRows: [ComposerTimeFormatPicker.Row] {
+        timeContext.map {
+            ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: $0.query, now: timeQueryDate))
+        } ?? []
+    }
+
+    /// Keys while times match what is typed after `@time `, as in the composer.
+    private func handleTimeAutocomplete(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
+        let rows = timeRows
+        switch command {
+        case .previous where !rows.isEmpty:
+            autocompleteIndex = (autocompleteIndex - 1 + rows.count) % rows.count
+        case .next where !rows.isEmpty:
+            autocompleteIndex = (autocompleteIndex + 1) % rows.count
+        case .accept, .advance:
+            guard !rows.isEmpty else {
+                timeQueryNeedsPick = true
+                return true
             }
-        )
+            insertTimestamp(rows[min(autocompleteIndex, rows.count - 1)].token, context: context)
+        case .dismiss: isAutocompleteDismissed = true
+        default: return false
+        }
+        return true
     }
 
-    private func handleMentionAutocomplete(
-        _ command: ComposerAutocompleteCommand,
-        context: MentionAutocompleteContext
-    ) -> Bool {
-        let suggestions = mentionAutocompleteSuggestions(for: context)
-        guard !suggestions.isEmpty else { return false }
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
+    private func insertTimestamp(_ token: DiscordTimestampToken, context: KeywordMentionContext) {
+        let replacement = token.rawToken + " "
+        text = (text as NSString).replacingCharacters(in: context.range, with: replacement)
+        selection = NSRange(location: context.range.location + replacement.utf16.count, length: 0)
+    }
+
+    private func handleAutocomplete(_ command: ComposerAutocompleteCommand) -> Bool {
+        if let timeContext { return handleTimeAutocomplete(command, context: timeContext) }
+        guard let context, !suggestions.isEmpty else { return false }
         switch command {
         case .previous:
             autocompleteIndex = (autocompleteIndex - 1 + suggestions.count) % suggestions.count
-            return true
-        case .next:
-            autocompleteIndex = (autocompleteIndex + 1) % suggestions.count
-            return true
+        case .next: autocompleteIndex = (autocompleteIndex + 1) % suggestions.count
         case .accept, .advance:
-            acceptMentionAutocomplete(
-                suggestions[min(autocompleteIndex, suggestions.count - 1)],
-                context: context
-            )
-            return true
-        case .dismiss:
-            isAutocompleteDismissed = true
-            return true
-        default:
-            return false
+            accept(suggestions[min(autocompleteIndex, suggestions.count - 1)], context: context)
+        case .dismiss: isAutocompleteDismissed = true
+        case .previousField, .nextField, .removeField: return false
         }
+        return true
     }
 
-    private func handleColonAutocomplete(
-        _ command: ComposerAutocompleteCommand,
-        context: ColonAutocompleteContext
-    ) -> Bool {
-        guard !colonSuggestions.isEmpty else { return false }
-        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
-        switch command {
-        case .previous:
-            autocompleteIndex = (autocompleteIndex - 1 + colonSuggestions.count) % colonSuggestions.count
-            return true
-        case .next:
-            autocompleteIndex = (autocompleteIndex + 1) % colonSuggestions.count
-            return true
-        case .accept, .advance:
-            acceptColon(colonSuggestions[min(autocompleteIndex, colonSuggestions.count - 1)], context: context)
-            return true
-        case .dismiss:
-            isAutocompleteDismissed = true
-            return true
-        default:
-            return false
-        }
-    }
-
-    private func acceptTimeFormat(
-        _ option: DiscordParsedTimeCandidate.Option,
-        context: TimeMentionContext? = nil
-    ) {
-        let result = TimeMentionCoordinator.accept(
-            option: option,
-            entry: activeTimeEntry,
-            context: context,
-            currentText: text
-        )
-        activeTimeEntry = nil
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
-        text = result.text
-        selection = result.selection
-    }
-
-    private func acceptActiveTimeEntry() {
-        guard let entry = activeTimeEntry else { return }
-        let option = allTimeOptions.indices.contains(autocompleteIndex)
-            ? allTimeOptions[autocompleteIndex]
-            : allTimeOptions.first
-        let result = TimeMentionCoordinator.acceptActiveEntry(
-            entry: entry,
-            selectedOption: option
-        )
-        activeTimeEntry = nil
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
-        text = result.text
-        selection = result.selection
-    }
-
-    private func cancelTimeEntry() {
-        guard let entry = activeTimeEntry else { return }
-        let result = TimeMentionCoordinator.cancelActiveEntry(entry: entry)
-        activeTimeEntry = nil
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
-        text = result.text
-        selection = result.selection
-    }
-
-    private func acceptMentionAutocomplete(
-        _ suggestion: MentionAutocompleteSuggestion,
-        context: MentionAutocompleteContext
-    ) {
-        if suggestion.id == "special:time" {
-            let nsText = text as NSString
-            let prefix = nsText.substring(to: context.range.location)
-            let suffix = nsText.substring(from: context.range.location + context.range.length)
-            let entry = TimeMentionEntry(prefix: prefix, query: "", suffix: suffix)
-            activeTimeEntry = entry
-            text = TimeMentionCoordinator.restoredDraftText(for: entry)
-            autocompleteIndex = 0
-            isAutocompleteDismissed = false
-            return
-        }
-        let nsText = text as NSString
-        let replacement = suggestion.value + " "
-        text = nsText.replacingCharacters(in: context.range, with: replacement)
-        selection = NSRange(
-            location: context.range.location + replacement.utf16.count,
-            length: 0
-        )
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
-    }
-
-    private func acceptColon(_ suggestion: ColonAutocompleteSuggestion, context: ColonAutocompleteContext) {
+    private func accept(_ suggestion: ColonAutocompleteSuggestion, context: ColonAutocompleteContext) {
         let value = text as NSString
         text = value.replacingCharacters(in: context.range, with: suggestion.value)
         selection = NSRange(

@@ -6,7 +6,6 @@ import ImageIO
 import Lottie
 import QuartzCore
 import SakuraCordModels
-import MessageRendering
 import SwiftUI
 
 extension NativeTimelineCanvasView {
@@ -33,7 +32,6 @@ extension NativeTimelineCanvasView {
         self.storage = storage
         self.model = model
         reconcilePollPresentations()
-        reconcileRelativeTimestamps()
         installSpoilerRevealStore(model.timelineSpoilerRevealStore)
         self.actions = actions
         baseContentOriginY = contentOriginY
@@ -118,8 +116,6 @@ extension NativeTimelineCanvasView {
         reconcileBeginningSelectionOverlay()
         reconcileActivityIndicators()
         reconcileSpoilerOverlays()
-        reconcileRelativeTimestamps()
-        updateRelativeTimestampAnimationOverlays()
         if !suppressesHoverPresentation {
             updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
@@ -217,7 +213,6 @@ extension NativeTimelineCanvasView {
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
-        updateRelativeTimestampAnimationOverlays()
         componentChoiceOverlay?.repositionWithAnchor()
         needsDisplay = true
         redrawMovedShortContentSynchronously(
@@ -553,7 +548,6 @@ extension NativeTimelineCanvasView {
         reconcileVoiceMessageOverlay()
         reconcileActivityIndicators()
         positionSpoilerOverlays()
-        updateRelativeTimestampAnimationOverlays()
     }
 
     func applyDocumentSize(_ size: NSSize) {
@@ -594,7 +588,6 @@ extension NativeTimelineCanvasView {
             clearBitmapCache(keepingCapacity: false)
             removeReactionMouseMonitor()
             finishReactionTransitions()
-            cleanupRelativeTimestampAnimationOverlays()
             animatedMediaReconcileTask?.cancel()
             animatedMediaReconcileTask = nil
             animatedMediaRows.removeAll()
@@ -1501,123 +1494,4 @@ extension NativeTimelineCanvasView {
         bitmapCost = 0
     }
 
-    func messageHasRelativeTimestamp(_ item: NativeMessageTimelineItem) -> Bool {
-        guard case let .message(row, _, _) = item else { return false }
-        let sources = TimestampMentionPresentation.sources(in: row.message, replyContent: row.replyPreview?.content)
-        for source in sources {
-            if source.contains(":R>") { return true }
-            for token in TimestampMentionPresentation.tokens(in: source) where token.style == .relative {
-                return true
-            }
-        }
-        return false
-    }
-
-    func reconcileRelativeTimestamps() {
-        let hasRelativeTimestamps = storage.items.contains(where: { messageHasRelativeTimestamp($0) })
-        if !hasRelativeTimestamps {
-            cleanupRelativeTimestampAnimationOverlays()
-            return
-        }
-        updateRelativeTimestampAnimationOverlays()
-    }
-
-    private func isTimestampConcealedBySpoiler(frame: CGRect, at index: Int) -> Bool {
-        if textSpoilerPointerHit(at: CGPoint(x: frame.midX, y: frame.midY)) != nil {
-            return true
-        }
-        guard let messageID = items[index].messageID else { return false }
-        let hiddenContainers = layouts[index].componentLayouts.flatMap {
-            NativeTimelineSpoilerConcealmentPolicy.hiddenContainerFrames(in: $0, messageID: messageID, store: spoilerRevealStore)
-        }
-        return NativeTimelineSpoilerConcealmentPolicy.isInsideHiddenContainer(
-            frame.offsetBy(dx: 0, dy: -displayedRowOrigin(at: index)), hiddenContainerFrames: hiddenContainers
-        )
-    }
-
-    func updateRelativeTimestampAnimationOverlays() {
-        guard !storage.items.isEmpty,
-              var index = rowIndex(at: max(0, visibleRect.minY))
-        else {
-            cleanupRelativeTimestampAnimationOverlays()
-            return
-        }
-
-        var visibleKeys: Set<RelativeTimestampKey> = []
-
-        while storage.items.indices.contains(index),
-              displayedRowOrigin(at: index) < visibleRect.maxY
-        {
-            updateTimestampOverlays(for: storage.items[index], at: index, visibleKeys: &visibleKeys)
-            index += 1
-        }
-
-        for (key, host) in timestampAnimationHosts where !visibleKeys.contains(key) {
-            host.removeFromSuperview()
-            timestampAnimationHosts.removeValue(forKey: key)
-            timestampAnimationHostConfigs.removeValue(forKey: key)
-        }
-    }
-
-    private func updateTimestampOverlays(
-        for item: NativeMessageTimelineItem,
-        at index: Int,
-        visibleKeys: inout Set<RelativeTimestampKey>
-    ) {
-        guard messageHasRelativeTimestamp(item) else { return }
-        let regions = mentionPointerRegions(at: index)
-        let isOutgoing = layouts.indices.contains(index) && layouts[index].bubbleRegion?.isOutgoing == true
-        for region in regions where region.isTimestamp && region.timestampStyle == "R" {
-            guard let date = region.timestampDate else { continue }
-            guard !isTimestampConcealedBySpoiler(frame: region.frame, at: index) else { continue }
-            let key = RelativeTimestampKey(
-                itemIdentifier: item.identifier,
-                region: region.region,
-                characterIndex: region.characterIndex
-            )
-            visibleKeys.insert(key)
-            attachOrUpdateTimestampHost(key: key, frame: region.frame, date: date, isOutgoing: isOutgoing)
-        }
-    }
-
-    private func attachOrUpdateTimestampHost(
-        key: RelativeTimestampKey,
-        frame: CGRect,
-        date: Date,
-        isOutgoing: Bool
-    ) {
-        if let host = timestampAnimationHosts[key] {
-            if host.frame != frame { host.frame = frame }
-            if let config = timestampAnimationHostConfigs[key], config.date == date, config.isOutgoing == isOutgoing {
-                return
-            }
-            timestampAnimationHostConfigs[key] = (date, isOutgoing)
-            host.rootView = AnyView(NativeTimelineTimestampPillView(
-                date: date,
-                style: "R",
-                isOutgoingBubble: isOutgoing
-            ))
-            return
-        }
-        let root = AnyView(NativeTimelineTimestampPillView(
-            date: date,
-            style: "R",
-            isOutgoingBubble: isOutgoing
-        ))
-        let host = NativeTimelinePassthroughHostingView(rootView: root)
-        host.frame = frame
-        host.wantsLayer = true
-        host.layer?.backgroundColor = NSColor.clear.cgColor
-        addSubview(host, positioned: .above, relativeTo: nil)
-        timestampAnimationHosts[key] = host
-        timestampAnimationHostConfigs[key] = (date, isOutgoing)
-    }
-
-    func cleanupRelativeTimestampAnimationOverlays() {
-        for host in timestampAnimationHosts.values {
-            host.removeFromSuperview()
-        }
-        timestampAnimationHosts.removeAll()
-        timestampAnimationHostConfigs.removeAll()
-    }
 }

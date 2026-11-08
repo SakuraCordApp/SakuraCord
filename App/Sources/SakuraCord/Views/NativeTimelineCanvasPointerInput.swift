@@ -4,7 +4,6 @@ import Combine
 import CoreText
 import ImageIO
 import Lottie
-import MessageRendering
 import QuartzCore
 import SakuraCordModels
 import SwiftUI
@@ -47,7 +46,6 @@ extension NativeTimelineCanvasView {
         addTrackingArea(tracking)
         self.tracking = tracking
         installVisibleRowTrackingAreas()
-        removeAllToolTips()
         super.updateTrackingAreas()
     }
 
@@ -1314,12 +1312,7 @@ extension NativeTimelineCanvasView {
                 itemIdentifier: items[index].identifier,
                 region: mention.region,
                 characterIndex: mention.characterIndex,
-                rawToken: mention.rawToken,
-                toolTip: mention.toolTip,
-                isTimestamp: mention.isTimestamp,
-                frame: mention.frame,
-                timestampDate: mention.timestampDate,
-                timestampStyle: mention.timestampStyle
+                rawToken: mention.rawToken
             )
         }
         return nil
@@ -1416,16 +1409,7 @@ extension NativeTimelineCanvasView {
                 framesetter: selectable.framesetter,
                 frame: selectable.frame
             ).filter { $0.presentation.isInteractive || $0.presentation.isTimestamp }.map { mention in
-                var targetDate: Date?
-                var targetStyle: String?
-                if case let .timestamp(resolvedDate, resolvedStyle) = mention.presentation.target {
-                    targetDate = resolvedDate
-                    targetStyle = resolvedStyle
-                } else if mention.presentation.isTimestamp, let token = DiscordTimestampToken(rawToken: mention.presentation.rawToken) {
-                    targetDate = token.date
-                    targetStyle = token.style.rawValue
-                }
-                return MentionPointerRegion(
+                MentionPointerRegion(
                     region: selectable.region,
                     characterIndex: mention.characterIndex,
                     rawToken: mention.presentation.rawToken,
@@ -1433,10 +1417,7 @@ extension NativeTimelineCanvasView {
                     frame: mention.frame.offsetBy(
                         dx: 0,
                         dy: rowOrigin
-                    ),
-                    toolTip: mention.presentation.toolTip,
-                    timestampDate: targetDate,
-                    timestampStyle: targetStyle
+                    )
                 )
             }
         }

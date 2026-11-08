@@ -108,9 +108,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         let rawToken: String
         let isTimestamp: Bool
         let frame: CGRect
-        var toolTip: String?
-        var timestampDate: Date?
-        var timestampStyle: String?
     }
 
     struct TextPointerHit {
@@ -309,13 +306,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         StableReactionPickerPresenter<EmojiPickerView>.Coordinator()
     let reactionHoverCoordinator =
         StableAnchoredPopoverPresenter<MessageReactionTooltip>.Coordinator()
-    struct RelativeTimestampKey: Hashable {
-        let itemIdentifier: NativeMessageTimelineItem.Identifier
-        let region: NativeTimelineTextRegion
-        let characterIndex: Int
-    }
-    var timestampAnimationHosts: [RelativeTimestampKey: NativeTimelinePassthroughHostingView] = [:]
-    var timestampAnimationHostConfigs: [RelativeTimestampKey: (date: Date, isOutgoing: Bool)] = [:]
     var pendingReactionBaseline: NativeTimelineReactionBaseline?
     var reactionTransitions: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionTransition] = [:]
     var reactionRowMotions: [NativeTimelineReactionRowMotion] = []
@@ -408,7 +398,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
         layerContentsPlacement = .topLeft
         // Pointer-driven state must paint in the same display pass as the
         // mouse event. Async layer drawing visibly leaves the previous row's
-        // hover even though hit testing has already moved on.
+        // hover behind even though hit testing has already moved on.
         layer?.drawsAsynchronously = false
         layer?.addSublayer(historySkeletonShimmer.layer)
         beginningSelectionOverlay.imageAlignment = .alignTopLeft
@@ -476,8 +466,6 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             NotificationCenter.default.removeObserver(self)
             NSWorkspace.shared.notificationCenter.removeObserver(self)
             pollClockTask?.cancel()
-            cleanupRelativeTimestampAnimationOverlays()
-            timestampHoverCoordinator.close()
             pollAnimationTicker.stop()
             clearDisclosure(redraws: false)
             pollPopover?.close()

@@ -4,7 +4,6 @@ import Combine
 import CoreText
 import ImageIO
 import Lottie
-import MessageRendering
 import QuartzCore
 import SakuraCordModels
 import SwiftUI
@@ -889,15 +888,6 @@ extension NativeTimelineRowPainter {
         isHovered: Bool,
         isOutgoingBubble: Bool = false
     ) {
-        if presentation.isTimestamp {
-            drawTimestamp(
-                presentation,
-                in: frame,
-                isHovered: isHovered,
-                isOutgoingBubble: isOutgoingBubble
-            )
-            return
-        }
         let color: NSColor = isOutgoingBubble
             ? .white : presentation.isTimestamp ? .labelColor : roleColor(presentation.colorHex) ?? .sakuraCordAccentColor
         let shape = NSBezierPath(
@@ -992,61 +982,6 @@ extension NativeTimelineRowPainter {
     private static func mentionLabel(_ presentation: MentionPresentation, in frame: CGRect, font: NSFont, color: NSColor) {
         text(presentation.label, in: frame, font: .systemFont(ofSize: font.pointSize, weight: presentation.labelWeight),
              color: color)
-    }
-
-    static func drawTimestamp(
-        _ presentation: MentionPresentation,
-        in frame: CGRect,
-        isHovered: Bool,
-        isOutgoingBubble: Bool = false
-    ) {
-        let currentLabel: String
-        let isRelative: Bool
-        if case let .timestamp(date, style) = presentation.target, style == "R" {
-            currentLabel = DiscordTimestampFormatter.formatted(date: date, style: "R", now: .now)
-            isRelative = true
-        } else {
-            currentLabel = presentation.label
-            isRelative = false
-        }
-
-        let metrics = NativeTimelineMentionMetrics.self
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .regular)
-        let labelSize = (currentLabel as NSString).size(withAttributes: [.font: font])
-        let neededWidth = ceil(metrics.horizontalPadding * 2 + labelSize.width)
-        let actualFrame: CGRect
-        if neededWidth > frame.width {
-            actualFrame = CGRect(x: frame.minX, y: frame.minY, width: neededWidth, height: frame.height)
-        } else {
-            actualFrame = frame
-        }
-
-        let shape = NSBezierPath(
-            concentricRoundedRect: actualFrame,
-            cornerRadius: InterfaceScale.metric(4.5)
-        )
-        if isOutgoingBubble {
-            NSColor.black.withAlphaComponent(isHovered ? 0.35 : 0.22).setFill()
-        } else {
-            NSColor.white.withAlphaComponent(isHovered ? 0.14 : 0.08).setFill()
-        }
-        shape.fill()
-
-        guard !isRelative else { return }
-
-        let labelX = actualFrame.minX + metrics.horizontalPadding
-        let textColor: NSColor = isOutgoingBubble ? .white : .labelColor
-        text(
-            currentLabel,
-            in: CGRect(
-                x: labelX,
-                y: actualFrame.minY,
-                width: max(1, actualFrame.maxX - labelX - metrics.horizontalPadding),
-                height: actualFrame.height
-            ),
-            font: font,
-            color: textColor
-        )
     }
 
     static func inlineEmojiImage(

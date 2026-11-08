@@ -43,12 +43,6 @@ public struct DiscordTimestampToken: Hashable, Sendable {
         timeZone: TimeZone = .autoupdatingCurrent,
         relativeTo now: Date = .now
     ) -> String {
-        DiscordTimestampFormatter.formatted(
-            seconds: seconds,
-            style: style.rawValue,
-            now: now,
-            locale: locale,
-            timeZone: timeZone
-        )
+        DiscordTimestampFormatter.string(for: date, style: style, relativeTo: now, locale: locale, timeZone: timeZone)
     }
 }

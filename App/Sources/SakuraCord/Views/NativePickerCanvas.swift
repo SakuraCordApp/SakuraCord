@@ -258,7 +258,6 @@ final class NativePickerCanvas<Row: Identifiable>: NSView, NativePickerViewport 
                         ?? NSHostingView(rootView: AnyView(EmptyView()))
                     host.rootView = content(row)
                     host.sizingOptions = []
-                    host.needsDisplay = true
                     view = host
                 }
                 recycled.removeAll { $0 === view }

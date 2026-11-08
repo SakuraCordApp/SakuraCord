@@ -1,110 +1,45 @@
 import Foundation
 
-public enum DiscordTimestampFormatter {
-    public static func formatted(
-        date: Date,
-        style: String?,
-        now: Date = .now,
-        locale: Locale = .autoupdatingCurrent,
-        timeZone: TimeZone = .autoupdatingCurrent,
-        calendar: Calendar = .autoupdatingCurrent
+/// Discord's timestamp styles: `d` and `s` print the year in full, and
+/// `R` follows moment.js, which counts up to 25 days before it says
+/// "a month", and up to 21 hours before it says "a day".
+enum DiscordTimestampFormatter {
+    static func string(
+        for date: Date, style: DiscordTimestampToken.Style, relativeTo now: Date,
+        locale: Locale, timeZone: TimeZone
     ) -> String {
-        switch style {
-        case "t":
-            var format = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "T":
-            var format = Date.FormatStyle(date: .omitted, time: .standard, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "d":
-            var format = Date.FormatStyle(date: .numeric, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "D":
-            var format = Date.FormatStyle(date: .long, time: .omitted, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "f", nil:
-            var format = Date.FormatStyle(date: .long, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "F":
-            var format = Date.FormatStyle(date: .complete, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "s":
-            var format = Date.FormatStyle(date: .numeric, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "S":
-            var format = Date.FormatStyle(date: .numeric, time: .standard, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        case "R":
-            return relativeText(for: date, relativeTo: now, locale: locale)
-        default:
-            var format = Date.FormatStyle(date: .long, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
+        if style == .relative { return relative(date, to: now, locale: locale) }
+        let parts: (Date.FormatStyle.DateStyle, Date.FormatStyle.TimeStyle) = switch style {
+        case .shortTime: (.omitted, .shortened)
+        case .mediumTime: (.omitted, .standard)
+        case .shortDate: (.numeric, .omitted)
+        case .longDate: (.long, .omitted)
+        case .longDateShortTime: (.long, .shortened)
+        case .fullDateShortTime: (.complete, .shortened)
+        case .shortDateShortTime: (.numeric, .shortened)
+        case .shortDateMediumTime: (.numeric, .standard)
+        case .relative: (.omitted, .omitted)
         }
+        return Date.FormatStyle(date: parts.0, time: parts.1, locale: locale, timeZone: timeZone).format(date)
     }
 
-    public static func formatted(
-        seconds: Int64,
-        style: String?,
-        now: Date = .now,
-        locale: Locale = .autoupdatingCurrent,
-        timeZone: TimeZone = .autoupdatingCurrent,
-        calendar: Calendar = .autoupdatingCurrent
-    ) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(seconds))
-        return formatted(date: date, style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar)
-    }
-
-    public static func tooltip(
-        date: Date,
-        style: String?,
-        now: Date = .now,
-        locale: Locale = .autoupdatingCurrent,
-        timeZone: TimeZone = .autoupdatingCurrent,
-        calendar: Calendar = .autoupdatingCurrent
-    ) -> String {
-        if style == "R" {
-            var format = Date.FormatStyle(date: .complete, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone)
-            format.capitalizationContext = .unknown
-            return format.format(date)
-        } else {
-            return relativeText(for: date, relativeTo: now, locale: locale)
-        }
-    }
-
-    public static func tooltip(
-        seconds: Int64,
-        style: String?,
-        now: Date = .now,
-        locale: Locale = .autoupdatingCurrent,
-        timeZone: TimeZone = .autoupdatingCurrent,
-        calendar: Calendar = .autoupdatingCurrent
-    ) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(seconds))
-        return tooltip(date: date, style: style, now: now, locale: locale, timeZone: timeZone, calendar: calendar)
-    }
-
-    public static func relativeText(
-        for date: Date,
-        relativeTo now: Date = .now,
-        locale: Locale = .autoupdatingCurrent
-    ) -> String {
+    private static func relative(_ date: Date, to now: Date, locale: Locale) -> String {
+        let interval = date.timeIntervalSince(now)
+        let duration = abs(interval)
+        // Each unit rounds the whole interval, as moment's durations do.
+        // Seconds in each unit, and the count below which moment uses it.
+        let units: [(Calendar.Component, (seconds: Double, below: Double))] = [
+            (.second, (1, 60)), (.minute, (60, 60)), (.hour, (3_600, 22)), (.day, (86_400, 26)), (.month, (2_629_746, 11)),
+        ]
+        let (unit, amount) = units.lazy
+            .map { ($0.0, (duration / $0.1.seconds).rounded(), $0.1.below) }
+            .first { $0.1 < $0.2 }
+            .map { ($0.0, $0.1) } ?? (.year, (duration / 31_556_952).rounded())
+        var components = DateComponents()
+        components.setValue(Int(max(amount, unit == .second ? 0 : 1)) * (interval < 0 ? -1 : 1), for: unit)
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = locale
         formatter.unitsStyle = .full
-        let interval = date.timeIntervalSince(now)
-        if !interval.isNaN, abs(interval) >= 7 * 86400, abs(interval) < 26 * 86400 {
-            let days = Int(interval / 86400)
-            return formatter.localizedString(from: DateComponents(day: days))
-        }
-        return formatter.localizedString(for: date, relativeTo: now)
+        return formatter.localizedString(from: components)
     }
 }
