@@ -82,7 +82,7 @@ extension AppModel {
         // The form answers the STARTED application it was opened for. Once another client submits or removes it,
         // or a reviewer acts, submitting would send stale answers; this client's own submission is still running.
         if let modal = store.modal, modal.kind == .form, !store.isWorking, let opened = previous[modal.guildID],
-           store.requests[modal.guildID].map({ $0.id != opened.id || $0.status != .started }) ?? true {
+           store.requests[modal.guildID]?.id != opened.id || store.requests[modal.guildID]?.status != .started {
             store.form = nil
             store.modal = nil
         }
@@ -134,11 +134,12 @@ extension AppModel {
     func selectGuildJoinRequest(_ guildID: GuildID?) {
         let store = guildJoinRequests
         if let guildID {
+            let isReselection = store.selectedGuildID == guildID
             // The page replaces the workspace like the official route does. Behind it the workspace rests on
             // Friends, so no conversation stays open to be marked read.
             openFriends()
             store.isFolderExpanded = true
-            if store.selectedGuildID != guildID { store.showsAnswers = false }
+            if !isReselection { store.showsAnswers = false }
         }
         store.selectedGuildID = guildID
         store.error = nil
@@ -173,19 +174,7 @@ extension AppModel {
         runGuildJoinRequestAction { [weak self] provider in
             do {
                 try await provider.submitGuildJoinApplication(form.guildID, fields: form.fields)
-            } catch {
-                // A lost reply is done once Discord's Gateway updates already show the result: the screened member
-                // is no longer pending, the application was submitted or reviewed, or another client discarded or
-                // replaced it. Keeping the form would offer the same answers again. Anything else, such as an update
-                // that has not arrived, keeps the form and its answers with the error.
-                let current = store.requests[form.guildID]
-                let isDone = if self?.serverRailGuildsByID[form.guildID] != nil {
-                    self?.onboardingMember(in: form.guildID)?.isPending == false
-                } else {
-                    [.submitted, .rejected, .approved].contains(current?.status) || opened.map { $0 != current?.id } == true
-                }
-                guard isDone else { throw error }
-            }
+            } catch where self?.submissionLanded(in: form.guildID, startedFrom: opened) == true {}
         } completion: { [weak self] in
             guard let self, store.modal?.id == modal.id else { return }
             store.form = nil
@@ -198,6 +187,16 @@ extension AppModel {
                 store.showsSubmittedTip = true
             }
         }
+    }
+
+    /// Whether a submission whose reply failed or was lost is done anyway, because Discord's Gateway updates already
+    /// show the result: the screened member is no longer pending, the application was submitted or reviewed, or
+    /// another client discarded or replaced it. Keeping the form would offer the same answers again; anything else,
+    /// such as an update that has not arrived, keeps the form and its answers with the error.
+    private func submissionLanded(in guildID: GuildID, startedFrom opened: JoinRequestID?) -> Bool {
+        if serverRailGuildsByID[guildID] != nil { return onboardingMember(in: guildID)?.isPending == false }
+        let current = guildJoinRequests.requests[guildID]
+        return [.submitted, .rejected, .approved].contains(current?.status) || opened.map { $0 != current?.id } == true
     }
 
     func withdrawGuildJoinRequest(_ guildID: GuildID) {

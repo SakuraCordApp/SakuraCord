@@ -38,6 +38,8 @@ extension AppModel {
     }
 
     func openFriends() {
+        // Friends and Message Requests replace an application's status page, as every other destination does.
+        if guildJoinRequests.selectedGuildID != nil { selectGuildJoinRequest(nil) }
         lastDirectMessageSelection = .friends
         friends.messageRequestsTab = nil
         cancelConversationNavigation()

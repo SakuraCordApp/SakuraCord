@@ -241,14 +241,14 @@ struct GuildJoinRequestPage: View {
         let iconURL = model.joinRequestGuildIconURL(guildID)
         switch status {
         case .started?:
-            StatusCard(symbol: "list.bullet", tint: .gray, iconURL: iconURL, guildName: guildName,
+            StatusCard(symbol: status.symbolName, tint: .gray, iconURL: iconURL, guildName: guildName,
                        title: "Submit your application to join \(guildName).", detail: nil)
         case .rejected?:
-            StatusCard(symbol: "xmark", tint: .red, iconURL: iconURL, guildName: guildName,
+            StatusCard(symbol: status.symbolName, tint: .red, iconURL: iconURL, guildName: guildName,
                        title: "Your application to join \(guildName) has been denied.",
                        detail: request?.rejectionReason.map { "Reason: \($0)" })
         default:
-            StatusCard(symbol: "hourglass", tint: .gray, iconURL: iconURL, guildName: guildName,
+            StatusCard(symbol: status.symbolName, tint: .gray, iconURL: iconURL, guildName: guildName,
                        title: "Your application to join \(guildName) is awaiting review!",
                        detail: "You’ll get notified when there’s an update.")
         }
@@ -453,6 +453,17 @@ private struct GuildJoinApplicationAnswerRow: View {
         case (_, .text(let text)?): text
         case (.multipleChoice(let choices), .choice(let index)?): choices.indices.contains(index) ? choices[index] : nil
         default: nil
+        }
+    }
+}
+
+extension GuildJoinRequest.Status? {
+    /// The glyph that marks an application's state on its page, its rail badge and the toolbar.
+    var symbolName: String {
+        switch self {
+        case .started?: "list.bullet"
+        case .rejected?: "xmark"
+        default: "hourglass"
         }
     }
 }

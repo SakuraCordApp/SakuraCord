@@ -1242,12 +1242,8 @@ private struct ChatRootView: View {
 
     private var conversationToolbarPresentation: ConversationToolbarPresentation? {
         if let guildID = model.presentedGuildJoinRequestID {
-            let symbol = switch model.guildJoinRequests.requests[guildID]?.status {
-            case .rejected?: "xmark"
-            case .started?: "list.bullet"
-            default: "hourglass"
-            }
-            return .init(title: model.joinRequestGuildName(guildID), systemImage: symbol)
+            return .init(title: model.joinRequestGuildName(guildID),
+                         systemImage: (model.guildJoinRequests.requests[guildID]?.status).symbolName)
         }
         if let conversation = model.presentedSideConversation, conversation.isFullWidth {
             // One line with the thread symbol for threads and forum posts
