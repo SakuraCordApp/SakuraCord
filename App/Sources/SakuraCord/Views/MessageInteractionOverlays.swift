@@ -946,10 +946,10 @@ private struct InlineMessageEditor: View {
 
     @ViewBuilder
     private var suggestionList: some View {
-        if let timeContext, timeQueryNeedsPick || !timeRows.isEmpty {
+        if let timeContext, case let rows = timeRows, timeQueryNeedsPick || !rows.isEmpty {
             ComposerTimeFormatPicker(
-                query: timeContext.query.trimmingCharacters(in: .whitespaces).lowercased(),
-                rows: timeRows,
+                query: timeContext.query,
+                rows: rows,
                 needsPick: timeQueryNeedsPick,
                 selectedIndex: autocompleteIndex,
                 cornerRadius: ChatChromeMetrics.composerCornerRadius,

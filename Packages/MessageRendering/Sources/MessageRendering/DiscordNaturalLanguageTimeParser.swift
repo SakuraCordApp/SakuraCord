@@ -146,7 +146,7 @@ private struct Parser {
         }
         let date = Self.utc.date(byAdding: calendarOffset, to: seconds == 0 ? quarterHour(now) : now)
             .map { $0.addingTimeInterval(sign * seconds) }
-        return date.flatMap { at(time, on: $0) }.map { [DiscordNaturalLanguageTimeParser.moment($0)] }
+        return date.flatMap { at(time, on: $0) }.map(Self.single)
     }
 
     /// `next week`, `last month`, `next year`; `this month` and `this year`
@@ -158,11 +158,11 @@ private struct Parser {
         switch words[0] {
         case "next", "last":
             let date = Self.utc.date(byAdding: unit, value: words[0] == "next" ? 1 : -1, to: quarterHour(now))
-            return date.map { [DiscordNaturalLanguageTimeParser.moment($0)] }
+            return date.map(Self.single)
         case "this":
             guard unit != .weekOfYear else { return timeOfDay(Self.noon) }
             return calendar.dateInterval(of: unit, for: now).flatMap { at(Self.noon, on: $0.start) }
-                .map { [DiscordNaturalLanguageTimeParser.moment($0)] }
+                .map(Self.single)
         default:
             return nil
         }
@@ -181,7 +181,7 @@ private struct Parser {
 
     private func day(_ words: [String], time: TimeOfDay?) -> [DiscordTimeSuggestion]? {
         if words == ["tonight"] {
-            return at(time ?? TimeOfDay(hour: 22, minute: 0), on: now).map { [DiscordNaturalLanguageTimeParser.moment($0)] }
+            return at(time ?? TimeOfDay(hour: 22, minute: 0), on: now).map(Self.single)
         }
         if words == ["this", "weekend"] || words == ["weekend"] {
             return weekday(["this", "saturday"], time: time ?? Self.noon)
@@ -190,7 +190,7 @@ private struct Parser {
             let day = time == nil
                 ? Self.utc.date(byAdding: .day, value: offset, to: quarterHour(now))
                 : calendar.date(byAdding: .day, value: offset, to: now)
-            return day.flatMap { at(time, on: $0) }.map { [DiscordNaturalLanguageTimeParser.moment($0)] }
+            return day.flatMap { at(time, on: $0) }.map(Self.single)
         }
         return weekday(words, time: time ?? Self.noon) ?? monthDay(words, time: time ?? Self.noon)
     }
@@ -260,7 +260,7 @@ private struct Parser {
             else { return nil }
             return at(time, on: date)
         }
-        if let year = parsed.year { return date(in: year).map { [DiscordNaturalLanguageTimeParser.moment($0)] } }
+        if let year = parsed.year { return date(in: year).map(Self.single) }
         let currentYear = calendar.component(.year, from: now)
         guard let thisYear = date(in: currentYear) else { return nil }
         if thisYear >= now { return labelled([thisYear], in: .year) }
@@ -349,6 +349,11 @@ private struct Parser {
 
     /// `time` on `day`, or `day` itself without one. Hour 24 is the next
     /// midnight.
+    /// One unlabelled reading.
+    private static func single(_ date: Date) -> [DiscordTimeSuggestion] {
+        [DiscordNaturalLanguageTimeParser.moment(date)]
+    }
+
     private func at(_ time: TimeOfDay?, on day: Date) -> Date? {
         guard let time else { return day }
         var wallCalendar = calendar

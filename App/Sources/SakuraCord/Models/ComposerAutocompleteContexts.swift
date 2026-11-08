@@ -76,8 +76,9 @@ struct KeywordMentionContext {
     }
 
     private static let expressions = Dictionary(uniqueKeysWithValues: Keyword.allCases.map { keyword in
-        (keyword, RegularExpressionFactory.make(
-            #"(?:^|\s)(@\#(keyword.rawValue) ((?:(?!(?<=\s)@(?:game|time) )[^\v])*))\z"#
+        let anyKeyword = Keyword.allCases.map(\.rawValue).joined(separator: "|")
+        return (keyword, RegularExpressionFactory.make(
+            #"(?:^|\s)(@\#(keyword.rawValue) ((?:(?!(?<=\s)@(?:\#(anyKeyword)) )[^\v])*))\z"#
         ))
     })
 

@@ -576,8 +576,8 @@ struct ComposerView: View {
                 ApplicationCommandHelpStrip(draft: draft, issue: commandComposer.fieldIssue, cancel: cancelCommand)
                     .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
             }
-        } else if let context = timeMentionContext, timeQueryNeedsPick || !timeRows(for: context).isEmpty {
-            timeMentionMenu(context)
+        } else if let context = timeMentionContext, case let rows = timeRows(for: context), timeQueryNeedsPick || !rows.isEmpty {
+            timeMentionMenu(context, rows: rows)
         } else if let context = gameMentionContext {
             gameMentionMenu(context)
         } else if let context = mentionAutocompleteContext {
@@ -1345,10 +1345,10 @@ private extension ComposerView {
         ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: context.query, now: timeQueryDate))
     }
 
-    private func timeMentionMenu(_ context: KeywordMentionContext) -> some View {
+    private func timeMentionMenu(_ context: KeywordMentionContext, rows: [ComposerTimeFormatPicker.Row]) -> some View {
         ComposerTimeFormatPicker(
-            query: context.query.trimmingCharacters(in: .whitespaces).lowercased(),
-            rows: timeRows(for: context),
+            query: context.query,
+            rows: rows,
             needsPick: timeQueryNeedsPick,
             selectedIndex: autocompleteIndex,
             cornerRadius: commandPanelCornerRadius,

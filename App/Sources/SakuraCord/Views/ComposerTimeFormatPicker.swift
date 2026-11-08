@@ -38,7 +38,7 @@ struct ComposerTimeFormatPicker: View {
 
     var body: some View {
         ComposerOptionPanel(
-            title: query.isEmpty ? "Time formats" : "Time formats for \(query)",
+            title: title,
             rows: rows,
             selectedIndex: selectedIndex,
             status: needsPick ? .message("Pick a time to continue.", isError: true) : .ready,
@@ -56,6 +56,11 @@ struct ComposerTimeFormatPicker: View {
         )
         .onAppear { clock.start() }
         .onDisappear { clock.stop() }
+    }
+
+    private var title: String {
+        let query = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return query.isEmpty ? "Time formats" : "Time formats for \(query)"
     }
 
     private static func label(_ reading: DiscordTimeSuggestion.Reading) -> String {
