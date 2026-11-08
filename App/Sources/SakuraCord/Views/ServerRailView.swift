@@ -640,7 +640,7 @@ struct GuildRailButton: View {
 private struct ServerRailHoverLabel: View {
     let name: String
     let guildID: GuildID?
-    var isMuted = false
+    let isMuted: Bool
     let maximumWidth: CGFloat
     // Called here rather than by the rail so voice-state changes re-render
     // only the visible card.
@@ -773,13 +773,6 @@ struct ServerRailHoverItem {
     var guildID: GuildID?
     var isMuted = false
     let bounds: Anchor<CGRect>
-
-    init(name: String, guildID: GuildID? = nil, isMuted: Bool = false, bounds: Anchor<CGRect>) {
-        self.name = name
-        self.guildID = guildID
-        self.isMuted = isMuted
-        self.bounds = bounds
-    }
 }
 
 struct ServerRailHoverPreferenceKey: PreferenceKey {

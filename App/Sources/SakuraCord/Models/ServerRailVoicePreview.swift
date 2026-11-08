@@ -60,14 +60,11 @@ extension AppModel {
         let participants = ordered
             .prefix(ServerRailVoicePreview.maximumAvatarCount)
             .map { userID in
-                var user = userID == currentUser?.id ? currentUser : nil
-                if user == nil, guildID == selectedGuildID {
-                    user = profileMember(userID, in: guildID)?.user
-                }
-                if user == nil {
-                    providerUserIDs.append(userID)
-                    user = resolved[userID] ?? profileMember(userID, in: guildID)?.user
-                }
+                let liveUser = userID == currentUser?.id ? currentUser
+                    : guildID == selectedGuildID ? profileMember(userID, in: guildID)?.user
+                    : nil
+                if liveUser == nil { providerUserIDs.append(userID) }
+                let user = liveUser ?? resolved[userID] ?? profileMember(userID, in: guildID)?.user
                 return ServerRailVoiceParticipant(
                     id: userID,
                     name: user?.displayName,
