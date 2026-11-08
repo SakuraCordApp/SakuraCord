@@ -95,15 +95,15 @@ final class EmbeddedActivityStore {
     }
 
     @ObservationIgnored var launchTicket: LaunchTicket?
-    /// Recent slash commands from this client by nonce; Discord tags the
-    /// participant an Activity command adds with that nonce.
-    @ObservationIgnored var commandLaunches: [(nonce: String, application: ApplicationCommandApplication)] = []
+    /// Recent slash commands and button presses from this client by nonce;
+    /// Discord tags the participant an Activity launch adds with that nonce.
+    @ObservationIgnored var interactionLaunches: [(nonce: String, application: ApplicationCommandApplication)] = []
     /// Age-gated Activities confirmed this session, as the official client asks once.
     @ObservationIgnored var ageConfirmedApplications: Set<ApplicationID> = []
 
-    func recordCommand(_ nonce: String, application: ApplicationCommandApplication) {
-        commandLaunches.append((nonce, application))
-        if commandLaunches.count > 16 { commandLaunches.removeFirst() }
+    func recordInteraction(_ nonce: String, application: ApplicationCommandApplication) {
+        interactionLaunches.append((nonce, application))
+        if interactionLaunches.count > 16 { interactionLaunches.removeFirst() }
     }
 
     /// The Activity hosted outside a voice channel, docked in its chat.
@@ -194,7 +194,7 @@ final class EmbeddedActivityStore {
         gatewaySessionID = nil
         pendingLeaves = [:]
         departingInstances = [:]
-        commandLaunches = []
+        interactionLaunches = []
         ageConfirmedApplications = []
     }
 }
@@ -614,7 +614,7 @@ extension AppModel {
             }
             return
         }
-        adoptCommandLaunch(instance)
+        adoptInteractionLaunch(instance)
         guard let session = store.session,
               session.application.id == instance.applicationID,
               session.location.id == instance.location.id
@@ -681,12 +681,12 @@ extension AppModel {
     /// Hosts the Activity this client's slash command started, such as
     /// `/wordle` in a text channel or DM. Discord has already moved this
     /// session out of any earlier instance, so that one closes without a leave.
-    private func adoptCommandLaunch(_ instance: EmbeddedActivityInstance) {
+    private func adoptInteractionLaunch(_ instance: EmbeddedActivityInstance) {
         let store = embeddedActivities
         guard let participant = instance.participants.first(where: { participant in
-            participant.userID == currentUser?.id && store.commandLaunches.contains { $0.nonce == participant.nonce }
-        }), let index = store.commandLaunches.firstIndex(where: { $0.nonce == participant.nonce }) else { return }
-        let command = store.commandLaunches.remove(at: index).application
+            participant.userID == currentUser?.id && store.interactionLaunches.contains { $0.nonce == participant.nonce }
+        }), let index = store.interactionLaunches.firstIndex(where: { $0.nonce == participant.nonce }) else { return }
+        let launcher = store.interactionLaunches.remove(at: index).application
         guard let channel = knownRootChannel(instance.location.channelID) else {
             leaveEmbeddedActivity(instance)
             return
@@ -695,7 +695,7 @@ extension AppModel {
         store.gatewaySessionID = participant.sessionID
         store.session = EmbeddedActivityStore.Session(
             application: store.application(instance.applicationID) ?? EmbeddedActivityApplication(
-                id: instance.applicationID, name: command.name, iconURL: command.displayIconURL
+                id: instance.applicationID, name: launcher.name, iconURL: launcher.displayIconURL
             ),
             channel: channel,
             phase: .launching,

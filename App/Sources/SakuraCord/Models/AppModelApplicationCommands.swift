@@ -402,7 +402,7 @@ extension AppModel {
             nonce: nonce
         )
         appendInteractionPlaceholder(for: invocation)
-        embeddedActivities.recordCommand(nonce, application: invocation.command.application)
+        embeddedActivities.recordInteraction(nonce, application: invocation.command.application)
         let session = accountSession()
         let attachmentURLs = invocation.values.compactMap { value -> URL? in
             guard case let .attachment(url) = value.argument else { return nil }

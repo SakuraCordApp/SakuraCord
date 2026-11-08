@@ -7,7 +7,7 @@ struct EmbeddedActivityView: NSViewRepresentable {
     let host: EmbeddedActivityHost
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = KeySink()
         install(in: container)
         return container
     }
@@ -21,6 +21,12 @@ struct EmbeddedActivityView: NSViewRepresentable {
         host.webView.frame = container.bounds
         host.webView.autoresizingMask = [.width, .height]
         container.addSubview(host.webView)
+    }
+
+    /// Keys the Activity leaves unhandled end here, as in a browser, instead
+    /// of reaching the window and beeping.
+    private final class KeySink: NSView {
+        override func keyDown(with event: NSEvent) {}
     }
 }
 

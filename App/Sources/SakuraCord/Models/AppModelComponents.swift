@@ -41,6 +41,10 @@ extension AppModel {
             )),
             nonce: submission.nonce
         )
+        // An app can answer a button by launching its Activity, as Wordle's Play does.
+        embeddedActivities.recordInteraction(submission.nonce, application: message.application ?? ApplicationCommandApplication(
+            id: applicationID.description, name: message.author.displayName, iconURL: message.author.avatarURL
+        ))
         let session = accountSession()
         do {
             try await session.provider.submitComponentInteraction(submission)

@@ -14,7 +14,7 @@ struct EmbeddedActivityTests {
         let user = try #require(model.currentUser)
         let channel = try #require(model.snapshot?.channels.first { $0.kind == .text })
         let wordle = ApplicationCommandApplication(id: "1211781489931452447", name: "Wordle")
-        model.embeddedActivities.recordCommand("1568432599532044288", application: wordle)
+        model.embeddedActivities.recordInteraction("1568432599532044288", application: wordle)
 
         let location = EmbeddedActivityLocation.of(channel)
         await model.consume(.embeddedActivityChanged(EmbeddedActivityInstance(

@@ -71,6 +71,8 @@ final class EmbeddedActivityHost: NSObject {
         isStopped = true
         webView.configuration.userContentController.removeScriptMessageHandler(forName: Self.handlerName, contentWorld: .page)
         webView.stopLoading()
+        // Unloading the page ends its audio; the relay's navigation policy would refuse it.
+        webView.navigationDelegate = nil
         webView.loadHTMLString("", baseURL: nil)
     }
 
