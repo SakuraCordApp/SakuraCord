@@ -184,6 +184,11 @@ public extension DiscordRESTProvider {
         return requested.compactMap { cachedByID[$0] }
     }
 
+    func knownMembers(in guildID: GuildID, userIDs: [UserID]) async -> [Member] {
+        let cachedByID = cachedMemberIndex(guildID: guildID)
+        return userIDs.compactMap { cachedByID[$0] }
+    }
+
     internal func cachedMemberIndex(guildID: GuildID) -> [UserID: Member] {
         if let cached = cachedMembersByID[guildID] {
             return cached
