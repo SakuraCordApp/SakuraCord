@@ -723,8 +723,8 @@ func `server verification blocks sends without exposing hidden channels`(state: 
 
     let roles = [roleNoIcon, roleIconLow, roleIconHigh, roleIconTie]
     let topRole = MessageAuthorPresentation.topRoleWithIcon(in: roles)
-    // Between roleIconHigh (id: 30, pos: 50) and roleIconTie (id: 40, pos: 50), roleIconTie wins due to higher id
-    #expect(topRole?.id == RoleID(rawValue: 40))
+    // At an equal position Discord ranks the older role (smaller ID) higher, so roleIconHigh (id 30) beats roleIconTie (id 40).
+    #expect(topRole?.id == RoleID(rawValue: 30))
 
     let topRoleNoTie = MessageAuthorPresentation.topRoleWithIcon(in: [roleNoIcon, roleIconLow, roleIconHigh])
     #expect(topRoleNoTie?.id == RoleID(rawValue: 30))
