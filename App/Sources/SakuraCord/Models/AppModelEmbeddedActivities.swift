@@ -63,8 +63,9 @@ final class EmbeddedActivityStore {
     /// Leaves still on their way to Discord, by composite instance ID.
     @ObservationIgnored var pendingLeaves: [String: Task<Void, Never>] = [:]
     /// Instances this session left, until a roster without it confirms the
-    /// leave, and whether that leave failed. They are never hosted again, and
-    /// one still listing this session after a failed leave is left again.
+    /// leave, and whether that leave failed, which is reported and, like any
+    /// mutation, not repeated. They are never hosted again unless the person
+    /// joins there again.
     @ObservationIgnored var departingInstances: [String: Bool] = [:]
     /// The proxy ticket fetched before a launch's request, as Discord's client does.
     struct LaunchTicket {
@@ -517,12 +518,9 @@ extension AppModel {
         let store = embeddedActivities
         // An instance being left is never hosted again, even by a relaunch in
         // the same place that is waiting for that leave.
-        if let leaveFailed = store.departingInstances[instance.compositeInstanceID] {
+        if store.departingInstances[instance.compositeInstanceID] != nil {
             if !instance.participants.contains(where: { $0.sessionID == store.gatewaySessionID }) {
                 store.departingInstances[instance.compositeInstanceID] = nil
-            } else if leaveFailed {
-                // Discord still lists this session after its leave failed.
-                leaveEmbeddedActivity(instance)
             }
             return
         }
