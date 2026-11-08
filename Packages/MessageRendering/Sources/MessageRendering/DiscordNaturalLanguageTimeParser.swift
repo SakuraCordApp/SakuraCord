@@ -4,7 +4,7 @@ import Foundation
 public struct DiscordTimeSuggestion: Equatable, Sendable {
     /// Why a query has more than one reading, shown beside its first format.
     public enum Reading: Equatable, Sendable {
-        case timeOnly, today, tomorrow, thisWeek, lastWeek, thisYear, nextYear
+        case timeOnly, today, tomorrow, thisWeek, nextWeek, lastWeek, thisYear, nextYear
     }
 
     public let date: Date
@@ -26,15 +26,29 @@ public enum DiscordNaturalLanguageTimeParser {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty, words != ["now"] else { return [moment(now)] }
         let parser = Parser(now: now, calendar: calendar)
+        var readings: [DiscordTimeSuggestion]?
         // `5pm est` is that wall time in that zone, on the local day.
-        if words.count > 1, let abbreviation = words.last?.uppercased(),
-           TimeZone.abbreviationDictionary[abbreviation] != nil, let zone = TimeZone(abbreviation: abbreviation) {
+        if words.count > 1, let hours = words.last.flatMap({ zoneOffsets[$0] }),
+           let zone = TimeZone(secondsFromGMT: Int(hours * 3_600)) {
             var zoned = parser
-            zoned.zoneShift = TimeInterval(calendar.timeZone.secondsFromGMT(for: now) - zone.secondsFromGMT(for: now))
-            if let readings = zoned.dated(Array(words.dropLast())) { return readings }
+            zoned.wallTimeZone = zone
+            readings = zoned.dated(Array(words.dropLast()))
         }
-        return parser.relative(words) ?? parser.period(words) ?? parser.dated(words) ?? []
+        readings = readings ?? parser.relative(words) ?? parser.period(words) ?? parser.dated(words)
+        // JavaScript dates, and so Discord timestamps, end 8.64e12 seconds
+        // either side of 1970.
+        guard let readings, readings.allSatisfy({ abs($0.date.timeIntervalSince1970) <= 8.64e12 }) else { return [] }
+        return readings
     }
+
+    /// Zone abbreviations name fixed offsets, so `5pm est` is UTC−5 in
+    /// summer too.
+    private static let zoneOffsets: [String: Double] = [
+        "utc": 0, "gmt": 0, "wet": 0, "west": 1, "bst": 1, "cet": 1, "cest": 2, "eet": 2, "eest": 3,
+        "msk": 3, "ist": 5.5, "sgt": 8, "hkt": 8, "jst": 9, "kst": 9, "aest": 10, "aedt": 11, "nzst": 12, "nzdt": 13,
+        "hst": -10, "akst": -9, "akdt": -8, "pst": -8, "pdt": -7, "mst": -7, "mdt": -6,
+        "cst": -6, "cdt": -5, "est": -5, "edt": -4, "ast": -4, "adt": -3, "nst": -3.5, "ndt": -2.5,
+    ]
 
     /// A precise instant keeps its seconds, which Discord shows in the
     /// first format; a resolved day or time does not.
@@ -56,8 +70,8 @@ private struct TimeOfDay {
 private struct Parser {
     let now: Date
     let calendar: Calendar
-    /// Moves a wall time typed with a zone suffix to that zone.
-    var zoneShift: TimeInterval = 0
+    /// The zone of a wall time typed with a zone suffix, on the local day.
+    var wallTimeZone: TimeZone?
 
     /// `in 2 hours`, `in 2h`, `in a week`, `3 days ago`, `in 3 days at 5pm`.
     func relative(_ words: [String]) -> [DiscordTimeSuggestion]? {
@@ -149,8 +163,9 @@ private struct Parser {
         ]
     }
 
-    /// `friday` reads as this week's and last week's; `next friday` names
-    /// the coming one, a week out when that is today.
+    /// `friday` reads as the coming one, and also the previous one when that
+    /// is nearer; `next friday` is the coming one, a week out when that is
+    /// today.
     private func weekday(_ words: [String], time: TimeOfDay) -> [DiscordTimeSuggestion]? {
         var words = words
         let modifier = ["this", "next", "last"].contains(words.first) ? words.removeFirst() : nil
@@ -158,16 +173,36 @@ private struct Parser {
               let today = at(time, on: now)
         else { return nil }
         let ahead = (weekday - calendar.component(.weekday, from: now) + 7) % 7
-        guard let coming = calendar.date(byAdding: .day, value: ahead, to: today) else { return nil }
-        if modifier == "next", ahead == 0 {
-            return calendar.date(byAdding: .day, value: 7, to: coming).map { [DiscordNaturalLanguageTimeParser.moment($0)] }
+        guard var coming = calendar.date(byAdding: .day, value: ahead, to: today),
+              let previous = calendar.date(byAdding: .day, value: ahead == 0 ? -7 : ahead - 7, to: today)
+        else { return nil }
+        if modifier == "next", ahead == 0, let following = calendar.date(byAdding: .day, value: 7, to: coming) {
+            coming = following
         }
-        var readings = [DiscordNaturalLanguageTimeParser.moment(coming, reading: .thisWeek)]
-        if modifier == "last" || (modifier == nil && ahead != 0),
-           let previous = calendar.date(byAdding: .day, value: -7, to: coming) {
-            readings.append(DiscordNaturalLanguageTimeParser.moment(previous, reading: .lastWeek))
+        // The previous one is offered too when it is the nearer.
+        let offersPrevious = modifier == "last" || (modifier == nil && 7 - ahead < ahead)
+        return labelled(offersPrevious ? [coming, previous] : [coming], in: .weekOfYear)
+    }
+
+    /// Discord names each reading's week, day or year relative to now;
+    /// a lone reading is named only when it is the current one.
+    private func labelled(_ dates: [Date], in period: Calendar.Component) -> [DiscordTimeSuggestion] {
+        dates.map { date in
+            let offset = calendar.dateInterval(of: period, for: now).flatMap { current in
+                calendar.dateComponents([period], from: current.start, to: date).value(for: period)
+                    .map { date < current.start ? $0 - 1 : $0 }
+            }
+            let reading: DiscordTimeSuggestion.Reading? = switch (period, offset) {
+            case (.weekOfYear, 0): .thisWeek
+            case (.weekOfYear, 1): .nextWeek
+            case (.weekOfYear, -1): .lastWeek
+            case (.year, 0): .thisYear
+            case (.year, 1): .nextYear
+            default: nil
+            }
+            let isCurrent = offset == 0
+            return DiscordNaturalLanguageTimeParser.moment(date, reading: dates.count > 1 || isCurrent ? reading : nil)
         }
-        return readings
     }
 
     /// `dec 25`, `25 december`, `november 8th`, `3/4`, `3/4/2026`,
@@ -187,13 +222,9 @@ private struct Parser {
         }
         if let year { return date(in: year).map { [DiscordNaturalLanguageTimeParser.moment($0)] } }
         guard let thisYear = date(in: currentYear) else { return nil }
-        if thisYear >= now { return [DiscordNaturalLanguageTimeParser.moment(thisYear, reading: .thisYear)] }
+        if thisYear >= now { return labelled([thisYear], in: .year) }
         guard let nextYear = date(in: currentYear + 1) else { return nil }
-        if isNumeric { return [DiscordNaturalLanguageTimeParser.moment(nextYear)] }
-        return [
-            DiscordNaturalLanguageTimeParser.moment(nextYear, reading: .nextYear),
-            DiscordNaturalLanguageTimeParser.moment(thisYear, reading: .thisYear),
-        ]
+        return labelled(isNumeric ? [nextYear] : [nextYear, thisYear], in: .year)
     }
 
     /// `3/4` is March 4, `31/12` December 31, `2026-12-31` year first.
@@ -274,11 +305,13 @@ private struct Parser {
     /// midnight.
     private func at(_ time: TimeOfDay?, on day: Date) -> Date? {
         guard let time else { return day }
-        let start = calendar.startOfDay(for: day)
-        let date = time.hour == 24
-            ? calendar.date(byAdding: .day, value: 1, to: start)
-            : calendar.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: start)
-        return date?.addingTimeInterval(zoneShift)
+        var wallCalendar = calendar
+        wallCalendar.timeZone = wallTimeZone ?? calendar.timeZone
+        var components = calendar.dateComponents([.year, .month, .day], from: day)
+        components.hour = time.hour % 24
+        components.minute = time.minute
+        guard let date = wallCalendar.date(from: components) else { return nil }
+        return time.hour == 24 ? wallCalendar.date(byAdding: .day, value: 1, to: date) : date
     }
 
     private func minuteStart(_ date: Date) -> Date {

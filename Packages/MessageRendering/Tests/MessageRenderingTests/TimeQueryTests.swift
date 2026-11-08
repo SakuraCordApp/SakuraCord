@@ -26,19 +26,36 @@ private let discordReadings: [(String, [String])] = [
     ("13pm", []),
     ("2/30", []),
     ("in 2000000000000000000 weeks", []),
+    ("in 299999 years", []),
+]
+
+/// The same moment for an account whose weeks start on Monday.
+private let mondayWeekReadings: [(String, [String])] = [
+    ("friday", ["nextWeek 2026-11-13 12:00", "thisWeek 2026-11-06 12:00"]),
+    ("sunday", ["thisWeek 2026-11-08 12:00"]),
+    ("monday", ["- 2026-11-09 12:00"]),
 ]
 
 @Test(arguments: discordReadings)
 func `time queries read as Discord reads them`(query: String, expected: [String]) throws {
+    #expect(try readings(of: query, firstWeekday: 1) == expected)
+}
+
+@Test(arguments: mondayWeekReadings)
+func `weekday labels follow the account's first weekday`(query: String, expected: [String]) throws {
+    #expect(try readings(of: query, firstWeekday: 2) == expected)
+}
+
+private func readings(of query: String, firstWeekday: Int) throws -> [String] {
     var calendar = Calendar(identifier: .gregorian)
+    calendar.firstWeekday = firstWeekday
     calendar.timeZone = try #require(TimeZone(identifier: "Europe/Berlin"))
     let now = try #require(ISO8601DateFormatter().date(from: "2026-11-08T04:10:13Z"))
     let format = Date.ISO8601FormatStyle(timeZone: calendar.timeZone).year().month().day().dateSeparator(.dash)
         .time(includingFractionalSeconds: false).timeSeparator(.colon)
-    let readings = DiscordNaturalLanguageTimeParser.suggestions(for: query, now: now, calendar: calendar).map { suggestion in
+    return DiscordNaturalLanguageTimeParser.suggestions(for: query, now: now, calendar: calendar).map { suggestion in
         var time = format.format(suggestion.date).replacingOccurrences(of: "T", with: " ")
         if time.hasSuffix(":00") { time.removeLast(3) }
         return "\(suggestion.reading.map { "\($0)" } ?? "-") \(time)"
     }
-    #expect(readings == expected)
 }

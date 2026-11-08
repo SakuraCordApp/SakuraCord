@@ -64,6 +64,7 @@ struct ComposerTimeFormatPicker: View {
         case .today: "Today"
         case .tomorrow: "Tomorrow"
         case .thisWeek: "This week"
+        case .nextWeek: "Next week"
         case .lastWeek: "Last week"
         case .thisYear: "This year"
         case .nextYear: "Next year"
