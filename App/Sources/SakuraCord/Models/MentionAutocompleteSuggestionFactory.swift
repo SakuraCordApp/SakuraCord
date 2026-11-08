@@ -23,7 +23,8 @@ enum MentionAutocompleteSuggestionFactory {
         let score: Double
         let sidebarPosition: Int
         let id: ChannelID
-        let isThread: Bool
+        /// The parent channel of a thread or post; nil for a channel.
+        let parentID: ChannelID?
     }
 
     private struct MemberSearchSignature: Equatable {
@@ -279,7 +280,7 @@ enum MentionAutocompleteSuggestionFactory {
             score: score,
             sidebarPosition: channel.categoryPosition * 100_000 + channel.position,
             id: channel.id,
-            isThread: false
+            parentID: nil
         )
     }
 
@@ -310,7 +311,7 @@ enum MentionAutocompleteSuggestionFactory {
             score: score,
             sidebarPosition: 0,
             id: thread.id,
-            isThread: true
+            parentID: thread.parentID ?? thread.id
         )
     }
 
@@ -362,9 +363,11 @@ enum MentionAutocompleteSuggestionFactory {
     private static func isPreferred(_ lhs: RankedCandidate, over rhs: RankedCandidate) -> Bool {
         if lhs.score != rhs.score { return lhs.score > rhs.score }
         // On equal scores Discord lists channels before threads and posts,
-        // channels in sidebar order and threads oldest first.
-        if lhs.isThread != rhs.isThread { return !lhs.isThread }
-        if lhs.sidebarPosition != rhs.sidebarPosition {
+        // channels in sidebar order and threads by parent channel, oldest first.
+        if (lhs.parentID == nil) != (rhs.parentID == nil) { return lhs.parentID == nil }
+        if let lhsParent = lhs.parentID, let rhsParent = rhs.parentID {
+            if lhsParent != rhsParent { return lhsParent < rhsParent }
+        } else if lhs.sidebarPosition != rhs.sidebarPosition {
             return lhs.sidebarPosition < rhs.sidebarPosition
         }
         return lhs.id < rhs.id
