@@ -224,8 +224,6 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var serverTagCardPresentation: ServerTagCardPresentation?
     var memberNameGeometries: [ItemID: MemberNameGeometry] = [:]
     var serverTagAccessibilityButtons: [ItemID: NativeMemberTagAccessibilityButton] = [:]
-    /// Name each visible role icon on hover, as Discord's tooltip does.
-    var roleIconToolTipViews: [ItemID: NSView] = [:]
     let serverTagPopoverCoordinator = StableAnchoredPopoverPresenter<AnyView>.Coordinator()
     lazy var serverTagPopoverAnchor = StablePopoverAnchor(
         sourceView: self,
@@ -336,10 +334,8 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let localPoint = convert(point, from: superview)
         // The hover row is a contents-free SwiftUI button. Keep its invisible
-        // hit region from swallowing the tag drawn by the native foreground,
-        // or a role icon's tooltip; clicks there still reach this canvas.
+        // hit region from swallowing the tag drawn by the native foreground.
         if serverTagIndex(at: localPoint) != nil { return self }
-        if let roleIcon = roleIconToolTipViews.values.first(where: { $0.frame.contains(localPoint) }) { return roleIcon }
         return super.hitTest(point)
     }
 

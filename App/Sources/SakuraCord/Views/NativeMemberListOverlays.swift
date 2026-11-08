@@ -277,7 +277,6 @@ extension NativeMemberListCanvasView {
         var visibleIDs: Set<ItemID> = []
         var headerIDs: Set<ItemID> = []
         var tagIDs: Set<ItemID> = []
-        var roleIconIDs: Set<ItemID> = []
         var children: [Any] = []
         for index in range {
             if case .header(let header) = items[index], !header.title.isEmpty, !header.isLoadingSkeleton {
@@ -340,28 +339,6 @@ extension NativeMemberListCanvasView {
                 }
                 children.append(button)
             }
-            if let prepared = preparedText[id] {
-                let geometry = memberNameGeometry(member, prepared: prepared, at: index)
-                if let frame = geometry.roleIconFrame, let role = geometry.topRoleWithIcon {
-                    roleIconIDs.insert(id)
-                    let view = roleIconToolTipViews[id] ?? {
-                        let value = NSView()
-                        value.setAccessibilityElement(true)
-                        value.setAccessibilityRole(.staticText)
-                        addSubview(value)
-                        roleIconToolTipViews[id] = value
-                        return value
-                    }()
-                    view.frame = frame
-                    view.toolTip = role.name
-                    view.setAccessibilityLabel("Role \(role.name)")
-                    children.append(view)
-                }
-            }
-        }
-        for (id, view) in roleIconToolTipViews where !roleIconIDs.contains(id) {
-            view.removeFromSuperview()
-            roleIconToolTipViews[id] = nil
         }
         for (id, proxy) in accessibilityRows where !visibleIDs.contains(id) {
             proxy.removeFromSuperview()
@@ -560,9 +537,6 @@ extension NativeMemberListCanvasView {
                 if let url = member.user.primaryGuild?.badgeURL {
                     requests.append((url, 32))
                 }
-                if let url = MessageAuthorPresentation.topRoleWithIcon(in: member.roles)?.iconURL {
-                    requests.append((url, 32))
-                }
                 requests.append(contentsOf: NativeMemberActivityPresentation.references(
                     in: member.memberListActivityText
                 ).compactMap(activityEmojiURL).map {
@@ -681,8 +655,6 @@ extension NativeMemberListCanvasView {
         clearServerTagHover()
         memberNameGeometries.removeAll()
         for button in serverTagAccessibilityButtons.values { button.removeFromSuperview() }
-        for view in roleIconToolTipViews.values { view.removeFromSuperview() }
-        roleIconToolTipViews.removeAll()
         serverTagAccessibilityButtons.removeAll()
         for host in avatarOverlays.values { host.removeFromSuperview() }
         for host in activityEmojiOverlays.values { host.removeFromSuperview() }

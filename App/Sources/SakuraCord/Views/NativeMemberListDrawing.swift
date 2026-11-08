@@ -301,6 +301,7 @@ extension NativeMemberListCanvasView {
 
         let textX = row.minX + 4 + NativeMemberListMetrics.avatarContainerSize + 8
         let nameY = prepared.activity == nil ? row.minY + 13 : row.minY + 5
+        let botBadgeWidth = NativeAppBadgePresentation.width
         let tagPresentation = prepared.serverTag
         let roleColor = presentation.roleColorDisplay == .nextToNames
             ? MessageAuthorPresentation.topRoleColor(in: member.roles).map(Self.color(hex:)) : nil
@@ -330,6 +331,11 @@ extension NativeMemberListCanvasView {
             let ovalRect = CGRect(x: textX, y: nameY + InterfaceScale.metric(5), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8))
             RoleGradientPaint.fillDot(prepared.gradientColors ?? [roleColor], in: ovalRect, context: context)
         }
+        if member.user.isBot, let accessory = nameLayout.accessoryFrames.first {
+            if accessory.width >= botBadgeWidth {
+                drawBotBadge(at: nameX + accessory.minX, nameY: nameY, context: context)
+            }
+        }
         if let tagPresentation, let frame = geometry.serverTagFrame {
             tagPresentation.draw(
                 in: frame,
@@ -344,12 +350,6 @@ extension NativeMemberListCanvasView {
                 priority: .visible,
                 maximumPixelDimension: 32
             )
-        }
-        if let role = geometry.topRoleWithIcon, let frame = geometry.roleIconFrame {
-            drawMemberRoleIcon(role, in: frame, at: index, context: context)
-        }
-        if let frame = geometry.botBadgeFrame {
-            NativeAppBadgePresentation.draw(in: frame, color: .systemIndigo, context: context)
         }
         if let activity = prepared.activity,
            let truncationToken = prepared.activityTruncationToken
@@ -559,6 +559,15 @@ extension NativeMemberListCanvasView {
         context.restoreGState()
     }
 
+    func drawBotBadge(at badgeX: CGFloat, nameY: CGFloat, context: CGContext) {
+        let badge = CGRect(
+            x: badgeX, y: nameY + InterfaceScale.metric(8) - ServerTagAppearance.height / 2,
+            width: NativeAppBadgePresentation.width, height: ServerTagAppearance.height
+        )
+        NativeAppBadgePresentation.draw(in: badge, color: .systemIndigo, context: context)
+    }
+
+    /// Discord shows role icons on member-list section headers, not beside names.
     private func drawMemberRoleIcon(_ role: GuildRole, in frame: CGRect, at index: Int, context: CGContext) {
         if let iconURL = role.iconURL {
             if let image = images[iconURL] {
