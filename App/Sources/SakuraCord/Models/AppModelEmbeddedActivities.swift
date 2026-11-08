@@ -208,10 +208,8 @@ extension AppModel {
             return
         }
         guard await confirmLaunch(of: application), isCurrentAccountSession(account) else { return }
-        // Discord moves this session out of the Activity it was in once the
-        // next one starts, so that one is left only if this launch fails.
-        let previous = store.session?.instance
-        store.endSession()
+        // Discord's client leaves the running Activity before starting another.
+        if store.session != nil { leaveActivity() }
         let session = EmbeddedActivityStore.Session(
             application: application, channel: channel, phase: .launching,
             isInCall: channel.kind == .voice || activeVoiceChannel?.id == channel.id
@@ -222,7 +220,6 @@ extension AppModel {
             guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
             guard activeVoiceChannel?.id == channel.id else {
                 store.endSession()
-                if let previous { leaveEmbeddedActivity(previous) }
                 return
             }
         }
@@ -247,7 +244,6 @@ extension AppModel {
             guard isCurrentAccountSession(account), store.session?.launchID == session.launchID,
                   store.session?.instance == nil else { return }
             store.session?.phase = .failed(error.localizedDescription)
-            if let previous { leaveEmbeddedActivity(previous) }
             return
         }
         guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
@@ -310,19 +306,23 @@ extension AppModel {
         (currentUser?.id == userID ? currentUser : membersByID[userID]?.user)?.avatarURL
     }
 
-    /// The launch message's button: join a running instance, or show it joined or ended.
+    /// The launch message's button: join a running instance, show it joined,
+    /// or play again once it ended, as Discord's does.
     func activityInstanceAction(_ instanceID: String) -> (String, Bool) {
         if embeddedActivities.session?.instance?.compositeInstanceID == instanceID { return ("Joined", true) }
-        guard let instance = embeddedActivities.instances[instanceID] else { return ("Ended", true) }
+        guard let instance = embeddedActivities.instances[instanceID] else { return ("Play", false) }
         return ("Join", knownRootChannel(instance.location.channelID) == nil)
     }
 
-    /// Joins the instance an application's launch message announced. Outside
-    /// a voice channel it needs no call, as in an application's own DM.
+    /// Joins the instance an application's launch message announced, or
+    /// starts the Activity again where the message is once it ended. Outside a
+    /// voice channel it needs no call, as in an application's own DM.
     func joinActivityInstance(_ instanceID: String, from message: Message) async {
-        guard let instance = embeddedActivities.instances[instanceID], let channel = knownRootChannel(instance.location.channelID) else { return }
-        guard let application = await shelfApplication(instance.applicationID, guildID: channel.guildID, fallback: {
-            EmbeddedActivityApplication(id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
+        let instance = embeddedActivities.instances[instanceID]
+        guard let channel = knownRootChannel(instance?.location.channelID ?? message.channelID) else { return }
+        let applicationID = instance?.applicationID ?? ApplicationID(rawValue: message.author.id.rawValue)
+        guard let application = await shelfApplication(applicationID, guildID: channel.guildID, fallback: {
+            EmbeddedActivityApplication(id: applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
         }) else { return }
         await startActivity(application, in: channel)
     }

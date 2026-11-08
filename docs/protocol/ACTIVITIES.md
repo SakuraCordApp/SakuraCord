@@ -30,8 +30,10 @@ location, participants}`. A guild voice location is `gc-GUILD-CHANNEL`, a privat
 channel `pc-CHANNEL`; the composite ID is `i-INSTANCE-LOCATION`. Each participant
 names a Gateway `session_id`, so one account can take part from one client while
 another of its sessions does not. `EMBEDDED_ACTIVITY_UPDATE_V2` carries the whole
-roster; an empty roster ends the instance. Starting another Activity removes the
-session from the previous instance without a separate leave request.
+roster; an empty roster ends the instance. Starting another Activity from the
+launcher first asks to leave the running one ("You sure?") and then sends its
+leave request; a slash command that starts another moves the session without
+one.
 READY_SUPPLEMENTAL lists the running instances of each guild under
 `activity_instances`; private-channel instances arrive only as updates.
 
@@ -64,7 +66,9 @@ caller's session. A command whose handler is the application (handler 1, for
 example Wordle) answers through the application instead. An application without
 an entry point uses `POST /activities/{channel}/{application}` with the session ID.
 Leaving is `POST /applications/{application}/activities/{location}/instances/{instance}/leave`
-with `{session_id}`. All three are single attempts.
+with `{session_id}`. All three are single attempts, per the mutation budget in
+the protocol baseline; the official client retries the leave twice and the
+channel join three times.
 
 ## Outside voice channels
 
@@ -121,9 +125,12 @@ client joins it instead, from the shelf, a launch message or any other entry:
 
 Launching through the entry point can post the application's launch message:
 type 23 with `interaction_metadata` (the launching user), the `application` and
-`activity_instance: {id}` naming the composite instance. Its card shows the
-Activity, who is playing from the instance updates, and Join while the instance
-runs.
+`activity_instance: {id}` naming the composite instance, and
+`interaction_metadata.name` "launch" with `command_type: 4`. The official client
+heads it "USER used Launch" and draws a coverless "Game Invitation" card tinted
+from the icon: the icon, the Activity's name and, once the instance ended,
+"Game ended. Start a new one?" with Play, which launches it again in that
+channel. SakuraCord shows who is playing and Join while the instance runs.
 
 An Activity invite is a channel invite with `target_type: 2` and
 `target_application_id`; the message carries only the invite link. The
