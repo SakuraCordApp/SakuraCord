@@ -30,14 +30,20 @@ final class EmbeddedActivityHost: NSObject {
     private weak var model: AppModel?
     private let application: EmbeddedActivityApplication
     private let instance: EmbeddedActivityInstance
+    /// The launch this host belongs to; its questions end with that launch.
+    private let launchID: UUID
     private let frameID = UUID().uuidString.lowercased()
     private var subscriptions: Set<String> = []
     private var speakingUserIDs: Set<String> = []
     private var voiceStates: [UserID: VoiceParticipantState] = [:]
     private var isStopped = false
 
-    init(model: AppModel, instance: EmbeddedActivityInstance, application: EmbeddedActivityApplication, proxyTicket: String) {
+    init(
+        model: AppModel, instance: EmbeddedActivityInstance, application: EmbeddedActivityApplication, launchID: UUID,
+        proxyTicket: String
+    ) {
         self.model = model
+        self.launchID = launchID
         self.application = application
         self.instance = instance
         let configuration = WKWebViewConfiguration()
@@ -263,7 +269,7 @@ final class EmbeddedActivityHost: NSObject {
         )
         let account = model.accountSession()
         do {
-            let granted = try await model.embeddedActivityConsent(to: request, account: account)
+            let granted = try await model.embeddedActivityConsent(to: request, launchID: launchID, account: account)
             guard !isStopped else { return }
             let code = try await account.provider.authorizeEmbeddedActivity(request, granted: granted)
             reply("AUTHORIZE", nonce, ["code": code])
@@ -456,7 +462,8 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
     private func openExternally(_ url: URL) async -> Bool {
         // A popup's task can run after the Activity ended; its prompt would be stale.
         guard let model, !isStopped else { return false }
-        let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name) && !isStopped
+        let opened = await model.embeddedActivities.ask(.openLink(url), applicationName: application.name, launchID: launchID)
+            && !isStopped
         if opened { NSWorkspace.shared.open(url) }
         return opened
     }

@@ -66,8 +66,20 @@ final class EmbeddedActivityStore {
     /// leave, and whether that leave failed. They are never hosted again, and
     /// one still listing this session after a failed leave is left again.
     @ObservationIgnored var departingInstances: [String: Bool] = [:]
-    /// The proxy ticket fetched before this launch's request, as Discord's client does.
-    @ObservationIgnored var launchTicket: (launchID: UUID, ticket: String)?
+    /// The proxy ticket fetched before a launch's request, as Discord's client does.
+    struct LaunchTicket {
+        let launchID: UUID
+        let ticket: String
+        let fetchedAt = Date.now
+
+        /// Discord's tickets last five minutes; like its client, an older one
+        /// is fetched again, such as after a long consent.
+        func isUsable(for launchID: UUID) -> Bool {
+            launchID == self.launchID && Date.now.timeIntervalSince(fetchedAt) < 4 * 60
+        }
+    }
+
+    @ObservationIgnored var launchTicket: LaunchTicket?
     /// Recent slash commands from this client by nonce; Discord tags the
     /// participant an Activity command adds with that nonce.
     @ObservationIgnored var commandLaunches: [(nonce: String, application: ApplicationCommandApplication)] = []
@@ -96,6 +108,14 @@ final class EmbeddedActivityStore {
         )
     }
 
+    /// Joining again supersedes a leave that failed there.
+    func forgetFailedLeaves(of applicationID: ApplicationID, in channelID: ChannelID) {
+        for instance in instances(in: channelID)
+            where instance.applicationID == applicationID && departingInstances[instance.compositeInstanceID] == true {
+            departingInstances[instance.compositeInstanceID] = nil
+        }
+    }
+
     func instances(in channelID: ChannelID) -> [EmbeddedActivityInstance] {
         instances.values.filter { $0.location.channelID == channelID }
             .sorted { $0.compositeInstanceID < $1.compositeInstanceID }
@@ -106,17 +126,18 @@ final class EmbeddedActivityStore {
     }
 
     /// Asks the person; a cancelled caller, such as one outliving its account,
-    /// is declined so nothing waits on a prompt nobody will answer. A
-    /// question belongs to the current launch unless it comes before one.
-    func ask(_ kind: Prompt.Kind, applicationName: String, beforeLaunch: Bool = false) async -> Bool {
+    /// is declined so nothing waits on a prompt nobody will answer. A question
+    /// for a launch (`launchID`) is declined once that launch has ended; nil
+    /// asks before a launch.
+    func ask(_ kind: Prompt.Kind, applicationName: String, launchID: UUID?) async -> Bool {
+        guard !Task.isCancelled, launchID == nil || launchID == session?.launchID else { return false }
         prompt?.resolve(false)
-        guard !Task.isCancelled else { return false }
         let id = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 var isResolved = false
                 prompt = Prompt(
-                    id: id, applicationName: applicationName, kind: kind, launchID: beforeLaunch ? nil : session?.launchID
+                    id: id, applicationName: applicationName, kind: kind, launchID: launchID
                 ) { [weak self] granted in
                     guard !isResolved else { return }
                     isResolved = true
@@ -257,6 +278,7 @@ extension AppModel {
         // A rejoin must not race the leave Discord has not yet seen.
         for leave in store.pendingLeaves.values { await leave.value }
         guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
+        store.forgetFailedLeaves(of: application.id, in: channel.id)
         // Like Discord's client, an instance of the Activity already running
         // in the channel is joined rather than started again.
         let joining = store.instances(in: channel.id).contains { $0.applicationID == application.id }
@@ -265,8 +287,8 @@ extension AppModel {
             // Like Discord's client, the proxy ticket comes before Discord
             // counts this session in, so a failed ticket strands nothing.
             let ticket = try await account.provider.embeddedActivityProxyTicket(application.id, channelID: channel.id)
-            store.launchTicket = (session.launchID, ticket)
-            if !joining { try await installForLaunch(application, in: channel, account: account) }
+            store.launchTicket = .init(launchID: session.launchID, ticket: ticket)
+            if !joining { try await installForLaunch(application, in: channel, launchID: session.launchID, account: account) }
             // Read after any consent, so ownership names the session the request sends.
             let sessionID = try await account.provider.embeddedActivitySessionID()
             store.gatewaySessionID = sessionID
@@ -308,13 +330,13 @@ extension AppModel {
     private func confirmLaunch(of application: EmbeddedActivityApplication) async -> Bool {
         let store = embeddedActivities
         if application.requiresAgeGate, !store.ageConfirmedApplications.contains(application.id) {
-            guard await store.ask(.confirmAge, applicationName: application.name, beforeLaunch: true) else { return false }
+            guard await store.ask(.confirmAge, applicationName: application.name, launchID: nil) else { return false }
             store.ageConfirmedApplications.insert(application.id)
         }
         guard let current = store.session, current.phase == .launching || current.phase == .running else { return true }
         return await store.ask(
             .replace(activity: current.application.name, channel: current.channel.name),
-            applicationName: application.name, beforeLaunch: true
+            applicationName: application.name, launchID: nil
         )
     }
 
@@ -322,14 +344,14 @@ extension AppModel {
     /// Activity they haven't before its command runs; declining is posted to
     /// Discord and launches nothing.
     private func installForLaunch(
-        _ application: EmbeddedActivityApplication, in channel: Channel, account: AppModelAccountSession
+        _ application: EmbeddedActivityApplication, in channel: Channel, launchID: UUID, account: AppModelAccountSession
     ) async throws {
         guard let scopes = try await account.provider.embeddedActivityInstallScopes(application.id, in: channel) else { return }
         let request = EmbeddedActivityAuthorizationRequest(
             applicationID: application.id, scopes: scopes, state: UUID().uuidString,
             location: .of(channel), channelType: channel.activityChannelType
         )
-        guard try await embeddedActivityConsent(to: request, account: account) else {
+        guard try await embeddedActivityConsent(to: request, launchID: launchID, account: account) else {
             // The launch ends now; Discord answers the refusal with access_denied.
             startAccountChildTask(account: account) { _, account in
                 try? await account.provider.installEmbeddedActivity(request, granted: false)
@@ -343,13 +365,14 @@ extension AppModel {
     /// the grant and the person acknowledged every disclosure, which are
     /// recorded once they agree.
     func embeddedActivityConsent(
-        to request: EmbeddedActivityAuthorizationRequest, account: AppModelAccountSession
+        to request: EmbeddedActivityAuthorizationRequest, launchID: UUID, account: AppModelAccountSession
     ) async throws -> Bool {
         let preview = try await account.provider.embeddedActivityAuthorizationPreview(request)
         let disclosures = preview.unacknowledgedDisclosures
         guard !preview.isAuthorized || !disclosures.isEmpty else { return true }
         guard await embeddedActivities.ask(
-            .authorize(scopes: request.scopes, disclosures: disclosures), applicationName: preview.applicationName
+            .authorize(scopes: request.scopes, disclosures: disclosures), applicationName: preview.applicationName,
+            launchID: launchID
         ) else { return false }
         if !disclosures.isEmpty {
             try await account.provider.acknowledgeEmbeddedActivityDisclosures(disclosures, applicationID: request.applicationID)
@@ -542,7 +565,7 @@ extension AppModel {
             do {
                 let store = model.embeddedActivities
                 // A slash command's Activity has no ticket yet; Discord launched it.
-                let ticket = if let launchTicket = store.launchTicket, launchTicket.launchID == session.launchID {
+                let ticket = if let launchTicket = store.launchTicket, launchTicket.isUsable(for: session.launchID) {
                     launchTicket.ticket
                 } else {
                     try await account.provider.embeddedActivityProxyTicket(
@@ -552,7 +575,8 @@ extension AppModel {
                 guard store.session?.launchID == session.launchID,
                       store.session?.instance?.compositeInstanceID == instance.compositeInstanceID else { return }
                 model.embeddedActivities.host = EmbeddedActivityHost(
-                    model: model, instance: instance, application: session.application, proxyTicket: ticket
+                    model: model, instance: instance, application: session.application, launchID: session.launchID,
+                    proxyTicket: ticket
                 )
                 model.embeddedActivities.session?.phase = .running
                 // Recents count each Activity opened; a failed save only loses that count.

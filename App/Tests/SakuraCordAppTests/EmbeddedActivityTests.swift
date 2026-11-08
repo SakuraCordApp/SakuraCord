@@ -30,4 +30,32 @@ struct EmbeddedActivityTests {
         #expect(session.instance?.instanceID == "1568432601910218892")
         #expect(model.embeddedActivities.pendingLeaves.isEmpty)
     }
+
+    /// A leave that failed while others kept playing must not make Discord
+    /// drop the person again once they rejoin that game.
+    @Test(.timeLimit(.minutes(1)))
+    func `rejoining an Activity whose leave failed hosts it instead of leaving it again`() async throws {
+        let model = AppModel(launchMode: .offlineTesting, provider: MockChatProvider())
+        await model.start()
+        let user = try #require(model.currentUser)
+        let channel = try #require(model.snapshot?.channels.first { $0.kind == .text })
+        let store = model.embeddedActivities
+        let application = EmbeddedActivityApplication(id: try #require(ApplicationID("1211781489931452447")), name: "Wordle")
+        let other = try #require(UserID("100000000000000002"))
+        let location = EmbeddedActivityLocation.of(channel)
+        let instance = EmbeddedActivityInstance(
+            applicationID: application.id, instanceID: "1568432601910218892",
+            compositeInstanceID: "i-1568432601910218892-\(location.id)", location: location,
+            participants: [.init(userID: user.id, sessionID: "session"), .init(userID: other, sessionID: "other")]
+        )
+        store.upsert(instance)
+        store.gatewaySessionID = "session"
+        store.departingInstances[instance.compositeInstanceID] = true
+
+        await model.startActivity(application, in: channel)
+        #expect(store.departingInstances[instance.compositeInstanceID] == nil)
+        await model.consume(.embeddedActivityChanged(instance))
+        #expect(store.session?.instance?.compositeInstanceID == instance.compositeInstanceID)
+        #expect(store.pendingLeaves.isEmpty)
+    }
 }
