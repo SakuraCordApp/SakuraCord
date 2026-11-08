@@ -37,6 +37,10 @@ struct ServerRailContainer: View {
             readAll: { readAllConfirmationSession = model.accountSession() },
             moveItems: model.moveServerRailItems,
             combineGuilds: model.combineServerRailGuild,
+            voicePreview: model.serverRailVoicePreview(for:),
+            resolveVoiceParticipants: { guildID, userIDs in
+                await model.resolveServerRailVoiceParticipants(userIDs, in: guildID)
+            },
             contextMenuActions: ServerRailContextMenuActions(
                 markRead: model.markGuildRead,
                 canInvite: { model.serverInviteChannel(for: $0.id) != nil },
@@ -148,6 +152,8 @@ struct ServerRailView: View {
     var readAll: () -> Void = {}
     var moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void = { _, _ in }
     var combineGuilds: (GuildID, GuildID) -> Void = { _, _ in }
+    var voicePreview: (GuildID) -> ServerRailVoicePreview? = { _ in nil }
+    var resolveVoiceParticipants: (GuildID, [UserID]) async -> Void = { _, _ in }
     let contextMenuActions: ServerRailContextMenuActions
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
@@ -214,7 +220,11 @@ struct ServerRailView: View {
                 if let hoverItem, drag.draggedID == nil {
                     ServerRailHoverLabel(
                         name: hoverItem.name,
-                        maximumWidth: max(0, sidebarWidth - ChatChromeMetrics.serverRailWidth - 7 - InterfaceScale.metric(16))
+                        guildID: hoverItem.guildID,
+                        isMuted: hoverItem.isMuted,
+                        maximumWidth: max(0, sidebarWidth - ChatChromeMetrics.serverRailWidth - 7 - InterfaceScale.metric(16)),
+                        voicePreview: voicePreview,
+                        resolveVoiceParticipants: resolveVoiceParticipants
                     )
                         .offset(
                             x: ChatChromeMetrics.serverRailWidth + 7,
@@ -774,7 +784,15 @@ struct GuildRailButton: View {
         )
         .help(displayName)
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
-            isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
+            isHovering
+                ? ServerRailHoverItem(
+                    name: displayName,
+                    guildID: guild.id,
+                    isMuted: presentation.notificationSettings.isMuted
+                        && (presentation.notificationSettings.muteConfiguration?.isActive() ?? true),
+                    bounds: bounds
+                )
+                : nil
         }
         .onScrollVisibilityChange(threshold: 0.01) { iconIsVisible = $0 }
         .onServerRailHover { isHovering = $0 }
@@ -784,26 +802,139 @@ struct GuildRailButton: View {
 
 private struct ServerRailHoverLabel: View {
     let name: String
+    let guildID: GuildID?
+    let isMuted: Bool
     let maximumWidth: CGFloat
+    // Called here rather than by the rail so voice-state changes re-render
+    // only the visible card.
+    let voicePreview: (GuildID) -> ServerRailVoicePreview?
+    let resolveVoiceParticipants: (GuildID, [UserID]) async -> Void
 
     var body: some View {
+        content
+            // Centre the label or card on the hovered row, whatever its height.
+            .frame(height: 32)
+            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        let voice = guildID.flatMap(voicePreview)
+        if voice != nil || isMuted {
+            VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
+                VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                    title
+                    if isMuted {
+                        Text("Muted")
+                            .font(.interface(.subheadline).weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let voice {
+                    ServerRailVoicePreviewRow(preview: voice)
+                }
+            }
+            .padding(.horizontal, InterfaceScale.metric(11))
+            .padding(.vertical, InterfaceScale.metric(9))
+            .frame(maxWidth: maximumWidth, alignment: .leading)
+            .fixedSize()
+            .glassEffect(
+                .regular,
+                in: RoundedRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous)
+            )
+            // Runs each time the card opens. Keyed by guild too: moving between
+            // guilds that show the same users must still read the new guild's.
+            .task(id: VoiceResolution(guildID: guildID, userIDs: voice?.providerUserIDs ?? [])) {
+                guard let guildID, let userIDs = voice?.providerUserIDs else { return }
+                await resolveVoiceParticipants(guildID, userIDs)
+            }
+        } else {
+            title
+                .padding(.horizontal, InterfaceScale.metric(11))
+                .frame(maxWidth: maximumWidth)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(height: InterfaceScale.metric(32))
+                .glassEffect(.regular, in: Capsule())
+        }
+    }
+
+    private struct VoiceResolution: Hashable {
+        let guildID: GuildID?
+        let userIDs: [UserID]
+    }
+
+    private var title: some View {
         Text(name)
             .font(.interface(.callout).weight(.semibold))
             .lineLimit(1)
             .truncationMode(.tail)
-            .padding(.horizontal, InterfaceScale.metric(11))
-            .frame(maxWidth: maximumWidth)
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(height: InterfaceScale.metric(32))
-            .glassEffect(.regular, in: Capsule())
-            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+    }
+}
+
+/// A speaker, the first participants' overlapping avatars and a count of the
+/// rest. Each avatar is cut away beneath the one that overlaps it.
+private struct ServerRailVoicePreviewRow: View {
+    let preview: ServerRailVoicePreview
+
+    private var avatarSize: CGFloat { InterfaceScale.metric(24) }
+    private var overlap: CGFloat { InterfaceScale.metric(6) }
+    private var cutoutGap: CGFloat { InterfaceScale.metric(2) }
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(8)) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.interfaceSystem(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: -overlap) {
+                ForEach(Array(preview.participants.enumerated()), id: \.element.id) { index, participant in
+                    let isOverlapped = index < preview.participants.count - 1 || preview.overflowCount > 0
+                    avatar(participant)
+                        .mask { cutout(isActive: isOverlapped) }
+                }
+                if preview.overflowCount > 0 {
+                    Text("+\(preview.overflowCount.formatted())")
+                        .font(.interfaceSystem(size: 11, weight: .bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, InterfaceScale.metric(7))
+                        .frame(minWidth: avatarSize, minHeight: avatarSize)
+                        .background(Color.secondary.opacity(0.25), in: Capsule())
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func avatar(_ participant: ServerRailVoiceParticipant) -> some View {
+        if let name = participant.name {
+            AvatarView(name: name, url: participant.avatarURL, size: avatarSize, animates: false)
+        } else {
+            Circle()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(width: avatarSize, height: avatarSize)
+        }
+    }
+
+    /// The avatar's full square, less a slightly larger circle where the
+    /// next avatar or count starts.
+    private func cutout(isActive: Bool) -> some View {
+        Rectangle()
+            .overlay(alignment: .leading) {
+                Circle()
+                    .frame(width: avatarSize + cutoutGap * 2, height: avatarSize + cutoutGap * 2)
+                    .offset(x: avatarSize - overlap - cutoutGap)
+                    .opacity(isActive ? 1 : 0)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
     }
 }
 
 struct ServerRailHoverItem {
     let name: String
+    var guildID: GuildID?
+    var isMuted = false
     let bounds: Anchor<CGRect>
 }
 

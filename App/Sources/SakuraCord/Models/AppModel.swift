@@ -164,6 +164,8 @@ final class AppModel {
 
     @ObservationIgnored let serverRailPresentation =
         ServerRailPresentationStore()
+    @ObservationIgnored let serverRailVoicePreviewStore =
+        ServerRailVoicePreviewStore()
     @ObservationIgnored let onboarding = GuildOnboardingStore()
     @ObservationIgnored let serverInvites = ServerInvitePresentationStore()
     @ObservationIgnored let guildJoinRequests = GuildJoinRequestStore()

@@ -656,6 +656,13 @@ struct VoiceStateUpdateDTO: Decodable {
     }
 }
 
+/// A guild VOICE_STATE_UPDATE carries the participant's member object. It is
+/// decoded apart from the state so a member that fails to decode cannot drop
+/// the voice state itself.
+struct VoiceStateMemberDTO: Decodable {
+    var member: GuildMemberDTO
+}
+
 struct GuildVoiceStateSnapshotDTO: Decodable {
     var id: String
     var voiceStates: LossyList<VoiceStateUpdateDTO>

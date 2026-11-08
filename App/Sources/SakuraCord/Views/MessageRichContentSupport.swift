@@ -9,6 +9,7 @@ enum DiscordRichMessageMetrics {
     /// Discord lays Components V2 out up to 600 pixels wide.
     static var componentsMaximumWidth: CGFloat { px(600) }
     static var cardCornerRadius: CGFloat { px(8) }
+    static var embedCornerRadius: CGFloat { px(4) }
     /// A container's 16-pixel padding inside its 1-point border.
     static var cardPadding: CGFloat { px(16) + InterfaceScale.metric(1) }
 
@@ -17,6 +18,38 @@ enum DiscordRichMessageMetrics {
     /// so every Discord length keeps its proportion to the text.
     nonisolated static func px(_ value: CGFloat) -> CGFloat {
         InterfaceScale.metric((value * InterfaceTypographyMetrics.messageTextSize / 16 * 2).rounded() / 2)
+    }
+}
+
+/// Discord's card colours, shared by embeds and component containers,
+/// resolved from its design tokens for the midnight theme in dark mode, as
+/// the spoiler cover assumes, and the light theme otherwise, then tinted the
+/// way a gradient theme tints them.
+enum DiscordEmbedPalette {
+    /// The grey behind Discord's secondary buttons and its muted borders.
+    static let grey = NSColor(srgbRed: 151 / 255, green: 151 / 255, blue: 159 / 255, alpha: 1)
+
+    /// `--background-surface-high`.
+    static var cardFill: NSColor {
+        themed(NSColor(srgbRed: 10 / 255, green: 10 / 255, blue: 12 / 255, alpha: 1), light: .white)
+    }
+
+    /// `--border-subtle`.
+    static var cardBorder: NSColor {
+        themed(grey.withAlphaComponent(51 / 255), light: grey.withAlphaComponent(71 / 255))
+    }
+
+    /// `--border-normal`, the bar of an embed without a colour.
+    static var defaultAccent: NSColor {
+        themed(grey.withAlphaComponent(61 / 255), light: grey.withAlphaComponent(102 / 255))
+    }
+
+    private static func themed(_ midnight: NSColor, light: NSColor) -> NSColor {
+        let theme = SakuraCordThemeStore.shared.committedTheme
+        return NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return theme.discordTinted(isDark ? midnight : light, isDark: isDark)
+        }
     }
 }
 
