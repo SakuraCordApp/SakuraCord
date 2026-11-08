@@ -212,7 +212,7 @@ enum MentionAutocompleteSuggestionFactory {
         roles: [GuildRole] = []
     ) -> [MentionAutocompleteSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedQuery = normalized(trimmedQuery)
+        let normalizedQuery = trimmedQuery.lowercased()
         let queryTerms = normalizedQuery.split(whereSeparator: \.isWhitespace).map(String.init)
         let channelsByID = threads.isEmpty ? [:] : Dictionary(
             channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
@@ -451,7 +451,9 @@ enum MentionAutocompleteSuggestionFactory {
         terms: [String]
     ) -> Double {
         guard !query.isEmpty else { return 7 }
-        let name = normalized(name)
+        // Discord folds case only: `cafe` reaches `café-lounge` as a letter
+        // subsequence, `café` as a substring, and `cafè` matches nothing.
+        let name = name.lowercased()
         var score: Double
         if name == query {
             score = 10
@@ -470,9 +472,9 @@ enum MentionAutocompleteSuggestionFactory {
         // Discord lets remaining terms match category, parent channel or guild context, at
         // half weight, while keeping a contextual result below a direct prefix.
         if terms.count > 1 {
-            let normalizedContext = normalized(context)
+            let context = context.lowercased()
             let unmatched = terms.filter { !name.contains($0) }
-            if !unmatched.isEmpty, unmatched.allSatisfy({ normalizedContext.contains($0) }) {
+            if !unmatched.isEmpty, unmatched.allSatisfy({ context.contains($0) }) {
                 score = min(score, 6) + 0.5 * Double(unmatched.count)
             }
         }
