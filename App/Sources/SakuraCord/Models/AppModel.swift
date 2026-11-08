@@ -867,6 +867,7 @@ final class AppModel {
 
     @ObservationIgnored var provider: any ChatProvider
     @ObservationIgnored let activityCoordinator: ActivityCoordinator
+    @ObservationIgnored let ipcServer: DiscordIPCServer
     @ObservationIgnored var database: SakuraCordDatabase?
     @ObservationIgnored var accountSessionGeneration: UInt64 = 0
     @ObservationIgnored var installedAccountSessionRevision: UInt64 = 0
@@ -1112,7 +1113,8 @@ final class AppModel {
         uploadPrivacyPreparation: UploadPrivacyPreparation? = nil,
         translation: TranslationState? = nil,
         composerPreferences: SettingsPreferenceStore? = nil,
-        activityCoordinator: ActivityCoordinator? = nil
+        activityCoordinator: ActivityCoordinator? = nil,
+        ipcServer: DiscordIPCServer? = nil
     ) {
         self.launchMode = launchMode
         includesOfflineSignIn = launchMode == .offlineTesting && awaitsOfflineSignIn
@@ -1144,7 +1146,13 @@ final class AppModel {
             provider
                 ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())
         self.provider = resolvedProvider
-        self.activityCoordinator = activityCoordinator ?? ActivityCoordinator(provider: resolvedProvider)
+        let resolvedCoordinator = activityCoordinator ?? ActivityCoordinator(provider: resolvedProvider)
+        self.activityCoordinator = resolvedCoordinator
+        let resolvedIPCServer = ipcServer ?? DiscordIPCServer(coordinator: resolvedCoordinator)
+        self.ipcServer = resolvedIPCServer
+        if launchMode == .normal {
+            try? resolvedIPCServer.start()
+        }
         hasPendingLaunchWelcome = includesOfflineSignIn
         typingState = TypingStateModel()
         self.localTypingTiming = localTypingTiming
