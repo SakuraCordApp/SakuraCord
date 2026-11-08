@@ -30,7 +30,8 @@ extension AppModel {
         {
             loadApplicationCommands(in: destination)
         }
-        for guildID in embeddedActivities.installedActivities.keys
+        // Every place Recents were read for, including a read still in flight.
+        for guildID in embeddedActivities.installedLoads.keys
             where target == .user || guildID.map(ApplicationCommandIndexTarget.guild) == target
         {
             loadInstalledActivities(guildID: guildID)
