@@ -390,6 +390,7 @@ extension AppModel {
                 model: self, instance: frame, application: application, launchID: session.launchID, proxyTicket: ticket
             )
             store.session?.phase = .running
+            playActivitySound(.activityLaunch)
             // Recents count each Activity opened; a failed save only loses that count.
             try? await account.provider.recordEmbeddedActivityLaunch(application.id)
         } catch {
@@ -458,8 +459,19 @@ extension AppModel {
     func leaveActivity() {
         let store = embeddedActivities
         let instance = store.session?.instance
-        store.endSession()
+        endActivitySession()
         if let instance { leaveEmbeddedActivity(instance) }
+    }
+
+    /// Ends the hosted Activity, with Discord's cue when one was open.
+    private func endActivitySession() {
+        if embeddedActivities.host != nil { playActivitySound(.activityEnd) }
+        embeddedActivities.endSession()
+    }
+
+    /// Discord's Activity cues, which follow the call feedback sounds setting.
+    private func playActivitySound(_ effect: AppSoundEffect) {
+        if voiceVideoPreferences.playsFeedbackSounds { soundPlayer.play(effect) }
     }
 
     private func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
@@ -581,8 +593,15 @@ extension AppModel {
     func consumeEmbeddedActivityEvent(_ event: ClientEvent) {
         switch event {
         case .embeddedActivityChanged(let instance):
+            let isNew = embeddedActivities.instances[instance.compositeInstanceID] == nil
             embeddedActivities.upsert(instance)
             consumeEmbeddedActivity(instance)
+            // Like Discord, someone else starting an Activity in the call is cued.
+            if isNew, instance.location.channelID == activeVoiceChannel?.id,
+               embeddedActivities.session?.instance?.compositeInstanceID != instance.compositeInstanceID,
+               !instance.participants.contains(where: { $0.sessionID == embeddedActivities.gatewaySessionID }) {
+                playActivitySound(.activityLaunch)
+            }
         case .embeddedActivitiesReceived(let instances):
             embeddedActivities.replaceInstances(instances)
             let listed = Set(instances.map(\.compositeInstanceID))
@@ -595,7 +614,7 @@ extension AppModel {
             // disconnected is simply absent.
             if let hosted = embeddedActivities.session?.instance, hosted.location.guildID != nil,
                !instances.contains(where: { $0.compositeInstanceID == hosted.compositeInstanceID }) {
-                embeddedActivities.endSession()
+                endActivitySession()
             }
         default:
             return
@@ -629,7 +648,7 @@ extension AppModel {
         }
         guard isOwnInstance(instance, application: session.application.id, location: session.location) else {
             // Discord removed this session from the instance it was in.
-            if session.instance?.compositeInstanceID == instance.compositeInstanceID { store.endSession() }
+            if session.instance?.compositeInstanceID == instance.compositeInstanceID { endActivitySession() }
             return
         }
         // An instance from a later attempt, such as a retry after a timeout,
@@ -639,6 +658,11 @@ extension AppModel {
             store.host?.stop()
             store.host = nil
             leaveEmbeddedActivity(previous)
+        }
+        if store.host != nil, !replacesInstance, let previous = session.instance {
+            let before = Set(previous.participants.map(\.userID)).count
+            let after = Set(instance.participants.map(\.userID)).count
+            if after != before { playActivitySound(after > before ? .activityUserJoin : .activityUserLeft) }
         }
         store.session?.instance = instance
         store.host?.participantsChanged()
@@ -667,6 +691,9 @@ extension AppModel {
                     proxyTicket: ticket
                 )
                 model.embeddedActivities.session?.phase = .running
+                // Discord cues joining people already playing in the call as a join.
+                let isJoiningCall = session.isInCall && Set(instance.participants.map(\.userID)).count > 1
+                model.playActivitySound(isJoiningCall ? .activityUserJoin : .activityLaunch)
                 // Recents count each Activity opened; a failed save only loses that count.
                 try? await account.provider.recordEmbeddedActivityLaunch(instance.applicationID)
             } catch {
@@ -691,7 +718,7 @@ extension AppModel {
             leaveEmbeddedActivity(instance)
             return
         }
-        store.endSession()
+        endActivitySession()
         store.gatewaySessionID = participant.sessionID
         store.session = EmbeddedActivityStore.Session(
             application: store.application(instance.applicationID) ?? EmbeddedActivityApplication(
