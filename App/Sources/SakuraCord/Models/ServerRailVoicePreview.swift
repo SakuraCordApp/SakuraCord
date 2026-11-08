@@ -16,14 +16,15 @@ struct ServerRailVoicePreview: Equatable {
 
     let participants: [ServerRailVoiceParticipant]
     let overflowCount: Int
-    /// Shown participants the app's member stores do not cover. The card
-    /// rereads them from the provider's cache each time it opens, so a copy
-    /// kept for a server that isn't open does not go stale.
+    /// Shown participants outside the open guild's live member store. The
+    /// card rereads them from the provider's cache each time it opens; the
+    /// app stops refreshing a guild's members once it is left, but the
+    /// provider keeps applying member updates for every guild.
     let providerUserIDs: [UserID]
 }
 
-/// Users for voice previews of guilds whose members the app has not loaded,
-/// read from the provider's existing member cache.
+/// Users for voice previews outside the open guild, read from the
+/// provider's existing member cache.
 @Observable
 final class ServerRailVoicePreviewStore {
     var usersByGuildID: [GuildID: [UserID: User]] = [:]
@@ -59,12 +60,13 @@ extension AppModel {
         let participants = ordered
             .prefix(ServerRailVoicePreview.maximumAvatarCount)
             .map { userID in
-                var user = userID == currentUser?.id
-                    ? currentUser
-                    : profileMember(userID, in: guildID)?.user
+                var user = userID == currentUser?.id ? currentUser : nil
+                if user == nil, guildID == selectedGuildID {
+                    user = profileMember(userID, in: guildID)?.user
+                }
                 if user == nil {
                     providerUserIDs.append(userID)
-                    user = resolved[userID]
+                    user = resolved[userID] ?? profileMember(userID, in: guildID)?.user
                 }
                 return ServerRailVoiceParticipant(
                     id: userID,
