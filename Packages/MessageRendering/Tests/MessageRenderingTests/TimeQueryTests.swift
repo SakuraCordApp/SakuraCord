@@ -3,14 +3,19 @@ import Foundation
 import Testing
 
 /// A misread `@time` query sends a timestamp for the wrong moment. Expected
-/// readings were recorded from Discord on Sunday 8 November 2026, 05:10:13
-/// Berlin time.
+/// readings follow what Discord offered for the same phrases on Sunday
+/// 8 November 2026 in Berlin, shifted to 05:10:13.
 private let discordReadings: [(String, [String])] = [
     ("5pm", ["timeOnly 2026-11-08 17:00", "today 2026-11-08 17:00"]),
     ("5", ["timeOnly 2026-11-08 05:00", "tomorrow 2026-11-09 05:00", "today 2026-11-08 05:00"]),
     ("midnight", ["timeOnly 2026-11-09 00:00", "- 2026-11-09 00:00"]),
     ("tomorrow 5pm", ["- 2026-11-09 17:00"]),
-    ("tomorrow", ["- 2026-11-09 05:10"]),
+    ("tomorrow", ["- 2026-11-09 05:15"]),
+    ("last month", ["- 2026-10-08 06:15"]),
+    ("in 1 day 2 hours", ["- 2026-11-09 07:10:13"]),
+    ("jan 1", ["- 2027-01-01 12:00"]),
+    ("5pm pdt", ["timeOnly 2026-11-09 01:00", "- 2026-11-09 01:00"]),
+    ("tues", []),
     ("in 2 hours", ["- 2026-11-08 07:10:13"]),
     ("in 3 days at 5pm", ["- 2026-11-11 17:00"]),
     ("friday", ["thisWeek 2026-11-13 12:00", "lastWeek 2026-11-06 12:00"]),
@@ -34,6 +39,8 @@ private let mondayWeekReadings: [(String, [String])] = [
     ("friday", ["nextWeek 2026-11-13 12:00", "thisWeek 2026-11-06 12:00"]),
     ("sunday", ["thisWeek 2026-11-08 12:00"]),
     ("monday", ["- 2026-11-09 12:00"]),
+    ("thursday", ["nextWeek 2026-11-12 12:00", "thisWeek 2026-11-05 12:00"]),
+    ("last mon", ["nextWeek 2026-11-09 12:00", "thisWeek 2026-11-02 12:00"]),
 ]
 
 @Test(arguments: discordReadings)
