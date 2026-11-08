@@ -257,7 +257,7 @@ private extension EmbeddedActivityDisclosure {
     var notice: String {
         switch self {
         case .ipLocation: "Developer may see your IP address while you use this application."
-        case .displaysAdvertisements: "This application displays advertisements."
+        case .displaysAdvertisements: "Developer may show ads while you use this application."
         }
     }
 }
