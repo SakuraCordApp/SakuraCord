@@ -28,6 +28,13 @@ enum NativeTimelineReactionFonts {
 }
 
 extension NativeTimelineRowLayout {
+    /// The command a response names. Discord titles a launch's entry point
+    /// ("launch") as "Launch".
+    static func commandLabel(for message: Message) -> String {
+        let name = message.interactionMetadata?.displayName ?? "command"
+        return message.type == .contextMenuCommand ? name.prefix(1).uppercased() + name.dropFirst() : name
+    }
+
     static func commandInvocation(
         _ message: Message,
         origin: CGPoint,
@@ -36,7 +43,7 @@ extension NativeTimelineRowLayout {
     ) -> CommandInvocationRegion {
         let user = message.interactionMetadata?.user.map(cosmeticPolicy.user)
         let userLabel = user?.displayName ?? "Someone"
-        let commandLabel = message.interactionMetadata?.displayName ?? "command"
+        let commandLabel = commandLabel(for: message)
         let userFont = ProfileNameFontLoader.shared.resolvedFont(for: user, fallback: .interfaceSystemFont(
             ofSize: NSFont.preferredFont(
                 forTextStyle: .caption2

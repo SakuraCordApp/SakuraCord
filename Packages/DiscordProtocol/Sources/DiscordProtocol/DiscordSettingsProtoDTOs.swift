@@ -557,6 +557,15 @@ enum DiscordSettingsProto {
                 break
             }
         }
+        return frecency(totalUses: totalUses, recentUses: recentUses, nowMilliseconds: nowMilliseconds)
+        }
+    }
+
+    /// The official client's frecency store: the age weights of the first ten
+    /// recent uses, and uses × their mean weight.
+    static func frecency(
+        totalUses: Int, recentUses: [UInt64], nowMilliseconds: UInt64
+    ) -> (score: Int, frecency: Int)? {
         let sampledUses = recentUses.prefix(10)
         guard !sampledUses.isEmpty else { return nil }
         let millisecondsPerDay: UInt64 = 86_400_000
@@ -585,7 +594,6 @@ enum DiscordSettingsProto {
                 ? Int.max
                 : Int(computedFrecency)
         return (score, frecency)
-        }
     }
 
     private static func computedFrecency(

@@ -258,12 +258,20 @@ extension NativeTimelineCanvasView {
                 Set<NativeTimelineMediaKey>] = [:]
         for index in rowRange
         where rowFrame(at: index).intersects(viewport) {
-            if let row = items[index].messageRow, !row.serverInvites.isEmpty, let model {
+            if let row = items[index].messageRow, let model {
                 let references = row.serverInvites
-                let session = model.accountSession()
-                Task { @MainActor in
-                    guard model.isCurrentAccountSession(session) else { return }
-                    for reference in references { model.loadServerInvite(reference) }
+                // A launch card is tinted from its icon, as Discord's is.
+                let uncachedIcon = (row.message.hasActivityInstance ? row.message.author.avatarURL : nil)
+                    .flatMap { ProfileAvatarPaletteLoader.shared.cached($0) == nil ? $0 : nil }
+                if !references.isEmpty || uncachedIcon != nil {
+                    let session = model.accountSession()
+                    Task { @MainActor in
+                        guard model.isCurrentAccountSession(session) else { return }
+                        for reference in references { model.loadServerInvite(reference) }
+                        if let uncachedIcon, (try? await ProfileAvatarPaletteLoader.shared.colors(uncachedIcon)) != nil {
+                            model.serverInvites.changed()
+                        }
+                    }
                 }
             }
             let rowKeys = mediaKeys(for: items[index], at: index)
@@ -338,8 +346,10 @@ extension NativeTimelineCanvasView {
             into: &keys
         )
         for card in layouts[index].inviteRegions {
+            if let url = card.content?.iconURL { keys.append(.media(url, maximumPixelDimension: 128)) }
+            if let url = card.content?.activity?.coverURL { keys.append(.media(url, maximumPixelDimension: 640)) }
+            for case let url? in card.playerAvatars.map(\.url) { keys.append(.media(url, maximumPixelDimension: 32)) }
             if let invite = card.invite {
-                if let url = invite.iconURL { keys.append(.media(url, maximumPixelDimension: 128)) }
                 if let url = invite.inviter?.avatarURL { keys.append(.media(url, maximumPixelDimension: 32)) }
                 for trait in invite.traits {
                     if let url = trait.emojiURL { keys.append(.media(url, maximumPixelDimension: 32)) }

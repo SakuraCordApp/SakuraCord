@@ -30,6 +30,12 @@ extension AppModel {
         {
             loadApplicationCommands(in: destination)
         }
+        // Every place Recents were read for, including a read still in flight.
+        for guildID in embeddedActivities.installedLoads.keys
+            where target == .user || guildID.map(ApplicationCommandIndexTarget.guild) == target
+        {
+            loadInstalledActivities(guildID: guildID)
+        }
     }
 
     func updateCommandFrecency(_ history: DiscordFrecencyHistory) {

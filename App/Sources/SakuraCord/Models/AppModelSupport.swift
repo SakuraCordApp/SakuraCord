@@ -95,6 +95,7 @@ extension AppModel {
         serverInvites.reset()
         guildJoinRequests.reset()
         serverRailPresentation.showsGuildJoinRequest = false
+        embeddedActivities.reset()
         friends.reset()
         lastDirectMessageSelection = nil
         ignoredUsers.reset()

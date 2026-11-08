@@ -231,6 +231,29 @@ public protocol ChatProvider: Sendable {
     func submitModal(_ submission: ModalSubmission) async throws
     /// Grants an OAuth2 authorization code after the person explicitly asked to sign in.
     func authorizeOAuth2(_ request: OAuth2AuthorizationRequest) async throws -> OAuth2AuthorizationGrant
+    func embeddedActivityShelf(guildID: GuildID?) async throws -> [EmbeddedActivityApplication]
+    func installedEmbeddedActivities(guildID: GuildID?) async -> Set<ApplicationID>
+    func embeddedActivitySessionID() async throws -> String
+    func recordEmbeddedActivityLaunch(_ applicationID: ApplicationID) async throws
+    func launchEmbeddedActivity(
+        _ applicationID: ApplicationID, in channel: Channel, sessionID: String, joining: Bool, fromCall: Bool,
+        shelfSection: String?
+    ) async throws
+    func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) async throws
+    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID?) async throws -> String
+    func embeddedActivityAuthorizationPreview(
+        _ authorization: EmbeddedActivityAuthorizationRequest
+    ) async throws -> EmbeddedActivityAuthorizationPreview
+    func authorizeEmbeddedActivity(
+        _ authorization: EmbeddedActivityAuthorizationRequest,
+        granted: Bool
+    ) async throws -> String
+    func authenticateEmbeddedActivity(_ applicationID: ApplicationID, accessToken: String) async throws -> JSONValue
+    func embeddedActivityInstallScopes(_ applicationID: ApplicationID, in channel: Channel) async throws -> [String]?
+    func acknowledgeEmbeddedActivityDisclosures(
+        _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
+    ) async throws
+    func installEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest, granted: Bool) async throws
     func componentChoices(
         kind: ComponentSelectKind, query: String, guildID: GuildID?, channelID: ChannelID
     ) async throws -> [ComponentSelectOption]
@@ -863,6 +886,60 @@ public extension ChatProvider {
     }
 
     func authorizeOAuth2(_ request: OAuth2AuthorizationRequest) async throws -> OAuth2AuthorizationGrant {
+        throw OAuth2AuthorizationError.unavailable
+    }
+
+    func embeddedActivityShelf(guildID: GuildID?) async throws -> [EmbeddedActivityApplication] {
+        throw ChatProviderError.invalidRequest("Activities are unavailable.")
+    }
+
+    func installedEmbeddedActivities(guildID: GuildID?) async -> Set<ApplicationID> { [] }
+
+    func embeddedActivitySessionID() async throws -> String {
+        throw ChatProviderError.invalidRequest("Activities are unavailable.")
+    }
+
+    func recordEmbeddedActivityLaunch(_ applicationID: ApplicationID) async throws {}
+
+    func launchEmbeddedActivity(
+        _ applicationID: ApplicationID, in channel: Channel, sessionID: String, joining: Bool, fromCall: Bool,
+        shelfSection: String?
+    ) async throws {
+        throw ChatProviderError.invalidRequest("Activities are unavailable.")
+    }
+
+    func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) async throws {}
+
+    func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID?) async throws -> String {
+        throw ChatProviderError.invalidRequest("Activities are unavailable.")
+    }
+
+    func embeddedActivityAuthorizationPreview(
+        _ authorization: EmbeddedActivityAuthorizationRequest
+    ) async throws -> EmbeddedActivityAuthorizationPreview {
+        throw OAuth2AuthorizationError.unavailable
+    }
+
+    func authorizeEmbeddedActivity(
+        _ authorization: EmbeddedActivityAuthorizationRequest,
+        granted: Bool
+    ) async throws -> String {
+        throw OAuth2AuthorizationError.unavailable
+    }
+
+    func authenticateEmbeddedActivity(_ applicationID: ApplicationID, accessToken: String) async throws -> JSONValue {
+        throw OAuth2AuthorizationError.unavailable
+    }
+
+    func embeddedActivityInstallScopes(_ applicationID: ApplicationID, in channel: Channel) async throws -> [String]? {
+        nil
+    }
+
+    func acknowledgeEmbeddedActivityDisclosures(
+        _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
+    ) async throws {}
+
+    func installEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest, granted: Bool) async throws {
         throw OAuth2AuthorizationError.unavailable
     }
 

@@ -550,6 +550,9 @@ extension DiscordRESTProvider {
             cacheReadySupplementalPrivateState(supplemental)
             applyReadySupplementalGuildProjection(supplemental)
             publishReadySupplementalAliases(supplemental)
+            continuation?.yield(.embeddedActivitiesReceived(
+                supplemental.guilds.flatMap(\.activityInstances).compactMap { $0.domain() }
+            ))
         }
         let states = ReadySupplementalVoiceStateResolver.resolve(
             body: body,

@@ -92,6 +92,11 @@ public struct DiscordMessageType: RawRepresentable, Codable, Hashable, Sendable 
         }
     }
 
+    /// A command's response, which shows who ran which command above it.
+    public var isCommandResponse: Bool {
+        self == .chatInputCommand || self == .contextMenuCommand
+    }
+
     public var hasGeneratedContent: Bool {
         switch rawValue {
         case 1 ... 12, 18, 22, 27 ... 31, 46, 52, 67:

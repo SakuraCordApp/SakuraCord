@@ -5,9 +5,28 @@ import SwiftUI
 struct DirectMessageCallWorkspace: View {
     let model: AppModel
     let channel: Channel
-    @SceneStorage("directMessageCallRegionHeight") private var preferredHeight = 340.0
+
+    var body: some View {
+        DockedRegionChatWorkspace(model: model, heightKey: "directMessageCallRegionHeight", defaultHeight: 340) {
+            DirectMessageCallRegion(model: model, channel: channel)
+        }
+    }
+}
+
+/// A resizable region docked above the channel's chat, such as a DM call or
+/// an Activity running in a text channel.
+struct DockedRegionChatWorkspace<Region: View>: View {
+    let model: AppModel
+    @ViewBuilder let region: Region
+    @SceneStorage private var preferredHeight: Double
     @State private var dragStartHeight: CGFloat?
     @State private var renderedHeight: CGFloat?
+
+    init(model: AppModel, heightKey: String, defaultHeight: Double, @ViewBuilder region: () -> Region) {
+        self.model = model
+        self.region = region()
+        _preferredHeight = SceneStorage(wrappedValue: defaultHeight, heightKey)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -17,7 +36,7 @@ struct DirectMessageCallWorkspace: View {
             )
 
             VStack(spacing: 0) {
-                DirectMessageCallRegion(model: model, channel: channel)
+                region
                     .frame(height: regionHeight)
 
                 DirectMessageCallResizeHandle(
@@ -152,12 +171,21 @@ private struct DirectMessageCallRegion: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VoiceVideoGrid(
-                model: model,
-                channel: channel,
-                isCompact: true,
-                ringingUserIDs: animatedRingingUserIDs
-            )
+            Group {
+                if model.embeddedActivities.session?.location.channelID == channel.id {
+                    EmbeddedActivityStage(model: model)
+                } else {
+                    VStack(spacing: 0) {
+                        if isConnectedHere { EmbeddedActivityJoinBanner(model: model, channel: channel) }
+                        VoiceVideoGrid(
+                            model: model,
+                            channel: channel,
+                            isCompact: true,
+                            ringingUserIDs: animatedRingingUserIDs
+                        )
+                    }
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if isConnectedHere {
