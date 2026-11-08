@@ -90,12 +90,16 @@ nonisolated enum RoleGradientPaint {
         for run in colorRuns { CTRunDraw(run, context, CFRange()) }
     }
 
+    /// Text clip mode intersects each run with the clip so far, so a line of
+    /// several runs (a truncated name, a fallback font) is filled run by run.
     private static func clipped(to line: CTLine, at origin: CGPoint, context: CGContext, fill: () -> Void) {
-        context.saveGState()
-        context.setTextDrawingMode(.clip)
-        context.textPosition = origin
-        CTLineDraw(line, context)
-        fill()
-        context.restoreGState()
+        for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
+            context.saveGState()
+            context.setTextDrawingMode(.clip)
+            context.textPosition = origin
+            CTRunDraw(run, context, CFRange())
+            fill()
+            context.restoreGState()
+        }
     }
 }
