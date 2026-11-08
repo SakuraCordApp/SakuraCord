@@ -105,25 +105,27 @@ public struct GuildJoinApplicationField: Equatable, Sendable {
     }
 
     /// Like the first-party inputs' `maxLength`, an edit that would pass the limit keeps the existing text and drops
-    /// what does not fit of the inserted text, a whole character at a time.
+    /// what does not fit of the inserted text. It compares and drops whole Unicode scalars, so existing text is never
+    /// mistaken for a canonically equal paste and a surrogate pair is never split.
     public func limited(_ text: String, replacing previous: String) -> String {
         guard let characterLimit, text.utf16.count > characterLimit else { return text }
-        let new = Array(text), old = Array(previous)
-        // Characters compare canonically, so é matches e + ◌́; only identical code units are existing text.
-        func same(_ lhs: Character, _ rhs: Character) -> Bool { lhs.utf16.elementsEqual(rhs.utf16) }
+        let new = Array(text.unicodeScalars), old = Array(previous.unicodeScalars)
         var prefix = 0
-        while prefix < min(new.count, old.count), same(new[prefix], old[prefix]) { prefix += 1 }
+        while prefix < min(new.count, old.count), new[prefix] == old[prefix] { prefix += 1 }
         var suffix = 0
-        while suffix < min(new.count, old.count) - prefix, same(new[new.count - 1 - suffix], old[old.count - 1 - suffix]) {
+        while suffix < min(new.count, old.count) - prefix, new[new.count - 1 - suffix] == old[old.count - 1 - suffix] {
             suffix += 1
         }
-        let head = String(new[..<prefix]), tail = String(new[(new.count - suffix)...])
-        var room = characterLimit - head.utf16.count - tail.utf16.count
-        let inserted = new[prefix ..< new.count - suffix].prefix { character in
-            room -= character.utf16.count
+        var room = characterLimit - new[..<prefix].utf16Count - new[(new.count - suffix)...].utf16Count
+        let inserted = new[prefix ..< new.count - suffix].prefix { scalar in
+            room -= scalar.utf16.count
             return room >= 0
         }
-        return head + String(inserted) + tail
+        var result = String.UnicodeScalarView()
+        result.append(contentsOf: new[..<prefix])
+        result.append(contentsOf: inserted)
+        result.append(contentsOf: new[(new.count - suffix)...])
+        return String(result)
     }
 
     public var isSatisfied: Bool {
@@ -157,4 +159,8 @@ public struct GuildJoinRequestGuild: Equatable, Sendable {
         self.name = name
         self.iconURL = iconURL
     }
+}
+
+private extension ArraySlice<Unicode.Scalar> {
+    var utf16Count: Int { reduce(0) { $0 + $1.utf16.count } }
 }

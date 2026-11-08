@@ -14,4 +14,7 @@ import Testing
     // Pasting decomposed text over its composed twin is new text, not the existing answer.
     let composed = String(repeating: "\u{E9}", count: 150)
     #expect(field.limited(String(repeating: "e\u{301}", count: 150), replacing: composed).utf16.count <= 150)
+    // A combining mark typed after a full answer's last letter is dropped; the letter stays.
+    let letters = String(repeating: "a", count: 149) + "e"
+    #expect(field.limited(letters + "\u{301}", replacing: letters) == letters)
 }

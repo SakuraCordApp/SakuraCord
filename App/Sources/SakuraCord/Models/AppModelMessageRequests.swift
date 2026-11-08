@@ -28,6 +28,8 @@ extension AppModel {
     }
 
     func openMessageRequests() {
+        // Like every other destination, Message Requests replaces an application's status page.
+        if guildJoinRequests.selectedGuildID != nil { selectGuildJoinRequest(nil) }
         openFriends()
         friends.messageRequestsTab = .pending
     }

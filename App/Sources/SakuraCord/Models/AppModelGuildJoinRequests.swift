@@ -163,14 +163,21 @@ extension AppModel {
     func submitGuildJoinApplication() {
         let store = guildJoinRequests
         guard let form = store.form, let modal = store.modal, form.fields.allSatisfy(\.isSatisfied) else { return }
-        runGuildJoinRequestAction { try await $0.submitGuildJoinApplication(form.guildID, fields: form.fields) } completion: { [weak self] in
+        runGuildJoinRequestAction { provider in
+            do {
+                try await provider.submitGuildJoinApplication(form.guildID, fields: form.fields)
+            } catch where store.requests[form.guildID]?.status != .started {
+                // The reply was lost or refused, but Discord already moved the application on (its Gateway update
+                // arrived meanwhile); keeping the form would offer the same answers again.
+            }
+        } completion: { [weak self] in
             guard let self, store.modal?.id == modal.id else { return }
             store.form = nil
             store.modal = nil
             showGuildJoinApprovalIfNeeded()
             // Like Discord, an applicant stays where they are; the folder opens with a note on what happens next.
             // A screened member simply continues in the server.
-            if serverRailGuildsByID[form.guildID] == nil {
+            if serverRailGuildsByID[form.guildID] == nil, store.requests[form.guildID]?.status == .submitted {
                 store.isFolderExpanded = true
                 store.showsSubmittedTip = true
             }
