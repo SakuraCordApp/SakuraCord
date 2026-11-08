@@ -20,15 +20,9 @@ struct NativeTimelineEditedTextBand {
     let motionID: Int
     /// Set when the text is the same and only its row's header came or went,
     /// as when a group's first message is deleted: the row then slides with
-    /// the edge of its height, its header fading in, instead of the old and
-    /// new lines crossfading over the header.
-    let slide: Slide?
-
-    /// Where the new text starts in its row, which the header and avatar
-    /// fade in around.
-    struct Slide {
-        let textOrigin: CGPoint
-    }
+    /// the edge of its height, its header fading in around the text that
+    /// starts here, instead of the old and new lines crossfading over it.
+    let slidingTextOrigin: CGPoint?
 }
 
 extension NativeTimelineCanvasView {
@@ -51,12 +45,12 @@ extension NativeTimelineCanvasView {
         let identifier = items[index].identifier
         let running = editedTextBands[identifier]
         // A slide has no old picture to continue from; the row lands instead.
-        guard running?.slide == nil else { return nil }
+        guard running?.slidingTextOrigin == nil else { return nil }
         var top = min(text.minY, running?.top ?? text.minY)
-        var slide: NativeTimelineEditedTextBand.Slide?
+        var slidingTextOrigin: CGPoint?
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
             if abs(newText.minY - oldText.minY) >= 0.5, abs(newText.height - oldText.height) < 0.5 {
-                slide = .init(textOrigin: newText.origin)
+                slidingTextOrigin = newText.origin
             }
             // A short row is padded to its avatar's height below everything
             // else: the padding its text grows into, or leaves, belongs to
@@ -64,7 +58,7 @@ extension NativeTimelineCanvasView {
             let newAfter = layout.height - newText.maxY
             guard abs(newAfter - layout.avatarPadding - after + old.layout.avatarPadding) < 1 else { return nil }
             after = min(after, newAfter)
-            top = slide == nil ? min(top, oldText.minY, newText.minY) : 0
+            top = slidingTextOrigin == nil ? min(top, oldText.minY, newText.minY) : 0
         }
         // Text on one side only brings the gap before what follows it,
         // which belongs to its space.
@@ -79,7 +73,7 @@ extension NativeTimelineCanvasView {
         let runningOffset = running.map { $0.top - top } ?? 0
         let startHeight = running.map { shownHeight(of: $0, at: index) + runningOffset } ?? oldHeight
         let size = NSSize(width: width, height: startHeight)
-        let picture = slide != nil ? nil : fadePictureScale(for: size).flatMap { scale in
+        let picture = slidingTextOrigin != nil ? nil : fadePictureScale(for: size).flatMap { scale in
             NativeTimelineSendTransitionSnapshot.render(size: size, scale: scale) {
                 guard let context = NSGraphicsContext.current?.cgContext else { return }
                 let progress = running.map { progress(of: $0, shown: startHeight - runningOffset) } ?? 1
@@ -110,7 +104,7 @@ extension NativeTimelineCanvasView {
         }
         return .init(
             identifier: identifier, top: top, oldHeight: startHeight,
-            newHeight: newHeight, picture: picture, motionID: motionID, slide: slide
+            newHeight: newHeight, picture: picture, motionID: motionID, slidingTextOrigin: slidingTextOrigin
         )
     }
 
@@ -169,17 +163,20 @@ extension NativeTimelineCanvasView {
             draw()
             context.restoreGState()
         }
-        if let slide = band.slide {
+        if let textOrigin = band.slidingTextOrigin {
             // The text keeps pace with the row's edge at full strength, and
             // the rest of the row fades in once the deleted one's has faded
             // out, so that their headers never show over each other. Their
             // fade follows the deletion's own motion, which an earlier edit
             // of the row still gliding does not speed up.
             let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
-            let motion = reactionRowMotions.first { $0.id == band.motionID }
-            let handoff = motion?.progress(at: rowMotionUptime) ?? progress
+            // A band is dropped with its motion, so the motion is running.
+            guard let motion = reactionRowMotions.first(where: { $0.id == band.motionID }) else {
+                preconditionFailure("A text band outlived its motion")
+            }
+            let handoff = motion.progress(at: rowMotionUptime)
             let handoffEnd = NativeTimelineDepartedRun.handoffFadeEnd
-            let text = CGPoint(x: frame.minX + slide.textOrigin.x, y: frame.minY + slide.textOrigin.y)
+            let text = CGPoint(x: frame.minX + textOrigin.x, y: frame.minY + textOrigin.y)
             let textBottom = max(textTop, text.y)
             // The fade covers the header above the text and the avatar
             // beside it, so that no region is painted twice.

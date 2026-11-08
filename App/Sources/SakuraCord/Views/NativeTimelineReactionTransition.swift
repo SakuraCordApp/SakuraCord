@@ -397,7 +397,7 @@ extension NativeTimelineCanvasView {
             update.plan.addStep(for: row, delta: delta, movesText: band != nil)
             if let band {
                 update.textBands.append(band)
-                if band.slide != nil {
+                if band.slidingTextOrigin != nil {
                     for piece in update.departedPieces.indices.dropFirst(firstDeparted) {
                         update.departedPieces[piece].piece.fadeEnd = NativeTimelineDepartedRun.handoffFadeEnd
                     }
@@ -431,7 +431,7 @@ extension NativeTimelineCanvasView {
             shown += height
             // A row deleted while still sliding in its header has no picture
             // of what it showed, so it leaves its space blank.
-            let sliding = editedTextBands[row.item.identifier]?.slide != nil
+            let sliding = editedTextBands[row.item.identifier]?.slidingTextOrigin != nil
             let piece = NativeTimelineDepartedRun.Piece(
                 image: sliding ? nil : rowFadeImage(row, width: bounds.width), height: height, motionID: update.motionID
             )
