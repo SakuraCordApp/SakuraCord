@@ -55,7 +55,8 @@ enum MediaViewerActionService {
             let proposed = folder.appendingPathComponent(
                 MediaViewerFilePolicy.suggestedFilename(
                     title: item.title,
-                    sourceURL: item.url
+                    sourceURL: item.url,
+                    contentType: item.contentType
                 )
             )
             guard let availableDestination = availableDestination(for: proposed) else {
@@ -103,13 +104,14 @@ enum MediaViewerActionService {
         panel.isExtensionHidden = false
         panel.nameFieldStringValue = MediaViewerFilePolicy.suggestedFilename(
             title: item.title,
-            sourceURL: item.url
+            sourceURL: item.url,
+            contentType: item.contentType
         )
         panel.directoryURL = directory
         if let type = MediaViewerFilePolicy.contentType(
             title: item.title,
             sourceURL: item.url
-        ) {
+        ) ?? item.contentType {
             panel.allowedContentTypes = [type]
         }
 
@@ -169,7 +171,7 @@ enum MediaViewerActionService {
 
 }
 nonisolated enum MediaViewerFilePolicy {
-    static func suggestedFilename(title: String, sourceURL: URL) -> String {
+    static func suggestedFilename(title: String, sourceURL: URL, contentType: UTType? = nil) -> String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = sourceURL.lastPathComponent.isEmpty
             ? "Media"
@@ -179,7 +181,9 @@ nonisolated enum MediaViewerFilePolicy {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
 
-        let sourceExtension = sourceURL.pathExtension
+        let sourceExtension = sourceURL.pathExtension.isEmpty
+            ? contentType?.preferredFilenameExtension ?? ""
+            : sourceURL.pathExtension
         if (filename as NSString).pathExtension.isEmpty,
            !sourceExtension.isEmpty
         {

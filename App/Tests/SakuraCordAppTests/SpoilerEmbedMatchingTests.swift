@@ -4,7 +4,9 @@ import SakuraCordModels
 import Testing
 
 @MainActor
-private func concealedEmbedIDs(content: String, embeds: [MessageEmbed]) -> Set<String> {
+private func concealedEmbeds(
+    content: String, embeds: [MessageEmbed]
+) -> [String: NativeTimelineComponentRevealKey] {
     let message = Message(
         id: MessageID(rawValue: 9_001),
         channelID: ChannelID(rawValue: 9_002),
@@ -12,12 +14,15 @@ private func concealedEmbedIDs(content: String, embeds: [MessageEmbed]) -> Set<S
         content: content,
         embeds: embeds
     )
-    return Set(
-        NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
-            in: message,
-            store: NativeTimelineSpoilerRevealStore()
-        ).keys
+    return NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
+        in: message,
+        store: NativeTimelineSpoilerRevealStore()
     )
+}
+
+@MainActor
+private func concealedEmbedIDs(content: String, embeds: [MessageEmbed]) -> Set<String> {
+    Set(concealedEmbeds(content: content, embeds: embeds).keys)
 }
 
 @MainActor @Test
@@ -54,6 +59,22 @@ func `every card of a spoilered link hides`() {
         ]
     )
     #expect(ids == ["embed-0", "embed-1"])
+}
+
+@MainActor @Test
+func `a spoilered multi-image post reveals as one preview`() {
+    let url = URL(string: "https://x.com/user/status/1")
+    let image = MessageEmbedMedia(url: URL(string: "https://pbs.twimg.com/media/a.jpg"))
+    let concealed = concealedEmbeds(
+        content: "||https://x.com/user/status/1||",
+        embeds: [
+            MessageEmbed(id: "card", type: "rich", description: "Post", url: url, image: image),
+            MessageEmbed(id: "image-1", type: "rich", url: url, image: image),
+            MessageEmbed(id: "image-2", type: "rich", url: url, image: image),
+        ]
+    )
+    #expect(Set(concealed.keys) == ["card", "image-1", "image-2"])
+    #expect(Set(concealed.values).count == 1)
 }
 
 @MainActor @Test

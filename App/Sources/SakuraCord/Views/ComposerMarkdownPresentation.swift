@@ -4,17 +4,20 @@ import MessageRendering
 /// Markdown is the document; AppKit attributes are only its presentation.
 @MainActor
 enum ComposerMarkdownPresentation {
-    static func apply(to text: NSMutableAttributedString, font: NSFont) {
-        text.setAttributedString(rendered(text, font: font))
+    /// Every run starts from the draft's plain `style`.
+    static func apply(to text: NSMutableAttributedString, style: ComposerTextStyle) {
+        text.setAttributedString(rendered(text, style: style))
     }
 
-    static func rendered(_ original: NSAttributedString, font: NSFont) -> NSAttributedString {
+    static func rendered(_ original: NSAttributedString, style: ComposerTextStyle) -> NSAttributedString {
         let fullRange = NSRange(location: 0, length: original.length)
-        let text = NSMutableAttributedString(
-            string: original.string, attributes: ComposerEmojiAttributedText.textAttributes(font)
+        let text = DiscordMarkdown.appKitSourceAttributed(
+            original.string, attributes: style.attributes,
+            baseFontSize: style.font.pointSize, usesMessageLineHeight: style.usesMessageLineHeight
         )
-        // Start with one plain run rather than resetting every previous style run.
         // Only app-owned token attachments survive incoming rich-text formatting.
+        // They are single characters here, so the source keeps their ranges
+        // even while a newly typed token is awaiting normalization.
         original.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
             guard let attachment = value as? NSTextAttachment else { return }
             original.enumerateAttributes(in: range) { attributes, tokenRange, _ in
@@ -25,21 +28,6 @@ enum ComposerMarkdownPresentation {
                 }
             }
         }
-        // Token attachments are single characters here, so these ranges remain
-        // correct even while a newly typed token is awaiting normalization.
-        var fonts: [UInt: NSFont] = [0: font]
-        for format in DiscordMarkdown.sourceFormats(text.string) {
-            let range = format.range
-            var traits: NSFontTraitMask = []
-            if format.isBold { traits.insert(.boldFontMask) }
-            if format.isItalic { traits.insert(.italicFontMask) }
-            let styledFont = fonts[traits.rawValue] ?? NSFontManager.shared.convert(font, toHaveTrait: traits)
-            fonts[traits.rawValue] = styledFont
-            text.addAttribute(.font, value: styledFont, range: range)
-            if format.isUnderlined {
-                text.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
-            }
-        }
         return text
     }
 }
@@ -47,14 +35,14 @@ enum ComposerMarkdownPresentation {
 extension ComposerNSTextView {
     func refreshMarkdownPresentation() {
         guard !hasMarkedText(), let textStorage else { return }
-        let baseFont = plainTypingAttributes[.font] as? NSFont ?? .interfaceSystemFont(ofSize: 15)
-        let rendered = ComposerMarkdownPresentation.rendered(textStorage, font: baseFont)
+        let rendered = ComposerMarkdownPresentation.rendered(textStorage, style: plainTextStyle)
         // Only changed runs should invalidate layout. Most keystrokes leave all
         // existing attributes intact, even though delimiter recognition is global.
-        guard !rendered.isEqual(to: textStorage) else {
+        defer {
             restorePlainTypingAttributes()
-            return
+            revealMarkdownSyntax()
         }
+        guard !rendered.isEqual(to: textStorage) else { return }
         var updates: [(NSRange, [NSAttributedString.Key: Any])] = []
         rendered.enumerateAttributes(in: NSRange(location: 0, length: rendered.length)) { attributes, range, _ in
             textStorage.enumerateAttributes(in: range) { current, subrange, _ in
@@ -68,7 +56,18 @@ extension ComposerNSTextView {
             for (range, attributes) in updates { textStorage.setAttributes(attributes, range: range) }
             textStorage.endEditing()
         }
-        restorePlainTypingAttributes()
+    }
+
+    /// Shows the Markdown syntax around the selection, once the text it
+    /// marks is settled.
+    func revealMarkdownSyntax() {
+        guard !hasMarkedText(), let textStorage, textStorage.editedMask.isEmpty else { return }
+        (layoutManager as? ComposerLayoutManager)?.reveal(around: selectedRange())
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        revealMarkdownSyntax()
     }
 
     override func didChangeText() {

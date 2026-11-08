@@ -371,7 +371,9 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcileActionCapsule() {
-        guard !sendTransitionBlocksInteractions else {
+        guard !sendTransitionBlocksInteractions,
+              model?.featuresSettings.messageHoverActions == true
+        else {
             removeActionCapsule()
             return
         }
@@ -386,8 +388,9 @@ extension NativeTimelineCanvasView {
             removeActionCapsule()
         }
         if actionCapsuleState?.isPresentationActive == true {
-            guard editingMessageID == nil,
-                  let messageID = actionCapsuleMessageID,
+            // An edited row shows Cancel and Save where its actions would be.
+            guard let messageID = actionCapsuleMessageID,
+                  messageID != editingMessageID,
                   let index = items.firstIndex(where: {
                       $0.messageID == messageID
                   }),
@@ -403,16 +406,15 @@ extension NativeTimelineCanvasView {
             positionActionCapsule(at: index)
             return
         }
-        guard editingMessageID == nil,
-              let index = hoveredRow
+        guard let index = hoveredRow
                 ?? mediaViewerHighlightedMessageID.flatMap({ messageID in
                     items.firstIndex(where: {
                         $0.messageID == messageID
                     })
                 }),
-
               items.indices.contains(index),
               case let .message(row, _, _) = items[index],
+              row.message.id != editingMessageID,
               MessageOutboxPresentation.interactionMode(
                 for: row.message
               ).allowsHoverActions,
@@ -580,32 +582,41 @@ extension NativeTimelineCanvasView {
         else { return }
         state.updateAvailableWidth(bounds.width)
         let size = state.hostSize
-        let layout = layouts[index]
-        let origin = displayedRowOrigin(at: index)
-        let minX: CGFloat
-        let anchorMaxX: CGFloat
-        let originY: CGFloat
-        if let bubble = layout.bubbleRegion {
-            let inset = InterfaceScale.metric(8)
-            minX = inset
-            anchorMaxX = min(bubble.frame.maxX, bounds.width - inset)
-            originY = max(0, origin + bubble.frame.minY - size.height + InterfaceScale.metric(7))
-        } else {
-            minX = 0
-            anchorMaxX = bounds.width - InterfaceScale.metric(14)
-            originY = origin + (layout.highlightFrame?.minY ?? 0) - InterfaceScale.metric(13)
-        }
-        let originX = max(minX, anchorMaxX - size.width)
-        // Keep the capsule below the window toolbar when the row reaches it.
-        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
-        let clampedOriginY = visibleRect.isEmpty ? originY : max(originY, unobscuredMinY + InterfaceScale.metric(4))
-        host.frame = CGRect(x: originX, y: clampedOriginY, width: size.width, height: size.height)
+        host.frame = rowActionsFrame(size: size, at: index)
         // A capsule clamped against the leading side grows away from it.
-        let pinsLeadingEdge = originX > anchorMaxX - size.width
+        let pinsLeadingEdge = host.frame.minX > rowActionsAnchorMaxX(at: index) - size.width
         if state.pinsLeadingEdge != pinsLeadingEdge {
             state.pinsLeadingEdge = pinsLeadingEdge
         }
         updateActionCapsuleInteractiveFrame()
+    }
+
+    private func rowActionsAnchorMaxX(at index: Int) -> CGFloat {
+        if let bubble = layouts[index].bubbleRegion {
+            return min(bubble.frame.maxX, bounds.width - InterfaceScale.metric(8))
+        }
+        return bounds.width - InterfaceScale.metric(14)
+    }
+
+    /// Where a row's hover actions, or an edit's Cancel and Save, sit: over
+    /// the row's top trailing corner, below the window toolbar.
+    func rowActionsFrame(size: CGSize, at index: Int) -> CGRect {
+        let layout = layouts[index]
+        let origin = displayedRowOrigin(at: index)
+        let minX: CGFloat
+        let originY: CGFloat
+        if let bubble = layout.bubbleRegion {
+            minX = InterfaceScale.metric(8)
+            originY = max(0, origin + bubble.frame.minY - size.height + InterfaceScale.metric(7))
+        } else {
+            minX = 0
+            originY = origin + (layout.highlightFrame?.minY ?? 0) - InterfaceScale.metric(13)
+        }
+        let originX = max(minX, rowActionsAnchorMaxX(at: index) - size.width)
+        // Keep the capsule below the window toolbar when the row reaches it.
+        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
+        let clampedOriginY = visibleRect.isEmpty ? originY : max(originY, unobscuredMinY + InterfaceScale.metric(4))
+        return CGRect(x: originX, y: clampedOriginY, width: size.width, height: size.height)
     }
 
     /// Only the visible pill takes pointer input; the rest of the host is
@@ -1026,14 +1037,19 @@ extension NativeTimelineCanvasView {
         at index: Int
     ) {
         guard !sendTransitionBlocksInteractions,
-              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editingMessageID == nil,
+              !row.message.hasPoll, !row.message.flags.contains(.voiceMessage), editingMessageID != row.id,
               items.indices.contains(index),
               items[index].messageID == row.id,
               let model,
               model.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil,
-              let actions
+              let editingLayout = makeEditingLayout?(items[index], 0)
         else { return }
-        // The editor is placed at the row's static position.
+        // Editing another message discards that edit, as Cancel does; one
+        // still saving keeps its editor.
+        if editingMessageID != nil {
+            endEditing(commit: nil)
+            guard editingMessageID == nil else { return }
+        }
         finishReactionTransitions()
         removeActionCapsule()
         setTextSelection(nil)
@@ -1054,48 +1070,32 @@ extension NativeTimelineCanvasView {
         componentButtonPressAnimationTask?.cancel()
         componentButtonPressAnimationTask = nil
 
-        let layout = layouts[index]
-        let (contentOrigin, width) = editingPlacement(in: layout)
-        let host = makeEditingHost(for: row, model: model, actions: actions, width: width)
-        host.frame = CGRect(
-            x: contentOrigin.x,
-            y: displayedRowOrigin(at: index) + contentOrigin.y,
-            width: width,
-            height: max(1, layout.contentFrame?.height ?? InterfaceScale.metric(24))
-        )
-        addSubview(host, positioned: .above, relativeTo: nil)
-        host.layoutSubtreeIfNeeded()
-        let fittedHeight = max(1, ceil(host.fittingSize.height))
-        let fittedRowHeight = NativeTimelineEditingGeometry.rowHeight(
-            avatarMaxY: layout.avatarFrame?.maxY,
-            contentOriginY: contentOrigin.y,
-            contentHeight: fittedHeight
-        )
         editingMessageID = row.id
         editingRowIndexCache = index
-        editingRowHost = host
-        editingRowHeight = fittedRowHeight
-        editingOverlayLocalFrame = CGRect(
-            x: contentOrigin.x,
-            y: contentOrigin.y,
-            width: width,
-            height: fittedHeight
-        )
+        editing.item = items[index]
         editingRowScrollSnapshot = nil
-        host.frame.size.height = fittedHeight
-        mentionPointerRegionCache.removeAll(keepingCapacity: true)
-        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
-        resizeForEditingChange(
-            by: fittedRowHeight - layout.height
+        let draft = NativeTimelineInlineEditDraft(text: row.message.content)
+        editing.draft = draft
+        let host = makeEditingHost(
+            for: row, model: model, draft: draft,
+            isOnOutgoingBubble: editingLayout.bubbleRegion?.isOutgoing == true
         )
-        rebuildAccessibilityProxy(for: items[index].identifier)
-        reconcileInlinePlayers()
-        setNeedsDisplay(CGRect(
-            x: 0,
-            y: displayedRowOrigin(at: index),
-            width: bounds.width,
-            height: max(fittedRowHeight, layout.height)
+        editingRowHost = host
+        addSubview(host, positioned: .above, relativeTo: nil)
+        let controls = NativeTimelineActionCapsuleHost(rootView: AnyView(
+            NativeTimelineInlineEditControls(
+                draft: draft,
+                canEdit: { [weak model] in
+                    model?.guildTimeoutUntil(in: row.message.channelID, guildID: row.message.guildID) == nil
+                },
+                save: { [weak self] in self?.endEditing(commit: MessageEditInputPolicy.submission(from: draft.text)) },
+                cancel: { [weak self] in self?.endEditing(commit: nil) }
+            )
         ))
+        controls.setAccessibilityIdentifier("message-editing-controls-\(row.id)")
+        addSubview(controls, positioned: .above, relativeTo: nil)
+        editing.controlsHost = controls
+        applyEditingLayout(editingLayout)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
         focusEditingTextView(in: host)
@@ -1110,40 +1110,44 @@ extension NativeTimelineCanvasView {
     private func makeEditingHost(
         for row: MessageRowPresentation,
         model: AppModel,
-        actions: NativeTimelineRowActions,
-        width: CGFloat
+        draft: NativeTimelineInlineEditDraft,
+        isOnOutgoingBubble: Bool
     ) -> NativeTimelineEditingHost {
         let root = NativeTimelineEditingMessageContent(
             model: model,
             message: row.message,
+            draft: draft,
+            isOnOutgoingBubble: isOnOutgoingBubble,
             save: { [weak self] value in
                 self?.endEditing(commit: value)
             },
             cancel: { [weak self] in
                 self?.endEditing(commit: nil)
             },
-            react: { emoji in
-                actions.react(emoji, row.message)
+            editorHeightDidChange: { [weak self] height in
+                guard let self, self.editingMessageID == row.id else { return }
+                self.editing.editorHeight = ceil(height)
+                self.relayoutEditingRow()
+            },
+            draftDidChange: { [weak self] in
+                guard let self, self.editingMessageID == row.id,
+                      self.editing.keepsRenderedHeight != self.editing.draftMatches(row.message)
+                else { return }
+                self.relayoutEditingRow()
             }
         )
-        .frame(width: width, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        let host = NativeTimelineEditingHost(rootView: AnyView(root))
-        host.setAccessibilityIdentifier("message-editing-row-\(row.id)")
-        host.fittingHeightDidChange = { [weak self, weak host] height in
-            guard let host else { return }
-            self?.updateEditingRowHeight(
-                to: height,
-                for: host
-            )
+        let editingHost = NativeTimelineEditingHost(rootView: AnyView(root))
+        editingHost.setAccessibilityIdentifier("message-editing-row-\(row.id)")
+        editingHost.fittingHeightDidChange = { [weak self, weak editingHost] _ in
+            guard let self, self.editingRowHost === editingHost else { return }
+            self.positionEditingRow()
         }
-        return host
+        return editingHost
     }
 
     @discardableResult
     func beginEditingCurrentUserMessage(_ messageID: MessageID) -> Bool {
-        guard editingMessageID == nil,
-              let currentUserID = model?.currentUser?.id,
+        guard let currentUserID = model?.currentUser?.id,
               let index = items.firstIndex(where: {
                   $0.messageID == messageID
               }),
@@ -1154,82 +1158,101 @@ extension NativeTimelineCanvasView {
         return editingMessageID == messageID
     }
 
+    /// Follows the edited row through storage updates; an update to its
+    /// message lays the row out again around the editor.
     func reconcileEditingRow() {
         guard let messageID = editingMessageID else { return }
-        if let index = editingRowIndexCache,
-           items.indices.contains(index),
-           items[index].messageID == messageID
-        {
-            positionEditingRow()
-            return
+        if editingRowIndex == nil {
+            // A message deleted mid-edit, or mid-save, takes its editor with it.
+            guard let index = items.firstIndex(where: { $0.messageID == messageID }) else {
+                return finishEditing(at: nil)
+            }
+            editingRowIndexCache = index
         }
-        guard let index = items.firstIndex(where: {
-            $0.messageID == messageID
-        }) else {
-            endEditing(commit: nil)
-            return
+        guard let index = editingRowIndex else { return }
+        // A saved edit has arrived; the row now draws what the editor showed.
+        if let committed = editing.committedContent, let current = items[index].messageRow?.message,
+           current.content == committed
+            || editing.savedEditTimestamp.map({ (current.editedTimestamp ?? .distantPast) >= $0 }) == true {
+            return finishEditing(at: index)
         }
-        editingRowIndexCache = index
-        positionEditingRow()
+        // The update may bring a new message or a new width; either changes
+        // the row around the editor.
+        editing.item = items[index]
+        relayoutEditingRow()
     }
 
-    func positionEditingRow() {
-        guard let host = editingRowHost,
-              editingMessageID != nil,
-              let index = editingRowIndexCache,
-              items.indices.contains(index),
-              let localFrame = editingOverlayLocalFrame
+    func relayoutEditingRow() {
+        guard let item = editing.item, case let .message(row, _, _) = item,
+              let index = editingRowIndex
         else { return }
-        let frame = localFrame.offsetBy(
-            dx: 0,
-            dy: displayedRowOrigin(at: index)
-        )
-        if host.frame != frame {
-            host.frame = frame
+        // The editor reports its draft's height as CoreText suggests it.
+        let draftHeight = editing.editorHeight > 0
+            ? NativeTimelineRowLayout.messageTextHeight(suggested: editing.editorHeight) : 0
+        guard var layout = makeEditingLayout?(item, draftHeight) else { return }
+        // A message's own rendering, such as a heading or jumbo emoji, can
+        // be taller than its raw text; until the draft changes, the row
+        // keeps its height, with the room below the draft.
+        editing.keepsRenderedHeight = editing.draftMatches(row.message)
+        let shortfall = storage.layouts[index].height - layout.height
+        if editing.keepsRenderedHeight, shortfall > 0.5,
+           let tallerLayout = makeEditingLayout?(item, (layout.contentFrame?.height ?? draftHeight) + shortfall) {
+            layout = tallerLayout
         }
+        applyEditingLayout(layout)
     }
 
-    func updateEditingRowHeight(
-        to fittedHeight: CGFloat,
-        for host: NativeTimelineEditingHost
-    ) {
-        guard editingRowHost === host,
-              let index = editingRowIndexCache,
-              items.indices.contains(index),
-              let localFrame = editingOverlayLocalFrame,
-              let previousRowHeight = editingRowHeight
-        else { return }
-        let fittedHeight = max(1, ceil(fittedHeight))
-        let nextRowHeight = NativeTimelineEditingGeometry.rowHeight(
-            avatarMaxY: layouts[index].avatarFrame?.maxY,
-            contentOriginY: localFrame.minY,
-            contentHeight: fittedHeight
-        )
-        let delta = nextRowHeight - previousRowHeight
-        guard abs(delta) > 0.5
-                || abs(fittedHeight - localFrame.height) > 0.5
-        else { return }
-
-        editingRowHeight = nextRowHeight
-        editingOverlayLocalFrame?.size.height = fittedHeight
-        host.frame.size.height = fittedHeight
+    private func applyEditingLayout(_ layout: NativeTimelineRowLayout) {
+        guard let index = editingRowIndex else { return }
+        let previousHeight = editingRowHeight ?? storage.layouts[index].height
+        editing.layout = layout
+        invalidateBitmap(items[index].identifier)
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
-        resizeForEditingChange(by: delta)
+        resizeForEditingChange(by: layout.height - previousHeight)
+        positionEditingRow()
         rebuildAccessibilityProxy(for: items[index].identifier)
+        reconcileInlinePlayers()
         setNeedsDisplay(visibleRect)
     }
 
+    /// The editor sits on the text it replaces; emoji suggestions open
+    /// above it, over the rows before.
+    func positionEditingRow() {
+        guard let host = editingRowHost,
+              let index = editingRowIndex,
+              let content = editing.layout?.contentFrame
+        else { return }
+        // Only the host's height beyond the editor's own is suggestions.
+        let height = host.lastReportedFittingHeight > 0 ? host.lastReportedFittingHeight : content.height
+        let suggestionsHeight = editing.editorHeight > 0 ? max(0, height - editing.editorHeight) : 0
+        // Near the top of the timeline there is no room above; they open below.
+        let unobscuredMinY = visibleRect.minY + (enclosingScrollView?.scrollerInsets.top ?? 0)
+        let opensBelow = suggestionsHeight > 0
+            && displayedRowOrigin(at: index) + content.minY - suggestionsHeight < unobscuredMinY
+        if let draft = editing.draft, suggestionsHeight > 0, draft.showsSuggestionsBelow != opensBelow {
+            draft.showsSuggestionsBelow = opensBelow
+        }
+        let localFrame = CGRect(
+            x: content.minX,
+            y: editing.draft?.showsSuggestionsBelow == true ? content.minY : content.minY - suggestionsHeight,
+            width: content.width,
+            height: height
+        )
+        editingOverlayLocalFrame = localFrame
+        let frame = localFrame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index))
+        if host.frame != frame {
+            host.frame = frame
+        }
+        if let controls = editing.controlsHost {
+            let frame = rowActionsFrame(size: controls.fittingSize, at: index)
+            if controls.frame != frame { controls.frame = frame }
+        }
+    }
+
     func endEditing(commit value: String?) {
-        guard let messageID = editingMessageID else { return }
-        let index =
-            editingRowIndexCache.flatMap { cachedIndex in
-                guard items.indices.contains(cachedIndex),
-                      items[cachedIndex].messageID == messageID
-                else { return nil }
-                return cachedIndex
-            }
-            ?? items.firstIndex(where: { $0.messageID == messageID })
+        guard let messageID = editingMessageID, editing.committedContent == nil else { return }
+        let index = editingRowIndex ?? items.firstIndex(where: { $0.messageID == messageID })
         let message: Message?
         if let index,
            case let .message(row, _, _) = items[index]
@@ -1242,13 +1265,43 @@ extension NativeTimelineCanvasView {
            model?.guildTimeoutUntil(in: message.channelID, guildID: message.guildID) != nil {
             return
         }
-        let delta: CGFloat
-        if let index, let editingRowHeight {
-            delta = editingRowHeight - layouts[index].height
+        if let value, let message, value != message.content {
+            awaitEditedMessage(message, value: value)
         } else {
-            delta = 0
+            finishEditing(at: index)
+            if let value, let message, let edit = actions?.edit {
+                Task { _ = await edit(message, value) }
+            }
         }
+    }
+
+    /// Keeps the saved text in the editor until the timeline shows the
+    /// saved message, so the row never falls back to the old text in
+    /// between, however long the save takes. A failed save gives the row
+    /// back.
+    private func awaitEditedMessage(_ message: Message, value: String) {
+        editing.committedContent = value
+        editing.draft?.isSaving = true
+        editing.controlsHost?.removeFromSuperview()
+        editing.controlsHost = nil
+        guard let edit = actions?.edit else { return finishEditing(at: editingRowIndex) }
+        Task { [weak self, weak draft = editing.draft] in
+            let saved = await edit(message, value)
+            // Only this save's session; a later edit of the message has its own draft.
+            guard let self, let draft, self.editing.draft === draft, self.editing.committedContent != nil else { return }
+            guard let saved else { return self.finishEditing(at: self.editingRowIndex) }
+            // The timeline may already show the save, or a later edit from
+            // elsewhere, whose text can differ from what was typed.
+            self.editing.savedEditTimestamp = saved.editedTimestamp ?? .distantPast
+            self.reconcileEditingRow()
+        }
+    }
+
+    private func finishEditing(at index: Int?) {
+        let delta = editingHeightDelta
+        let identifier = editing.item?.identifier
         editing.clear()
+        if let identifier { invalidateBitmap(identifier) }
         mentionPointerRegionCache.removeAll(keepingCapacity: true)
         codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
         resizeForEditingChange(by: -delta)
@@ -1258,10 +1311,9 @@ extension NativeTimelineCanvasView {
         } else {
             reconcileAccessibilityProxies()
         }
+        reconcileInlinePlayers()
         setNeedsDisplay(visibleRect)
-        if let value, let message {
-            actions?.edit(message, value)
-        }
+        refreshHoverPresentation()
     }
 
     var editingRowIndex: Int? {
@@ -1315,26 +1367,13 @@ extension NativeTimelineCanvasView {
         animatedMediaKeys(for: row, layout: layout)
     }
 
-    func installEditingGeometryForTesting(
-        messageID: MessageID,
-        rowIndex: Int,
-        rowHeight: CGFloat
-    ) {
-        editingMessageID = messageID
-        editingRowIndexCache = rowIndex
-        editingRowHeight = rowHeight
-    }
-
-    var hasEditingGeometryForTesting: Bool {
-        editingMessageID != nil
-    }
 #endif
 
     var editingHeightDelta: CGFloat {
         guard let index = editingRowIndex,
               let editingRowHeight
         else { return 0 }
-        return editingRowHeight - layouts[index].height
+        return editingRowHeight - storage.layouts[index].height
     }
 
     var transientContentOriginY: CGFloat {
@@ -1350,7 +1389,7 @@ extension NativeTimelineCanvasView {
             + NativeTimelineTransientRowGeometry.contentHeight(
                 base: contentHeight,
                 replacementHeight: editingRowHeight,
-                baseRowHeight: editingRowIndex.map { layouts[$0].height }
+                baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
             )
             + bottomSpacerHeight
     }
@@ -1366,7 +1405,7 @@ extension NativeTimelineCanvasView {
                 rowIndex: index,
                 replacementIndex: editingRowIndex,
                 replacementHeight: editingRowHeight,
-                baseRowHeight: editingRowIndex.map { layouts[$0].height }
+                baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
             )
     }
 
@@ -1379,9 +1418,10 @@ extension NativeTimelineCanvasView {
         ) - reactionMotionRemainingHeight(at: index)
     }
 
+    /// Rows after the edited one move with it even when the content origin
+    /// stays, so their overlays and pointer regions follow every change.
     func resizeForEditingChange(by delta: CGFloat) {
         guard abs(delta) > 0.5 else { return }
-        let previousOriginY = contentOriginY
         contentOriginY = transientContentOriginY
         let size = NSSize(
             width: frame.width,
@@ -1389,76 +1429,18 @@ extension NativeTimelineCanvasView {
         )
         applyDocumentSize(size)
         enclosingScrollView?.tile()
-        positionEditingRow()
-        if abs(previousOriginY - contentOriginY) >= 0.5 {
-            mentionPointerRegionCache.removeAll(keepingCapacity: true)
-            codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
-            updateTrackingAreas()
-            window?.invalidateCursorRects(for: self)
-            reconcileAccessibilityProxies()
-            positionAnimatedMediaOverlays()
-            reconcileBeginningSelectionOverlay()
-            positionInlineVideoOverlays()
-            reconcileVoiceMessageOverlay()
-            reconcileActivityIndicators()
-            positionSpoilerOverlays()
-            needsDisplay = true
-        }
-    }
-
-    /// The editor brings its own field. In a bubble row it replaces the
-    /// bubble, keeping the bubble's side, instead of filling its content
-    /// column, which for an outgoing bubble starts against the trailing edge.
-    func editingPlacement(
-        in layout: NativeTimelineRowLayout
-    ) -> (origin: CGPoint, width: CGFloat) {
-        let minimumWidth = InterfaceScale.metric(80)
-        let trailingLimit = bounds.width - MessageRowLayoutMetrics.horizontalInset
-        guard let bubble = layout.bubbleRegion?.frame else {
-            let origin = editingContentOrigin(in: layout)
-            return (origin, max(minimumWidth, trailingLimit - origin.x))
-        }
-        let leadingLimit = layout.bubbleRegion?.isOutgoing == true
-            ? MessageRowLayoutMetrics.horizontalInset + MessageRowLayoutMetrics.avatarDiameter
-            : bubble.minX
-        let width = max(
-            minimumWidth,
-            min(max(bubble.width, InterfaceScale.metric(420)), trailingLimit - leadingLimit)
-        )
-        let originX = layout.bubbleRegion?.isOutgoing == true
-            ? max(leadingLimit, bubble.maxX - width)
-            : bubble.minX
-        return (CGPoint(x: originX, y: bubble.minY), width)
-    }
-
-    func editingContentOrigin(
-        in layout: NativeTimelineRowLayout
-    ) -> CGPoint {
-        var frames: [CGRect] = []
-        if let frame = layout.contentFrame {
-            frames.append(frame)
-        }
-        frames.append(contentsOf: layout.linkedImageRegions.map(\.frame))
-        frames.append(contentsOf: layout.attachmentRegions.map(\.frame))
-        frames.append(contentsOf: layout.embedFrames)
-        frames.append(contentsOf: layout.componentFrames)
-        frames.append(contentsOf: layout.stickerFrames)
-        if let frame = layout.threadFrame {
-            frames.append(frame)
-        }
-        frames.append(contentsOf: layout.reactionRegions.map(\.frame))
-        if let frame = layout.addReactionFrame {
-            frames.append(frame)
-        }
-        if let first = frames.min(by: {
-            $0.minY == $1.minY ? $0.minX < $1.minX : $0.minY < $1.minY
-        }) {
-            return first.origin
-        }
-        return CGPoint(
-            x: layout.authorFrame?.minX ?? InterfaceScale.metric(64),
-            y: (layout.authorFrame?.maxY ?? layout.replyFrame?.maxY ?? InterfaceScale.metric(3)) + InterfaceScale.metric(3)
-        )
+        mentionPointerRegionCache.removeAll(keepingCapacity: true)
+        codeBlockPointerRegionCache.removeAll(keepingCapacity: true)
+        updateTrackingAreas()
+        window?.invalidateCursorRects(for: self)
+        reconcileAccessibilityProxies()
+        positionAnimatedMediaOverlays()
+        reconcileBeginningSelectionOverlay()
+        positionInlineVideoOverlays()
+        reconcileVoiceMessageOverlay()
+        reconcileActivityIndicators()
+        positionSpoilerOverlays()
+        needsDisplay = true
     }
 
     func editingOverlayFrame(at index: Int) -> CGRect {
@@ -1625,11 +1607,17 @@ extension NativeMessageTimelineCoordinator {
         else { return }
         lastEditRequestID = request.id
         guard canvas.beginEditingCurrentUserMessage(request.messageID),
-              let scrollView
+              let scrollView,
+              let index = canvas.editingRowIndex
         else { return }
-        _ = scroll(
-            to: .message(request.messageID, anchor: .center),
-            in: scrollView
-        )
+        // A message in sight, even in part, is edited where it is; one out
+        // of sight is brought just into it, from the side it was on.
+        let row = canvas.rowFrame(at: index)
+        let insets = scrollView.scrollerInsets
+        let visible = canvas.visibleRect.divided(atDistance: insets.top, from: .minYEdge).remainder
+            .divided(atDistance: insets.bottom, from: .maxYEdge).remainder
+        guard !visible.intersects(row) else { return }
+        let fromAbove = row.maxY <= visible.minY
+        _ = scroll(to: .message(request.messageID, anchor: fromAbove ? .top : .bottom), in: scrollView)
     }
 }

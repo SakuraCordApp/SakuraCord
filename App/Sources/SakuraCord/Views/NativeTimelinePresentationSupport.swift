@@ -12,6 +12,27 @@ final class NativeTimelineCanvasStorage {
     var contentHeight: CGFloat = 0
 }
 
+/// The canvas's row layouts, with the row being edited inline laid out
+/// around its editor.
+@MainActor
+struct NativeTimelineCanvasLayouts: @MainActor RandomAccessCollection {
+    let storage: NativeTimelineCanvasStorage
+    let editing: NativeTimelineEditingSession
+
+    var startIndex: Int { storage.layouts.startIndex }
+    var endIndex: Int { storage.layouts.endIndex }
+
+    subscript(index: Int) -> NativeTimelineRowLayout {
+        // The edit's row index can trail a storage update until the canvas
+        // reconciles it, so the replacement also has to match the message.
+        if index == editing.rowIndex, let layout = editing.layout,
+           storage.items[index].messageID == editing.messageID {
+            return layout
+        }
+        return storage.layouts[index]
+    }
+}
+
 nonisolated final class NativeTimelineAccessibilityElement:
     NSAccessibilityElement
 {
@@ -150,13 +171,6 @@ nonisolated enum NativeTimelineAccessibilityPolicy {
         )
     }
 
-    static func showsMessageBody(
-        messageID: MessageID,
-        editingMessageID: MessageID?
-    ) -> Bool {
-        messageID != editingMessageID
-    }
-
     static func editingOverlayInsertionIndex(
         in rowIdentifiers: [NativeMessageTimelineItem.Identifier],
         editingItemIdentifier: NativeMessageTimelineItem.Identifier?
@@ -167,19 +181,6 @@ nonisolated enum NativeTimelineAccessibilityPolicy {
               )
         else { return nil }
         return rowIndex + 1
-    }
-}
-
-nonisolated enum NativeTimelineEditingGeometry {
-    static func rowHeight(
-        avatarMaxY: CGFloat?,
-        contentOriginY: CGFloat,
-        contentHeight: CGFloat
-    ) -> CGFloat {
-        max(
-            avatarMaxY ?? 0,
-            contentOriginY + contentHeight + 3
-        )
     }
 }
 

@@ -28,6 +28,10 @@ struct ServerRailContainer: View {
             readAll: { readAllConfirmationSession = model.accountSession() },
             moveItems: model.moveServerRailItems,
             combineGuilds: model.combineServerRailGuild,
+            voicePreview: model.serverRailVoicePreview(for:),
+            resolveVoiceParticipants: { guildID, userIDs in
+                await model.resolveServerRailVoiceParticipants(userIDs, in: guildID)
+            },
             contextMenuActions: ServerRailContextMenuActions(
                 markRead: model.markGuildRead,
                 canInvite: { model.serverInviteChannel(for: $0.id) != nil },
@@ -123,6 +127,8 @@ struct ServerRailView: View {
     var readAll: () -> Void = {}
     var moveItems: ([GuildRailItem.RailIdentifier], GuildRailDestination) -> Void = { _, _ in }
     var combineGuilds: (GuildID, GuildID) -> Void = { _, _ in }
+    var voicePreview: (GuildID) -> ServerRailVoicePreview? = { _ in nil }
+    var resolveVoiceParticipants: (GuildID, [UserID]) async -> Void = { _, _ in }
     let contextMenuActions: ServerRailContextMenuActions
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
@@ -164,6 +170,9 @@ struct ServerRailView: View {
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
         }
+        .onScrollPhaseChange { _, phase in
+            if drag.isScrolling != phase.isScrolling { drag.isScrolling = phase.isScrolling }
+        }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
         // Scrolled icons must not draw beneath the window's traffic lights.
@@ -179,7 +188,11 @@ struct ServerRailView: View {
                 if let hoverItem, drag.draggedID == nil {
                     ServerRailHoverLabel(
                         name: hoverItem.name,
-                        maximumWidth: max(0, sidebarWidth - ChatChromeMetrics.serverRailWidth - 7 - InterfaceScale.metric(16))
+                        guildID: hoverItem.guildID,
+                        isMuted: hoverItem.isMuted,
+                        maximumWidth: max(0, sidebarWidth - ChatChromeMetrics.serverRailWidth - 7 - InterfaceScale.metric(16)),
+                        voicePreview: voicePreview,
+                        resolveVoiceParticipants: resolveVoiceParticipants
                     )
                         .offset(
                             x: ChatChromeMetrics.serverRailWidth + 7,
@@ -331,7 +344,7 @@ private struct ReadAllServersButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .accessibilityIdentifier("read-all-servers")
     }
 }
@@ -377,7 +390,7 @@ private struct DirectMessageRailButton: View {
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
             isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
         }
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }
@@ -395,40 +408,52 @@ struct ServerRailBadgedIcon<Icon: View>: View {
     }
 
     var body: some View {
-        if mentionCount > 0 {
-            icon
-                .overlay(alignment: .bottomTrailing) {
+        // One structure with or without a badge, so the icon keeps its
+        // identity while a badge comes and goes.
+        icon
+            .overlay(alignment: .bottomTrailing) {
+                ServerRailMentionBadge(count: mentionCount, isCutout: true)
+                    .offset(x: InterfaceScale.metric(badgeOffset + 2), y: InterfaceScale.metric(badgeOffset + 2))
+                    .blendMode(.destinationOut)
+                    .accessibilityHidden(true)
+            }
+            .compositingGroup()
+            .overlay(alignment: .bottomTrailing) {
+                ServerRailMentionBadge(count: mentionCount)
+                    .opacity(drawsBadgeInOverlay ? 0 : 1)
+                    .offset(x: InterfaceScale.metric(badgeOffset), y: InterfaceScale.metric(badgeOffset))
+            }
+    }
+}
+
+/// A rail icon's mention count, empty at zero. A cutout is the badge's
+/// slightly larger silhouette, which `.destinationOut` cuts from the icon
+/// behind the badge; both run the same motion, so they stay in step.
+struct ServerRailMentionBadge: View {
+    let count: Int
+    var isCutout = false
+
+    var body: some View {
+        ZStack {
+            if count > 0 {
+                let badge = Text(count, format: .number)
+                    .font(.interfaceSystem(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText(value: Double(count)))
+                    .padding(.horizontal, InterfaceScale.metric(5))
+                    .frame(minWidth: InterfaceScale.metric(18), minHeight: InterfaceScale.metric(18))
+                    .background(Color(hex: MentionRed.hex), in: Capsule())
+                if isCutout {
                     badge
                         .padding(InterfaceScale.metric(2))
                         .background(.black, in: Capsule())
-                        .offset(x: InterfaceScale.metric(badgeOffset + 2), y: InterfaceScale.metric(badgeOffset + 2))
-                        .blendMode(.destinationOut)
-                        .accessibilityHidden(true)
+                        .transition(MentionBadgeMotion.transition)
+                } else {
+                    badge.transition(MentionBadgeMotion.transition)
                 }
-                .compositingGroup()
-                .overlay(alignment: .bottomTrailing) {
-                    badge
-                        .opacity(drawsBadgeInOverlay ? 0 : 1)
-                        .offset(x: InterfaceScale.metric(badgeOffset), y: InterfaceScale.metric(badgeOffset))
-                }
-        } else {
-            icon
+            }
         }
-    }
-
-    private var badge: some View { ServerRailMentionBadge(count: mentionCount) }
-}
-
-struct ServerRailMentionBadge: View {
-    let count: Int
-
-    var body: some View {
-        Text(count, format: .number)
-            .font(.interfaceSystem(size: 10, weight: .bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, InterfaceScale.metric(5))
-            .frame(minWidth: InterfaceScale.metric(18), minHeight: InterfaceScale.metric(18))
-            .background(Color(hex: 0xF23F43), in: Capsule())
+        .mentionBadgeMotion(count)
     }
 }
 
@@ -596,36 +621,157 @@ struct GuildRailButton: View {
         )
         .help(displayName)
         .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
-            isHovering ? ServerRailHoverItem(name: displayName, bounds: bounds) : nil
+            isHovering
+                ? ServerRailHoverItem(
+                    name: displayName,
+                    guildID: guild.id,
+                    isMuted: presentation.notificationSettings.isMuted
+                        && (presentation.notificationSettings.muteConfiguration?.isActive() ?? true),
+                    bounds: bounds
+                )
+                : nil
         }
         .onScrollVisibilityChange(threshold: 0.01) { iconIsVisible = $0 }
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }
 
 private struct ServerRailHoverLabel: View {
     let name: String
+    let guildID: GuildID?
+    let isMuted: Bool
     let maximumWidth: CGFloat
+    // Called here rather than by the rail so voice-state changes re-render
+    // only the visible card.
+    let voicePreview: (GuildID) -> ServerRailVoicePreview?
+    let resolveVoiceParticipants: (GuildID, [UserID]) async -> Void
 
     var body: some View {
+        content
+            // Centre the label or card on the hovered row, whatever its height.
+            .frame(height: 32)
+            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        let voice = guildID.flatMap(voicePreview)
+        if voice != nil || isMuted {
+            VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
+                VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                    title
+                    if isMuted {
+                        Text("Muted")
+                            .font(.interface(.subheadline).weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let voice {
+                    ServerRailVoicePreviewRow(preview: voice)
+                }
+            }
+            .padding(.horizontal, InterfaceScale.metric(11))
+            .padding(.vertical, InterfaceScale.metric(9))
+            .frame(maxWidth: maximumWidth, alignment: .leading)
+            .fixedSize()
+            .glassEffect(
+                .regular,
+                in: RoundedRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous)
+            )
+            // Runs each time the card opens. Keyed by guild too: moving between
+            // guilds that show the same users must still read the new guild's.
+            .task(id: VoiceResolution(guildID: guildID, userIDs: voice?.providerUserIDs ?? [])) {
+                guard let guildID, let userIDs = voice?.providerUserIDs else { return }
+                await resolveVoiceParticipants(guildID, userIDs)
+            }
+        } else {
+            title
+                .padding(.horizontal, InterfaceScale.metric(11))
+                .frame(maxWidth: maximumWidth)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(height: InterfaceScale.metric(32))
+                .glassEffect(.regular, in: Capsule())
+        }
+    }
+
+    private struct VoiceResolution: Hashable {
+        let guildID: GuildID?
+        let userIDs: [UserID]
+    }
+
+    private var title: some View {
         Text(name)
             .font(.interface(.callout).weight(.semibold))
             .lineLimit(1)
             .truncationMode(.tail)
-            .padding(.horizontal, InterfaceScale.metric(11))
-            .frame(maxWidth: maximumWidth)
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(height: InterfaceScale.metric(32))
-            .glassEffect(.regular, in: Capsule())
-            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+    }
+}
+
+/// A speaker, the first participants' overlapping avatars and a count of the
+/// rest. Each avatar is cut away beneath the one that overlaps it.
+private struct ServerRailVoicePreviewRow: View {
+    let preview: ServerRailVoicePreview
+
+    private var avatarSize: CGFloat { InterfaceScale.metric(24) }
+    private var overlap: CGFloat { InterfaceScale.metric(6) }
+    private var cutoutGap: CGFloat { InterfaceScale.metric(2) }
+
+    var body: some View {
+        HStack(spacing: InterfaceScale.metric(8)) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.interfaceSystem(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: -overlap) {
+                ForEach(Array(preview.participants.enumerated()), id: \.element.id) { index, participant in
+                    let isOverlapped = index < preview.participants.count - 1 || preview.overflowCount > 0
+                    avatar(participant)
+                        .mask { cutout(isActive: isOverlapped) }
+                }
+                if preview.overflowCount > 0 {
+                    Text("+\(preview.overflowCount.formatted())")
+                        .font(.interfaceSystem(size: 11, weight: .bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, InterfaceScale.metric(7))
+                        .frame(minWidth: avatarSize, minHeight: avatarSize)
+                        .background(Color.secondary.opacity(0.25), in: Capsule())
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func avatar(_ participant: ServerRailVoiceParticipant) -> some View {
+        if let name = participant.name {
+            AvatarView(name: name, url: participant.avatarURL, size: avatarSize, animates: false)
+        } else {
+            Circle()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(width: avatarSize, height: avatarSize)
+        }
+    }
+
+    /// The avatar's full square, less a slightly larger circle where the
+    /// next avatar or count starts.
+    private func cutout(isActive: Bool) -> some View {
+        Rectangle()
+            .overlay(alignment: .leading) {
+                Circle()
+                    .frame(width: avatarSize + cutoutGap * 2, height: avatarSize + cutoutGap * 2)
+                    .offset(x: avatarSize - overlap - cutoutGap)
+                    .opacity(isActive ? 1 : 0)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
     }
 }
 
 struct ServerRailHoverItem {
     let name: String
+    var guildID: GuildID?
+    var isMuted = false
     let bounds: Anchor<CGRect>
 }
 
@@ -666,7 +812,7 @@ private struct HomeRailButton: View {
         }
         .buttonStyle(ServerRailButtonStyle())
         .accessibilityLabel("Direct Messages")
-        .onModalHover { isHovering = $0 }
+        .onServerRailHover { isHovering = $0 }
         .help("Direct Messages")
     }
 }
@@ -740,6 +886,38 @@ extension EnvironmentValues {
     @Entry var serverRailMentionBadgesInOverlay = false
     @Entry var serverRailFolderIndicatorsInOverlay = false
     @Entry var serverRailIsDragPreview = false
+}
+
+extension View {
+    /// Hover for a server rail row, which ignores the pointer arriving over
+    /// it while the rail scrolls.
+    func onServerRailHover(perform action: @escaping (Bool) -> Void) -> some View {
+        modifier(ServerRailHover(action: action))
+    }
+}
+
+private struct ServerRailHover: ViewModifier {
+    let action: (Bool) -> Void
+    @Environment(ServerRailDragController.self) private var drag
+    @State private var pointer = ServerRailPointer()
+
+    func body(content: Content) -> some View {
+        content
+            .onModalHover { isInside in
+                pointer.isInside = isInside
+                if !isInside || !drag.isScrolling { action(isInside) }
+            }
+            .onChange(of: drag.isScrolling) { _, isScrolling in
+                if !isScrolling, pointer.isInside { action(true) }
+            }
+    }
+}
+
+/// Where the pointer is over a rail row, kept out of view state so
+/// following it while the rail scrolls re-renders nothing.
+final class ServerRailPointer {
+    var isInside = false
+    var location: CGPoint?
 }
 
 /// Rail selection is drawn by the indicator; pressing must not tint the icon.

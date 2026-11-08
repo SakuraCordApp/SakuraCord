@@ -467,8 +467,9 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
 }
 
 @Test func `newest button shows once the reader is away from the newest message`() {
-    func shows(established: Bool = true, nearBottom: Bool, count: Int = 2) -> Bool {
+    func shows(enabled: Bool = true, established: Bool = true, nearBottom: Bool, count: Int = 2) -> Bool {
         TimelineNewestButtonPolicy.isShown(
+            isEnabled: enabled,
             hasEstablishedInitialPosition: established,
             isNearBottom: nearBottom,
             messageCount: count
@@ -479,6 +480,7 @@ func `permission resolver ignores noncanonical numeric member ids`(_ overwriteID
     // A timeline still settling its first position, or an empty one, has none.
     #expect(!shows(established: false, nearBottom: false))
     #expect(!shows(nearBottom: false, count: 0))
+    #expect(!shows(enabled: false, nearBottom: false))
 }
 
 @Test func `wheel input toward newest is downward and vertical`() {

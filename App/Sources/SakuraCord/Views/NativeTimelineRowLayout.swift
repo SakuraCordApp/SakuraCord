@@ -73,15 +73,21 @@ struct NativeTimelineRowLayout {
         let frame: CGRect
         let textRegions: [TextRegion]
         let imageRegions: [ImageRegion]
-        let mediaFrame: CGRect?
+        var mediaFrame: CGRect?
         let mediaURL: URL?
         let mediaPreviewURL: URL?
         let mediaPlaceholder: NativeTimelineMediaPlaceholder?
+        var mediaFillsFrame = false
         let mediaIsVideo: Bool
         let mediaAutoplaysInline: Bool
         let mediaPosterFillsFrame: Bool
         let accentColor: UInt32?
         let drawsTopSeparator: Bool
+
+        /// Discord rounds a card tighter than the media it otherwise covers.
+        var cornerRadius: CGFloat {
+            kind == .card ? DiscordRichMessageMetrics.embedCornerRadius : DiscordRichMessageMetrics.cardCornerRadius
+        }
     }
 
     struct SakuraCordDeepLinkRegion {
@@ -264,7 +270,8 @@ struct NativeTimelineRowLayout {
         width proposedWidth: CGFloat,
         source: AppModel? = nil,
         metrics: Metrics? = nil,
-        relativeTo date: Date = .now
+        relativeTo date: Date = .now,
+        editingTextHeight: CGFloat? = nil
     ) -> Self {
         let width = max(InterfaceScale.metric(220), proposedWidth)
         switch item {
@@ -319,7 +326,8 @@ struct NativeTimelineRowLayout {
                 width: width,
                 source: source,
                 metrics: metrics ?? Metrics(source: source),
-                relativeTo: date
+                relativeTo: date,
+                editingTextHeight: editingTextHeight
             )
             return builder.make()
         }

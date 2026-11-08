@@ -1,12 +1,10 @@
-import OSLog
 import SakuraCordModels
 import SwiftUI
 
 struct ForwardMessageOverlay: View {
     let model: AppModel
     let message: Message
-    let animationState: WindowModalContext
-    let dismiss: () -> Void
+    @Environment(\.windowModalContext) private var dismiss
     @State private var query = ""
     @State private var context = ""
     @State private var selectedDestinationIDs: [ForwardDestinationID] = []
@@ -16,16 +14,14 @@ struct ForwardMessageOverlay: View {
     @State private var displayedDestinations: [ForwardDestination] = []
     @State private var unqueriedDestinations: [ForwardDestination] = []
     @State private var destinationScrollPosition: ForwardDestinationID?
-    @FocusState private var isContextFocused: Bool
+    @FocusState private var focus: Field?
+
+    private enum Field { case search, context }
 
     private struct SearchRequest: Hashable {
         let query: String
         let pinnedDestinationIDs: [ForwardDestinationID]
         let indexRevision: Int
-    }
-
-    private var isVisible: Bool {
-        animationState.isVisible
     }
 
     private func rebuildSearchIndex() async {
@@ -117,68 +113,14 @@ struct ForwardMessageOverlay: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                WindowModalBackdrop(dismiss: dismiss)
-                GlassEffectContainer(spacing: 0) {
-                    VStack(spacing: 0) {
-                        header
-                        Divider()
-                        destinationList
-                        Divider()
-                        footer
-                    }
-                    .background(
-                        Color(nsColor: .windowBackgroundColor),
-                        in: ConcentricRectangle(
-                            cornerRadius: ForwardPickerLayoutMetrics.cornerRadius,
-                            style: .continuous
-                        )
-                    )
-                    .overlay {
-                        ConcentricRectangle(
-                            cornerRadius: ForwardPickerLayoutMetrics.cornerRadius,
-                            style: .continuous
-                        )
-                        .stroke(.separator, lineWidth: 1)
-                    }
-                    .shadow(color: .black.opacity(0.28), radius: InterfaceScale.metric(24), y: 10)
-                    .scaleEffect(isVisible ? 1 : 0.965)
-                    .frame(
-                        width: min(
-                            ForwardPickerLayoutMetrics.width,
-                            max(
-                                0,
-                                geometry.size.width
-                                    - ForwardPickerLayoutMetrics.outerInset * 2
-                            )
-                        ),
-                        height: min(
-                            ForwardPickerLayoutMetrics.height,
-                            max(
-                                0,
-                                geometry.size.height
-                                    - ForwardPickerLayoutMetrics.outerInset * 2
-                            )
-                        )
-                    )
-                    .padding(ForwardPickerLayoutMetrics.outerInset)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            header
+            Divider()
+            destinationList
+            Divider()
+            composer
         }
-        .ignoresSafeArea()
-        // Keep a modal-level SwiftUI responder in the chain after Search gives
-        // up focus. AppKit routes Escape through `cancelOperation(_:)`, while
-        // SwiftUI's exit command reaches this focusable ancestor for controls
-        // that install their own internal responder.
-        .focusable()
-        .focusEffectDisabled()
-        .accessibilityAddTraits(.isModal)
-        .animation(
-            .easeOut(duration: WindowModalAnimationTiming.openingSeconds),
-            value: isVisible
-        )
+        .windowModalSize(width: ForwardPickerLayoutMetrics.width, height: ForwardPickerLayoutMetrics.height)
         // Discord's UserSearchContextManager stays subscribed to UserStore,
         // GuildMemberStore, ChannelStore, and supplemental READY updates while
         // the modal is open. Rebuild only when those source stores advance;
@@ -194,35 +136,30 @@ struct ForwardMessageOverlay: View {
         )) {
             await refreshDisplayedDestinations()
         }
-        .onExitCommand(perform: dismiss)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Forward To")
     }
 
+    /// The pickers' inline search header; Cancel and Escape close the picker.
     private var header: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(3)) {
-                    Text("Forward To")
-                        .font(.interface(.title2).weight(.semibold))
-                    Text(selectedDestinationIDs.count >= ForwardDestinationSearchPolicy.maximumSelections
-                        ? "Maximum 5 places at once."
-                        : "Select where you want to share this message.")
-                        .font(.interface(.callout))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                HoverCloseButton(
-                    help: "Close",
-                    accessibilityIdentifier: "forward-close",
-                    action: dismiss
-                )
-            }
-            PickerSearchField(
-                text: $query,
-                placeholder: "Search",
-                accessibilityIdentifier: "forward-search"
-            )
+        PickerSearchHeader(text: $query, focus: { focus = .search }, input: {
+            TextField(searchPlaceholder, text: $query)
+                .textFieldStyle(.plain)
+                .font(.interfaceSystem(size: ChatChromeMetrics.pickerSearchHeaderFontSize))
+                .tint(SakuraCordAccentColor.color)
+                .focused($focus, equals: .search)
+        })
+        .accessibilityIdentifier("forward-search")
+        .task {
+            await Task.yield()
+            focus = .search
         }
-        .padding(InterfaceScale.metric(24))
+    }
+
+    private var searchPlaceholder: String {
+        selectedDestinationIDs.count >= ForwardDestinationSearchPolicy.maximumSelections
+            ? "Maximum 5 places at once"
+            : "Forward to…"
     }
 
     private var destinationList: some View {
@@ -231,7 +168,7 @@ struct ForwardMessageOverlay: View {
             // 80 rows. Keeping that bounded list eager avoids SwiftUI's lazy
             // collection invalidation trap when accessibility scroll actions
             // race a live search-index update.
-            VStack(spacing: 0) {
+            VStack(spacing: InterfaceScale.metric(2)) {
                 ForEach(displayedDestinations) { destination in
                     ForwardDestinationRow(
                         destination: destination,
@@ -256,61 +193,46 @@ struct ForwardMessageOverlay: View {
         }
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    /// The forwarded message and its optional note share one row 8 points
+    /// inside the panel; the footer capsules sit 12 points inside it.
+    private var composer: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
+                ForwardedMessagePreview(model: model, message: message)
+                TextField("Add an optional message…", text: $context, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .tint(SakuraCordAccentColor.color)
+                    .lineLimit(1 ... 3)
+                    .focused($focus, equals: .context)
+                    .padding(.horizontal, InterfaceScale.metric(8))
+                    .padding(.vertical, InterfaceScale.metric(6))
+            }
+            .modifier(ModalRowBackground(isHighlighted: focus == .context) { focus = .context })
+            .padding(InterfaceScale.metric(8))
             if let error = model.forwardingErrorMessage {
                 Text(error)
-                    .font(.interface(.caption))
+                    .font(.interface(.callout))
                     .foregroundStyle(.red)
-                    .padding(.horizontal, InterfaceScale.metric(24))
-                    .padding(.top, InterfaceScale.metric(8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, InterfaceScale.metric(20))
+                    .padding(.bottom, InterfaceScale.metric(4))
             }
-            ForwardedMessagePreview(model: model, message: message)
-                .padding(.horizontal, InterfaceScale.metric(24))
-                .padding(.top, InterfaceScale.metric(16))
-            HStack(alignment: .bottom, spacing: InterfaceScale.metric(8)) {
-                TextField("Add an optional message…", text: $context, axis: .vertical)
-                    .tint(SakuraCordAccentColor.color)
-                    .textFieldStyle(.plain)
-                    .focused($isContextFocused)
-                    .lineLimit(1 ... 3)
-                    .padding(.horizontal, InterfaceScale.metric(11))
-                    .frame(minHeight: InterfaceScale.metric(40))
-                    .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous))
-                    .onTapGesture { isContextFocused = true }
-                    .glassEffect(
-                        .regular.interactive(),
-                        in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous)
-                    )
-                Button {
+            Divider()
+            HStack {
+                ModalGlassButton(symbol: "xmark", label: "Cancel") { dismiss?() }
+                Spacer(minLength: InterfaceScale.metric(16))
+                ModalGlassButton(
+                    symbol: "arrowshape.turn.up.right.fill",
+                    label: selectedDestinationIDs.count > 1 ? "Send (\(selectedDestinationIDs.count))" : "Send",
+                    primary: true,
+                    isLoading: model.isForwardingMessages
+                ) {
                     let destinations = selectedDestinationIDs
                     Task { await model.forward(message, to: destinations, context: context) }
-                } label: {
-                    Group {
-                        if model.isForwardingMessages {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text(selectedDestinationIDs.count > 1
-                                ? "Send (\(selectedDestinationIDs.count))"
-                                : "Send")
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .frame(minWidth: InterfaceScale.metric(66))
-                    .frame(height: InterfaceScale.metric(40))
-                    .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .contentShape(ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous))
-                .glassEffect(
-                    .regular.tint(SakuraCordAccentColor.color).interactive(),
-                    in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(12), style: .continuous)
-                )
                 .disabled(selectedDestinationIDs.isEmpty || model.isForwardingMessages)
             }
-            .padding(.horizontal, InterfaceScale.metric(24))
-            .padding(.top, InterfaceScale.metric(16))
-            .padding(.bottom, InterfaceScale.metric(8))
+            .padding(InterfaceScale.metric(12))
         }
     }
 

@@ -12,6 +12,8 @@ extension NativeTimelineRowLayout {
         let width: CGFloat
         let source: AppModel?
         let metrics: Metrics
+        /// The inline editor's text height while this message is edited.
+        let editingTextHeight: CGFloat?
 
         private var result = NativeTimelineRowLayout()
         private var contentPresentation: NativeTimelineTextPresentation.Value
@@ -47,8 +49,12 @@ extension NativeTimelineRowLayout {
         private var timestampGutterWidth: CGFloat { max(avatarWidth, metrics.timestampGutterWidth) }
         private let presentedReactions: [Reaction]
 
-        init(row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics, relativeTo date: Date = .now) {
+        init(
+            row: MessageRowPresentation, isUnreadBoundary: Bool, width: CGFloat, source: AppModel?, metrics: Metrics,
+            relativeTo date: Date = .now, editingTextHeight: CGFloat? = nil
+        ) {
             self.row = row
+            self.editingTextHeight = editingTextHeight
             self.isUnreadBoundary = isUnreadBoundary
             self.width = width
             self.source = source
@@ -66,6 +72,9 @@ extension NativeTimelineRowLayout {
         /// Replaces the estimated bubble width once the real content extent
         /// is known.
         private var fittedBubbleContentWidth: CGFloat?
+        /// Where an inline edit's text goes in a bubble, which may be wider
+        /// than the message's own text.
+        private var editingTextColumn: NativeTimelineBubbleLayout.Column?
 
         mutating func make() -> NativeTimelineRowLayout {
             let unmeasured = self
@@ -88,9 +97,10 @@ extension NativeTimelineRowLayout {
                   layout.embedRegions.allSatisfy({ $0.kind == .bareMedia })
             else { return nil }
             var extent = InterfaceScale.metric(28)
-            if let attributedContent = layout.attributedContent, let framesetter = layout.contentFramesetter {
+            // The message's own text, which an inline edit hides from the layout.
+            if let attributedContent = contentPresentation.attributedContent {
                 extent = max(extent, NativeTimelineBubbleLayout.measuredTextWidth(
-                    framesetter,
+                    contentPresentation.framesetter,
                     value: attributedContent,
                     maximumWidth: contentWidth
                 ))
@@ -153,15 +163,23 @@ extension NativeTimelineRowLayout {
                     isEnabled: usesBubbles,
                     translation: translationPresentation
                 )
-            let bubbleColumn = NativeTimelineBubbleLayout.column(
-                availableWidth: width,
-                horizontalInset: horizontalInset,
-                avatarWidth: avatarWidth,
-                columnGap: columnGap,
-                isGenerated: isGenerated,
-                context: bubbleContext,
-                preferredContentWidth: preferredBubbleContentWidth
-            )
+            func column(preferring preferredContentWidth: CGFloat) -> NativeTimelineBubbleLayout.Column {
+                NativeTimelineBubbleLayout.column(
+                    availableWidth: width,
+                    horizontalInset: horizontalInset,
+                    avatarWidth: avatarWidth,
+                    columnGap: columnGap,
+                    isGenerated: isGenerated,
+                    context: bubbleContext,
+                    preferredContentWidth: preferredContentWidth
+                )
+            }
+            let bubbleColumn = column(preferring: preferredBubbleContentWidth)
+            // An edit can outgrow the text it replaces. Only its editor and
+            // the bubble around it widen; media keeps its place.
+            if usesBubbles, editingTextHeight != nil {
+                editingTextColumn = column(preferring: NativeTimelineBubbleLayout.maximumContentWidth(availableWidth: width))
+            }
             contentX = row.isResource ? horizontalInset : bubbleColumn.contentX
             contentWidth = row.isResource ? width - horizontalInset * 2 : bubbleColumn.contentWidth
             ordinaryContentWidth = max(
@@ -510,6 +528,11 @@ extension NativeTimelineRowLayout {
             }
 
             if message.forwardedSnapshot != nil {
+                // The bar takes the column's leading edge and the forwarded
+                // content moves right of it, so the bar stays clear of the
+                // avatar gutter and a bubble's rim.
+                contentX += MessageRowLayoutMetrics.forwardedContentInset
+                contentWidth -= MessageRowLayoutMetrics.forwardedContentInset
                 result.forwardedHeaderFrame = CGRect(
                     x: contentX,
                     y: verticalOffset,
@@ -527,9 +550,11 @@ extension NativeTimelineRowLayout {
                 contentWidth,
                 DiscordRichMessageMetrics.maximumWidth
             )
-            result.attributedContent = contentPresentation.attributedContent
-            result.contentFramesetter = contentPresentation.framesetter
-            if let attributedContent = contentPresentation.attributedContent {
+            if let editingTextHeight {
+                appendEditingText(height: editingTextHeight)
+            } else if let attributedContent = contentPresentation.attributedContent {
+                result.attributedContent = attributedContent
+                result.contentFramesetter = contentPresentation.framesetter
                 verticalOffset += NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: attributedContent)
                 let textHeight = NativeTimelineRowLayout.measuredTextHeight(
                     contentPresentation.framesetter,
@@ -583,6 +608,24 @@ extension NativeTimelineRowLayout {
                 verticalOffset = layout.frame.maxY
                 hasRichContent = true
             }
+        }
+
+        /// The editor takes the text's place.
+        private mutating func appendEditingText(height: CGFloat) {
+            // The row follows the draft as it grows and shrinks. Until the
+            // editor has measured it, the text keeps its own height.
+            let height = height > 0 ? height : contentPresentation.attributedContent.map { value in
+                NativeTimelineMarkdownChromeMetrics.leadingVisualInset(in: value)
+                    + NativeTimelineRowLayout.measuredTextHeight(
+                        contentPresentation.framesetter, value: value, length: value.length, width: contentWidth
+                    )
+            } ?? 0
+            result.contentFrame = CGRect(
+                x: editingTextColumn?.contentX ?? contentX, y: verticalOffset,
+                width: editingTextColumn?.contentWidth ?? contentWidth, height: height
+            )
+            verticalOffset += height
+            hasRichContent = true
         }
 
         private mutating func appendLinkedImages() {
@@ -757,12 +800,10 @@ extension NativeTimelineRowLayout {
                 }
             }
             if !usesComponentsV2 {
-                let visibleEmbeds =
-                    MessageEmbedPresentation.visibleEmbeds(
-                        for: message
-                    )
+                let visibleEmbeds = MessageEmbedPresentation.visibleEmbeds(for: message)
                 result.embedRegions.reserveCapacity(visibleEmbeds.count)
-                for embed in visibleEmbeds {
+                for embeds in MessageEmbedPresentation.groupedEmbeds(visibleEmbeds) {
+                    let embed = embeds[0]
                     let embedY = verticalOffset + (hasRichContent ? InterfaceScale.metric(8) : 0)
                     if embed.type == "components" {
                         if let region = NativeTimelineComponentLayout.make(
@@ -780,17 +821,17 @@ extension NativeTimelineRowLayout {
                         }
                         continue
                     }
-                    guard let region = NativeTimelineEmbedLayout.make(
-                        embed: embed,
+                    let regions = NativeTimelineEmbedLayout.makeGroup(
+                        embeds: embeds,
                         message: message,
                         source: source,
-                        attachments: message.attachments,
                         origin: CGPoint(x: contentX, y: embedY),
                         maximumWidth: inlineMediaMaximumWidth,
                         integratesWithBubble: usesBubbles,
                         drawsTopSeparator: usesBubbles && hasRichContent
-                    ) else { continue }
-                    result.embedRegions.append(region)
+                    )
+                    guard let region = regions.first else { continue }
+                    result.embedRegions.append(contentsOf: regions)
                     verticalOffset = region.frame.maxY
                     hasRichContent = true
                 }
@@ -913,8 +954,10 @@ extension NativeTimelineRowLayout {
                 hasRichContent = true
             }
             if let forwardedBarStartY {
+                contentX -= MessageRowLayoutMetrics.forwardedContentInset
+                contentWidth += MessageRowLayoutMetrics.forwardedContentInset
                 result.forwardedBarFrame = CGRect(
-                    x: contentX - InterfaceScale.metric(11),
+                    x: contentX,
                     y: forwardedBarStartY,
                     width: InterfaceScale.metric(3),
                     height: max(InterfaceScale.metric(18), verticalOffset - forwardedBarStartY)
@@ -940,9 +983,12 @@ extension NativeTimelineRowLayout {
 
             if usesBubbles, hasRichContent {
                 verticalOffset += NativeTimelineBubbleLayout.verticalPadding
+                let editing = editingTextColumn ?? .init(contentX: contentX, contentWidth: contentWidth)
+                let bubbleMinX = min(contentX, editing.contentX)
+                let bubbleMaxX = max(contentX + contentWidth, editing.contentX + editing.contentWidth)
                 let region = NativeTimelineBubbleLayout.region(
-                    contentX: contentX,
-                    contentWidth: contentWidth,
+                    contentX: bubbleMinX,
+                    contentWidth: bubbleMaxX - bubbleMinX,
                     minY: bubbleStartY,
                     maxY: verticalOffset,
                     isOutgoing: isOutgoingBubble,

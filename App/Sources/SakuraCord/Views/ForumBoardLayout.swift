@@ -158,6 +158,8 @@ struct ForumBoardLayout {
     }
 
     let width: CGFloat
+    /// Cards per row: one in list mode.
+    let columns: Int
     let entries: [Entry]
     let contentHeight: CGFloat
     let indexByID: [ForumBoardItem.Identifier: Int]
@@ -222,6 +224,7 @@ struct ForumBoardLayout {
         entries.reserveCapacity(items.count)
         var rowStarts: [RowStart] = []
         var cursorY = metrics.contentInset
+        var columns = 1
 
         func appendFullWidth(_ item: ForumBoardItem, height: CGFloat, lines: Int = 0) {
             if !entries.isEmpty { cursorY += metrics.cardSpacing }
@@ -234,7 +237,7 @@ struct ForumBoardLayout {
         switch mode {
         case .gallery:
             let spacing = metrics.gallerySpacing
-            let columns = max(1, Int((innerWidth + spacing) / (metrics.galleryMinimumColumnWidth + spacing)))
+            columns = max(1, Int((innerWidth + spacing) / (metrics.galleryMinimumColumnWidth + spacing)))
             let columnWidth = floor((innerWidth - spacing * CGFloat(columns - 1)) / CGFloat(columns))
             var column = 0
             var rowY = cursorY
@@ -305,6 +308,7 @@ struct ForumBoardLayout {
         }
         return Self(
             width: width,
+            columns: columns,
             entries: entries,
             contentHeight: cursorY + metrics.contentInset,
             indexByID: indexByID,

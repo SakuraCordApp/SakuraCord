@@ -183,10 +183,24 @@ final class NativeTimelinePointerState {
 @MainActor
 final class NativeTimelineEditingSession {
     var host: NativeTimelineEditingHost?
+    /// Cancel and Save, where the row's hover actions otherwise appear.
+    var controlsHost: NativeTimelineActionCapsuleHost?
     weak var textView: ComposerNSTextView?
     var messageID: MessageID?
     var rowIndex: Int?
-    var rowHeight: CGFloat?
+    /// The row laid out around the editor, standing in for its stored layout.
+    var layout: NativeTimelineRowLayout?
+    /// The item `layout` was made from, so an update to the message relays it out.
+    var item: NativeMessageTimelineItem?
+    var editorHeight: CGFloat = 0
+    /// Whether the row was laid out for a draft still equal to the message,
+    /// which keeps at least the height the message was drawn at.
+    var keepsRenderedHeight = true
+    var draft: NativeTimelineInlineEditDraft?
+    /// The saved text, while the timeline has yet to show it.
+    var committedContent: String?
+    /// When the save succeeded, the time it marked the message edited.
+    var savedEditTimestamp: Date?
     var overlayLocalFrame: CGRect?
     var scrollSnapshot: NSImage?
 
@@ -194,13 +208,26 @@ final class NativeTimelineEditingSession {
         messageID != nil
     }
 
+    /// Whether the draft still says what `message` does.
+    func draftMatches(_ message: Message) -> Bool {
+        draft?.text == message.content
+    }
+
     func clear() {
         host?.removeFromSuperview()
         host = nil
+        controlsHost?.removeFromSuperview()
+        controlsHost = nil
         textView = nil
         messageID = nil
         rowIndex = nil
-        rowHeight = nil
+        layout = nil
+        item = nil
+        editorHeight = 0
+        keepsRenderedHeight = true
+        committedContent = nil
+        savedEditTimestamp = nil
+        draft = nil
         overlayLocalFrame = nil
         scrollSnapshot = nil
     }
@@ -470,8 +497,7 @@ extension NativeTimelineCanvasView {
     }
 
     var editingRowHeight: CGFloat? {
-        get { editing.rowHeight }
-        set { editing.rowHeight = newValue }
+        editing.layout?.height
     }
 
     var editingOverlayLocalFrame: CGRect? {

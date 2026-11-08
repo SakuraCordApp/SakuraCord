@@ -630,6 +630,7 @@ private struct ThreadMessageTimelineView: View {
 
     private func overlays(_ unread: TimelineUnreadPresentation) -> Overlays {
         let showsNewestButton = TimelineNewestButtonPolicy.isShown(
+            isEnabled: model.featuresSettings.scrollToBottomButton,
             hasEstablishedInitialPosition: hasEstablishedInitialPosition,
             isNearBottom: isNearBottom,
             messageCount: model.threadMessages.count

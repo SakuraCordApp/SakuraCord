@@ -129,11 +129,7 @@ extension NativeTimelineCanvasView {
             contentOriginMoved: contentOriginMoved,
             isEnabled: redrawsMovedShortContentSynchronously
         )
-        if !suppressesHoverPresentation {
-            synchronizeHoverWithCurrentPointer()
-        }
-        reconcileHoverTooltips()
-        reconcileActionCapsule()
+        refreshHoverPresentation()
     }
 
     func updateHistorySkeleton(
@@ -226,6 +222,12 @@ extension NativeTimelineCanvasView {
                 abs(oldOriginY - contentOriginY) >= 0.5,
             isEnabled: true
         )
+        refreshHoverPresentation()
+    }
+
+    /// The row under the pointer shows its hover again after content moves
+    /// beneath it.
+    func refreshHoverPresentation() {
         if !suppressesHoverPresentation {
             synchronizeHoverWithCurrentPointer()
         }
@@ -884,12 +886,6 @@ extension NativeTimelineCanvasView {
                 in: CGRect(origin: rowFrame.origin, size: image.size), from: .zero, operation: .sourceOver,
                 fraction: 1, respectFlipped: true, hints: nil
             )
-        } else if let editingMessageID, item.messageID == editingMessageID {
-            drawEditingTimelineRow(
-                item, at: index, rowFrame: rowFrame, dirtyRect: dirtyRect,
-                preparedMediaKeys: preparedMediaKeys
-            )
-            return
         } else if timelineRowRequiresDirectPresentation(
             item: item, index: index, revealState: revealState
         ) {
@@ -903,30 +899,16 @@ extension NativeTimelineCanvasView {
                 preparedMediaKeys: preparedMediaKeys, revealState: revealState
             )
         }
+        if item.messageID == editingMessageID, let editingRowScrollSnapshot {
+            editingRowScrollSnapshot.draw(
+                in: editingOverlayFrame(at: index), from: .zero, operation: .sourceOver,
+                fraction: 1, respectFlipped: true, hints: nil
+            )
+        }
         clearSendTransitionBubble(for: item, layout: layouts[index], rowFrame: rowFrame)
         if !unreadDividerFades.isEmpty {
             clearHeldUnreadDivider(for: item, layout: layouts[index], rowFrame: rowFrame)
         }
-    }
-
-    private func drawEditingTimelineRow(
-        _ item: NativeMessageTimelineItem,
-        at index: Int,
-        rowFrame: CGRect,
-        dirtyRect: CGRect,
-        preparedMediaKeys: Set<NativeTimelineMediaKey>
-    ) {
-        NSGraphicsContext.current?.cgContext.clear(rowFrame.intersection(dirtyRect))
-        enqueueVisibleMediaRequests(identifier: item.identifier, keys: preparedMediaKeys)
-        NativeTimelineRowPainter.draw(
-            item: item, layout: layouts[index], in: rowFrame, model: model,
-            isHovered: false, drawsBubbleBackground: false, hidesMessageContent: true,
-            spoilerRevealStore: spoilerRevealStore
-        )
-        editingRowScrollSnapshot?.draw(
-            in: editingOverlayFrame(at: index), from: .zero, operation: .sourceOver,
-            fraction: 1, respectFlipped: true, hints: nil
-        )
     }
 
     private func timelineRowRequiresDirectPresentation(
@@ -935,6 +917,7 @@ extension NativeTimelineCanvasView {
         revealState: NativeTimelineTextSpoilerRevealState
     ) -> Bool {
         isPreviewingWidth
+            || item.messageID == editingMessageID
             || layouts[index].pollLayout != nil
             || hoveredPollTarget?.messageID == item.messageID
             || hoveredRow == index

@@ -119,9 +119,13 @@ extension NativeTimelineCanvasView {
                        }
                    )
         {
-            let editingChild = additionalChildren.remove(at: hostIndex)
+            // The editor, then its Cancel and Save, read right after the row.
+            var editingChildren = [additionalChildren.remove(at: hostIndex)]
+            if let controlsIndex = additionalChildren.firstIndex(where: { ($0 as? NSView) === editing.controlsHost }) {
+                editingChildren.append(additionalChildren.remove(at: controlsIndex))
+            }
             orderedChildren.insert(
-                editingChild,
+                contentsOf: editingChildren,
                 at: min(insertionIndex, orderedChildren.endIndex)
             )
         }
@@ -491,13 +495,6 @@ extension NativeTimelineCanvasView {
                 parent: element
             )
         )
-        guard NativeTimelineAccessibilityPolicy.showsMessageBody(
-            messageID: message.id,
-            editingMessageID: editingMessageID
-        ) else {
-            element.setAccessibilityChildren(children)
-            return element
-        }
         appendMessageBodyAccessibility(
             to: &children,
             message: message,
@@ -760,7 +757,8 @@ extension NativeTimelineCanvasView {
                 rowIndex: rowIndex,
                 parent: parent
             ))
-        } else if let frame = layout.contentFrame {
+        } else if let frame = layout.contentFrame, message.id != editingMessageID {
+            // While editing, the editor over the text reads it instead.
             let content = accessibilityMessageText(message)
             if !content.isEmpty {
                 children.append(accessibilityElement(
@@ -1267,8 +1265,11 @@ extension NativeTimelineCanvasView {
         let concealedEmbeds = NativeTimelineSpoilerConcealmentPolicy.concealedEmbeds(
             in: message, store: spoilerRevealStore
         )
+        var coveredKeys = Set<NativeTimelineComponentRevealKey>()
         for region in layout.embedRegions {
             if let key = concealedEmbeds[region.embedID] {
+                // A multi-image post's card spans its grid and reveals it whole.
+                guard coveredKeys.insert(key).inserted else { continue }
                 children.append(accessibilityElement(
                     role: .button,
                     label: "Reveal spoiler",

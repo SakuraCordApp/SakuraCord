@@ -163,7 +163,7 @@ private struct ChatWorkspacePrimaryContent: View {
         case .chat:
             if let channel = model.selectedChannel,
                channel.kind == .directMessage || channel.kind == .groupDirectMessage,
-               model.privateCall(in: channel.id) != nil
+               model.joinablePrivateCall(in: channel.id) != nil
                     || model.activeVoiceChannel?.id == channel.id
             {
                 DirectMessageCallWorkspace(model: model, channel: channel)

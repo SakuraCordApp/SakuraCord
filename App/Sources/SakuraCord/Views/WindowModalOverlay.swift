@@ -194,10 +194,9 @@ where Presentation.ID: Hashable {
                     AnyView(content(resolvedPresentation, animationState))
                 }
             )
-            overlay.frame = container.bounds
-            overlay.autoresizingMask = [.width, .height]
             overlay.wantsLayer = true
             container.addSubview(overlay, positioned: .above, relativeTo: nil)
+            overlay.fillWindowFrame()
             overlayView = overlay
             if isPresented {
                 overlay.present()
@@ -293,6 +292,21 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    /// Fills the window frame, over its toolbar. In full screen the toolbar
+    /// is a separate window above this one, so the modal starts below it.
+    func fillWindowFrame() {
+        guard let superview, let window else { return }
+        var frame = superview.bounds
+        if window.styleMask.contains(.fullScreen) {
+            frame.size.height = window.contentLayoutRect.height
+        }
+        self.frame = frame
+    }
+
+    override func resize(withOldSuperviewSize oldSize: NSSize) {
+        fillWindowFrame()
     }
 
     override func cancelOperation(_ sender: Any?) {

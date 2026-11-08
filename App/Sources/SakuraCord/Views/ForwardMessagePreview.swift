@@ -277,7 +277,7 @@ struct ForwardedMessagePreview: View {
                 )
             }
         }
-        .padding(.leading, InterfaceScale.metric(16))
+        .padding(.leading, InterfaceScale.metric(8))
         .frame(minHeight: InterfaceScale.metric(30), maxHeight: InterfaceScale.metric(56))
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
@@ -332,7 +332,8 @@ private struct ForwardPreviewThumbnail: View {
         .frame(width: InterfaceScale.metric(56), height: InterfaceScale.metric(56))
         // Far too small for the pill, so the blur stands alone.
         .spoilerCover(media.isSpoiler, pillScale: nil)
-        .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous))
+        // Concentric with the 24-point row it sits 8 points inside.
+        .clipShape(RoundedRectangle(cornerRadius: InterfaceScale.metric(16), style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             if overflowCount > 0 {
                 Text("+\(overflowCount)")

@@ -264,9 +264,7 @@ private actor AttachmentCompactionTestWorker: AttachmentCompacting {
         target: .user(UserID(rawValue: 123))
     )
     let textView = ComposerNSTextView()
-    textView.plainTypingAttributes = ComposerEmojiAttributedText.textAttributes(
-        .systemFont(ofSize: 15)
-    )
+    textView.plainTextStyle = .composer(.systemFont(ofSize: 15))
     textView.textStorage?.setAttributedString(
         ComposerEmojiAttributedText.make(token, mentionPresentations: [token: presentation])
     )

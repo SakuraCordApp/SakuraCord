@@ -3,9 +3,9 @@ import Foundation
 nonisolated extension SettingsCatalog {
     static let featuresPage = page(
         .features, group: .preferences, title: "Features", image: "square.stack.3d.up.fill",
-        help: "Manage hidden channels, FakeNitro, voice messages, attachments, and on-device translation.",
+        help: "Manage hidden channels, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
         keywords: [
-            "channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "voice messages", "uploads", "translation",
+            "channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
             "language",
         ]
     )
@@ -60,6 +60,18 @@ nonisolated extension SettingsCatalog {
             .fakeNitroStreamQuality, page: .features, section: .featuresFakeNitro,
             label: "FakeNitro stream quality", help: "Use higher stream resolutions and frame rates without Nitro.",
             keywords: ["features", "FakeNitro"], scope: .appWideLocal
+        ),
+        control(
+            .messageHoverActions, page: .features, section: .featuresTimeline,
+            label: "Message hover actions",
+            help: "Show the floating reactions and actions menu when hovering a message.",
+            keywords: ["timeline", "hover", "actions", "reactions", "toolbar", "messages"], scope: .appWideLocal
+        ),
+        control(
+            .scrollToBottomButton, page: .features, section: .featuresTimeline,
+            label: "Scroll to bottom button",
+            help: "Show the floating button above the composer that jumps to the latest message after scrolling up.",
+            keywords: ["timeline", "scroll", "bottom", "jump", "latest", "new messages"], scope: .appWideLocal
         ),
         control(
             .voiceMessageRecording, page: .features, section: .featuresVoiceMessages,

@@ -22,7 +22,7 @@ extension ForumBoardView {
     }
 
     func hit(at point: CGPoint) -> Hit? {
-        guard let layoutState else { return nil }
+        guard let layoutState, CACurrentMediaTime() >= glideEndTime else { return nil }
         let probe = CGRect(x: point.x, y: point.y, width: 1, height: 1)
         guard let entry = layoutState.entries(intersecting: probe).first(where: { $0.frame.contains(point) }) else { return nil }
         // A card waiting for its bitmap is not on screen yet; the card it
