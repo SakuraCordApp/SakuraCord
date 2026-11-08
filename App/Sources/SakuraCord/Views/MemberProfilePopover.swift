@@ -1,4 +1,5 @@
 import AppKit
+import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
 
@@ -180,8 +181,33 @@ struct MemberProfilePopover<Footer: View>: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.profileAnimationsPaused) private var animationsPaused
     @Environment(\.windowModalContext) private var editorModal
+    @Environment(\.serverTagCardModel) private var model
+    @State private var currentUserActivity: OutgoingActivityPayload?
     @State private var contentHeight: CGFloat = 320
     @State private var theme = ProfileThemeState()
+
+    private var effectiveRichActivity: MemberRichActivity? {
+        if isCurrentUser, let current = currentUserActivity {
+            return MemberRichActivity(
+                name: current.name,
+                type: current.type.rawValue,
+                details: current.details,
+                state: current.state,
+                startTimestamp: current.timestamps?.start,
+                endTimestamp: current.timestamps?.end,
+                largeImage: current.assets?.largeImage,
+                largeText: current.assets?.largeText,
+                smallImage: current.assets?.smallImage,
+                smallText: current.assets?.smallText,
+                applicationID: current.applicationId
+            )
+        }
+        return member.richActivity
+    }
+
+    private var hasActiveActivity: Bool {
+        effectiveRichActivity != nil || member.isListeningToMusic || (member.activityText != nil && !member.activityText!.isEmpty)
+    }
 
     var body: some View {
         Group {
@@ -231,6 +257,10 @@ struct MemberProfilePopover<Footer: View>: View {
             if !cosmeticPolicy.disables(.gradient, for: member.id) {
                 await theme.load(theme.source(for: profile, scale: displayScale, allowsTheme: editor?.isNitro))
             }
+        }
+        .task(id: isCurrentUser) {
+            guard isCurrentUser, let model else { return }
+            currentUserActivity = await model.activityCoordinator.currentPrimaryActivity()
         }
     }
 
@@ -324,6 +354,10 @@ struct MemberProfilePopover<Footer: View>: View {
                     }
                     if profile.isPrivate == true {
                         privateProfileNotice(profile)
+                    }
+                    if hasActiveActivity, editor == nil {
+                        ProfileActivitySection(member: member, richActivity: effectiveRichActivity)
+                            .padding(.horizontal, InterfaceScale.metric(16))
                     }
                     if let editor, editor.scope == .main || editor.isNitro {
                         ProfileInlineBioEditor(value: Binding(get: { editor.bio }, set: { editor.bio = $0 }), displayValue: profile.bio, model: editor.model)

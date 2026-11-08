@@ -53,11 +53,58 @@ struct GuildActivityEmojiDTO: Decodable {
     var animated: Bool?
 }
 
+struct GuildActivityTimestampsDTO: Decodable {
+    var start: Int64?
+    var end: Int64?
+}
+
+struct GuildActivityAssetsDTO: Decodable {
+    var largeImage: String?
+    var largeText: String?
+    var smallImage: String?
+    var smallText: String?
+
+    enum CodingKeys: String, CodingKey {
+        case largeImage = "large_image"
+        case largeText = "large_text"
+        case smallImage = "small_image"
+        case smallText = "small_text"
+    }
+}
+
 struct GuildActivityDTO: Decodable {
     var name: String?
     var type: Int?
+    var details: String?
     var state: String?
     var emoji: GuildActivityEmojiDTO?
+    var timestamps: GuildActivityTimestampsDTO?
+    var assets: GuildActivityAssetsDTO?
+    var applicationId: String?
+    var syncId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, type, details, state, emoji, timestamps, assets
+        case applicationId = "application_id"
+        case syncId = "sync_id"
+    }
+
+    var asRichActivity: MemberRichActivity? {
+        guard let name else { return nil }
+        return MemberRichActivity(
+            name: name,
+            type: type ?? 0,
+            details: details,
+            state: state,
+            startTimestamp: timestamps?.start,
+            endTimestamp: timestamps?.end,
+            largeImage: assets?.largeImage,
+            largeText: assets?.largeText,
+            smallImage: assets?.smallImage,
+            smallText: assets?.smallText,
+            applicationID: applicationId
+        )
+    }
 
     var displayText: String? {
         let activityState = state.flatMap { $0.isEmpty ? nil : $0 }
@@ -211,7 +258,8 @@ struct GuildMemberDTO: Decodable {
             flags: flags,
             communicationDisabledUntil: includesCommunicationDisabledUntil
                 ? communicationDisabledUntil.flatMap(DiscordDate.parse) : previousCommunicationDisabledUntil,
-            joinedAt: joinedAt.flatMap(DiscordDate.parse)
+            joinedAt: joinedAt.flatMap(DiscordDate.parse),
+            richActivity: primaryActivity?.asRichActivity
         )
     }
 

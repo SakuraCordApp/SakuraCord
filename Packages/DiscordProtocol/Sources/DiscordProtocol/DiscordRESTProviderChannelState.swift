@@ -218,6 +218,7 @@ extension DiscordRESTProvider {
                 primaryActivity?.displayText
                     ?? member.customStatus
             member.isListeningToMusic = primaryActivity?.type == 2
+            member.richActivity = primaryActivity?.asRichActivity
         }
         cachedPrivateMembersByID[userID] = member
     }

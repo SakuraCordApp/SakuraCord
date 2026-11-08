@@ -8,7 +8,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Playing track creates listening activity with timestamps and assets")
     func testPlayingTrackCreatesListeningActivity() async {
         let provider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: provider)
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
         let monitor = AppleMusicPresenceMonitor(
             coordinator: coordinator,
@@ -46,7 +46,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Paused or stopped track clears published activity")
     func testPausedOrStoppedTrackClearsActivity() async {
         let provider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: provider)
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
         let monitor = AppleMusicPresenceMonitor(coordinator: coordinator)
 
         await monitor.handlePlayerInfo([
@@ -83,7 +83,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Missing or empty track title clears activity")
     func testEmptyTrackTitleClearsActivity() async {
         let provider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: provider)
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
         let monitor = AppleMusicPresenceMonitor(coordinator: coordinator)
 
         await monitor.handlePlayerInfo([
@@ -103,7 +103,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Track with missing optional metadata formats gracefully")
     func testMissingOptionalMetadata() async {
         let provider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: provider)
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
         let monitor = AppleMusicPresenceMonitor(
             coordinator: coordinator,
@@ -128,7 +128,7 @@ struct AppleMusicPresenceMonitorTests {
         let provider = MockChatProvider()
         let coordinator = ActivityCoordinator(
             provider: provider,
-            preferences: ActivityCoordinatorPreferences(isAppleMusicPresenceEnabled: false)
+            preferences: ActivityCoordinatorPreferences(isActivitySharingEnabled: true, isAppleMusicPresenceEnabled: false)
         )
         let monitor = AppleMusicPresenceMonitor(coordinator: coordinator)
 
@@ -144,7 +144,7 @@ struct AppleMusicPresenceMonitorTests {
     @Test("Lifecycle start and stop unregisters cleanly")
     func testStartAndStopLifecycle() async {
         let provider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: provider)
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
         let monitor = AppleMusicPresenceMonitor(coordinator: coordinator)
 
         monitor.start()

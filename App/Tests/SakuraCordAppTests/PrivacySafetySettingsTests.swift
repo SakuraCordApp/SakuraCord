@@ -72,24 +72,24 @@ import Testing
     value.anonymisesFileNames = true
     value.externalLinkConfirmationPolicy = .allLinks
     value.trustedDomains = ["Example.COM", "sub.example.com", "example.com"]
-    value.sharesActivity = false
-    value.sharesAppleMusicActivity = false
-    value.allowsLocalRPC = false
+    value.sharesActivity = true
+    value.sharesAppleMusicActivity = true
+    value.allowsLocalRPC = true
     store.save(value)
     let reloaded = store.load()
     #expect(!reloaded.removesMediaMetadata)
     #expect(reloaded.anonymisesFileNames)
     #expect(reloaded.externalLinkConfirmationPolicy == .allLinks)
     #expect(reloaded.trustedDomains == ["example.com", "sub.example.com"])
-    #expect(!reloaded.sharesActivity)
-    #expect(!reloaded.sharesAppleMusicActivity)
-    #expect(!reloaded.allowsLocalRPC)
+    #expect(reloaded.sharesActivity)
+    #expect(reloaded.sharesAppleMusicActivity)
+    #expect(reloaded.allowsLocalRPC)
 
     let export = preferences.export(scope: .appWide, page: .privacySafety)
     #expect(export.values == [
-        SettingsControlID.activitySharing.rawValue: .bool(false),
-        SettingsControlID.appleMusicPresence.rawValue: .bool(false),
-        SettingsControlID.localDiscordRPC.rawValue: .bool(false),
+        SettingsControlID.activitySharing.rawValue: .bool(true),
+        SettingsControlID.appleMusicPresence.rawValue: .bool(true),
+        SettingsControlID.localDiscordRPC.rawValue: .bool(true),
         SettingsControlID.removeMediaMetadata.rawValue: .bool(false),
         SettingsControlID.anonymiseFileNames.rawValue: .bool(true),
         SettingsControlID.privacyTypingIndicators.rawValue: .bool(true),
@@ -338,16 +338,17 @@ import Testing
     await model.start()
 
     var settings = model.privacySafetySettings
-    #expect(settings.sharesActivity)
-    #expect(settings.sharesAppleMusicActivity)
-    #expect(settings.allowsLocalRPC)
+    #expect(!settings.sharesActivity)
+    #expect(!settings.sharesAppleMusicActivity)
+    #expect(!settings.allowsLocalRPC)
 
-    settings.sharesAppleMusicActivity = false
+    settings.sharesActivity = true
+    settings.sharesAppleMusicActivity = true
     model.applyPrivacySafetySettings(settings)
     try? await Task.sleep(nanoseconds: 50_000_000)
 
     let prefs = await model.activityCoordinator.currentPreferences()
-    #expect(!prefs.isAppleMusicPresenceEnabled)
+    #expect(prefs.isAppleMusicPresenceEnabled)
     #expect(prefs.isActivitySharingEnabled)
-    #expect(prefs.isLocalRPCEnabled)
+    #expect(!prefs.isLocalRPCEnabled)
 }

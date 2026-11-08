@@ -311,6 +311,7 @@ extension DiscordRESTProvider {
                 primaryActivity?.displayText
                     ?? members[index].customStatus
             members[index].isListeningToMusic = primaryActivity?.type == 2
+            members[index].richActivity = primaryActivity?.asRichActivity
         }
         cachedMembers[guildID] = members
         if guildID == pendingMemberGuildID {

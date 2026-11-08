@@ -8,7 +8,7 @@ import Testing
 struct ActivityCoordinatorTests {
     @Test func `coordinator publishes permitted activity to provider`() async throws {
         let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider)
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
 
         let music = OutgoingActivityPayload(
             name: "Apple Music",
@@ -26,7 +26,7 @@ struct ActivityCoordinatorTests {
 
     @Test func `clearing activity removes it from coordinator and provider`() async throws {
         let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider)
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
 
         let rpcActivity = OutgoingActivityPayload(
             name: "VS Code",
@@ -47,6 +47,7 @@ struct ActivityCoordinatorTests {
     @Test func `master privacy toggle suppresses all activities from publishing`() async throws {
         let mockProvider = MockChatProvider()
         var prefs = ActivityCoordinatorPreferences()
+        prefs = .enabledAll
         prefs.isActivitySharingEnabled = false
         let coordinator = ActivityCoordinator(provider: mockProvider, preferences: prefs)
 
@@ -68,7 +69,7 @@ struct ActivityCoordinatorTests {
 
     @Test func `source specific privacy toggles filter out respective sources`() async throws {
         let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider)
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
 
         let music = OutgoingActivityPayload(name: "Apple Music", type: .listening)
         let rpc = OutgoingActivityPayload(name: "Modrinth", type: .playing)
@@ -97,7 +98,7 @@ struct ActivityCoordinatorTests {
 
     @Test func `swapping provider re-synchronizes active permitted activities`() async throws {
         let initialProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: initialProvider)
+        let coordinator = ActivityCoordinator(provider: initialProvider, preferences: .enabledAll)
 
         let music = OutgoingActivityPayload(name: "Apple Music", type: .listening)
         await coordinator.setActivity(music, for: .appleMusic)

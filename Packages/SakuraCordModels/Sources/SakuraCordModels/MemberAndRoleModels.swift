@@ -54,6 +54,46 @@ public struct RoleMemberResult: Equatable, Sendable {
     }
 }
 
+public struct MemberRichActivity: Codable, Hashable, Sendable {
+    public var name: String
+    public var type: Int
+    public var details: String?
+    public var state: String?
+    public var startTimestamp: Int64?
+    public var endTimestamp: Int64?
+    public var largeImage: String?
+    public var largeText: String?
+    public var smallImage: String?
+    public var smallText: String?
+    public var applicationID: String?
+
+    public init(
+        name: String,
+        type: Int = 0,
+        details: String? = nil,
+        state: String? = nil,
+        startTimestamp: Int64? = nil,
+        endTimestamp: Int64? = nil,
+        largeImage: String? = nil,
+        largeText: String? = nil,
+        smallImage: String? = nil,
+        smallText: String? = nil,
+        applicationID: String? = nil
+    ) {
+        self.name = name
+        self.type = type
+        self.details = details
+        self.state = state
+        self.startTimestamp = startTimestamp
+        self.endTimestamp = endTimestamp
+        self.largeImage = largeImage
+        self.largeText = largeText
+        self.smallImage = smallImage
+        self.smallText = smallText
+        self.applicationID = applicationID
+    }
+}
+
 public struct Member: Identifiable, Codable, Hashable, Sendable {
     public var id: UserID {
         user.id
@@ -78,6 +118,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
     public var activityText: String?
     public var customStatus: String?
     public var isListeningToMusic: Bool
+    public var richActivity: MemberRichActivity?
     /// Whether the member's latest presence is active on mobile and has no
     /// desktop or web session.
     public var isMobileOnly: Bool
@@ -130,7 +171,8 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         flags: UInt64? = nil,
         communicationDisabledUntil: Date? = nil,
         joinedAt: Date? = nil,
-        memberListIndex: Int? = nil
+        memberListIndex: Int? = nil,
+        richActivity: MemberRichActivity? = nil
     ) {
         self.user = user
         self.roleName = roleName
@@ -153,6 +195,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.communicationDisabledUntil = communicationDisabledUntil
         self.joinedAt = joinedAt
         self.memberListIndex = memberListIndex
+        self.richActivity = richActivity
     }
 
     public init(
@@ -176,7 +219,8 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         flags: UInt64? = nil,
         communicationDisabledUntil: Date? = nil,
         joinedAt: Date? = nil,
-        memberListIndex: Int? = nil
+        memberListIndex: Int? = nil,
+        richActivity: MemberRichActivity? = nil
     ) {
         self.user = user
         self.roleName = roleName
@@ -199,13 +243,14 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         self.communicationDisabledUntil = communicationDisabledUntil
         self.joinedAt = joinedAt
         self.memberListIndex = memberListIndex
+        self.richActivity = richActivity
     }
 
     private enum CodingKeys: String, CodingKey {
         case user, roleName, roleID, rolePosition, isRoleCategory, status, roleIDs, roles,
              guildAvatarURL,
              globalDisplayName, guildNickname, guildProfileCosmetics, activityText, customStatus, isListeningToMusic,
-             isMobileOnly, memberListIndex, joinedAt, communicationDisabledUntil
+             isMobileOnly, memberListIndex, joinedAt, communicationDisabledUntil, richActivity
     }
 
     public init(from decoder: Decoder) throws {
@@ -229,6 +274,7 @@ public struct Member: Identifiable, Codable, Hashable, Sendable {
         memberListIndex = try container.decodeIfPresent(Int.self, forKey: .memberListIndex)
         joinedAt = try container.decodeIfPresent(Date.self, forKey: .joinedAt)
         communicationDisabledUntil = try container.decodeIfPresent(Date.self, forKey: .communicationDisabledUntil)
+        richActivity = try container.decodeIfPresent(MemberRichActivity.self, forKey: .richActivity)
     }
 
     public mutating func applyGlobalProfileUser(_ value: User) {

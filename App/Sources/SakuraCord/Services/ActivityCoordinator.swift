@@ -37,13 +37,21 @@ public nonisolated struct ActivityCoordinatorPreferences: Equatable, Sendable {
     public var isLocalRPCEnabled: Bool
 
     public init(
-        isActivitySharingEnabled: Bool = true,
-        isAppleMusicPresenceEnabled: Bool = true,
-        isLocalRPCEnabled: Bool = true
+        isActivitySharingEnabled: Bool = false,
+        isAppleMusicPresenceEnabled: Bool = false,
+        isLocalRPCEnabled: Bool = false
     ) {
         self.isActivitySharingEnabled = isActivitySharingEnabled
         self.isAppleMusicPresenceEnabled = isAppleMusicPresenceEnabled
         self.isLocalRPCEnabled = isLocalRPCEnabled
+    }
+
+    public static var enabledAll: ActivityCoordinatorPreferences {
+        ActivityCoordinatorPreferences(
+            isActivitySharingEnabled: true,
+            isAppleMusicPresenceEnabled: true,
+            isLocalRPCEnabled: true
+        )
     }
 }
 
@@ -118,6 +126,11 @@ public actor ActivityCoordinator {
     public func currentPermittedActivities() -> [ActivitySource: OutgoingActivityPayload] {
         guard preferences.isActivitySharingEnabled else { return [:] }
         return registeredActivities.filter { isSourcePermitted($0.key) }
+    }
+
+    public func currentPrimaryActivity() -> OutgoingActivityPayload? {
+        let permitted = currentPermittedActivities()
+        return permitted.values.sorted { $0.priorityRank < $1.priorityRank }.first
     }
 
     public func isSourceActive(_ source: ActivitySource) -> Bool {

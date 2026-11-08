@@ -60,9 +60,9 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
         sendsTypingIndicators: true,
         externalLinkConfirmationPolicy: .untrustedDomains,
         trustedDomains: ExternalLinkTrustedDomain.defaults,
-        sharesActivity: true,
-        sharesAppleMusicActivity: true,
-        allowsLocalRPC: true
+        sharesActivity: false,
+        sharesAppleMusicActivity: false,
+        allowsLocalRPC: false
     )
 
     var removesMediaMetadata = true
@@ -70,9 +70,9 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     var sendsTypingIndicators: Bool
     var externalLinkConfirmationPolicy: ExternalLinkConfirmationPolicy
     var trustedDomains: [String]
-    var sharesActivity: Bool = true
-    var sharesAppleMusicActivity: Bool = true
-    var allowsLocalRPC: Bool = true
+    var sharesActivity: Bool = false
+    var sharesAppleMusicActivity: Bool = false
+    var allowsLocalRPC: Bool = false
 }
 
 @MainActor

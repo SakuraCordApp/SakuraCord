@@ -83,7 +83,7 @@ struct DiscordIPCServerTests {
     @Test func `server starts and accepts handshake responding with ready event`() async throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider)
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
         let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
         try server.start()
         defer { server.stop() }
@@ -107,7 +107,7 @@ struct DiscordIPCServerTests {
     @Test func `client can set and clear activity through IPC`() async throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider)
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
         let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
         try server.start()
         defer { server.stop() }
@@ -169,7 +169,7 @@ struct DiscordIPCServerTests {
     @Test func `disconnecting client automatically clears its activity`() async throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider)
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
         let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
         try server.start()
         defer { server.stop() }
@@ -201,7 +201,7 @@ struct DiscordIPCServerTests {
     @Test func `ping frame receives pong response`() async throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
-        let coordinator = ActivityCoordinator(provider: mockProvider)
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
         let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
         try server.start()
         defer { server.stop() }
