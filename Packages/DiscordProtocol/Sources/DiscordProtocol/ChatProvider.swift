@@ -228,7 +228,8 @@ public protocol ChatProvider: Sendable {
     func embeddedActivitySessionID() async throws -> String
     func recordEmbeddedActivityLaunch(_ applicationID: ApplicationID) async throws
     func launchEmbeddedActivity(
-        _ applicationID: ApplicationID, in channel: Channel, joining: Bool, fromCall: Bool, shelfSection: String?
+        _ applicationID: ApplicationID, in channel: Channel, sessionID: String, joining: Bool, fromCall: Bool,
+        shelfSection: String?
     ) async throws
     func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) async throws
     func embeddedActivityProxyTicket(_ applicationID: ApplicationID, channelID: ChannelID) async throws -> String
@@ -867,7 +868,8 @@ public extension ChatProvider {
     func recordEmbeddedActivityLaunch(_ applicationID: ApplicationID) async throws {}
 
     func launchEmbeddedActivity(
-        _ applicationID: ApplicationID, in channel: Channel, joining: Bool, fromCall: Bool, shelfSection: String?
+        _ applicationID: ApplicationID, in channel: Channel, sessionID: String, joining: Bool, fromCall: Bool,
+        shelfSection: String?
     ) async throws {
         throw ChatProviderError.invalidRequest("Activities are unavailable.")
     }

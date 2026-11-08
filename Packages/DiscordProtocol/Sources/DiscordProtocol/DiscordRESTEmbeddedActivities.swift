@@ -53,10 +53,10 @@ public extension DiscordRESTProvider {
     /// channel join, as the official client does. The resulting instance
     /// arrives as `EMBEDDED_ACTIVITY_UPDATE_V2`.
     func launchEmbeddedActivity(
-        _ applicationID: ApplicationID, in channel: Channel, joining: Bool, fromCall: Bool, shelfSection: String?
+        _ applicationID: ApplicationID, in channel: Channel, sessionID: String, joining: Bool, fromCall: Bool,
+        shelfSection: String?
     ) async throws {
         let channelID = channel.id, guildID = channel.guildID
-        let sessionID = try await interactionSessionID()
         let command = joining ? nil : try await entryPointCommand(for: applicationID, channelID: channelID, guildID: guildID)?.command
         guard let command else {
             // Applications without an entry point start with the channel join too.

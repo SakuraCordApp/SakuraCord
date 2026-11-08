@@ -36,9 +36,12 @@ final class EmbeddedActivityStore {
             case replace(activity: String, channel: String)
         }
 
-        let id = UUID()
+        var id = UUID()
         var applicationName: String
         var kind: Kind
+        /// The launch it belongs to; ending that launch dismisses it. Nil for
+        /// questions asked before a launch, which outlive the Activity running.
+        var launchID: UUID?
         var resolve: (Bool) -> Void
     }
 
@@ -59,6 +62,12 @@ final class EmbeddedActivityStore {
     @ObservationIgnored var launchTimeout: Task<Void, Never>?
     /// Leaves still on their way to Discord, by composite instance ID.
     @ObservationIgnored var pendingLeaves: [String: Task<Void, Never>] = [:]
+    /// Instances this session left, until a roster without it confirms the
+    /// leave, and whether that leave failed. They are never hosted again, and
+    /// one still listing this session after a failed leave is left again.
+    @ObservationIgnored var departingInstances: [String: Bool] = [:]
+    /// The proxy ticket fetched before this launch's request, as Discord's client does.
+    @ObservationIgnored var launchTicket: (launchID: UUID, ticket: String)?
     /// Recent slash commands from this client by nonce; Discord tags the
     /// participant an Activity command adds with that nonce.
     @ObservationIgnored var commandLaunches: [(nonce: String, application: ApplicationCommandApplication)] = []
@@ -97,14 +106,18 @@ final class EmbeddedActivityStore {
     }
 
     /// Asks the person; a cancelled caller, such as one outliving its account,
-    /// is declined so nothing waits on a prompt nobody will answer.
-    func ask(_ kind: Prompt.Kind, applicationName: String) async -> Bool {
+    /// is declined so nothing waits on a prompt nobody will answer. A
+    /// question belongs to the current launch unless it comes before one.
+    func ask(_ kind: Prompt.Kind, applicationName: String, beforeLaunch: Bool = false) async -> Bool {
         prompt?.resolve(false)
         guard !Task.isCancelled else { return false }
+        let id = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 var isResolved = false
-                prompt = Prompt(applicationName: applicationName, kind: kind) { [weak self] granted in
+                prompt = Prompt(
+                    id: id, applicationName: applicationName, kind: kind, launchID: beforeLaunch ? nil : session?.launchID
+                ) { [weak self] granted in
                     guard !isResolved else { return }
                     isResolved = true
                     self?.prompt = nil
@@ -112,7 +125,9 @@ final class EmbeddedActivityStore {
                 }
             }
         } onCancel: {
-            Task { @MainActor [weak self] in self?.prompt?.resolve(false) }
+            Task { @MainActor [weak self] in
+                if self?.prompt?.id == id { self?.prompt?.resolve(false) }
+            }
         }
     }
 
@@ -121,14 +136,16 @@ final class EmbeddedActivityStore {
         launch = nil
         launchTimeout?.cancel()
         launchTimeout = nil
+        launchTicket = nil
         host?.stop()
         host = nil
-        prompt?.resolve(false)
+        if let prompt, prompt.launchID != nil, prompt.launchID == session?.launchID { prompt.resolve(false) }
         session = nil
     }
 
     func reset() {
         endSession()
+        prompt?.resolve(false)
         instances = [:]
         shelves = [:]
         shelfLoads.values.forEach { $0.cancel() }
@@ -137,6 +154,7 @@ final class EmbeddedActivityStore {
         shelfError = nil
         gatewaySessionID = nil
         pendingLeaves = [:]
+        departingInstances = [:]
         commandLaunches = []
         ageConfirmedApplications = []
     }
@@ -244,10 +262,17 @@ extension AppModel {
         let joining = store.instances(in: channel.id).contains { $0.applicationID == application.id }
         // Ending the session cancels a launch that has not reached Discord yet.
         let launch = Task {
-            store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
+            // Like Discord's client, the proxy ticket comes before Discord
+            // counts this session in, so a failed ticket strands nothing.
+            let ticket = try await account.provider.embeddedActivityProxyTicket(application.id, channelID: channel.id)
+            store.launchTicket = (session.launchID, ticket)
             if !joining { try await installForLaunch(application, in: channel, account: account) }
+            // Read after any consent, so ownership names the session the request sends.
+            let sessionID = try await account.provider.embeddedActivitySessionID()
+            store.gatewaySessionID = sessionID
             try await account.provider.launchEmbeddedActivity(
-                application.id, in: channel, joining: joining, fromCall: session.isInCall, shelfSection: shelfSection
+                application.id, in: channel, sessionID: sessionID, joining: joining, fromCall: session.isInCall,
+                shelfSection: shelfSection
             )
         }
         store.launch = launch
@@ -283,13 +308,13 @@ extension AppModel {
     private func confirmLaunch(of application: EmbeddedActivityApplication) async -> Bool {
         let store = embeddedActivities
         if application.requiresAgeGate, !store.ageConfirmedApplications.contains(application.id) {
-            guard await store.ask(.confirmAge, applicationName: application.name) else { return false }
+            guard await store.ask(.confirmAge, applicationName: application.name, beforeLaunch: true) else { return false }
             store.ageConfirmedApplications.insert(application.id)
         }
         guard let current = store.session, current.phase == .launching || current.phase == .running else { return true }
         return await store.ask(
             .replace(activity: current.application.name, channel: current.channel.name),
-            applicationName: application.name
+            applicationName: application.name, beforeLaunch: true
         )
     }
 
@@ -305,8 +330,10 @@ extension AppModel {
             location: .of(channel), channelType: channel.activityChannelType
         )
         guard try await embeddedActivityConsent(to: request, account: account) else {
-            // Discord answers a refusal with access_denied; the launch ends either way.
-            try? await account.provider.installEmbeddedActivity(request, granted: false)
+            // The launch ends now; Discord answers the refusal with access_denied.
+            startAccountChildTask(account: account) { _, account in
+                try? await account.provider.installEmbeddedActivity(request, granted: false)
+            }
             throw CancellationError()
         }
         try await account.provider.installEmbeddedActivity(request, granted: true)
@@ -342,8 +369,16 @@ extension AppModel {
     private func leaveEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
         let id = instance.compositeInstanceID
         guard embeddedActivities.pendingLeaves[id] == nil else { return }
+        embeddedActivities.departingInstances[id] = false
         embeddedActivities.pendingLeaves[id] = startAccountChildTask(account: accountSession()) { model, account in
-            try? await account.provider.leaveEmbeddedActivity(instance)
+            do {
+                try await account.provider.leaveEmbeddedActivity(instance)
+            } catch {
+                guard model.isCurrentAccountSession(account), !Task.isCancelled else { return }
+                let name = model.embeddedActivities.application(instance.applicationID)?.name ?? "the Activity"
+                model.errorMessage = "Couldn’t leave \(name): \(error.localizedDescription)"
+                if model.embeddedActivities.departingInstances[id] != nil { model.embeddedActivities.departingInstances[id] = true }
+            }
             model.embeddedActivities.pendingLeaves[id] = nil
         }
     }
@@ -436,6 +471,11 @@ extension AppModel {
             consumeEmbeddedActivity(instance)
         case .embeddedActivitiesReceived(let instances):
             embeddedActivities.replaceInstances(instances)
+            let listed = Set(instances.map(\.compositeInstanceID))
+            // A guild instance missing from the snapshot has ended; private ones are never listed.
+            embeddedActivities.departingInstances = embeddedActivities.departingInstances.filter { id, _ in
+                listed.contains(id) || embeddedActivities.instances[id].map { $0.location.guildID == nil } == true
+            }
             instances.forEach(consumeEmbeddedActivity)
             // The snapshot lists every guild instance; one that ended while
             // disconnected is simply absent.
@@ -452,6 +492,17 @@ extension AppModel {
 
     private func consumeEmbeddedActivity(_ instance: EmbeddedActivityInstance) {
         let store = embeddedActivities
+        // An instance being left is never hosted again, even by a relaunch in
+        // the same place that is waiting for that leave.
+        if let leaveFailed = store.departingInstances[instance.compositeInstanceID] {
+            if !instance.participants.contains(where: { $0.sessionID == store.gatewaySessionID }) {
+                store.departingInstances[instance.compositeInstanceID] = nil
+            } else if leaveFailed {
+                // Discord still lists this session after its leave failed.
+                leaveEmbeddedActivity(instance)
+            }
+            return
+        }
         adoptCommandLaunch(instance)
         guard let session = store.session,
               session.application.id == instance.applicationID,
@@ -470,21 +521,36 @@ extension AppModel {
             if session.instance?.compositeInstanceID == instance.compositeInstanceID { store.endSession() }
             return
         }
+        // An instance from a later attempt, such as a retry after a timeout,
+        // replaces one this launch adopted from an earlier attempt.
+        let replacesInstance = session.instance.map { $0.compositeInstanceID != instance.compositeInstanceID } ?? false
+        if replacesInstance, let previous = session.instance {
+            store.host?.stop()
+            store.host = nil
+            leaveEmbeddedActivity(previous)
+        }
         store.session?.instance = instance
         store.host?.participantsChanged()
         // The update can arrive before and after the launch request returns;
         // only the first one starts the Activity. It can also arrive after the
         // launch failed or timed out, and Discord counts this client as joined.
-        guard session.instance == nil else { return }
+        guard session.instance == nil || replacesInstance else { return }
         store.session?.phase = .launching
         store.launchTimeout?.cancel()
         let account = accountSession()
         startAccountChildTask(account: account) { model, account in
             do {
-                let ticket = try await account.provider.embeddedActivityProxyTicket(
-                    instance.applicationID, channelID: instance.location.channelID
-                )
-                guard model.embeddedActivities.session?.launchID == session.launchID else { return }
+                let store = model.embeddedActivities
+                // A slash command's Activity has no ticket yet; Discord launched it.
+                let ticket = if let launchTicket = store.launchTicket, launchTicket.launchID == session.launchID {
+                    launchTicket.ticket
+                } else {
+                    try await account.provider.embeddedActivityProxyTicket(
+                        instance.applicationID, channelID: instance.location.channelID
+                    )
+                }
+                guard store.session?.launchID == session.launchID,
+                      store.session?.instance?.compositeInstanceID == instance.compositeInstanceID else { return }
                 model.embeddedActivities.host = EmbeddedActivityHost(
                     model: model, instance: instance, application: session.application, proxyTicket: ticket
                 )
@@ -492,7 +558,9 @@ extension AppModel {
                 // Recents count each Activity opened; a failed save only loses that count.
                 try? await account.provider.recordEmbeddedActivityLaunch(instance.applicationID)
             } catch {
-                guard model.embeddedActivities.session?.launchID == session.launchID else { return }
+                guard model.embeddedActivities.session?.launchID == session.launchID,
+                      model.embeddedActivities.session?.instance?.compositeInstanceID == instance.compositeInstanceID
+                else { return }
                 model.embeddedActivities.session?.phase = .failed(error.localizedDescription)
             }
         }
