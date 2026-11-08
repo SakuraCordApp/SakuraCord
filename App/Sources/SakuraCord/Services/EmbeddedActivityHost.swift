@@ -261,16 +261,11 @@ final class EmbeddedActivityHost: NSObject {
             location: instance.location,
             channelType: channelType
         )
-        let provider = model.accountSession().provider
+        let account = model.accountSession()
         do {
-            let preview = try await provider.embeddedActivityAuthorizationPreview(request)
+            let granted = try await model.embeddedActivityConsent(to: request, account: account)
             guard !isStopped else { return }
-            var granted = preview.isAuthorized
-            if !granted {
-                granted = await model.embeddedActivities.ask(.authorize(scopes: scopes), applicationName: preview.applicationName)
-            }
-            guard !isStopped else { return }
-            let code = try await provider.authorizeEmbeddedActivity(request, granted: granted)
+            let code = try await account.provider.authorizeEmbeddedActivity(request, granted: granted)
             reply("AUTHORIZE", nonce, ["code": code])
         } catch {
             fail("AUTHORIZE", nonce, .oauth2, error.localizedDescription)
@@ -345,13 +340,7 @@ final class EmbeddedActivityHost: NSObject {
 
     /// Discord's type for the hosting channel.
     private var channelType: Int {
-        switch model?.embeddedActivities.session?.channel.kind {
-        case .voice: 2
-        case .directMessage: 1
-        case .groupDirectMessage: 3
-        case .announcement: 5
-        default: 0
-        }
+        model?.embeddedActivities.session?.channel.activityChannelType ?? 0
     }
 
     private func channelPayload(model: AppModel) -> [String: Any] {

@@ -229,8 +229,10 @@ extension View {
             Button("Cancel", role: .cancel) { prompt.resolve(false) }
         } message: { prompt in
             switch prompt.kind {
-            case .authorize(let scopes):
-                Text("\(prompt.applicationName) wants to access your Discord account: \(scopes.joined(separator: ", ")).")
+            case .authorize(let scopes, let disclosures):
+                Text(([
+                    "\(prompt.applicationName) wants to access your Discord account: \(scopes.joined(separator: ", "))."
+                ] + disclosures.map(\.notice)).joined(separator: "\n\n"))
             case .openLink(let url):
                 Text(url.absoluteString)
             case .confirmAge:
@@ -247,6 +249,15 @@ extension View {
         case .openLink: "Open a link from \(prompt.applicationName)?"
         case .confirmAge: "Start \(prompt.applicationName)?"
         case .replace: "You sure?"
+        }
+    }
+}
+
+private extension EmbeddedActivityDisclosure {
+    var notice: String {
+        switch self {
+        case .ipLocation: "Developer may see your IP address while you use this application."
+        case .displaysAdvertisements: "This application displays advertisements."
         }
     }
 }

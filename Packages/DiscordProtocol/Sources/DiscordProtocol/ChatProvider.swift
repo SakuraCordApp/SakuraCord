@@ -240,6 +240,11 @@ public protocol ChatProvider: Sendable {
         granted: Bool
     ) async throws -> String
     func authenticateEmbeddedActivity(_ applicationID: ApplicationID, accessToken: String) async throws -> JSONValue
+    func embeddedActivityInstallScopes(_ applicationID: ApplicationID, in channel: Channel) async throws -> [String]?
+    func acknowledgeEmbeddedActivityDisclosures(
+        _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
+    ) async throws
+    func installEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest, granted: Bool) async throws
     func componentChoices(
         kind: ComponentSelectKind, query: String, guildID: GuildID?, channelID: ChannelID
     ) async throws -> [ComponentSelectOption]
@@ -887,6 +892,18 @@ public extension ChatProvider {
     }
 
     func authenticateEmbeddedActivity(_ applicationID: ApplicationID, accessToken: String) async throws -> JSONValue {
+        throw OAuth2AuthorizationError.unavailable
+    }
+
+    func embeddedActivityInstallScopes(_ applicationID: ApplicationID, in channel: Channel) async throws -> [String]? {
+        nil
+    }
+
+    func acknowledgeEmbeddedActivityDisclosures(
+        _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
+    ) async throws {}
+
+    func installEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest, granted: Bool) async throws {
         throw OAuth2AuthorizationError.unavailable
     }
 

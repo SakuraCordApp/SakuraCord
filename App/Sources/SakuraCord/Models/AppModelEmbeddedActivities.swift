@@ -29,7 +29,7 @@ final class EmbeddedActivityStore {
     /// A question the Activity's host must ask before acting for it.
     struct Prompt: Identifiable {
         enum Kind {
-            case authorize(scopes: [String])
+            case authorize(scopes: [String], disclosures: [EmbeddedActivityDisclosure])
             case openLink(URL)
             case confirmAge
             /// Leaving the running Activity, named with its channel, for another.
@@ -142,6 +142,19 @@ final class EmbeddedActivityStore {
     }
 }
 
+extension Channel {
+    /// Discord's channel type, as Activity consent and the SDK report it.
+    var activityChannelType: Int {
+        switch kind {
+        case .voice: 2
+        case .directMessage: 1
+        case .groupDirectMessage: 3
+        case .announcement: 5
+        default: 0
+        }
+    }
+}
+
 extension EmbeddedActivityLocation {
     static func of(_ channel: Channel) -> Self {
         let id = channel.guildID.map { "gc-\($0)-\(channel.id)" } ?? "pc-\(channel.id)"
@@ -232,6 +245,7 @@ extension AppModel {
         // Ending the session cancels a launch that has not reached Discord yet.
         let launch = Task {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
+            if !joining { try await installForLaunch(application, in: channel, account: account) }
             try await account.provider.launchEmbeddedActivity(
                 application.id, in: channel, joining: joining, fromCall: session.isInCall, shelfSection: shelfSection
             )
@@ -243,6 +257,11 @@ extension AppModel {
             // The instance update can arrive before a lost launch response.
             guard isCurrentAccountSession(account), store.session?.launchID == session.launchID,
                   store.session?.instance == nil else { return }
+            // The person declined to install the application.
+            if error is CancellationError {
+                store.endSession()
+                return
+            }
             store.session?.phase = .failed(error.localizedDescription)
             return
         }
@@ -272,6 +291,43 @@ extension AppModel {
             .replace(activity: current.application.name, channel: current.channel.name),
             applicationName: application.name
         )
+    }
+
+    /// Like Discord's client, asks the person to install an app-handled
+    /// Activity they haven't before its command runs; declining is posted to
+    /// Discord and launches nothing.
+    private func installForLaunch(
+        _ application: EmbeddedActivityApplication, in channel: Channel, account: AppModelAccountSession
+    ) async throws {
+        guard let scopes = try await account.provider.embeddedActivityInstallScopes(application.id, in: channel) else { return }
+        let request = EmbeddedActivityAuthorizationRequest(
+            applicationID: application.id, scopes: scopes, state: UUID().uuidString,
+            location: .of(channel), channelType: channel.activityChannelType
+        )
+        guard try await embeddedActivityConsent(to: request, account: account) else {
+            // Discord answers a refusal with access_denied; the launch ends either way.
+            try? await account.provider.installEmbeddedActivity(request, granted: false)
+            throw CancellationError()
+        }
+        try await account.provider.installEmbeddedActivity(request, granted: true)
+    }
+
+    /// Discord's consent before an Activity grant: asked unless Discord holds
+    /// the grant and the person acknowledged every disclosure, which are
+    /// recorded once they agree.
+    func embeddedActivityConsent(
+        to request: EmbeddedActivityAuthorizationRequest, account: AppModelAccountSession
+    ) async throws -> Bool {
+        let preview = try await account.provider.embeddedActivityAuthorizationPreview(request)
+        let disclosures = preview.unacknowledgedDisclosures
+        guard !preview.isAuthorized || !disclosures.isEmpty else { return true }
+        guard await embeddedActivities.ask(
+            .authorize(scopes: request.scopes, disclosures: disclosures), applicationName: preview.applicationName
+        ) else { return false }
+        if !disclosures.isEmpty {
+            try await account.provider.acknowledgeEmbeddedActivityDisclosures(disclosures, applicationID: request.applicationID)
+        }
+        return true
     }
 
     /// Closes the hosted Activity now; Discord is told in the background. A

@@ -57,7 +57,7 @@ public extension DiscordRESTProvider {
     ) async throws {
         let channelID = channel.id, guildID = channel.guildID
         let sessionID = try await interactionSessionID()
-        let command = joining ? nil : try await entryPointCommand(for: applicationID, channelID: channelID, guildID: guildID)
+        let command = joining ? nil : try await entryPointCommand(for: applicationID, channelID: channelID, guildID: guildID)?.command
         guard let command else {
             // Applications without an entry point start with the channel join too.
             var body: [String: JSONValue] = ["session_id": .string(sessionID)]
@@ -115,6 +115,8 @@ public extension DiscordRESTProvider {
     func embeddedActivityAuthorizationPreview(
         _ authorization: EmbeddedActivityAuthorizationRequest
     ) async throws -> EmbeddedActivityAuthorizationPreview {
+        // The official client reads the developer's disclosures first.
+        let disclosures: ActivityDisclosuresDTO = try await request("/applications/\(authorization.applicationID)/disclosures")
         let preview: ActivityAuthorizationPreviewDTO = try await request(
             "/oauth2/authorize",
             query: Self.authorizationQuery(authorization) + [URLQueryItem(name: "integration_type", value: "1")]
@@ -124,8 +126,21 @@ public extension DiscordRESTProvider {
         }
         return EmbeddedActivityAuthorizationPreview(
             applicationName: preview.application.name,
-            isAuthorized: preview.authorized == true
+            isAuthorized: preview.authorized == true,
+            unacknowledgedDisclosures: disclosures.disclosures.filter { !disclosures.ackedDisclosures.contains($0) }
+                .compactMap(EmbeddedActivityDisclosure.init)
         )
+    }
+
+    /// Records that the person saw the developer's disclosures.
+    func acknowledgeEmbeddedActivityDisclosures(
+        _ disclosures: [EmbeddedActivityDisclosure], applicationID: ApplicationID
+    ) async throws {
+        let (data, response) = try await perform(
+            "/applications/\(applicationID)/disclosures", method: "POST", query: [],
+            body: ["disclosures": .array(disclosures.map { .number(Double($0.rawValue)) })], maximumAttempts: 1
+        )
+        guard (200 ..< 300).contains(response.statusCode) else { throw unexplainedFailure(data, response) }
     }
 
     /// Grants the Activity an authorization code, or records the person's
@@ -135,6 +150,39 @@ public extension DiscordRESTProvider {
         _ authorization: EmbeddedActivityAuthorizationRequest,
         granted: Bool
     ) async throws -> String {
+        let items = try await postAuthorization(authorization, granted: granted)
+        guard granted, items.first(where: { $0.name == "state" })?.value == authorization.state,
+              let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
+        else { throw OAuth2AuthorizationError.unexpectedResponse }
+        return code
+    }
+
+    /// The scopes Discord asks a person to grant before it launches an
+    /// app-handled Activity they and the place haven't installed, or nil when
+    /// it launches straight away.
+    func embeddedActivityInstallScopes(_ applicationID: ApplicationID, in channel: Channel) async throws -> [String]? {
+        guard let entryPoint = try await entryPointCommand(for: applicationID, channelID: channel.id, guildID: channel.guildID),
+              !entryPoint.isInstalled, entryPoint.command.integrationTypes.contains(1),
+              Self.isApplicationHandled(entryPoint.command)
+        else { return nil }
+        let application: PublicApplicationDTO = try await request(
+            "/applications/\(applicationID)/public", query: [URLQueryItem(name: "with_guild", value: "false")]
+        )
+        return application.integrationTypesConfig?["1"]?.oauth2InstallParams?.scopes
+    }
+
+    /// Installs the application for the person before its Activity launches,
+    /// or records that they declined; neither yields a code.
+    func installEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest, granted: Bool) async throws {
+        _ = try await postAuthorization(authorization, granted: granted)
+    }
+
+    /// The consent POST shared by Activity authorization and installation;
+    /// returns the query of the location Discord names.
+    private func postAuthorization(
+        _ authorization: EmbeddedActivityAuthorizationRequest,
+        granted: Bool
+    ) async throws -> [URLQueryItem] {
         let location = authorization.location
         var body: [String: JSONValue] = [
             "authorize": .bool(granted),
@@ -161,10 +209,7 @@ public extension DiscordRESTProvider {
         if let error = items.first(where: { $0.name == "error" })?.value {
             throw OAuth2AuthorizationError.denied(items.first { $0.name == "error_description" }?.value ?? error)
         }
-        guard granted, items.first(where: { $0.name == "state" })?.value == authorization.state,
-              let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
-        else { throw OAuth2AuthorizationError.unexpectedResponse }
-        return code
+        return items
     }
 
     /// Validates an Activity's OAuth access token for its own application and
@@ -204,12 +249,13 @@ public extension DiscordRESTProvider {
     }
 
     /// The application's entry-point command, from the indexes the official
-    /// client already holds, then the application's own index.
+    /// client already holds, then the application's own index. It counts as
+    /// installed when the person's or the place's index lists it.
     private func entryPointCommand(
         for applicationID: ApplicationID,
         channelID: ChannelID,
         guildID: GuildID?
-    ) async throws -> ApplicationCommand? {
+    ) async throws -> (command: ApplicationCommand, isInstalled: Bool)? {
         let targets: [ApplicationCommandIndexTarget] = [
             .user, guildID.map(ApplicationCommandIndexTarget.guild) ?? .channel(channelID),
             .application(applicationID.description),
@@ -227,10 +273,37 @@ public extension DiscordRESTProvider {
             if let command = catalog.commands.first(where: {
                 $0.type == .primaryEntryPoint && $0.applicationID == applicationID.description
             }) {
-                return command
+                if case .application = target { return (command, false) }
+                return (command, true)
             }
         }
         return nil
+    }
+
+    /// Whether the application answers the entry point itself (handler 1),
+    /// rather than Discord launching the Activity (handler 2).
+    private static func isApplicationHandled(_ command: ApplicationCommand) -> Bool {
+        (try? JSONSerialization.jsonObject(with: command.rootCommandJSON) as? [String: Any])?["handler"] as? Int == 1
+    }
+}
+
+private struct PublicApplicationDTO: Decodable {
+    struct IntegrationTypeConfiguration: Decodable {
+        struct InstallParameters: Decodable {
+            let scopes: [String]
+        }
+
+        let oauth2InstallParams: InstallParameters?
+
+        enum CodingKeys: String, CodingKey {
+            case oauth2InstallParams = "oauth2_install_params"
+        }
+    }
+
+    let integrationTypesConfig: [String: IntegrationTypeConfiguration]?
+
+    enum CodingKeys: String, CodingKey {
+        case integrationTypesConfig = "integration_types_config"
     }
 }
 
@@ -246,6 +319,16 @@ private struct ActivityAuthorizationPreviewDTO: Decodable {
 
     let application: Application
     let authorized: Bool?
+}
+
+private struct ActivityDisclosuresDTO: Decodable {
+    let disclosures: [Int]
+    let ackedDisclosures: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case disclosures
+        case ackedDisclosures = "acked_disclosures"
+    }
 }
 
 private struct ActivityAuthorizationLocationDTO: Decodable {

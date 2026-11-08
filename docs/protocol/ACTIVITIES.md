@@ -58,9 +58,18 @@ tags, the description, and In-App Purchases when `is_monetized`;
 `requires_age_gate` Activities ask for age confirmation before launch.
 
 Launching runs the application's entry-point command (application
-command type 4) from the command indexes: `POST /interactions` type 2 with the
+command type 4) from the command indexes. When the application answers that
+command itself (handler 1), the command allows user installs, and neither the
+person's nor the place's index lists it, the official client first asks to
+install it (OAuth with `integration_type: 1` and the scopes from
+`GET /applications/{application}/public?with_guild=false`
+`integration_types_config["1"].oauth2_install_params`); declining is posted and
+launches nothing. The launch itself is `POST /interactions` type 2 with the
 command's `data` envelope, empty `options` and `attachments`,
-`analytics_location: "app_launcher"` and, in a voice channel, `source: "VOICE"`. Discord
+`analytics_location: "app_launcher"`, `source` (`"VOICE"` from a call's controls,
+`"TEXT"` from the composer) and `section_name`, the launcher section it was
+picked from (`activities`, `recent_apps`, `search`, or the text launcher's
+`Promoted`). Discord
 answers with `INTERACTION_SUCCESS` and the instance update containing the
 caller's session. A command whose handler is the application (handler 1, for
 example Wordle) answers through the application instead. An application without
@@ -105,9 +114,13 @@ Commands answer with the same `cmd` and `nonce`; unsupported ones fail with
 Participation follows the voice session: when another client of the same account
 takes over voice, Discord removes this session from the instance.
 
-`AUTHORIZE` reads `GET /oauth2/authorize` (client ID, `response_type=code`,
+`AUTHORIZE` first reads `GET /applications/{application}/disclosures`
+(`{disclosures, acked_disclosures, all_acked}`; 1 is the developer seeing the IP
+address, 2 advertisements), then `GET /oauth2/authorize` (client ID, `response_type=code`,
 scopes, state, `integration_type=1`). When it reports `authorized: true` no consent
-is shown; otherwise the person approves first. One `POST` with
+is shown unless a disclosure is unacknowledged; otherwise the person approves
+first, the consent listing those disclosures, which agreeing acknowledges with
+`POST /applications/{application}/disclosures {disclosures: [...]}`. One `POST` with
 `{authorize: true, integration_type: 1, location_context}` follows; outside a
 guild the context uses guild `10000` and channel type 1. Only the code from the
 returned location reaches the Activity. A declined consent is posted too, with

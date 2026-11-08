@@ -136,9 +136,19 @@ public struct EmbeddedActivityAuthorizationPreview: Hashable, Sendable {
     public var applicationName: String
     /// Discord already holds a grant for these scopes; no consent is shown.
     public var isAuthorized: Bool
+    /// Disclosures the person hasn't acknowledged, such as the developer
+    /// seeing their IP address; the consent shows them until acknowledged.
+    public var unacknowledgedDisclosures: [EmbeddedActivityDisclosure]
 
-    public init(applicationName: String, isAuthorized: Bool) {
+    public init(applicationName: String, isAuthorized: Bool, unacknowledgedDisclosures: [EmbeddedActivityDisclosure] = []) {
         self.applicationName = applicationName
         self.isAuthorized = isAuthorized
+        self.unacknowledgedDisclosures = unacknowledgedDisclosures
     }
+}
+
+/// What an Activity's developer discloses before the person uses it.
+public enum EmbeddedActivityDisclosure: Int, Hashable, Sendable {
+    case ipLocation = 1
+    case displaysAdvertisements = 2
 }

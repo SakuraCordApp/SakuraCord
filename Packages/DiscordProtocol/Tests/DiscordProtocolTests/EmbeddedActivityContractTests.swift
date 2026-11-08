@@ -21,11 +21,14 @@ struct EmbeddedActivityContractTests {
         #expect(try await provider.embeddedActivityAuthorizationPreview(request).isAuthorized)
         #expect(try await provider.authorizeEmbeddedActivity(request, granted: true) == "one-time-code")
         let requests = recorder.requests
-        #expect(requests.map(\.httpMethod) == ["GET", "POST"])
-        let previewQuery = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        #expect(requests.map { "\($0.httpMethod!) \($0.url!.path)" } == [
+            "GET /api/v9/applications/880218394199220334/disclosures", "GET /api/v9/oauth2/authorize",
+            "POST /api/v9/oauth2/authorize",
+        ])
+        let previewQuery = URLComponents(url: requests[1].url!, resolvingAgainstBaseURL: false)!.queryItems!
         #expect(previewQuery.contains(URLQueryItem(name: "integration_type", value: "1")))
         #expect(previewQuery.contains(URLQueryItem(name: "scope", value: "identify guilds")))
-        let body = try #require(JSONSerialization.jsonObject(with: requests[1].httpBody!) as? [String: Any])
+        let body = try #require(JSONSerialization.jsonObject(with: requests[2].httpBody!) as? [String: Any])
         #expect(body["authorize"] as? Bool == true)
         #expect(body["integration_type"] as? Int == 1)
         let context = try #require(body["location_context"] as? [String: Any])
@@ -137,6 +140,8 @@ private final class ActivityURLProtocol: URLProtocol, @unchecked Sendable {
         let state = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
             .queryItems?.first { $0.name == "state" }?.value ?? ""
         let (status, json): (Int, String) = switch (request.url!.path, request.httpMethod, state) {
+        case (let path, "GET", _) where path.hasSuffix("/disclosures"):
+            (200, #"{"disclosures":[],"acked_disclosures":[],"all_acked":true}"#)
         case ("/api/v9/oauth2/@me", _, _):
             (401, #"{"code":0,"message":"401: Unauthorized"}"#)
         case (_, "GET", _):
