@@ -346,6 +346,14 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             storage: .appWide(key: "settings.features.voiceMessageRecording"), defaultValue: .bool(true)
         ),
         SettingsPreferenceRegistration(
+            id: .messageHoverActions, page: .features,
+            storage: .appWide(key: "settings.features.messageHoverActions"), defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
+            id: .scrollToBottomButton, page: .features,
+            storage: .appWide(key: "settings.features.scrollToBottomButton"), defaultValue: .bool(true)
+        ),
+        SettingsPreferenceRegistration(
             id: .attachmentCompactionPrompt, page: .features,
             storage: .appWide(key: "settings.attachments.attachmentCompactionPrompt"), defaultValue: .string(AttachmentHandlingPolicy.ask.rawValue)
         ),

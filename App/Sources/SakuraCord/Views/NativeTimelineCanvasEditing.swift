@@ -345,7 +345,9 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcileActionCapsule() {
-        guard !sendTransitionBlocksInteractions else {
+        guard !sendTransitionBlocksInteractions,
+              model?.featuresSettings.messageHoverActions == true
+        else {
             removeActionCapsule()
             return
         }
