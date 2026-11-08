@@ -600,7 +600,7 @@ extension NativeTimelineCanvasView {
         // audio player, sits at its final place: the row joins it there.
         editedTextBands = editedTextBands.filter { identifier, band in
             runningMotionIDs.contains(band.motionID)
-                && rowIndex(forIdentifier: identifier).map { !hostsLiveViews(at: $0) } == true
+                && rowIndex(forIdentifier: identifier, hint: band.rowIndex).map { !hostsLiveViews(at: $0) } == true
         }
         let endsBands = editedTextBands.count != bandCount
         departedRuns = departedRuns.compactMapValues { $0.advanced(to: now) }
