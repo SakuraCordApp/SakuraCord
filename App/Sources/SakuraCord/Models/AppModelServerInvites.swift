@@ -159,7 +159,9 @@ extension AppModel {
             // Discord asks for an application only when it reports a verification form for this join.
             if accepted.invite.requiresApplication, accepted.requiresVerification {
                 store.showsJoinDialog = false
-                openGuildJoinApplication(invite.guildID, inviteCode: reference.code)
+                openGuildJoinApplication(invite.guildID, inviteCode: reference.code, guild: .init(
+                    id: invite.guildID, name: accepted.invite.name, iconURL: accepted.invite.iconURL
+                ))
                 return true
             }
             // Member screening admits the account as a pending member that must answer the form.

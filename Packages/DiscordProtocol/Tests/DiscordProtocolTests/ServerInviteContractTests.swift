@@ -145,8 +145,6 @@ struct ServerInviteContractTests {
         #expect(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "lurker", value: "false")])
         #expect(request.httpBody == Data("{}".utf8))
         #expect(request.value(forHTTPHeaderField: "X-Context-Properties") == "e30=")
-        // An apply-to-join server answers with the started application, which still needs its form.
-        #expect(try await provider.joinDiscoverableGuild(.init(rawValue: 954)))
 
         await provider.setCaptchaHandler { challenge in
             #expect(challenge.siteKey == "site-key")
@@ -155,15 +153,15 @@ struct ServerInviteContractTests {
         }
         _ = try await provider.joinDiscoverableGuild(.init(rawValue: 951))
         let writes = capture.requests.filter { $0.httpMethod == "PUT" }
-        #expect(writes.count == 4)
-        #expect(writes[2].url == writes[3].url)
-        #expect(writes[2].value(forHTTPHeaderField: "X-Captcha-Key") == nil)
-        #expect(writes[3].value(forHTTPHeaderField: "X-Captcha-Key") == "human-solution")
+        #expect(writes.count == 3)
+        #expect(writes[1].url == writes[2].url)
+        #expect(writes[1].value(forHTTPHeaderField: "X-Captcha-Key") == nil)
+        #expect(writes[2].value(forHTTPHeaderField: "X-Captcha-Key") == "human-solution")
 
         await #expect(throws: ServerInviteError.banned) { _ = try await provider.joinDiscoverableGuild(.init(rawValue: 952)) }
         await provider.seedInviteGuild(owner: false)
         _ = try await provider.joinDiscoverableGuild(.init(rawValue: 900))
-        #expect(capture.requests.filter { $0.httpMethod == "PUT" }.count == 5)
+        #expect(capture.requests.filter { $0.httpMethod == "PUT" }.count == 4)
         #expect(await !provider.requestSafetyCircuitIsOpen)
 
         await provider.disconnect()
@@ -456,7 +454,6 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
         let (status, body) = guildID == "951" && !hasSolution ? (400, Self.challenge)
             : guildID == "952" ? (403, #"{"code":40007,"message":"The user is banned from this guild."}"#)
             : guildID == "953" ? (403, #"{"code":50001,"message":"Missing Access"}"#)
-            : guildID == "954" ? (200, #"{"show_verification_form":true,"join_request":{"id":"56","guild_id":"954","application_status":"STARTED"}}"#)
             : (200, #"{"id":"\#(guildID)","name":"Parks","features":["DISCOVERABLE"]}"#)
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

@@ -125,11 +125,11 @@ DM whose id equals the request id, with channel flag `65536`; approval then post
 a system message of type 52 there. SakuraCord does not implement review or
 editing the form; those remain in Discord.
 
-Applying from a guild profile sends the ordinary full-membership
-`PUT /guilds/{guild}/members/@me` (see [Server tag cards](#server-tag-cards));
-for such a guild Discord answers with `join_request` and
-`show_verification_form` instead of a membership, and the form is then read
-without an invite code. Member screening without manual approval (gate feature
+Applying from a guild profile reads the form without an invite code, and the
+submitting `PUT /guilds/{guild}/requests/@me` creates the application. Without an
+invite, both the full-membership `PUT /guilds/{guild}/members/@me` and the
+Reapply `POST /guilds/{guild}/requests/@me` answer `404` (observed 8 November
+2026). Member screening without manual approval (gate feature
 only) admits the account as a pending member (`pending:true`); it submits the
 same form through the same `PUT`, and Discord clears `pending` with a member
 update. Like Discord's input blocker, a pending member's conversation offers

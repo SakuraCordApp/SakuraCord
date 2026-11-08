@@ -147,9 +147,11 @@ extension AppModel {
     }
 
     /// Opens the application for a server; an invite code is required when the account has no other access to it.
-    func openGuildJoinApplication(_ guildID: GuildID, inviteCode: String? = nil) {
+    /// `guild` is the server as the caller already shows it, so the form's header is right before the form loads.
+    func openGuildJoinApplication(_ guildID: GuildID, inviteCode: String? = nil, guild: GuildJoinRequestGuild? = nil) {
         let store = guildJoinRequests
         if let inviteCode { store.inviteCodes[guildID] = inviteCode }
+        if let guild, store.guilds[guildID] == nil { store.guilds[guildID] = guild }
         store.form = nil
         store.error = nil
         let modal = GuildJoinRequestStore.Modal(guildID: guildID, kind: .form)

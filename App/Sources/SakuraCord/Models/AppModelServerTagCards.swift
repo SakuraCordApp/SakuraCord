@@ -112,7 +112,14 @@ extension AppModel {
             dismissExpandedProfile()
             selectGuildJoinRequest(guildID)
             return true
-        case .apply, .join:
+        case .apply:
+            // Discord answers 404 to joining or to starting an application from here. The form loads without an
+            // invite, and submitting it creates the application.
+            dismissContextualProfile()
+            dismissExpandedProfile()
+            openGuildJoinApplication(guildID, guild: .init(id: guildID, name: profile.name, iconURL: profile.iconURL))
+            return true
+        case .join:
             break
         }
         let invites = serverInvites
@@ -129,13 +136,6 @@ extension AppModel {
         do {
             let requiresVerification = try await session.provider.joinDiscoverableGuild(guildID)
             guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
-            if action == .apply {
-                // Discord answers the profile's Apply with an application rather than a membership.
-                dismissContextualProfile()
-                dismissExpandedProfile()
-                openGuildJoinApplication(guildID)
-                return true
-            }
             guard let guild = try await awaitJoinedGuild(guildID, account: session) else { return false }
             navigateToServerTagGuild(guildID)
             if requiresVerification {
