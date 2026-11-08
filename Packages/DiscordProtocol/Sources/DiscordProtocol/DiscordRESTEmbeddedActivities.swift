@@ -408,8 +408,8 @@ private struct ActivityShelfDTO: Decodable {
     private static let promotedFlag = 1 << 29
 
     /// Shelf order, without Activities the desktop (web) client cannot run.
-    /// Recents order follows the official client's application frecency (uses
-    /// times the mean age weight of the last ten launches), then the name.
+    /// Recents order follows the score the official launcher sorts by: the age
+    /// weights of the last ten launches added up, then the name.
     func domain(frecency: [DiscordFrecencyEntry], now: Date = .now) -> [EmbeddedActivityApplication] {
         let applications = Dictionary(
             self.applications.elements.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
@@ -418,7 +418,7 @@ private struct ActivityShelfDTO: Decodable {
             DiscordSettingsProto.frecency(
                 totalUses: entry.totalUses, recentUses: entry.recentUses.filter { $0 > 0 },
                 nowMilliseconds: UInt64(now.timeIntervalSince1970 * 1000)
-            ).map { (entry.key, $0.frecency) }
+            ).map { (entry.key, $0.score) }
         }, uniquingKeysWith: max)
         let recentRanks = Dictionary(uniqueKeysWithValues: Set(activities.elements.map(\.applicationID))
             .sorted { lhs, rhs in
