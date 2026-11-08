@@ -246,6 +246,8 @@ extension AppModel {
             serverInvites.changed()
         } catch {
             guard isCurrentAccountSession(account), !Task.isCancelled else { return }
+            // An older shelf can't vouch for what this read would have listed.
+            embeddedActivities.shelves[guildID] = nil
             embeddedActivities.shelfError = error.localizedDescription
             return
         }
@@ -555,8 +557,7 @@ extension AppModel {
         if embeddedActivities.application(id) == nil { await loadActivityShelf(guildID: guildID) }
         guard isCurrentAccountSession(account), !Task.isCancelled else { return nil }
         if let application = embeddedActivities.application(id) { return application }
-        // A refresh that failed leaves an older shelf behind, which can't vouch for a new Activity.
-        guard embeddedActivities.shelves[guildID] != nil, embeddedActivities.shelfError == nil else {
+        guard embeddedActivities.shelves[guildID] != nil else {
             errorMessage = "Couldn’t load Activities: \(embeddedActivities.shelfError ?? "try again.")"
             return nil
         }
