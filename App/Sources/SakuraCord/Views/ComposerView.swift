@@ -122,54 +122,7 @@ struct ComposerView: View {
                         ApplicationCommandComposerBadge(command: commandDraft.command, cancel: cancelCommand)
                     } else if !isCreatingThread {
                         composerLeadingButton(appearance: appearance)
-                        .escapeDismissiblePopover(isPresented: $showComposerActions, arrowEdge: .top) {
-                            VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
-                                if canAddAttachments {
-                                    Button {
-                                        showComposerActions = false
-                                        showFileImporter = true
-                                    } label: {
-                                        Label("Upload a File", systemImage: "doc.badge.plus")
-                                            .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
-                                    }
-                                    Button {
-                                        showComposerActions = false
-                                        showPhotosPicker = true
-                                    } label: {
-                                        Label("Select from Photos", systemImage: "photo.on.rectangle")
-                                            .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
-                                    }
-                                }
-                                if canCreateThread {
-                                    Button {
-                                        showComposerActions = false
-                                        model.beginThreadCreation()
-                                    } label: {
-                                        Label {
-                                            Text("Create Thread")
-                                        } icon: {
-                                            SakuraCordSystemSymbol.swiftUIImage(named: SakuraCordSystemSymbol.thread)
-                                        }
-                                            .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
-                                    }
-                                }
-                                if canCreatePoll {
-                                    Button {
-                                        showComposerActions = false
-                                        showPollCreator = true
-                                    } label: {
-                                        Label("Create a Poll", systemImage: "chart.bar.xaxis")
-                                            .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
-                                    }
-                                }
-                                startActivityRow
-                                ComposerTranslateDraftRow(model: model, destination: conversation) {
-                                    showComposerActions = false
-                                }
-                            }
-                            .labelStyle(ComposerActionLabelStyle())
-                            .buttonStyle(PopoverRowButtonStyle()).padding(InterfaceScale.metric(6)).frame(width: InterfaceScale.metric(200))
-                        }
+                        .escapeDismissiblePopover(isPresented: $showComposerActions, arrowEdge: .top) { composerActionsMenu }
                         .background { activityShelfPresenter }
                     }
                 }
@@ -1794,6 +1747,56 @@ private extension ComposerView {
 }
 
 extension ComposerView {
+    /// The composer's + menu: files, a thread, a poll, an Activity and translation.
+    private var composerActionsMenu: some View {
+        VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
+            if canAddAttachments {
+                Button {
+                    showComposerActions = false
+                    showFileImporter = true
+                } label: {
+                    Label("Upload a File", systemImage: "doc.badge.plus")
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+                }
+                Button {
+                    showComposerActions = false
+                    showPhotosPicker = true
+                } label: {
+                    Label("Select from Photos", systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+                }
+            }
+            if canCreateThread {
+                Button {
+                    showComposerActions = false
+                    model.beginThreadCreation()
+                } label: {
+                    Label {
+                        Text("Create Thread")
+                    } icon: {
+                        SakuraCordSystemSymbol.swiftUIImage(named: SakuraCordSystemSymbol.thread)
+                    }
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+                }
+            }
+            if canCreatePoll {
+                Button {
+                    showComposerActions = false
+                    showPollCreator = true
+                } label: {
+                    Label("Create a Poll", systemImage: "chart.bar.xaxis")
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+                }
+            }
+            startActivityRow
+            ComposerTranslateDraftRow(model: model, destination: conversation) {
+                showComposerActions = false
+            }
+        }
+        .labelStyle(ComposerActionLabelStyle())
+        .buttonStyle(PopoverRowButtonStyle()).padding(InterfaceScale.metric(6)).frame(width: InterfaceScale.metric(200))
+    }
+
     /// Activities start in the channel itself, never in a thread.
     private var activityChannel: Channel? {
         guard conversation == .channel, let channel = model.selectedChannel,
