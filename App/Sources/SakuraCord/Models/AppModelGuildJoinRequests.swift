@@ -28,6 +28,8 @@ final class GuildJoinRequestStore {
     var selectedGuildID: GuildID?
     var showsAnswers = false
     var isFolderExpanded = false
+    /// Discord points at the folder once an application is submitted instead of leaving the current view.
+    var showsSubmittedTip = false
     var isWorking = false
     var error: String?
     /// Approvals whose greeting was closed while Discord records the acknowledgement.
@@ -35,11 +37,6 @@ final class GuildJoinRequestStore {
     /// The invite each application was opened from; Discord's form request carries it.
     @ObservationIgnored var inviteCodes: [GuildID: String] = [:]
     @ObservationIgnored var isLoadingGuilds = false
-
-    /// Applications awaiting review or rejected, oldest first, as the Pending Applications folder lists them.
-    var railRequests: [GuildJoinRequest] {
-        requests.values.filter(\.isOpen).sorted { $0.id < $1.id }
-    }
 
     func guildName(_ guildID: GuildID) -> String {
         guilds[guildID]?.name ?? "this server"
@@ -54,6 +51,7 @@ final class GuildJoinRequestStore {
         selectedGuildID = nil
         showsAnswers = false
         isFolderExpanded = false
+        showsSubmittedTip = false
         isWorking = false
         error = nil
         acknowledging = []
@@ -63,10 +61,18 @@ final class GuildJoinRequestStore {
 }
 
 extension AppModel {
+    /// Unapproved applications to servers the account is not in, oldest first, as Discord's Pending Applications
+    /// folder lists them. Unsubmitted ones stay listed so they can be finished or discarded.
+    var pendingApplications: [GuildJoinRequest] {
+        guildJoinRequests.requests.values
+            .filter { ($0.isOpen || $0.status == .started) && serverRailGuildsByID[$0.guildID] == nil }
+            .sorted { $0.id < $1.id }
+    }
+
     func applyGuildJoinRequests(_ list: [GuildJoinRequest]) {
         let store = guildJoinRequests
         store.requests = Dictionary(list.map { ($0.guildID, $0) }) { $1 }
-        if let guildID = store.selectedGuildID, store.railRequests.contains(where: { $0.guildID == guildID }) == false {
+        if let guildID = store.selectedGuildID, !pendingApplications.contains(where: { $0.guildID == guildID }) {
             // Approved, withdrawn elsewhere, or reapplied: the page no longer describes an application.
             selectGuildJoinRequest(nil)
         }
@@ -87,7 +93,7 @@ extension AppModel {
     private func loadGuildJoinRequestGuildsIfNeeded() {
         let store = guildJoinRequests
         guard !store.isLoadingGuilds,
-              store.railRequests.contains(where: { store.guilds[$0.guildID] == nil }) else { return }
+              pendingApplications.contains(where: { store.guilds[$0.guildID] == nil }) else { return }
         store.isLoadingGuilds = true
         startAccountChildTask(account: accountSession()) { model, account in
             let guilds = try? await account.provider.guildJoinRequestGuilds()
@@ -149,8 +155,12 @@ extension AppModel {
             store.form = nil
             store.modal = nil
             showGuildJoinApprovalIfNeeded()
-            // A screened member continues in the server; an applicant waits on the status page.
-            if serverRailGuildsByID[form.guildID] == nil { selectGuildJoinRequest(form.guildID) }
+            // Like Discord, an applicant stays where they are; the folder opens with a note on what happens next.
+            // A screened member simply continues in the server.
+            if serverRailGuildsByID[form.guildID] == nil {
+                store.isFolderExpanded = true
+                store.showsSubmittedTip = true
+            }
         }
     }
 

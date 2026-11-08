@@ -34,8 +34,7 @@ public extension DiscordRESTProvider {
         let startedFrom = cachedGuildJoinRequests[guildID]?.id
         let (data, response) = try await perform(
             "/guilds/\(guildID)/requests/@me", method: "PUT", query: [],
-            body: ["version": .string(cached.version), "form_fields": .array(answered)],
-            headers: ["X-Context-Properties": Data("{}".utf8).base64EncodedString()], maximumAttempts: 1
+            body: ["version": .string(cached.version), "form_fields": .array(answered)], maximumAttempts: 1
         )
         try checkJoinRequestResponse(data, response)
         try applyJoinRequestResponse(data, startedFrom: startedFrom)

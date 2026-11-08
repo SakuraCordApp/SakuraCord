@@ -264,7 +264,8 @@ struct ServerInviteContractTests {
         let query = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
         #expect(query == [URLQueryItem(name: "with_guild", value: "true"), URLQueryItem(name: "invite_code", value: "apply")])
         #expect(requests[1].url?.path == "/api/v9/guilds/900/requests/@me")
-        #expect(requests[1].value(forHTTPHeaderField: "X-Context-Properties") == "e30=")
+        // The official client's submission carries no context properties, unlike the invite acceptance.
+        #expect(requests[1].value(forHTTPHeaderField: "X-Context-Properties") == nil)
         let body = try #require(JSONSerialization.jsonObject(with: requests[1].httpBody!) as? [String: Any])
         #expect(body["version"] as? String == "2026-11-03T02:44:07.373000+00:00")
         let fields = try #require(body["form_fields"] as? [[String: Any]])

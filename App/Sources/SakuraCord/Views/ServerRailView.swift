@@ -18,13 +18,14 @@ struct ServerRailContainer: View {
             sidebarWidth: sidebarWidth,
             items: model.serverRailPresentation.items,
             directMessages: model.serverRailPresentation.directMessages,
-            joinRequests: joinRequests.railRequests.map { request in
+            joinRequests: model.pendingApplications.map { request in
                 ServerRailJoinRequestEntry(id: request.guildID, name: model.joinRequestGuildName(request.guildID),
                                            iconURL: model.joinRequestGuildIconURL(request.guildID),
-                                           isRejected: request.status == .rejected,
+                                           status: request.status,
                                            isSelected: joinRequests.selectedGuildID == request.guildID)
             },
             joinRequestsExpanded: Bindable(joinRequests).isFolderExpanded,
+            showsSubmittedTip: Bindable(joinRequests).showsSubmittedTip,
             selectJoinRequest: model.selectGuildJoinRequest,
             home: model.serverRailPresentation.home,
             selectHome: { model.selectGuild(nil) },
@@ -140,6 +141,7 @@ struct ServerRailView: View {
     let directMessages: [ServerRailDirectMessageEntry]
     var joinRequests: [ServerRailJoinRequestEntry] = []
     var joinRequestsExpanded: Binding<Bool> = .constant(false)
+    var showsSubmittedTip: Binding<Bool> = .constant(false)
     var selectJoinRequest: (GuildID?) -> Void = { _ in }
     let home: ServerRailHomeEntry
     let selectHome: () -> Void
@@ -182,7 +184,7 @@ struct ServerRailView: View {
 
                 if !joinRequests.isEmpty {
                     PendingApplicationsRailFolder(entries: joinRequests, isExpanded: joinRequestsExpanded,
-                                                  select: { selectJoinRequest($0) })
+                                                  showsSubmittedTip: showsSubmittedTip, select: { selectJoinRequest($0) })
                         .transition(ServerRailAnimations.membershipTransition)
                 }
 
@@ -207,6 +209,9 @@ struct ServerRailView: View {
         }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
+        // Rows that appear or leave above the visible ones, such as the Pending Applications folder, must not
+        // scroll Home out of view.
+        .defaultScrollAnchor(.top, for: .sizeChanges)
         // Scrolled icons must not draw beneath the window's traffic lights.
         .scrollEdgeEffectStyle(.hard, for: .top)
         .background {
@@ -431,14 +436,24 @@ struct ServerRailJoinRequestEntry: Identifiable, Equatable {
     let id: GuildID
     let name: String
     let iconURL: URL?
-    let isRejected: Bool
+    let status: GuildJoinRequest.Status
     let isSelected: Bool
+
+    /// Discord's hover wording for each state.
+    var statusDescription: String {
+        switch status {
+        case .started: "Membership Incomplete"
+        case .rejected: "Membership Rejected"
+        default: "Membership In Review"
+        }
+    }
 }
 
-/// Applications under review or rejected, grouped like Discord's Pending Applications folder.
+/// Unapproved applications, grouped like Discord's Pending Applications folder.
 private struct PendingApplicationsRailFolder: View {
     let entries: [ServerRailJoinRequestEntry]
     @Binding var isExpanded: Bool
+    @Binding var showsSubmittedTip: Bool
     let select: (GuildID) -> Void
     @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
@@ -470,6 +485,20 @@ private struct PendingApplicationsRailFolder: View {
                 isHovering ? ServerRailHoverItem(name: "Pending Applications", bounds: bounds) : nil
             }
             .onServerRailHover { isHovering = $0 }
+            .popover(isPresented: $showsSubmittedTip, arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
+                    Text("Your application is pending!").font(.interface(.headline))
+                    Text("The server admin will get back to you soon.").font(.interface(.callout)).foregroundStyle(.secondary)
+                    Button("Got it") { showsSubmittedTip = false }
+                        .buttonStyle(.glassProminent)
+                        .buttonBorderShape(.capsule)
+                        .tint(SakuraCordAccentColor.color)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, InterfaceScale.metric(6))
+                }
+                .padding(InterfaceScale.metric(14))
+                .frame(width: InterfaceScale.metric(260))
+            }
             if isExpanded {
                 ForEach(entries) { entry in
                     JoinRequestRailButton(entry: entry) { select(entry.id) }
@@ -499,16 +528,16 @@ private struct JoinRequestRailButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        let label = entry.isRejected ? "\(entry.name), application denied" : "\(entry.name), application pending"
+        let label = "\(entry.name), \(entry.statusDescription)"
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(4)) {
                 ServerRailSelectionIndicator(isSelected: entry.isSelected, isHovering: isHovering, hasNotification: false)
                 GuildIconView(name: entry.name, iconURL: entry.iconURL, size: InterfaceScale.metric(44),
                               cornerRadius: InterfaceScale.metric(13), animates: isHovering, isSelected: entry.isSelected)
                     .saturation(0.4)
-                    .modifier(ApplicationStatusBadge(symbol: entry.isRejected ? "xmark" : "hourglass",
-                                                     tint: entry.isRejected ? Color(hex: 0xF23F43) : .gray,
-                                                     diameter: 18, offset: 4))
+                    .modifier(ApplicationStatusBadge(symbol: entry.status == .rejected ? "xmark" : "hourglass",
+                                                     tint: entry.status == .rejected ? Color(hex: 0xF23F43) : .gray,
+                                                     diameter: 18, offset: 4, isHidden: entry.status == .started))
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
             .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
@@ -564,15 +593,19 @@ struct ApplicationStatusBadge: ViewModifier {
     /// Unscaled points, like the offset.
     let diameter: CGFloat
     let offset: CGFloat
+    /// Discord shows no badge on an unsubmitted application; the badge shrinks away rather than popping.
+    var isHidden = false
 
     func body(content: Content) -> some View {
         let gap = InterfaceScale.metric(2)
+        let scale = isHidden ? 0.01 : 1
         let diameter = InterfaceScale.metric(diameter)
         let offset = InterfaceScale.metric(offset)
         content
             .overlay(alignment: .bottomTrailing) {
                 Circle()
                     .frame(width: diameter + gap * 2, height: diameter + gap * 2)
+                    .scaleEffect(scale)
                     .offset(x: offset + gap, y: offset + gap)
                     .blendMode(.destinationOut)
             }
@@ -584,6 +617,7 @@ struct ApplicationStatusBadge: ViewModifier {
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: diameter, height: diameter)
                     .background(tint, in: Circle())
+                    .scaleEffect(scale)
                     .offset(x: offset, y: offset)
             }
     }

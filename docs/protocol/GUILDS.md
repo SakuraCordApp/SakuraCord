@@ -93,10 +93,11 @@ Applicant sequence, as the official client performs it:
    request's status instead of the form.
 2. `GET /guilds/{guild}/member-verification?with_guild=true&invite_code={code}`
    returns `version`, `description`, `form_fields`, `guild` and `profile`.
-3. `PUT /guilds/{guild}/requests/@me` with `X-Context-Properties: e30=` and
-   `{version, form_fields}` submits. Each field is echoed as received plus
-   `response`: a string for `TEXT_INPUT` (at most 150 characters) and
-   `PARAGRAPH` (1,000), the zero-based choice index for `MULTIPLE_CHOICE`, and
+3. `PUT /guilds/{guild}/requests/@me` with `{version, form_fields}` and no
+   `X-Context-Properties` submits. Each field is echoed as received plus
+   `response`: a string for `TEXT_INPUT` (at most 150 UTF-16 code units, the
+   input's `maxLength`, which truncates longer input) and `PARAGRAPH` (1,000,
+   newlines kept), the zero-based choice index for `MULTIPLE_CHOICE`, and
    `true` for `TERMS`. The response is `201` with the `SUBMITTED` request.
 4. Withdrawing is `DELETE /guilds/{guild}/requests/@me` (`204`). Reapplying after
    a rejection is `POST /guilds/{guild}/requests/@me` without a body, which
@@ -134,15 +135,27 @@ same form through the same `PUT`, and Discord clears `pending` with a member
 update. Like Discord's input blocker, a pending member's conversation offers
 Complete in place of the composer.
 
-Like the official client, SakuraCord groups `SUBMITTED` and `REJECTED` requests in
-a Pending Applications rail folder; selecting one replaces the workspace with its
-status, which shows the rejection reason and offers Reapply and Withdraw. The form
-and the approval greeting are modals. SakuraCord also lets the applicant view the
+Like the official client, SakuraCord groups the account's unapproved requests to
+servers it is not in (`STARTED`, `SUBMITTED` and `REJECTED`) in a Pending
+Applications rail folder; selecting one replaces the workspace with its status.
+An unsubmitted application offers Open Application and Discard Application (the
+same `DELETE` as Withdraw); a rejected one shows the reason and offers Reapply and
+Withdraw. Submitting leaves the current view in place, opens the folder and points
+at it with "Your application is pending!". The form and the approval greeting are
+modals. SakuraCord also lets the applicant view the
 submitted answers, read with `GET /join-requests/{id}`, which Discord returns to
 the applicant; the official client shows them only in an interview. The interview's
 type 52 message renders as the approval notice. Unknown field types (Discord also
 defines `VERIFICATION`) cannot be answered here, so their application must be
 completed in Discord. Writes use the ordinary single-attempt mutation budget.
+
+Official Fresh host `0.0.411`, web build `667580`, observed on 8 November 2026
+with the same server and accounts, confirmed the submission without
+`X-Context-Properties`, the 150-unit truncation of a pasted answer, the kept
+paragraph newline, the folder and "Membership Incomplete" status of a `STARTED`
+request after Reapply, Open Application (which reads the form again with the
+remembered `invite_code`), Discard Application, and the pending note after
+submitting.
 
 Official Fresh host `0.0.411`, web build `660103`, observed on 3 November 2026
 with a test server switched to apply-to-join and a second account, confirmed the

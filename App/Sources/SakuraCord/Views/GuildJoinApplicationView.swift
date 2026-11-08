@@ -143,29 +143,33 @@ struct GuildJoinRequestPage: View {
     private var store: GuildJoinRequestStore { model.guildJoinRequests }
     private var request: GuildJoinRequest? { store.requests[guildID] }
     private var guildName: String { model.joinRequestGuildName(guildID) }
+    private var status: GuildJoinRequest.Status? { request?.status }
 
     var body: some View {
-        let rejected = request?.status == .rejected
         let card = RoundedRectangle(cornerRadius: cardRadius)
         ScrollView(.vertical) {
             VStack(spacing: InterfaceScale.metric(16)) {
                 VStack(spacing: 0) {
-                    StatusCard(symbol: rejected ? "xmark" : "hourglass", tint: rejected ? .red : .gray,
-                               iconURL: model.joinRequestGuildIconURL(guildID), guildName: guildName,
-                               title: rejected ? "Your application to join \(guildName) has been denied."
-                                               : "Your application to join \(guildName) is awaiting review!",
-                               detail: rejected ? request?.rejectionReason.map { "Reason: \($0)" }
-                                                : "You’ll get notified when there’s an update.")
+                    statusCard
                     GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
                         HStack(spacing: InterfaceScale.metric(8)) {
-                            if rejected {
+                            switch status {
+                            case .started?:
+                                ModalGlassButton(symbol: "list.bullet", label: "Open Application", fillsWidth: true) {
+                                    model.openGuildJoinApplication(guildID)
+                                }
+                            case .rejected?:
                                 ModalGlassButton(symbol: "arrow.clockwise", label: "Reapply", isLoading: isRunning(.reapply),
                                                  fillsWidth: true) {
                                     action = .reapply
                                     model.reapplyToGuild(guildID)
                                 }
+                            default:
+                                EmptyView()
                             }
-                            ModalGlassButton(symbol: "arrow.uturn.backward", label: "Withdraw", primary: true, destructive: true,
+                            ModalGlassButton(symbol: status == .started ? "trash" : "arrow.uturn.backward",
+                                             label: status == .started ? "Discard Application" : "Withdraw",
+                                             primary: true, destructive: true,
                                              isLoading: isRunning(.withdraw), fillsWidth: true) { confirmsWithdraw = true }
                         }
                     }
@@ -177,24 +181,27 @@ struct GuildJoinRequestPage: View {
                 .background(.background.opacity(0.88), in: card)
                 .overlay { card.stroke(.primary.opacity(0.06)) }
                 .containerShape(card)
-                GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
-                    HStack(spacing: InterfaceScale.metric(8)) {
-                        ModalGlassButton(symbol: store.showsAnswers ? "eye.slash" : "eye",
-                                         label: store.showsAnswers ? "Hide Application" : "View Application",
-                                         isLoading: isRunning(.answers),
-                                         height: 32) {
-                            action = .answers
-                            model.toggleGuildJoinRequestAnswers(guildID)
-                        }
-                        if let channelID = request?.interviewChannelID {
-                            ModalGlassButton(symbol: "bubble.left.and.bubble.right", label: "Open Interview", height: 32) {
-                                model.navigate(to: channelID)
+                // An unsubmitted application has no answers on Discord yet.
+                if status != .started {
+                    GlassEffectContainer(spacing: InterfaceScale.metric(8)) {
+                        HStack(spacing: InterfaceScale.metric(8)) {
+                            ModalGlassButton(symbol: store.showsAnswers ? "eye.slash" : "eye",
+                                             label: store.showsAnswers ? "Hide Application" : "View Application",
+                                             isLoading: isRunning(.answers),
+                                             height: 32) {
+                                action = .answers
+                                model.toggleGuildJoinRequestAnswers(guildID)
+                            }
+                            if let channelID = request?.interviewChannelID {
+                                ModalGlassButton(symbol: "bubble.left.and.bubble.right", label: "Open Interview", height: 32) {
+                                    model.navigate(to: channelID)
+                                }
                             }
                         }
                     }
+                    .disabled(store.isWorking)
+                    if store.showsAnswers { answers }
                 }
-                .disabled(store.isWorking)
-                if store.showsAnswers { answers }
             }
             .padding(InterfaceScale.metric(32))
             .frame(maxWidth: .infinity)
@@ -203,7 +210,7 @@ struct GuildJoinRequestPage: View {
         .background { SakuraCordSignInBackdrop().ignoresSafeArea(edges: .top) }
         .tint(SakuraCordAccentColor.color)
         .animation(motion, value: store.showsAnswers)
-        .animation(motion, value: request?.status)
+        .animation(motion, value: status)
         .animation(motion, value: request?.interviewChannelID)
         .animation(motion, value: store.error)
         .animation(motion, value: answersLoaded)
@@ -214,10 +221,28 @@ struct GuildJoinRequestPage: View {
             }
             Button("Never Mind", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to withdraw your application from \(guildName)?")
+            Text(status == .started ? "If you discard, you can start a new application from an invite link."
+                                    : "Are you sure you want to withdraw your application from \(guildName)?")
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Application to \(guildName)")
+    }
+
+    @ViewBuilder private var statusCard: some View {
+        let iconURL = model.joinRequestGuildIconURL(guildID)
+        switch status {
+        case .started?:
+            StatusCard(symbol: "list.bullet", tint: .gray, iconURL: iconURL, guildName: guildName,
+                       title: "Submit your application to join \(guildName).", detail: nil)
+        case .rejected?:
+            StatusCard(symbol: "xmark", tint: .red, iconURL: iconURL, guildName: guildName,
+                       title: "Your application to join \(guildName) has been denied.",
+                       detail: request?.rejectionReason.map { "Reason: \($0)" })
+        default:
+            StatusCard(symbol: "hourglass", tint: .gray, iconURL: iconURL, guildName: guildName,
+                       title: "Your application to join \(guildName) is awaiting review!",
+                       detail: "You’ll get notified when there’s an update.")
+        }
     }
 
     private func isRunning(_ action: Action) -> Bool { store.isWorking && self.action == action }
@@ -285,7 +310,23 @@ private struct GuildJoinApplicationFieldEditor: View {
             case .shortAnswer:
                 textField(TextField(field.placeholder ?? "Enter your answer", text: text))
             case .paragraph:
-                textField(TextField(field.placeholder ?? "Enter your answer", text: text, axis: .vertical).lineLimit(3 ... 10))
+                // A text view, so Return starts a new line as in Discord's paragraph answers.
+                textField(ZStack(alignment: .topLeading) {
+                    if text.wrappedValue.isEmpty {
+                        Text(field.placeholder ?? "Enter your answer")
+                            .foregroundStyle(.tertiary)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                    TextEditor(text: text)
+                        .textEditorStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: InterfaceScale.metric(54), maxHeight: InterfaceScale.metric(180))
+                        .fixedSize(horizontal: false, vertical: true)
+                        // Aligns typed text with the placeholder despite the text view's line padding.
+                        .padding(.horizontal, -InterfaceScale.metric(5))
+                        .accessibilityLabel(field.label)
+                })
             case .multipleChoice(let choices):
                 VStack(spacing: InterfaceScale.metric(4)) {
                     ForEach(choices.indices, id: \.self) { index in
@@ -336,21 +377,21 @@ private struct GuildJoinApplicationFieldEditor: View {
     private var text: Binding<String> {
         Binding(
             get: { if case .text(let value) = field.answer { value } else { "" } },
-            set: { field.answer = $0.isEmpty ? nil : .text($0) }
+            set: { field.answer = $0.isEmpty ? nil : .text(field.limited($0)) }
         )
     }
 
     private var showsCounter: Bool {
-        field.characterLimit.map { text.wrappedValue.count > $0 * 4 / 5 } ?? false
+        field.characterLimit.map { text.wrappedValue.utf16.count > $0 * 4 / 5 } ?? false
     }
 
-    /// Discord limits answers; past the limit the count turns red and Submit stays disabled.
+    /// The remaining room as the answer nears Discord's limit, which input cannot pass.
     @ViewBuilder private var counter: some View {
         if showsCounter, let limit = field.characterLimit {
-            let count = text.wrappedValue.count
+            let count = text.wrappedValue.utf16.count
             Text("\(count)/\(limit)")
                 .font(.interface(.caption).monospacedDigit())
-                .foregroundStyle(count > limit ? .red : .secondary)
+                .foregroundStyle(count >= limit ? .orange : .secondary)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }

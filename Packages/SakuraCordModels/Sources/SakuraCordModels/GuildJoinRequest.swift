@@ -95,7 +95,7 @@ public struct GuildJoinApplicationField: Equatable, Sendable {
         self.answer = answer
     }
 
-    /// The first-party form's input limits.
+    /// The first-party form's input limits, in UTF-16 code units like its text inputs' `maxLength`.
     public var characterLimit: Int? {
         switch kind {
         case .shortAnswer: 150
@@ -104,13 +104,23 @@ public struct GuildJoinApplicationField: Equatable, Sendable {
         }
     }
 
+    /// Like the first-party inputs, text past the limit is dropped rather than typed, a whole character at a time.
+    public func limited(_ text: String) -> String {
+        guard let characterLimit, text.utf16.count > characterLimit else { return text }
+        var length = 0
+        return String(text.prefix { character in
+            length += character.utf16.count
+            return length <= characterLimit
+        })
+    }
+
     public var isSatisfied: Bool {
         switch (kind, answer) {
         case (.unsupported, _): return false
         case (_, nil): return !isRequired
         case (.shortAnswer, .text(let text)?), (.paragraph, .text(let text)?):
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (!isRequired || !trimmed.isEmpty) && text.count <= characterLimit ?? .max
+            return (!isRequired || !trimmed.isEmpty) && text.utf16.count <= characterLimit ?? .max
         case (.multipleChoice(let choices), .choice(let index)?): return choices.indices.contains(index)
         case (.terms, .agreed(let agreed)?): return agreed || !isRequired
         default: return false
