@@ -265,12 +265,12 @@ final class EmbeddedActivityHost: NSObject {
         do {
             let preview = try await provider.embeddedActivityAuthorizationPreview(request)
             guard !isStopped else { return }
-            if !preview.isAuthorized {
-                guard await model.embeddedActivities.ask(.authorize(scopes: scopes), applicationName: preview.applicationName),
-                      !isStopped
-                else { return fail("AUTHORIZE", nonce, .oauth2, "User cancelled authorization") }
+            var granted = preview.isAuthorized
+            if !granted {
+                granted = await model.embeddedActivities.ask(.authorize(scopes: scopes), applicationName: preview.applicationName)
             }
-            let code = try await provider.authorizeEmbeddedActivity(request)
+            guard !isStopped else { return }
+            let code = try await provider.authorizeEmbeddedActivity(request, granted: granted)
             reply("AUTHORIZE", nonce, ["code": code])
         } catch {
             fail("AUTHORIZE", nonce, .oauth2, error.localizedDescription)

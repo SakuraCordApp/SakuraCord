@@ -19,7 +19,7 @@ struct EmbeddedActivityContractTests {
         let provider = makeProvider(accountID)
         let request = authorization(state: "granted")
         #expect(try await provider.embeddedActivityAuthorizationPreview(request).isAuthorized)
-        #expect(try await provider.authorizeEmbeddedActivity(request) == "one-time-code")
+        #expect(try await provider.authorizeEmbeddedActivity(request, granted: true) == "one-time-code")
         let requests = recorder.requests
         #expect(requests.map(\.httpMethod) == ["GET", "POST"])
         let previewQuery = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
@@ -35,10 +35,25 @@ struct EmbeddedActivityContractTests {
         await provider.disconnect()
     }
 
+    @Test func `a refused consent is recorded once and yields no code`() async throws {
+        let accountID = UUID().uuidString
+        let recorder = ActivityRequestRecorder(authorization: accountID)
+        let provider = makeProvider(accountID)
+        await #expect(throws: OAuth2AuthorizationError.self) {
+            _ = try await provider.authorizeEmbeddedActivity(authorization(state: "refused"), granted: false)
+        }
+        let requests = recorder.requests
+        #expect(requests.map(\.httpMethod) == ["POST"])
+        let body = try #require(JSONSerialization.jsonObject(with: requests[0].httpBody!) as? [String: Any])
+        #expect(body["authorize"] as? Bool == false)
+        #expect(body["permissions"] as? String == "0")
+        await provider.disconnect()
+    }
+
     @Test func `a forged authorization state yields no code`() async throws {
         let provider = makeProvider(UUID().uuidString)
         await #expect(throws: OAuth2AuthorizationError.self) {
-            _ = try await provider.authorizeEmbeddedActivity(authorization(state: "forged"))
+            _ = try await provider.authorizeEmbeddedActivity(authorization(state: "forged"), granted: true)
         }
         await provider.disconnect()
     }

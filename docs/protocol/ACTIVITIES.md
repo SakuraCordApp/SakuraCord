@@ -106,7 +106,9 @@ scopes, state, `integration_type=1`). When it reports `authorized: true` no cons
 is shown; otherwise the person approves first. One `POST` with
 `{authorize: true, integration_type: 1, location_context}` follows; outside a
 guild the context uses guild `10000` and channel type 1. Only the code from the
-returned location reaches the Activity. `AUTHENTICATE` validates the Activity's
+returned location reaches the Activity. A declined consent is posted too, with
+`authorize: false` and `permissions: "0"`; Discord answers with an
+`access_denied` location and the Activity gets no code. `AUTHENTICATE` validates the Activity's
 bearer token with `GET /oauth2/@me` and requires its application and this
 account's user; that token's rejection never ends the account session.
 

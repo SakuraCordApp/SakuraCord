@@ -122,24 +122,30 @@ public extension DiscordRESTProvider {
         )
     }
 
-    /// Grants the Activity an authorization code. The POST is a single attempt;
-    /// the redirect it names is parsed, never followed.
-    func authorizeEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest) async throws -> String {
+    /// Grants the Activity an authorization code, or records the person's
+    /// refusal as the official client does, which yields none. The POST is a
+    /// single attempt; the redirect it names is parsed, never followed.
+    func authorizeEmbeddedActivity(
+        _ authorization: EmbeddedActivityAuthorizationRequest,
+        granted: Bool
+    ) async throws -> String {
         let location = authorization.location
+        var body: [String: JSONValue] = [
+            "authorize": .bool(granted),
+            "integration_type": .number(1),
+            "location_context": .object([
+                // The official client uses the 10000 placeholder outside a guild.
+                "guild_id": .string(location.guildID?.description ?? "10000"),
+                "channel_id": .string(location.channelID.description),
+                "channel_type": .number(Double(authorization.channelType)),
+            ]),
+        ]
+        if !granted { body["permissions"] = .string("0") }
         let (data, response) = try await perform(
             "/oauth2/authorize",
             method: "POST",
             query: Self.authorizationQuery(authorization),
-            body: [
-                "authorize": .bool(true),
-                "integration_type": .number(1),
-                "location_context": .object([
-                    // The official client uses the 10000 placeholder outside a guild.
-                    "guild_id": .string(location.guildID?.description ?? "10000"),
-                    "channel_id": .string(location.channelID.description),
-                    "channel_type": .number(Double(authorization.channelType)),
-                ]),
-            ],
+            body: body,
             maximumAttempts: 1
         )
         let authorized: ActivityAuthorizationLocationDTO = try decodedResponse(
@@ -149,7 +155,7 @@ public extension DiscordRESTProvider {
         if let error = items.first(where: { $0.name == "error" })?.value {
             throw OAuth2AuthorizationError.denied(items.first { $0.name == "error_description" }?.value ?? error)
         }
-        guard items.first(where: { $0.name == "state" })?.value == authorization.state,
+        guard granted, items.first(where: { $0.name == "state" })?.value == authorization.state,
               let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
         else { throw OAuth2AuthorizationError.unexpectedResponse }
         return code

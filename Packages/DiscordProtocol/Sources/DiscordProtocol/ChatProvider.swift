@@ -233,7 +233,10 @@ public protocol ChatProvider: Sendable {
     func embeddedActivityAuthorizationPreview(
         _ authorization: EmbeddedActivityAuthorizationRequest
     ) async throws -> EmbeddedActivityAuthorizationPreview
-    func authorizeEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest) async throws -> String
+    func authorizeEmbeddedActivity(
+        _ authorization: EmbeddedActivityAuthorizationRequest,
+        granted: Bool
+    ) async throws -> String
     func authenticateEmbeddedActivity(_ applicationID: ApplicationID, accessToken: String) async throws -> JSONValue
     func componentChoices(
         kind: ComponentSelectKind, query: String, guildID: GuildID?, channelID: ChannelID
@@ -872,7 +875,10 @@ public extension ChatProvider {
         throw OAuth2AuthorizationError.unavailable
     }
 
-    func authorizeEmbeddedActivity(_ authorization: EmbeddedActivityAuthorizationRequest) async throws -> String {
+    func authorizeEmbeddedActivity(
+        _ authorization: EmbeddedActivityAuthorizationRequest,
+        granted: Bool
+    ) async throws -> String {
         throw OAuth2AuthorizationError.unavailable
     }
 
