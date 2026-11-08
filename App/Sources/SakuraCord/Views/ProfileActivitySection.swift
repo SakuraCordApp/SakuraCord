@@ -1,3 +1,4 @@
+import AppKit
 import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
@@ -75,6 +76,36 @@ struct ProfileActivitySection: View {
         effectiveActivity?.endTimestamp
     }
 
+    private var resolvedArtworkImage: NSImage? {
+        if let imageRef = effectiveActivity?.largeImage {
+            if imageRef.hasPrefix("file://"), let url = URL(string: imageRef) {
+                return NSImage(contentsOf: url)
+            }
+            if imageRef.hasPrefix("/"), FileManager.default.fileExists(atPath: imageRef) {
+                return NSImage(contentsOfFile: imageRef)
+            }
+        }
+        if isMusic, FileManager.default.fileExists(atPath: AppleMusicPresenceMonitor.artworkPath) {
+            return NSImage(contentsOfFile: AppleMusicPresenceMonitor.artworkPath)
+        }
+        return nil
+    }
+
+    private var resolvedRemoteArtworkURL: URL? {
+        guard let largeImage = effectiveActivity?.largeImage else { return nil }
+        if largeImage.hasPrefix("spotify:") {
+            let hash = String(largeImage.dropFirst("spotify:".count))
+            return URL(string: "https://i.scdn.co/image/\(hash)")
+        }
+        if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
+            return URL(string: largeImage)
+        }
+        if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
+            return URL(string: "https://cdn.discordapp.com/app-assets/\(appID)/\(largeImage).png")
+        }
+        return nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
             Text(headerText)
@@ -128,6 +159,35 @@ struct ProfileActivitySection: View {
     @ViewBuilder
     private var artworkView: some View {
         let cornerRadius = InterfaceScale.metric(8)
+        let size = InterfaceScale.metric(58)
+        if let image = resolvedArtworkImage {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else if let remoteURL = resolvedRemoteArtworkURL {
+            AsyncImage(url: remoteURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                default:
+                    fallbackArtIcon
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            fallbackArtIcon
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackArtIcon: some View {
+        let cornerRadius = InterfaceScale.metric(8)
+        let size = InterfaceScale.metric(58)
         if isMusic {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(
@@ -137,27 +197,15 @@ struct ProfileActivitySection: View {
                         endPoint: .bottomTrailing
                     )
                 )
+                .frame(width: size, height: size)
                 .overlay {
                     Image(systemName: "music.note")
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(.white)
                 }
-        } else if let largeImage = effectiveActivity?.largeImage,
-                  let url = URL(string: largeImage),
-                  url.scheme != nil {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                default:
-                    genericGameIcon
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
             genericGameIcon
+                .frame(width: size, height: size)
         }
     }
 

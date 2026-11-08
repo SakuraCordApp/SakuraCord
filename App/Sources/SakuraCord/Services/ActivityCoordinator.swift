@@ -62,6 +62,7 @@ public actor ActivityCoordinator {
     private var preferences: ActivityCoordinatorPreferences
     private var registeredActivities: [ActivitySource: OutgoingActivityPayload] = [:]
     private var publishedSourceIDs: Set<String> = []
+    private var onActivityChangedHandler: (@Sendable (OutgoingActivityPayload?) -> Void)?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "ActivityCoordinator")
 
     public init(
@@ -137,8 +138,16 @@ public actor ActivityCoordinator {
         registeredActivities[source] != nil
     }
 
+    public func setOnActivityChanged(_ handler: (@Sendable (OutgoingActivityPayload?) -> Void)?) {
+        self.onActivityChangedHandler = handler
+        let primary = currentPrimaryActivity()
+        handler?(primary)
+    }
+
     private func synchronizeProvider() async {
         let permitted = currentPermittedActivities()
+        let primary = permitted.values.sorted { $0.priorityRank < $1.priorityRank }.first
+        onActivityChangedHandler?(primary)
         let permittedSourceIDs = Set(permitted.keys.map(\.sourceID))
 
         // 1. Clear any sources that were previously published but are no longer permitted/registered

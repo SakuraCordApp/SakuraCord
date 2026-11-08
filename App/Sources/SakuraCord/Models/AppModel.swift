@@ -864,6 +864,7 @@ final class AppModel {
     var externalAttachmentUploadPresentation: ExternalAttachmentUploadPresentation?
     var inspectorVisibility = InspectorVisibility()
     var errorMessage: String?
+    var currentUserActivity: OutgoingActivityPayload?
 
     @ObservationIgnored var provider: any ChatProvider
     @ObservationIgnored let activityCoordinator: ActivityCoordinator
@@ -1237,6 +1238,39 @@ final class AppModel {
             }
         }
         configureAttachmentMedia()
+        let coordinatorToListen = resolvedCoordinator
+        Task { [weak self] in
+            await coordinatorToListen.setOnActivityChanged { [weak self] payload in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.currentUserActivity = payload
+                    if let userID = self.currentUser?.id, var member = self.membersByID[userID] {
+                        if let payload {
+                            member.activityText = payload.details ?? payload.name
+                            member.isListeningToMusic = payload.type == .listening
+                            member.richActivity = MemberRichActivity(
+                                name: payload.name,
+                                type: payload.type.rawValue,
+                                details: payload.details,
+                                state: payload.state,
+                                startTimestamp: payload.timestamps?.start,
+                                endTimestamp: payload.timestamps?.end,
+                                largeImage: payload.assets?.largeImage,
+                                largeText: payload.assets?.largeText,
+                                smallImage: payload.assets?.smallImage,
+                                smallText: payload.assets?.smallText,
+                                applicationID: payload.applicationId
+                            )
+                        } else {
+                            member.activityText = nil
+                            member.isListeningToMusic = false
+                            member.richActivity = nil
+                        }
+                        self.membersByID[userID] = member
+                    }
+                }
+            }
+        }
     }
 }
 

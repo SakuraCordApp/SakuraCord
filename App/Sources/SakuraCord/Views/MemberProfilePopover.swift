@@ -182,12 +182,12 @@ struct MemberProfilePopover<Footer: View>: View {
     @Environment(\.profileAnimationsPaused) private var animationsPaused
     @Environment(\.windowModalContext) private var editorModal
     @Environment(\.serverTagCardModel) private var model
-    @State private var currentUserActivity: OutgoingActivityPayload?
     @State private var contentHeight: CGFloat = 320
     @State private var theme = ProfileThemeState()
 
     private var effectiveRichActivity: MemberRichActivity? {
-        if isCurrentUser, let current = currentUserActivity {
+        if isCurrentUser {
+            guard let current = model?.currentUserActivity else { return nil }
             return MemberRichActivity(
                 name: current.name,
                 type: current.type.rawValue,
@@ -206,7 +206,10 @@ struct MemberProfilePopover<Footer: View>: View {
     }
 
     private var hasActiveActivity: Bool {
-        effectiveRichActivity != nil || member.isListeningToMusic || (member.activityText != nil && !member.activityText!.isEmpty)
+        if isCurrentUser {
+            return effectiveRichActivity != nil
+        }
+        return effectiveRichActivity != nil || member.isListeningToMusic || (member.activityText != nil && !member.activityText!.isEmpty)
     }
 
     var body: some View {
@@ -258,10 +261,7 @@ struct MemberProfilePopover<Footer: View>: View {
                 await theme.load(theme.source(for: profile, scale: displayScale, allowsTheme: editor?.isNitro))
             }
         }
-        .task(id: isCurrentUser) {
-            guard isCurrentUser, let model else { return }
-            currentUserActivity = await model.activityCoordinator.currentPrimaryActivity()
-        }
+
     }
 
     private var profileContent: some View {

@@ -66,6 +66,78 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
     public static let musicNotificationName = Notification.Name("com.apple.Music.playerInfo")
     public static let legacyiTunesNotificationName = Notification.Name("com.apple.iTunes.playerInfo")
+    public static let artworkPath: String = {
+        (NSTemporaryDirectory() as NSString).appendingPathComponent("sakuracord_applemusic_art.png")
+    }()
+
+    private func exportArtworkIfAvailable() {
+        Task.detached(priority: .utility) {
+            let path = Self.artworkPath
+            let scriptSource = """
+            tell application "Music"
+                if it is running then
+                    tell current track
+                        if (count of artworks) > 0 then
+                            set artData to raw data of artwork 1
+                            set artPath to POSIX file "\(path)"
+                            set artFile to (open for access artPath with write permission)
+                            set eof artFile to 0
+                            write artData to artFile
+                            close access artFile
+                            return true
+                        end if
+                    end tell
+                end if
+                return false
+            end tell
+            """
+            var errorInfo: NSDictionary?
+            if let script = NSAppleScript(source: scriptSource) {
+                _ = script.executeAndReturnError(&errorInfo)
+            }
+        }
+    }
+
+    private func removeCachedArtwork() {
+        try? FileManager.default.removeItem(atPath: Self.artworkPath)
+    }
+
+    public func checkCurrentTrack() {
+        Task.detached(priority: .utility) { [weak self] in
+            let scriptSource = """
+            tell application "Music"
+                if it is running then
+                    set pState to (player state as string)
+                    if pState is "playing" then
+                        set tName to (name of current track as string)
+                        set tArtist to (artist of current track as string)
+                        set tAlbum to (album of current track as string)
+                        set tPos to (player position as real)
+                        set tDur to (duration of current track as real)
+                        return pState & "|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * 1000)
+                    end if
+                end if
+                return "stopped"
+            end tell
+            """
+            var errorInfo: NSDictionary?
+            guard let script = NSAppleScript(source: scriptSource) else { return }
+            let descriptor = script.executeAndReturnError(&errorInfo)
+            let result = descriptor.stringValue ?? ""
+            guard result != "stopped", !result.isEmpty else { return }
+            let parts = result.components(separatedBy: "|||")
+            guard parts.count >= 6 else { return }
+            let trackInfo = AppleMusicTrackInfo(
+                playerState: parts[0],
+                name: parts[1],
+                artist: parts[2],
+                album: parts[3],
+                currentPositionSeconds: Double(parts[4]) ?? 0,
+                totalTimeMilliseconds: Double(parts[5])
+            )
+            await self?.handleTrackInfo(trackInfo)
+        }
+    }
 
     public init(
         coordinator: ActivityCoordinator,
@@ -104,6 +176,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             }
             observationTokens.append(token)
         }
+        checkCurrentTrack()
         logger.info("Apple Music presence monitor started observing notifications.")
     }
 
@@ -119,6 +192,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             center.removeObserver(token)
         }
 
+        removeCachedArtwork()
         Task { [coordinator] in
             await coordinator.clearActivity(for: .appleMusic)
         }
@@ -135,12 +209,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     @discardableResult
     public func handleTrackInfo(_ trackInfo: AppleMusicTrackInfo?) async -> OutgoingActivityPayload? {
         guard let trackInfo else {
+            removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
             return nil
         }
 
         guard trackInfo.playerState.caseInsensitiveCompare("Playing") == .orderedSame else {
             logger.debug("Apple Music player state is '\(trackInfo.playerState, privacy: .public)'; clearing activity.")
+            removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
             return nil
         }
@@ -148,9 +224,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard let trackName = trackInfo.name?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trackName.isEmpty else {
             logger.debug("Apple Music playing track missing title; clearing activity.")
+            removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
             return nil
         }
+
+        exportArtworkIfAvailable()
 
         let artist = trackInfo.artist?.trimmingCharacters(in: .whitespacesAndNewlines)
         let album = trackInfo.album?.trimmingCharacters(in: .whitespacesAndNewlines)
