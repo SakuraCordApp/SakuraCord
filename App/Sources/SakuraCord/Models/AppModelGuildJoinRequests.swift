@@ -36,8 +36,11 @@ final class GuildJoinRequestStore {
     @ObservationIgnored var acknowledging: Set<JoinRequestID> = []
     /// The invite each application was opened from; Discord's form request carries it.
     @ObservationIgnored var inviteCodes: [GuildID: String] = [:]
-    /// The application a running submission answers: the one open when it began, or, for a form opened from a
-    /// server profile, the first one Discord reports during it.
+    /// The application the open form answers, as it was when the form opened or Discord last started one for it.
+    /// A form from a server profile has none.
+    @ObservationIgnored var formRequest: GuildJoinRequest?
+    /// The application a running submission answers: the form's, or, for a form from a server profile, the first one
+    /// Discord reports during it.
     @ObservationIgnored var submittingRequestID: JoinRequestID?
     @ObservationIgnored var isLoadingGuilds = false
 
@@ -59,6 +62,7 @@ final class GuildJoinRequestStore {
         error = nil
         acknowledging = []
         inviteCodes = [:]
+        formRequest = nil
         submittingRequestID = nil
         isLoadingGuilds = false
     }
@@ -83,19 +87,7 @@ extension AppModel {
         let store = guildJoinRequests
         let previous = store.requests
         store.requests = Dictionary(list.map { ($0.guildID, $0) }) { $1 }
-        // The form answers the application it was opened for. Once another client submits, replaces or removes it,
-        // or a reviewer acts, submitting would send stale answers; this client's own submission is still running.
-        // A form opened from a server profile has no application yet, so one that Discord starts for it is not a change.
-        if let modal = store.modal, modal.kind == .form {
-            let opened = previous[modal.guildID], current = store.requests[modal.guildID]
-            if store.isWorking {
-                if store.submittingRequestID == nil { store.submittingRequestID = current?.id }
-            } else if current?.id != opened?.id || current?.status != opened?.status,
-                      !(opened == nil && current?.status == .started) {
-                store.form = nil
-                store.modal = nil
-            }
-        }
+        reconcileGuildJoinForm()
         if let guildID = store.selectedGuildID {
             if !pendingApplications.contains(where: { $0.guildID == guildID }) {
                 // Approved, withdrawn elsewhere, or reapplied: the page no longer describes an application.
@@ -164,6 +156,7 @@ extension AppModel {
         if let guild, store.guilds[guildID] == nil { store.guilds[guildID] = guild }
         store.form = nil
         store.error = nil
+        store.formRequest = store.requests[guildID]
         let modal = GuildJoinRequestStore.Modal(guildID: guildID, kind: .form)
         store.modal = modal
         startAccountChildTask(account: accountSession()) { model, account in
@@ -210,6 +203,28 @@ extension AppModel {
         let current = guildJoinRequests.requests[guildID]
         return [.submitted, .rejected, .approved].contains(current?.status)
             || guildJoinRequests.submittingRequestID.map { $0 != current?.id } == true
+    }
+
+    /// Once another client submits, replaces or removes the form's application, or a reviewer acts, submitting would
+    /// send stale answers, so the form closes. A running action decides first; this runs again when it ends.
+    private func reconcileGuildJoinForm() {
+        let store = guildJoinRequests
+        guard let modal = store.modal, modal.kind == .form else { return }
+        let current = store.requests[modal.guildID]
+        if store.isWorking {
+            if store.submittingRequestID == nil { store.submittingRequestID = current?.id }
+            return
+        }
+        let answered = store.formRequest
+        guard current?.id != answered?.id || current?.status != answered?.status else { return }
+        // Discord starting the form's application, or removing an earlier one that is no longer live (as Reapply
+        // does), leaves nothing stale.
+        if answered?.status != .started, current == nil || current?.status == .started {
+            store.formRequest = current
+            return
+        }
+        store.form = nil
+        store.modal = nil
     }
 
     func withdrawGuildJoinRequest(_ guildID: GuildID) {
@@ -267,16 +282,14 @@ extension AppModel {
         store.isWorking = true
         store.error = nil
         startAccountChildTask(account: accountSession()) { model, account in
-            do {
-                try await action(account.provider)
-                guard model.isCurrentAccountSession(account) else { return }
-                store.isWorking = false
-                completion()
-            } catch {
-                guard model.isCurrentAccountSession(account) else { return }
-                store.isWorking = false
-                store.error = error.localizedDescription
+            let result = await Result { try await action(account.provider) }
+            guard model.isCurrentAccountSession(account) else { return }
+            store.isWorking = false
+            switch result {
+            case .success: completion()
+            case .failure(let error): store.error = error.localizedDescription
             }
+            model.reconcileGuildJoinForm()
         }
     }
 }
