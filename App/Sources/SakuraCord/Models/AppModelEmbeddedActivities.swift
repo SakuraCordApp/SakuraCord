@@ -20,10 +20,20 @@ final class EmbeddedActivityStore {
         /// Runs in the call it started in and ends with it; otherwise it is
         /// docked in the channel's chat and outlives calls there.
         var isInCall: Bool
+        /// Where the launcher was opened, for the launch request and a retry.
+        var launcher: Launcher?
         /// Tells this launch's late results apart from a newer one in the same place.
         let launchID = UUID()
 
         var location: EmbeddedActivityLocation { .of(channel) }
+    }
+
+    /// Where the shelf a launch came from was opened, as Discord's launch reports it.
+    struct Launcher: Equatable {
+        /// A call's controls rather than the composer.
+        var isFromCall: Bool
+        /// The shelf section the Activity was picked from.
+        var section: String
     }
 
     /// A question the Activity's host must ask before acting for it.
@@ -212,7 +222,7 @@ extension AppModel {
 
     func retryActivity() async {
         guard let session = embeddedActivities.session else { return }
-        await startActivity(session.application, in: session.channel)
+        await startActivity(session.application, in: session.channel, launcher: session.launcher)
     }
 
     /// Reads the guild's shelf; a caller arriving mid-read waits for that read.
@@ -247,18 +257,10 @@ extension AppModel {
         }
     }
 
-    /// Where the shelf a launch came from was opened, as Discord's launch reports it.
-    struct ActivityLauncher {
-        /// A call's controls rather than the composer.
-        var isFromCall: Bool
-        /// The shelf section the Activity was picked from.
-        var section: String
-    }
-
     /// Starts the application in the channel, or joins the instance already
     /// running there. A voice channel Activity runs alongside voice; elsewhere
     /// it docks in the channel's chat.
-    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel, launcher: ActivityLauncher? = nil) async {
+    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel, launcher: EmbeddedActivityStore.Launcher? = nil) async {
         let store = embeddedActivities
         let account = accountSession()
         let location = EmbeddedActivityLocation.of(channel)
@@ -271,7 +273,7 @@ extension AppModel {
         if store.session != nil { leaveActivity() }
         let session = EmbeddedActivityStore.Session(
             application: application, channel: channel, phase: .launching,
-            isInCall: channel.kind == .voice || activeVoiceChannel?.id == channel.id
+            isInCall: channel.kind == .voice || activeVoiceChannel?.id == channel.id, launcher: launcher
         )
         store.session = session
         if channel.kind == .voice, activeVoiceChannel?.id != channel.id {
