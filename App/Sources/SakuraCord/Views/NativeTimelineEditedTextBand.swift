@@ -50,6 +50,8 @@ extension NativeTimelineCanvasView {
         // such as code, starts lower.
         let identifier = items[index].identifier
         let running = editedTextBands[identifier]
+        // A slide has no old picture to continue from; the row lands instead.
+        guard running?.slide == nil else { return nil }
         var top = min(text.minY, running?.top ?? text.minY)
         var slide: NativeTimelineEditedTextBand.Slide?
         if let oldText = old.layout.contentFrame, let newText = layout.contentFrame {
@@ -170,11 +172,15 @@ extension NativeTimelineCanvasView {
         if let slide = band.slide {
             // The text keeps pace with the row's edge at full strength, and
             // the rest of the row fades in once the deleted one's has faded
-            // out, so that their headers never show over each other.
+            // out, so that their headers never show over each other. Their
+            // fade follows the deletion's own motion, which an earlier edit
+            // of the row still gliding does not speed up.
             let frame = paintFrame.offsetBy(dx: 0, dy: shown - band.newHeight)
+            let motion = reactionRowMotions.first { $0.id == band.motionID }
+            let handoff = motion?.progress(at: rowMotionUptime) ?? progress
             clipped(from: textTop, to: paintFrame.maxY) {
                 let handoffEnd = NativeTimelineDepartedRun.handoffFadeEnd
-                context.setAlpha(max(0, (progress - handoffEnd) / (1 - handoffEnd)))
+                context.setAlpha(max(0, (handoff - handoffEnd) / (1 - handoffEnd)))
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
                 drawPicture(frame)
                 context.endTransparencyLayer()
