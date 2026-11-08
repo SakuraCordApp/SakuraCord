@@ -560,14 +560,15 @@ extension AppModel {
         _ id: ApplicationID, guildID: GuildID?, fallback: () -> EmbeddedActivityApplication
     ) async -> EmbeddedActivityApplication? {
         let account = accountSession()
-        if embeddedActivities.application(id) == nil { await loadActivityShelf(guildID: guildID) }
+        let listed = { self.embeddedActivities.shelves[guildID]?.first { $0.id == id } }
+        if listed() == nil { await loadActivityShelf(guildID: guildID) }
         guard isCurrentAccountSession(account), !Task.isCancelled else { return nil }
-        if let application = embeddedActivities.application(id) { return application }
+        // Another place's shelf can't stand in for this one's.
         guard embeddedActivities.shelves[guildID] != nil else {
             errorMessage = "Couldn’t load Activities: \(embeddedActivities.shelfErrors[guildID] ?? "try again.")"
             return nil
         }
-        return fallback()
+        return listed() ?? fallback()
     }
 
     private func activityInstance(for invite: ServerInvite) -> EmbeddedActivityInstance? {
