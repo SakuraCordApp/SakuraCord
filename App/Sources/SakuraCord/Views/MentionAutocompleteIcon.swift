@@ -13,7 +13,7 @@ struct MentionAutocompleteIcon: View {
         case .role:
             RoleColorIndicator(colorHex: suggestion.colorHex, size: InterfaceScale.metric(12))
         case .channel, .guildNavigation, .game, .command:
-            Image(systemName: suggestion.systemImage ?? "questionmark")
+            SakuraCordSystemSymbol.swiftUIImage(named: suggestion.systemImage ?? "questionmark")
                 .font(.interfaceSystem(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
         case .linkedChannel:
