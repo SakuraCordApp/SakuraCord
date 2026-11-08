@@ -202,13 +202,15 @@ final class EmbeddedActivityHost: NSObject {
             reply(command, nonce, ["evt": event])
             if command == "SUBSCRIBE" { sendInitialState(for: event) }
         case "GET_CHANNEL":
-            guard args["channel_id"] as? String == instance.location.channelID.description else {
+            // A contextless Activity has no channel; the one it was opened from only places it.
+            guard !application.isContextless, args["channel_id"] as? String == instance.location.channelID.description else {
                 return fail(command, nonce, .invalidChannel, "Invalid channel")
             }
             reply(command, nonce, channelPayload(model: model))
         case "GET_CHANNEL_PERMISSIONS":
             let permissions = model.embeddedActivities.session.flatMap { model.effectiveMessagePermissions(in: $0.channel) } ?? 0
-            reply(command, nonce, ["permissions": String(instance.location.guildID == nil ? 0 : permissions)])
+            let hasChannel = instance.location.guildID != nil && !application.isContextless
+            reply(command, nonce, ["permissions": String(hasChannel ? permissions : 0)])
         case "GET_ACTIVITY_INSTANCE_CONNECTED_PARTICIPANTS":
             reply(command, nonce, ["participants": participantsPayload()])
         case "GET_CONTEXT":
@@ -241,7 +243,7 @@ final class EmbeddedActivityHost: NSObject {
             else { return fail(command, nonce, .invalidPayload, "Invalid URL") }
             reply(command, nonce, ["opened": await openExternally(url)])
         case "OPEN_INVITE_DIALOG":
-            guard instance.location.guildID.flatMap({ model.serverRailGuildsByID[$0] }) != nil else {
+            guard !application.isContextless, instance.location.guildID.flatMap({ model.serverRailGuildsByID[$0] }) != nil else {
                 return fail(command, nonce, .invalidChannel, "Invites are unavailable in this channel")
             }
             model.presentActivityInviteCreation(for: instance)
@@ -324,7 +326,7 @@ final class EmbeddedActivityHost: NSObject {
     }
 
     private func voiceChanged() {
-        guard let model, !isStopped else { return }
+        guard let model, !isStopped, !application.isContextless else { return }
         // Speaking belongs to the Activity's channel only when it is the call's.
         var speaking: Set<String> = []
         if model.activeVoiceChannel?.id == instance.location.channelID {

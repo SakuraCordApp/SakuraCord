@@ -60,6 +60,7 @@ final class EmbeddedActivityStore {
     var shelves: [GuildID?: [EmbeddedActivityApplication]] = [:]
     /// Activities installed for the person or the server, which Recents list.
     var installedActivities: [GuildID?: Set<ApplicationID>] = [:]
+    @ObservationIgnored var installedLoads: [GuildID?: Task<Void, Never>] = [:]
     /// Shelf reads in flight, shared by every caller. Each is an account child
     /// task, so account cleanup cancels and drains it.
     @ObservationIgnored var shelfLoads: [GuildID?: Task<Void, Never>] = [:]
@@ -183,6 +184,8 @@ final class EmbeddedActivityStore {
         instances = [:]
         shelves = [:]
         installedActivities = [:]
+        installedLoads.values.forEach { $0.cancel() }
+        installedLoads = [:]
         shelfLoads.values.forEach { $0.cancel() }
         shelfLoads = [:]
         cardShelfRequests = []
@@ -234,8 +237,6 @@ extension AppModel {
     }
 
     private func fetchActivityShelf(guildID: GuildID?, account: AppModelAccountSession) async {
-        // Command indexes can take a while to be ready; the shelf shows without waiting for them.
-        async let installed = account.provider.installedEmbeddedActivities(guildID: guildID)
         do {
             let shelf = try await account.provider.embeddedActivityShelf(guildID: guildID)
             guard isCurrentAccountSession(account), !Task.isCancelled else { return }
@@ -248,9 +249,20 @@ extension AppModel {
             embeddedActivities.shelfError = error.localizedDescription
             return
         }
-        let installedActivities = await installed
-        guard isCurrentAccountSession(account), !Task.isCancelled else { return }
-        embeddedActivities.installedActivities[guildID] = installedActivities
+        // Command indexes can take a while to be ready; neither the shelf nor a launch waits for them.
+        loadInstalledActivities(guildID: guildID)
+    }
+
+    /// The installed Activities Recents list, read again when a command index
+    /// they come from changes.
+    func loadInstalledActivities(guildID: GuildID?) {
+        let store = embeddedActivities
+        store.installedLoads[guildID]?.cancel()
+        store.installedLoads[guildID] = startAccountChildTask(account: accountSession()) { model, account in
+            let installed = await account.provider.installedEmbeddedActivities(guildID: guildID)
+            guard model.isCurrentAccountSession(account), !Task.isCancelled else { return }
+            model.embeddedActivities.installedActivities[guildID] = installed
+        }
     }
 
     /// Starts the application in the channel, or joins the instance already
@@ -532,10 +544,10 @@ extension AppModel {
     }
 
     /// The shelf's details for an Activity a card points to, reading the shelf
-    /// first. If the read failed the Activity is treated as age-restricted, so
-    /// a card never skips a confirmation the shelf would ask for; one missing
-    /// from a loaded shelf has no gate to honour. Nil once the account changed
-    /// or the caller was cancelled while reading.
+    /// first. Without them a card can't honour the age gate or open a
+    /// contextless Activity on its own, so a failed read starts nothing; one
+    /// missing from a loaded shelf runs in the channel with no gate. Nil once
+    /// the account changed or the caller was cancelled while reading.
     private func shelfApplication(
         _ id: ApplicationID, guildID: GuildID?, fallback: () -> EmbeddedActivityApplication
     ) async -> EmbeddedActivityApplication? {
@@ -543,9 +555,11 @@ extension AppModel {
         if embeddedActivities.application(id) == nil { await loadActivityShelf(guildID: guildID) }
         guard isCurrentAccountSession(account), !Task.isCancelled else { return nil }
         if let application = embeddedActivities.application(id) { return application }
-        var application = fallback()
-        application.requiresAgeGate = embeddedActivities.shelves[guildID] == nil
-        return application
+        guard embeddedActivities.shelves[guildID] != nil else {
+            errorMessage = "Couldn’t load Activities: \(embeddedActivities.shelfError ?? "try again.")"
+            return nil
+        }
+        return fallback()
     }
 
     private func activityInstance(for invite: ServerInvite) -> EmbeddedActivityInstance? {

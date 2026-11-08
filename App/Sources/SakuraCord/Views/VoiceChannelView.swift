@@ -8,6 +8,9 @@ struct VoiceChannelView: View {
         VStack(spacing: 0) {
             if isActiveCall {
                 connectedContent
+            } else if let channel, model.embeddedActivities.dockedSession?.channel.id == channel.id {
+                // A contextless Activity opened here runs without the call.
+                EmbeddedActivityStage(model: model)
             } else {
                 disconnectedContent
             }

@@ -30,6 +30,11 @@ extension AppModel {
         {
             loadApplicationCommands(in: destination)
         }
+        for guildID in embeddedActivities.installedActivities.keys
+            where target == .user || guildID.map(ApplicationCommandIndexTarget.guild) == target
+        {
+            loadInstalledActivities(guildID: guildID)
+        }
     }
 
     func updateCommandFrecency(_ history: DiscordFrecencyHistory) {
