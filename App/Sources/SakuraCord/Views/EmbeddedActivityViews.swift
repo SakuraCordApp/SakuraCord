@@ -235,6 +235,8 @@ extension View {
                 Text(url.absoluteString)
             case .confirmAge:
                 Text("\(prompt.applicationName) is age-restricted. Confirm that you are 18 or older to continue.")
+            case .replace(let activity, let channel):
+                Text("Are you sure you want to disconnect from \(activity) in \(channel)?")
             }
         }
     }
@@ -244,6 +246,7 @@ extension View {
         case .authorize: "Authorize \(prompt.applicationName)?"
         case .openLink: "Open a link from \(prompt.applicationName)?"
         case .confirmAge: "Start \(prompt.applicationName)?"
+        case .replace: "You sure?"
         }
     }
 }
@@ -254,6 +257,7 @@ private extension EmbeddedActivityStore.Prompt {
         case .authorize: "Authorize"
         case .openLink: "Open Link"
         case .confirmAge: "I’m 18 or Older"
+        case .replace: "Confirm"
         }
     }
 }

@@ -32,6 +32,8 @@ final class EmbeddedActivityStore {
             case authorize(scopes: [String])
             case openLink(URL)
             case confirmAge
+            /// Leaving the running Activity, named with its channel, for another.
+            case replace(activity: String, channel: String)
         }
 
         let id = UUID()
@@ -195,7 +197,9 @@ extension AppModel {
     /// Starts the application in the channel, or joins the instance already
     /// running there. A voice channel Activity runs alongside voice; elsewhere
     /// it docks in the channel's chat.
-    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel) async {
+    /// `shelfSection` names the shelf section it was chosen from, as Discord's
+    /// launch reports it.
+    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel, shelfSection: String? = nil) async {
         let store = embeddedActivities
         let account = accountSession()
         let location = EmbeddedActivityLocation.of(channel)
@@ -203,11 +207,7 @@ extension AppModel {
            current.phase == .launching || current.phase == .running {
             return
         }
-        if application.requiresAgeGate, !store.ageConfirmedApplications.contains(application.id) {
-            guard await store.ask(.confirmAge, applicationName: application.name),
-                  isCurrentAccountSession(account) else { return }
-            store.ageConfirmedApplications.insert(application.id)
-        }
+        guard await confirmLaunch(of: application), isCurrentAccountSession(account) else { return }
         // Discord moves this session out of the Activity it was in once the
         // next one starts, so that one is left only if this launch fails.
         let previous = store.session?.instance
@@ -235,7 +235,9 @@ extension AppModel {
         // Ending the session cancels a launch that has not reached Discord yet.
         let launch = Task {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
-            try await account.provider.launchEmbeddedActivity(application.id, in: channel, joining: joining)
+            try await account.provider.launchEmbeddedActivity(
+                application.id, in: channel, joining: joining, fromCall: session.isInCall, shelfSection: shelfSection
+            )
         }
         store.launch = launch
         do {
@@ -259,6 +261,21 @@ extension AppModel {
             else { return }
             store?.session?.phase = .failed("\(application.name) did not start. Try again.")
         }
+    }
+
+    /// The questions Discord asks before a launch: age-restricted Activities
+    /// once a session, and leaving a running Activity for another.
+    private func confirmLaunch(of application: EmbeddedActivityApplication) async -> Bool {
+        let store = embeddedActivities
+        if application.requiresAgeGate, !store.ageConfirmedApplications.contains(application.id) {
+            guard await store.ask(.confirmAge, applicationName: application.name) else { return false }
+            store.ageConfirmedApplications.insert(application.id)
+        }
+        guard let current = store.session, current.phase == .launching || current.phase == .running else { return true }
+        return await store.ask(
+            .replace(activity: current.application.name, channel: current.channel.name),
+            applicationName: application.name
+        )
     }
 
     /// Closes the hosted Activity now; Discord is told in the background. A

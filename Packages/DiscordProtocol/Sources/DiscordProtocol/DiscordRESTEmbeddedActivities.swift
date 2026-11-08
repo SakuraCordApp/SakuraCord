@@ -52,7 +52,9 @@ public extension DiscordRESTProvider {
     /// entry-point command, or joins the instance running there with the
     /// channel join, as the official client does. The resulting instance
     /// arrives as `EMBEDDED_ACTIVITY_UPDATE_V2`.
-    func launchEmbeddedActivity(_ applicationID: ApplicationID, in channel: Channel, joining: Bool) async throws {
+    func launchEmbeddedActivity(
+        _ applicationID: ApplicationID, in channel: Channel, joining: Bool, fromCall: Bool, shelfSection: String?
+    ) async throws {
         let channelID = channel.id, guildID = channel.guildID
         let sessionID = try await interactionSessionID()
         let command = joining ? nil : try await entryPointCommand(for: applicationID, channelID: channelID, guildID: guildID)
@@ -79,9 +81,11 @@ public extension DiscordRESTProvider {
             "data": .object(payload.data),
             "nonce": .string(invocation.nonce),
             "analytics_location": .string("app_launcher"),
+            // Where the launcher was opened: a call's controls or the composer.
+            "source": .string(fromCall ? "VOICE" : "TEXT"),
         ]
         if let guildID { body["guild_id"] = .string(guildID.description) }
-        if channel.kind == .voice { body["source"] = .string("VOICE") }
+        if let shelfSection { body["section_name"] = .string(shelfSection) }
         // A launch superseded while its command was looked up stops here.
         try Task.checkCancellation()
         let (data, response) = try await perform("/interactions", method: "POST", query: [], body: body)

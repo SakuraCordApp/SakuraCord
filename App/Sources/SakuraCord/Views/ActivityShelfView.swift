@@ -10,6 +10,8 @@ struct ActivityShelfView: View {
     @State private var query = ""
     @State private var searchIsFocused = false
     @State private var selection: EmbeddedActivityApplication?
+    /// The section the selection was chosen from, as Discord's launch reports it.
+    @State private var selectionSection = "activities"
     /// The Activity under the pointer, whose details are prepared off-screen.
     @State private var warmed: EmbeddedActivityApplication?
     @State private var showsAllRecents = false
@@ -91,7 +93,9 @@ struct ActivityShelfView: View {
                     alignment: .leading, spacing: InterfaceScale.metric(10)
                 ) {
                     ForEach(showsAllRecents ? recents : Array(recents.prefix(8))) { application in
-                        Button { selection = application } label: {
+                        Button {
+                            select(application, section: "recents")
+                        } label: {
                             ActivityIcon(url: application.iconURL, size: 44)
                         }
                         .buttonStyle(ActivityShelfPressStyle())
@@ -103,7 +107,7 @@ struct ActivityShelfView: View {
                 .padding(.horizontal, InterfaceScale.metric(14))
                 .padding(.bottom, InterfaceScale.metric(16))
             }
-            grid(title: "Activities", shelf)
+            grid(title: "Activities", section: "activities", shelf)
         } else {
             let matches = shelf.filter {
                 $0.name.localizedStandardContains(query) || $0.tags.contains { $0.localizedStandardContains(query) }
@@ -114,12 +118,12 @@ struct ActivityShelfView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(120))
             } else {
-                grid(title: "Search Results", matches)
+                grid(title: "Search Results", section: "search", matches)
             }
         }
     }
 
-    private func grid(title: String, _ applications: [EmbeddedActivityApplication]) -> some View {
+    private func grid(title: String, section: String, _ applications: [EmbeddedActivityApplication]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             EmojiPickerHeader(title: title, count: applications.count)
             LazyVGrid(
@@ -127,7 +131,10 @@ struct ActivityShelfView: View {
                 spacing: InterfaceScale.metric(12)
             ) {
                 ForEach(applications) { application in
-                    ActivityShelfTile(application: application, hover: { warmed = application }, action: { selection = application })
+                    ActivityShelfTile(
+                        application: application, hover: { warmed = application },
+                        action: { select(application, section: section) }
+                    )
                 }
             }
             .padding(.horizontal, InterfaceScale.metric(14))
@@ -167,9 +174,14 @@ struct ActivityShelfView: View {
         shelf.filter { $0.recentRank != nil }.sorted { ($0.recentRank ?? 0) < ($1.recentRank ?? 0) }
     }
 
+    private func select(_ application: EmbeddedActivityApplication, section: String) {
+        selection = application
+        selectionSection = section
+    }
+
     private func launch(_ application: EmbeddedActivityApplication) {
         dismiss()
-        Task { await model.startActivity(application, in: channel) }
+        Task { await model.startActivity(application, in: channel, shelfSection: selectionSection) }
     }
 }
 
