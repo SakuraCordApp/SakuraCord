@@ -44,6 +44,7 @@ public actor MockChatProvider: ChatProvider {
     var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
     var relationshipPresences: [UserID: UserPresence]?
     var presenceChurnTask: Task<Void, Never>?
+    var activeActivities: [String: OutgoingActivityPayload] = [:]
 #if SAKURACORD_MOTION_BENCHMARK
     /// Threads seeded for the side-chat animation benchmark, and the latency
     /// simulated before their history is served.
@@ -296,6 +297,26 @@ public actor MockChatProvider: ChatProvider {
 
     public func currentStatus() async -> PresenceStatus {
         .online
+    }
+
+    public func currentActivities() async -> [String: OutgoingActivityPayload] {
+        activeActivities
+    }
+
+    public func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
+        if let activity {
+            activeActivities[sourceID] = activity
+        } else {
+            activeActivities.removeValue(forKey: sourceID)
+        }
+    }
+
+    public func clearActivities(sourceID: String? = nil) async throws {
+        if let sourceID {
+            activeActivities.removeValue(forKey: sourceID)
+        } else {
+            activeActivities.removeAll()
+        }
     }
 
     public func updateStatus(_ status: PresenceStatus) async throws {

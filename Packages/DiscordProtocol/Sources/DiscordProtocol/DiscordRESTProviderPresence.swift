@@ -6,6 +6,30 @@ public extension DiscordRESTProvider {
         presenceStatus
     }
 
+    func currentActivities() async -> [String: OutgoingActivityPayload] {
+        activeActivities
+    }
+
+    func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
+        guard currentUser != nil else { throw ChatProviderError.unauthenticated }
+        if let activity {
+            activeActivities[sourceID] = activity
+        } else {
+            activeActivities.removeValue(forKey: sourceID)
+        }
+        await sendPresenceIfChanged()
+    }
+
+    func clearActivities(sourceID: String? = nil) async throws {
+        guard currentUser != nil else { throw ChatProviderError.unauthenticated }
+        if let sourceID {
+            activeActivities.removeValue(forKey: sourceID)
+        } else {
+            activeActivities.removeAll()
+        }
+        await sendPresenceIfChanged()
+    }
+
     // Official stable622805 module827827 and module594061 `markDirty`.
     /// Applies a pick at once and saves it; only this first save reports a failure.
     func updateStatus(_ status: PresenceStatus) async throws {
@@ -66,12 +90,22 @@ extension DiscordRESTProvider {
         continuation?.yield(.currentUserStatusChanged(status))
     }
 
+    func activeActivitiesList() -> [OutgoingActivityPayload] {
+        activeActivities.values.sorted { lhs, rhs in
+            if lhs.priorityRank != rhs.priorityRank {
+                return lhs.priorityRank < rhs.priorityRank
+            }
+            return lhs.name < rhs.name
+        }
+    }
+
     // Official stable622805 PresenceUpdater.
     /// Sends a changed presence, at most five per 20 seconds, deferring the latest.
     func sendPresenceIfChanged() async {
         deferredPresenceTask?.cancel()
         deferredPresenceTask = nil
-        guard gatewayReady, presenceStatus != lastSentPresenceStatus else { return }
+        let activities = activeActivitiesList()
+        guard gatewayReady, (presenceStatus != lastSentPresenceStatus || activities != lastSentActivities) else { return }
         let now = Date.now
         presenceSendWindowEnds.removeAll { $0 <= now }
         let budgetReopens = presenceSendWindowEnds.count >= 5 ? presenceSendWindowEnds.first ?? now : now
@@ -99,16 +133,23 @@ extension DiscordRESTProvider {
 
     func sendPresence() async throws {
         let status = presenceStatus
+        let activities = activeActivitiesList()
         presenceSendWindowEnds.append(Date.now.addingTimeInterval(20))
         lastSentPresenceStatus = status
+        lastSentActivities = activities
         do {
             try await sendGateway([
                 "op": 3,
-                "d": ["since": 0, "activities": [], "status": status.rawValue, "afk": false]
-                    as [String: Any],
+                "d": [
+                    "since": 0,
+                    "activities": activities.map(\.gatewayDictionary),
+                    "status": status.rawValue,
+                    "afk": false,
+                ] as [String: Any],
             ])
         } catch {
             if lastSentPresenceStatus == status { lastSentPresenceStatus = nil }
+            if lastSentActivities == activities { lastSentActivities = nil }
             throw error
         }
     }
