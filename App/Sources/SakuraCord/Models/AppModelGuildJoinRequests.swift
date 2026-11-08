@@ -71,10 +71,23 @@ extension AppModel {
 
     func applyGuildJoinRequests(_ list: [GuildJoinRequest]) {
         let store = guildJoinRequests
+        let previous = store.requests
         store.requests = Dictionary(list.map { ($0.guildID, $0) }) { $1 }
-        if let guildID = store.selectedGuildID, !pendingApplications.contains(where: { $0.guildID == guildID }) {
-            // Approved, withdrawn elsewhere, or reapplied: the page no longer describes an application.
-            selectGuildJoinRequest(nil)
+        // The form answers the STARTED application it was opened for. Once another client submits or removes it,
+        // or a reviewer acts, submitting would send stale answers; this client's own submission is still running.
+        if let modal = store.modal, modal.kind == .form, !store.isWorking, let opened = previous[modal.guildID],
+           store.requests[modal.guildID].map({ $0.id != opened.id || $0.status != .started }) ?? true {
+            store.form = nil
+            store.modal = nil
+        }
+        if let guildID = store.selectedGuildID {
+            if !pendingApplications.contains(where: { $0.guildID == guildID }) {
+                // Approved, withdrawn elsewhere, or reapplied: the page no longer describes an application.
+                selectGuildJoinRequest(nil)
+            } else if previous[guildID]?.id != store.requests[guildID]?.id {
+                // A new application has its own answers, which stay hidden until asked for again.
+                store.showsAnswers = false
+            }
         }
         showGuildJoinApprovalIfNeeded()
         loadGuildJoinRequestGuildsIfNeeded()
@@ -179,7 +192,15 @@ extension AppModel {
         let store = guildJoinRequests
         store.showsAnswers.toggle()
         guard store.showsAnswers, let request = store.requests[guildID], store.answers[request.id] == nil else { return }
-        runGuildJoinRequestAction { store.answers[request.id] = try await $0.guildJoinRequestAnswers(request.id) }
+        runGuildJoinRequestAction {
+            do {
+                store.answers[request.id] = try await $0.guildJoinRequestAnswers(request.id)
+            } catch {
+                // Nothing to show; the error explains why and the button can try again.
+                store.showsAnswers = false
+                throw error
+            }
+        }
     }
 
     /// Closes the approval greeting, records it with Discord as the official client does, and opens the server.

@@ -152,7 +152,9 @@ completed in Discord. Writes use the ordinary single-attempt mutation budget.
 Official Fresh host `0.0.411`, web build `667580`, observed on 8 November 2026
 with the same server and accounts, confirmed the submission without
 `X-Context-Properties`, the 150-unit truncation of a pasted answer, the kept
-paragraph newline, the folder and "Membership Incomplete" status of a `STARTED`
+paragraph newline in the request (Discord stores the answer without it, for its own
+submissions too), rules-only screening's "Before you can talk here…" form, the
+folder and "Membership Incomplete" status of a `STARTED`
 request after Reapply, Open Application (which reads the form again with the
 remembered `invite_code`), Discard Application, and the pending note after
 submitting.

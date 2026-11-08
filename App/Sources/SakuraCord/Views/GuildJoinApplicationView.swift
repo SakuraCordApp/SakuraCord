@@ -43,6 +43,12 @@ struct GuildJoinApplicationView: View {
         dismiss?(allowsDisabled: true)
     }
 
+    /// Cancel and Escape both ask before discarding typed answers.
+    private func cancel() {
+        guard !store.isWorking else { return }
+        if hasAnswers { confirmsDiscard = true } else { close() }
+    }
+
     @ViewBuilder private var form: some View {
         HStack(spacing: InterfaceScale.metric(12)) {
             GuildIconView(name: guildName, iconURL: iconURL, size: InterfaceScale.metric(40), cornerRadius: InterfaceScale.metric(12))
@@ -61,13 +67,14 @@ struct GuildJoinApplicationView: View {
         if let form = store.form {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(20)) {
+                    // A screened member is already in the server and nobody reviews the answers; Discord words it so.
+                    let isScreening = model.serverRailGuildsByID[modal.guildID] != nil
                     VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
-                        Text("Answer a few questions to join \(guildName)").font(.interface(.title3).weight(.semibold))
-                        // Rules-only screening admits the member at once; nobody reviews it.
-                        if model.serverRailGuildsByID[modal.guildID]?.features.contains("MEMBER_VERIFICATION_MANUAL_APPROVAL") != false {
-                            Text("The server admin will get back to you shortly after you submit.")
-                                .font(.interface(.callout)).foregroundStyle(.secondary)
-                        }
+                        Text(isScreening ? "Before you can talk here…" : "Answer a few questions to join \(guildName)")
+                            .font(.interface(.title3).weight(.semibold))
+                        Text(isScreening ? "You’ll need to complete the required steps below."
+                                         : "The server admin will get back to you shortly after you submit.")
+                            .font(.interface(.callout)).foregroundStyle(.secondary)
                     }
                     ForEach(form.fields.indices, id: \.self) { index in
                         GuildJoinApplicationFieldEditor(field: Binding(
@@ -75,12 +82,14 @@ struct GuildJoinApplicationView: View {
                             set: { store.form?.fields[index] = $0 }
                         ))
                     }
-                    Text("""
-                    Make sure you have not entered your password or any other sensitive information. \
-                    By applying, you give the server admins permission to message you regarding your application.
-                    """)
-                        .font(.interface(.caption)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if !isScreening {
+                        Text("""
+                        Make sure you have not entered your password or any other sensitive information. \
+                        By applying, you give the server admins permission to message you regarding your application.
+                        """)
+                            .font(.interface(.caption)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.horizontal, InterfaceScale.metric(18)).padding(.vertical, InterfaceScale.metric(16))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,9 +108,7 @@ struct GuildJoinApplicationView: View {
         }
         Divider()
         HStack {
-            ModalGlassButton(symbol: "xmark", label: "Cancel") {
-                if hasAnswers { confirmsDiscard = true } else { close() }
-            }
+            ModalGlassButton(symbol: "xmark", label: "Cancel", action: cancel)
             .disabled(store.isWorking)
             Spacer(minLength: InterfaceScale.metric(16))
             ModalGlassButton(symbol: "paperplane", label: "Submit", primary: true, isLoading: store.isWorking) {
@@ -111,6 +118,8 @@ struct GuildJoinApplicationView: View {
             .keyboardShortcut(.defaultAction)
         }
         .padding(InterfaceScale.metric(12))
+        .onAppear { dismiss?.escapeAction = cancel }
+        .onDisappear { dismiss?.escapeAction = nil }
     }
 
     @ViewBuilder private var welcome: some View {
@@ -308,7 +317,7 @@ private struct GuildJoinApplicationFieldEditor: View {
             GuildJoinApplicationFieldLabel(field: field)
             switch field.kind {
             case .shortAnswer:
-                textField(TextField(field.placeholder ?? "Enter your answer", text: text))
+                textField(TextField(field.placeholder ?? "Enter your answer", text: text).accessibilityLabel(field.label))
             case .paragraph:
                 // A text view, so Return starts a new line as in Discord's paragraph answers.
                 textField(ZStack(alignment: .topLeading) {
@@ -377,7 +386,10 @@ private struct GuildJoinApplicationFieldEditor: View {
     private var text: Binding<String> {
         Binding(
             get: { if case .text(let value) = field.answer { value } else { "" } },
-            set: { field.answer = $0.isEmpty ? nil : .text(field.limited($0)) }
+            set: { newValue in
+                let previous = if case .text(let value) = field.answer { value } else { "" }
+                field.answer = newValue.isEmpty ? nil : .text(field.limited(newValue, replacing: previous))
+            }
         )
     }
 

@@ -162,6 +162,8 @@ struct ServerRailView: View {
     private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var folderLayoutRevision = 0
     @State private var drag = ServerRailDragController()
+    @State private var scrollPosition = ScrollPosition(edge: .top)
+    @State private var staysAtTop = true
 
     var body: some View {
         ScrollView {
@@ -209,9 +211,16 @@ struct ServerRailView: View {
         }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
-        // Rows that appear or leave above the visible ones, such as the Pending Applications folder, must not
-        // scroll Home out of view.
-        .defaultScrollAnchor(.top, for: .sizeChanges)
+        // SwiftUI keeps a visible row in place when rows appear above it, such as the Pending Applications folder,
+        // which scrolls Home out of view. A rail the user left at the top returns there.
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top < 1 } action: { _, isAtTop in
+            if drag.isScrolling || drag.draggedID != nil {
+                staysAtTop = isAtTop
+            } else if staysAtTop, !isAtTop {
+                scrollPosition.scrollTo(edge: .top)
+            }
+        }
         // Scrolled icons must not draw beneath the window's traffic lights.
         .scrollEdgeEffectStyle(.hard, for: .top)
         .background {

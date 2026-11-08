@@ -104,14 +104,22 @@ public struct GuildJoinApplicationField: Equatable, Sendable {
         }
     }
 
-    /// Like the first-party inputs, text past the limit is dropped rather than typed, a whole character at a time.
-    public func limited(_ text: String) -> String {
+    /// Like the first-party inputs' `maxLength`, an edit that would pass the limit keeps the existing text and drops
+    /// what does not fit of the inserted text, a whole character at a time.
+    public func limited(_ text: String, replacing previous: String) -> String {
         guard let characterLimit, text.utf16.count > characterLimit else { return text }
-        var length = 0
-        return String(text.prefix { character in
-            length += character.utf16.count
-            return length <= characterLimit
-        })
+        let new = Array(text), old = Array(previous)
+        var prefix = 0
+        while prefix < min(new.count, old.count), new[prefix] == old[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < min(new.count, old.count) - prefix, new[new.count - 1 - suffix] == old[old.count - 1 - suffix] { suffix += 1 }
+        let head = String(new[..<prefix]), tail = String(new[(new.count - suffix)...])
+        var room = characterLimit - head.utf16.count - tail.utf16.count
+        let inserted = new[prefix ..< new.count - suffix].prefix { character in
+            room -= character.utf16.count
+            return room >= 0
+        }
+        return head + String(inserted) + tail
     }
 
     public var isSatisfied: Bool {
