@@ -193,10 +193,8 @@ struct EmbeddedActivityJoinBanner: View {
             }
             Spacer()
             ModalGlassButton(symbol: "play.fill", label: "Join Activity", primary: true, height: 32) {
-                guard let application else { return }
-                Task { await model.startActivity(application, in: channel) }
+                Task { await model.joinRunningActivity(instance, in: channel) }
             }
-            .disabled(application == nil)
         }
         .padding(InterfaceScale.metric(10))
         .glassEffect(.regular, in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous))

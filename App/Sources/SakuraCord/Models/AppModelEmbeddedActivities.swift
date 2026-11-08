@@ -450,6 +450,15 @@ extension AppModel {
         await startActivity(application, in: channel)
     }
 
+    /// Joins an Activity someone is running in the channel, including one the
+    /// shelf doesn't list, such as one started with its slash command.
+    func joinRunningActivity(_ instance: EmbeddedActivityInstance, in channel: Channel) async {
+        guard let application = await shelfApplication(instance.applicationID, guildID: channel.guildID, fallback: {
+            EmbeddedActivityApplication(id: instance.applicationID, name: "Activity")
+        }) else { return }
+        await startActivity(application, in: channel)
+    }
+
     func isInActivityInvite(_ invite: ServerInvite) -> Bool {
         guard let instance = activityInstance(for: invite) else { return false }
         return embeddedActivities.session?.instance?.compositeInstanceID == instance.compositeInstanceID
