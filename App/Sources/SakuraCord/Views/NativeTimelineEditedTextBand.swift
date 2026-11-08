@@ -18,8 +18,8 @@ struct NativeTimelineEditedTextBand {
     let picture: NSImage?
     /// The motion easing the row's height.
     let motionID: Int
-    /// The row's index when the glide started, a hint for finding it each frame.
-    let rowIndex: Int
+    /// Where the row was last found, a hint for finding it each frame.
+    var rowIndex: Int
     /// Set when the text is the same and only its row's header came or went,
     /// as when a group's first message is deleted: the row then slides with
     /// the edge of its height, its header fading in around the text that

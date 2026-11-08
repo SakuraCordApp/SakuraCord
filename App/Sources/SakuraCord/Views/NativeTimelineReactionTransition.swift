@@ -598,9 +598,13 @@ extension NativeTimelineCanvasView {
         let bandCount = editedTextBands.count
         // A view the row gains over its content mid-glide, such as a hovered
         // audio player, sits at its final place: the row joins it there.
-        editedTextBands = editedTextBands.filter { identifier, band in
-            runningMotionIDs.contains(band.motionID)
-                && rowIndex(forIdentifier: identifier, hint: band.rowIndex).map { !hostsLiveViews(at: $0) } == true
+        editedTextBands = editedTextBands.reduce(into: [:]) { bands, entry in
+            var band = entry.value
+            guard runningMotionIDs.contains(band.motionID),
+                  let index = rowIndex(forIdentifier: entry.key, hint: band.rowIndex), !hostsLiveViews(at: index)
+            else { return }
+            band.rowIndex = index
+            bands[entry.key] = band
         }
         let endsBands = editedTextBands.count != bandCount
         departedRuns = departedRuns.compactMapValues { $0.advanced(to: now) }

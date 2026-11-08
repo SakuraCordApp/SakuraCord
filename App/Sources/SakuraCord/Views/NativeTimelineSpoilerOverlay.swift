@@ -340,7 +340,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     nonisolated override func accessibilityPerformPress() -> Bool {
         MainActor.assumeIsolated {
             activate()
-            return true
+            return didActivate
         }
     }
 
