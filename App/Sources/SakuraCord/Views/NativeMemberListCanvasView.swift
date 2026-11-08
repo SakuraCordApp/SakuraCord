@@ -224,6 +224,8 @@ final class NativeMemberListCanvasView: NSView, WindowModalInputParticipant {
     var serverTagCardPresentation: ServerTagCardPresentation?
     var memberNameGeometries: [ItemID: MemberNameGeometry] = [:]
     var serverTagAccessibilityButtons: [ItemID: NativeMemberTagAccessibilityButton] = [:]
+    /// Name each visible role icon on hover, as Discord's tooltip does.
+    var roleIconToolTipViews: [ItemID: NSView] = [:]
     let serverTagPopoverCoordinator = StableAnchoredPopoverPresenter<AnyView>.Coordinator()
     lazy var serverTagPopoverAnchor = StablePopoverAnchor(
         sourceView: self,

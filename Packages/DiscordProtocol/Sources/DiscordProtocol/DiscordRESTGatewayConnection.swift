@@ -788,10 +788,20 @@ extension DiscordRESTProvider {
         }
     }
 
-    func publishGuildRoles(_ guildID: GuildID) {
+    /// Caches a guild's roles stamped with its features, so every member,
+    /// profile and catalog built from them applies Discord's role-style gates.
+    func cacheGuildRoles(_ roles: [GuildRoleDTO], in guildID: GuildID) {
         let features = cachedGuilds[guildID]?.features
+        cachedGuildRoles[guildID] = roles.map { role in
+            var role = role
+            role.guildFeatures = features
+            return role
+        }
+    }
+
+    func publishGuildRoles(_ guildID: GuildID) {
         let roles = (cachedGuildRoles[guildID] ?? [])
-            .compactMap { $0.domain(guildFeatures: features) }
+            .compactMap(\.domain)
             .sorted { lhs, rhs in
                 if lhs.position != rhs.position { return lhs.position > rhs.position }
                 return lhs.id.rawValue > rhs.id.rawValue
@@ -803,7 +813,6 @@ extension DiscordRESTProvider {
     func reconcileMembersAfterRoleChange(guildID: GuildID) {
         guard var members = cachedMembers[guildID] else { return }
         let roleDTOs = cachedGuildRoles[guildID] ?? []
-        let features = cachedGuilds[guildID]?.features
         for index in members.indices {
             let roleIDs = Set(members[index].roleIDs.map(\.description))
             let resolved = roleDTOs
@@ -813,7 +822,7 @@ extension DiscordRESTProvider {
                 if lhs.position != rhs.position { return lhs.position < rhs.position }
                 return lhs.id < rhs.id
             }
-            members[index].roles = resolved.compactMap { $0.domain(guildFeatures: features) }
+            members[index].roles = resolved.compactMap(\.domain)
             members[index].roleName = category?.name ?? "Member"
             members[index].roleID = category.flatMap { RoleID($0.id) }
             members[index].rolePosition = category?.position

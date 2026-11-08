@@ -38,9 +38,8 @@ public extension DiscordRESTProvider {
     }
 
     func roles(in guildID: GuildID) async throws -> [GuildRole] {
-        let features = cachedGuilds[guildID]?.features
-        return try await guildRoleDTOs(in: guildID)
-            .compactMap { $0.domain(guildFeatures: features) }
+        try await guildRoleDTOs(in: guildID)
+            .compactMap(\.domain)
             .sorted { $0.position > $1.position }
     }
 
@@ -59,8 +58,8 @@ public extension DiscordRESTProvider {
         do {
             let roles = try await task.value
             guildRoleTasks[guildID] = nil
-            cachedGuildRoles[guildID] = roles
-            return roles
+            cacheGuildRoles(roles, in: guildID)
+            return cachedGuildRoles[guildID] ?? []
         } catch {
             guildRoleTasks[guildID] = nil
             throw error

@@ -83,7 +83,7 @@ extension DiscordRESTProvider {
                 publishGuildChannels(guildID)
             }
             if let roles = catalog.roles {
-                cachedGuildRoles[guildID] = roles
+                cacheGuildRoles(roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if let threads = catalog.threads, !threads.isEmpty {
@@ -98,7 +98,7 @@ extension DiscordRESTProvider {
                     .formUnion(catalogMembers.compactMap { UserID($0.user.id) })
                 cacheLiveSearchUsers(catalogMembers.map(\.user))
                 let guildRoles = cachedGuildRoles[guildID] ?? []
-                let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles, guildFeatures: cachedGuilds[guildID]?.features)
+                let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
                 let previousMembers = cachedMemberIndex(guildID: guildID)
                 let members = catalogMembers.compactMap {
                     try? $0.domain(
@@ -183,7 +183,8 @@ extension DiscordRESTProvider {
         cachedGuilds[guildID] = guild
         continuation?.yield(.guildChanged(guild))
         // Boosts gained or lost change which role gradients and icons show.
-        if previousRoleStyles != guild.features.intersection(roleStyleFeatures), cachedGuildRoles[guildID] != nil {
+        if previousRoleStyles != guild.features.intersection(roleStyleFeatures), let roles = cachedGuildRoles[guildID] {
+            cacheGuildRoles(roles, in: guildID)
             publishGuildRoles(guildID)
         }
         if discardInaccessibleMemberLists(guildID: guildID) {
@@ -218,7 +219,7 @@ extension DiscordRESTProvider {
         var roles = cachedGuildRoles[guildID] ?? []
         roles.removeAll { $0.id == update.role.id }
         roles.append(update.role)
-        cachedGuildRoles[guildID] = roles
+        cacheGuildRoles(roles, in: guildID)
         clearCurrentUserPermissionSnapshot(guildID)
         publishGuildRoles(guildID)
     }

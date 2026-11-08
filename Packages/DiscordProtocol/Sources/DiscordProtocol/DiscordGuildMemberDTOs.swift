@@ -284,18 +284,17 @@ struct GuildRoleDTO: Decodable {
     var mentionable: Bool?
     var permissions: String?
     private var tags: Tags?
+    /// The guild's features when the role was cached. Discord paints
+    /// gradients only with enhanced role colours and shows icons only with
+    /// role icons or on a purchasable role; `nil` keeps every style.
+    var guildFeatures: Set<String>?
     enum CodingKeys: String, CodingKey {
         case id, name, position, hoist, color, colors, icon
         case unicodeEmoji = "unicode_emoji"
         case mentionable, permissions, tags
     }
 
-    var domain: GuildRole? { domain(guildFeatures: nil) }
-
-    /// Discord paints gradients only in guilds with enhanced role colours and
-    /// shows icons only with role icons or on a purchasable role; `nil`
-    /// features keep every style.
-    func domain(guildFeatures: Set<String>?) -> GuildRole? {
+    var domain: GuildRole? {
         guard let id = RoleID(id) else { return nil }
         let colorHex = colors?.primaryColor.flatMap { $0 == 0 ? nil : $0 }
             ?? color.flatMap { $0 == 0 ? nil : $0 }

@@ -319,7 +319,7 @@ extension NativeMemberListCanvasView {
                     at: CGPoint(x: nameX, y: nameY),
                     gradientColors: gradientColors,
                     context: context,
-                    isHovered: hoveredIndex == index || rowOverlayIndex == index
+                    isHovered: hoveredIndex == index
                 )
             } else {
                 Self.draw(line: visibleName, at: CGPoint(x: nameX, y: nameY), context: context)

@@ -335,7 +335,7 @@ extension DiscordRESTProvider {
                 }
             }
             if let guildID, !guild.roles.isEmpty {
-                cachedGuildRoles[guildID] = guild.roles
+                cacheGuildRoles(guild.roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if !guild.threads.isEmpty {
@@ -347,7 +347,7 @@ extension DiscordRESTProvider {
             }
             if let guildID, !guild.members.isEmpty {
                 let guildRoles = cachedGuildRoles[guildID] ?? []
-                let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles, guildFeatures: cachedGuilds[guildID]?.features)
+                let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
                 let members = guild.members.compactMap {
                     try? $0.domain(
                         currentUserID: currentUser?.id,
@@ -658,7 +658,7 @@ extension DiscordRESTProvider {
                 publishGuildChannels(guildID)
             }
             if !guild.roles.isEmpty {
-                cachedGuildRoles[guildID] = guild.roles
+                cacheGuildRoles(guild.roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if !guild.threads.isEmpty {
@@ -673,7 +673,7 @@ extension DiscordRESTProvider {
             }
             guard !guild.members.isEmpty else { continue }
             let guildRoles = cachedGuildRoles[guildID] ?? []
-            let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles, guildFeatures: cachedGuilds[guildID]?.features)
+            let guildRoleCatalog = GuildMemberRoleCatalog(guildRoles)
             let previousMembers = cachedMemberIndex(guildID: guildID)
             let members = guild.members.compactMap {
                 try? $0.domain(

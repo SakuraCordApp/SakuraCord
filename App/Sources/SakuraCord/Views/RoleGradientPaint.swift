@@ -7,6 +7,9 @@ import QuartzCore
 /// and adds a soft glow behind the hovered name.
 nonisolated enum RoleGradientPaint {
     static let scrollPeriod: CFTimeInterval = 1.5
+    /// A hovered row repaints whole; a 100-point scroll over 1.5 seconds
+    /// stays smooth at 30 frames per second.
+    static let scrollFrameRate = CAFrameRateRange(minimum: 24, maximum: 30, preferred: 30)
     static var tileWidth: CGFloat { InterfaceScale.metric(100) }
 
     static func colors(primary: NSColor?, secondary: NSColor?, tertiary: NSColor?) -> [NSColor]? {

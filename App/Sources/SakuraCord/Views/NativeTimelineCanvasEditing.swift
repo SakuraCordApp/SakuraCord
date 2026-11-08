@@ -26,7 +26,7 @@ extension NativeTimelineCanvasView {
         let old = hoveredAuthorMessageID
         hoveredAuthorMessageID = value
         if let index = value.flatMap(visibleMessageRowIndex(for:)), scrollsAuthorGradient(at: index) {
-            authorHoverTicker.start(on: self) { [weak self] in
+            authorHoverTicker.start(on: self, frameRate: RoleGradientPaint.scrollFrameRate) { [weak self] in
                 self?.stepAuthorHover()
             }
         } else {

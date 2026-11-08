@@ -277,6 +277,7 @@ extension NativeMemberListCanvasView {
         var visibleIDs: Set<ItemID> = []
         var headerIDs: Set<ItemID> = []
         var tagIDs: Set<ItemID> = []
+        var roleIconIDs: Set<ItemID> = []
         var children: [Any] = []
         for index in range {
             if case .header(let header) = items[index], !header.title.isEmpty, !header.isLoadingSkeleton {
@@ -339,6 +340,24 @@ extension NativeMemberListCanvasView {
                 }
                 children.append(button)
             }
+            if let prepared = preparedText[id] {
+                let geometry = memberNameGeometry(member, prepared: prepared, at: index)
+                if let frame = geometry.roleIconFrame, let role = geometry.topRoleWithIcon {
+                    roleIconIDs.insert(id)
+                    let view = roleIconToolTipViews[id] ?? {
+                        let value = NSView()
+                        addSubview(value)
+                        roleIconToolTipViews[id] = value
+                        return value
+                    }()
+                    view.frame = frame
+                    view.toolTip = role.name
+                }
+            }
+        }
+        for (id, view) in roleIconToolTipViews where !roleIconIDs.contains(id) {
+            view.removeFromSuperview()
+            roleIconToolTipViews[id] = nil
         }
         for (id, proxy) in accessibilityRows where !visibleIDs.contains(id) {
             proxy.removeFromSuperview()
@@ -425,10 +444,11 @@ extension NativeMemberListCanvasView {
         foreground.frame = host.frame
         foreground.layer?.zPosition = 12
         foreground.needsDisplay = true
-        // A hovered gradient name scrolls, as Discord's does.
-        if RoleGradientPaint.animates, presentation.roleColorDisplay == .inNames,
+        // A hovered gradient name scrolls, as Discord's does; a selected one
+        // the pointer has left stays still.
+        if RoleGradientPaint.animates, hoveredIndex == index, presentation.roleColorDisplay == .inNames,
            preparedText[items[index].id]?.gradientColors != nil {
-            memberHoverTicker.start(on: self) { [weak self] in
+            memberHoverTicker.start(on: self, frameRate: RoleGradientPaint.scrollFrameRate) { [weak self] in
                 self?.rowForegroundOverlay?.needsDisplay = true
             }
         } else {
@@ -657,6 +677,8 @@ extension NativeMemberListCanvasView {
         clearServerTagHover()
         memberNameGeometries.removeAll()
         for button in serverTagAccessibilityButtons.values { button.removeFromSuperview() }
+        for view in roleIconToolTipViews.values { view.removeFromSuperview() }
+        roleIconToolTipViews.removeAll()
         serverTagAccessibilityButtons.removeAll()
         for host in avatarOverlays.values { host.removeFromSuperview() }
         for host in activityEmojiOverlays.values { host.removeFromSuperview() }

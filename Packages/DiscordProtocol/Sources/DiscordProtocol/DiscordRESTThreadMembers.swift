@@ -106,7 +106,7 @@ extension DiscordRESTProvider {
 
     func ingestThreadMembers(_ entries: [ThreadMemberDTO], guildID: GuildID) {
         let roles = cachedGuildRoles[guildID] ?? []
-        let catalog = GuildMemberRoleCatalog(roles, guildFeatures: cachedGuilds[guildID]?.features)
+        let catalog = GuildMemberRoleCatalog(roles)
         let previousMembers = cachedMemberIndex(guildID: guildID)
         let members = entries.compactMap { entry -> Member? in
             guard let member = entry.member else { return nil }
