@@ -69,6 +69,12 @@ extension AppModel {
             .sorted { $0.id < $1.id }
     }
 
+    /// The application whose status page replaces the workspace. An approval's GUILD_CREATE can arrive before its
+    /// request update; the page must not keep saying "awaiting review" beside the newly joined server meanwhile.
+    var presentedGuildJoinRequestID: GuildID? {
+        guildJoinRequests.selectedGuildID.flatMap { serverRailGuildsByID[$0] == nil ? $0 : nil }
+    }
+
     func applyGuildJoinRequests(_ list: [GuildJoinRequest]) {
         let store = guildJoinRequests
         let previous = store.requests

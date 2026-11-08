@@ -238,7 +238,7 @@ private struct ChatRootView: View {
                 ChannelSidebarView(
                     voiceModel: model,
                     // A pending server has no channels; Discord shows only the rail beside its status.
-                    showsConversations: model.guildJoinRequests.selectedGuildID == nil,
+                    showsConversations: model.presentedGuildJoinRequestID == nil,
                     guild: selectedGuild,
                     channels: model.visibleChannels,
                     channelGroups: model.visibleChannelGroups,
@@ -280,7 +280,7 @@ private struct ChatRootView: View {
             Group {
                 if model.isSwitchingAccounts {
                     Color.clear
-                } else if let guildID = model.guildJoinRequests.selectedGuildID {
+                } else if let guildID = model.presentedGuildJoinRequestID {
                     GuildJoinRequestPage(model: model, guildID: guildID)
                         .id(guildID)
                 } else if let guildID = model.onboardingEntryGuildID {
@@ -667,7 +667,7 @@ private struct ChatRootView: View {
         if !model.isSwitchingAccounts {
             if model.isMessageRequestsPresented {
                 MessageRequestsToolbarTabs(model: model)
-            } else if model.isFriendsPresented, model.guildJoinRequests.selectedGuildID == nil {
+            } else if model.isFriendsPresented, model.presentedGuildJoinRequestID == nil {
                 FriendsToolbarSections(model: model)
             }
         }
@@ -1241,7 +1241,7 @@ private struct ChatRootView: View {
     }
 
     private var conversationToolbarPresentation: ConversationToolbarPresentation? {
-        if let guildID = model.guildJoinRequests.selectedGuildID {
+        if let guildID = model.presentedGuildJoinRequestID {
             let symbol = switch model.guildJoinRequests.requests[guildID]?.status {
             case .rejected?: "xmark"
             case .started?: "list.bullet"
