@@ -39,9 +39,15 @@ final class GuildJoinRequestStore {
     /// The application the open form answers, as it was when the form opened or Discord last started one for it.
     /// A form from a server profile has none.
     @ObservationIgnored var formRequest: GuildJoinRequest?
-    /// The application a running submission answers: the form's, or, for a form from a server profile, the first one
-    /// Discord reports during it.
-    @ObservationIgnored var submittingRequestID: JoinRequestID?
+    /// The form's submission while it runs.
+    @ObservationIgnored var submission: Submission?
+
+    struct Submission {
+        let modalID: UUID
+        /// The application the submission answers: the form's, or, for a form from a server profile, the first one
+        /// Discord reports while it runs.
+        var requestID: JoinRequestID?
+    }
     @ObservationIgnored var isLoadingGuilds = false
 
     func guildName(_ guildID: GuildID) -> String {
@@ -63,7 +69,7 @@ final class GuildJoinRequestStore {
         acknowledging = []
         inviteCodes = [:]
         formRequest = nil
-        submittingRequestID = nil
+        submission = nil
         isLoadingGuilds = false
     }
 }
@@ -175,8 +181,10 @@ extension AppModel {
     func submitGuildJoinApplication() {
         let store = guildJoinRequests
         guard let form = store.form, let modal = store.modal, form.fields.allSatisfy(\.isSatisfied) else { return }
-        store.submittingRequestID = store.requests[form.guildID]?.id
+        guard !store.isWorking else { return }
+        store.submission = .init(modalID: modal.id, requestID: store.requests[form.guildID]?.id)
         runGuildJoinRequestAction { [weak self] provider in
+            defer { if self?.guildJoinRequests.submission?.modalID == modal.id { self?.guildJoinRequests.submission = nil } }
             do {
                 try await provider.submitGuildJoinApplication(form.guildID, fields: form.fields)
             } catch where self?.submissionLanded(in: form.guildID) == true {}
@@ -202,27 +210,30 @@ extension AppModel {
         if serverRailGuildsByID[guildID] != nil { return onboardingMember(in: guildID)?.isPending == false }
         let current = guildJoinRequests.requests[guildID]
         return [.submitted, .rejected, .approved].contains(current?.status)
-            || guildJoinRequests.submittingRequestID.map { $0 != current?.id } == true
+            || guildJoinRequests.submission?.requestID.map { $0 != current?.id } == true
     }
 
     /// Once another client submits, replaces or removes the form's application, or a reviewer acts, submitting would
-    /// send stale answers, so the form closes. A running action decides first; this runs again when it ends.
+    /// send stale answers, so the form closes. The form's own running submission decides first; this runs again when
+    /// it ends.
     private func reconcileGuildJoinForm() {
         let store = guildJoinRequests
         guard let modal = store.modal, modal.kind == .form else { return }
         let current = store.requests[modal.guildID]
-        if store.isWorking {
-            if store.submittingRequestID == nil { store.submittingRequestID = current?.id }
+        if store.submission != nil {
+            if store.submission?.requestID == nil { store.submission?.requestID = current?.id }
             return
         }
         let answered = store.formRequest
-        guard current?.id != answered?.id || current?.status != answered?.status else { return }
         // Discord starting the form's application, or removing an earlier one that is no longer live (as Reapply
         // does), leaves nothing stale.
         if answered?.status != .started, current == nil || current?.status == .started {
             store.formRequest = current
             return
         }
+        // Reapply opens the form while the rejected application it replaces can still be listed.
+        let isUnchanged = current?.id == answered?.id && current?.status == answered?.status
+        if isUnchanged, current?.status == .started || current?.status == .rejected { return }
         store.form = nil
         store.modal = nil
     }
