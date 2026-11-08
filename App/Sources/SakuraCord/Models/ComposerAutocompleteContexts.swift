@@ -41,15 +41,17 @@ struct ColonAutocompleteContext {
 
 struct MentionAutocompleteContext {
     // Discord's `#"…"` channel mention escapes quotes and backslashes with a
-    // backslash.
+    // backslash. Both token expressions end at `\z`, not `$`, which also
+    // matches before a trailing line break and would let a suggestion replace
+    // text the caret has already left.
     private static let quotedChannelExpression = RegularExpressionFactory.make(
-        #"(?:^|\s)(#["“”]((?:\\.|[^"“”\\\v])*(\\?))(["“”]?))$"#
+        #"(?:^|\s)(#["“”]((?:\\.|[^"“”\\\v])*(\\?))(["“”]?))\z"#
     )
     private static let quotedSuffixExpression = RegularExpressionFactory.make(
         #"^(?:\\.|[^"“”\\\v])*["“”]"#
     )
     private static let expression = RegularExpressionFactory.make(
-        #"(?:^|\s)([@#]([^\s@#]*))$"#
+        #"(?:^|\s)([@#]([^\s@#]*))\z"#
     )
 
     enum Kind: Equatable { case member, channel }

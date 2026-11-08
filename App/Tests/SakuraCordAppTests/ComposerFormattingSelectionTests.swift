@@ -85,3 +85,10 @@ func `channel mention autocomplete covers the whole quoted token`(
     #expect(context.query == query)
     #expect((text as NSString).substring(with: context.range) == token)
 }
+
+@MainActor
+@Test func `channel mention autocomplete closes at a line break`() {
+    let text = "check #\"Release\n Notes\" now"
+    let caret = ("check #\"Release\n" as NSString).length
+    #expect(MentionAutocompleteContext(text: text, selection: NSRange(location: caret, length: 0)) == nil)
+}
