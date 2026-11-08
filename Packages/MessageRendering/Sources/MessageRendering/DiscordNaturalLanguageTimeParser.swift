@@ -228,8 +228,9 @@ private struct Parser {
     private func labelled(_ dates: [Date], in period: Calendar.Component) -> [DiscordTimeSuggestion] {
         dates.map { date in
             let offset = calendar.dateInterval(of: period, for: now).flatMap { current in
-                calendar.dateComponents([period], from: current.start, to: date).value(for: period)
-                    .map { date < current.start ? $0 - 1 : $0 }
+                calendar.dateInterval(of: period, for: date).flatMap {
+                    calendar.dateComponents([period], from: current.start, to: $0.start).value(for: period)
+                }
             }
             let reading: DiscordTimeSuggestion.Reading? = switch (period, offset) {
             case (.day, 0): .today

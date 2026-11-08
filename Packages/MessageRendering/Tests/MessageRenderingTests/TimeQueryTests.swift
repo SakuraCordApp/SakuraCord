@@ -21,6 +21,7 @@ private let discordReadings: [(String, [String])] = [
     ("friday", ["thisWeek 2026-11-13 12:00", "lastWeek 2026-11-06 12:00"]),
     ("next sunday", ["- 2026-11-15 12:00"]),
     ("last sunday", ["thisWeek 2026-11-08 12:00", "lastWeek 2026-11-01 12:00"]),
+    ("last sunday 00:00", ["thisWeek 2026-11-08 00:00", "lastWeek 2026-11-01 00:00"]),
     ("dec 25 midnight", ["thisYear 2026-12-26 00:00"]),
     ("dec 25 5pm", ["thisYear 2026-12-25 17:00"]),
     ("24 october 5pm", ["nextYear 2027-10-24 17:00", "thisYear 2026-10-24 17:00"]),
