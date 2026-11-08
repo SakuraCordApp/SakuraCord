@@ -79,12 +79,16 @@ extension AppModel {
         let store = guildJoinRequests
         let previous = store.requests
         store.requests = Dictionary(list.map { ($0.guildID, $0) }) { $1 }
-        // The form answers the STARTED application it was opened for. Once another client submits or removes it,
+        // The form answers the application it was opened for. Once another client submits, replaces or removes it,
         // or a reviewer acts, submitting would send stale answers; this client's own submission is still running.
-        if let modal = store.modal, modal.kind == .form, !store.isWorking, let opened = previous[modal.guildID],
-           store.requests[modal.guildID]?.id != opened.id || store.requests[modal.guildID]?.status != .started {
-            store.form = nil
-            store.modal = nil
+        // A form opened from a server profile has no application yet, so one that Discord starts for it is not a change.
+        if let modal = store.modal, modal.kind == .form, !store.isWorking {
+            let opened = previous[modal.guildID], current = store.requests[modal.guildID]
+            let changed = current?.id != opened?.id || current?.status != opened?.status
+            if changed, !(opened == nil && current?.status == .started) {
+                store.form = nil
+                store.modal = nil
+            }
         }
         if let guildID = store.selectedGuildID {
             if !pendingApplications.contains(where: { $0.guildID == guildID }) {
