@@ -94,7 +94,7 @@ struct ActivityShelfView: View {
                 ) {
                     ForEach(showsAllRecents ? recents : Array(recents.prefix(8))) { application in
                         Button {
-                            select(application, section: "recents")
+                            select(application, section: "recent_apps")
                         } label: {
                             ActivityIcon(url: application.iconURL, size: 44)
                         }
