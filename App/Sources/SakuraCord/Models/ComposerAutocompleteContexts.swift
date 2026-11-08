@@ -72,13 +72,14 @@ struct MentionAutocompleteContext {
             var tokenRange = match.range(at: 1)
             if match.range(at: 4).length == 0, cursor < text.utf16.count {
                 // A backslash just before the caret escapes the suffix's first
-                // character, which therefore cannot close the token.
-                let escapedLength = match.range(at: 3).length == 0 ? 0 : 1
+                // character, which therefore cannot close the token; a line
+                // break ends the token instead.
                 let suffix = (text as NSString).substring(from: cursor)
-                let suffixLength = (suffix as NSString).length
-                if escapedLength <= suffixLength, let suffixMatch = Self.quotedSuffixExpression.firstMatch(
+                let escaped = match.range(at: 3).length == 0 ? nil : suffix.first
+                let escapedLength = escaped?.utf16.count ?? 0
+                if escaped?.isNewline != true, let suffixMatch = Self.quotedSuffixExpression.firstMatch(
                     in: suffix,
-                    range: NSRange(location: escapedLength, length: suffixLength - escapedLength)
+                    range: NSRange(location: escapedLength, length: (suffix as NSString).length - escapedLength)
                 ) {
                     tokenRange.length += escapedLength + suffixMatch.range.length
                 }

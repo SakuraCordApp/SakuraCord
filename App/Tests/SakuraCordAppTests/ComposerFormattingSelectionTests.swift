@@ -73,6 +73,7 @@ func `composer partial formatting preserves other text styles attachments and un
     (##"check #"Release \"Notes\" Updates""##, nil, #"Release "Notes" Updates"#, ##"#"Release \"Notes\" Updates""##),
     (##"check #"Release \"Notes\" Updates" now"##, 15, "Release", ##"#"Release \"Notes\" Updates""##),
     (##"check #"Release \\" and say "hello" today"##, 17, #"Release \"#, ##"#"Release \\""##),
+    ("#\"C:\\\nnext \"line\"", 5, "C:\\", "#\"C:\\"),
     ("hello #release", nil, "release", "#release")
 ] as [(String, Int?, String, String)])
 func `channel mention autocomplete covers the whole quoted token`(
