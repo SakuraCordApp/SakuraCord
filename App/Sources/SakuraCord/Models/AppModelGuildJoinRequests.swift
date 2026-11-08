@@ -180,11 +180,11 @@ extension AppModel {
 
     func submitGuildJoinApplication() {
         let store = guildJoinRequests
-        guard let form = store.form, let modal = store.modal, form.fields.allSatisfy(\.isSatisfied) else { return }
-        guard !store.isWorking else { return }
+        guard !store.isWorking, let form = store.form, let modal = store.modal,
+              form.fields.allSatisfy(\.isSatisfied) else { return }
         store.submission = .init(modalID: modal.id, requestID: store.requests[form.guildID]?.id)
         runGuildJoinRequestAction { [weak self] provider in
-            defer { if self?.guildJoinRequests.submission?.modalID == modal.id { self?.guildJoinRequests.submission = nil } }
+            defer { if store.submission?.modalID == modal.id { store.submission = nil } }
             do {
                 try await provider.submitGuildJoinApplication(form.guildID, fields: form.fields)
             } catch where self?.submissionLanded(in: form.guildID) == true {}
