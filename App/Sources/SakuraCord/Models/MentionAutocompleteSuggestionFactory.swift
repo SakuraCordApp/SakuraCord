@@ -248,6 +248,13 @@ enum MentionAutocompleteSuggestionFactory {
         case .text, .announcement, .forum: true
         case .voice, .directMessage, .groupDirectMessage, .unknown: false
         }
+        // The supplied channel list is the same already-discovered store
+        // used by the sidebar. Re-evaluating permissions here can hide a
+        // channel that Discord supplied when the current-member snapshot
+        // is still partial (and makes the picker disagree with the
+        // sidebar). The comparison client's autocomplete searches that
+        // channel store directly, including entries exposed by its active
+        // channel-store patches.
         guard isTextChannel else { return nil }
         let guild = channel.guildID.flatMap { guilds[$0] }
         let context = [channel.category, guild?.name].compactMap { $0 }.joined(separator: " ")
@@ -257,6 +264,9 @@ enum MentionAutocompleteSuggestionFactory {
             query: query,
             terms: terms
         )
+        // Discord drops a non-matching channel before its frecency boost, and
+        // its missing parentheses make any positive frecency value a full
+        // three-point boost before the 10/7 cap.
         guard query.isEmpty || score > 0 else { return nil }
         if usageScore > 0 {
             score = min(score + 3, score >= 7 ? 10 : 7)
