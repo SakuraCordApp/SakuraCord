@@ -258,19 +258,19 @@ extension NativeTimelineCanvasView {
                 Set<NativeTimelineMediaKey>] = [:]
         for index in rowRange
         where rowFrame(at: index).intersects(viewport) {
-            if let row = items[index].messageRow, !row.serverInvites.isEmpty || row.message.hasActivityInstance,
-               let model
-            {
-                let references = row.serverInvites, message = row.message
-                let session = model.accountSession()
-                Task { @MainActor in
-                    guard model.isCurrentAccountSession(session) else { return }
-                    for reference in references { model.loadServerInvite(reference) }
-                    // A launch card is tinted from its icon, as Discord's is.
-                    if message.hasActivityInstance, let icon = message.author.avatarURL,
-                       ProfileAvatarPaletteLoader.shared.cached(icon) == nil,
-                       (try? await ProfileAvatarPaletteLoader.shared.colors(icon)) != nil {
-                        model.serverInvites.changed()
+            if let row = items[index].messageRow, let model {
+                let references = row.serverInvites
+                // A launch card is tinted from its icon, as Discord's is.
+                let uncachedIcon = (row.message.hasActivityInstance ? row.message.author.avatarURL : nil)
+                    .flatMap { ProfileAvatarPaletteLoader.shared.cached($0) == nil ? $0 : nil }
+                if !references.isEmpty || uncachedIcon != nil {
+                    let session = model.accountSession()
+                    Task { @MainActor in
+                        guard model.isCurrentAccountSession(session) else { return }
+                        for reference in references { model.loadServerInvite(reference) }
+                        if let uncachedIcon, (try? await ProfileAvatarPaletteLoader.shared.colors(uncachedIcon)) != nil {
+                            model.serverInvites.changed()
+                        }
                     }
                 }
             }

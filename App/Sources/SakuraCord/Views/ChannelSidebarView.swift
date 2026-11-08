@@ -1408,7 +1408,7 @@ private struct ChannelRow: View {
                 .foregroundStyle(channelNameForegroundStyle)
                 .lineLimit(1)
             Spacer()
-            if let activity = runningActivity {
+            if let activity = runningActivity.application {
                 // A running Activity shows its icon on the row, as in Discord.
                 ActivityIcon(url: activity.iconURL, size: 16)
                     .help(activity.name)
@@ -1435,8 +1435,8 @@ private struct ChannelRow: View {
             }
         }
         .mentionBadgeMotion(channel.mentionCount)
-        .task(id: needsActivityShelf) {
-            if needsActivityShelf { await model.loadActivityCardShelf(guildID: channel.guildID) }
+        .task(id: runningActivity.needsShelf) {
+            if runningActivity.needsShelf { await model.loadActivityCardShelf(guildID: channel.guildID) }
         }
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .anchorPreference(key: SidebarUnreadRowAnchors.self, value: .bounds) {
@@ -1489,13 +1489,12 @@ private struct ChannelRow: View {
         }
     }
 
-    private var runningActivity: EmbeddedActivityApplication? {
+    /// The Activity running here, and whether the shelf must load to name it.
+    private var runningActivity: (application: EmbeddedActivityApplication?, needsShelf: Bool) {
         let store = model.embeddedActivities
-        return store.instances(in: channel.id).lazy.compactMap { store.application($0.applicationID) }.first
-    }
-
-    private var needsActivityShelf: Bool {
-        runningActivity == nil && !model.embeddedActivities.instances(in: channel.id).isEmpty
+        let instances = store.instances(in: channel.id)
+        let application = instances.lazy.compactMap { store.application($0.applicationID) }.first
+        return (application, application == nil && !instances.isEmpty)
     }
 
     private var hasActiveScreenShare: Bool {

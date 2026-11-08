@@ -120,7 +120,7 @@ extension NativeTimelineInviteLayout {
         invite = entry?.invite
         // Tinted from the cover, or a launch message's icon, never the server's brand.
         gradientColor = entry?.adaptiveColor
-            ?? content.activityInstanceID.flatMap { _ in content.iconURL.flatMap(ProfileAvatarPaletteLoader.shared.cached)?.first }
+            ?? (content.activityInstanceID == nil ? nil : content.iconURL.flatMap(ProfileAvatarPaletteLoader.shared.cached)?.first)
         self.error = error
         (isUnavailable, isExpanded, hasCollapsedContent) = (false, true, false)
         (frame, bannerFrame, iconFrame, symbolFrame, buttonFrame) = (

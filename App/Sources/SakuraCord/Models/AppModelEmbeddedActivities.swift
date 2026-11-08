@@ -140,7 +140,7 @@ final class EmbeddedActivityStore {
     /// is declined so nothing waits on a prompt nobody will answer. A question
     /// for a launch (`launchID`) is declined once that launch has ended; nil
     /// asks before a launch.
-    func ask(_ kind: Prompt.Kind, applicationName: String, launchID: UUID?) async -> Bool {
+    func ask(_ kind: Prompt.Kind, applicationName: String, launchID: UUID? = nil) async -> Bool {
         guard !Task.isCancelled, launchID == nil || launchID == session?.launchID else { return false }
         prompt?.resolve(false)
         let id = UUID()
@@ -171,7 +171,7 @@ final class EmbeddedActivityStore {
         launchTicket = nil
         host?.stop()
         host = nil
-        if let prompt, prompt.launchID != nil, prompt.launchID == session?.launchID { prompt.resolve(false) }
+        if let launchID = prompt?.launchID, launchID == session?.launchID { prompt?.resolve(false) }
         session = nil
     }
 
@@ -189,19 +189,6 @@ final class EmbeddedActivityStore {
         departingInstances = [:]
         commandLaunches = []
         ageConfirmedApplications = []
-    }
-}
-
-extension Channel {
-    /// Discord's channel type, as Activity consent and the SDK report it.
-    var activityChannelType: Int {
-        switch kind {
-        case .voice: 2
-        case .directMessage: 1
-        case .groupDirectMessage: 3
-        case .announcement: 5
-        default: 0
-        }
     }
 }
 
@@ -339,13 +326,13 @@ extension AppModel {
     private func confirmLaunch(of application: EmbeddedActivityApplication) async -> Bool {
         let store = embeddedActivities
         if application.requiresAgeGate, !store.ageConfirmedApplications.contains(application.id) {
-            guard await store.ask(.confirmAge, applicationName: application.name, launchID: nil) else { return false }
+            guard await store.ask(.confirmAge, applicationName: application.name) else { return false }
             store.ageConfirmedApplications.insert(application.id)
         }
         guard let current = store.session, current.phase == .launching || current.phase == .running else { return true }
         return await store.ask(
             .replace(activity: current.application.name, channel: current.channel.name),
-            applicationName: application.name, launchID: nil
+            applicationName: application.name
         )
     }
 
@@ -358,7 +345,7 @@ extension AppModel {
         guard let scopes = try await account.provider.embeddedActivityInstallScopes(application.id, in: channel) else { return }
         let request = EmbeddedActivityAuthorizationRequest(
             applicationID: application.id, scopes: scopes, state: UUID().uuidString,
-            location: .of(channel), channelType: channel.activityChannelType
+            location: .of(channel), channelType: channel.discordCommandType
         )
         guard try await embeddedActivityConsent(to: request, launchID: launchID, account: account) else {
             // The launch ends now; Discord answers the refusal with access_denied.
@@ -444,18 +431,24 @@ extension AppModel {
         let instance = embeddedActivities.instances[instanceID]
         guard let channel = knownRootChannel(instance?.location.channelID ?? message.channelID) else { return }
         let applicationID = instance?.applicationID ?? ApplicationID(rawValue: message.author.id.rawValue)
-        guard let application = await shelfApplication(applicationID, guildID: channel.guildID, fallback: {
+        await joinActivity(applicationID, in: channel) {
             EmbeddedActivityApplication(id: applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
-        }) else { return }
-        await startActivity(application, in: channel)
+        }
     }
 
     /// Joins an Activity someone is running in the channel, including one the
     /// shelf doesn't list, such as one started with its slash command.
     func joinRunningActivity(_ instance: EmbeddedActivityInstance, in channel: Channel) async {
-        guard let application = await shelfApplication(instance.applicationID, guildID: channel.guildID, fallback: {
+        await joinActivity(instance.applicationID, in: channel) {
             EmbeddedActivityApplication(id: instance.applicationID, name: "Activity")
-        }) else { return }
+        }
+    }
+
+    private func joinActivity(
+        _ applicationID: ApplicationID, in channel: Channel, fallback: () -> EmbeddedActivityApplication
+    ) async {
+        guard let application = await shelfApplication(applicationID, guildID: channel.guildID, fallback: fallback)
+        else { return }
         await startActivity(application, in: channel)
     }
 
@@ -561,7 +554,7 @@ extension AppModel {
         }
         // An instance from a later attempt, such as a retry after a timeout,
         // replaces one this launch adopted from an earlier attempt.
-        let replacesInstance = session.instance.map { $0.compositeInstanceID != instance.compositeInstanceID } ?? false
+        let replacesInstance = session.instance != nil && session.instance?.compositeInstanceID != instance.compositeInstanceID
         if replacesInstance, let previous = session.instance {
             store.host?.stop()
             store.host = nil
