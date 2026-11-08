@@ -496,9 +496,7 @@ extension AppModel {
     func activityPlayers(reference: ServerInviteReference?, instanceID: String?) -> [UserID] {
         let instance = instanceID.flatMap { embeddedActivities.instances[$0] }
             ?? reference.flatMap { inviteEntry(for: $0)?.invite }.flatMap(activityInstance(for:))
-        guard let instance else { return [] }
-        var seen = Set<UserID>()
-        return instance.participants.map(\.userID).filter { seen.insert($0).inserted }
+        return instance?.playerIDs ?? []
     }
 
     func activityPlayerAvatarURL(_ userID: UserID) -> URL? {
@@ -659,10 +657,9 @@ extension AppModel {
             store.host = nil
             leaveEmbeddedActivity(previous)
         }
-        if store.host != nil, !replacesInstance, let previous = session.instance {
-            let before = Set(previous.participants.map(\.userID)).count
-            let after = Set(instance.participants.map(\.userID)).count
-            if after != before { playActivitySound(after > before ? .activityUserJoin : .activityUserLeft) }
+        if store.host != nil, !replacesInstance, let previous = session.instance,
+           instance.playerIDs.count != previous.playerIDs.count {
+            playActivitySound(instance.playerIDs.count > previous.playerIDs.count ? .activityUserJoin : .activityUserLeft)
         }
         store.session?.instance = instance
         store.host?.participantsChanged()
@@ -676,7 +673,7 @@ extension AppModel {
         startAccountChildTask(account: account) { model, account in
             do {
                 let store = model.embeddedActivities
-                // A slash command's Activity has no ticket yet; Discord launched it.
+                // An Activity a slash command or button started has no ticket yet; Discord launched it.
                 let ticket = if let launchTicket = store.launchTicket, launchTicket.isUsable(for: session.launchID) {
                     launchTicket.ticket
                 } else {
@@ -692,7 +689,7 @@ extension AppModel {
                 )
                 model.embeddedActivities.session?.phase = .running
                 // Discord cues joining people already playing in the call as a join.
-                let isJoiningCall = session.isInCall && Set(instance.participants.map(\.userID)).count > 1
+                let isJoiningCall = session.isInCall && instance.playerIDs.count > 1
                 model.playActivitySound(isJoiningCall ? .activityUserJoin : .activityLaunch)
                 // Recents count each Activity opened; a failed save only loses that count.
                 try? await account.provider.recordEmbeddedActivityLaunch(instance.applicationID)
@@ -705,8 +702,8 @@ extension AppModel {
         }
     }
 
-    /// Hosts the Activity this client's slash command started, such as
-    /// `/wordle` in a text channel or DM. Discord has already moved this
+    /// Hosts the Activity this client's slash command or button press
+    /// started, such as `/wordle` in a text channel or DM. Discord has already moved this
     /// session out of any earlier instance, so that one closes without a leave.
     private func adoptInteractionLaunch(_ instance: EmbeddedActivityInstance) {
         let store = embeddedActivities

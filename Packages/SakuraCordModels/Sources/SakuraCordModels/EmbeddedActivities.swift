@@ -49,6 +49,12 @@ public struct EmbeddedActivityInstance: Hashable, Sendable {
         self.location = location
         self.participants = participants
     }
+
+    /// Each account playing, once however many of its sessions take part.
+    public var playerIDs: [UserID] {
+        var seen = Set<UserID>()
+        return participants.map(\.userID).filter { seen.insert($0).inserted }
+    }
 }
 
 /// An application that can run as an Activity, as listed by the Activity shelf.

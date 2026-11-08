@@ -71,8 +71,6 @@ final class EmbeddedActivityHost: NSObject {
         isStopped = true
         webView.configuration.userContentController.removeScriptMessageHandler(forName: Self.handlerName, contentWorld: .page)
         webView.stopLoading()
-        // Unloading the page ends its audio; the relay's navigation policy would refuse it.
-        webView.navigationDelegate = nil
         webView.loadHTMLString("", baseURL: nil)
     }
 
@@ -449,8 +447,9 @@ extension EmbeddedActivityHost: WKNavigationDelegate, WKUIDelegate {
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
         // The Activity and its embeds navigate freely inside the iframe; the
-        // relay page itself never leaves, and links aimed at it open in the browser.
-        guard navigationAction.targetFrame?.isMainFrame == true,
+        // relay page itself never leaves, and links aimed at it open in the
+        // browser. Once stopped, it unloads, which ends the Activity's audio.
+        guard !isStopped, navigationAction.targetFrame?.isMainFrame == true,
               let url = navigationAction.request.url, url != Self.hostURL
         else { return decisionHandler(.allow) }
         decisionHandler(.cancel)
