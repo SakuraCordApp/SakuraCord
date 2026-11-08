@@ -26,6 +26,13 @@ connection owns call media; each selected screen stream has a separate Voice
 allocation. A stream stop must not leave the enclosing call. Match voice-server,
 state and stream updates to the owning account/session before installing them.
 
+Guild voice states from READY_SUPPLEMENTAL `merged_voice_states`, lazy guild
+snapshots and `VOICE_STATE_UPDATE` are tracked for every guild. A guild
+`VOICE_STATE_UPDATE` carries the participant's documented `member`; it is
+admitted to the member cache only when that member is absent, without publishing
+a member-list change. The server rail's hover card reads only cached members and
+never sends a Gateway member request.
+
 Negotiate transport, codecs and DAVE through MediaPipeline. UDP discovery and
 provisional connection setup are bounded and clean up on failure; they cannot
 leave an indefinite connecting state. Voice timeout `4009` identifies again.

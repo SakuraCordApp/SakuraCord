@@ -345,7 +345,9 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcileActionCapsule() {
-        guard !glideBlocksPointer else {
+        guard !glideBlocksPointer,
+              model?.featuresSettings.messageHoverActions == true
+        else {
             removeActionCapsule()
             return
         }

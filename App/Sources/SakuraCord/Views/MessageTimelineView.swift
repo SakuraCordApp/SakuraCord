@@ -114,6 +114,7 @@ struct MessageTimelineView: View {
         }
         .overlay(alignment: .bottom) {
             if TimelineNewestButtonPolicy.isShown(
+                isEnabled: model.featuresSettings.scrollToBottomButton,
                 hasEstablishedInitialPosition: hasEstablishedInitialPosition,
                 isNearBottom: scrollPolicy.isNearBottom,
                 messageCount: model.messages.count
@@ -666,11 +667,12 @@ nonisolated enum TimelineNewestButtonPolicy {
     /// already excludes. A timeline still settling its first position shows
     /// no button.
     static func isShown(
+        isEnabled: Bool,
         hasEstablishedInitialPosition: Bool,
         isNearBottom: Bool,
         messageCount: Int
     ) -> Bool {
-        hasEstablishedInitialPosition && !isNearBottom && messageCount > 0
+        isEnabled && hasEstablishedInitialPosition && !isNearBottom && messageCount > 0
     }
 }
 
