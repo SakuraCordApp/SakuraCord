@@ -555,7 +555,8 @@ extension AppModel {
         if embeddedActivities.application(id) == nil { await loadActivityShelf(guildID: guildID) }
         guard isCurrentAccountSession(account), !Task.isCancelled else { return nil }
         if let application = embeddedActivities.application(id) { return application }
-        guard embeddedActivities.shelves[guildID] != nil else {
+        // A refresh that failed leaves an older shelf behind, which can't vouch for a new Activity.
+        guard embeddedActivities.shelves[guildID] != nil, embeddedActivities.shelfError == nil else {
             errorMessage = "Couldn’t load Activities: \(embeddedActivities.shelfError ?? "try again.")"
             return nil
         }
