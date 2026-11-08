@@ -43,7 +43,7 @@ struct MentionAutocompleteContext {
     // Discord's `#"…"` channel mention escapes quotes and backslashes with a
     // backslash.
     private static let quotedChannelExpression = RegularExpressionFactory.make(
-        #"(?:^|\s)(#["“”]((?:\\.|[^"“”\\\v])*\\?)(["“”]?))$"#
+        #"(?:^|\s)(#["“”]((?:\\.|[^"“”\\\v])*(\\?))(["“”]?))$"#
     )
     private static let quotedSuffixExpression = RegularExpressionFactory.make(
         #"^(?:\\.|[^"“”\\\v])*["“”]"#
@@ -68,13 +68,17 @@ struct MentionAutocompleteContext {
         ), match.range(at: 1).location != NSNotFound,
         match.range(at: 2).location != NSNotFound {
             var tokenRange = match.range(at: 1)
-            if match.range(at: 3).length == 0, cursor < text.utf16.count {
+            if match.range(at: 4).length == 0, cursor < text.utf16.count {
+                // A backslash just before the caret escapes the suffix's first
+                // character, which therefore cannot close the token.
+                let escapedLength = match.range(at: 3).length == 0 ? 0 : 1
                 let suffix = (text as NSString).substring(from: cursor)
-                if let suffixMatch = Self.quotedSuffixExpression.firstMatch(
+                let suffixLength = (suffix as NSString).length
+                if escapedLength <= suffixLength, let suffixMatch = Self.quotedSuffixExpression.firstMatch(
                     in: suffix,
-                    range: NSRange(location: 0, length: (suffix as NSString).length)
+                    range: NSRange(location: escapedLength, length: suffixLength - escapedLength)
                 ) {
-                    tokenRange.length += suffixMatch.range.length
+                    tokenRange.length += escapedLength + suffixMatch.range.length
                 }
             }
             range = tokenRange
