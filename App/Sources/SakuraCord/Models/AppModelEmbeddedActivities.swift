@@ -247,12 +247,18 @@ extension AppModel {
         }
     }
 
+    /// Where the shelf a launch came from was opened, as Discord's launch reports it.
+    struct ActivityLauncher {
+        /// A call's controls rather than the composer.
+        var isFromCall: Bool
+        /// The shelf section the Activity was picked from.
+        var section: String
+    }
+
     /// Starts the application in the channel, or joins the instance already
     /// running there. A voice channel Activity runs alongside voice; elsewhere
     /// it docks in the channel's chat.
-    /// `shelfSection` names the shelf section it was chosen from, as Discord's
-    /// launch reports it.
-    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel, shelfSection: String? = nil) async {
+    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel, launcher: ActivityLauncher? = nil) async {
         let store = embeddedActivities
         let account = accountSession()
         let location = EmbeddedActivityLocation.of(channel)
@@ -294,8 +300,8 @@ extension AppModel {
             let sessionID = try await account.provider.embeddedActivitySessionID()
             store.gatewaySessionID = sessionID
             try await account.provider.launchEmbeddedActivity(
-                application.id, in: channel, sessionID: sessionID, joining: joining, fromCall: session.isInCall,
-                shelfSection: shelfSection
+                application.id, in: channel, sessionID: sessionID, joining: joining,
+                fromCall: launcher?.isFromCall ?? session.isInCall, shelfSection: launcher?.section
             )
         }
         store.launch = launch

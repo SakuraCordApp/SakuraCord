@@ -6,6 +6,8 @@ import SwiftUI
 struct ActivityShelfView: View {
     let model: AppModel
     let channel: Channel
+    /// Opened from a call's controls rather than the composer, which Discord's launch reports.
+    let isFromCall: Bool
     let dismiss: () -> Void
     @State private var query = ""
     @State private var searchIsFocused = false
@@ -181,7 +183,11 @@ struct ActivityShelfView: View {
 
     private func launch(_ application: EmbeddedActivityApplication) {
         dismiss()
-        Task { await model.startActivity(application, in: channel, shelfSection: selectionSection) }
+        Task {
+            await model.startActivity(
+                application, in: channel, launcher: .init(isFromCall: isFromCall, section: selectionSection)
+            )
+        }
     }
 }
 

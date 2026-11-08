@@ -1823,7 +1823,7 @@ extension ComposerView {
             accessibilityIdentifier: "composer-activity-shelf"
         ) {
             if let activityChannel {
-                ActivityShelfView(model: model, channel: activityChannel) { showActivityShelf = false }
+                ActivityShelfView(model: model, channel: activityChannel, isFromCall: false) { showActivityShelf = false }
             }
         }
     }

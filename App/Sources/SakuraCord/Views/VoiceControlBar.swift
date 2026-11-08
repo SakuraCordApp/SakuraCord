@@ -649,7 +649,7 @@ struct VoiceCallControlDock: View {
                     preferredEdge: .maxY,
                     accessibilityIdentifier: "voice-call-activity-shelf"
                 ) {
-                    ActivityShelfView(model: model, channel: channel) { showActivities = false }
+                    ActivityShelfView(model: model, channel: channel, isFromCall: true) { showActivities = false }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
