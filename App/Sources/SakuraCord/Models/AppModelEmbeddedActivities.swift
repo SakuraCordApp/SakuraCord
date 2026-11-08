@@ -171,6 +171,13 @@ extension AppModel {
         if store.shelfLoads[guildID] == load { store.shelfLoads[guildID] = nil }
     }
 
+    /// Activity cards show the shelf's art, as Discord's do.
+    func loadActivityCardShelf(guildID: GuildID?) async {
+        let store = embeddedActivities
+        guard store.shelves[guildID] == nil, store.cardShelfRequests.insert(guildID).inserted else { return }
+        await loadActivityShelf(guildID: guildID)
+    }
+
     private func fetchActivityShelf(guildID: GuildID?, account: AppModelAccountSession) async {
         do {
             let shelf = try await account.provider.embeddedActivityShelf(guildID: guildID)

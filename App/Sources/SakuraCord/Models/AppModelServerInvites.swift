@@ -111,10 +111,8 @@ extension AppModel {
                 store.activeLoads -= 1
                 store.changed(reference)
                 model.startServerInviteLoads()
-                // The card shows the shelf's Activity art, as Discord's does.
-                if let invite = entry.invite, invite.activity != nil,
-                   model.embeddedActivities.cardShelfRequests.insert(invite.guildID).inserted {
-                    await model.loadActivityShelf(guildID: invite.guildID)
+                if let invite = entry.invite, invite.activity != nil {
+                    await model.loadActivityCardShelf(guildID: invite.guildID)
                 }
             }
         }

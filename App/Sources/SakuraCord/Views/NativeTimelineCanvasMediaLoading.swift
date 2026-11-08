@@ -258,12 +258,15 @@ extension NativeTimelineCanvasView {
                 Set<NativeTimelineMediaKey>] = [:]
         for index in rowRange
         where rowFrame(at: index).intersects(viewport) {
-            if let row = items[index].messageRow, !row.serverInvites.isEmpty, let model {
-                let references = row.serverInvites
+            if let row = items[index].messageRow, !row.serverInvites.isEmpty || row.message.hasActivityInstance,
+               let model
+            {
+                let references = row.serverInvites, message = row.message
                 let session = model.accountSession()
                 Task { @MainActor in
                     guard model.isCurrentAccountSession(session) else { return }
                     for reference in references { model.loadServerInvite(reference) }
+                    if message.hasActivityInstance { await model.loadActivityCardShelf(guildID: message.guildID) }
                 }
             }
             let rowKeys = mediaKeys(for: items[index], at: index)
