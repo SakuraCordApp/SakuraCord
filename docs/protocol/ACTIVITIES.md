@@ -112,10 +112,10 @@ returned location reaches the Activity. A declined consent is posted too, with
 bearer token with `GET /oauth2/@me` and requires its application and this
 account's user; that token's rejection never ends the account session.
 
-A running instance is joined the same way from the channel. The official
-client's Join button on a launch message instead sends
-`POST /activities/{channel}/{application}` with `{session_id}`; both join the
-existing instance.
+A running instance is joined the same way from the channel. The Join button
+on a launch message instead sends `POST /activities/{channel}/{application}`
+with `{session_id, guild_id}` (no `guild_id` in a private channel), as the
+official client's does; both join the existing instance.
 
 ## Messages and invites
 

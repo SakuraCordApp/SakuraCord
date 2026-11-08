@@ -195,7 +195,9 @@ extension AppModel {
     /// Starts the application in the channel, or joins the instance already
     /// running there. A voice channel Activity runs alongside voice; elsewhere
     /// it docks in the channel's chat.
-    func startActivity(_ application: EmbeddedActivityApplication, in channel: Channel) async {
+    func startActivity(
+        _ application: EmbeddedActivityApplication, in channel: Channel, joiningAnnounced: Bool = false
+    ) async {
         let store = embeddedActivities
         let account = accountSession()
         let location = EmbeddedActivityLocation.of(channel)
@@ -208,7 +210,10 @@ extension AppModel {
                   isCurrentAccountSession(account) else { return }
             store.ageConfirmedApplications.insert(application.id)
         }
-        if store.session != nil { leaveActivity() }
+        // Discord moves this session out of the Activity it was in once the
+        // next one starts, so that one is left only if this launch fails.
+        let previous = store.session?.instance
+        store.endSession()
         let session = EmbeddedActivityStore.Session(
             application: application, channel: channel, phase: .launching,
             isInCall: channel.kind == .voice || activeVoiceChannel?.id == channel.id
@@ -219,6 +224,7 @@ extension AppModel {
             guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
             guard activeVoiceChannel?.id == channel.id else {
                 store.endSession()
+                if let previous { leaveEmbeddedActivity(previous) }
                 return
             }
         }
@@ -228,7 +234,7 @@ extension AppModel {
         // Ending the session cancels a launch that has not reached Discord yet.
         let launch = Task {
             store.gatewaySessionID = try await account.provider.embeddedActivitySessionID()
-            try await account.provider.launchEmbeddedActivity(application.id, in: channel)
+            try await account.provider.launchEmbeddedActivity(application.id, in: channel, joiningAnnounced: joiningAnnounced)
         }
         store.launch = launch
         do {
@@ -238,6 +244,7 @@ extension AppModel {
             guard isCurrentAccountSession(account), store.session?.launchID == session.launchID,
                   store.session?.instance == nil else { return }
             store.session?.phase = .failed(error.localizedDescription)
+            if let previous { leaveEmbeddedActivity(previous) }
             return
         }
         guard isCurrentAccountSession(account), store.session?.launchID == session.launchID else { return }
@@ -299,7 +306,7 @@ extension AppModel {
         guard let application = await shelfApplication(instance.applicationID, guildID: channel.guildID, fallback: {
             EmbeddedActivityApplication(id: instance.applicationID, name: message.author.displayName, iconURL: message.author.avatarURL)
         }) else { return }
-        await startActivity(application, in: channel)
+        await startActivity(application, in: channel, joiningAnnounced: true)
     }
 
     func isInActivityInvite(_ invite: ServerInvite) -> Bool {
