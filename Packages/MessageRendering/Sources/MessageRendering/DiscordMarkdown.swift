@@ -1423,7 +1423,7 @@ public extension DiscordMarkdown {
             self.metrics = metrics
             plainParagraph = attributes[.paragraphStyle] as? NSParagraphStyle ?? .default
             textColor = (attributes[.foregroundColor] as? NSColor).flatMap { $0 == .labelColor ? nil : $0 }
-            syntaxColor = textColor?.withAlphaComponent(0.5) ?? .tertiaryLabelColor
+            syntaxColor = textColor?.withAlphaComponent(0.72) ?? .secondaryLabelColor
         }
 
         func run() {
