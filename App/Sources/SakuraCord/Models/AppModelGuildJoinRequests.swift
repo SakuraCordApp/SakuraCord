@@ -213,15 +213,20 @@ extension AppModel {
             || guildJoinRequests.submission?.requestID.map { $0 != current?.id } == true
     }
 
-    /// Once another client submits, replaces or removes the form's application, or a reviewer acts, submitting would
-    /// send stale answers, so the form closes. The form's own running submission decides first; this runs again when
-    /// it ends.
-    private func reconcileGuildJoinForm() {
+    /// Once another client submits, replaces or removes the form's application, finishes the member's screening, or a
+    /// reviewer acts, submitting would send stale answers, so the form closes. The form's own running submission
+    /// decides first; this runs again when it ends.
+    func reconcileGuildJoinForm() {
         let store = guildJoinRequests
         guard let modal = store.modal, modal.kind == .form else { return }
         let current = store.requests[modal.guildID]
         if store.submission != nil {
             if store.submission?.requestID == nil { store.submission?.requestID = current?.id }
+            return
+        }
+        if serverRailGuildsByID[modal.guildID] != nil, onboardingMember(in: modal.guildID)?.isPending == false {
+            store.form = nil
+            store.modal = nil
             return
         }
         let answered = store.formRequest
