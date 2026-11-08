@@ -866,6 +866,7 @@ final class AppModel {
     var errorMessage: String?
 
     @ObservationIgnored var provider: any ChatProvider
+    @ObservationIgnored let activityCoordinator: ActivityCoordinator
     @ObservationIgnored var database: SakuraCordDatabase?
     @ObservationIgnored var accountSessionGeneration: UInt64 = 0
     @ObservationIgnored var installedAccountSessionRevision: UInt64 = 0
@@ -1110,7 +1111,8 @@ final class AppModel {
         privacySafetySettingsStore: PrivacySafetySettingsStore? = nil,
         uploadPrivacyPreparation: UploadPrivacyPreparation? = nil,
         translation: TranslationState? = nil,
-        composerPreferences: SettingsPreferenceStore? = nil
+        composerPreferences: SettingsPreferenceStore? = nil,
+        activityCoordinator: ActivityCoordinator? = nil
     ) {
         self.launchMode = launchMode
         includesOfflineSignIn = launchMode == .offlineTesting && awaitsOfflineSignIn
@@ -1138,9 +1140,11 @@ final class AppModel {
         self.accessibilityMessageAnnouncer = accessibilityMessageAnnouncer ?? AccessibilityMessageAnnouncer()
         selectedCameraUID = resolvedVoicePreferences.remembersCamera && !resolvedVoicePreferences.cameraUID.isEmpty ? resolvedVoicePreferences.cameraUID : nil
         screenShareSettings = resolvedVoicePreferences.screenShareDefaults
-        self.provider =
+        let resolvedProvider =
             provider
                 ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())
+        self.provider = resolvedProvider
+        self.activityCoordinator = activityCoordinator ?? ActivityCoordinator(provider: resolvedProvider)
         hasPendingLaunchWelcome = includesOfflineSignIn
         typingState = TypingStateModel()
         self.localTypingTiming = localTypingTiming

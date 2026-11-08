@@ -113,6 +113,10 @@ extension AppModel {
         self.provider = provider
         self.database = database
         installedAccountSessionRevision &+= 1
+        let coordinator = activityCoordinator
+        Task {
+            await coordinator.setProvider(provider)
+        }
     }
 
     @discardableResult
