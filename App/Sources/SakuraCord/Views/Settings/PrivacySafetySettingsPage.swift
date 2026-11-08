@@ -319,6 +319,17 @@ private struct PrivacyDiscordActivitySection: View {
 
     var body: some View {
         Section {
+            Toggle("Share activity status", isOn: $value.sharesActivity)
+                .tint(SakuraCordAccentColor.color)
+                .settingsControlAnchor(.activitySharing, state: state)
+            Toggle("Display Apple Music as activity", isOn: $value.sharesAppleMusicActivity)
+                .tint(SakuraCordAccentColor.color)
+                .disabled(!value.sharesActivity)
+                .settingsControlAnchor(.appleMusicPresence, state: state)
+            Toggle("Allow local apps to connect (Discord RPC)", isOn: $value.allowsLocalRPC)
+                .tint(SakuraCordAccentColor.color)
+                .disabled(!value.sharesActivity)
+                .settingsControlAnchor(.localDiscordRPC, state: state)
             Toggle("Remove metadata from images and videos", isOn: $value.removesMediaMetadata)
                 .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.removeMediaMetadata, state: state)
@@ -329,7 +340,7 @@ private struct PrivacyDiscordActivitySection: View {
                 .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.privacyTypingIndicators, state: state)
         } header: {
-            Text("Discord Activity", bundle: #bundle)
+            Text("Discord Activity & Presence", bundle: #bundle)
         }
     }
 }

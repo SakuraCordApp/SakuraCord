@@ -59,7 +59,10 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     static let defaults = Self(
         sendsTypingIndicators: true,
         externalLinkConfirmationPolicy: .untrustedDomains,
-        trustedDomains: ExternalLinkTrustedDomain.defaults
+        trustedDomains: ExternalLinkTrustedDomain.defaults,
+        sharesActivity: true,
+        sharesAppleMusicActivity: true,
+        allowsLocalRPC: true
     )
 
     var removesMediaMetadata = true
@@ -67,6 +70,9 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     var sendsTypingIndicators: Bool
     var externalLinkConfirmationPolicy: ExternalLinkConfirmationPolicy
     var trustedDomains: [String]
+    var sharesActivity: Bool = true
+    var sharesAppleMusicActivity: Bool = true
+    var allowsLocalRPC: Bool = true
 }
 
 @MainActor
@@ -82,6 +88,15 @@ final class PrivacySafetySettingsStore {
 
     func load() -> PrivacySafetySettingsSnapshot {
         var value = PrivacySafetySettingsSnapshot.defaults
+        if case let .bool(saved) = preferences.value(for: .activitySharing) {
+            value.sharesActivity = saved
+        }
+        if case let .bool(saved) = preferences.value(for: .appleMusicPresence) {
+            value.sharesAppleMusicActivity = saved
+        }
+        if case let .bool(saved) = preferences.value(for: .localDiscordRPC) {
+            value.allowsLocalRPC = saved
+        }
         if case let .bool(saved) = preferences.value(for: .removeMediaMetadata) {
             value.removesMediaMetadata = saved
         }
@@ -103,6 +118,9 @@ final class PrivacySafetySettingsStore {
     }
 
     func save(_ value: PrivacySafetySettingsSnapshot) {
+        preferences.set(.bool(value.sharesActivity), for: .activitySharing)
+        preferences.set(.bool(value.sharesAppleMusicActivity), for: .appleMusicPresence)
+        preferences.set(.bool(value.allowsLocalRPC), for: .localDiscordRPC)
         preferences.set(.bool(value.removesMediaMetadata), for: .removeMediaMetadata)
         preferences.set(.bool(value.anonymisesFileNames), for: .anonymiseFileNames)
         preferences.set(.bool(value.sendsTypingIndicators), for: .privacyTypingIndicators)
@@ -349,6 +367,15 @@ extension AppModel {
         privacySafetySettings = value
         if wasSendingTypingIndicators, !value.sendsTypingIndicators {
             stopLocalTyping(clearThrottle: false)
+        }
+        Task {
+            await activityCoordinator.updatePreferences(
+                ActivityCoordinatorPreferences(
+                    isActivitySharingEnabled: value.sharesActivity,
+                    isAppleMusicPresenceEnabled: value.sharesAppleMusicActivity,
+                    isLocalRPCEnabled: value.allowsLocalRPC
+                )
+            )
         }
     }
 }

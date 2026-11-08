@@ -1148,7 +1148,15 @@ final class AppModel {
             provider
                 ?? (launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider())
         self.provider = resolvedProvider
-        let resolvedCoordinator = activityCoordinator ?? ActivityCoordinator(provider: resolvedProvider)
+        let resolvedPrivacyStore = privacySafetySettingsStore ?? .shared
+        self.privacySafetySettingsStore = resolvedPrivacyStore
+        let loadedPrivacy = resolvedPrivacyStore.load()
+        let initialActivityPreferences = ActivityCoordinatorPreferences(
+            isActivitySharingEnabled: loadedPrivacy.sharesActivity,
+            isAppleMusicPresenceEnabled: loadedPrivacy.sharesAppleMusicActivity,
+            isLocalRPCEnabled: loadedPrivacy.allowsLocalRPC
+        )
+        let resolvedCoordinator = activityCoordinator ?? ActivityCoordinator(provider: resolvedProvider, preferences: initialActivityPreferences)
         self.activityCoordinator = resolvedCoordinator
         let resolvedIPCServer = ipcServer ?? DiscordIPCServer(coordinator: resolvedCoordinator)
         self.ipcServer = resolvedIPCServer
@@ -1165,7 +1173,6 @@ final class AppModel {
         self.localTypingTiming = localTypingTiming
         self.reactionMutationTiming = reactionMutationTiming
         self.readAcknowledgementTiming = readAcknowledgementTiming
-        let resolvedPrivacyStore = privacySafetySettingsStore ?? .shared
         let anonymisesUploadFilenames: @Sendable () async -> Bool = { await resolvedPrivacyStore.load().anonymisesFileNames }
         let uploadPrivacy = uploadPrivacyPreparation ?? UploadPrivacyPreparation(store: resolvedPrivacyStore)
         self.uploadPrivacyPreparation = uploadPrivacy
@@ -1173,7 +1180,6 @@ final class AppModel {
         self.externalAttachmentUploader = externalAttachmentUploader ?? CatboxAttachmentUploader(
             anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
         )
-        self.privacySafetySettingsStore = resolvedPrivacyStore
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
                 ?? AppLaunchConfiguration(

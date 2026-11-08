@@ -15,6 +15,27 @@ nonisolated extension SettingsCatalog {
                 help: "Manage accounts you have ignored on Discord.", keywords: ["ignore", "unignore", "people", "relationships"],
                 owner: .appModel, scope: .discordSynchronized, persistence: .discordManaged, reset: .notApplicable),
         control(
+            .activitySharing, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Share Activity Status",
+            help: "Broadcast your current activity and presence to Discord.",
+            keywords: ["activity", "presence", "rich presence", "status"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .appleMusicPresence, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Share Apple Music Playback",
+            help: "Display the song currently playing in macOS Apple Music as your listening activity.",
+            keywords: ["apple music", "music", "song", "listening", "presence"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
+            .localDiscordRPC, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Allow Local Discord RPC",
+            help: "Allow local apps and games on your Mac to connect via Discord IPC socket and set rich presence.",
+            keywords: ["rpc", "ipc", "socket", "games", "rich presence"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
             .removeMediaMetadata, page: .privacySafety,
             section: .privacyDiscordActivity, label: "Remove metadata from images and videos",
             help: "Remove location, camera and other personal metadata before Discord or external uploads, preserving media quality.",

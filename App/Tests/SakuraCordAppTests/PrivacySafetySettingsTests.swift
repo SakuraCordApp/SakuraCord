@@ -1,4 +1,5 @@
 @testable import SakuraCord
+import DiscordProtocol
 import Foundation
 import MessageRendering
 import SakuraCordModels
@@ -71,15 +72,24 @@ import Testing
     value.anonymisesFileNames = true
     value.externalLinkConfirmationPolicy = .allLinks
     value.trustedDomains = ["Example.COM", "sub.example.com", "example.com"]
+    value.sharesActivity = false
+    value.sharesAppleMusicActivity = false
+    value.allowsLocalRPC = false
     store.save(value)
     let reloaded = store.load()
     #expect(!reloaded.removesMediaMetadata)
     #expect(reloaded.anonymisesFileNames)
     #expect(reloaded.externalLinkConfirmationPolicy == .allLinks)
     #expect(reloaded.trustedDomains == ["example.com", "sub.example.com"])
+    #expect(!reloaded.sharesActivity)
+    #expect(!reloaded.sharesAppleMusicActivity)
+    #expect(!reloaded.allowsLocalRPC)
 
     let export = preferences.export(scope: .appWide, page: .privacySafety)
     #expect(export.values == [
+        SettingsControlID.activitySharing.rawValue: .bool(false),
+        SettingsControlID.appleMusicPresence.rawValue: .bool(false),
+        SettingsControlID.localDiscordRPC.rawValue: .bool(false),
         SettingsControlID.removeMediaMetadata.rawValue: .bool(false),
         SettingsControlID.anonymiseFileNames.rawValue: .bool(true),
         SettingsControlID.privacyTypingIndicators.rawValue: .bool(true),
@@ -253,6 +263,7 @@ import Testing
         .privacyTypingIndicators, .anonymiseFileNames, .removeMediaMetadata,
         .externalLinkProtection, .trustedDomains,
         .clearLocalActivity, .ignoredAccounts, .blockedAccounts,
+        .activitySharing, .appleMusicPresence, .localDiscordRPC,
     ]
     let controls = SettingsCatalog.foundation.controls.filter {
         $0.destination.page == .privacySafety
@@ -310,4 +321,33 @@ import Testing
     #expect(assessment.warnings.contains {
         $0.contains("discord.com") && $0.contains("cdn.discordapp.com")
     })
+}
+
+
+@MainActor
+@Test func `AppModel applying privacy safety settings synchronizes activity coordinator`() async {
+    let defaults = InMemoryPreferences()
+    let preferences = SettingsPreferenceStore(defaults: defaults)
+    let privacyStore = PrivacySafetySettingsStore(preferences: preferences)
+    let provider = MockChatProvider()
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        privacySafetySettingsStore: privacyStore
+    )
+    await model.start()
+
+    var settings = model.privacySafetySettings
+    #expect(settings.sharesActivity)
+    #expect(settings.sharesAppleMusicActivity)
+    #expect(settings.allowsLocalRPC)
+
+    settings.sharesAppleMusicActivity = false
+    model.applyPrivacySafetySettings(settings)
+    try? await Task.sleep(nanoseconds: 50_000_000)
+
+    let prefs = await model.activityCoordinator.currentPreferences()
+    #expect(!prefs.isAppleMusicPresenceEnabled)
+    #expect(prefs.isActivitySharingEnabled)
+    #expect(prefs.isLocalRPCEnabled)
 }
