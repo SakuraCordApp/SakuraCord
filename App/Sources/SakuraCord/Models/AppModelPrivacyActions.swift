@@ -5,7 +5,7 @@ extension AppModel {
         forwardDestinationHistory = []
         workspaceNavigationOverlay = nil
         guard launchMode == .normal else { return }
-        PRBuildProfile.defaults.removeObject(
+        UserDefaults.standard.removeObject(
             forKey: forwardDestinationHistoryDefaultsKey
         )
     }
@@ -15,7 +15,7 @@ extension AppModel {
         // belong to Discord-synchronized settings, not disposable learning.
         guard persistsEmojiPreferences else { return }
         for key in ["dev.sakuracord.emoji-recents", "dev.sakuracord.emoji-usage", "dev.sakuracord.favorite-emojis"] {
-            PRBuildProfile.defaults.removeObject(forKey: key)
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
 

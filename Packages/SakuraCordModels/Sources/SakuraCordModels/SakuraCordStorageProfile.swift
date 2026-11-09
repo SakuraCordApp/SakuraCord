@@ -18,10 +18,6 @@ public struct SakuraCordStorageProfile: Equatable, Sendable {
         ) != nil ? identifier : "unrecognized-preview"
     }
 
-    public var preferencesSuiteName: String? {
-        storageIdentifier.map { "dev.sakuracord.SakuraCord.preview.\($0)" }
-    }
-
     public var storageIdentifier: String? {
         previewIdentifier.map { identifier in
             identifier == "unrecognized-preview" ? identifier : identifier.split(separator: "-").prefix(2).joined(separator: "-")

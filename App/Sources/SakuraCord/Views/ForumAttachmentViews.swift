@@ -16,7 +16,7 @@ private struct ForumAttachmentFramePreferenceKey: PreferenceKey {
 }
 
 struct ForumComposerAttachmentControl: View {
-    @AppStorage(PrivacySafetySettingsStore.anonymiseFileNamesKey, store: PRBuildProfile.defaults) private var anonymisesFileNames = false
+    @AppStorage(PrivacySafetySettingsStore.anonymiseFileNamesKey) private var anonymisesFileNames = false
     @Binding var attachments: [ForumPostAttachment]
     let addAttachments: () -> Void
     @State private var editingTarget: ForumAttachmentEditorTarget?

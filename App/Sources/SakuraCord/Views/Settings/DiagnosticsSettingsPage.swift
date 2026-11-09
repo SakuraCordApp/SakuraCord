@@ -9,13 +9,13 @@ struct DiagnosticsSettingsPage: View {
     @ObservedObject var updateController: AppUpdateController
     let state: SettingsViewState
 
-    @AppStorage(DiagnosticsPreferences.capturesConnectionMetricsKey, store: PRBuildProfile.defaults)
+    @AppStorage(DiagnosticsPreferences.capturesConnectionMetricsKey)
     private var capturesConnectionMetrics = false
-    @AppStorage(DiagnosticsPreferences.capturesDetailedPayloadsKey, store: PRBuildProfile.defaults)
+    @AppStorage(DiagnosticsPreferences.capturesDetailedPayloadsKey)
     private var capturesDetailedAPIPayloads = false
-    @AppStorage(DiagnosticsPreferences.savesDiagnosticsToDiskKey, store: PRBuildProfile.defaults)
+    @AppStorage(DiagnosticsPreferences.savesDiagnosticsToDiskKey)
     private var savesAPIDiagnosticsToDisk = false
-    @AppStorage(DiagnosticsPreferences.enablesPanicSaveKey, store: PRBuildProfile.defaults)
+    @AppStorage(DiagnosticsPreferences.enablesPanicSaveKey)
     private var enablesPanicSave = true
     @State private var panicSaveErrorDescription: String?
     @State private var apiDiagnosticEntryCount = 0

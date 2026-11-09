@@ -60,7 +60,7 @@ final class SettingsConversationRestorationStore {
     private let defaults: any PreferenceStoring
     private var pendingLaunchRestoration: SettingsConversationRestoration?
 
-    init(defaults: any PreferenceStoring = PRBuildProfile.defaults) {
+    init(defaults: any PreferenceStoring = UserDefaults.standard) {
         self.defaults = defaults
     }
 
@@ -117,7 +117,7 @@ final class GeneralWindowRestorationStore {
 
     private let defaults: any PreferenceStoring
 
-    init(defaults: any PreferenceStoring = PRBuildProfile.defaults) {
+    init(defaults: any PreferenceStoring = UserDefaults.standard) {
         self.defaults = defaults
     }
 

@@ -356,7 +356,7 @@ struct ServerRailView: View {
             }).first {
                 ServerFolderRailHeader(
                     entry: entry,
-                    isExpanded: PRBuildProfile.defaults.bool(forKey: ServerFolderRailView.expansionKey(entry.folder.id)),
+                    isExpanded: UserDefaults.standard.bool(forKey: ServerFolderRailView.expansionKey(entry.folder.id)),
                     contextMenuActions: contextMenuActions,
                     toggle: {},
                     loadsImageWhenOffscreen: true
