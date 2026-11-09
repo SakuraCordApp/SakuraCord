@@ -313,4 +313,150 @@ struct DiscordIPCServerTests {
         let published = try #require(activities.values.first)
         #expect(published.timestamps?.start == startSeconds * 1000)
     }
+
+    private func createListeningSocket(at path: String) -> Int32? {
+        let listenFD = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard listenFD >= 0 else { return nil }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = path.utf8CString
+        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
+            close(listenFD)
+            return nil
+        }
+        withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
+            _ = pathBytes.withUnsafeBufferPointer { buf in
+                memcpy(ptr, buf.baseAddress!, buf.count)
+            }
+        }
+        let bindResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in
+                Darwin.bind(listenFD, sockAddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard bindResult == 0, Darwin.listen(listenFD, 5) == 0 else {
+            close(listenFD)
+            return nil
+        }
+        return listenFD
+    }
+
+    private func createDeadSocket(at path: String) {
+        let deadFD = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard deadFD >= 0 else { return }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = path.utf8CString
+        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
+            close(deadFD)
+            return
+        }
+        withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
+            _ = pathBytes.withUnsafeBufferPointer { buf in
+                memcpy(ptr, buf.baseAddress!, buf.count)
+            }
+        }
+        _ = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in
+                Darwin.bind(deadFD, sockAddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        close(deadFD)
+    }
+
+    @Test func `purgeStaleSockets removes dead sockets and broken symlinks but preserves active ones`() throws {
+        let tempDir = "/tmp/test-ipc-\(UUID().uuidString.prefix(8))"
+        try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+        let activeSocketPath = "\(tempDir)/discord-ipc-0"
+        let activeFD = try #require(createListeningSocket(at: activeSocketPath))
+        defer {
+            close(activeFD)
+            unlink(activeSocketPath)
+        }
+
+        let deadSocketPath = "\(tempDir)/discord-ipc-1"
+        createDeadSocket(at: deadSocketPath)
+
+        let brokenSymlinkPath = "\(tempDir)/discord-ipc-2"
+        symlink("\(tempDir)/nonexistent-target", brokenSymlinkPath)
+
+        let activeSymlinkPath = "\(tempDir)/discord-ipc-3"
+        symlink(activeSocketPath, activeSymlinkPath)
+        defer { unlink(activeSymlinkPath) }
+
+        DiscordIPCServer.purgeStaleSockets(in: tempDir)
+
+        #expect(FileManager.default.fileExists(atPath: activeSocketPath))
+        #expect(!FileManager.default.fileExists(atPath: deadSocketPath))
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: brokenSymlinkPath)) == nil)
+        #expect(FileManager.default.fileExists(atPath: activeSymlinkPath))
+    }
+
+    @Test func `canReplaceWithSymlink preserves active sockets and symlinks but permits stale replacement`() throws {
+        let tempDir = "/tmp/test-ipc-\(UUID().uuidString.prefix(8))"
+        try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+        // Non-existent path can be replaced
+        let freePath = "\(tempDir)/free.sock"
+        #expect(DiscordIPCServer.canReplaceWithSymlink(at: freePath))
+
+        // Active socket cannot be replaced
+        let activeSocketPath = "\(tempDir)/active.sock"
+        let activeFD = try #require(createListeningSocket(at: activeSocketPath))
+        defer {
+            close(activeFD)
+            unlink(activeSocketPath)
+        }
+        #expect(!DiscordIPCServer.canReplaceWithSymlink(at: activeSocketPath))
+        #expect(FileManager.default.fileExists(atPath: activeSocketPath))
+
+        // Symlink pointing to active socket cannot be replaced
+        let symlinkToActive = "\(tempDir)/symlink_active.sock"
+        symlink(activeSocketPath, symlinkToActive)
+        defer { unlink(symlinkToActive) }
+        #expect(!DiscordIPCServer.canReplaceWithSymlink(at: symlinkToActive))
+        #expect(FileManager.default.fileExists(atPath: symlinkToActive))
+
+        // Dead socket can be replaced and gets unlinked
+        let deadSocketPath = "\(tempDir)/dead.sock"
+        createDeadSocket(at: deadSocketPath)
+        #expect(DiscordIPCServer.canReplaceWithSymlink(at: deadSocketPath))
+        #expect(!FileManager.default.fileExists(atPath: deadSocketPath))
+
+        // Broken symlink can be replaced and gets unlinked
+        let brokenSymlink = "\(tempDir)/broken_symlink.sock"
+        symlink("\(tempDir)/nonexistent", brokenSymlink)
+        #expect(DiscordIPCServer.canReplaceWithSymlink(at: brokenSymlink))
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: brokenSymlink)) == nil)
+    }
+
+    @Test func `removeSymlinkIfOwned removes symlink only if destination matches target socket`() throws {
+        let tempDir = "/tmp/test-ipc-\(UUID().uuidString.prefix(8))"
+        try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+        let targetSocketPath = "\(tempDir)/our_server.sock"
+        let otherSocketPath = "\(tempDir)/other_server.sock"
+        let symlinkPath = "\(tempDir)/discord-ipc-0"
+
+        // Points to our target -> removed
+        symlink(targetSocketPath, symlinkPath)
+        DiscordIPCServer.removeSymlinkIfOwned(symlinkPath: symlinkPath, targetPath: targetSocketPath)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath)) == nil)
+
+        // Points to other target -> NOT removed
+        symlink(otherSocketPath, symlinkPath)
+        DiscordIPCServer.removeSymlinkIfOwned(symlinkPath: symlinkPath, targetPath: targetSocketPath)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath)) == otherSocketPath)
+        unlink(symlinkPath)
+
+        // Non-symlink file -> NOT removed
+        FileManager.default.createFile(atPath: symlinkPath, contents: Data())
+        DiscordIPCServer.removeSymlinkIfOwned(symlinkPath: symlinkPath, targetPath: targetSocketPath)
+        #expect(FileManager.default.fileExists(atPath: symlinkPath))
+        unlink(symlinkPath)
+    }
 }

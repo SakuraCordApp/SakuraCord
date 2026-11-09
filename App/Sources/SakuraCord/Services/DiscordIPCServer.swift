@@ -371,6 +371,10 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         queue.sync { boundSocketPath }
     }
 
+    public var currentBoundSymlinkPath: String? {
+        queue.sync { boundSymlinkPath }
+    }
+
     public var isServerRunning: Bool {
         queue.sync { isRunning }
     }
@@ -390,6 +394,35 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         return (0 ... 9).map { "\(dir)/discord-ipc-\($0)" }
     }
 
+    /// Probes whether a process is actively listening on a Unix domain socket path (or a symlink pointing to one).
+    public static func isSocketActivelyListening(at path: String) -> Bool {
+        let testFD = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard testFD >= 0 else { return false }
+        defer { close(testFD) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+
+        let pathBytes = path.utf8CString
+        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
+            return false
+        }
+
+        withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
+            _ = pathBytes.withUnsafeBufferPointer { buf in
+                memcpy(ptr, buf.baseAddress!, buf.count)
+            }
+        }
+
+        let connectResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in
+                Darwin.connect(testFD, sockAddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+
+        return connectResult == 0
+    }
+
     /// Purges stale or broken IPC sockets in a directory if no active process is listening.
     public static func purgeStaleSockets(in directory: String = "/tmp") {
         for index in 0 ... 9 {
@@ -398,43 +431,84 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             // Check if file or symlink exists (lstat catches broken symlinks too)
             guard lstat(socketPath, &statBuf) == 0 else { continue }
 
-            // If it is a symlink, verify if target is dead or stale
-            if (statBuf.st_mode & S_IFMT) == S_IFLNK {
+            let fileType = statBuf.st_mode & S_IFMT
+            if fileType == S_IFLNK {
                 var targetStat = stat()
                 if stat(socketPath, &targetStat) != 0 {
-                    // Target does not exist (broken symlink)
+                    // Broken symlink (target does not exist) -> safe to purge
                     unlink(socketPath)
-                }
-                continue
-            }
-
-            // If it is a Unix domain socket, probe if actively listening
-            if (statBuf.st_mode & S_IFMT) == S_IFSOCK {
-                let testFD = socket(AF_UNIX, SOCK_STREAM, 0)
-                guard testFD >= 0 else { continue }
-                var addr = sockaddr_un()
-                addr.sun_family = sa_family_t(AF_UNIX)
-                let pathBytes = socketPath.utf8CString
-                if pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) {
-                    withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
-                        _ = pathBytes.withUnsafeBufferPointer { buf in
-                            memcpy(ptr, buf.baseAddress!, buf.count)
-                        }
-                    }
-                    let connectResult = withUnsafePointer(to: &addr) { ptr in
-                        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in
-                            Darwin.connect(testFD, sockAddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-                        }
-                    }
-                    close(testFD)
-                    // If connection fails, the socket is stale and can be safely purged
-                    if connectResult != 0 {
+                } else if (targetStat.st_mode & S_IFMT) == S_IFSOCK {
+                    // Symlink points to a socket; safe to purge only if target is dead
+                    if !isSocketActivelyListening(at: socketPath) {
                         unlink(socketPath)
                     }
-                } else {
-                    close(testFD)
+                }
+            } else if fileType == S_IFSOCK {
+                // Unix domain socket file; safe to purge only if dead
+                if !isSocketActivelyListening(at: socketPath) {
+                    unlink(socketPath)
                 }
             }
+        }
+    }
+
+    /// Determines whether a destination path can be safely replaced by SakuraCord's symlink.
+    /// Occupied sockets or symlinks belonging to active listeners are never touched.
+    static func canReplaceWithSymlink(at symlinkPath: String) -> Bool {
+        var statBuf = stat()
+        if lstat(symlinkPath, &statBuf) != 0 {
+            // Path does not exist; free to create symlink
+            return true
+        }
+
+        let fileType = statBuf.st_mode & S_IFMT
+        if fileType == S_IFLNK {
+            var targetStat = stat()
+            if stat(symlinkPath, &targetStat) != 0 {
+                // Target does not exist (broken symlink); safe to remove and replace
+                unlink(symlinkPath)
+                return true
+            }
+            if (targetStat.st_mode & S_IFMT) == S_IFSOCK {
+                // Symlink points to a socket; replace only if target socket is dead
+                if !isSocketActivelyListening(at: symlinkPath) {
+                    unlink(symlinkPath)
+                    return true
+                }
+            }
+            // Active listener or non-socket target; leave occupied path alone
+            return false
+        }
+
+        if fileType == S_IFSOCK {
+            // Socket file; replace only if dead
+            if !isSocketActivelyListening(at: symlinkPath) {
+                unlink(symlinkPath)
+                return true
+            }
+            // Active socket belonging to another client; leave occupied path alone
+            return false
+        }
+
+        // Regular file, directory, or other file type; leave occupied path alone
+        return false
+    }
+
+    /// Removes a symlink only if it still points to this server's bound socket path.
+    static func removeSymlinkIfOwned(symlinkPath: String, targetPath: String) {
+        var statBuf = stat()
+        guard lstat(symlinkPath, &statBuf) == 0,
+              (statBuf.st_mode & S_IFMT) == S_IFLNK else {
+            return
+        }
+
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let bytesRead = readlink(symlinkPath, &buffer, buffer.count - 1)
+        guard bytesRead > 0 else { return }
+        buffer[bytesRead] = 0
+        let destination = String(cString: buffer)
+        if destination == targetPath {
+            unlink(symlinkPath)
         }
     }
 
@@ -469,9 +543,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             // a symlink in /tmp so cross-platform games/mods hardcoding /tmp can connect.
             if requestedSocketPath == nil, !path.hasPrefix("/tmp/"), let fileName = path.split(separator: "/").last {
                 let symlinkPath = "/tmp/\(fileName)"
-                // Remove any stale or broken symlink before linking
-                unlink(symlinkPath)
-                if symlink(path, symlinkPath) == 0 {
+                if Self.canReplaceWithSymlink(at: symlinkPath), symlink(path, symlinkPath) == 0 {
                     self.boundSymlinkPath = symlinkPath
                 }
             }
@@ -480,13 +552,14 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             source.setEventHandler { [weak self] in
                 self?.acceptConnection()
             }
+            let socketToClean = path
             let symlinkToClean = self.boundSymlinkPath
             source.setCancelHandler {
                 close(boundFD)
                 if let symlinkToClean {
-                    unlink(symlinkToClean)
+                    Self.removeSymlinkIfOwned(symlinkPath: symlinkToClean, targetPath: socketToClean)
                 }
-                unlink(path)
+                unlink(socketToClean)
             }
             self.listenSource = source
             source.resume()
@@ -510,7 +583,9 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             }
             listenFD = -1
             if let boundSymlinkPath {
-                unlink(boundSymlinkPath)
+                if let boundSocketPath {
+                    Self.removeSymlinkIfOwned(symlinkPath: boundSymlinkPath, targetPath: boundSocketPath)
+                }
                 self.boundSymlinkPath = nil
             }
             if let boundSocketPath {
@@ -544,18 +619,9 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         }
 
         // Probe if another process is actively listening on this socket
-        let testFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        if testFD >= 0 {
-            let connectResult = withUnsafePointer(to: &addr) { ptr in
-                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in
-                    Darwin.connect(testFD, sockAddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-                }
-            }
-            close(testFD)
-            if connectResult == 0 {
-                close(fd)
-                return nil
-            }
+        if Self.isSocketActivelyListening(at: path) {
+            close(fd)
+            return nil
         }
 
         unlink(path)
@@ -580,7 +646,6 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         chmod(path, 0o700)
         return fd
     }
-
     private func acceptConnection() {
         guard isRunning, listenFD >= 0 else { return }
         var clientAddr = sockaddr_un()
