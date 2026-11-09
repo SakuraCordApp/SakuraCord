@@ -8,10 +8,23 @@ import os
 public actor MusicArtworkResolver {
     public static let shared = MusicArtworkResolver()
     private var cache: [String: String] = [:]
+    private var cacheKeys: [String] = []
+    private let maxCacheSize = 64
 
     public func cachedArtworkURL(title: String, artist: String?, album: String?) -> String? {
         let key = "\(artist ?? "") - \(title) - \(album ?? "")"
         return cache[key]
+    }
+
+    private func storeInCache(key: String, url: String) {
+        if cache[key] == nil {
+            if cacheKeys.count >= maxCacheSize {
+                let oldest = cacheKeys.removeFirst()
+                cache.removeValue(forKey: oldest)
+            }
+            cacheKeys.append(key)
+        }
+        cache[key] = url
     }
 
     public func resolveArtworkURL(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> String? {
@@ -29,7 +42,7 @@ public actor MusicArtworkResolver {
                 if let (data, _) = try? await URLSession.shared.data(for: request),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let thumb = json["thumbnail_url"] as? String, !thumb.isEmpty {
-                    cache[key] = thumb
+                    storeInCache(key: key, url: thumb)
                     return thumb
                 }
             }
@@ -53,7 +66,7 @@ public actor MusicArtworkResolver {
            let first = results.first,
            let art100 = first["artworkUrl100"] as? String {
             let highRes = art100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
-            cache[key] = highRes
+            storeInCache(key: key, url: highRes)
             return highRes
         }
 
@@ -168,8 +181,6 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         (NSTemporaryDirectory() as NSString).appendingPathComponent("sakuracord_applemusic_art.png")
     }()
 
-    public static let fallbackArtworkPath: String = "/tmp/sakuracord_applemusic_art.png"
-
     private struct TrackPlaybackState: Sendable {
         var trackName: String
         var artist: String?
@@ -224,18 +235,36 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
     }
 
-    public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
-        let appTarget = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "Spotify" : "Music"
-        let scriptSource = """
-        tell application "\(appTarget)"
+    nonisolated(unsafe) private static let musicPositionScript: NSAppleScript? = {
+        let script = NSAppleScript(source: """
+        tell application "Music"
             if it is running then
                 return (player position as real)
             end if
             return -1
         end tell
-        """
+        """)
+        script?.compileAndReturnError(nil)
+        return script
+    }()
+
+    nonisolated(unsafe) private static let spotifyPositionScript: NSAppleScript? = {
+        let script = NSAppleScript(source: """
+        tell application "Spotify"
+            if it is running then
+                return (player position as real)
+            end if
+            return -1
+        end tell
+        """)
+        script?.compileAndReturnError(nil)
+        return script
+    }()
+
+    public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
+        let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
+        guard let script = isSpotify ? spotifyPositionScript : musicPositionScript else { return nil }
         var errorInfo: NSDictionary?
-        guard let script = NSAppleScript(source: scriptSource) else { return nil }
         let descriptor = script.executeAndReturnError(&errorInfo)
         if errorInfo != nil { return nil }
         let val = descriptor.doubleValue
@@ -268,7 +297,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard isMonitoring, positionPollTask == nil else { return }
         positionPollTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard !Task.isCancelled, let self else { break }
                 await self.checkPositionDrift(appName: appName)
             }
@@ -317,14 +346,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         if let data {
             currentArtworkData = data
             try? data.write(to: URL(fileURLWithPath: artworkPath), options: .atomic)
-            try? data.write(to: URL(fileURLWithPath: fallbackArtworkPath), options: .atomic)
         }
     }
 
     public static func removeCachedArtwork() {
         currentArtworkData = nil
         try? FileManager.default.removeItem(atPath: artworkPath)
-        try? FileManager.default.removeItem(atPath: fallbackArtworkPath)
     }
 
     public func checkCurrentTrack() {
@@ -575,7 +602,6 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                    NSImage(data: data) != nil {
                     Self.currentArtworkData = data
                     try? data.write(to: URL(fileURLWithPath: Self.artworkPath), options: .atomic)
-                    try? data.write(to: URL(fileURLWithPath: Self.fallbackArtworkPath), options: .atomic)
                 }
 
                 let updatedAssets = ActivityAssets(

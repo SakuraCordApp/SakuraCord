@@ -99,11 +99,7 @@ struct ProfileActivitySection: View {
                let img = NSImage(data: data) {
                 return img
             }
-            if FileManager.default.fileExists(atPath: AppleMusicPresenceMonitor.fallbackArtworkPath),
-               let data = try? Data(contentsOf: URL(fileURLWithPath: AppleMusicPresenceMonitor.fallbackArtworkPath)),
-               let img = NSImage(data: data) {
-                return img
-            }
+
         }
         return nil
     }
