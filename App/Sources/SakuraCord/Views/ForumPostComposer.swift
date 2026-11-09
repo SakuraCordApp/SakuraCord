@@ -72,6 +72,10 @@ struct ForumPostComposer: View {
     @State private var sendTransitionAnchor = ComposerSendTransitionAnchor()
     @FocusState private var isTitleFocused: Bool
 
+    /// Forum posts keep the standard limit, which the provider enforces for
+    /// every account.
+    private static let limitPremiumType: Int? = nil
+
     init(model: AppModel, channel: Channel) {
         self.model = model
         self.channel = channel
@@ -158,20 +162,25 @@ struct ForumPostComposer: View {
     }
 
     private var bodyField: some View {
-        ForumPostBodyEditor(
-            model: model,
-            text: $draft.content,
-            selection: $contentSelection,
-            isFocused: $isContentFocused,
-            submit: submit,
-            receiveAttachments: receiveAttachments
-        )
+        // The text scrolls within the space left to it rather than growing
+        // past the panel.
+        GeometryReader { proxy in
+            ForumPostBodyEditor(
+                model: model,
+                text: $draft.content,
+                selection: $contentSelection,
+                isFocused: $isContentFocused,
+                maximumHeight: proxy.size.height,
+                submit: submit,
+                receiveAttachments: receiveAttachments
+            )
+        }
         .padding(.horizontal, InterfaceScale.metric(18))
         .padding(.vertical, InterfaceScale.metric(14))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottomTrailing) {
-            if ChatCharacterLimitPolicy.shouldShowCounter(characterCount: draft.content.count, premiumType: model.currentUser?.premiumType) {
-                ComposerCharacterCounter(characterCount: draft.content.count, premiumType: model.currentUser?.premiumType)
+            if ChatCharacterLimitPolicy.shouldShowCounter(characterCount: draft.content.count, premiumType: Self.limitPremiumType) {
+                ComposerCharacterCounter(characterCount: draft.content.count, premiumType: Self.limitPremiumType)
                     .padding(InterfaceScale.metric(10))
                     .transition(.opacity)
             }
@@ -354,12 +363,18 @@ private extension ForumPostComposer {
         if title.isEmpty { return .missingTitle }
         if title.count > Self.titleLimit { return .titleTooLong }
         if draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, attachments.isEmpty { return .missingContent }
-        if !ChatCharacterLimitPolicy.isWithinLimit(characterCount: draft.content.count, premiumType: model.currentUser?.premiumType) {
+        if !ChatCharacterLimitPolicy.isWithinLimit(characterCount: draft.content.count, premiumType: Self.limitPremiumType) {
             return .contentTooLong
         }
-        if channel.requiresForumTag, draft.tagIDs.isEmpty { return .missingTag }
+        if channel.requiresForumTag, appliedTagIDs.isEmpty { return .missingTag }
         if !checkingAttachmentIDs.isEmpty { return .checkingFiles }
         return nil
+    }
+
+    /// The draft's tags that the forum still offers; one deleted since the
+    /// draft was saved can't be seen or removed.
+    var appliedTagIDs: [ForumTagID] {
+        channel.availableTags.map(\.id).filter(draft.tagIDs.contains)
     }
 
     func submit() {
@@ -383,7 +398,7 @@ private extension ForumPostComposer {
                     title: draft.title,
                     content: draft.content,
                     attachments: attachments,
-                    appliedTagIDs: Array(draft.tagIDs),
+                    appliedTagIDs: appliedTagIDs,
                     autoArchiveDuration: channel.defaultAutoArchiveDuration ?? 4_320
                 )
             )
@@ -392,7 +407,7 @@ private extension ForumPostComposer {
             submitTask = nil
             if didCreate {
                 draft = ForumPostComposerDraft()
-                modal?()
+                modal?(allowsDisabled: true)
             }
         }
     }

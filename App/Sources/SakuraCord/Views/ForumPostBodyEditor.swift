@@ -9,6 +9,7 @@ struct ForumPostBodyEditor: View {
     @Binding var text: String
     @Binding var selection: NSRange?
     @Binding var isFocused: Bool
+    let maximumHeight: CGFloat
     let submit: () -> Void
     let receiveAttachments: (ComposerIncomingAttachments) -> Void
     @State private var autocompleteIndex = 0
@@ -34,7 +35,7 @@ struct ForumPostBodyEditor: View {
                 return true
             },
             canReceiveAttachments: { model.canAttachFilesToForumPosts },
-            maximumHeight: .greatestFiniteMagnitude,
+            maximumHeight: maximumHeight,
             accessibilityHint: "Press Command-Return to post.",
             selection: $selection,
             isFocused: $isFocused
@@ -210,18 +211,19 @@ struct ForumPostBodyEditor: View {
             return route(command, count: suggestions.count) { accept(suggestions[$0], context: context) }
         case let .mention(context, suggestions):
             return route(command, count: suggestions.count) { accept(suggestions[$0], context: context) }
-        case let .time(_, rows) where rows.isEmpty:
-            // Nothing matches yet: Return asks for a time rather than a newline.
+        case let .time(context, rows) where !rows.isEmpty:
+            return route(command, count: rows.count) { insert(rows[$0].token.rawToken + " ", replacing: context.range) }
+        case .time, nil:
+            // `@time ` with nothing matching yet: Return asks for a time
+            // rather than a newline, as in the composer.
+            guard timeContext != nil else { return false }
             switch command {
             case .accept, .advance: timeQueryNeedsPick = true
-            case .dismiss: isAutocompleteDismissed = true
+            // With no menu showing, Escape closes the modal instead.
+            case .dismiss where menu != nil: isAutocompleteDismissed = true
             default: return false
             }
             return true
-        case let .time(context, rows):
-            return route(command, count: rows.count) { insert(rows[$0].token.rawToken + " ", replacing: context.range) }
-        case nil:
-            return false
         }
     }
 
