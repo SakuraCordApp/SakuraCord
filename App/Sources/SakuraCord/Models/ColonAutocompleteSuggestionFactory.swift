@@ -120,13 +120,13 @@ enum ColonAutocompleteSuggestionFactory {
 final class ColonAutocompleteSuggestionCache {
     private struct Key: Equatable {
         let query: String
-        let emojiCount: Int
+        let emojis: [DiscordEmoji]
         let guildID: GuildID?
         let premiumType: Int?
         let fakeNitro: Bool
         let guildCount: Int
         let favoriteKeys: [String]
-        let usageCount: Int
+        let usageScores: [String: Int]
         let settingsAreLoaded: Bool
     }
 
@@ -136,13 +136,13 @@ final class ColonAutocompleteSuggestionCache {
     func suggestions(query: String, model: AppModel) -> [ColonAutocompleteSuggestion] {
         let key = Key(
             query: query,
-            emojiCount: model.orderedCustomEmojis.count,
+            emojis: model.orderedCustomEmojis,
             guildID: model.selectedGuildID,
             premiumType: model.currentUser?.premiumType,
             fakeNitro: model.featuresSettings.fakeNitroEmojis,
             guildCount: model.serverRailGuildsByID.count,
             favoriteKeys: model.discordFavoriteEmojiKeys,
-            usageCount: model.discordEmojiUsageScores.count,
+            usageScores: model.discordEmojiUsageScores,
             settingsAreLoaded: model.hasLoadedDiscordEmojiSettings
         )
         if key != self.key {
