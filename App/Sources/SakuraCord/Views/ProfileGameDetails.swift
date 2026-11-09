@@ -3,8 +3,8 @@ import SwiftUI
 
 struct ProfileGameDetails: View {
     let metadata: ProfileGameMetadata
-    let open: (URL) -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: ProfileGameMetrics.sectionSpacing) {
@@ -44,7 +44,7 @@ struct ProfileGameDetails: View {
                 ProfileGameSection("Links") {
                     HStack(spacing: InterfaceScale.metric(8)) {
                         ForEach(links, id: \.category) { site in
-                            Button { open(site.url) } label: {
+                            Button { openURL(site.url) } label: {
                                 ProfileGameBrandIcon(category: site.category, size: 16).profileGameActionLabel(isIcon: true)
                             }
                             .buttonStyle(.plain)
@@ -56,7 +56,6 @@ struct ProfileGameDetails: View {
                 }
             }
         }
-        .environment(\.openURL, OpenURLAction { open($0); return .handled })
     }
 
     private var stores: [ProfileGameWebsite] {

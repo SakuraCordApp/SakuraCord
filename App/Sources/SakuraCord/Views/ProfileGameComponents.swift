@@ -47,7 +47,7 @@ struct ProfileGameHeroButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.interfaceSystem(size: 13, weight: .semibold))
-                .frame(width: InterfaceScale.metric(32), height: InterfaceScale.metric(32))
+                .frame(width: ProfileGameMetrics.controlHeight, height: ProfileGameMetrics.controlHeight)
                 .contentShape(.circle)
                 .glassEffect(.regular.interactive(), in: .circle)
         }

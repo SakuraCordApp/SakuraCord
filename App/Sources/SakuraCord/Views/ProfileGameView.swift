@@ -42,7 +42,9 @@ struct ProfileGameView: View {
             }
             .padding(.bottom, ProfileGameMetrics.inset)
         }
-        .scrollIndicators(.automatic)
+        // Links in announcements, stores, reviews and the link row all go
+        // through the app's own link handling.
+        .environment(\.openURL, OpenURLAction { url in openLink(url); return .handled })
         .overlay(alignment: .top) { chrome }
         .background {
             // Hosted here rather than at the root so the viewer opens in the
@@ -183,7 +185,7 @@ struct ProfileGameView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                ProfileGameDetails(metadata: metadata, open: openLink).frame(width: ProfileGameMetrics.sidebarWidth)
+                ProfileGameDetails(metadata: metadata).frame(width: ProfileGameMetrics.sidebarWidth)
             }
             .padding(.horizontal, ProfileGameMetrics.inset)
         } else if isLoading {
@@ -216,7 +218,6 @@ struct ProfileGameView: View {
                 }
             }
             .padding(.horizontal, ProfileGameMetrics.inset)
-            .environment(\.openURL, OpenURLAction { url in openLink(url); return .handled })
         }
     }
 

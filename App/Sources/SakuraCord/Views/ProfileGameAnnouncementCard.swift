@@ -31,7 +31,6 @@ struct ProfileGameAnnouncementCard: View {
     }
 
     @ViewBuilder private var textContent: some View {
-        let hasImage = imageURL != nil
         if let author = message.embedSource?.author {
             HStack(spacing: InterfaceScale.metric(6)) {
                 if let icon = author.proxyIconURL ?? author.iconURL {
@@ -46,7 +45,7 @@ struct ProfileGameAnnouncementCard: View {
         if !previewBody.isEmpty {
             Text(DiscordMarkdown.attributed(previewBody))
                 .font(.interfaceSystem(size: 13)).foregroundStyle(message.title == nil ? .primary : .secondary)
-                .lineLimit(hasImage ? 2 : 7)
+                .lineLimit(message.media == nil ? 7 : 2)
         }
     }
 
@@ -79,8 +78,10 @@ struct ProfileGameAnnouncementCard: View {
             }
             Spacer(minLength: 0)
             if message.reactionCount > 0, message.poll == nil {
-                Label(message.reactionCount.formatted(.number.notation(.compactName)), systemImage: "face.smiling")
-                    .labelStyle(ProfileGameCompactLabelStyle())
+                HStack(spacing: InterfaceScale.metric(4)) {
+                    Image(systemName: "face.smiling")
+                    Text(message.reactionCount.formatted(.number.notation(.compactName)))
+                }
             }
         }
         .font(.interfaceSystem(size: 12)).foregroundStyle(.secondary)
@@ -90,7 +91,10 @@ struct ProfileGameAnnouncementCard: View {
     /// viewer can't resolve outside the game's server.
     private var previewBody: String {
         message.body.split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { $0.replacing(/<@&\d+>|@here|@everyone/, with: "").contains { !$0.isWhitespace } || $0.allSatisfy(\.isWhitespace) }
+            .filter { line in
+                let isPingOnly = line.replacing(/<@&\d+>|@here|@everyone/, with: "").allSatisfy(\.isWhitespace)
+                return !isPingOnly || line.allSatisfy(\.isWhitespace)
+            }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -99,16 +103,10 @@ struct ProfileGameAnnouncementCard: View {
         guard let media = message.media, let url = media.proxyURL ?? media.url,
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         let ratio = media.width.flatMap { width in media.height.flatMap { $0 > 0 && width > 0 ? Double(width) / Double($0) : nil } } ?? 16 / 9
-        let width = ProfileGameGallery.supportedSize(300 * displayScale)
+        let width = ProfileGameGallery.supportedSize(Self.width * displayScale)
         components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "format", value: "webp"),
             URLQueryItem(name: "width", value: String(width)), URLQueryItem(name: "height", value: String(Int((Double(width) / ratio).rounded())))]
         return components.url
-    }
-}
-
-private struct ProfileGameCompactLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: InterfaceScale.metric(4)) { configuration.icon; configuration.title }
     }
 }
 
