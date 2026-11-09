@@ -12,6 +12,7 @@ struct ComposerSuggestionList<Row: Identifiable, Content: View>: View where Row.
     let highlight: (Row) -> Void
     let activate: (Row) -> Void
     @ViewBuilder let content: (Row) -> Content
+    @Environment(\.composerSuggestionListHeightLimit) private var heightLimit
 
     var body: some View {
         let ids = rows.map(\.id)
@@ -34,7 +35,7 @@ struct ComposerSuggestionList<Row: Identifiable, Content: View>: View where Row.
                 if let id = selectedID ?? ids.first { proxy.scrollTo(id) }
             }
         }
-        .frame(height: min(maximumHeight, heights.reduce(0, +)))
+        .frame(height: min(maximumHeight, heightLimit, heights.reduce(0, +)))
         .padding(.horizontal, InterfaceScale.metric(6))
     }
 
@@ -44,4 +45,10 @@ struct ComposerSuggestionList<Row: Identifiable, Content: View>: View where Row.
         hasher.combine(heights)
         return hasher.finalize()
     }
+}
+
+extension EnvironmentValues {
+    /// Caps a suggestion list below its own maximum where it opens in a
+    /// short space, such as a forum post's body.
+    @Entry var composerSuggestionListHeightLimit: CGFloat = .infinity
 }

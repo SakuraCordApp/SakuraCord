@@ -12,6 +12,7 @@ struct ForumPostBodyEditor: View {
     let maximumHeight: CGFloat
     let submit: () -> Void
     let receiveAttachments: (ComposerIncomingAttachments) -> Void
+    let dropTargetChanged: (Bool) -> Void
     @State private var autocompleteIndex = 0
     @State private var keyboardSelectionRevision = 0
     @State private var isAutocompleteDismissed = false
@@ -30,6 +31,7 @@ struct ForumPostBodyEditor: View {
             onTextChange: { text = $0 },
             onSubmit: submit,
             onAutocompleteCommand: handleAutocomplete,
+            onDropTargetChanged: { isTargeted, _ in dropTargetChanged(isTargeted) },
             onReceiveAttachments: { attachments, _ in
                 receiveAttachments(attachments)
                 return true
@@ -55,6 +57,8 @@ struct ForumPostBodyEditor: View {
         .overlay(alignment: .bottom) {
             if isFocused, let menu {
                 suggestionList(menu)
+                    // The menu's heading and insets stay inside the field too.
+                    .environment(\.composerSuggestionListHeightLimit, max(maximumHeight - InterfaceScale.metric(48), InterfaceScale.metric(68)))
                     .transition(.opacity.combined(with: .offset(y: InterfaceScale.metric(6))))
             }
         }

@@ -172,7 +172,8 @@ struct ForumPostComposer: View {
                 isFocused: $isContentFocused,
                 maximumHeight: proxy.size.height,
                 submit: submit,
-                receiveAttachments: receiveAttachments
+                receiveAttachments: receiveAttachments,
+                dropTargetChanged: { isDropTargeted = $0 && model.canAttachFilesToForumPosts }
             )
         }
         .padding(.horizontal, InterfaceScale.metric(18))
