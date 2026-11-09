@@ -77,12 +77,17 @@ run_package_tests() {
 case "$TARGET" in
   app)
     run_tests "$ROOT_DIR/App" || true
-    for i in $(seq 2 15); do
+    for i in $(seq 2 80); do
       echo "=== EXPERIMENT App run $i ==="
+      load_pids=()
+      if (( i % 2 == 0 )); then
+        for _ in $(seq 1 $(( $(sysctl -n hw.ncpu) * 2 ))); do yes > /dev/null & load_pids+=($!); done
+      fi
       python3 "$ROOT_DIR/script/run_test_diagnostics.py" --label "App-$i" \
         --output-dir "$SAKURACORD_RUNTIME_DIR/test-diagnostics" --events --timeout-seconds 180 -- \
         swift test --package-path "$ROOT_DIR/App" --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
         --scratch-path "$ROOT_DIR/App/.build" --skip-build || true
+      for pid in "${load_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
     done
     echo "Experiment finished; failing deliberately." >&2
     exit 1
