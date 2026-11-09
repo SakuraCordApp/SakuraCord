@@ -59,9 +59,11 @@ struct ForumPostBodyEditor: View {
             }
         }
         .animation(ComposerResizeMotion.isReduced ? nil : ComposerResizeMotion.hover, value: menu?.kind)
-        .onChange(of: text) { _, _ in
-            isAutocompleteDismissed = false
+        .onChange(of: text) { _, value in
             timeQueryNeedsPick = false
+            // A typed `:name:` becomes its emoji, as in the composer.
+            if completeClosedEmojiName(in: value) { return }
+            isAutocompleteDismissed = false
             autocompleteIndex = 0
         }
         .onChange(of: selection) { _, _ in
@@ -73,6 +75,17 @@ struct ForumPostBodyEditor: View {
         // A relative time counts on while it is written, as in the composer.
         .onChange(of: text.contains(":R>"), initial: true) { _, counts in
             counts ? timestampClock.start() : timestampClock.stop()
+        }
+        .task(id: emojiContext != nil || mentionContext?.kind == .channel) {
+            guard emojiContext != nil || mentionContext?.kind == .channel else { return }
+            await model.loadDiscordEmojiSettings()
+        }
+        .task(id: emojiContext != nil) {
+            guard emojiContext != nil else { return }
+            for guild in model.snapshot?.guilds ?? [] {
+                guard !Task.isCancelled else { return }
+                await model.loadEmojis(for: guild.id)
+            }
         }
         .onDisappear {
             timestampClock.stop()
@@ -110,7 +123,8 @@ struct ForumPostBodyEditor: View {
                 suggestions: suggestions,
                 selectedIndex: autocompleteIndex,
                 highlight: { autocompleteIndex = $0 },
-                select: { accept($0, context: context) }
+                select: { accept($0, replacing: context.range) },
+                keyboardSelectionRevision: keyboardSelectionRevision
             )
         case let .mention(context, suggestions):
             MentionAutocompleteList(
@@ -143,6 +157,16 @@ struct ForumPostBodyEditor: View {
 
     private func emojiSuggestions(for context: ColonAutocompleteContext) -> [ColonAutocompleteSuggestion] {
         emojiCache.suggestions(query: context.query, model: model)
+    }
+
+    private func completeClosedEmojiName(in text: String) -> Bool {
+        guard let context = ClosedColonAutocompleteContext(text: text, selection: selection),
+              let suggestion = emojiCache.suggestions(query: context.query, model: model).first(where: {
+                  $0.matchesCompletionName(context.query)
+              })
+        else { return false }
+        accept(suggestion, replacing: context.range)
+        return true
     }
 
     private var mentionContext: MentionAutocompleteContext? {
@@ -208,7 +232,7 @@ struct ForumPostBodyEditor: View {
         if command == .previous || command == .next { keyboardSelectionRevision &+= 1 }
         switch menu {
         case let .emoji(context, suggestions):
-            return route(command, count: suggestions.count) { accept(suggestions[$0], context: context) }
+            return route(command, count: suggestions.count) { accept(suggestions[$0], replacing: context.range) }
         case let .mention(context, suggestions):
             return route(command, count: suggestions.count) { accept(suggestions[$0], context: context) }
         case let .time(context, rows) where !rows.isEmpty:
@@ -239,9 +263,9 @@ struct ForumPostBodyEditor: View {
         return true
     }
 
-    private func accept(_ suggestion: ColonAutocompleteSuggestion, context: ColonAutocompleteContext) {
+    private func accept(_ suggestion: ColonAutocompleteSuggestion, replacing range: NSRange) {
         if let emoji = suggestion.customEmoji { ComposerEmojiImageStore.shared.register(emoji) }
-        insert(suggestion.value, replacing: context.range)
+        insert(suggestion.value, replacing: range)
     }
 
     private func accept(_ suggestion: MentionAutocompleteSuggestion, context: MentionAutocompleteContext) {

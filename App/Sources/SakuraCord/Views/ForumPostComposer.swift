@@ -224,7 +224,7 @@ struct ForumPostComposer: View {
                                 isSelected: draft.tagIDs.contains(tag.id)
                             ) { toggleTag(tag) }
                             .disabled(tag.isModerated && !model.canManageForumPosts
-                                || !draft.tagIDs.contains(tag.id) && draft.tagIDs.count >= Self.tagLimit)
+                                || !draft.tagIDs.contains(tag.id) && appliedTagIDs.count >= Self.tagLimit)
                         }
                     }
                     .padding(.vertical, InterfaceScale.metric(2))
@@ -371,8 +371,9 @@ private extension ForumPostComposer {
         return nil
     }
 
-    /// The draft's tags that the forum still offers; one deleted since the
-    /// draft was saved can't be seen or removed.
+    /// The draft's tags that the forum still offers. One deleted since the
+    /// draft was saved can't be seen or removed, so it neither counts toward
+    /// the limit nor is sent.
     var appliedTagIDs: [ForumTagID] {
         channel.availableTags.map(\.id).filter(draft.tagIDs.contains)
     }
@@ -416,8 +417,8 @@ private extension ForumPostComposer {
         guard !tag.isModerated || model.canManageForumPosts else { return }
         if draft.tagIDs.contains(tag.id) {
             draft.tagIDs.remove(tag.id)
-        } else if draft.tagIDs.count < Self.tagLimit {
-            draft.tagIDs.insert(tag.id)
+        } else if appliedTagIDs.count < Self.tagLimit {
+            draft.tagIDs = Set(appliedTagIDs + [tag.id])
         }
     }
 
