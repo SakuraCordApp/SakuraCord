@@ -557,7 +557,7 @@ final class ForumPostPreviewTextView: NSView {
     }
 
     override func resetCursorRects() {
-        guard WindowModalCoordinator.allowsInput(for: self) else { return }
+        guard !renderer.hiddenSpoilerRanges.isEmpty, WindowModalCoordinator.allowsInput(for: self) else { return }
         for range in renderer.hiddenSpoilerRanges {
             for frame in hiddenSpoilerFrames(for: range) {
                 addCursorRect(frame, cursor: .pointingHand)
