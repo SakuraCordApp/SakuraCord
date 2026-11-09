@@ -68,7 +68,7 @@ struct ForumPostComposer: View {
     @State private var isContentFocused = false
     @State private var isDropTargeted = false
     @State private var sendTransitionAnchor = ComposerSendTransitionAnchor()
-    @FocusState private var isTitleFocused: Bool
+    @State private var isTitleFocused = false
 
     /// Forum posts keep the standard limit, which the provider enforces for
     /// every account.
@@ -139,17 +139,13 @@ struct ForumPostComposer: View {
                 .foregroundStyle(.secondary)
                 .help(channel.name)
                 .accessibilityHidden(true)
-            TextField("Post title", text: draftBinding(\.title), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.interfaceSystem(size: 19, weight: .semibold))
-                .lineLimit(1 ... 3)
-                .tint(SakuraCordAccentColor.color)
-                .focused($isTitleFocused)
-                .onSubmit { isContentFocused = true }
-                .background {
-                    ForumPostTitlePasteRouter(isActive: isTitleFocused && model.canAttachFilesToForumPosts, receive: receiveAttachments)
-                }
-                .accessibilityLabel("Title")
+            ForumPostTitleField(
+                text: draftBinding(\.title),
+                isFocused: $isTitleFocused,
+                canReceiveAttachments: { model.canAttachFilesToForumPosts },
+                receiveAttachments: receiveAttachments,
+                submit: { isContentFocused = true }
+            )
             if draft.title.count > Self.titleLimit - 20 {
                 Text("\(draft.title.count)/\(Self.titleLimit)")
                     .font(.interface(.caption)).monospacedDigit()
@@ -567,60 +563,6 @@ private struct ForumPostRejectionShake: ViewModifier {
             LinearKeyframe(-3, duration: 0.06)
             LinearKeyframe(3, duration: 0.06)
             LinearKeyframe(0, duration: 0.04)
-        }
-    }
-}
-
-/// The title is a plain text field, so files pasted while it has focus join
-/// the post's attachments, as in the body, rather than pasting as text.
-private struct ForumPostTitlePasteRouter: NSViewRepresentable {
-    let isActive: Bool
-    let receive: (ComposerIncomingAttachments) -> Void
-
-    func makeNSView(context: Context) -> RouterView { RouterView() }
-
-    func updateNSView(_ view: RouterView, context: Context) {
-        view.receive = receive
-        view.isActive = isActive
-    }
-
-    static func dismantleNSView(_ view: RouterView, coordinator: ()) {
-        view.isActive = false
-    }
-
-    final class RouterView: NSView {
-        var receive: ((ComposerIncomingAttachments) -> Void)?
-        var isActive = false { didSet { synchronize() } }
-        private var monitor: Any?
-
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            synchronize()
-        }
-
-        private func synchronize() {
-            guard isActive, window != nil else {
-                if let monitor { NSEvent.removeMonitor(monitor) }
-                monitor = nil
-                return
-            }
-            guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, event.window === self.window,
-                      WindowModalCoordinator.allowsInput(for: self),
-                      ComposerUnfocusedTypingMonitor.shouldOfferPaste(characters: event.characters, modifierFlags: event.modifierFlags),
-                      let type = NSPasteboard.general.availableType(from: ComposerPasteboardAttachments.readableTypes),
-                      let attachments = ComposerPasteboardAttachments.attachments(from: .general, type: type)
-                else { return event }
-                receive?(attachments)
-                return nil
-            }
-        }
-
-        isolated deinit {
-            if let monitor { NSEvent.removeMonitor(monitor) }
         }
     }
 }
