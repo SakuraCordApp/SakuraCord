@@ -24,8 +24,10 @@ extension AppModel {
         friends.incomingCount
     }
 
+    /// An application's status page rests on Friends without showing it, so it has nothing to search.
     var isFriendsSearchActive: Bool {
-        isFriendsPresented && friends.messageRequestsTab == nil && friendsSection != .addFriend
+        isFriendsPresented && presentedGuildJoinRequestID == nil && friends.messageRequestsTab == nil
+            && friendsSection != .addFriend
     }
 
     var friendsSearchText: String {

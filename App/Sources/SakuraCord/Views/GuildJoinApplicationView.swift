@@ -539,14 +539,14 @@ struct GuildJoinRequestSidebar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
-        .animation(snappyMotion(0.25, in: .sidebar), value: preview)
-        .animation(snappyMotion(0.25, in: .sidebar), value: request?.status)
+        .animation(model.animates(.sidebar) ? .snappy(duration: 0.25) : nil, value: preview == nil)
+        .animation(model.animates(.sidebar) ? .snappy(duration: 0.25) : nil, value: request?.status)
         .task(id: guildID) { await model.loadGuildJoinRequestPreview(guildID) }
     }
 
     @ViewBuilder private func counts(_ preview: GuildJoinApplicationForm, members: Int) -> some View {
         if let online = preview.onlineCount { count(online, "Online", color: .green) }
-        count(members, "Members", color: .secondary)
+        count(members, members == 1 ? "Member" : "Members", color: .secondary)
     }
 
     private func count(_ value: Int, _ label: String, color: Color) -> some View {

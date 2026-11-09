@@ -57,6 +57,12 @@ final class GuildJoinRequestStore {
         guilds[guildID]?.name ?? "this server"
     }
 
+    /// The form describes the server, so it previews the server and names it.
+    func recordPreview(_ form: GuildJoinApplicationForm, for guildID: GuildID) {
+        previews[guildID] = form
+        if let name = form.guildName { guilds[guildID] = .init(id: guildID, name: name, iconURL: form.iconURL) }
+    }
+
     func reset() {
         requests = [:]
         guilds = [:]
@@ -182,8 +188,7 @@ extension AppModel {
             switch result {
             case .success(let form):
                 store.form = form
-                store.previews[guildID] = form
-                if let name = form.guildName { store.guilds[guildID] = .init(id: guildID, name: name, iconURL: form.iconURL) }
+                store.recordPreview(form, for: guildID)
             case .failure(let error):
                 store.error = error.localizedDescription
             }
@@ -280,8 +285,7 @@ extension AppModel {
         guard let form = try? await account.provider.guildJoinApplicationForm(guildID, inviteCode: store.inviteCodes[guildID]),
               isCurrentAccountSession(account)
         else { return }
-        store.previews[guildID] = form
-        if let name = form.guildName { store.guilds[guildID] = .init(id: guildID, name: name, iconURL: form.iconURL) }
+        store.recordPreview(form, for: guildID)
     }
 
     func toggleGuildJoinRequestAnswers(_ guildID: GuildID) {

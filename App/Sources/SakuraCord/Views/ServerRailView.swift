@@ -513,7 +513,6 @@ private struct PendingApplicationsRailFolder: View {
                         .transition(ServerRailAnimations.membershipTransition)
                 }
             }
-            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: entries.map(\.id))
             // The last status badge hangs below its row; the reveal keeps it whole.
             .padding(.bottom, InterfaceScale.metric(6))
             .modifier(ServerFolderRowsReveal(isExpanded: isExpanded))

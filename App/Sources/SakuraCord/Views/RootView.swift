@@ -1917,7 +1917,6 @@ private extension AppModel {
 
     /// The toolbar field searches friends or browsable channels instead.
     var showsLocalToolbarSearch: Bool {
-        presentedGuildJoinRequestID == nil
-            && (isFriendsSearchActive || (isBrowsingGuildChannels && presentedSideConversation == nil))
+        isFriendsSearchActive || (isBrowsingGuildChannels && presentedSideConversation == nil)
     }
 }
