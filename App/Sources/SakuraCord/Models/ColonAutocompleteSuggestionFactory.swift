@@ -111,3 +111,52 @@ enum ColonAutocompleteSuggestionFactory {
         }.map(\.suggestion)
     }
 }
+
+/// The last `:emoji:` ranking for an editor. Hovering a suggestion while
+/// scrolling redraws the editor, and ranking every emoji again on each of
+/// those redraws makes the menu stutter, so the result is kept until the
+/// query or anything it was ranked from changes.
+@MainActor
+final class ColonAutocompleteSuggestionCache {
+    private struct Key: Equatable {
+        let query: String
+        let emojiCount: Int
+        let guildID: GuildID?
+        let premiumType: Int?
+        let fakeNitro: Bool
+        let guildCount: Int
+        let favoriteKeys: [String]
+        let usageCount: Int
+        let settingsAreLoaded: Bool
+    }
+
+    private var key: Key?
+    private var value: [ColonAutocompleteSuggestion] = []
+
+    func suggestions(query: String, model: AppModel) -> [ColonAutocompleteSuggestion] {
+        let key = Key(
+            query: query,
+            emojiCount: model.orderedCustomEmojis.count,
+            guildID: model.selectedGuildID,
+            premiumType: model.currentUser?.premiumType,
+            fakeNitro: model.featuresSettings.fakeNitroEmojis,
+            guildCount: model.serverRailGuildsByID.count,
+            favoriteKeys: model.discordFavoriteEmojiKeys,
+            usageCount: model.discordEmojiUsageScores.count,
+            settingsAreLoaded: model.hasLoadedDiscordEmojiSettings
+        )
+        if key != self.key {
+            self.key = key
+            value = ColonAutocompleteSuggestionFactory.suggestions(
+                query: query,
+                customEmojis: model.composerCustomEmojis,
+                customValue: model.composerText(for:),
+                customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
+                discordFavoriteKeys: Set(model.discordFavoriteEmojiKeys),
+                discordUsageScores: model.discordEmojiUsageScores,
+                discordSettingsAreLoaded: model.hasLoadedDiscordEmojiSettings
+            )
+        }
+        return value
+    }
+}
