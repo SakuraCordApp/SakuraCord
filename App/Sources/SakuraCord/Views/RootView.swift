@@ -1046,6 +1046,7 @@ private struct ChatRootView: View {
     }
 
     private var sidebarDisplayName: String {
+        if let guildID = model.presentedGuildJoinRequestID { return model.joinRequestGuildName(guildID) }
         guard let guild = selectedGuild else { return "Messages" }
         return guild.name.isEmpty ? "Unnamed Server" : guild.name
     }
@@ -1912,12 +1913,13 @@ private struct MessageRequestsToolbarTabs: ToolbarContent {
 private extension AppModel {
     /// The workspace shows message search in the window toolbar.
     var showsWorkspaceMessageSearch: Bool {
-        onboardingEntryGuildID == nil && guildWorkspacePage == nil
+        onboardingEntryGuildID == nil && guildWorkspacePage == nil && presentedGuildJoinRequestID == nil
             && (isSwitchingAccounts || canShowMessageSearch)
     }
 
     /// The toolbar field searches friends or browsable channels instead.
     var showsLocalToolbarSearch: Bool {
-        isFriendsSearchActive || (isBrowsingGuildChannels && presentedSideConversation == nil)
+        presentedGuildJoinRequestID == nil
+            && (isFriendsSearchActive || (isBrowsingGuildChannels && presentedSideConversation == nil))
     }
 }

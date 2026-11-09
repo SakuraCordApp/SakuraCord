@@ -514,7 +514,10 @@ private struct PendingApplicationsRailFolder: View {
                 }
             }
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: entries.map(\.id))
+            // The last status badge hangs below its row; the reveal keeps it whole.
+            .padding(.bottom, InterfaceScale.metric(6))
             .modifier(ServerFolderRowsReveal(isExpanded: isExpanded))
+            .padding(.bottom, -InterfaceScale.metric(6))
         }
         .padding(.vertical, isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.expandedPadding) : 0)
         .background {
@@ -625,6 +628,7 @@ struct ApplicationStatusBadge: ViewModifier {
                 Circle()
                     .frame(width: diameter + gap * 2, height: diameter + gap * 2)
                     .scaleEffect(scale)
+                    .animation(.snappy(duration: 0.25), value: isHidden)
                     .offset(x: offset + gap, y: offset + gap)
                     .blendMode(.destinationOut)
             }
@@ -637,6 +641,8 @@ struct ApplicationStatusBadge: ViewModifier {
                     .frame(width: diameter, height: diameter)
                     .background(tint, in: Circle())
                     .scaleEffect(scale)
+                    .animation(.snappy(duration: 0.25), value: isHidden)
+                    .animation(.snappy(duration: 0.25), value: symbol)
                     .offset(x: offset, y: offset)
             }
     }

@@ -180,7 +180,7 @@ extension AppModel {
     /// field in place beside a thread pane, where it fades out instead of
     /// leaving the toolbar.
     var keepsMessageSearchFieldInPlace: Bool {
-        sessionState == .workspace && onboardingEntryGuildID == nil
+        sessionState == .workspace && onboardingEntryGuildID == nil && presentedGuildJoinRequestID == nil
             && guildWorkspacePage == nil && !isFriendsPresented
             && MessageSearchSurfacePolicy.showsToolbar(channelKind: selectedChannel?.kind, hasOpenThread: false)
     }

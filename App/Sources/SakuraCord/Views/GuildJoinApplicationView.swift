@@ -216,6 +216,8 @@ struct GuildJoinRequestPage: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+        // Discord centres the status in the window; a page taller than it scrolls from the top.
+        .defaultScrollAnchor(.center, for: .alignment)
         .background { SakuraCordSignInBackdrop().ignoresSafeArea(edges: .top) }
         .tint(SakuraCordAccentColor.color)
         .animation(motion, value: store.showsAnswers)
