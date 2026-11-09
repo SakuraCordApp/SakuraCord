@@ -78,10 +78,10 @@ time.sleep(60)
         child = ("import os, signal, time; "
                  "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
                  f"open({str(ready)!r}, 'w').write(str(os.getpid())); time.sleep(60)")
-        group = "0" if own_group else "None"
+        group = "os.setpgrp" if own_group else "None"
         wait = "; time.sleep(60)" if launcher_waits else ""
-        source = ("import subprocess, sys, time; "
-                  f"subprocess.Popen([sys.executable, '-c', {child!r}], process_group={group}){wait}")
+        source = ("import os, subprocess, sys, time; "
+                  f"subprocess.Popen([sys.executable, '-c', {child!r}], preexec_fn={group}){wait}")
         with subprocess.Popen(self.command(source), stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True) as process:
             try:
