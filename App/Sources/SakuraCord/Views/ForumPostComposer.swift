@@ -52,8 +52,6 @@ struct ForumPostComposer: View {
     let model: AppModel
     let channel: Channel
     @Environment(\.windowModalContext) private var modal
-    @State private var draft: ForumPostComposerDraft
-    @State private var checkingAttachmentIDs: Set<UUID> = []
     /// One entry per access started, so the same file attached twice stays
     /// open until both are removed.
     @State private var securityScopedAttachmentURLs: [URL] = []
@@ -79,7 +77,6 @@ struct ForumPostComposer: View {
     init(model: AppModel, channel: Channel) {
         self.model = model
         self.channel = channel
-        _draft = State(initialValue: model.forumPostDrafts[channel.id] ?? ForumPostComposerDraft())
     }
 
     var body: some View {
@@ -123,13 +120,10 @@ struct ForumPostComposer: View {
             }
             await Task.yield()
             if draft.title.isEmpty { isTitleFocused = true } else { isContentFocused = true }
+            let pending = attachments.filter { draft.checkingAttachmentIDs.contains($0.id) }
+            if !pending.isEmpty { await checkAttachments(pending) }
         }
-        .onChange(of: draft) { old, value in
-            model.forumPostDrafts[channel.id] = value.isEmpty ? nil : value
-            problem = nil
-            // Pasted files no draft holds any more are deleted.
-            if old.attachments.map(\.url) != value.attachments.map(\.url) { model.pruneOwnedPromisedAttachmentFiles() }
-        }
+        .onChange(of: draft) { problem = nil }
         .onAppear { modal?.escapeAction = handleEscape }
         .onDisappear(perform: releaseAttachments)
         .accessibilityElement(children: .contain)
@@ -145,7 +139,7 @@ struct ForumPostComposer: View {
                 .foregroundStyle(.secondary)
                 .help(channel.name)
                 .accessibilityHidden(true)
-            TextField("Post title", text: $draft.title, axis: .vertical)
+            TextField("Post title", text: draftBinding(\.title), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.interfaceSystem(size: 19, weight: .semibold))
                 .lineLimit(1 ... 3)
@@ -176,7 +170,7 @@ struct ForumPostComposer: View {
         GeometryReader { proxy in
             ForumPostBodyEditor(
                 model: model,
-                text: $draft.content,
+                text: draftBinding(\.content),
                 selection: $contentSelection,
                 isFocused: $isContentFocused,
                 maximumHeight: proxy.size.height,
@@ -201,7 +195,7 @@ struct ForumPostComposer: View {
     private var attachmentTray: some View {
         ComposerAttachmentTray(
             attachments: attachments,
-            checkingIDs: checkingAttachmentIDs,
+            checkingIDs: draft.checkingAttachmentIDs,
             uploads: model.attachmentUploads,
             sendTransitionAnchor: sendTransitionAnchor,
             mediaViewerSourceID: {
@@ -376,7 +370,7 @@ private extension ForumPostComposer {
             return .contentTooLong
         }
         if channel.requiresForumTag, appliedTagIDs.isEmpty { return .missingTag }
-        if !checkingAttachmentIDs.isEmpty { return .checkingFiles }
+        if !draft.checkingAttachmentIDs.isEmpty { return .checkingFiles }
         return nil
     }
 
@@ -416,15 +410,12 @@ private extension ForumPostComposer {
                     autoArchiveDuration: channel.defaultAutoArchiveDuration ?? 4_320
                 )
             )
+            // Cleared even if the composer closed meanwhile.
+            if didCreate { draft = ForumPostComposerDraft() }
             guard !Task.isCancelled else { return }
             isSubmitting = false
             submitTask = nil
-            if didCreate {
-                // Cleared here too: the modal may close before `onChange` runs.
-                model.forumPostDrafts[channel.id] = nil
-                draft = ForumPostComposerDraft()
-                modal?(allowsDisabled: true)
-            }
+            if didCreate { modal?(allowsDisabled: true) }
         }
     }
 
@@ -468,6 +459,17 @@ private extension ForumPostComposer {
 
     // MARK: Attachments
 
+    /// The draft lives in the model, so a file check that ends after the
+    /// composer closed or reopened still updates what it shows.
+    var draft: ForumPostComposerDraft {
+        get { model.forumPostDrafts[channel.id] ?? ForumPostComposerDraft() }
+        nonmutating set { model.forumPostDrafts[channel.id] = newValue == ForumPostComposerDraft() ? nil : newValue }
+    }
+
+    func draftBinding<Value>(_ keyPath: WritableKeyPath<ForumPostComposerDraft, Value>) -> Binding<Value> {
+        Binding { draft[keyPath: keyPath] } set: { draft[keyPath: keyPath] = $0 }
+    }
+
     var attachments: [ForumPostAttachment] { draft.attachments }
 
     /// Pasted data is held by the model, which deletes it once no draft or
@@ -493,20 +495,21 @@ private extension ForumPostComposer {
         let staged = urls.map {
             ForumPostAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
         }
-        let stagedIDs = Set(staged.map(\.id))
         draft.attachments.append(contentsOf: staged)
-        checkingAttachmentIDs.formUnion(stagedIDs)
-        // Saved at once rather than on change, so the model holds pasted
-        // files before anything can prune them.
-        model.forumPostDrafts[channel.id] = draft
-        Task { [channelID = channel.id] in
-            let allowedURLs = Set(await model.attachmentURLsWithinDiscordLimit(urls))
-            checkingAttachmentIDs.subtract(stagedIDs)
-            let rejectedIDs = Set(staged.filter { !allowedURLs.contains($0.url) }.map(\.id))
-            for id in rejectedIDs { removeAttachment(id) }
-            // The composer may have closed during the check.
-            model.forumPostDrafts[channelID]?.attachments.removeAll { rejectedIDs.contains($0.id) }
-            model.pruneOwnedPromisedAttachmentFiles()
+        draft.checkingAttachmentIDs.formUnion(staged.map(\.id))
+        Task { await checkAttachments(staged) }
+    }
+
+    /// Removes any of `staged` over Discord's size limit. The check gives up
+    /// if the selected conversation changes or the composer closes first;
+    /// the files then stay pending and are checked when it next appears.
+    func checkAttachments(_ staged: [ForumPostAttachment]) async {
+        let context = model.attachmentComposerContext(for: .channel)
+        let allowedURLs = Set(await model.attachmentURLsWithinDiscordLimit(staged.map(\.url)))
+        guard !Task.isCancelled, model.attachmentComposerContext(for: .channel) == context else { return }
+        draft.checkingAttachmentIDs.subtract(staged.map(\.id))
+        for attachment in staged where !allowedURLs.contains(attachment.url) {
+            removeAttachment(attachment.id)
         }
     }
 
@@ -518,10 +521,12 @@ private extension ForumPostComposer {
     func removeAttachment(_ id: UUID) {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
         let url = draft.attachments.remove(at: index).url
-        checkingAttachmentIDs.remove(id)
+        draft.checkingAttachmentIDs.remove(id)
         if let scoped = securityScopedAttachmentURLs.firstIndex(of: url) {
             securityScopedAttachmentURLs.remove(at: scoped).stopAccessingSecurityScopedResource()
         }
+        // Pasted files no draft holds any more are deleted.
+        model.pruneOwnedPromisedAttachmentFiles()
     }
 
     func openAttachment(_ id: UUID) {

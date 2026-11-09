@@ -9,6 +9,8 @@ struct ForumPostComposerDraft: Equatable {
     var content = ""
     var tagIDs: Set<ForumTagID> = []
     var attachments: [ForumPostAttachment] = []
+    /// Attachments still being size-checked, which hold Post back.
+    var checkingAttachmentIDs: Set<UUID> = []
 
     var isEmpty: Bool {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
