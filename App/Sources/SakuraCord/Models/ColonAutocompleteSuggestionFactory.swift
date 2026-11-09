@@ -125,7 +125,7 @@ final class ColonAutocompleteSuggestionCache {
         let guildID: GuildID?
         let premiumType: Int?
         let fakeNitro: Bool
-        let guilds: [GuildID: Guild]
+        let guildNames: [GuildID: String]
         let favoriteKeys: [String]
         let usageScores: [String: Int]
         let settingsAreLoaded: Bool
@@ -142,7 +142,9 @@ final class ColonAutocompleteSuggestionCache {
             guildID: model.selectedGuildID,
             premiumType: model.currentUser?.premiumType,
             fakeNitro: model.featuresSettings.fakeNitroEmojis,
-            guilds: model.serverRailGuildsByID,
+            // Only names reach the menu, and unread counts replace the guild
+            // map with almost every message.
+            guildNames: model.serverRailGuildsByID.mapValues(\.name),
             favoriteKeys: model.discordFavoriteEmojiKeys,
             usageScores: model.discordEmojiUsageScores,
             settingsAreLoaded: model.hasLoadedDiscordEmojiSettings
@@ -153,10 +155,10 @@ final class ColonAutocompleteSuggestionCache {
                 query: query,
                 customEmojis: model.composerCustomEmojis,
                 customValue: model.composerText(for:),
-                customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
-                discordFavoriteKeys: Set(model.discordFavoriteEmojiKeys),
-                discordUsageScores: model.discordEmojiUsageScores,
-                discordSettingsAreLoaded: model.hasLoadedDiscordEmojiSettings
+                customSource: { key.guildNames[$0.guildID] },
+                discordFavoriteKeys: Set(key.favoriteKeys),
+                discordUsageScores: key.usageScores,
+                discordSettingsAreLoaded: key.settingsAreLoaded
             )
         }
         return value
