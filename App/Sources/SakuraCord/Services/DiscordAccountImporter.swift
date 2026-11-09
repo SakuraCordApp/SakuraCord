@@ -19,7 +19,7 @@ enum DiscordAccountImporter {
         let directories = ["discord", "Discord"].map {
             home.appending(path: "Library/Application Support/\($0)/Local Storage/leveldb").resolvingSymlinksInPath()
         }
-        if let data = PRBuildProfile.defaults.data(forKey: bookmarkKey) {
+        if let data = UserDefaults.standard.data(forKey: bookmarkKey) {
             var stale = false
             if let directory = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope, .withoutUI],
                                         relativeTo: nil, bookmarkDataIsStale: &stale),
@@ -30,7 +30,7 @@ enum DiscordAccountImporter {
                     if stale { try saveAccess(to: directory) }
                     return try await readAccounts(at: directory, excluding: savedAccountIDs)
                 } catch let error as CocoaError where error.code == .fileReadNoPermission {
-                    PRBuildProfile.defaults.removeObject(forKey: bookmarkKey)
+                    UserDefaults.standard.removeObject(forKey: bookmarkKey)
                 }
             }
         }
@@ -54,7 +54,7 @@ enum DiscordAccountImporter {
             options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
             includingResourceValuesForKeys: nil, relativeTo: nil
         )
-        PRBuildProfile.defaults.set(bookmark, forKey: bookmarkKey)
+        UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
     }
 
     private static func authorizeAccess(to directory: URL) async throws -> URL {

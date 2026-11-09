@@ -29,11 +29,7 @@ struct ServerFolderRailView: View {
         self.selectGuild = selectGuild
         self.contextMenuActions = contextMenuActions
         self.expansionChanged = expansionChanged
-        _isExpanded = AppStorage(
-            wrappedValue: false,
-            Self.expansionKey(entry.folder.id),
-            store: PRBuildProfile.defaults
-        )
+        _isExpanded = AppStorage(wrappedValue: false, Self.expansionKey(entry.folder.id))
     }
 
     static func expansionKey(_ folderID: Int64) -> String {

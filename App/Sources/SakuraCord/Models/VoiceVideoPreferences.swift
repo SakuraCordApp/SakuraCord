@@ -71,7 +71,7 @@ final class VoiceVideoPreferences {
 
     @ObservationIgnored private let defaults: any PreferenceStoring
 
-    init(defaults: any PreferenceStoring = PRBuildProfile.defaults) {
+    init(defaults: any PreferenceStoring = UserDefaults.standard) {
         self.defaults = defaults
         inputDeviceUID = ""
         outputDeviceUID = ""

@@ -821,7 +821,7 @@ final class SettingsPreferenceStore {
 
     init(
         registry: SettingsPreferenceRegistry = .foundation,
-        defaults: any PreferenceStoring = PRBuildProfile.defaults
+        defaults: any PreferenceStoring = UserDefaults.standard
     ) {
         self.registry = registry
         self.defaults = defaults

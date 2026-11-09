@@ -78,29 +78,8 @@ actor UserDefaultsSavedAccountStore: SavedAccountStoring {
 
     private let defaults: any PreferenceStoring
 
-    init(
-        defaults: any PreferenceStoring = PRBuildProfile.defaults,
-        seedFrom source: (any PreferenceStoring)? = PRBuildProfile.savedAccountMetadataSource
-    ) {
+    init(defaults: any PreferenceStoring = UserDefaults.standard) {
         self.defaults = defaults
-        if let source {
-            let marker = "dev.sakuracord.preview-account-metadata-seeded"
-            if !defaults.bool(forKey: marker) {
-                // Only picker metadata crosses profiles; credentials remain in
-                // Keychain, and preview changes never write back to the source.
-                if defaults.object(forKey: Self.accountsKey) == nil,
-                   defaults.object(forKey: Self.preferredAccountKey) == nil
-                {
-                    if let accounts = source.data(forKey: Self.accountsKey) {
-                        defaults.set(accounts, forKey: Self.accountsKey)
-                    }
-                    if let preferred = source.string(forKey: Self.preferredAccountKey) {
-                        defaults.set(preferred, forKey: Self.preferredAccountKey)
-                    }
-                }
-                defaults.set(true, forKey: marker)
-            }
-        }
     }
 
     // A presentation hint available before asynchronous credential restoration.

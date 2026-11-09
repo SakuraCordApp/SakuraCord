@@ -55,7 +55,7 @@ final class DiscordFrecencyStore {
         entries = [:]
         hasLoadedRemoteHistory = false
         pendingUsages = defaultsKey
-            .flatMap { PRBuildProfile.defaults.data(forKey: $0) }
+            .flatMap { UserDefaults.standard.data(forKey: $0) }
             .flatMap { try? JSONDecoder().decode([PendingUsage].self, from: $0) } ?? []
         for usage in pendingUsages {
             track(usage.key, timestamp: usage.timestamp)
@@ -66,7 +66,7 @@ final class DiscordFrecencyStore {
     static func removePendingEmojiUsage(scope: String) {
         let safeScope = scope.replacingOccurrences(of: #"[^A-Za-z0-9_.-]"#, with: "-", options: .regularExpression)
         for kind in ["emoji", "reaction"] {
-            PRBuildProfile.defaults.removeObject(forKey: "dev.sakuracord.\(kind)-frecency-pending.\(safeScope)")
+            UserDefaults.standard.removeObject(forKey: "dev.sakuracord.\(kind)-frecency-pending.\(safeScope)")
         }
     }
 
@@ -250,9 +250,9 @@ final class DiscordFrecencyStore {
     private func persistPending() {
         guard let defaultsKey else { return }
         if pendingUsages.isEmpty {
-            PRBuildProfile.defaults.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
         } else if let data = try? JSONEncoder().encode(pendingUsages) {
-            PRBuildProfile.defaults.set(data, forKey: defaultsKey)
+            UserDefaults.standard.set(data, forKey: defaultsKey)
         }
     }
 }

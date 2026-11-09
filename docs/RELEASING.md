@@ -417,8 +417,9 @@ configuration, architecture, artifact provenance, version, archive and symbols
 hashes, and binary UUIDs. Reruns receive distinct identities and bundle versions.
 PR bundle versions reserve `4_000_000_000_000_000_000 + runID * 1000 + attempt`
 (with at most 13 run-ID digits and attempts 1–999), within signed 64-bit range.
-The production bundle identifier stays stable for Sparkle; PR builds use the
-app's per-PR local-data namespace, shared by updates within that PR. They retain
+The production bundle identifier stays stable for Sparkle; PR builds share
+settings with the regular app and use a per-PR account-database folder, shared
+by updates within that PR. They retain
 normal update preferences and explicit return-to-release controls. Old PR artifacts lacking the
 switching protocol cannot be published into the catalog.
 

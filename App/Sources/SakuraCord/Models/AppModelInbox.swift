@@ -13,7 +13,7 @@ extension AppModel {
         guard sessionState == .workspace else { return }
         inbox.isPresented = true
         if !isOfflineTesting {
-            let preferences = PRBuildProfile.defaults
+            let preferences = UserDefaults.standard
             inbox.query = InboxMentionQuery(
                 guildID: preferences.bool(forKey: "dev.sakuracord.inbox-current-server") ? selectedGuildID : nil,
                 includesRoles: preferences.object(forKey: "dev.sakuracord.inbox-include-roles") as? Bool ?? true,
@@ -29,7 +29,7 @@ extension AppModel {
 
     func inboxMentionQueryDidChange() {
         if !isOfflineTesting {
-            let preferences = PRBuildProfile.defaults
+            let preferences = UserDefaults.standard
             if selectedChannel?.guildID != nil {
                 preferences.set(inbox.query.guildID != nil, forKey: "dev.sakuracord.inbox-current-server")
             }

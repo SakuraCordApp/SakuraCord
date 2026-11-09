@@ -193,16 +193,14 @@ not start network work merely because a row redraws.
 | Report drafts and report-service session | Session memory; drafts are discarded once filed, and both are cleared when the account changes. Attachments use the existing upload-privacy preparation and are read when attached. |
 | Diagnostics | Bounded memory and optional/specific disk output. See the single [retention and redaction contract](protocol/SESSION.md#diagnostics). |
 
-Pull request builds select an isolated preferences suite and account-database
-folder from the PR number in their packaged build identity before opening either
-store. No regular database is copied or migrated in place; updates within a PR
-retain that PR’s settings and drafts, while different PRs stay separate.
-Returning to Regular or Nightly reopens the original stores. Invalid preview identity metadata still selects an isolated
-profile. Keychain credentials remain shared deliberately. An empty preview
-profile seeds saved-account picker metadata and the preferred account once,
-without copying credentials or writing subsequent changes back. Update-track and
-recovery preferences also stay outside the per-PR profile. Disposable media
-and derived caches remain shared.
+Pull request builds share user defaults with Regular and Nightly, so settings
+and saved-account metadata changed in either direction apply to both. They
+select an isolated account-database folder from the PR number in their packaged
+build identity before opening it. No regular database is copied or migrated in
+place; updates within a PR retain that PR’s drafts, while different PRs stay
+separate. Returning to Regular or Nightly reopens the original database. Invalid
+preview identity metadata still selects an isolated database. Keychain
+credentials, disposable media and derived caches remain shared.
 
 Before the first switch into a pull request build, `PRBuildRecovery` asks for a
 folder and saves a signature-validated Regular or Nightly app there, outside the

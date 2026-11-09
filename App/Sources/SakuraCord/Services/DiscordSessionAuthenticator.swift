@@ -53,19 +53,19 @@ actor UserDefaultsDiscordFingerprintStore: DiscordFingerprintStoring {
     private nonisolated static let installationKey = "dev.sakuracord.discord-installation-id"
 
     func load() -> String? {
-        PRBuildProfile.defaults.string(forKey: Self.key)
+        UserDefaults.standard.string(forKey: Self.key)
     }
 
     func save(_ fingerprint: String) {
-        PRBuildProfile.defaults.set(fingerprint, forKey: Self.key)
+        UserDefaults.standard.set(fingerprint, forKey: Self.key)
     }
 
     func loadInstallationID() async -> String? {
-        PRBuildProfile.defaults.string(forKey: Self.installationKey)
+        UserDefaults.standard.string(forKey: Self.installationKey)
     }
 
     func saveInstallationID(_ installationID: String) async {
-        PRBuildProfile.defaults.set(installationID, forKey: Self.installationKey)
+        UserDefaults.standard.set(installationID, forKey: Self.installationKey)
     }
 }
 

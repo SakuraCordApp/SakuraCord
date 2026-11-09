@@ -79,11 +79,11 @@ extension AppModel {
             return
         }
         forwardDestinationHistory = Array(
-            (PRBuildProfile.defaults.stringArray(forKey: historyKey) ?? [])
+            (UserDefaults.standard.stringArray(forKey: historyKey) ?? [])
                 .compactMap(ChannelID.init)
                 .prefix(8)
         )
-        if let data = PRBuildProfile.defaults.data(forKey: discordFrecencyUsageDeltasDefaultsKey),
+        if let data = UserDefaults.standard.data(forKey: discordFrecencyUsageDeltasDefaultsKey),
            let value = try? JSONDecoder().decode(
                [String: DiscordFrecencyUsage].self,
                from: data
@@ -107,7 +107,7 @@ extension AppModel {
             visiting: channelID
         )
         guard launchMode == .normal else { return }
-        PRBuildProfile.defaults.set(
+        UserDefaults.standard.set(
             forwardDestinationHistory.map(\.description),
             forKey: forwardDestinationHistoryDefaultsKey
         )
@@ -202,7 +202,7 @@ extension AppModel {
         delta.recentUses = Array(delta.recentUses.suffix(10))
         persistedDiscordFrecencyUsageDeltas[key] = delta
         if let data = try? JSONEncoder().encode(persistedDiscordFrecencyUsageDeltas) {
-            PRBuildProfile.defaults.set(data, forKey: discordFrecencyUsageDeltasDefaultsKey)
+            UserDefaults.standard.set(data, forKey: discordFrecencyUsageDeltasDefaultsKey)
         }
     }
 
