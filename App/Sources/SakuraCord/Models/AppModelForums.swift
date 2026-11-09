@@ -2,6 +2,24 @@ import DiscordProtocol
 import Foundation
 import SakuraCordModels
 
+/// What the forum post composer keeps between openings. Files aren't kept:
+/// their access ends when the composer closes.
+struct ForumPostComposerDraft: Equatable {
+    var title = ""
+    var content = ""
+    var tagIDs: Set<ForumTagID> = []
+    var attachments: [ForumPostAttachment] = []
+    /// Attachments still being size-checked, which hold Post back.
+    var checkingAttachmentIDs: Set<UUID> = []
+
+    var isEmpty: Bool {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && tagIDs.isEmpty
+            && attachments.isEmpty
+    }
+}
+
 extension AppModel {
     func canToggleForumTag(_ tag: ForumTag, on post: ForumPost) -> Bool {
         let policy = threadActionPolicy(post.thread)

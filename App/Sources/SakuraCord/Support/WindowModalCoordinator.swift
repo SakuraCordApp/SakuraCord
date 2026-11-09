@@ -7,6 +7,13 @@ protocol WindowModalInputParticipant: AnyObject {
     func modalInputDidChange()
 }
 
+/// A field inside a modal that can use Escape itself, such as to close its
+/// suggestion menu, before Escape closes the modal.
+@MainActor
+protocol WindowModalEscapeConsumer: AnyObject {
+    func consumeModalEscape() -> Bool
+}
+
 /// Presentation order, focus and event ownership belong to a window, not AppModel.
 @MainActor
 final class WindowModalCoordinator {
@@ -175,6 +182,7 @@ final class WindowModalCoordinator {
             guard KeyboardShortcutPolicy.isPlainEscape(keyCode: event.keyCode, modifierFlags: event.modifierFlags, characters: event.charactersIgnoringModifiers) else { return event }
             if window.attachedSheet != nil { return event }
             if PopoverEscapeKeyCoordinator.shared.dismissTopmostPopover(in: window) { return nil }
+            if (window.firstResponder as? WindowModalEscapeConsumer)?.consumeModalEscape() == true { return nil }
             guard topmost.capturesEscape else { return event }
             topmost.animationState.handleEscape()
             return nil

@@ -446,19 +446,7 @@ private struct ChatRootView: View {
             }
             .frame(width: 1, height: 1)
         }
-        .background {
-            if presentsForumComposer,
-               let channel = model.selectedChannel,
-               channel.kind == .forum
-            {
-                ForumPostComposerOverlay(
-                    model: model,
-                    channel: channel,
-                    isPresented: $presentsForumComposer
-                )
-                .frame(width: 0, height: 0)
-            }
-        }
+        .modifier(ForumPostComposerPresentationModifier(model: model, isPresented: $presentsForumComposer))
         .overlay {
             if showsFileDropEffect {
                 ComposerFileDropOverlay(

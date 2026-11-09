@@ -47,6 +47,16 @@ extension AppModel {
         _ urls: [URL],
         offeringExternalUploadFor destination: MessageComposerDestination? = nil
     ) async -> [URL] {
+        await checkedAttachmentURLsWithinDiscordLimit(urls, offeringExternalUploadFor: destination) ?? []
+    }
+
+    /// The files within Discord's size limit, or nil when the check gave up
+    /// because the account or the selected conversation changed, or it was
+    /// cancelled.
+    func checkedAttachmentURLsWithinDiscordLimit(
+        _ urls: [URL],
+        offeringExternalUploadFor destination: MessageComposerDestination? = nil
+    ) async -> [URL]? {
         let urls = uploadableFileURLs(urls)
         guard !urls.isEmpty else { return [] }
         let generation = accountSessionGeneration
@@ -57,13 +67,13 @@ extension AppModel {
         } catch {
             guard generation == accountSessionGeneration,
                   attachmentComposerContext(for: destination ?? .channel) == context,
-                  !Task.isCancelled, !(error is CancellationError) else { return [] }
+                  !Task.isCancelled, !(error is CancellationError) else { return nil }
             errorMessage = error.localizedDescription
             return []
         }
         guard generation == accountSessionGeneration,
               attachmentComposerContext(for: destination ?? .channel) == context,
-              !Task.isCancelled else { return [] }
+              !Task.isCancelled else { return nil }
         let premiumType = snapshot?.currentUser.premiumType ?? 0
         let limit = DiscordAttachmentUploadPolicy.maximumFileSize(premiumType: premiumType)
         var accepted: [URL] = []
@@ -273,6 +283,7 @@ extension AppModel {
                 .map(\.standardizedFileURL)
         )
         retainedFileURLs.formUnion(commandComposers.flatMap(\.attachmentURLs).map(\.standardizedFileURL))
+        retainedFileURLs.formUnion(forumPostDrafts.values.flatMap(\.attachments).map(\.url.standardizedFileURL))
         retainedFileURLs.formUnion(promisedAttachmentFilesInFlight)
 
         let staleFileURLs = promisedAttachmentDirectoryByFileURL.keys.filter {
