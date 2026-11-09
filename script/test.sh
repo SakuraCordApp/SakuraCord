@@ -87,7 +87,7 @@ case "$TARGET" in
         --output-dir "$SAKURACORD_RUNTIME_DIR/test-diagnostics" --events --timeout-seconds 180 -- \
         swift test --package-path "$ROOT_DIR/App" --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
         --scratch-path "$ROOT_DIR/App/.build" --skip-build || true
-      for pid in "${load_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+      for pid in ${load_pids[@]+"${load_pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
     done
     echo "Experiment finished; failing deliberately." >&2
     exit 1
