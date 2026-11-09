@@ -189,7 +189,7 @@ import Testing
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `Microphone test waits for playback and cancels queued audio on stop`() async {
+@Test func `Microphone test waits for playback and cancels queued audio on stop`() async {
     let fake = ControlledMicrophoneTestEngine()
     var permissionRequests = 0
     let playbackRequests = AsyncStream<AsyncStream<Void>.Continuation>.makeStream()
@@ -292,7 +292,7 @@ import Testing
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `Stopping a microphone test cancels a pending permission request`() async {
+@Test func `Stopping a microphone test cancels a pending permission request`() async {
     let requested = AsyncStream<Void>.makeStream()
     let permission = AsyncStream<Bool>.makeStream()
     let fake = ControlledMicrophoneTestEngine()

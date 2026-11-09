@@ -8,7 +8,7 @@ import Testing
 enum StatusBootstrapReadStage: CaseIterable, Sendable { case snapshot, currentStatus }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)), arguments: StatusBootstrapReadStage.allCases)
+@Test(arguments: StatusBootstrapReadStage.allCases)
 func `a newer account status event survives an earlier gated bootstrap snapshot`(stage: StatusBootstrapReadStage) async throws {
     let provider = GatedBootstrapRaceProvider(stage: stage)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)

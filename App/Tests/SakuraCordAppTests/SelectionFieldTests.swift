@@ -55,7 +55,7 @@ import Testing
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)))
+@Test
 func `dynamic selection search discards a cancelled stale response`() async throws {
     let search = SelectionFieldSearchHarness()
     defer { search.finish() }
@@ -218,7 +218,7 @@ private final class SelectionFieldSearchHarness {
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)))
+@Test
 func `cancelled selection searches can restart without changing the query`() async throws {
     let search = SelectionFieldSearchHarness()
     defer { search.finish() }

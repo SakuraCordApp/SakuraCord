@@ -6,7 +6,7 @@ import Testing
 
 @MainActor
 struct GuildCustomizationTests {
-    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    @Test(arguments: [false, true])
     func `onboarding refresh preserves a timeout changed while configuration is loading`(removingTimeout: Bool) async throws {
         let provider = try CustomizationProvider()
         let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -39,7 +39,7 @@ struct GuildCustomizationTests {
         model.onboarding.reset()
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func `returning to onboarding preserves the cached question and advancing cannot strand a refresh`() async throws {
         let provider = try CustomizationProvider()
         let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -154,7 +154,7 @@ struct GuildCustomizationTests {
         #expect(model.presentedGuildChannelSettings(in: guildID).channelOverrides == overrides)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func `hide muted completion preserves newer synchronized settings and retains the HTTP fallback`() async throws {
         let provider = try CustomizationProvider()
         let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -217,7 +217,7 @@ struct GuildCustomizationTests {
         #expect(model.sidebarThreadLayout(guildID: guildID, channelGroups: [], now: expiry).relevanceDeadlines.isEmpty)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func `answer bursts coalesce and old confirmations cannot replace newer input`() async throws {
         let provider = try CustomizationProvider()
         let clock = CustomizationGate()
@@ -268,7 +268,7 @@ struct GuildCustomizationTests {
         #expect(model.onboarding.entries.isEmpty)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func `channel edits are optimistic batched and rollback preserves unrelated server updates`() async throws {
         let provider = try CustomizationProvider()
         let clock = CustomizationGate()

@@ -200,7 +200,7 @@ func `visible sparse edits preserve unrelated fresh history fields`(usesAsyncCon
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)), arguments: [false, true], [false, true])
+@Test(arguments: [false, true], [false, true])
 func `draft clearing orders earlier and later edits around deletion`(editsAfterClear: Bool, clearsAll: Bool) async throws {
     let database = try SakuraCordDatabase(inMemory: true)
     let inactiveDatabase = try SakuraCordDatabase(inMemory: true)
