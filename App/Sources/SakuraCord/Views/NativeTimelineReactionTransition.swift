@@ -279,7 +279,7 @@ extension NativeTimelineCanvasView {
               editingRowIndex == nil,
               rowDisclosure == nil,
               unreadDividerGap == nil,
-              !sendTransitionBlocksInteractions
+              sendTransitions.isEmpty
         else {
             placeDepartedPieces(handOvers.values.flatMap { handOver in
                 (handOver.run?.pieces ?? []).map { (handOver.anchor, $0) }

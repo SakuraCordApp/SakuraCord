@@ -965,6 +965,9 @@ extension NativeMessageTimelineCoordinator {
                       let restoreAnchor = preparation.restoreAnchor {
                 restore(restoreAnchor)
             }
+            // A send's copy that its confirmed row outgrew, as with a cached
+            // link preview, gives way first so the row's growth can glide.
+            canvas.reconcileSendTransitions()
             // Reaction changes move rows from where the scroll position just settled.
             canvas.beginReactionTransitions()
         }
