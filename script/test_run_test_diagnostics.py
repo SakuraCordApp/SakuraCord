@@ -66,19 +66,22 @@ time.sleep(60)
         self.assertTrue(list(directory.glob("*.sample.txt")))
 
     def test_cancellation_kills_child_even_after_launcher_exits(self):
-        # SwiftPM keeps running while its test helper sits in its own process group.
-        for launcher_waits in (False, True):
-            with self.subTest(launcher_waits=launcher_waits):
-                self.assert_cancellation_kills_child(launcher_waits)
+        # SwiftPM starts its test helper in its own process group; the helper
+        # can outlive the launcher.
+        for own_group in (False, True):
+            for launcher_waits in (False, True):
+                with self.subTest(own_group=own_group, launcher_waits=launcher_waits):
+                    self.assert_cancellation_kills_child(own_group, launcher_waits)
 
-    def assert_cancellation_kills_child(self, launcher_waits):
-        ready = self.root / f"child-pid-{launcher_waits}"
+    def assert_cancellation_kills_child(self, own_group, launcher_waits):
+        ready = self.root / f"child-pid-{own_group}-{launcher_waits}"
         child = ("import os, signal, time; "
                  "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
                  f"open({str(ready)!r}, 'w').write(str(os.getpid())); time.sleep(60)")
+        group = "0" if own_group else "None"
+        wait = "; time.sleep(60)" if launcher_waits else ""
         source = ("import subprocess, sys, time; "
-                  f"subprocess.Popen([sys.executable, '-c', {child!r}], start_new_session={launcher_waits})"
-                  + ("; time.sleep(60)" if launcher_waits else ""))
+                  f"subprocess.Popen([sys.executable, '-c', {child!r}], process_group={group}){wait}")
         with subprocess.Popen(self.command(source), stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True) as process:
             try:

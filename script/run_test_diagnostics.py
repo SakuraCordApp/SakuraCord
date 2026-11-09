@@ -15,17 +15,23 @@ import tempfile
 import time
 
 
-def process_tree(pid):
+def session_processes(pid):
     listing = subprocess.check_output(
         ["ps", "-axo", "pid=,ppid=,pgid=,stat=,etime=,comm="], text=True,
     )
     rows = [line for line in listing.splitlines() if len(line.split()) >= 6]
-    # SwiftPM starts its test helper in a separate process group, so follow
-    # parent links as well as the launcher's group.
-    members = {row.split()[0] for row in rows if row.split()[2] == str(pid)}
-    while added := {row.split()[0] for row in rows if row.split()[1] in members} - members:
-        members |= added
-    return [row for row in rows if row.split()[0] in members]
+    # The launcher leads its own session. SwiftPM starts its test helper in a
+    # separate process group of that session, which the helper keeps even when
+    # the launcher exits and it is reparented.
+    return [row for row in rows if in_session(int(row.split()[0]), pid)]
+
+
+def in_session(pid, session):
+    try:
+        return os.getsid(pid) == session
+    except OSError:
+        # The process exited, or belongs to another user.
+        return False
 
 
 def signal_group(pid, sig):
@@ -39,7 +45,7 @@ def signal_group(pid, sig):
 
 def stop(process):
     # The launcher may have exited while a child still owns the output pipe.
-    groups = {process.pid} | {int(row.split()[2]) for row in process_tree(process.pid)}
+    groups = {process.pid} | {int(row.split()[2]) for row in session_processes(process.pid)}
     if any([signal_group(group, signal.SIGTERM) for group in groups]):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
@@ -96,7 +102,7 @@ def diagnose(process, directory):
                     pending.discard(event["testID"])
         print("Tests started without an end event:\n" + "\n".join(sorted(pending)), flush=True)
     try:
-        rows = process_tree(process.pid)
+        rows = session_processes(process.pid)
         (directory / "processes.txt").write_text("\n".join(rows) + "\n")
         print("\n".join(rows), flush=True)
         # Sample up to six children before the SwiftPM launcher.
