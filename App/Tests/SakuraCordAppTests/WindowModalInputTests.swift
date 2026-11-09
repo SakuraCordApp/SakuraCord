@@ -192,3 +192,33 @@ private func modalTestHost(in window: NSWindow, behavior: WindowModalBehavior = 
     host.removeFromSuperview()
     #expect(hovered)
 }
+
+/// Records the context-menu requests that reach it, as the window's root
+/// hosting view does for whatever lies under the pointer.
+private final class ModalTestMenuSurface: NSView {
+    var menuRequests = 0
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuRequests += 1
+        return nil
+    }
+}
+
+@MainActor
+@Test func `a right-click on a modal does not open a menu for what it covers`() throws {
+    let window = modalTestWindow()
+    let surface = ModalTestMenuSurface(frame: window.contentRect(forFrameRect: window.frame))
+    window.contentView = surface
+    let host = modalTestHost(in: window)
+    defer { host.unregisterInput(); host.removeFromSuperview() }
+    host.present()
+    let event = try #require(NSEvent.mouseEvent(
+        with: .rightMouseDown, location: CGPoint(x: 20, y: 20), modifierFlags: [], timestamp: 0,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+    ))
+    host.rightMouseDown(with: event)
+    #expect(surface.menuRequests == 0)
+    // Once the modal closes, the surface's menus work again.
+    host.unregisterInput()
+    host.rightMouseDown(with: event)
+    #expect(surface.menuRequests > 0)
+}
