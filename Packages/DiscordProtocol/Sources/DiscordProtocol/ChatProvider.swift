@@ -39,6 +39,13 @@ public protocol ChatProvider: Sendable {
     func joinDiscoverableGuild(_ guildID: GuildID) async throws -> Bool
     func createServerInvite(in channelID: ChannelID, guildID: GuildID, settings: ServerInviteSettings) async throws -> CreatedServerInvite
     func leaveGuild(_ guildID: GuildID) async throws
+    func guildJoinApplicationForm(_ guildID: GuildID, inviteCode: String?) async throws -> GuildJoinApplicationForm
+    func submitGuildJoinApplication(_ guildID: GuildID, fields: [GuildJoinApplicationField]) async throws
+    func reapplyToGuild(_ guildID: GuildID) async throws
+    func withdrawGuildJoinRequest(_ guildID: GuildID) async throws
+    func acknowledgeGuildJoinRequest(_ request: GuildJoinRequest) async throws
+    func guildJoinRequestGuilds() async throws -> [GuildJoinRequestGuild]
+    func guildJoinRequestAnswers(_ requestID: JoinRequestID) async throws -> [GuildJoinApplicationField]
     func clearLocalSearchCache() async throws
     func prepareAuthentication() async throws
     func bootstrap() async throws -> BootstrapSnapshot
@@ -431,6 +438,30 @@ public extension ChatProvider {
 
     func leaveGuild(_ guildID: GuildID) async throws {
         throw ServerInviteError.unsupported("Leaving servers is unavailable for this session.")
+    }
+
+    func guildJoinApplicationForm(_ guildID: GuildID, inviteCode: String?) async throws -> GuildJoinApplicationForm {
+        throw ServerInviteError.unsupported("Server applications are unavailable for this session.")
+    }
+
+    func submitGuildJoinApplication(_ guildID: GuildID, fields: [GuildJoinApplicationField]) async throws {
+        throw ServerInviteError.unsupported("Server applications are unavailable for this session.")
+    }
+
+    func reapplyToGuild(_ guildID: GuildID) async throws {
+        throw ServerInviteError.unsupported("Server applications are unavailable for this session.")
+    }
+
+    func withdrawGuildJoinRequest(_ guildID: GuildID) async throws {
+        throw ServerInviteError.unsupported("Server applications are unavailable for this session.")
+    }
+
+    func acknowledgeGuildJoinRequest(_ request: GuildJoinRequest) async throws {}
+
+    func guildJoinRequestGuilds() async throws -> [GuildJoinRequestGuild] { [] }
+
+    func guildJoinRequestAnswers(_ requestID: JoinRequestID) async throws -> [GuildJoinApplicationField] {
+        throw ServerInviteError.unsupported("Server applications are unavailable for this session.")
     }
 
     func updateProfileCustomStatus(_ status: ProfileCustomStatus?) async throws -> ProfileCustomStatus? {

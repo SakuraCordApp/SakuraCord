@@ -278,6 +278,9 @@ private struct ChatRootView: View {
             Group {
                 if model.isSwitchingAccounts {
                     Color.clear
+                } else if let guildID = model.presentedGuildJoinRequestID {
+                    GuildJoinRequestPage(model: model, guildID: guildID)
+                        .id(guildID)
                 } else if let guildID = model.onboardingEntryGuildID {
                     GuildOnboardingView(model: model, guildID: guildID)
                         .id(guildID)
@@ -664,7 +667,7 @@ private struct ChatRootView: View {
         if !model.isSwitchingAccounts {
             if model.isMessageRequestsPresented {
                 MessageRequestsToolbarTabs(model: model)
-            } else if model.isFriendsPresented {
+            } else if model.isFriendsPresented, model.presentedGuildJoinRequestID == nil {
                 FriendsToolbarSections(model: model)
             }
         }
@@ -1041,6 +1044,7 @@ private struct ChatRootView: View {
     }
 
     private var sidebarDisplayName: String {
+        if let guildID = model.presentedGuildJoinRequestID { return model.joinRequestGuildName(guildID) }
         guard let guild = selectedGuild else { return "Messages" }
         return guild.name.isEmpty ? "Unnamed Server" : guild.name
     }
@@ -1238,6 +1242,10 @@ private struct ChatRootView: View {
     }
 
     private var conversationToolbarPresentation: ConversationToolbarPresentation? {
+        if let guildID = model.presentedGuildJoinRequestID {
+            return .init(title: model.joinRequestGuildName(guildID),
+                         systemImage: (model.guildJoinRequests.requests[guildID]?.status).symbolName)
+        }
         if let conversation = model.presentedSideConversation, conversation.isFullWidth {
             // One line with the thread symbol for threads and forum posts
             // alike, as before side chats were unified.
@@ -1903,7 +1911,7 @@ private struct MessageRequestsToolbarTabs: ToolbarContent {
 private extension AppModel {
     /// The workspace shows message search in the window toolbar.
     var showsWorkspaceMessageSearch: Bool {
-        onboardingEntryGuildID == nil && guildWorkspacePage == nil
+        onboardingEntryGuildID == nil && guildWorkspacePage == nil && presentedGuildJoinRequestID == nil
             && (isSwitchingAccounts || canShowMessageSearch)
     }
 

@@ -221,7 +221,7 @@ private struct InteractionModalFieldGroup<Content: View>: View {
 }
 
 /// Shared input surface: a soft rounded field like the rest of SakuraCord's forms.
-private struct InteractionModalFieldBackground: ViewModifier {
+struct InteractionModalFieldBackground: ViewModifier {
     var isFocused = false
     var hasError = false
     var cornerRadius: CGFloat = InterfaceScale.metric(14)
@@ -460,10 +460,20 @@ private struct InteractionModalCheckboxGroup: View {
     }
 }
 
-private struct InteractionModalChoiceRow: View {
+struct InteractionModalChoiceRow: View {
     let option: ComponentSelectOption
     let symbol: String
     let isSelected: Bool
+
+    init(option: ComponentSelectOption, symbol: String, isSelected: Bool) {
+        self.option = option
+        self.symbol = symbol
+        self.isSelected = isSelected
+    }
+
+    init(label: String, symbol: String, isSelected: Bool) {
+        self.init(option: .init(label: label, value: label), symbol: symbol, isSelected: isSelected)
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: InterfaceScale.metric(10)) {

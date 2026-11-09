@@ -355,6 +355,8 @@ extension AppModel {
         case .guildChanged, .guildLayoutChanged, .guildLayoutSaveFailed, .guildRolesChanged,
              .currentUserChanged, .currentUserStatusChanged:
             consumeGatewayWorkspaceStateEvent(event)
+        case .guildJoinRequestsChanged(let requests):
+            applyGuildJoinRequests(requests)
         case .applicationCommandIndexInvalidated(let target):
             invalidateApplicationCommandIndex(target)
         case .applicationCommandAutocomplete(let result):

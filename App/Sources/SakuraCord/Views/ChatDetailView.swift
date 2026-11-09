@@ -86,6 +86,19 @@ private struct ChatDetailFooter: View {
                     MessageRequestActions(model: model, channel: channel)
                         .controlSize(.small)
                 }
+            } else if let guildID = channel.guildID, model.onboardingMember(in: guildID)?.isPending == true,
+                      case .readable = access {
+                // A screened member answers the server's form before talking, as in Discord's input blocker.
+                DisabledComposerView(
+                    message: "You must complete a few more steps before you can talk.",
+                    appearance: model.appearanceSettings.composerBarAppearance
+                ) {
+                    Button("Complete") { model.openGuildJoinApplication(guildID) }
+                        .buttonStyle(.glassProminent)
+                        .buttonBorderShape(.capsule)
+                        .tint(SakuraCordAccentColor.color)
+                        .controlSize(.small)
+                }
             } else {
                 composerSlot
             }
@@ -100,9 +113,7 @@ private struct ChatDetailFooter: View {
             checkingMessage: "Checking channel permissions…",
             readOnlyMessage: channel.isOfficialSystemDirectMessage
                 ? "This chat is reserved for official Discord notifications."
-                : (channel.guildID.flatMap { model.onboardingMember(in: $0) }?.isPending == true
-                   ? "Complete this server’s member screening in Discord to send messages."
-                   : "You do not have permission to send messages in this channel.")
+                : "You do not have permission to send messages in this channel."
         ) {
             if model.messageAppearance(for: channel.id) == .bubbles {
                 TypingBubbleIndicatorView(model: model, channel: channel)

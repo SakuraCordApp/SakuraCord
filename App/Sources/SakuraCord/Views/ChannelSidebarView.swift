@@ -141,7 +141,10 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if guild == nil {
+            if let guildID = voiceModel.presentedGuildJoinRequestID {
+                // A pending server has no channels; its sidebar describes it instead.
+                GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
+            } else if guild == nil {
                 DirectMessageInboxView(
                     model: voiceModel,
                     channels: channels,

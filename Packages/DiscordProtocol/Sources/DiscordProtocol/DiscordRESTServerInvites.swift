@@ -155,7 +155,7 @@ public extension DiscordRESTProvider {
         return decoder
     }
 
-    private func checkInviteResponse(_ data: Data, _ response: HTTPURLResponse) throws {
+    func checkInviteResponse(_ data: Data, _ response: HTTPURLResponse) throws {
         guard !(200 ..< 300).contains(response.statusCode) else { return }
         switch Self.discordErrorCode(from: data) {
         case 10006, 50270: throw ServerInviteError.unavailable
