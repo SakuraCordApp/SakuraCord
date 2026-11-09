@@ -18,6 +18,13 @@ struct ForumPostTitleField: NSViewRepresentable {
         .interfaceSystemFont(ofSize: 19, weight: .semibold)
     }
 
+    private static var placeholder: NSAttributedString {
+        NSAttributedString(
+            string: String(localized: "Post title"),
+            attributes: [.font: font, .foregroundColor: NSColor.tertiaryLabelColor]
+        )
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -32,11 +39,6 @@ struct ForumPostTitleField: NSViewRepresentable {
         field.cell?.wraps = true
         field.cell?.isScrollable = false
         field.maximumNumberOfLines = Self.maximumLineCount
-        field.font = Self.font
-        field.placeholderAttributedString = NSAttributedString(
-            string: String(localized: "Post title"),
-            attributes: [.font: Self.font, .foregroundColor: NSColor.tertiaryLabelColor]
-        )
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.setAccessibilityLabel(String(localized: "Title"))
         field.delegate = context.coordinator
@@ -50,7 +52,14 @@ struct ForumPostTitleField: NSViewRepresentable {
         context.coordinator.parent = self
         field.editor.canReceiveAttachments = canReceiveAttachments
         field.editor.receiveAttachments = receiveAttachments
-        if field.stringValue != text { field.stringValue = text }
+        // Follows Interface Size and accent changes, as the body does.
+        if field.font != Self.font {
+            field.font = Self.font
+            field.placeholderAttributedString = Self.placeholder
+        }
+        field.editor.applySakuraCordTextSelectionAppearance()
+        // The editor owns text still being composed with an input method.
+        if !field.editor.hasMarkedText(), field.stringValue != text { field.stringValue = text }
         context.coordinator.applyFocus(to: field)
     }
 
@@ -121,7 +130,6 @@ struct ForumPostTitleField: NSViewRepresentable {
             editor.isFieldEditor = true
             editor.isRichText = false
             editor.allowsUndo = true
-            editor.applySakuraCordTextSelectionAppearance()
             return editor
         }()
 
