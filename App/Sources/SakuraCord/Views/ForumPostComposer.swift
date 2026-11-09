@@ -408,6 +408,8 @@ private extension ForumPostComposer {
             isSubmitting = false
             submitTask = nil
             if didCreate {
+                // Cleared here too: the modal may close before `onChange` runs.
+                model.forumPostDrafts[channel.id] = nil
                 draft = ForumPostComposerDraft()
                 modal?(allowsDisabled: true)
             }
