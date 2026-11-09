@@ -563,7 +563,7 @@ nonisolated enum MessageGrouping {
     }
 
     private static func isGroupable(_ message: Message) -> Bool {
-        !message.type.hasGeneratedContent && message.type != .chatInputCommand
+        !message.type.hasGeneratedContent && !message.type.isCommandResponse
             && message.type != .autoModerationAction
     }
 

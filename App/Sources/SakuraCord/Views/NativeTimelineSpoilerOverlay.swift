@@ -155,7 +155,8 @@ nonisolated enum NativeTimelineSpoilerAppearance {
 @MainActor
 final class NativeTimelineSpoilerOverlayHost: NSView {
     let cornerRadius: CGFloat
-    let revealAction: () -> Void
+    /// Reveals the spoiler; false when the timeline refused the press, so the cover stays usable.
+    let revealAction: () -> Bool
     /// Tints the cover while the pointer is over it, as a text spoiler's
     /// fill tints.
     let tintView = NSView()
@@ -175,7 +176,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     init(
         frame: CGRect,
         cornerRadius: CGFloat,
-        reveal: @escaping () -> Void
+        reveal: @escaping () -> Bool
     ) {
         self.cornerRadius = cornerRadius
         revealAction = reveal
@@ -339,7 +340,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     nonisolated override func accessibilityPerformPress() -> Bool {
         MainActor.assumeIsolated {
             activate()
-            return true
+            return didActivate
         }
     }
 
@@ -365,8 +366,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
 
     func activate() {
         guard !didActivate else { return }
-        didActivate = true
-        revealAction()
+        didActivate = revealAction()
     }
 }
 

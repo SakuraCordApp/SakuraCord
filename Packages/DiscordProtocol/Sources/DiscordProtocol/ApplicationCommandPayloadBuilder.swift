@@ -32,7 +32,7 @@ enum ApplicationCommandPayloadBuilder {
         if command.type == .user || command.type == .message {
             return try contextMenu(invocation, isAutocomplete: autocomplete != nil)
         }
-        guard command.type == .chatInput else {
+        guard command.type == .chatInput || command.type == .primaryEntryPoint else {
             throw ChatProviderError.invalidRequest("This kind of application command is not supported.")
         }
         let values = Dictionary(

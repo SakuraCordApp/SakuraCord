@@ -204,6 +204,7 @@ extension AppModel {
             || old?.communicationDisabledUntil != member.communicationDisabledUntil {
             refreshUnreadPresentation(appliesAccessImmediately: true, accessAffectedGuildIDs: [guildID])
         }
+        if old?.isPending != member.isPending { reconcileGuildJoinForm() }
         if let old, old.roles != member.roles, onboarding.presentedGuildID == guildID {
             startAccountChildTask(account: accountSession()) { model, _ in
                 await model.synchronizeGuildCustomization(in: guildID)

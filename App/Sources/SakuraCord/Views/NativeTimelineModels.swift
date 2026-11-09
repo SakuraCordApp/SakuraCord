@@ -18,14 +18,14 @@ final class NativeTimelineDisplayLinkTicker: NSObject {
     var displayLink: CADisplayLink?
     var tick: (() -> Void)?
 
-    func start(on view: NSView, tick: @escaping () -> Void) {
+    func start(on view: NSView, frameRate: CAFrameRateRange? = nil, tick: @escaping () -> Void) {
         stop()
         self.tick = tick
         let displayLink = view.displayLink(
             target: self,
             selector: #selector(displayLinkDidFire(_:))
         )
-        displayLink.preferredFrameRateRange = .fullRate(on: view.window?.screen)
+        displayLink.preferredFrameRateRange = frameRate ?? .fullRate(on: view.window?.screen)
         self.displayLink = displayLink
         displayLink.add(to: .main, forMode: .common)
     }

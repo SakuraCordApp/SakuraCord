@@ -204,6 +204,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var unreadDividerFades: [NativeMessageTimelineItem.Identifier: NativeTimelineUnreadDividerFade] = [:]
     var unreadDividerGap: NativeTimelineUnreadDividerGap?
     let unreadDividerGapTicker = NativeTimelineDisplayLinkTicker()
+    let authorHoverTicker = NativeTimelineDisplayLinkTicker()
     var minimumHeight: CGFloat = 1
     var bottomSpacerHeight: CGFloat = 0
     var maximumDrawDuration = 0.0
@@ -315,9 +316,34 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     var reactionMotionShift: CGFloat = 0
     var reactionMotionSteps: [(index: Int, cumulative: CGFloat)] = []
     var reactionMotionRemainingHeights: [Int: CGFloat] = [:]
+    /// The part of each row's remaining height that its edited text's band still has to glide.
+    var reactionMotionTextRemainingHeights: [Int: CGFloat] = [:]
+    var editedTextBands: [NativeMessageTimelineItem.Identifier: NativeTimelineEditedTextBand] = [:] {
+        didSet {
+            guard oldValue.isEmpty != editedTextBands.isEmpty else { return }
+            if editedTextBands.isEmpty { restorePointerInteractions() } else { suppressPointerInteractions() }
+        }
+    }
+    var departedRuns: [NativeMessageTimelineItem.Identifier: NativeTimelineDepartedRun] = [:]
+    /// What a row deleted by the update landing now was still showing:
+    /// the run closing below it and the part of its own height change
+    /// still to come, both now the row before it's.
+    struct HandOver {
+        let anchor: NativeMessageTimelineItem.Identifier
+        var run: NativeTimelineDepartedRun?
+        var residualHeight: CGFloat = 0
+    }
+
+    /// By deleted row, for the update that deleted it to place.
+    var handOvers: [NativeMessageTimelineItem.Identifier: HandOver] = [:]
+    var nextReactionMotionID = 1
     let reactionTicker = NativeTimelineDisplayLinkTicker()
+    /// When the reaction ticker last stepped, to tell a late frame.
+    var reactionStepUptime: TimeInterval?
     var reactionPictures: [ReactionPictureKey: CGImage] = [:]
     var reactionBandViews: [NativeMessageTimelineItem.Identifier: NativeTimelineReactionBandView] = [:]
+    /// The display scale and colour space reaction pictures are drawn for.
+    var reactionBacking: (scale: CGFloat, colorSpace: NSColorSpace?) = (0, nil)
     /// The width the running reaction motions were laid out at.
     var reactionTransitionWidth: CGFloat = 0
     let timestampHoverCoordinator =
@@ -457,6 +483,11 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
+        // AppKit also calls this as the window is resized or moved with
+        // neither changed, which would snap a motion mid-update.
+        let backing = (scale: window?.backingScaleFactor ?? 0, colorSpace: window?.colorSpace)
+        guard backing != reactionBacking else { return }
+        reactionBacking = backing
         // Moving chips were drawn for the previous display's scale and colours.
         finishReactionTransitions()
     }
@@ -475,6 +506,7 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
             messageJumpHighlightTask?.cancel()
             transcriptGlideFinishTask?.cancel()
             unreadDividerGapTicker.stop()
+            authorHoverTicker.stop()
             reactionTicker.stop()
             for fade in unreadDividerFades.values {
                 fade.finishTask?.cancel()

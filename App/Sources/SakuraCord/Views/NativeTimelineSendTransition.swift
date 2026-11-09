@@ -943,7 +943,7 @@ extension NativeTimelineCanvasView {
         )
         // Earlier sends keep flying; each hides only its own row.
         sendTransitions.append(transition)
-        suppressSendTransitionInteractions()
+        suppressPointerInteractions()
         // The canvas update already installed media at the destination.
         // Remove those overlays now that their row is held back for flight.
         reconcileAnimatedMedia()
@@ -1100,7 +1100,7 @@ extension NativeTimelineCanvasView {
                 store?.discard(presentedConversationID, animated: false)
             }
             finishSendTransitions(reconcilesHeldMedia: true)
-            restoreSendTransitionInteractions()
+            restorePointerInteractions()
             return
         }
         for transition in sendTransitions {
@@ -1210,7 +1210,7 @@ extension NativeTimelineCanvasView {
         startVisibleInlineVideosImmediately()
         reconcileSpoilerOverlays()
         reconcileActivityIndicators()
-        restoreSendTransitionInteractions()
+        restorePointerInteractions()
     }
 
     func cancelTranscriptGlide() {
@@ -1220,19 +1220,24 @@ extension NativeTimelineCanvasView {
         layer?.removeAnimation(forKey: Self.transcriptGlideKey)
     }
 
-    private func restoreSendTransitionInteractions() {
-        guard !sendTransitionBlocksInteractions else { return }
+    func restorePointerInteractions() {
+        guard !glideBlocksPointer else { return }
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
         synchronizeHoverWithCurrentPointer()
     }
 
-    private func suppressSendTransitionInteractions() {
+    func suppressPointerInteractions() {
         // A press begun before the rows moved must not activate on release.
         clearPointerTargets()
         pressedPollTarget = nil
         hoveredPollTarget = nil
         textSelectionGesture = nil
+        if let press = voiceMessagePress {
+            voiceMessagePress = nil
+            // A scrub paused playback, which its release would resume.
+            if case .waveform = press.control { model?.voiceMessagePlayback.endScrub(press.region.playbackID) }
+        }
         updateCodeCopyControl()
         closeHoverTooltips()
         removeActionCapsule()
@@ -1243,6 +1248,12 @@ extension NativeTimelineCanvasView {
 
     var sendTransitionBlocksInteractions: Bool {
         !sendTransitions.isEmpty || isTranscriptGliding
+    }
+
+    /// An edit's lines easing, as a send's glide, leave the pointer nothing
+    /// to hit: the rows' regions sit where they land.
+    var glideBlocksPointer: Bool {
+        sendTransitionBlocksInteractions || !editedTextBands.isEmpty
     }
 
     var isTranscriptGliding: Bool {
@@ -1310,13 +1321,13 @@ extension NativeTimelineCanvasView {
         }
         guard abs(translation) >= 0.5 else {
             cancelTranscriptGlide()
-            restoreSendTransitionInteractions()
+            restorePointerInteractions()
             return
         }
         transcriptGlide = NativeTimelineTranscriptGlide(
             offset: translation, beganAt: now, hold: hold, curve: curve
         )
-        suppressSendTransitionInteractions()
+        suppressPointerInteractions()
         // Rows outside the viewport become visible during the glide.
         setNeedsDisplay(visible.insetBy(dx: 0, dy: -abs(translation)))
         let animation: CAAnimation
@@ -1347,7 +1358,7 @@ extension NativeTimelineCanvasView {
             guard !Task.isCancelled, let self else { return }
             self.transcriptGlideFinishTask = nil
             self.transcriptGlide = nil
-            self.restoreSendTransitionInteractions()
+            self.restorePointerInteractions()
         }
     }
 
@@ -1451,7 +1462,7 @@ extension NativeTimelineCanvasView {
         layout: NativeTimelineRowLayout,
         rowFrame: CGRect
     ) -> NSImage? {
-        NativeTimelineSendTransitionSnapshot.render(size: frame.size, scale: window?.backingScaleFactor ?? 2) {
+        NativeTimelineSendTransitionSnapshot.render(size: frame.size, scale: rowBitmapScale) {
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             context.translateBy(x: -frame.minX, y: -frame.minY)
             context.clip(to: frame)
@@ -1612,17 +1623,13 @@ extension NativeMessageTimelineCoordinator {
         preparation: TimelineUpdatePreparation,
         transcriptAnchor anchor: SendTransitionTranscriptAnchor?
     ) {
-        guard let canvas else { return }
-        canvas.reconcileSendTransitions()
-        guard let anchor,
+        guard let canvas, let anchor,
               !preparation.conversationChanged,
               let channelID = parent.conversation.sendTransitionChannelID
         else { return }
-        let shift: () -> CGFloat = { [items] in
-            guard let identifier = anchor.identifier,
-                  let previous = anchor.frameInWindow,
-                  let index = items.lastIndex(where: { $0.identifier == identifier })
-            else { return 0 }
+        let anchorIndex = anchor.identifier.flatMap { identifier in items.lastIndex { $0.identifier == identifier } }
+        let shift: () -> CGFloat = {
+            guard let index = anchorIndex, let previous = anchor.frameInWindow else { return 0 }
             return canvas.convert(canvas.rowFrame(at: index), to: nil).minY - previous.minY
         }
         if didMutateItems,
@@ -1630,7 +1637,11 @@ extension NativeMessageTimelineCoordinator {
                parent: parent, channelID: channelID, anchor: anchor
            )
         {
-            canvas.beginSendTransition(from: pending, rowIndex: index, transcriptShift: shift())
+            // Starting the flight ends any running row motion, so rows it still
+            // holds away from their places, such as above a preview unrolling,
+            // glide there with the transcript instead of jumping.
+            let held = anchorIndex.map(canvas.reactionMotionOffset(at:)) ?? 0
+            canvas.beginSendTransition(from: pending, rowIndex: index, transcriptShift: shift() + held)
         } else if anchor.isSending, parent.model.animatesMessageSending {
             // The composer resizing as it clears moves the transcript too.
             // Until the message arrives, hold the rows where they were so

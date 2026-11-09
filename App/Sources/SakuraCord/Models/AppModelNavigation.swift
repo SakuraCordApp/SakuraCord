@@ -31,6 +31,8 @@ nonisolated enum ConversationNavigationTarget: Hashable, Sendable {
 
 extension AppModel {
     func selectGuild(_ guildID: GuildID?) {
+        // Direct Messages may rest on Friends, which selects neither a server nor a conversation.
+        if guildID == nil { leaveGuildJoinRequestPage() }
         startConversationNavigation { model, account in
             await model.activateGuild(guildID, account: account)
         }
@@ -249,6 +251,14 @@ extension AppModel {
         guard !roles.isEmpty else { return }
         guard guildRolesByGuildID[guildID] != roles else { return }
         guildRolesByGuildID[guildID] = roles
+        for key in profileCache.keys where key.guildID == guildID {
+            profileCache[key]?.refreshRoles(from: roles)
+        }
+        for destination in [ProfilePresentationDestination.inspector, .contextual, .expanded] {
+            guard var presentation = profilePresentation(for: destination), presentation.guildID == guildID else { continue }
+            presentation.profile?.refreshRoles(from: roles)
+            setProfilePresentation(presentation, for: destination)
+        }
         guard selectedGuildID == guildID else { return }
         guildRoles = roles
         refreshUnreadPresentation(

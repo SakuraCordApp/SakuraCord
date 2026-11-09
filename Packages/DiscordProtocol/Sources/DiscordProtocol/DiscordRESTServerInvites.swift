@@ -79,16 +79,22 @@ public extension DiscordRESTProvider {
         guard settings.maxAge != .never || cachedGuilds[guildID]?.features.contains("COMMUNITY") == true else {
             throw ServerInviteError.failed("Non-expiring invites require a Community server.")
         }
-        // Mirrors the official settings-page submission. The modal's on-open
+        // Mirrors the official settings-page submission, and an Activity's
+        // invite dialog for a target application. The modal's on-open
         // `validate` reuse is omitted because SakuraCord creates only on request.
-        let context = try JSONSerialization.data(withJSONObject: ["location": "Guild Context Menu"])
+        var body: [String: JSONValue] = [
+            "max_age": .number(Double(settings.maxAge.rawValue)),
+            "max_uses": .number(Double(settings.maxUses.rawValue)),
+            "target_type": .null, "temporary": .bool(false), "flags": .number(0)
+        ]
+        if let application = settings.targetApplicationID {
+            body["target_type"] = .number(2)
+            body["target_application_id"] = .string(application.description)
+        }
+        let location = settings.targetApplicationID == nil ? "Guild Context Menu" : "Stream Invite"
+        let context = try JSONSerialization.data(withJSONObject: ["location": location])
         let (data, response) = try await perform(
-            "/channels/\(channelID)/invites", method: "POST", query: [],
-            body: [
-                "max_age": .number(Double(settings.maxAge.rawValue)),
-                "max_uses": .number(Double(settings.maxUses.rawValue)),
-                "target_type": .null, "temporary": .bool(false), "flags": .number(0)
-            ],
+            "/channels/\(channelID)/invites", method: "POST", query: [], body: body,
             headers: ["X-Context-Properties": context.base64EncodedString()], maximumAttempts: 1
         )
         if !(200 ..< 300).contains(response.statusCode) {
@@ -149,7 +155,7 @@ public extension DiscordRESTProvider {
         return decoder
     }
 
-    private func checkInviteResponse(_ data: Data, _ response: HTTPURLResponse) throws {
+    func checkInviteResponse(_ data: Data, _ response: HTTPURLResponse) throws {
         guard !(200 ..< 300).contains(response.statusCode) else { return }
         switch Self.discordErrorCode(from: data) {
         case 10006, 50270: throw ServerInviteError.unavailable
@@ -176,6 +182,14 @@ private struct ServerInviteDTO: Decodable {
     var approximatePresenceCount: Int?
     var flags: Int?
     var targetType: Int?
+    var targetApplication: TargetApplication?
+
+    struct TargetApplication: Decodable {
+        var id: String
+        var name: String
+        var icon: String?
+        var coverImage: String?
+    }
 
     struct Inviter: Decodable {
         var id: String
@@ -199,7 +213,7 @@ private struct ServerInviteDTO: Decodable {
         var description: String?
         var features: Set<String>?
     }
-    struct InviteChannel: Decodable { var id: String; var type: Int? }
+    struct InviteChannel: Decodable { var id: String; var type: Int?; var name: String? }
     struct Profile: Decodable {
         var name: String?
         var iconHash: String?
@@ -236,7 +250,17 @@ private struct ServerInviteDTO: Decodable {
                 })
             }, memberCount: approximateMemberCount, onlineCount: approximatePresenceCount,
             expiresAt: expiresAt.flatMap(DiscordRESTProvider.inviteDate),
-            features: features, requiresSpecialAcceptance: (flags ?? 0) & 1 != 0 || targetType != nil
+            features: features, requiresSpecialAcceptance: (flags ?? 0) & 1 != 0 || targetType != nil,
+            activity: targetType == 2 ? targetApplication.flatMap { application in
+                ApplicationID(application.id).map { id in
+                    ServerInvite.Activity(
+                        applicationID: id, name: application.name,
+                        iconURL: application.icon.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=128") },
+                        coverURL: application.coverImage.flatMap { URL(string: "https://cdn.discordapp.com/app-icons/\(id)/\($0).png?size=512") },
+                        channelName: channel?.name
+                    )
+                }
+            } : nil
         )
     }
 }

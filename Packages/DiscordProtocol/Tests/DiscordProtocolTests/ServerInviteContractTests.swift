@@ -214,6 +214,15 @@ struct ServerInviteContractTests {
         let context = try #require(Data(base64Encoded: request.value(forHTTPHeaderField: "X-Context-Properties")!))
         #expect(try JSONSerialization.jsonObject(with: context) as? [String: String] == ["location": "Guild Context Menu"])
 
+        // An Activity's invite must target the application, or it only opens the channel.
+        let activity = ServerInviteSettings(targetApplicationID: .init(rawValue: 880))
+        _ = try await provider.createServerInvite(in: .init(rawValue: 901), guildID: .init(rawValue: 900), settings: activity)
+        let activityRequest = try #require(capture.requests.last)
+        let activityBody = try #require(JSONSerialization.jsonObject(with: activityRequest.httpBody!) as? [String: Any])
+        #expect(activityBody["target_type"] as? Int == 2 && activityBody["target_application_id"] as? String == "880")
+        let activityContext = try #require(Data(base64Encoded: activityRequest.value(forHTTPHeaderField: "X-Context-Properties")!))
+        #expect(try JSONSerialization.jsonObject(with: activityContext) as? [String: String] == ["location": "Stream Invite"])
+
         await #expect(throws: ServerInviteError.self) {
             _ = try await provider.createServerInvite(in: .init(rawValue: 903), guildID: .init(rawValue: 900), settings: settings)
         }
@@ -236,6 +245,85 @@ struct ServerInviteContractTests {
         await provider.disconnect()
     }
 
+    @Test func `an application echoes Discord's fields once with each answer in its wire type`() async throws {
+        let capture = InviteRequestCapture()
+        let provider = try await makeProvider(capture.id)
+        let guildID = GuildID(rawValue: 900)
+        // Accepting the invite started the application; Gateway reported it before the form opened.
+        await provider.seedCurrentUser(id: 7)
+        await provider.handleGuildJoinRequestDispatch(name: "GUILD_JOIN_REQUEST_CREATE", body: .object([
+            "guild_id": .string("900"), "status": .string("STARTED"),
+            "request": .object(["id": .string("55"), "guild_id": .string("900"), "user_id": .string("7"),
+                                "application_status": .string("STARTED")])
+        ]))
+        var form = try await provider.guildJoinApplicationForm(guildID, inviteCode: "apply")
+        #expect(form.guildName == "Apply")
+        #expect(form.fields.map(\.kind) == [.shortAnswer, .paragraph, .multipleChoice(["macOS", "Linux"]), .terms(["Be kind"]),
+                                           .shortAnswer])
+        form.fields[0].answer = .text("Hello")
+        form.fields[1].answer = .text("Line 1\nLine 2")
+        form.fields[2].answer = .choice(1)
+        form.fields[3].answer = .agreed(true)
+        #expect(form.fields.allSatisfy { $0.isSatisfied }) // The last question is optional.
+        try await provider.submitGuildJoinApplication(guildID, fields: form.fields)
+        let requests = capture.requests
+        #expect(requests.map(\.httpMethod) == ["GET", "PUT"])
+        let query = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)!.queryItems!
+        #expect(query == [URLQueryItem(name: "with_guild", value: "true"), URLQueryItem(name: "invite_code", value: "apply")])
+        #expect(requests[1].url?.path == "/api/v9/guilds/900/requests/@me")
+        // The official client's submission carries no context properties, unlike the invite acceptance.
+        #expect(requests[1].value(forHTTPHeaderField: "X-Context-Properties") == nil)
+        let body = try #require(JSONSerialization.jsonObject(with: requests[1].httpBody!) as? [String: Any])
+        #expect(body["version"] as? String == "2026-11-03T02:44:07.373000+00:00")
+        let fields = try #require(body["form_fields"] as? [[String: Any]])
+        #expect(fields[0]["response"] as? String == "Hello")
+        #expect(fields[0]["automations"] is NSNull) // Fields are echoed as received.
+        #expect(fields[1]["response"] as? String == "Line 1\nLine 2")
+        #expect((fields[2]["response"] as? NSNumber)?.intValue == 1)
+        #expect(fields[3]["response"] as? Bool == true)
+        #expect(fields[4]["response"] == nil)
+        #expect(await provider.cachedGuildJoinRequests[guildID]?.status == .submitted)
+        await provider.disconnect()
+    }
+
+    @Test func `an application whose questions changed since the editor read them is not sent`() async throws {
+        let capture = InviteRequestCapture()
+        let provider = try await makeProvider(capture.id)
+        let guildID = GuildID(rawValue: 900)
+        var form = try await provider.guildJoinApplicationForm(guildID, inviteCode: "apply")
+        // A later read, such as the status page's, cached a form whose first question differs from the editor's.
+        form.fields[0].label = "A question the server replaced"
+        form.fields[0].answer = .text("Hello")
+        await #expect(throws: ServerInviteError.self) { try await provider.submitGuildJoinApplication(guildID, fields: form.fields) }
+        #expect(capture.requests.map(\.httpMethod) == ["GET"])
+        await provider.disconnect()
+    }
+
+    @Test func `moderators never adopt other people's join requests as their own`() async throws {
+        let provider = try await makeProvider(InviteRequestCapture().id)
+        let guildID = GuildID(rawValue: 900)
+        await provider.seedCurrentUser(id: 7)
+        func event(_ name: String, user: String, status: String = "SUBMITTED") async {
+            let request: JSONValue = .object([
+                "id": .string("55"), "guild_id": .string("900"), "user_id": .string(user),
+                "application_status": .string(status), "rejection_reason": .string("Not yet")
+            ])
+            let body: JSONValue = name == "GUILD_JOIN_REQUEST_DELETE"
+                ? .object(["id": .string("55"), "guild_id": .string("900"), "user_id": .string(user)])
+                : .object(["guild_id": .string("900"), "status": .string(status), "request": request])
+            await provider.handleGuildJoinRequestDispatch(name: name, body: body)
+        }
+        await event("GUILD_JOIN_REQUEST_CREATE", user: "8")
+        #expect(await provider.cachedGuildJoinRequests.isEmpty)
+        await event("GUILD_JOIN_REQUEST_UPDATE", user: "7", status: "REJECTED")
+        #expect(await provider.cachedGuildJoinRequests[guildID]?.rejectionReason == "Not yet")
+        await event("GUILD_JOIN_REQUEST_DELETE", user: "8")
+        #expect(await provider.cachedGuildJoinRequests[guildID] != nil)
+        await event("GUILD_JOIN_REQUEST_DELETE", user: "7")
+        #expect(await provider.cachedGuildJoinRequests.isEmpty)
+        await provider.disconnect()
+    }
+
     private func makeProvider(_ accountID: String, socket: ReadyGatewaySocket = ReadyGatewaySocket()) async throws -> DiscordRESTProvider {
         await socket.push(gatewayMessage(op: 10, data: .object(["heartbeat_interval": .number(60_000)])))
         await socket.push(gatewayMessage(op: 0, data: .object([
@@ -253,6 +341,10 @@ struct ServerInviteContractTests {
 }
 
 private extension DiscordRESTProvider {
+    func seedCurrentUser(id: UInt64) {
+        currentUser = User(id: .init(rawValue: id), username: "applicant", displayName: "Applicant")
+    }
+
     func seedInviteGuild(owner: Bool, community: Bool = false) {
         cachedGuilds[.init(rawValue: 900)] = Guild(id: .init(rawValue: 900), name: "Test", isOwnedByCurrentUser: owner,
                                                features: community ? ["COMMUNITY"] : [])
@@ -305,6 +397,9 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
         var capturedRequest = request
         capturedRequest.httpBody = data
         NotificationCenter.default.post(name: Self.captured, object: capturedRequest)
+        if request.url!.path.hasSuffix("/member-verification") || request.url!.path.hasSuffix("/requests/@me") {
+            return joinApplication()
+        }
         if request.httpMethod == "PUT" || request.url!.lastPathComponent == "profile" { return joinGuild() }
         if request.url!.path.hasPrefix("/api/v9/channels/") {
             let limited = request.url!.path.contains("/903/")
@@ -352,6 +447,28 @@ private final class InviteURLProtocol: URLProtocol, @unchecked Sendable {
         if status != 204 { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
         client?.urlProtocolDidFinishLoading(self)
     }
+    private func joinApplication() {
+        let submitted = request.httpMethod == "PUT"
+        let body = submitted ? """
+            {"id":"55","guild_id":"900","user_id":"7","application_status":"SUBMITTED","rejection_reason":null,
+             "interview_channel_id":null,"last_seen":null}
+            """ : """
+            {"version":"2026-11-03T02:44:07.373000+00:00","description":null,
+             "guild":{"id":"900","name":"Apply","icon":null,"approximate_member_count":3,"approximate_presence_count":1},
+             "form_fields":[
+              {"field_type":"TEXT_INPUT","label":"Why?","description":null,"automations":null,"required":true,"placeholder":null},
+              {"field_type":"PARAGRAPH","label":"About you","required":true},
+              {"field_type":"MULTIPLE_CHOICE","label":"Platform","required":true,"choices":["macOS","Linux"]},
+              {"field_type":"TERMS","label":"Rules","required":true,"values":["Be kind"]},
+              {"field_type":"TEXT_INPUT","label":"Anything else?","required":false}]}
+            """
+        let response = HTTPURLResponse(url: request.url!, statusCode: submitted ? 201 : 200, httpVersion: "HTTP/1.1",
+                                       headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
     private func joinGuild() {
         let components = request.url!.pathComponents
         let guildID = components[components.firstIndex(of: "guilds")! + 1]

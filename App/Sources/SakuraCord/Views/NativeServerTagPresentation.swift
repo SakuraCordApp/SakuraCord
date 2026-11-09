@@ -105,23 +105,50 @@ nonisolated struct NativeIdentityTextPresentation: @unchecked Sendable {
 
     @MainActor
     func draw(in frame: CGRect, color: NSColor, context: CGContext, isUnderlined: Bool = false) {
+        drawLine(in: frame, context: context) { baseline in
+            context.setFillColor(color.cgColor)
+            context.textPosition = CGPoint(x: 0, y: baseline)
+            CTLineDraw(line, context)
+            if isUnderlined {
+                context.setStrokeColor(color.cgColor)
+                context.setLineWidth(1)
+                context.move(to: CGPoint(x: 0, y: baseline - InterfaceScale.metric(1.5)))
+                context.addLine(to: CGPoint(x: min(width, frame.width), y: baseline - InterfaceScale.metric(1.5)))
+                context.strokePath()
+            }
+        }
+    }
+
+    /// A role gradient name; while hovered it scrolls, glows and is underlined
+    /// in the same gradient.
+    @MainActor
+    func draw(in frame: CGRect, gradientColors: [NSColor], context: CGContext, isUnderlined: Bool = false) {
+        drawLine(in: frame, context: context) { baseline in
+            let visibleWidth = min(width, frame.width)
+            RoleGradientPaint.draw(
+                line, at: CGPoint(x: 0, y: baseline), width: visibleWidth, colors: gradientColors,
+                isHovered: isUnderlined, context: context
+            )
+            guard isUnderlined else { return }
+            context.saveGState()
+            context.clip(to: CGRect(x: 0, y: baseline - InterfaceScale.metric(1.5) - 0.5, width: visibleWidth, height: 1))
+            RoleGradientPaint.fill(
+                gradientColors, in: CGRect(x: 0, y: 0, width: visibleWidth, height: 0),
+                isScrolling: AppMotionPolicy.animatesUncategorized, context: context
+            )
+            context.restoreGState()
+        }
+    }
+
+    @MainActor
+    private func drawLine(in frame: CGRect, context: CGContext, body: (CGFloat) -> Void) {
         guard frame.width > 0, frame.height > 0 else { return }
         context.saveGState()
         context.clip(to: frame)
         context.translateBy(x: frame.minX, y: frame.maxY)
         context.scaleBy(x: 1, y: -1)
         context.textMatrix = .identity
-        context.setFillColor(color.cgColor)
-        let baseline = frame.height / 2 - glyphBounds.midY
-        context.textPosition = CGPoint(x: 0, y: baseline)
-        CTLineDraw(line, context)
-        if isUnderlined {
-            context.setStrokeColor(color.cgColor)
-            context.setLineWidth(1)
-            context.move(to: CGPoint(x: 0, y: baseline - InterfaceScale.metric(1.5)))
-            context.addLine(to: CGPoint(x: min(width, frame.width), y: baseline - InterfaceScale.metric(1.5)))
-            context.strokePath()
-        }
+        body(frame.height / 2 - glyphBounds.midY)
         context.restoreGState()
     }
 }

@@ -346,23 +346,17 @@ extension AppModel {
         if consumeForwardSearchPeopleEvent(event) { return }
         if consumeApplicationStreamEvent(event) { return }
         if consumeProfileEvent(event) { return }
+        if consumeVoiceEvent(event) { return }
         switch event {
         case .currentUserRolesChanged, .currentUserRolesSnapshot:
             consumeCurrentUserRoleEvent(event)
-        case .voiceStateChanged, .voiceStatesReceived:
-            consumeVoiceStateEvent(event)
-        case .privateCallChanged(var call):
-            consumePrivateCallChanged(&call)
-        case .privateCallDeleted(let channelID, let unavailable):
-            consumePrivateCallDeleted(channelID: channelID, unavailable: unavailable)
-        case .voiceServerChanged(let info):
-            recordVoiceServerUpdateReceived(info)
-            scheduleVoiceServerMigration(to: info)
         case .snapshotChanged(let value):
             consumeSnapshotChanged(value)
         case .guildChanged, .guildLayoutChanged, .guildLayoutSaveFailed, .guildRolesChanged,
              .currentUserChanged, .currentUserStatusChanged:
             consumeGatewayWorkspaceStateEvent(event)
+        case .guildJoinRequestsChanged(let requests):
+            applyGuildJoinRequests(requests)
         case .applicationCommandIndexInvalidated(let target):
             invalidateApplicationCommandIndex(target)
         case .applicationCommandAutocomplete(let result):

@@ -229,6 +229,7 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
         cornerRadius: 8
     ) {
         activationCount += 1
+        return true
     }
     let window = NSWindow(
         contentRect: bounds,
@@ -373,6 +374,7 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
         cornerRadius: 8
     ) {
         keyboardActivations += 1
+        return true
     }
     keyboardOverlay.keyDown(
         with: try keyEvent(characters: " ", keyCode: 49)
@@ -385,6 +387,7 @@ func `spoiler cover centers its pill and owns pointer keyboard and accessibility
         cornerRadius: 8
     ) {
         accessibilityActivations += 1
+        return true
     }
     #expect(accessibilityOverlay.accessibilityPerformPress())
     #expect(accessibilityActivations == 1)

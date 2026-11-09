@@ -458,20 +458,14 @@ private struct SoundboardButton: View {
     }
 
     private var surfaceColor: Color {
-        if colorScheme == .dark {
-            return isHovering ? Color(hex: 0x28292C) : Color(hex: 0x202023)
-        }
-        return isHovering ? Color(hex: 0xD8D7DC) : Color(hex: 0xE2E1E6)
+        PickerTileStyle.surface(colorScheme, isHovering: isHovering)
     }
 
     private var outlineColor: Color {
         if model.isSoundPlaying(sound), !isPressed {
             return Color(hex: 0x23A55A)
         }
-        guard isHovering else { return .clear }
-        return colorScheme == .dark
-            ? Color(hex: 0x44454A)
-            : Color(hex: 0xAFAEB4)
+        return PickerTileStyle.outline(colorScheme, isHovering: isHovering)
     }
 
     private var saveActions: MediaSaveMenuActions {

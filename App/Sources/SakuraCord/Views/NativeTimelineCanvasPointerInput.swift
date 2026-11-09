@@ -13,7 +13,7 @@ extension NativeTimelineCanvasView {
         let hit = super.hitTest(point)
         // Subview controls share the canvas's presentation transform, but
         // AppKit hit testing uses their unanimated frames as well.
-        return sendTransitionBlocksInteractions && hit != nil ? self : hit
+        return glideBlocksPointer && hit != nil ? self : hit
     }
 
     /// Whether the pointer's hover is followed: not while scrolling, nor
@@ -25,7 +25,7 @@ extension NativeTimelineCanvasView {
 
     override func updateTrackingAreas() {
         guard tracksHover,
-              !sendTransitionBlocksInteractions,
+              !glideBlocksPointer,
               !overlayBlocksInteractions
         else {
             pointer.removeTrackingAreas(from: self)
@@ -53,7 +53,7 @@ extension NativeTimelineCanvasView {
         removeAllToolTips()
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard !suppressesHoverPresentation,
-              !sendTransitionBlocksInteractions,
+              !glideBlocksPointer,
               !overlayBlocksInteractions
         else { return }
         super.resetCursorRects()
@@ -124,6 +124,7 @@ extension NativeTimelineCanvasView {
                 if let tag = layouts[index].serverTagRegion, tag.presentation.identity.guildID != nil {
                     addCursorRect(tag.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                 }
+                installRoleIconToolTip(at: index, rowOrigin: rowOrigin)
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
                 installThreadCardCursor(at: index, rowOrigin: rowOrigin)
                 installReactionCursors(at: index, rowOrigin: rowOrigin)
@@ -199,6 +200,11 @@ extension NativeTimelineCanvasView {
         }
     }
 
+    private func installRoleIconToolTip(at index: Int, rowOrigin: CGFloat) {
+        guard let roleRegion = layouts[index].roleIconRegion else { return }
+        addToolTip(roleRegion.frame.offsetBy(dx: 0, dy: rowOrigin), owner: self, userData: nil)
+    }
+
     private func installForwardedSourceCursor(at index: Int, rowOrigin: CGFloat) {
         guard let frame = layouts[index].forwardedSourceRegion?.frame else { return }
         addCursorRect(
@@ -208,7 +214,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
             clearPointerHoverTargets()
             return
@@ -262,7 +268,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
             clearPointerHoverTargets()
             return
@@ -408,7 +414,7 @@ extension NativeTimelineCanvasView {
 
     override func mouseDown(with event: NSEvent) {
         pointer.didForceClickLookup = false
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
         dismissTimestampHover()
@@ -526,7 +532,7 @@ extension NativeTimelineCanvasView {
 
     override func mouseDragged(with event: NSEvent) {
         guard !pointer.didForceClickLookup else { return }
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         if dragVoiceMessagePress(to: convert(event.locationInWindow, from: nil)) { return }
         if pressedPollTarget != nil {
             setHoveredPollTarget(pollPointerHit(at: convert(event.locationInWindow, from: nil))?.target)
@@ -587,7 +593,7 @@ extension NativeTimelineCanvasView {
             pointer.didForceClickLookup = false
             return
         }
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         if endVoiceMessagePress(at: convert(event.locationInWindow, from: nil)) { return }
         if let pressed = pressedPollTarget {
             pressedPollTarget = nil
@@ -1019,6 +1025,7 @@ extension NativeTimelineCanvasView {
     ) {
         guard let model else { return }
         closeMessageProfilePopover()
+        closeServerTagPopover()
         let guildID = sourceMessage.flatMap { model.messagePresentationGuildID(for: $0) } ?? model.selectedGuildID
         model.showMembers(withRole: roleID, in: guildID)
         showMentionPopover(
@@ -1074,7 +1081,7 @@ extension NativeTimelineCanvasView {
             guard let self,
                   event.window === self.window,
                   !self.overlayBlocksInteractions,
-                  !self.sendTransitionBlocksInteractions
+                  !self.glideBlocksPointer
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
             // An inline editor's suggestions and its Cancel and Save can
@@ -1104,10 +1111,15 @@ extension NativeTimelineCanvasView {
             x: point.x,
             y: point.y - displayedRowOrigin(at: index)
         )
+        let layout = layouts[index]
         guard NativeTimelineHoverHitTesting.contains(
             local,
-            in: layouts[index].highlightFrame
-        ) else {
+            in: layout.highlightFrame
+        ) || layout.authorFrame?.contains(local) == true
+          || layout.avatarFrame?.contains(local) == true
+          || layout.roleIconRegion?.frame.contains(local) == true
+          || layout.serverTagRegion?.frame.contains(local) == true
+        else {
             return nil
         }
         return index
@@ -1206,7 +1218,7 @@ extension NativeTimelineCanvasView {
     }
 
     func synchronizeHoverWithCurrentPointer() {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered() else {
             clearPointerHoverTargets()
             return

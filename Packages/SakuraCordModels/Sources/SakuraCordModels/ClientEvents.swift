@@ -68,6 +68,10 @@ public enum ClientEvent: Equatable, Sendable {
     /// A nil value means Discord deallocated the current voice server and the
     /// client must wait for a replacement allocation before reconnecting.
     case voiceServerChanged(VoiceConnectionInfo?)
+    /// An Activity instance started, changed participants, or ended (no participants).
+    case embeddedActivityChanged(EmbeddedActivityInstance)
+    /// Every running Activity instance in the account's guilds, replacing earlier state.
+    case embeddedActivitiesReceived([EmbeddedActivityInstance])
     case applicationStreamChanged(ApplicationStream)
     case applicationStreamDeleted(
         key: ApplicationStreamKey,
@@ -82,6 +86,8 @@ public enum ClientEvent: Equatable, Sendable {
     )
     case snapshotChanged(BootstrapSnapshot)
     case guildChanged(Guild)
+    /// Every application of the current account to an apply-to-join server.
+    case guildJoinRequestsChanged([GuildJoinRequest])
     case guildLayoutChanged(guilds: [Guild], railItems: [GuildRailItem])
     case guildLayoutSaveFailed(reason: String)
     case guildRolesChanged(guildID: GuildID, roles: [GuildRole])

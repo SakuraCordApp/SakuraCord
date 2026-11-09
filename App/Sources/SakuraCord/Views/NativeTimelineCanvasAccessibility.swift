@@ -704,6 +704,12 @@ extension NativeTimelineCanvasView {
                     children.append(accessibilityElement(role: .staticText, label: label, frame: frame, parent: parent))
                 }
             }
+            if let roleRegion = layout.roleIconRegion {
+                children.append(accessibilityElement(
+                    role: .staticText, label: "Role \(roleRegion.role.name)",
+                    frame: accessibilityChildFrame(roleRegion.frame, rowIndex: rowIndex), parent: parent
+                ))
+            }
             if accessibilitySettings.announcesTimestamps,
                let frame = layout.timestampFrame
             {

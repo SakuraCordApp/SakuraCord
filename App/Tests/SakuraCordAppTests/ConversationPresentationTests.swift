@@ -699,3 +699,36 @@ func `server verification blocks sends without exposing hidden channels`(state: 
                     currentMember: context.currentMember)
     #expect(can(context))
 }
+
+@Test func `message author presentation top role with icon selects highest position role`() {
+    let roleNoIcon = GuildRole(id: RoleID(rawValue: 10), name: "No Icon High", position: 100)
+    let roleIconLow = GuildRole(
+        id: RoleID(rawValue: 20),
+        name: "Icon Low",
+        position: 10,
+        unicodeEmoji: "⭐"
+    )
+    let roleIconHigh = GuildRole(
+        id: RoleID(rawValue: 30),
+        name: "Icon High",
+        position: 50,
+        iconURL: URL(string: "https://cdn.discordapp.com/role-icons/30/icon.png")
+    )
+    let roleIconTie = GuildRole(
+        id: RoleID(rawValue: 40),
+        name: "Icon Tie",
+        position: 50,
+        unicodeEmoji: "🔥"
+    )
+
+    let roles = [roleNoIcon, roleIconLow, roleIconHigh, roleIconTie]
+    let topRole = MessageAuthorPresentation.topRoleWithIcon(in: roles)
+    // At an equal position Discord ranks the older role (smaller ID) higher, so roleIconHigh (id 30) beats roleIconTie (id 40).
+    #expect(topRole?.id == RoleID(rawValue: 30))
+
+    let topRoleNoTie = MessageAuthorPresentation.topRoleWithIcon(in: [roleNoIcon, roleIconLow, roleIconHigh])
+    #expect(topRoleNoTie?.id == RoleID(rawValue: 30))
+
+    let none = MessageAuthorPresentation.topRoleWithIcon(in: [roleNoIcon])
+    #expect(none == nil)
+}

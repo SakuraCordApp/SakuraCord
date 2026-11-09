@@ -69,6 +69,19 @@ extension NativeMemberListCanvasView {
         context.restoreGState()
     }
 
+    /// A role gradient name, scrolling and glowing while its row is hovered.
+    @MainActor
+    static func draw(line: CTLine, at point: CGPoint, gradientColors: [NSColor], context: CGContext, isHovered: Bool) {
+        var ascent: CGFloat = 0
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, nil, nil))
+        context.saveGState()
+        context.textMatrix = .identity
+        context.translateBy(x: point.x, y: point.y + ascent)
+        context.scaleBy(x: 1, y: -1)
+        RoleGradientPaint.draw(line, at: .zero, width: width, colors: gradientColors, isHovered: isHovered, context: context)
+        context.restoreGState()
+    }
+
     static func truncatedLine(
         _ line: CTLine,
         token: CTLine,

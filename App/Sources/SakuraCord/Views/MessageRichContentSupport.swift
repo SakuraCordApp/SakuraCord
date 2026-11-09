@@ -292,6 +292,9 @@ nonisolated enum SystemMessagePresentation {
             friendRequestTextRuns(for: message, currentUserID: currentUserID, recipient: recipient)
         case .pollResult:
             pollResultTextRuns(message)
+        case .guildJoinRequestApproved:
+            // The applicant is not named in the payload; the official row names the GDM's applicant.
+            [.secondary("The application to "), .emphasized(message.content), .secondary(" was approved! Welcome!")]
         case .call:
             callTextRuns(for: message, author: author, currentUserID: currentUserID)
         case .guildBoost, .guildBoostTier1, .guildBoostTier2, .guildBoostTier3:
@@ -537,7 +540,7 @@ nonisolated enum SystemMessagePresentation {
         case .recipientRemove: "arrow.left"
         case .channelNameChange: "pencil"
         case .channelIconChange: "photo.fill"
-        case .userJoin: "arrow.right"
+        case .userJoin, .guildJoinRequestApproved: "arrow.right"
         case .guildBoost, .guildBoostTier1, .guildBoostTier2, .guildBoostTier3:
             "sparkles"
         case .channelPinnedMessage: "pin.fill"
@@ -556,6 +559,7 @@ nonisolated enum SystemMessagePresentation {
         message.type == .friendRequestAccepted
             || message.type == .recipientAdd
             || message.type == .userJoin
+            || message.type == .guildJoinRequestApproved
             || (message.type == .call
                 && !isMissedCall(message, currentUserID: currentUserID))
     }

@@ -686,7 +686,11 @@ extension DiscordRESTProvider {
             gatewayLogger.debug(
                 "Discord REST \(route, privacy: .public) status=\(response.statusCode) bucket=\(bucket, privacy: .public)"
             )
-            if Self.isAuthenticationFailure(status: response.statusCode, discordCode: discordCode) {
+            // A caller-supplied credential (an Activity's OAuth token) is not the
+            // account's; its rejection belongs to that operation alone.
+            if context.headers["Authorization"] == nil,
+               Self.isAuthenticationFailure(status: response.statusCode, discordCode: discordCode)
+            {
                 await stopAfterAuthenticationFailure(route: route)
                 throw apiDiagnostics.coalescing(ChatProviderError.unauthenticated, with: response)
             }

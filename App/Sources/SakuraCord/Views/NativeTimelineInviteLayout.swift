@@ -3,7 +3,7 @@ import CoreText
 import SakuraCordModels
 
 struct NativeServerCardContent {
-    let guildID: GuildID
+    let guildID: GuildID?
     let name: String
     let iconURL: URL?
     let inviter: User?
@@ -12,11 +12,18 @@ struct NativeServerCardContent {
     let traits: [ServerInvite.Trait]
     let memberCount: Int?
     let onlineCount: Int?
+    var activity: ServerInvite.Activity?
+    /// Server name shown beside an Activity's voice channel.
+    let guildName: String
+    /// The running instance an application's launch message offers to join.
+    var activityInstanceID: String?
 
     init(invite: ServerInvite) {
         guildID = invite.guildID
-        name = invite.name
-        iconURL = invite.iconURL
+        activity = invite.activity
+        guildName = invite.name
+        name = invite.activity?.name ?? invite.name
+        iconURL = invite.activity?.iconURL ?? invite.iconURL
         inviter = invite.inviter
         brandColor = invite.brandColor
         description = invite.description
@@ -25,8 +32,29 @@ struct NativeServerCardContent {
         onlineCount = invite.onlineCount
     }
 
+    /// The card an application posts when someone launches its Activity.
+    init(activityMessage message: Message) {
+        guildID = message.guildID
+        activityInstanceID = message.activityInstanceID
+        activity = ServerInvite.Activity(
+            applicationID: ApplicationID(rawValue: message.author.id.rawValue), name: message.author.displayName,
+            iconURL: message.author.avatarURL
+        )
+        guildName = ""
+        name = message.author.displayName
+        iconURL = message.author.avatarURL
+        inviter = message.interactionMetadata?.user
+        brandColor = nil
+        description = nil
+        traits = []
+        memberCount = nil
+        onlineCount = nil
+    }
+
     init(profile: GuildProfile, iconURL: URL?, adaptiveColor: UInt32? = nil) {
         guildID = profile.id
+        activity = nil
+        guildName = profile.name
         name = profile.name
         self.iconURL = iconURL
         inviter = nil
@@ -91,6 +119,10 @@ struct NativeTimelineInviteLayout {
     let isUnavailable: Bool
     let error: String?
     let integratesWithBubble: Bool
+    /// The speaker before an Activity card's channel line.
+    var symbolFrame: CGRect?
+    /// Faces of the people in the Activity, as Discord stacks them.
+    var playerAvatars: [(frame: CGRect, url: URL?)] = []
 
     var accessibilityLabel: String {
         (labels.map(\.text) + (content?.traits.map(\.label) ?? [])).joined(separator: ". ")
@@ -101,7 +133,7 @@ struct NativeTimelineInviteLayout {
          integratesWithBubble: Bool = false) {
         self.reference = reference
         self.integratesWithBubble = integratesWithBubble
-        componentID = "server-invite:\(index):\(reference?.code ?? preview?.guildID.description ?? "")"
+        componentID = "server-invite:\(index):\(reference?.code ?? preview?.guildID?.description ?? "")"
         let entry = reference.flatMap { source?.inviteEntry(for: $0) }
         invite = entry?.isUnavailable == true ? nil : entry?.invite
         content = preview ?? invite.map(NativeServerCardContent.init)
@@ -236,20 +268,27 @@ struct NativeTimelineInviteLayout {
             countX += textWidth + InterfaceScale.metric(20)
         }
         if countX > originX { cursor += InterfaceScale.metric(20) }
-        let created = Date(timeIntervalSince1970: Double((invite.guildID.rawValue >> 22) + 1_420_070_400_000) / 1_000)
-        labels.append(.init(text: "Est. \(created.formatted(.dateTime.month(.abbreviated).year()))",
+        guard let guildID = invite.guildID else { return }
+        labels.append(.init(text: "Est. \(guildID.createdAt.formatted(.dateTime.month(.abbreviated).year()))",
                             frame: CGRect(x: originX, y: cursor, width: width, height: InterfaceScale.metric(20)), secondary: true))
         cursor += InterfaceScale.metric(20)
     }
 
-    private static func action(for invite: ServerInvite?, entry: NativeTimelineInviteEntry?, source: AppModel?)
-        -> (String, Bool) {
+    static func action(for invite: ServerInvite?, entry: NativeTimelineInviteEntry?,
+                       content: NativeServerCardContent? = nil, source: AppModel?) -> (String, Bool) {
+        if let instanceID = content?.activityInstanceID { return source?.activityInstanceAction(instanceID) ?? ("Join", true) }
+        if let invite, invite.activity != nil, let source, source.presentationGuild(invite.guildID) != nil {
+            if source.isInActivityInvite(invite) { return ("Joined", true) }
+            let label = source.activityPlayers(reference: invite.reference, instanceID: nil).isEmpty ? "Play" : "Join"
+            return (label, source.activityInviteChannel(invite) == nil)
+        }
         if let invite, source?.isLeavingInviteGuild(invite.guildID) == true { return ("Leaving…", true) }
         if let invite, source?.isJoiningInviteGuild(invite.guildID) == true { return ("Joining…", true) }
         if let member = invite.flatMap({ source?.presentationGuild($0.guildID) }) {
             return (member.isUnavailable ? "Server unavailable" : "Go to Server", member.isUnavailable)
         }
         if invite?.unsupportedJoinReason != nil { return ("Open in Discord", false) }
+        if invite?.requiresApplication == true { return ("Apply to Join", false) }
         return (invite != nil ? "Join Server" : entry?.error != nil ? "Try Again" : "Loading…",
                 entry?.isLoading != false && invite == nil)
     }
@@ -283,7 +322,7 @@ struct NativeTimelineInviteLayout {
         return TraitArrangement(regions: regions, height: cursorY + traitHeight - origin.y, overflow: overflow)
     }
 
-    private static func height(_ text: String, width: CGFloat, size: CGFloat, bold: Bool = false, lineHeight: CGFloat = 20) -> CGFloat {
+    static func height(_ text: String, width: CGFloat, size: CGFloat, bold: Bool = false, lineHeight: CGFloat = 20) -> CGFloat {
         let value = Label(text: text, frame: .zero, size: size, bold: bold, lineHeight: lineHeight).attributedText(color: .labelColor)
         let measured = CTFramesetterSuggestFrameSizeWithConstraints(CTFramesetterCreateWithAttributedString(value), CFRange(), nil,
                                                                   CGSize(width: width, height: .greatestFiniteMagnitude), nil).height

@@ -168,6 +168,8 @@ final class AppModel {
         ServerRailVoicePreviewStore()
     @ObservationIgnored let onboarding = GuildOnboardingStore()
     @ObservationIgnored let serverInvites = ServerInvitePresentationStore()
+    @ObservationIgnored let guildJoinRequests = GuildJoinRequestStore()
+    @ObservationIgnored let embeddedActivities = EmbeddedActivityStore()
     @ObservationIgnored let captcha = HumanCaptchaStore()
     @ObservationIgnored let friends = FriendsState()
     @ObservationIgnored let ignoredUsers = IgnoredUsersState()
@@ -638,6 +640,7 @@ final class AppModel {
     var selectedGuildID: GuildID? {
         didSet {
             if oldValue != selectedGuildID { switchMessageSearchScope(from: oldValue) }
+            if selectedGuildID != nil { leaveGuildJoinRequestPage() }
             refreshServerRailSelection()
             refreshSelectedGuildPresentation()
         }
@@ -774,6 +777,7 @@ final class AppModel {
             let keepsGuildPage = selectionChangeKeepsGuildPage
             if !keepsGuildPage {
                 onboarding.presentedGuildID = nil
+                if selectedChannelID != nil { leaveGuildJoinRequestPage() }
             }
             refreshServerRailSelection()
             if !keepsGuildPage { recordConversationNavigation() }

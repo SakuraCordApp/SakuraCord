@@ -1450,7 +1450,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
         hasActivity: Bool = false,
         hasSharedClientTheme: Bool = false,
         hasCall: Bool = false,
-        hasActivityInstance: Bool = false
+        activityInstanceID: String? = nil
     ) -> Message {
         Message(
             id: MessageID(rawValue: UInt64(type.rawValue + 100)),
@@ -1468,7 +1468,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
             hasPoll: hasPoll,
             hasActivity: hasActivity,
             hasSharedClientTheme: hasSharedClientTheme,
-            hasActivityInstance: hasActivityInstance
+            activityInstanceID: activityInstanceID
         )
     }
 
@@ -1483,7 +1483,7 @@ func `persisted forward frecency replay is idempotent for one account scope`() {
     #expect(!message(type: .default, hasActivity: true).isForwardable)
     #expect(!message(type: .default, hasSharedClientTheme: true).isForwardable)
     #expect(!message(type: .default, hasCall: true).isForwardable)
-    #expect(!message(type: .default, hasActivityInstance: true).isForwardable)
+    #expect(!message(type: .default, activityInstanceID: "i-1").isForwardable)
 
     let allowedFlags: [MessageFlags] = [
         .crossposted, .isCrosspost, .suppressEmbeds, .urgent, .hasThread,

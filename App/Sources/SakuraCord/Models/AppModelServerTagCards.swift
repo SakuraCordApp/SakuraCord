@@ -26,7 +26,16 @@ final class ServerTagCardStore {
     }
 
     enum Action: Equatable {
-        case goToServer, join
+        case goToServer, join, apply, applicationStatus
+
+        var title: String {
+            switch self {
+            case .goToServer: "Go to Server"
+            case .join: "Join"
+            case .apply: "Apply to Join"
+            case .applicationStatus: "View Application Status"
+            }
+        }
     }
 
     var entries: [GuildID: Entry] = [:]
@@ -84,7 +93,8 @@ extension AppModel {
 
     func serverTagCardAction(for profile: GuildProfile) -> ServerTagCardStore.Action? {
         if serverRailGuildsByID[profile.id] != nil { return .goToServer }
-        // Manual-approval applications remain delegated to Discord.
+        if guildJoinRequests.requests[profile.id]?.isOpen == true { return .applicationStatus }
+        if profile.acceptsApplications { return .apply }
         return profile.isDirectlyJoinable ? .join : nil
     }
 
@@ -92,14 +102,27 @@ extension AppModel {
     func activateServerTagCard(_ guildID: GuildID) async -> Bool {
         let store = serverTagCards
         guard let profile = store.entries[guildID]?.profile, let action = serverTagCardAction(for: profile) else { return false }
-        if action == .goToServer {
+        switch action {
+        case .goToServer:
             guard serverRailGuildsByID[guildID]?.isUnavailable == false else { return false }
             navigateToServerTagGuild(guildID)
             return true
-        }
-        if profile.features.contains("MEMBER_VERIFICATION_GATE_ENABLED") {
-            store.entries[guildID]?.actionError = "This server requires member screening. Join it in Discord, then return to SakuraCord."
-            return false
+        case .applicationStatus:
+            dismissContextualProfile()
+            dismissExpandedProfile()
+            selectGuildJoinRequest(guildID)
+            return true
+        case .apply:
+            // Discord answers 404 to joining or to starting an application from here. The form loads without an
+            // invite, and submitting it creates the application, so an earlier invite that may since have expired
+            // is not sent along.
+            dismissContextualProfile()
+            dismissExpandedProfile()
+            guildJoinRequests.inviteCodes[guildID] = nil
+            openGuildJoinApplication(guildID, guild: .init(id: guildID, name: profile.name, iconURL: profile.iconURL))
+            return true
+        case .join:
+            break
         }
         let invites = serverInvites
         guard invites.joining.insert(guildID).inserted else { return false }
@@ -115,12 +138,13 @@ extension AppModel {
         do {
             let requiresVerification = try await session.provider.joinDiscoverableGuild(guildID)
             guard isCurrentAccountSession(session), !Task.isCancelled else { return false }
-            if requiresVerification {
-                throw ServerInviteError.unsupported("Discord requires verification to finish joining. Complete it in Discord, then return to SakuraCord.")
-            }
             guard let guild = try await awaitJoinedGuild(guildID, account: session) else { return false }
             navigateToServerTagGuild(guildID)
-            if guild.features.contains("GUILD_ONBOARDING") { openChannelsAndRoles(in: guildID) }
+            if requiresVerification {
+                openGuildJoinApplication(guildID)
+            } else if guild.features.contains("GUILD_ONBOARDING") {
+                openChannelsAndRoles(in: guildID)
+            }
             return true
         } catch {
             guard isCurrentAccountSession(session), !(error is CancellationError) else { return false }

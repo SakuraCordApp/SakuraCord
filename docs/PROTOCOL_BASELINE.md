@@ -13,10 +13,11 @@ dated observations establish why a wire shape was chosen.
 | [Session and authentication](protocol/SESSION.md) | Client metadata, login, Gateway lifecycle, event delivery, diagnostics. |
 | [Messages and uploads](protocol/MESSAGING.md) | Sends, history, reactions, polls, threads, commands, media preparation. |
 | [Read state and Inbox](protocol/READ_STATE.md) | Acknowledgements, Undo, mentions, events, notifications. |
-| [Guilds and membership](protocol/GUILDS.md) | Invites, onboarding, channel customization, Guide, member discovery. |
+| [Guilds and membership](protocol/GUILDS.md) | Invites, join applications, onboarding, channel customization, Guide, member discovery. |
 | [Friends and relationships](protocol/RELATIONSHIPS.md) | Relationship records, friend presence, requests, blocking, CAPTCHA replay. |
 | [Profiles and synchronized settings](protocol/SETTINGS.md) | Profile saves, nicknames, group-DM edits and leaving, closing a 1:1 DM, widgets, status, protobuf updates, folders and favourites. |
 | [Voice and streams](protocol/VOICE.md) | Calls, screen sharing, voice recovery, soundboard. |
+| [Activities](protocol/ACTIVITIES.md) | Activity shelf, launch and leave, instances, the Embedded App SDK host, Activity OAuth and invites. |
 
 Architecture owns [component and persistence boundaries](ARCHITECTURE.md).
 Development owns [launch and verification procedures](DEVELOPMENT.md).

@@ -7,6 +7,7 @@
 | Contract | Source | Representative checks |
 | --- | --- | --- |
 | Invite preview/join/leave | [DiscordRESTServerInvites.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTServerInvites.swift) | [ServerInviteContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ServerInviteContractTests.swift); [HumanCaptchaTests.swift](../../App/Tests/SakuraCordAppTests/HumanCaptchaTests.swift) |
+| Join applications | [DiscordRESTGuildJoinRequests.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGuildJoinRequests.swift); [AppModelGuildJoinRequests.swift](../../App/Sources/SakuraCord/Models/AppModelGuildJoinRequests.swift) | [ServerInviteContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ServerInviteContractTests.swift) |
 | Onboarding/customization | [DiscordRESTOnboarding.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTOnboarding.swift); [AppModelGuildCustomization.swift](../../App/Sources/SakuraCord/Models/AppModelGuildCustomization.swift) | [OnboardingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/OnboardingContractTests.swift); [GuildCustomizationTests.swift](../../App/Tests/SakuraCordAppTests/GuildCustomizationTests.swift) |
 | Guide | [DiscordRESTGuildGuide.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGuildGuide.swift); [AppModelGuildGuide.swift](../../App/Sources/SakuraCord/Models/AppModelGuildGuide.swift) | [OnboardingContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/OnboardingContractTests.swift) |
 | Catalogues and members | [Gateway request builders](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordGatewaySupport.swift) | [ServerProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ServerProviderContractTests.swift); [GatewayLifecycleEventTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GatewayLifecycleEventTests.swift) |
@@ -29,8 +30,9 @@ that session is no longer current. Ambiguous failure is never
 replayed. Unsupported/malformed challenges and account restrictions report a
 join error without stopping unrelated account traffic.
 
-Onboarding invites can enter the native membership flow. Member screening and
-special guest/target flows remain delegated to Discord. Unknown catalogue or
+Onboarding invites can enter the native membership flow. Apply-to-join and
+member-screening invites open the [application form](#join-applications).
+Special guest/target flows remain delegated to Discord. Unknown catalogue or
 verification state must not be reported as completed joining. A successful
 membership does not require a readable channel.
 
@@ -52,8 +54,10 @@ are shown only for `DISCOVERABLE` guilds. Resolve the five top `game_application
 through the existing games provider after ranking by `game_activity.activity_score`.
 
 Existing members navigate without joining. Without an invite, Join is offered only
-for discoverable guilds. Manual-approval recruitment (`visibility:3` plus screening
-and manual-approval features) remains delegated to Discord, as does member screening.
+for discoverable guilds. A profile with `visibility:3` plus screening and
+manual-approval features offers Apply to Join instead, or View Application Status
+while the account has an application under review; see
+[join applications](#join-applications).
 SakuraCord has no lurker mode: it sends the final full-membership
 `PUT /guilds/{guild}/members/@me?lurker=false` with `{}` and
 `X-Context-Properties: e30=`. This has one attempt and at most one human-completed
@@ -70,6 +74,101 @@ The join request construction was established by first-party web build `622805` 
 analysis on 29 September 2026. Paicord has only the PATCH member route and pinned
 Swiftcord has no equivalent. No live join was performed. The provider request and
 budget coverage lives in `ServerInviteContractTests`.
+
+## Join applications
+
+A guild with both `MEMBER_VERIFICATION_GATE_ENABLED` and
+`MEMBER_VERIFICATION_MANUAL_APPROVAL` is apply-to-join: a moderator must approve
+an application before the account becomes a member. Each account has at most one
+request per guild. Its `application_status` is `STARTED`, `SUBMITTED`, `REJECTED`
+or `APPROVED`; a request carries `id` (also `join_request_id`), `guild_id`,
+`user_id`, `rejection_reason`, `interview_channel_id`, `created_at`,
+`reviewed_at` and `last_seen`.
+
+Applicant sequence, as the official client performs it:
+
+1. The invite POST (see [Invites](#invites)) answers `show_verification_form:true`
+   and creates or reuses a `STARTED` request; no membership or `GUILD_CREATE`
+   follows. Opening the invite again while `SUBMITTED` or `REJECTED` shows that
+   request's status instead of the form.
+2. `GET /guilds/{guild}/member-verification?with_guild=true&invite_code={code}`
+   returns `version`, `description`, `form_fields`, `guild` and `profile`.
+3. `PUT /guilds/{guild}/requests/@me` with `{version, form_fields}` and no
+   `X-Context-Properties` submits. Each field is echoed as received plus
+   `response`: a string for `TEXT_INPUT` (at most 150 UTF-16 code units, the
+   input's `maxLength`, which truncates longer input) and `PARAGRAPH` (1,000,
+   newlines kept), the zero-based choice index for `MULTIPLE_CHOICE`, and
+   `true` for `TERMS`. The response is `201` with the `SUBMITTED` request.
+4. Withdrawing is `DELETE /guilds/{guild}/requests/@me` (`204`). Reapplying after
+   a rejection is `POST /guilds/{guild}/requests/@me` without a body, which
+   replaces the old request with a new `STARTED` one before the form opens again.
+5. Closing the approval greeting sends `POST /guilds/{guild}/requests/{id}/ack`;
+   it sets `last_seen`, after which the applicant view ignores the approval.
+
+`/users/@me/join-request-guilds` names the guilds (id, name, icon, features) the
+account has applied to, which are not in its guild list. READY's
+`guild_join_requests` lists the account's requests without answers. Gateway
+`GUILD_JOIN_REQUEST_CREATE`/`UPDATE` carry `{guild_id, status, request}` and
+`GUILD_JOIN_REQUEST_DELETE` carries `{guild_id, id, user_id}`; moderators also
+receive other people's requests, so the applicant state ignores any whose
+`user_id` is not the current user. The Gateway update can precede the HTTP
+response. Withdrawing, reapplying and leaving the guild after approval each
+delete the previous request. Approval adds the guild through the ordinary
+`GUILD_CREATE`, after which onboarding applies as for any join.
+
+Moderator review uses `GET /guilds/{guild}/requests?status=SUBMITTED&limit=…`,
+`GET /guilds/{guild}/requests/users/{user}` and
+`PATCH /guilds/{guild}/requests/{id}` with `{action:"APPROVED"}` or
+`{action:"REJECTED", rejection_reason}` (the reason is optional and omitted when
+empty). Interview is `POST /join-requests/{id}/interview`, which creates a group
+DM whose id equals the request id, with channel flag `65536`; approval then posts
+a system message of type 52 there. SakuraCord does not implement review or
+editing the form; those remain in Discord.
+
+Applying from a guild profile reads the form without an invite code, and the
+submitting `PUT /guilds/{guild}/requests/@me` creates the application. Without an
+invite, both the full-membership `PUT /guilds/{guild}/members/@me` and the
+Reapply `POST /guilds/{guild}/requests/@me` answer `404` (observed 8 November
+2026). Member screening without manual approval (gate feature
+only) admits the account as a pending member (`pending:true`); it submits the
+same form through the same `PUT`, and Discord clears `pending` with a member
+update. Like Discord's input blocker, a pending member's conversation offers
+Complete in place of the composer.
+
+Like the official client, SakuraCord groups the account's unapproved requests to
+servers it is not in (`STARTED`, `SUBMITTED` and `REJECTED`) in a Pending
+Applications rail folder; selecting one replaces the workspace with its status.
+An unsubmitted application offers Open Application and Discard Application (the
+same `DELETE` as Withdraw); a rejected one shows the reason and offers Reapply and
+Withdraw. Submitting leaves the current view in place, opens the folder and points
+at it with "Your application is pending!". The form and the approval greeting are
+modals. SakuraCord also lets the applicant view the
+submitted answers, read with `GET /join-requests/{id}`, which Discord returns to
+the applicant; the official client shows them only in an interview. The interview's
+type 52 message renders as the approval notice. Unknown field types (Discord also
+defines `VERIFICATION`) cannot be answered here, so their application must be
+completed in Discord. Writes use the ordinary single-attempt mutation budget.
+
+Official Fresh host `0.0.411`, web build `667580`, observed on 8 November 2026
+with the same server and accounts, confirmed the submission without
+`X-Context-Properties`, the 150-unit truncation of a pasted answer, the kept
+paragraph newline in the request (Discord stores the answer without it, for its own
+submissions too), rules-only screening's "Before you can talk here…" form, the
+folder and "Membership Incomplete" status of a `STARTED`
+request after Reapply, Open Application (which reads the form again with the
+remembered `invite_code`), Discard Application, and the pending note after
+submitting.
+
+Official Fresh host `0.0.411`, web build `660103`, observed on 3 November 2026
+with a test server switched to apply-to-join and a second account, confirmed the
+sequence above: every field type, required-field and length limits, closing an
+unsubmitted form (no request is sent; the `STARTED` request remains), submit,
+withdraw, reapply after withdrawal and after rejection (no cooldown), rejection
+with and without a reason, interview, approval, leaving after approval and an
+already-member invite (which still posts the invite and then navigates). The
+form editor only offers required questions; `required:false` handling follows
+the same build's form code. Applying from the guild profile and rate-limit (`429`)
+and ineligible (`150023`) rejections were not exercised live.
 
 ## Onboarding and channel selection
 

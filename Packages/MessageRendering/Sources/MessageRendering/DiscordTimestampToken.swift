@@ -43,26 +43,6 @@ public struct DiscordTimestampToken: Hashable, Sendable {
         timeZone: TimeZone = .autoupdatingCurrent,
         relativeTo now: Date = .now
     ) -> String {
-        if style == .relative {
-            let formatter = RelativeDateTimeFormatter()
-            formatter.locale = locale
-            formatter.unitsStyle = .full
-            return formatter.localizedString(for: date, relativeTo: now)
-        }
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.timeZone = timeZone
-        switch style {
-        case .shortTime: formatter.dateStyle = .none; formatter.timeStyle = .short
-        case .mediumTime: formatter.dateStyle = .none; formatter.timeStyle = .medium
-        case .shortDate: formatter.dateStyle = .short; formatter.timeStyle = .none
-        case .longDate: formatter.dateStyle = .long; formatter.timeStyle = .none
-        case .longDateShortTime: formatter.dateStyle = .long; formatter.timeStyle = .short
-        case .fullDateShortTime: formatter.dateStyle = .full; formatter.timeStyle = .short
-        case .shortDateShortTime: formatter.dateStyle = .short; formatter.timeStyle = .short
-        case .shortDateMediumTime: formatter.dateStyle = .short; formatter.timeStyle = .medium
-        case .relative: break
-        }
-        return formatter.string(from: date)
+        DiscordTimestampFormatter.string(for: date, style: style, relativeTo: now, locale: locale, timeZone: timeZone)
     }
 }

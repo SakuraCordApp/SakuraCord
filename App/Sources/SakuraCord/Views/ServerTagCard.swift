@@ -115,7 +115,7 @@ struct ServerTagCard: View {
                     } label: {
                         Group {
                             if isJoining { ProgressView().controlSize(.small) } else {
-                                Text(action == .join ? "Join" : "Go to Server")
+                                Text(action.title)
                             }
                         }
                         .frame(maxWidth: .infinity)

@@ -456,10 +456,6 @@ private struct ExpandedFolderGuilds: View {
     let morphsInFolder: Bool
     let previewIDs: Set<GuildID>
     let isExpanded: Bool
-    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
-    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
-    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
-    @State private var extraRowsHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: isExpanded && guildEntries.count > previewIDs.count ? InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing) : 0) {
@@ -476,28 +472,7 @@ private struct ExpandedFolderGuilds: View {
                     guildRow(entry)
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                withAnimation(reduceMotion ? nil : ServerRailAnimations.reorder) {
-                    extraRowsHeight = height
-                }
-            }
-            .frame(height: isExpanded ? extraRowsHeight : 0, alignment: .bottom)
-            .opacity(isExpanded ? 1 : 0)
-            .mask {
-                GeometryReader { geometry in
-                    let fadeHeight = InterfaceScale.metric(16)
-                    VStack(spacing: 0) {
-                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                            .frame(height: fadeHeight)
-                        Rectangle().fill(.black)
-                    }
-                    .frame(height: geometry.size.height + fadeHeight)
-                    .offset(y: isExpanded ? -fadeHeight : 0)
-                }
-            }
-            .allowsHitTesting(isExpanded)
-            .accessibilityHidden(!isExpanded)
+            .modifier(ServerFolderRowsReveal(isExpanded: isExpanded))
         }
         .transformPreference(ServerRailRowsPreferenceKey.self) { rows in
             // Collapsed rows retain layout for the morph, but are not drop targets.
@@ -565,7 +540,43 @@ nonisolated private struct ServerFolderIndicatorMotion: GeometryEffect {
     }
 }
 
-private enum ServerFolderRailMetrics {
+/// Rows below a folder's header that unroll as it opens: their height eases open from the top under a soft
+/// edge, and they keep their layout while closed so the folder can grow around them.
+struct ServerFolderRowsReveal: ViewModifier {
+    let isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+    @State private var height: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                withAnimation(reduceMotion ? nil : ServerRailAnimations.reorder) {
+                    self.height = height
+                }
+            }
+            .frame(height: isExpanded ? height : 0, alignment: .bottom)
+            .opacity(isExpanded ? 1 : 0)
+            .mask {
+                GeometryReader { geometry in
+                    let fadeHeight = InterfaceScale.metric(16)
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                            .frame(height: fadeHeight)
+                        Rectangle().fill(.black)
+                    }
+                    .frame(height: geometry.size.height + fadeHeight)
+                    .offset(y: isExpanded ? -fadeHeight : 0)
+                }
+            }
+            .allowsHitTesting(isExpanded)
+            .accessibilityHidden(!isExpanded)
+    }
+}
+
+enum ServerFolderRailMetrics {
     static let containerSize: CGFloat = 52
     static let previewIconSize: CGFloat = 21
     static let guildSpacing: CGFloat = 8

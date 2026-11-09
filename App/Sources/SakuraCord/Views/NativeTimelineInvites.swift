@@ -5,7 +5,7 @@ extension NativeMessageTimelineCoordinator {
     func refreshServerInvites(_ reference: ServerInviteReference?) {
         guard let canvas, let scrollView, layoutWidth > 0 else { return }
         let matches: (NativeMessageTimelineItem) -> Bool = { item in
-            guard let row = item.messageRow, !row.serverInvites.isEmpty else { return false }
+            guard let row = item.messageRow, !row.serverInvites.isEmpty || row.message.hasActivityInstance else { return false }
             return reference.map { row.serverInvites.contains($0) } ?? true
         }
         cachedItemLayouts = cachedItemLayouts.filter { !matches($0.value.item) }
@@ -47,8 +47,15 @@ extension NativeTimelineCanvasView {
     }
 
     func activateInvite(_ card: NativeTimelineInviteLayout, message: Message, expands: Bool) {
-        guard let reference = card.reference else { return }
         guard let model else { return }
+        if let instanceID = card.content?.activityInstanceID {
+            guard !card.isDisabled, !expands else { return }
+            model.startAccountChildTask(account: model.accountSession()) { model, _ in
+                await model.joinActivityInstance(instanceID, from: message)
+            }
+            return
+        }
+        guard let reference = card.reference else { return }
         if expands {
             if !model.serverInvites.expanded.insert(reference).inserted {
                 model.serverInvites.expanded.remove(reference)
@@ -57,6 +64,12 @@ extension NativeTimelineCanvasView {
             return
         }
         guard !card.isDisabled else { return }
+        if let invite = card.invite, invite.activity != nil, model.presentationGuild(invite.guildID) != nil {
+            model.startAccountChildTask(account: model.accountSession()) { model, _ in
+                await model.joinActivityInvite(invite)
+            }
+            return
+        }
         if card.invite?.unsupportedJoinReason != nil,
            card.invite.flatMap({ model.serverRailGuildsByID[$0.guildID] }) == nil {
             NSWorkspace.shared.open(reference.url)
@@ -72,7 +85,7 @@ extension NativeTimelineCanvasView {
                                    rowIndex: Int, parent: NSAccessibilityElement) {
         for card in layout.inviteRegions {
             let group = accessibilityElement(role: .group,
-                label: "Server invite. " + card.accessibilityLabel,
+                label: (card.content?.activity == nil ? "Server invite. " : "Activity. ") + card.accessibilityLabel,
                 frame: accessibilityChildFrame(card.frame, rowIndex: rowIndex), parent: parent)
             var controls: [Any] = []
             if card.buttonFrame.height > 0 {

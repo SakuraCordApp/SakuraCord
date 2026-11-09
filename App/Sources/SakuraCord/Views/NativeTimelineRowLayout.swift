@@ -145,6 +145,8 @@ struct NativeTimelineRowLayout {
     }
 
     var height: CGFloat = 0
+    /// The space below a short row's content that pads it to its avatar's height.
+    var avatarPadding: CGFloat = 0
     var loaderLayout: NativeTimelineLoaderLayout?
     var beginningLayout: NativeTimelineBeginningLayout?
     var searchSectionRegion: SearchSectionRegion?
@@ -172,6 +174,11 @@ struct NativeTimelineRowLayout {
         let presentation: NativeServerTagPresentation
     }
     var serverTagRegion: ServerTagRegion?
+    struct RoleIconRegion: Equatable {
+        let frame: CGRect
+        let role: GuildRole
+    }
+    var roleIconRegion: RoleIconRegion?
     var timestampText: NativeIdentityTextPresentation?
     var editedText: NativeIdentityTextPresentation?
     var botBadgeFrame: CGRect?

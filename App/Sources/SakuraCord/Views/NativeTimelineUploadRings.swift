@@ -217,7 +217,11 @@ extension NativeTimelineCanvasView {
                 view.frame = (ring.mediaFrame ?? ring.frame).offsetBy(dx: 0, dy: origin)
                 view.setColor(Self.uploadRingColor(ring, isOutgoing: layout.bubbleRegion?.isOutgoing == true))
                 view.isFailed = ring.isFailed
-                view.activate = { [weak self] in self?.activateUploadRing(ring, of: message) }
+                // A press held across a glide doesn't act on its release.
+                view.activate = { [weak self] in
+                    guard let self, !glideBlocksPointer else { return }
+                    activateUploadRing(ring, of: message)
+                }
                 view.fraction = uploads.fraction(nonce: nonce, attachmentID: ring.attachmentID)
             }
         }

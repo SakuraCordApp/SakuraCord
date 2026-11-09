@@ -67,7 +67,8 @@ extension NativeTimelineRowPainter {
 
     private static func drawMessageBubbleTint(_ input: NativeTimelineMessageDrawInput) {
         guard let bubbleRegion = input.layout.bubbleRegion else { return }
-        let integratedSectionFrames = input.layout.inviteRegions.map(\.frame)
+        // An Activity card sits on the bubble itself; its cover tile sets it apart.
+        let integratedSectionFrames = input.layout.inviteRegions.filter { $0.content?.activity == nil }.map(\.frame)
             + input.layout.sakuraCordDeepLinkRegions.map(\.frame)
             + [input.layout.threadFrame, input.layout.pollLayout?.frame].compactMap { $0 }
             + input.layout.embedRegions.compactMap {
@@ -167,28 +168,47 @@ extension NativeTimelineRowPainter {
             let presentedAuthor =
                 author?.user
                 ?? message.author
+            let display = input.model?.accessibilitySettings.roleColorDisplay
+            let gradientColors = presentedAuthor.isBot ? nil : roleGradientColors(author)
             if let context = NSGraphicsContext.current?.cgContext {
-                input.layout.authorText?.draw(
-                    in: frame,
-                    color: presentedAuthor.isBot
-                        ? .sakuraCordAccentColor
-                        : input.model?.accessibilitySettings.roleColorDisplay != .inNames
-                        ? .labelColor : roleColor(author?.roleColorHex) ?? .labelColor,
-                    context: context, isUnderlined: input.isAuthorHovered
-                )
+                if display == .inNames, let gradientColors {
+                    input.layout.authorText?.draw(
+                        in: frame, gradientColors: gradientColors, context: context, isUnderlined: input.isAuthorHovered
+                    )
+                } else {
+                    input.layout.authorText?.draw(
+                        in: frame,
+                        color: presentedAuthor.isBot
+                            ? .sakuraCordAccentColor
+                            : display != .inNames
+                            ? .labelColor : roleColor(author?.roleColorHex) ?? .labelColor,
+                        context: context, isUnderlined: input.isAuthorHovered
+                    )
+                }
             }
-            if input.model?.accessibilitySettings.roleColorDisplay == .nextToNames,
-               let color = roleColor(author?.roleColorHex) {
-                color.setFill()
-                NSBezierPath(ovalIn: CGRect(
+            if display == .nextToNames, let color = roleColor(author?.roleColorHex) {
+                roleDot(gradientColors ?? [color], in: CGRect(
                     x: frame.minX - InterfaceScale.metric(15),
                     y: frame.midY - InterfaceScale.metric(4.5),
                     width: InterfaceScale.metric(9),
                     height: InterfaceScale.metric(9)
-                )).fill()
+                ))
             }
         }
         drawMessageIdentityMetadata(input)
+    }
+
+    static func roleGradientColors(_ author: MessageAuthorPresentation?) -> [NSColor]? {
+        RoleGradientPaint.colors(
+            primary: roleColor(author?.roleColorHex),
+            secondary: roleColor(author?.roleSecondaryColorHex),
+            tertiary: roleColor(author?.roleTertiaryColorHex)
+        )
+    }
+
+    private static func roleDot(_ colors: [NSColor], in rect: CGRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        RoleGradientPaint.fillDot(colors, in: rect, context: context)
     }
 
     private static func drawMessageIdentityMetadata(
@@ -206,6 +226,21 @@ extension NativeTimelineRowPainter {
                let frame = region.presentation.badgeFrame(in: region.frame),
                let image = mediaImage(for: .media(url, maximumPixelDimension: 32)) {
                 drawImage(image, in: frame, cornerRadius: 0, fillsFrame: false)
+            }
+        }
+        if let region = input.layout.roleIconRegion {
+            if let url = region.role.iconURL,
+               let image = mediaImage(for: .media(url, maximumPixelDimension: 48)) {
+                drawImage(image, in: region.frame, cornerRadius: 0, fillsFrame: false)
+            } else if let emoji = region.role.unicodeEmoji, !emoji.isEmpty {
+                text(
+                    emoji,
+                    in: region.frame,
+                    font: .systemFont(ofSize: region.frame.height * 0.85),
+                    color: .labelColor,
+                    alignment: .center,
+                    lineBreakMode: .byClipping
+                )
             }
         }
         if let frame = input.layout.timestampFrame,
@@ -1120,22 +1155,31 @@ extension NativeTimelineRowPainter {
             ),
             height: NativeTimelineReplyMetrics.lineHeight
         )
-        text(
-            displayName,
-            in: authorFrame,
-            font: font,
-            color: foregroundColor ?? (author.isBot
-                ? .sakuraCordAccentColor
-                : model?.accessibilitySettings.roleColorDisplay == .inNames ? roleColor ?? .labelColor : .labelColor)
-        )
+        let gradientColors = author.isBot ? nil : roleGradientColors(presentation)
+        if foregroundColor == nil,
+           model?.accessibilitySettings.roleColorDisplay == .inNames,
+           let gradientColors,
+           let context = NSGraphicsContext.current?.cgContext
+        {
+            NativeIdentityTextPresentation(displayName, font: font, maximumWidth: authorFrame.width)
+                .draw(in: authorFrame, gradientColors: gradientColors, context: context)
+        } else {
+            text(
+                displayName,
+                in: authorFrame,
+                font: font,
+                color: foregroundColor ?? (author.isBot
+                    ? .sakuraCordAccentColor
+                    : model?.accessibilitySettings.roleColorDisplay == .inNames ? roleColor ?? .labelColor : .labelColor)
+            )
+        }
         if showsIndicator, let roleColor {
-            roleColor.setFill()
-            NSBezierPath(ovalIn: CGRect(
+            roleDot(gradientColors ?? [roleColor], in: CGRect(
                 x: authorFrame.minX - indicatorWidth,
                 y: authorFrame.midY - InterfaceScale.metric(5),
                 width: InterfaceScale.metric(10),
                 height: InterfaceScale.metric(10)
-            )).fill()
+            ))
         }
         return CGRect(x: authorFrame.minX - indicatorWidth, y: authorFrame.minY, width: authorFrame.width + indicatorWidth, height: authorFrame.height)
     }
@@ -1234,7 +1278,7 @@ extension NativeTimelineRowPainter {
             weight: .semibold
         )
         text(
-            message.interactionMetadata?.displayName ?? "command",
+            NativeTimelineRowLayout.commandLabel(for: message),
             in: region.commandFrame,
             font: .interfaceSystemFont(
                 ofSize: NSFont.preferredFont(

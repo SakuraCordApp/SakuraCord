@@ -25,12 +25,40 @@ extension NativeTimelineCanvasView {
         guard hoveredAuthorMessageID != value else { return }
         let old = hoveredAuthorMessageID
         hoveredAuthorMessageID = value
+        if let index = value.flatMap(visibleMessageRowIndex(for:)), scrollsAuthorGradient(at: index) {
+            authorHoverTicker.start(on: self, frameRate: RoleGradientPaint.scrollFrameRate) { [weak self] in
+                self?.stepAuthorHover()
+            }
+        } else {
+            authorHoverTicker.stop()
+        }
+        updateAvatarPlayback()
         for messageID in [old, value].compactMap({ $0 }) {
             guard let index = items.firstIndex(where: {
                 $0.messageID == messageID
             }) else { continue }
             setNeedsDisplay(rowFrame(at: index))
         }
+    }
+
+    /// A hovered gradient name scrolls, as Discord's does; solid names stay still.
+    private func scrollsAuthorGradient(at index: Int) -> Bool {
+        guard AppMotionPolicy.animatesUncategorized, model?.accessibilitySettings.roleColorDisplay == .inNames,
+              case let .message(row, _, _) = items[index]
+        else { return false }
+        let author = model?.authorPresentation(for: row.message)
+        return author?.user.isBot == false && NativeTimelineRowPainter.roleGradientColors(author) != nil
+    }
+
+    private func stepAuthorHover() {
+        guard let index = hoveredAuthorMessageID.flatMap(visibleMessageRowIndex(for:)),
+              let authorFrame = layouts[index].authorFrame
+        else {
+            authorHoverTicker.stop()
+            return
+        }
+        // The glow reaches a few points past the name.
+        setNeedsDisplay(authorFrame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index)).insetBy(dx: -6, dy: -6))
     }
 
     func setHoveredMention(
@@ -345,7 +373,7 @@ extension NativeTimelineCanvasView {
     }
 
     func reconcileActionCapsule() {
-        guard !sendTransitionBlocksInteractions,
+        guard !glideBlocksPointer,
               model?.featuresSettings.messageHoverActions == true
         else {
             removeActionCapsule()
@@ -1267,7 +1295,11 @@ extension NativeTimelineCanvasView {
             // The timeline may already show the save, or a later edit from
             // elsewhere, whose text can differ from what was typed.
             self.editing.savedEditTimestamp = saved.editedTimestamp ?? .distantPast
+            // Outside a timeline update, the hand-off from the editor to the
+            // row eases here, as the update's would.
+            self.captureReactionBaseline()
             self.reconcileEditingRow()
+            self.beginReactionTransitions()
         }
     }
 
@@ -1374,13 +1406,19 @@ extension NativeTimelineCanvasView {
                 : index < disclosureRange.lowerBound ? disclosureShiftBefore : 0)
             + unreadDividerGapShift(at: index)
             + reactionMotionOffset(at: index)
-            + NativeTimelineTransientRowGeometry.rowOrigin(
-                base: rowOrigins[index],
-                rowIndex: index,
-                replacementIndex: editingRowIndex,
-                replacementHeight: editingRowHeight,
-                baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
-            )
+            + transientRowOrigin(at: index)
+    }
+
+    /// A row's top within the content with the edited row at its editing
+    /// height, before any motion.
+    func transientRowOrigin(at index: Int) -> CGFloat {
+        NativeTimelineTransientRowGeometry.rowOrigin(
+            base: rowOrigins[index],
+            rowIndex: index,
+            replacementIndex: editingRowIndex,
+            replacementHeight: editingRowHeight,
+            baseRowHeight: editingRowIndex.map { storage.layouts[$0].height }
+        )
     }
 
     func displayedRowHeight(at index: Int) -> CGFloat {
@@ -1427,20 +1465,26 @@ extension NativeTimelineCanvasView {
         )
     }
 
-    func freezeEditingRowForScroll() {
-        guard editingRowScrollSnapshot == nil,
-              let host = editingRowHost,
+    /// A picture of the inline editor as it shows now.
+    func editingHostSnapshot() -> NSImage? {
+        guard let host = editingRowHost,
               host.alphaValue > 0.5,
               host.bounds.width > 0,
               host.bounds.height > 0,
-              let representation = host.bitmapImageRepForCachingDisplay(
-                  in: host.bounds
-              )
-        else { return }
+              let representation = host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        else { return nil }
         host.cacheDisplay(in: host.bounds, to: representation)
         representation.size = host.bounds.size
         let image = NSImage(size: host.bounds.size)
         image.addRepresentation(representation)
+        return image
+    }
+
+    func freezeEditingRowForScroll() {
+        guard editingRowScrollSnapshot == nil,
+              let host = editingRowHost,
+              let image = editingHostSnapshot()
+        else { return }
         editingRowScrollSnapshot = image
         host.alphaValue = 0
         if let index = editingRowIndexCache, items.indices.contains(index) {

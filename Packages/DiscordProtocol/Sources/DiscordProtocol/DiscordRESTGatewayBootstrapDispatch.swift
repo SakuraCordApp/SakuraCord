@@ -109,6 +109,7 @@ extension DiscordRESTProvider {
             voiceStateCount: guildProjection.voiceStateCount,
             currentUserRolesByGuild: guildProjection.currentUserRolesByGuild
         )
+        applyReadyGuildJoinRequests(body)
     }
 
     private func resetReadySessionState(
@@ -335,7 +336,7 @@ extension DiscordRESTProvider {
                 }
             }
             if let guildID, !guild.roles.isEmpty {
-                cachedGuildRoles[guildID] = guild.roles
+                cacheGuildRoles(guild.roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if !guild.threads.isEmpty {
@@ -549,6 +550,9 @@ extension DiscordRESTProvider {
             cacheReadySupplementalPrivateState(supplemental)
             applyReadySupplementalGuildProjection(supplemental)
             publishReadySupplementalAliases(supplemental)
+            continuation?.yield(.embeddedActivitiesReceived(
+                supplemental.guilds.flatMap(\.activityInstances).compactMap { $0.domain() }
+            ))
         }
         let states = ReadySupplementalVoiceStateResolver.resolve(
             body: body,
@@ -658,7 +662,7 @@ extension DiscordRESTProvider {
                 publishGuildChannels(guildID)
             }
             if !guild.roles.isEmpty {
-                cachedGuildRoles[guildID] = guild.roles
+                cacheGuildRoles(guild.roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if !guild.threads.isEmpty {

@@ -56,14 +56,24 @@ extension NativeMemberListCanvasView {
         at index: Int,
         context: CGContext
     ) {
-        let label = "\(section.title) — \(section.totalCount)"
         let font = NSFont.interfaceSystemFont(
             ofSize: InterfaceTypographyMetrics.interfaceTextSize,
             weight: .semibold
         )
-        let line = cachedSectionHeaderLine(label, font: font, color: NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7))
+        let color = NSColor.secondaryLabelColor.withAlphaComponent(NSColor.secondaryLabelColor.alphaComponent * 0.7)
         let labelY = origins[index] + InterfaceScale.metric(16)
-        let labelX = InterfaceScale.metric(14)
+        var labelX = InterfaceScale.metric(14)
+        if let role = section.role, role.hasIcon {
+            let iconSize = InterfaceScale.metric(14)
+            let spacing = InterfaceScale.metric(4)
+            let textCenterY = labelY + font.ascender - font.capHeight / 2.0
+            let iconY = (textCenterY - iconSize / 2.0).rounded()
+            let iconRect = CGRect(x: labelX, y: iconY, width: iconSize, height: iconSize)
+            drawMemberRoleIcon(role, in: iconRect, at: index, context: context)
+            labelX += iconSize + spacing
+        }
+        let label = "\(section.title) — \(section.totalCount)"
+        let line = cachedSectionHeaderLine(label, font: font, color: color)
         Self.draw(
             line: line,
             at: CGPoint(
@@ -304,12 +314,22 @@ extension NativeMemberListCanvasView {
                 token: prepared.nameTruncationToken,
                 maximumWidth: nameLayout.nameWidth
             )
-            Self.draw(line: visibleName, at: CGPoint(x: nameX, y: nameY), context: context)
+            if presentation.roleColorDisplay == .inNames, let gradientColors = prepared.gradientColors {
+                Self.draw(
+                    line: visibleName,
+                    at: CGPoint(x: nameX, y: nameY),
+                    gradientColors: gradientColors,
+                    context: context,
+                    isHovered: hoveredIndex == index
+                )
+            } else {
+                Self.draw(line: visibleName, at: CGPoint(x: nameX, y: nameY), context: context)
+            }
         }
 
         if let roleColor {
-            context.setFillColor(roleColor.cgColor)
-            context.fillEllipse(in: CGRect(x: textX, y: nameY + InterfaceScale.metric(5), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8)))
+            let ovalRect = CGRect(x: textX, y: nameY + InterfaceScale.metric(5), width: InterfaceScale.metric(8), height: InterfaceScale.metric(8))
+            RoleGradientPaint.fillDot(prepared.gradientColors ?? [roleColor], in: ovalRect, context: context)
         }
         if member.user.isBot, let accessory = nameLayout.accessoryFrames.first {
             if accessory.width >= botBadgeWidth {
@@ -547,4 +567,23 @@ extension NativeMemberListCanvasView {
         NativeAppBadgePresentation.draw(in: badge, color: .systemIndigo, context: context)
     }
 
+    /// Discord shows role icons on member-list section headers, not beside names.
+    private func drawMemberRoleIcon(_ role: GuildRole, in frame: CGRect, at index: Int, context: CGContext) {
+        if let iconURL = role.iconURL {
+            if let image = images[iconURL] {
+                Self.draw(image: image, aspectFitIn: frame, context: context)
+            } else {
+                requestImageIfNeeded(url: iconURL, index: index, priority: .visible, maximumPixelDimension: 32)
+            }
+        } else if let emoji = role.unicodeEmoji, !emoji.isEmpty {
+            let emojiFont = NSFont.systemFont(ofSize: frame.height * 0.85)
+            let emojiLine = Self.line(emoji, font: emojiFont, color: .labelColor)
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(emojiLine, &ascent, &descent, nil))
+            let emojiX = frame.midX - width / 2
+            let emojiY = frame.midY - (ascent - descent) / 2
+            Self.draw(line: emojiLine, at: CGPoint(x: emojiX, y: emojiY), context: context)
+        }
+    }
 }

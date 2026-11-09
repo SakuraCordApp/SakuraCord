@@ -13,10 +13,20 @@ struct ServerRailContainer: View {
 
     var body: some View {
         @Bindable var invites = model.serverInvites
+        let joinRequests = model.guildJoinRequests
         ServerRailView(
             sidebarWidth: sidebarWidth,
             items: model.serverRailPresentation.items,
             directMessages: model.serverRailPresentation.directMessages,
+            joinRequests: model.pendingApplications.map { request in
+                ServerRailJoinRequestEntry(id: request.guildID, name: model.joinRequestGuildName(request.guildID),
+                                           iconURL: model.joinRequestGuildIconURL(request.guildID),
+                                           status: request.status,
+                                           isSelected: joinRequests.selectedGuildID == request.guildID)
+            },
+            joinRequestsExpanded: Bindable(joinRequests).isFolderExpanded,
+            showsSubmittedTip: Bindable(joinRequests).showsSubmittedTip,
+            selectJoinRequest: model.selectGuildJoinRequest,
             home: model.serverRailPresentation.home,
             selectHome: { model.selectGuild(nil) },
             selectDirectMessage: { model.navigate(to: $0) },
@@ -78,6 +88,19 @@ struct ServerRailContainer: View {
         .windowModal(item: Bindable(invites.creation).presentation, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             ServerInviteCreationView(model: model, presentation: $0)
         }
+        .windowModal(item: Binding(
+            get: { joinRequests.modal },
+            set: { modal in
+                // However the approval greeting closes, it is acknowledged like the official one.
+                if modal == nil, let current = joinRequests.modal, current.kind == .welcome {
+                    model.finishGuildJoinApproval(current.guildID)
+                } else {
+                    joinRequests.modal = modal
+                    model.showGuildJoinApprovalIfNeeded()
+                }
+            }
+        ), cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular, isConcealed: { model.captcha.challenge != nil },
+        content: { GuildJoinApplicationView(model: model, modal: $0) })
         .alert("Mark All Servers as Read?",
                isPresented: Binding(get: { readAllConfirmationSession != nil },
                                     set: { if !$0 { readAllConfirmationSession = nil } }),
@@ -116,6 +139,10 @@ struct ServerRailView: View {
     let sidebarWidth: CGFloat
     let items: [ServerRailPresentationItem]
     let directMessages: [ServerRailDirectMessageEntry]
+    var joinRequests: [ServerRailJoinRequestEntry] = []
+    var joinRequestsExpanded: Binding<Bool> = .constant(false)
+    var showsSubmittedTip: Binding<Bool> = .constant(false)
+    var selectJoinRequest: (GuildID?) -> Void = { _ in }
     let home: ServerRailHomeEntry
     let selectHome: () -> Void
     let selectDirectMessage: (ChannelID) -> Void
@@ -135,6 +162,8 @@ struct ServerRailView: View {
     private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
     @State private var folderLayoutRevision = 0
     @State private var drag = ServerRailDragController()
+    @State private var scrollPosition = ScrollPosition(edge: .top)
+    @State private var staysAtTop = true
 
     var body: some View {
         ScrollView {
@@ -155,6 +184,12 @@ struct ServerRailView: View {
                     .transition(ServerRailAnimations.membershipTransition)
                 }
 
+                if !joinRequests.isEmpty {
+                    PendingApplicationsRailFolder(entries: joinRequests, isExpanded: joinRequestsExpanded,
+                                                  showsSubmittedTip: showsSubmittedTip, select: { selectJoinRequest($0) })
+                        .transition(ServerRailAnimations.membershipTransition)
+                }
+
                 VStack(spacing: InterfaceScale.metric(showsReadAllButton ? ReadAllServersButton.verticalPadding : 10)) {
                     Divider().padding(.horizontal, InterfaceScale.metric(12))
                     if showsReadAllButton {
@@ -166,7 +201,11 @@ struct ServerRailView: View {
             }
             .padding(.bottom, InterfaceScale.metric(12))
             .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
+            // Pending Applications also opens without a click, when an application is submitted; the rows below
+            // move with it.
+            .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: joinRequestsExpanded.wrappedValue)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: directMessages.map(\.id))
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: joinRequests.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)
         }
@@ -175,6 +214,16 @@ struct ServerRailView: View {
         }
         // Unlike .hidden, .never overrides macOS's always-visible scrollbar preference.
         .scrollIndicators(.never)
+        // SwiftUI keeps a visible row in place when rows appear above it, such as the Pending Applications folder,
+        // which scrolls Home out of view. A rail the user left at the top returns there.
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top < 1 } action: { _, isAtTop in
+            if drag.isScrolling || drag.draggedID != nil {
+                staysAtTop = isAtTop
+            } else if staysAtTop, !isAtTop {
+                scrollPosition.scrollTo(edge: .top)
+            }
+        }
         // Scrolled icons must not draw beneath the window's traffic lights.
         .scrollEdgeEffectStyle(.hard, for: .top)
         .background {
@@ -395,6 +444,139 @@ private struct DirectMessageRailButton: View {
     }
 }
 
+struct ServerRailJoinRequestEntry: Identifiable, Equatable {
+    let id: GuildID
+    let name: String
+    let iconURL: URL?
+    let status: GuildJoinRequest.Status
+    let isSelected: Bool
+}
+
+/// Unapproved applications, grouped like Discord's Pending Applications folder. It opens and closes like the
+/// server folders: the tile grows into the folder's container and the applications unroll beneath it.
+private struct PendingApplicationsRailFolder: View {
+    let entries: [ServerRailJoinRequestEntry]
+    @Binding var isExpanded: Bool
+    @Binding var showsSubmittedTip: Bool
+    let select: (GuildID) -> Void
+    @State private var isHovering = false
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+
+    var body: some View {
+        VStack(spacing: isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing) : 0) {
+            Button {
+                // Like the server folders' header, a click animates explicitly: a pointer click does not carry the
+                // rail's implicit animation to the header.
+                withAnimation(reduceMotion ? nil : ServerRailAnimations.folderExpansion) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: InterfaceScale.metric(4)) {
+                    ServerRailSelectionIndicator(isSelected: !isExpanded && entries.contains(where: \.isSelected),
+                                                 isHovering: isHovering && !isExpanded, hasNotification: false)
+                    Image(systemName: "hourglass")
+                        .font(.interfaceSystem(size: 19, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+                }
+                .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(ServerRailButtonStyle())
+            .accessibilityLabel("Pending Applications")
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .help("Pending Applications")
+            .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
+                isHovering ? ServerRailHoverItem(name: "Pending Applications", bounds: bounds) : nil
+            }
+            .onServerRailHover { isHovering = $0 }
+            // A popover hosts its anchor in AppKit, which moves without the folder's animation; anchoring it on
+            // an empty background keeps the visible header in the animated layout.
+            .background { Color.clear.popover(isPresented: $showsSubmittedTip, arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
+                    Text("Your application is pending!").font(.interface(.headline))
+                    Text("The server admin will get back to you soon.").font(.interface(.callout)).foregroundStyle(.secondary)
+                    Button("Got it") { showsSubmittedTip = false }
+                        .buttonStyle(.glassProminent)
+                        .buttonBorderShape(.capsule)
+                        .tint(SakuraCordAccentColor.color)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, InterfaceScale.metric(6))
+                }
+                .padding(InterfaceScale.metric(14))
+                .frame(width: InterfaceScale.metric(260))
+            } }
+            VStack(spacing: InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing)) {
+                ForEach(entries) { entry in
+                    JoinRequestRailButton(entry: entry) { select(entry.id) }
+                        .transition(ServerRailAnimations.membershipTransition)
+                }
+            }
+            // The last status badge hangs below its row; the reveal keeps it whole.
+            .padding(.bottom, InterfaceScale.metric(6))
+            .modifier(ServerFolderRowsReveal(isExpanded: isExpanded))
+            .padding(.bottom, -InterfaceScale.metric(6))
+        }
+        .padding(.vertical, isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.expandedPadding) : 0)
+        .background {
+            // The collapsed tile is the container, which grows into the open folder's outline.
+            GeometryReader { geometry in
+                let verticalInset = 3 / displayScale
+                let tile = InterfaceScale.metric(44)
+                let width = isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.containerSize) : tile
+                ConcentricRectangle(cornerRadius: InterfaceScale.metric(isExpanded ? 17 : 13), style: .continuous)
+                    .fill(Color.gray.opacity(isExpanded ? 0.12 : 0.18))
+                    .overlay {
+                        ConcentricRectangle(cornerRadius: InterfaceScale.metric(17) - 0.5, style: .continuous)
+                            .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                            .padding(0.5)
+                            .opacity(isExpanded ? 1 : 0)
+                    }
+                    .frame(width: width, height: isExpanded ? max(0, geometry.size.height - verticalInset * 2) : tile)
+                    .offset(x: (geometry.size.width - width) / 2, y: isExpanded ? verticalInset : InterfaceScale.metric(1))
+            }
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+private struct JoinRequestRailButton: View {
+    let entry: ServerRailJoinRequestEntry
+    let action: () -> Void
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
+
+    var body: some View {
+        let label = "\(entry.name), \(entry.status.membershipDescription)"
+        Button(action: action) {
+            HStack(spacing: InterfaceScale.metric(4)) {
+                ServerRailSelectionIndicator(isSelected: entry.isSelected, isHovering: isHovering, hasNotification: false)
+                GuildIconView(name: entry.name, iconURL: entry.iconURL, size: InterfaceScale.metric(44),
+                              cornerRadius: InterfaceScale.metric(13), animates: isHovering, isSelected: entry.isSelected)
+                    .saturation(0.4)
+                    .modifier(ApplicationStatusBadge(symbol: entry.status == .rejected ? "xmark" : "hourglass",
+                                                     tint: entry.status == .rejected ? Color(hex: 0xF23F43) : .gray,
+                                                     diameter: 18, offset: 4, isHidden: entry.status == .started))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: entry.status)
+                    .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+            }
+            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ServerRailButtonStyle())
+        .accessibilityLabel(label)
+        .help(label)
+        .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
+            isHovering ? ServerRailHoverItem(name: label, bounds: bounds) : nil
+        }
+        .onServerRailHover { isHovering = $0 }
+        .animation(.snappy(duration: 0.18), value: isHovering)
+    }
+}
+
 struct ServerRailBadgedIcon<Icon: View>: View {
     let mentionCount: Int
     let badgeOffset: CGFloat
@@ -422,6 +604,44 @@ struct ServerRailBadgedIcon<Icon: View>: View {
                 ServerRailMentionBadge(count: mentionCount)
                     .opacity(drawsBadgeInOverlay ? 0 : 1)
                     .offset(x: InterfaceScale.metric(badgeOffset), y: InterfaceScale.metric(badgeOffset))
+            }
+    }
+}
+
+/// A status glyph in a disc on an icon's corner. The icon is cut away around the disc, so whatever surface
+/// the icon rests on shows through, as with the rail's mention badges.
+struct ApplicationStatusBadge: ViewModifier {
+    let symbol: String
+    let tint: Color
+    /// Unscaled points, like the offset.
+    let diameter: CGFloat
+    let offset: CGFloat
+    /// Discord shows no badge on an unsubmitted application; the badge shrinks away rather than popping.
+    var isHidden = false
+
+    func body(content: Content) -> some View {
+        let gap = InterfaceScale.metric(2)
+        let scale = isHidden ? 0.01 : 1
+        let diameter = InterfaceScale.metric(diameter)
+        let offset = InterfaceScale.metric(offset)
+        content
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .frame(width: diameter + gap * 2, height: diameter + gap * 2)
+                    .scaleEffect(scale)
+                    .offset(x: offset + gap, y: offset + gap)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: symbol)
+                    .font(.interfaceSystem(size: self.diameter / 2, weight: .bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: diameter, height: diameter)
+                    .background(tint, in: Circle())
+                    .scaleEffect(scale)
+                    .offset(x: offset, y: offset)
             }
     }
 }
