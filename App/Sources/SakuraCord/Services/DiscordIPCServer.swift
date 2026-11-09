@@ -371,10 +371,6 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         queue.sync { boundSocketPath }
     }
 
-    public var currentBoundSymlinkPath: String? {
-        queue.sync { boundSymlinkPath }
-    }
-
     public var isServerRunning: Bool {
         queue.sync { isRunning }
     }
