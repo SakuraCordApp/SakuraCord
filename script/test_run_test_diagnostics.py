@@ -66,11 +66,19 @@ time.sleep(60)
         self.assertTrue(list(directory.glob("*.sample.txt")))
 
     def test_cancellation_kills_child_even_after_launcher_exits(self):
-        ready = self.root / "child-pid"
+        # SwiftPM keeps running while its test helper sits in its own process group.
+        for launcher_waits in (False, True):
+            with self.subTest(launcher_waits=launcher_waits):
+                self.assert_cancellation_kills_child(launcher_waits)
+
+    def assert_cancellation_kills_child(self, launcher_waits):
+        ready = self.root / f"child-pid-{launcher_waits}"
         child = ("import os, signal, time; "
                  "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
                  f"open({str(ready)!r}, 'w').write(str(os.getpid())); time.sleep(60)")
-        source = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}])"
+        source = ("import subprocess, sys, time; "
+                  f"subprocess.Popen([sys.executable, '-c', {child!r}], start_new_session={launcher_waits})"
+                  + ("; time.sleep(60)" if launcher_waits else ""))
         with subprocess.Popen(self.command(source), stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True) as process:
             try:

@@ -15,32 +15,40 @@ import tempfile
 import time
 
 
-def process_group(pid):
+def process_tree(pid):
     listing = subprocess.check_output(
         ["ps", "-axo", "pid=,ppid=,pgid=,stat=,etime=,comm="], text=True,
     )
-    return [line for line in listing.splitlines()
-            if len(line.split()) >= 6 and line.split()[2] == str(pid)]
+    rows = [line for line in listing.splitlines() if len(line.split()) >= 6]
+    # SwiftPM starts its test helper in a separate process group, so follow
+    # parent links as well as the launcher's group.
+    members = {row.split()[0] for row in rows if row.split()[2] == str(pid)}
+    while added := {row.split()[0] for row in rows if row.split()[1] in members} - members:
+        members |= added
+    return [row for row in rows if row.split()[0] in members]
 
 
 def signal_group(pid, sig):
     try:
         os.killpg(pid, sig)
         return True
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
+        # macOS reports EPERM for a group that holds only unreaped zombies.
         return False
 
 
 def stop(process):
     # The launcher may have exited while a child still owns the output pipe.
-    if signal_group(process.pid, signal.SIGTERM):
+    groups = {process.pid} | {int(row.split()[2]) for row in process_tree(process.pid)}
+    if any([signal_group(group, signal.SIGTERM) for group in groups]):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             process.poll()
-            if not signal_group(process.pid, 0):
+            if not any(signal_group(group, 0) for group in groups):
                 break
             time.sleep(0.1)
-        signal_group(process.pid, signal.SIGKILL)
+        for group in groups:
+            signal_group(group, signal.SIGKILL)
     # Like ps and sample, a killed process always finishes, but a starved
     # machine can take longer than any fixed limit.
     process.wait()
@@ -49,9 +57,10 @@ def stop(process):
 def sample(pid, path):
     # A loaded machine can stretch sample's attach, sampling and symbol phases
     # far beyond their nominal length, and killing it discards the report.
-    # SIGINT ends sampling early yet still writes the report, but only once
-    # sampling has started, which sample announces on stderr.
-    with subprocess.Popen(["/usr/bin/sample", pid, "2", "-file", str(path)],
+    # SIGINT ends sampling and still writes the report, but only while sampling:
+    # after the stderr announcement, and before a requested duration far longer
+    # than the two seconds actually sampled.
+    with subprocess.Popen(["/usr/bin/sample", pid, "60", "-file", str(path)],
                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                           text=True) as sampler:
         if sampler.stderr.readline().startswith("Sampling process"):
@@ -81,7 +90,7 @@ def diagnose(process, directory):
                     pending.discard(event["testID"])
         print("Tests started without an end event:\n" + "\n".join(sorted(pending)), flush=True)
     try:
-        rows = process_group(process.pid)
+        rows = process_tree(process.pid)
         (directory / "processes.txt").write_text("\n".join(rows) + "\n")
         print("\n".join(rows), flush=True)
         # Sample up to six children before the SwiftPM launcher.
