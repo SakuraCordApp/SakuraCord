@@ -120,6 +120,7 @@ enum ColonAutocompleteSuggestionFactory {
 final class ColonAutocompleteSuggestionCache {
     private struct Key: Equatable {
         let query: String
+        let skinTone: NativeEmojiSkinTone
         let emojis: [DiscordEmoji]
         let guildID: GuildID?
         let premiumType: Int?
@@ -136,6 +137,7 @@ final class ColonAutocompleteSuggestionCache {
     func suggestions(query: String, model: AppModel) -> [ColonAutocompleteSuggestion] {
         let key = Key(
             query: query,
+            skinTone: .preferred,
             emojis: model.orderedCustomEmojis,
             guildID: model.selectedGuildID,
             premiumType: model.currentUser?.premiumType,
