@@ -124,7 +124,7 @@ final class ColonAutocompleteSuggestionCache {
         let guildID: GuildID?
         let premiumType: Int?
         let fakeNitro: Bool
-        let guildCount: Int
+        let guilds: [GuildID: Guild]
         let favoriteKeys: [String]
         let usageScores: [String: Int]
         let settingsAreLoaded: Bool
@@ -140,7 +140,7 @@ final class ColonAutocompleteSuggestionCache {
             guildID: model.selectedGuildID,
             premiumType: model.currentUser?.premiumType,
             fakeNitro: model.featuresSettings.fakeNitroEmojis,
-            guildCount: model.serverRailGuildsByID.count,
+            guilds: model.serverRailGuildsByID,
             favoriteKeys: model.discordFavoriteEmojiKeys,
             usageScores: model.discordEmojiUsageScores,
             settingsAreLoaded: model.hasLoadedDiscordEmojiSettings
