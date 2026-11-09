@@ -43,6 +43,16 @@ struct ForumPostBodyEditor: View {
             isFocused: $isFocused
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The text view is only as tall as its text; a click below it still
+        // writes at the end of the post.
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selection = NSRange(location: text.utf16.count, length: 0)
+                    isFocused = true
+                }
+        }
         .overlay(alignment: .topLeading) {
             if text.isEmpty {
                 Text("Write your post")
