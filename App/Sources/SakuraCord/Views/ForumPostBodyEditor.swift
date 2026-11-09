@@ -22,6 +22,7 @@ struct ForumPostBodyEditor: View {
     @State private var emojiCache = ColonAutocompleteSuggestionCache()
 
     var body: some View {
+        let menu = self.menu
         ComposerTextView(
             text: text,
             placeholder: "Write your post",
@@ -90,8 +91,8 @@ struct ForumPostBodyEditor: View {
         .onChange(of: text.contains(":R>"), initial: true) { _, counts in
             counts ? timestampClock.start() : timestampClock.stop()
         }
-        .task(id: emojiContext != nil || mentionContext?.kind == .channel) {
-            guard emojiContext != nil || mentionContext?.kind == .channel else { return }
+        .task(id: needsEmojiSettings) {
+            guard needsEmojiSettings else { return }
             await model.loadDiscordEmojiSettings()
         }
         .task(id: emojiContext != nil) {
@@ -114,11 +115,10 @@ struct ForumPostBodyEditor: View {
 
     // MARK: Suggestions
 
-    /// The open menu, worked out once per update: hovering a row while
-    /// scrolling redraws this view, and ranking every emoji again then
-    /// stutters the scroll.
+    /// The open menu, read once per body pass. Hovering a row while scrolling
+    /// redraws this view, so emoji rankings come from the shared cache.
     private var menu: ForumPostSuggestionMenu? {
-        if let context = emojiContext, case let suggestions = emojiSuggestions(for: context), !suggestions.isEmpty {
+        if let context = emojiContext, case let suggestions = emojiCache.suggestions(query: context.query, model: model), !suggestions.isEmpty {
             return .emoji(context, suggestions)
         }
         if let context = mentionContext, case let suggestions = mentionSuggestions(for: context), !suggestions.isEmpty {
@@ -169,10 +169,6 @@ struct ForumPostBodyEditor: View {
         isAutocompleteDismissed ? nil : ColonAutocompleteContext(text: text, selection: selection)
     }
 
-    private func emojiSuggestions(for context: ColonAutocompleteContext) -> [ColonAutocompleteSuggestion] {
-        emojiCache.suggestions(query: context.query, model: model)
-    }
-
     private func completeClosedEmojiName(in text: String) -> Bool {
         guard let context = ClosedColonAutocompleteContext(text: text, selection: selection),
               let suggestion = emojiCache.suggestions(query: context.query, model: model).first(where: {
@@ -181,6 +177,11 @@ struct ForumPostBodyEditor: View {
         else { return false }
         accept(suggestion, replacing: context.range)
         return true
+    }
+
+    /// Favourites and usage rank emoji and channels, as in the composer.
+    private var needsEmojiSettings: Bool {
+        emojiContext != nil || mentionContext?.kind == .channel
     }
 
     private var mentionContext: MentionAutocompleteContext? {
@@ -288,8 +289,9 @@ struct ForumPostBodyEditor: View {
     }
 
     private func insert(_ value: String, replacing range: NSRange) {
-        text = (text as NSString).replacingCharacters(in: range, with: value)
-        selection = NSRange(location: range.location + value.utf16.count, length: 0)
+        let edit = ComposerDraftEditing.insert(value, into: text, replacing: range)
+        text = edit.text
+        selection = edit.selection
         autocompleteIndex = 0
         isAutocompleteDismissed = true
     }

@@ -224,10 +224,7 @@ struct ForumPostComposer: View {
                                 customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
                                 isSelected: draft.tagIDs.contains(tag.id)
                             ) { toggleTag(tag) }
-                            // A selected tag can always be removed, even one
-                            // made moderator-only since the draft was saved.
-                            .disabled(!draft.tagIDs.contains(tag.id)
-                                && (tag.isModerated && !model.canManageForumPosts || appliedTagIDs.count >= Self.tagLimit))
+                            .disabled(!draft.tagIDs.contains(tag.id) && !canAdd(tag))
                         }
                     }
                     .padding(.vertical, InterfaceScale.metric(2))
@@ -418,10 +415,16 @@ private extension ForumPostComposer {
         }
     }
 
+    /// Adding is gated; a selected tag can always be removed, even one made
+    /// moderator-only since the draft was saved.
+    func canAdd(_ tag: ForumTag) -> Bool {
+        (!tag.isModerated || model.canManageForumPosts) && appliedTagIDs.count < Self.tagLimit
+    }
+
     func toggleTag(_ tag: ForumTag) {
         if draft.tagIDs.contains(tag.id) {
             draft.tagIDs.remove(tag.id)
-        } else if !tag.isModerated || model.canManageForumPosts, appliedTagIDs.count < Self.tagLimit {
+        } else if canAdd(tag) {
             draft.tagIDs = Set(appliedTagIDs + [tag.id])
         }
     }
@@ -501,16 +504,7 @@ private extension ForumPostComposer {
     }
 
     func openAttachment(_ id: UUID) {
-        guard let currentUser = model.currentUser,
-              let presentation = NativeTimelineMediaViewerPlan.composerAttachments(attachments, selectedAttachmentID: id, author: currentUser)
-        else { return }
-        // Every staged file zooms back into its own tile.
-        let sources = attachments.compactMap(sendTransitionAnchor.mediaViewerSource)
-        model.mediaViewerSelectedItemID = id.uuidString
-        model.mediaViewerPresentation = presentation.withTimelineMedia(
-            previewImages: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0.image) }),
-            transitionSources: Dictionary(uniqueKeysWithValues: sources.map { ($0.itemID, $0) })
-        )
+        model.openComposerAttachment(id, in: attachments, from: sendTransitionAnchor)
     }
 
     func releaseAttachments() {
