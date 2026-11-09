@@ -335,7 +335,7 @@ extension DiscordRESTProvider {
                 }
             }
             if let guildID, !guild.roles.isEmpty {
-                cachedGuildRoles[guildID] = guild.roles
+                cacheGuildRoles(guild.roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if !guild.threads.isEmpty {
@@ -661,7 +661,7 @@ extension DiscordRESTProvider {
                 publishGuildChannels(guildID)
             }
             if !guild.roles.isEmpty {
-                cachedGuildRoles[guildID] = guild.roles
+                cacheGuildRoles(guild.roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if !guild.threads.isEmpty {

@@ -6,6 +6,8 @@ struct ComposerReplyHeader: View {
     let authorName: String
     let avatarURL: URL?
     let roleColorHex: UInt32?
+    var roleSecondaryColorHex: UInt32?
+    var roleTertiaryColorHex: UInt32?
     let mentionsAuthor: Bool
     let canMentionAuthor: Bool
     let toggleMention: () -> Void
@@ -23,10 +25,14 @@ struct ComposerReplyHeader: View {
                     maximumPixelDimension: 36,
                     animates: false
                 )
-                NameRoleColorIndicator(colorHex: roleColorHex)
+                NameRoleColorIndicator(
+                    colorHex: roleColorHex,
+                    secondaryColorHex: roleSecondaryColorHex,
+                    tertiaryColorHex: roleTertiaryColorHex
+                )
                 Text(authorName)
                     .displayNameFont(authorFontID, textStyle: .callout)
-                    .foregroundStyle(authorColor)
+                    .foregroundStyle(authorStyle)
                     .lineLimit(1)
             }
 
@@ -54,8 +60,12 @@ struct ComposerReplyHeader: View {
         .background(.primary.opacity(0.035))
     }
 
-    private var authorColor: Color {
-        roleColorDisplay == .inNames ? roleColorHex.map(Color.init(hex:)) ?? .primary : .primary
+    private var authorStyle: AnyShapeStyle {
+        guard roleColorDisplay == .inNames else { return AnyShapeStyle(.primary) }
+        if let gradient = LinearGradient.role(roleColorHex, roleSecondaryColorHex, roleTertiaryColorHex) {
+            return AnyShapeStyle(gradient)
+        }
+        return AnyShapeStyle(roleColorHex.map(Color.init(hex:)) ?? .primary)
     }
 }
 

@@ -249,6 +249,14 @@ extension AppModel {
         guard !roles.isEmpty else { return }
         guard guildRolesByGuildID[guildID] != roles else { return }
         guildRolesByGuildID[guildID] = roles
+        for key in profileCache.keys where key.guildID == guildID {
+            profileCache[key]?.refreshRoles(from: roles)
+        }
+        for destination in [ProfilePresentationDestination.inspector, .contextual, .expanded] {
+            guard var presentation = profilePresentation(for: destination), presentation.guildID == guildID else { continue }
+            presentation.profile?.refreshRoles(from: roles)
+            setProfilePresentation(presentation, for: destination)
+        }
         guard selectedGuildID == guildID else { return }
         guildRoles = roles
         refreshUnreadPresentation(

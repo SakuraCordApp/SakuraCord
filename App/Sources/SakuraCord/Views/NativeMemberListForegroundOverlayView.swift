@@ -32,6 +32,8 @@ final class NativeMemberForegroundOverlayView: NSView {
               let context = NSGraphicsContext.current?.cgContext
         else { return }
         context.saveGState()
+        context.setShouldSmoothFonts(true)
+        context.setAllowsFontSmoothing(true)
         context.translateBy(x: -frame.minX, y: -frame.minY)
         canvas.drawMemberForeground(member, at: itemIndex, context: context)
         context.restoreGState()

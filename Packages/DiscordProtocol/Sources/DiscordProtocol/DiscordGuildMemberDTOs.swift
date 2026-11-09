@@ -247,9 +247,13 @@ extension GuildMemberDTO {
 
 struct GuildRoleColorsDTO: Decodable {
     var primaryColor: UInt32?
+    var secondaryColor: UInt32?
+    var tertiaryColor: UInt32?
 
     enum CodingKeys: String, CodingKey {
         case primaryColor = "primary_color"
+        case secondaryColor = "secondary_color"
+        case tertiaryColor = "tertiary_color"
     }
 }
 
@@ -280,6 +284,10 @@ struct GuildRoleDTO: Decodable {
     var mentionable: Bool?
     var permissions: String?
     private var tags: Tags?
+    /// The guild's features when the role was cached. Discord paints
+    /// gradients only with enhanced role colours and shows icons only with
+    /// role icons or on a purchasable role; `nil` keeps every style.
+    var guildFeatures: Set<String>?
     enum CodingKeys: String, CodingKey {
         case id, name, position, hoist, color, colors, icon
         case unicodeEmoji = "unicode_emoji"
@@ -290,19 +298,28 @@ struct GuildRoleDTO: Decodable {
         guard let id = RoleID(id) else { return nil }
         let colorHex = colors?.primaryColor.flatMap { $0 == 0 ? nil : $0 }
             ?? color.flatMap { $0 == 0 ? nil : $0 }
-        let iconURL = icon.flatMap {
-            URL(string: "https://cdn.discordapp.com/role-icons/\(id)/\($0).png?size=32")
-        }
+        let isPurchasableSubscription = tags?.isPurchasableSubscription ?? false
+        let showsGradient = guildFeatures?.contains("ENHANCED_ROLE_COLORS") ?? true
+        let showsIcon = isPurchasableSubscription || (guildFeatures?.contains("ROLE_ICONS") ?? true)
+        let secondaryColorHex = showsGradient ? colors?.secondaryColor.flatMap { $0 == 0 ? nil : $0 } : nil
+        let tertiaryColorHex = showsGradient ? colors?.tertiaryColor.flatMap { $0 == 0 ? nil : $0 } : nil
+        let unicodeEmoji = showsIcon ? unicodeEmoji.flatMap { $0.isEmpty ? nil : $0 } : nil
+        // Discord shows a role's unicode emoji in place of its uploaded icon.
+        let iconURL = showsIcon && unicodeEmoji == nil ? icon.flatMap {
+            URL(string: "https://cdn.discordapp.com/role-icons/\(id)/\($0).webp?size=40&quality=lossless")
+        } : nil
         return GuildRole(
             id: id,
             name: name,
             position: position,
             colorHex: colorHex,
+            secondaryColorHex: secondaryColorHex,
+            tertiaryColorHex: tertiaryColorHex,
             iconURL: iconURL,
             unicodeEmoji: unicodeEmoji,
             isMentionable: mentionable ?? false,
             permissions: permissions.flatMap(UInt64.init),
-            isPurchasableSubscription: tags?.isPurchasableSubscription ?? false
+            isPurchasableSubscription: isPurchasableSubscription
         )
     }
 }

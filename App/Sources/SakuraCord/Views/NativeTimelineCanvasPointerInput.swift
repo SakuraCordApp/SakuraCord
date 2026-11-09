@@ -124,6 +124,7 @@ extension NativeTimelineCanvasView {
                 if let tag = layouts[index].serverTagRegion, tag.presentation.identity.guildID != nil {
                     addCursorRect(tag.frame.offsetBy(dx: 0, dy: rowOrigin), cursor: .pointingHand)
                 }
+                installRoleIconToolTip(at: index, rowOrigin: rowOrigin)
                 installForwardedSourceCursor(at: index, rowOrigin: rowOrigin)
                 installThreadCardCursor(at: index, rowOrigin: rowOrigin)
                 installReactionCursors(at: index, rowOrigin: rowOrigin)
@@ -197,6 +198,11 @@ extension NativeTimelineCanvasView {
                 )
             }
         }
+    }
+
+    private func installRoleIconToolTip(at index: Int, rowOrigin: CGFloat) {
+        guard let roleRegion = layouts[index].roleIconRegion else { return }
+        addToolTip(roleRegion.frame.offsetBy(dx: 0, dy: rowOrigin), owner: self, userData: nil)
     }
 
     private func installForwardedSourceCursor(at index: Int, rowOrigin: CGFloat) {
@@ -1019,6 +1025,7 @@ extension NativeTimelineCanvasView {
     ) {
         guard let model else { return }
         closeMessageProfilePopover()
+        closeServerTagPopover()
         let guildID = sourceMessage.flatMap { model.messagePresentationGuildID(for: $0) } ?? model.selectedGuildID
         model.showMembers(withRole: roleID, in: guildID)
         showMentionPopover(
@@ -1104,10 +1111,15 @@ extension NativeTimelineCanvasView {
             x: point.x,
             y: point.y - displayedRowOrigin(at: index)
         )
+        let layout = layouts[index]
         guard NativeTimelineHoverHitTesting.contains(
             local,
-            in: layouts[index].highlightFrame
-        ) else {
+            in: layout.highlightFrame
+        ) || layout.authorFrame?.contains(local) == true
+          || layout.avatarFrame?.contains(local) == true
+          || layout.roleIconRegion?.frame.contains(local) == true
+          || layout.serverTagRegion?.frame.contains(local) == true
+        else {
             return nil
         }
         return index

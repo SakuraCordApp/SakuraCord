@@ -219,3 +219,12 @@ public struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         self.customStatus = customStatus
     }
 }
+
+public extension UserProfile {
+    /// A profile copies its guild roles, so a role edit or a boost change
+    /// that alters how roles are styled replaces them here.
+    mutating func refreshRoles(from guildRoles: [GuildRole]) {
+        let current = Dictionary(guildRoles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        roles = roles.compactMap { current[$0.id] }
+    }
+}

@@ -178,6 +178,7 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
     let members: [Member]
     let gatewayStartIndex: Int?
     let isLoadingSkeleton: Bool
+    let role: GuildRole?
 
     init(
         id: SectionIdentifier,
@@ -186,7 +187,8 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         totalCount: Int,
         members: [Member],
         gatewayStartIndex: Int? = nil,
-        isLoadingSkeleton: Bool = false
+        isLoadingSkeleton: Bool = false,
+        role: GuildRole? = nil
     ) {
         self.id = id
         self.title = title
@@ -195,6 +197,7 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         self.members = members
         self.gatewayStartIndex = gatewayStartIndex
         self.isLoadingSkeleton = isLoadingSkeleton
+        self.role = role
     }
 
     static var loadingSkeletonSections: [MemberSection] {
@@ -246,7 +249,7 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         }
 
         let sort = forThread ? threadMemberNameSort : memberNameSort
-        var sections = makeRoleSections(roleMembers, sort: sort)
+        var sections = makeRoleSections(roleMembers, roles: roles, sort: sort)
 
         if !ungroupedOnline.isEmpty {
             ungroupedOnline.sort(by: sort)
@@ -272,22 +275,39 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
         return sections
     }
 
-    private static func makeRoleSections(_ roleMembers: [SectionIdentifier: [Member]], sort: (Member, Member) -> Bool) -> [MemberSection] {
+    private static func makeRoleSections(
+        _ roleMembers: [SectionIdentifier: [Member]],
+        roles: [GuildRole],
+        sort: (Member, Member) -> Bool
+    ) -> [MemberSection] {
+        let rolesByID = Dictionary(uniqueKeysWithValues: roles.map { ($0.id, $0) })
         return roleMembers.map { id, members in
             let name = switch id {
             case let .role(name, _): name
             case .online, .offline: ""
             }
+            let position = switch id {
+            case let .role(_, pos): pos
+            case .online, .offline: 0
+            }
+            let role = members.lazy.compactMap { member in
+                if let roleID = member.roleID, let matchedRole = rolesByID[roleID] { return matchedRole }
+                return member.roles.first {
+                    if let roleID = member.roleID, $0.id == roleID { return true }
+                    return $0.name == member.roleName && $0.position == member.rolePosition
+                }
+            }.first ?? roles.first { $0.name == name && $0.position == position }
             return MemberSection(
                 id: id,
                 title: name,
-                colorHex: members.lazy.compactMap { member in
+                colorHex: role?.colorHex ?? members.lazy.compactMap { member in
                     member.roles.first {
                         $0.name == member.roleName && $0.position == member.rolePosition
                     }?.colorHex
                 }.first,
                 totalCount: members.count,
-                members: members.sorted(by: sort)
+                members: members.sorted(by: sort),
+                role: role
             )
         }
         .sorted { lhs, rhs in
@@ -367,7 +387,8 @@ nonisolated struct MemberSection: Identifiable, Equatable, Sendable {
                 colorHex: role?.colorHex,
                 totalCount: group.count,
                 members: loadedMembers,
-                gatewayStartIndex: startIndex
+                gatewayStartIndex: startIndex,
+                role: role
             ))
         }
         return sections

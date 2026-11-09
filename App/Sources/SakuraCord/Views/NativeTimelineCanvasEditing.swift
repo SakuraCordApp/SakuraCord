@@ -25,12 +25,40 @@ extension NativeTimelineCanvasView {
         guard hoveredAuthorMessageID != value else { return }
         let old = hoveredAuthorMessageID
         hoveredAuthorMessageID = value
+        if let index = value.flatMap(visibleMessageRowIndex(for:)), scrollsAuthorGradient(at: index) {
+            authorHoverTicker.start(on: self, frameRate: RoleGradientPaint.scrollFrameRate) { [weak self] in
+                self?.stepAuthorHover()
+            }
+        } else {
+            authorHoverTicker.stop()
+        }
+        updateAvatarPlayback()
         for messageID in [old, value].compactMap({ $0 }) {
             guard let index = items.firstIndex(where: {
                 $0.messageID == messageID
             }) else { continue }
             setNeedsDisplay(rowFrame(at: index))
         }
+    }
+
+    /// A hovered gradient name scrolls, as Discord's does; solid names stay still.
+    private func scrollsAuthorGradient(at index: Int) -> Bool {
+        guard AppMotionPolicy.animatesUncategorized, model?.accessibilitySettings.roleColorDisplay == .inNames,
+              case let .message(row, _, _) = items[index]
+        else { return false }
+        let author = model?.authorPresentation(for: row.message)
+        return author?.user.isBot == false && NativeTimelineRowPainter.roleGradientColors(author) != nil
+    }
+
+    private func stepAuthorHover() {
+        guard let index = hoveredAuthorMessageID.flatMap(visibleMessageRowIndex(for:)),
+              let authorFrame = layouts[index].authorFrame
+        else {
+            authorHoverTicker.stop()
+            return
+        }
+        // The glow reaches a few points past the name.
+        setNeedsDisplay(authorFrame.offsetBy(dx: 0, dy: displayedRowOrigin(at: index)).insetBy(dx: -6, dy: -6))
     }
 
     func setHoveredMention(

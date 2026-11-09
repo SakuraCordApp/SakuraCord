@@ -83,7 +83,7 @@ extension DiscordRESTProvider {
                 publishGuildChannels(guildID)
             }
             if let roles = catalog.roles {
-                cachedGuildRoles[guildID] = roles
+                cacheGuildRoles(roles, in: guildID)
                 publishGuildRoles(guildID)
             }
             if let threads = catalog.threads, !threads.isEmpty {
@@ -178,8 +178,15 @@ extension DiscordRESTProvider {
                 to: cachedGuilds[guildID], currentUserID: currentUser?.id
             )
         else { return }
+        let roleStyleFeatures: Set<String> = ["ENHANCED_ROLE_COLORS", "ROLE_ICONS"]
+        let previousRoleStyles = cachedGuilds[guildID]?.features.intersection(roleStyleFeatures)
         cachedGuilds[guildID] = guild
         continuation?.yield(.guildChanged(guild))
+        // Boosts gained or lost change which role gradients and icons show.
+        if previousRoleStyles != guild.features.intersection(roleStyleFeatures), let roles = cachedGuildRoles[guildID] {
+            cacheGuildRoles(roles, in: guildID)
+            publishGuildRoles(guildID)
+        }
         if discardInaccessibleMemberLists(guildID: guildID) {
             publishMembers(guildID: guildID, members: [], groups: [])
         }
@@ -212,7 +219,7 @@ extension DiscordRESTProvider {
         var roles = cachedGuildRoles[guildID] ?? []
         roles.removeAll { $0.id == update.role.id }
         roles.append(update.role)
-        cachedGuildRoles[guildID] = roles
+        cacheGuildRoles(roles, in: guildID)
         clearCurrentUserPermissionSnapshot(guildID)
         publishGuildRoles(guildID)
     }

@@ -173,10 +173,18 @@ private struct ThreadStarterMessagePreview: View {
 
     var body: some View {
         let author = model.authorPresentation(for: message)
+        let gradient = LinearGradient.role(author.roleColorHex, author.roleSecondaryColorHex, author.roleTertiaryColorHex)
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
-            Text(author.user.displayName)
-                .font(.interface(.callout).weight(.semibold))
-                .foregroundStyle(author.roleColorHex.map { Color(hex: $0) } ?? .primary)
+            HStack(spacing: InterfaceScale.metric(6)) {
+                Text(author.user.displayName)
+                    .font(.interface(.callout).weight(.semibold))
+                    .foregroundStyle(
+                        gradient.map(AnyShapeStyle.init) ?? AnyShapeStyle(author.roleColorHex.map { Color(hex: $0) } ?? .primary)
+                    )
+                if let role = author.topRoleWithIcon {
+                    RoleIconView(role: role, size: InterfaceScale.metric(14))
+                }
+            }
             Text(previewText)
                 .font(.interface(.callout))
                 .foregroundStyle(.secondary)

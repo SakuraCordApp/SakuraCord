@@ -619,11 +619,27 @@ extension NativeMemberListCanvasView {
                 continue
             }
             let nameFont = nameFont(for: member)
+            let topRole = MessageAuthorPresentation.topRoleWithColor(in: member.roles)
             let nameColor = presentation.roleColorDisplay == .inNames
-                ? MessageAuthorPresentation.topRoleColor(in: member.roles)
-                    .map(Self.color(hex:)) ?? labelColor
+                ? topRole?.colorHex.map(Self.color(hex:)) ?? labelColor
                 : labelColor
             let alpha = presentation.opacity(for: member)
+            let gradientColors: [NSColor]?
+            if let topRole,
+               let primary = topRole.colorHex,
+               let secondary = topRole.secondaryColorHex
+            {
+                let primaryColor = Self.color(hex: primary).withAlphaComponent(alpha)
+                let secondaryColor = Self.color(hex: secondary).withAlphaComponent(alpha)
+                if let tertiary = topRole.tertiaryColorHex {
+                    let tertiaryColor = Self.color(hex: tertiary).withAlphaComponent(alpha)
+                    gradientColors = [primaryColor, secondaryColor, tertiaryColor]
+                } else {
+                    gradientColors = [primaryColor, secondaryColor]
+                }
+            } else {
+                gradientColors = nil
+            }
             let activityColor = presentation.activityTextPrimaryOpacity.map {
                 labelColor.withAlphaComponent(alpha * $0)
             } ?? Self.memberActivityColor.withAlphaComponent(alpha)
@@ -658,6 +674,7 @@ extension NativeMemberListCanvasView {
                     color: nameColor.withAlphaComponent(alpha)
                 ),
                 nameWidth: CGFloat(CTLineGetTypographicBounds(name, nil, nil, nil)),
+                gradientColors: gradientColors,
                 activity: activity,
                 activityTruncationToken: activityTruncationToken,
                 activityWidth: activity.map {

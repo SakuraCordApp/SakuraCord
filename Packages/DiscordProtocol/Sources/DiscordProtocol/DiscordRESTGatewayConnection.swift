@@ -788,6 +788,17 @@ extension DiscordRESTProvider {
         }
     }
 
+    /// Caches a guild's roles stamped with its features, so every member,
+    /// profile and catalog built from them applies Discord's role-style gates.
+    func cacheGuildRoles(_ roles: [GuildRoleDTO], in guildID: GuildID) {
+        let features = cachedGuilds[guildID]?.features
+        cachedGuildRoles[guildID] = roles.map { role in
+            var role = role
+            role.guildFeatures = features
+            return role
+        }
+    }
+
     func publishGuildRoles(_ guildID: GuildID) {
         let roles = (cachedGuildRoles[guildID] ?? [])
             .compactMap(\.domain)
@@ -796,6 +807,9 @@ extension DiscordRESTProvider {
                 return lhs.id.rawValue > rhs.id.rawValue
             }
         continuation?.yield(.guildRolesChanged(guildID: guildID, roles: roles))
+        for key in cachedProfiles.keys where key.guildID == guildID {
+            cachedProfiles[key]?.refreshRoles(from: roles)
+        }
         reconcileMembersAfterRoleChange(guildID: guildID)
     }
 
