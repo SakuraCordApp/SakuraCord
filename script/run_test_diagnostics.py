@@ -63,12 +63,18 @@ def sample(pid, path):
     with subprocess.Popen(["/usr/bin/sample", pid, "60", "-file", str(path)],
                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                           text=True) as sampler:
-        if sampler.stderr.readline().startswith("Sampling process"):
-            try:
-                sampler.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                sampler.send_signal(signal.SIGINT)
-        _, error = sampler.communicate()
+        try:
+            if sampler.stderr.readline().startswith("Sampling process"):
+                try:
+                    sampler.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    sampler.send_signal(signal.SIGINT)
+            _, error = sampler.communicate()
+        except BaseException:
+            # A cancelled run must reach test-host cleanup without waiting
+            # for the sampler to finish.
+            sampler.kill()
+            raise
     if not path.exists():
         print(f"Could not sample PID {pid}: {error.strip()}", flush=True)
 
