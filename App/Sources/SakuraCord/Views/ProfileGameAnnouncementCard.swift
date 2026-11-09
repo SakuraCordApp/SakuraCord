@@ -45,7 +45,7 @@ struct ProfileGameAnnouncementCard: View {
         if !previewBody.isEmpty {
             Text(DiscordMarkdown.attributed(previewBody))
                 .font(.interfaceSystem(size: 13)).foregroundStyle(message.title == nil ? .primary : .secondary)
-                .lineLimit(message.media == nil ? 7 : 2)
+                .lineLimit(imageURL == nil ? 7 : 2)
         }
     }
 
