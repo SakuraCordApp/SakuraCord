@@ -194,8 +194,7 @@ enum MentionAutocompleteSuggestionFactory {
                 title: "@time",
                 detail: "Refer to a time dynamically in the viewer’s time zone",
                 value: "@time",
-                target: .unresolved,
-                action: .chooseTimeFormat
+                target: .unresolved
             ))
         }
         return results

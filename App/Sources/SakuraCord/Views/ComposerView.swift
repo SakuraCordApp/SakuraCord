@@ -3,12 +3,6 @@ import SakuraCordModels
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `@time` opens a picker that replaces its query in the draft.
-private struct ComposerMentionPicker {
-    let range: NSRange
-    let seconds: Int64
-}
-
 struct ComposerView: View {
     typealias Conversation = MessageComposerDestination
 
@@ -48,7 +42,11 @@ struct ComposerView: View {
     @State private var isAutocompleteDismissed = false
     @State private var commandAwaitingClear: ApplicationCommand?
     @State private var timestampClock = RelativeTimestampDisplayClock()
-    @State private var mentionPicker: ComposerMentionPicker?
+    /// When the `@time` query last changed: its readings and the
+    /// timestamp a pick sends count from then.
+    @State private var timeQueryDate = Date.now
+    /// Return was pressed on an `@time` query with no reading.
+    @State private var timeQueryNeedsPick = false
     @State private var sendTransitionAnchor = ComposerSendTransitionAnchor()
     @State private var holdsPlaceholderForSendTransition = false
     /// A send clears the composer under the message leaving it, so the
@@ -421,7 +419,7 @@ struct ComposerView: View {
             }
         }
         .onChange(of: draft) { _, value in
-            mentionPicker = nil
+            timeQueryNeedsPick = false
             if completeClosedEmojiName(in: value) {
                 return
             }
@@ -459,6 +457,7 @@ struct ComposerView: View {
             model.errorMessage = message
             voiceMessage.clearError()
         }
+        .onChange(of: timeMentionContext?.query) { timeQueryDate = .now }
         .task(id: gameMentionContext?.query) { [query = gameMentionContext?.query] in
             await gameMentionSearch.search(query ?? "", model: model)
         }
@@ -469,7 +468,6 @@ struct ComposerView: View {
             sendTransitionAnchor.channelID = activeConversationID
             model.timelineSendTransitionStore.registerComposer(sendTransitionAnchor)
             draftSelection = nil
-            mentionPicker = nil
             selectionBeforeEmojiPicker = nil
             showFileImporter = false
             showGIFPicker = false
@@ -536,8 +534,8 @@ struct ComposerView: View {
                 ApplicationCommandHelpStrip(draft: draft, issue: commandComposer.fieldIssue, cancel: cancelCommand)
                     .commandPanelSurface(cornerRadius: commandPanelCornerRadius)
             }
-        } else if let mentionPicker {
-            mentionPickerMenu(mentionPicker)
+        } else if let context = timeMentionContext, case let rows = timeRows(for: context), timeQueryNeedsPick || !rows.isEmpty {
+            timeMentionMenu(context, rows: rows)
         } else if let context = gameMentionContext {
             gameMentionMenu(context)
         } else if let context = mentionAutocompleteContext {
@@ -1036,8 +1034,8 @@ struct ComposerView: View {
         if supportsCommands, commandComposer.isPickerPresented {
             return handleCommandPickerAutocomplete(command)
         }
-        if let mentionPicker {
-            return handleMentionPickerCommand(command, picker: mentionPicker)
+        if let context = timeMentionContext {
+            return handleTimeMention(command, context: context)
         }
         if let context = gameMentionContext {
             return handleGameMention(command, context: context)
@@ -1290,57 +1288,79 @@ private extension ComposerView {
     ) {
         autocompleteIndex = 0
         isAutocompleteDismissed = true
-        switch suggestion.action {
-        case .chooseTimeFormat:
-            mentionPicker = ComposerMentionPicker(range: context.range, seconds: Int64(Date.now.timeIntervalSince1970))
-        case .insert:
-            if let member = suggestion.member { model.rememberMentionMember(member) }
-            draftSelection = insertInDraft(suggestion.value + " ", replacing: context.range)
-        }
+        if let member = suggestion.member { model.rememberMentionMember(member) }
+        draftSelection = insertInDraft(suggestion.value + " ", replacing: context.range)
     }
 
-    private func mentionPickerMenu(_ picker: ComposerMentionPicker) -> some View {
+    /// The `@time` menu replaces the mention menu once `@time ` is typed,
+    /// and keeps the keys while it is open.
+    private var timeMentionContext: KeywordMentionContext? {
+        guard !isAutocompleteDismissed, mentionAutocompleteContext == nil, autocompleteContext == nil,
+              !(supportsCommands && commandComposer.isPickerPresented)
+        else { return nil }
+        return KeywordMentionContext(.time, text: draft, selection: draftSelection)
+    }
+
+    private func timeRows(for context: KeywordMentionContext) -> [ComposerTimeFormatPicker.Row] {
+        ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: context.query, now: timeQueryDate))
+    }
+
+    private func timeMentionMenu(_ context: KeywordMentionContext, rows: [ComposerTimeFormatPicker.Row]) -> some View {
         ComposerTimeFormatPicker(
-            seconds: picker.seconds,
+            query: context.query,
+            rows: rows,
+            needsPick: timeQueryNeedsPick,
             selectedIndex: autocompleteIndex,
             cornerRadius: commandPanelCornerRadius,
             keyboardSelectionRevision: autocompleteKeyboardSelectionRevision,
-            select: {
-                insertMentionPickerResult(DiscordTimestampToken(seconds: picker.seconds, style: $0).rawToken, range: picker.range)
-            },
+            select: { insertTimestamp($0.token, context: context) },
             highlight: { autocompleteIndex = $0 }
         )
     }
 
-    private func handleMentionPickerCommand(_ command: ComposerAutocompleteCommand, picker: ComposerMentionPicker) -> Bool {
-        let styles = ComposerTimeFormatPicker.styles
+    /// Keys while times match what is typed after `@time `. Return with no
+    /// match neither sends nor leaves the query, as in Discord.
+    private func handleTimeMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
+        let rows = timeRows(for: context)
+        if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
         switch command {
         case .previous:
-            autocompleteIndex = (autocompleteIndex - 1 + styles.count) % styles.count
+            guard !rows.isEmpty else { return false }
+            autocompleteIndex = (autocompleteIndex - 1 + rows.count) % rows.count
         case .next:
-            autocompleteIndex = (autocompleteIndex + 1) % styles.count
+            guard !rows.isEmpty else { return false }
+            autocompleteIndex = (autocompleteIndex + 1) % rows.count
         case .accept, .advance:
-            let token = DiscordTimestampToken(seconds: picker.seconds, style: styles[autocompleteIndex])
-            insertMentionPickerResult(token.rawToken, range: picker.range)
+            guard !rows.isEmpty else {
+                timeQueryNeedsPick = true
+                return true
+            }
+            insertTimestamp(rows[min(autocompleteIndex, rows.count - 1)].token, context: context)
         case .dismiss:
-            dismissMentionPicker()
+            isAutocompleteDismissed = true
         case .previousField, .nextField, .removeField:
             return false
         }
         return true
     }
 
+    private func insertTimestamp(_ token: DiscordTimestampToken, context: KeywordMentionContext) {
+        draftSelection = insertInDraft(token.rawToken + " ", replacing: context.range)
+        autocompleteIndex = 0
+        isFocused = true
+    }
+
     /// A title can contain `@`, but a mention typed after the query is
     /// completed as one. An open slash picker keeps the keys, so the menu
     /// waits for it to close.
-    private var gameMentionContext: GameMentionContext? {
+    private var gameMentionContext: KeywordMentionContext? {
         guard !isAutocompleteDismissed, mentionAutocompleteContext == nil,
               !(supportsCommands && commandComposer.isPickerPresented)
         else { return nil }
-        return GameMentionContext(text: draft, selection: draftSelection)
+        return KeywordMentionContext(.game, text: draft, selection: draftSelection)
     }
 
-    private func gameMentionMenu(_ context: GameMentionContext) -> some View {
+    private func gameMentionMenu(_ context: KeywordMentionContext) -> some View {
         ComposerGameMentionPicker(
             search: gameMentionSearch,
             query: context.query,
@@ -1353,7 +1373,7 @@ private extension ComposerView {
     }
 
     /// Keys while games match what is typed after `@game `.
-    private func handleGameMention(_ command: ComposerAutocompleteCommand, context: GameMentionContext) -> Bool {
+    private func handleGameMention(_ command: ComposerAutocompleteCommand, context: KeywordMentionContext) -> Bool {
         let games = gameMentionSearch.games
         if command == .previous || command == .next { autocompleteKeyboardSelectionRevision &+= 1 }
         switch command {
@@ -1374,16 +1394,10 @@ private extension ComposerView {
         return true
     }
 
-    private func insertGameMention(_ game: ProfileGame, context: GameMentionContext) {
+    private func insertGameMention(_ game: ProfileGame, context: KeywordMentionContext) {
         model.rememberGameMention(game)
         draftSelection = insertInDraft("<@$\(game.id)> ", replacing: context.range)
         autocompleteIndex = 0
-    }
-
-    private func dismissMentionPicker() {
-        mentionPicker = nil
-        isAutocompleteDismissed = true
-        isFocused = true
     }
 
     /// Starts a clicked command mention once this conversation's commands
@@ -1418,14 +1432,6 @@ private extension ComposerView {
         } else {
             commandAwaitingClear = command
         }
-    }
-
-    private func insertMentionPickerResult(_ token: String, range: NSRange) {
-        mentionPicker = nil
-        draftSelection = insertInDraft(token + " ", replacing: range)
-        autocompleteIndex = 0
-        isAutocompleteDismissed = true
-        isFocused = true
     }
 }
 

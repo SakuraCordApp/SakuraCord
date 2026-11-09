@@ -1,38 +1,78 @@
 import MessageRendering
 import SwiftUI
 
-/// The `@time` menu: each format, previewing the current time as it counts.
+/// The `@time` menu: every reading of the typed time in Discord's formats,
+/// the first format of each reading labelled with what sets it apart.
 struct ComposerTimeFormatPicker: View {
-    static let styles: [DiscordTimestampToken.Style] = [
-        .shortDateMediumTime, .longDateShortTime, .fullDateShortTime, .relative,
-    ]
+    struct Row: Identifiable {
+        let id: String
+        let token: DiscordTimestampToken
+        let reading: DiscordTimeSuggestion.Reading?
+        let startsGroup: Bool
+    }
+
+    static func rows(_ suggestions: [DiscordTimeSuggestion]) -> [Row] {
+        suggestions.enumerated().flatMap { index, suggestion in
+            suggestion.styles.enumerated().map { styleIndex, style in
+                Row(
+                    id: "\(index)-\(style.rawValue)",
+                    token: suggestion.token(style),
+                    reading: styleIndex == 0 ? suggestion.reading : nil,
+                    startsGroup: index > 0 && styleIndex == 0
+                )
+            }
+        }
+    }
 
     @State private var clock = RelativeTimestampDisplayClock()
 
-    let seconds: Int64
+    let query: String
+    let rows: [Row]
+    /// Return was pressed while nothing matched, which Discord refuses to send.
+    let needsPick: Bool
     let selectedIndex: Int
     let cornerRadius: CGFloat
     let keyboardSelectionRevision: Int
-    let select: (DiscordTimestampToken.Style) -> Void
+    let select: (Row) -> Void
     let highlight: (Int) -> Void
 
     var body: some View {
         ComposerOptionPanel(
-            title: "Time formats",
-            rows: Self.styles,
+            title: title,
+            rows: rows,
             selectedIndex: selectedIndex,
+            status: needsPick ? .message("Pick a time to continue.", isError: true) : .ready,
             cornerRadius: cornerRadius,
             keyboardSelectionRevision: keyboardSelectionRevision,
             select: select,
             highlight: highlight,
-            accessibilityLabel: preview,
-            label: { Text(preview($0)).foregroundStyle(.primary).lineLimit(1) }
+            accessibilityLabel: { [$0.token.formatted(relativeTo: clock.date), $0.reading.map(Self.label)].compactMap { $0 }.joined(separator: ", ") },
+            startsGroup: \.startsGroup,
+            label: { row in
+                Text(row.token.formatted(relativeTo: clock.date)).foregroundStyle(.primary).lineLimit(1)
+                Spacer(minLength: InterfaceScale.metric(12))
+                if let reading = row.reading { ComposerOptionDetail(Self.label(reading)) }
+            }
         )
         .onAppear { clock.start() }
         .onDisappear { clock.stop() }
     }
 
-    private func preview(_ style: DiscordTimestampToken.Style) -> String {
-        DiscordTimestampToken(seconds: seconds, style: style).formatted(relativeTo: clock.date)
+    private var title: String {
+        let query = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return query.isEmpty ? "Time formats" : "Time formats for \(query)"
+    }
+
+    private static func label(_ reading: DiscordTimeSuggestion.Reading) -> String {
+        switch reading {
+        case .timeOnly: "Time only"
+        case .today: "Today"
+        case .tomorrow: "Tomorrow"
+        case .thisWeek: "This week"
+        case .nextWeek: "Next week"
+        case .lastWeek: "Last week"
+        case .thisYear: "This year"
+        case .nextYear: "Next year"
+        }
     }
 }
