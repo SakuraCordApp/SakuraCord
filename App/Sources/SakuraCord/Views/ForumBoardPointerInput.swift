@@ -160,7 +160,7 @@ extension ForumBoardView {
     }
 
     override func resetCursorRects() {
-        guard let layoutState else { return }
+        guard let layoutState, WindowModalCoordinator.allowsInput(for: self) else { return }
         for entry in layoutState.entries(intersecting: visibleRect) where isInteractive(entry.item) {
             addCursorRect(entry.frame, cursor: .pointingHand)
         }

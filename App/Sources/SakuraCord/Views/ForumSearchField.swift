@@ -62,7 +62,7 @@ private struct ForumSearchInput: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = ForumSearchTextField()
         field.delegate = context.coordinator
         field.setAccessibilityPlaceholderValue("Search posts")
         field.isBordered = false
@@ -124,5 +124,13 @@ private struct ForumSearchInput: NSViewRepresentable {
             control.window?.makeFirstResponder(nil)
             return true
         }
+    }
+}
+
+/// Shows the text cursor only while no modal covers the forum.
+private final class ForumSearchTextField: NSTextField {
+    override func resetCursorRects() {
+        guard WindowModalCoordinator.allowsInput(for: self) else { return }
+        super.resetCursorRects()
     }
 }
