@@ -54,7 +54,9 @@ struct ForumPostComposer: View {
     @Environment(\.windowModalContext) private var modal
     @State private var draft: ForumPostComposerDraft
     @State private var checkingAttachmentIDs: Set<UUID> = []
-    @State private var securityScopedAttachmentURLs: Set<URL> = []
+    /// One entry per access started, so the same file attached twice stays
+    /// open until both are removed.
+    @State private var securityScopedAttachmentURLs: [URL] = []
     @State private var isSubmitting = false
     @State private var submitTask: Task<Void, Never>?
     @State private var problem: ForumPostProblem?
@@ -117,7 +119,7 @@ struct ForumPostComposer: View {
         .task {
             // Files kept with the draft are opened again, as when attached.
             for url in attachments.map(\.url) where url.startAccessingSecurityScopedResource() {
-                securityScopedAttachmentURLs.insert(url)
+                securityScopedAttachmentURLs.append(url)
             }
             await Task.yield()
             if draft.title.isEmpty { isTitleFocused = true } else { isContentFocused = true }
@@ -128,6 +130,7 @@ struct ForumPostComposer: View {
             // Pasted files no draft holds any more are deleted.
             if old.attachments.map(\.url) != value.attachments.map(\.url) { model.pruneOwnedPromisedAttachmentFiles() }
         }
+        .onAppear { modal?.escapeAction = handleEscape }
         .onDisappear(perform: releaseAttachments)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("New post in \(channel.name)")
@@ -479,14 +482,13 @@ private extension ForumPostComposer {
     /// Files show at once and are checked behind their tiles, as in the
     /// message composer; any over Discord's size limit leave again.
     func addAttachments(_ urls: [URL]) {
-        let attachedURLs = Set(attachments.map(\.url))
-        let urls = model.uploadableFileURLs(urls.filter { !attachedURLs.contains($0) })
+        let urls = model.uploadableFileURLs(urls)
         guard !urls.isEmpty, model.attachmentBatchFits(urls.count, besides: attachments.count) else {
             model.pruneOwnedPromisedAttachmentFiles()
             return
         }
-        for url in urls where !securityScopedAttachmentURLs.contains(url) && url.startAccessingSecurityScopedResource() {
-            securityScopedAttachmentURLs.insert(url)
+        for url in urls where url.startAccessingSecurityScopedResource() {
+            securityScopedAttachmentURLs.append(url)
         }
         let staged = urls.map {
             ForumPostAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
@@ -517,11 +519,23 @@ private extension ForumPostComposer {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
         let url = draft.attachments.remove(at: index).url
         checkingAttachmentIDs.remove(id)
-        if securityScopedAttachmentURLs.remove(url) != nil { url.stopAccessingSecurityScopedResource() }
+        if let scoped = securityScopedAttachmentURLs.firstIndex(of: url) {
+            securityScopedAttachmentURLs.remove(at: scoped).stopAccessingSecurityScopedResource()
+        }
     }
 
     func openAttachment(_ id: UUID) {
         model.openComposerAttachment(id, in: attachments, from: sendTransitionAnchor)
+    }
+
+    /// As in the message composer, Escape first drops the staged files, then
+    /// closes the composer.
+    func handleEscape() {
+        if attachments.isEmpty || isSubmitting {
+            modal?()
+        } else {
+            for id in attachments.map(\.id) { removeAttachment(id) }
+        }
     }
 
     func releaseAttachments() {
