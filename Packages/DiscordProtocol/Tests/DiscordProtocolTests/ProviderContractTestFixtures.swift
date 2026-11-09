@@ -35,6 +35,15 @@ struct ReadyGatewayTransport: GatewayTransport {
     }
 }
 
+/// Keeps the Gateway's own timers from firing. `ReadyGatewaySocket` never
+/// acknowledges heartbeats, so a heartbeat timer elapsing mid-test would
+/// reconnect the session at a random point.
+struct HeldGatewayClock: GatewayClock {
+    func sleep(for _: Duration) async throws {
+        try await Task.sleep(for: .seconds(86_400))
+    }
+}
+
 private enum ReadyGatewayError: Error { case closed }
 
 actor ReadyGatewaySocket: GatewaySocket {

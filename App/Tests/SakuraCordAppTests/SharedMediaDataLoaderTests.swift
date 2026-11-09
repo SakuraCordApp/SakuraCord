@@ -13,7 +13,7 @@ import Testing
     #expect(configuration.requestCachePolicy == .returnCacheDataElseLoad)
 }
 
-@Test(.timeLimit(.minutes(1))) func `cancelling the final media waiter cancels its fetch`() async throws {
+@Test func `cancelling the final media waiter cancels its fetch`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let loader = SharedMediaDataLoader(remoteFetch: probe.fetch)
     let url = try #require(URL(string: "https://cdn.example/only.png"))
@@ -34,7 +34,7 @@ import Testing
     )
 }
 
-@Test(.timeLimit(.minutes(1))) func `cancelling one shared media waiter preserves the fetch`() async throws {
+@Test func `cancelling one shared media waiter preserves the fetch`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let loader = SharedMediaDataLoader(remoteFetch: probe.fetch)
     let url = try #require(URL(string: "https://cdn.example/shared.png"))
@@ -60,7 +60,7 @@ import Testing
     #expect(await loader.remoteLoadSnapshot().waiterCount == 0)
 }
 
-@Test(.timeLimit(.minutes(1))) func `visible media queue and started requests stay bounded`() async throws {
+@Test func `visible media queue and started requests stay bounded`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let loader = SharedMediaDataLoader(remoteFetch: probe.fetch)
     let activeRequests = try makeMediaRequests(
@@ -106,7 +106,7 @@ import Testing
     })
 }
 
-@Test(.timeLimit(.minutes(1))) func `visible media displaces saturated prefetch instead of staying blank`() async throws {
+@Test func `visible media displaces saturated prefetch instead of staying blank`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let loader = SharedMediaDataLoader(remoteFetch: probe.fetch)
     let activeRequests = try makeMediaRequests(
@@ -179,7 +179,7 @@ import Testing
     })
 }
 
-@Test(.timeLimit(.minutes(1))) func `simultaneous image waiters create one queued decode`() async throws {
+@Test func `simultaneous image waiters create one queued decode`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let dataLoader = SharedMediaDataLoader(remoteFetch: probe.fetch)
     let decodeCount = DecodeCounter()
@@ -242,7 +242,7 @@ import Testing
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `visible timeline request promotes coalesced prefetch download and decode`() async throws {
+@Test func `visible timeline request promotes coalesced prefetch download and decode`() async throws {
     let probe = SuspendedRemoteMediaFetch()
     let dataLoader = SharedMediaDataLoader(remoteFetch: probe.fetch)
     let decodeScheduler = NativeTimelineMediaDecodeScheduler()
@@ -316,7 +316,7 @@ import Testing
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `visible duplicate keeps a later fallback at visible priority`() async throws {
+@Test func `visible duplicate keeps a later fallback at visible priority`() async throws {
     let primaryURL = try #require(
         URL(string: "https://cdn.example/primary-static.png")
     )
@@ -361,7 +361,7 @@ import Testing
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `cancelling an offscreen static request cancels its owned callback`()
+@Test func `cancelling an offscreen static request cancels its owned callback`()
     async throws
 {
     let url = try #require(
@@ -394,7 +394,7 @@ import Testing
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `same row media subscribers remain isolated by canvas owner`() async throws {
+@Test func `same row media subscribers remain isolated by canvas owner`() async throws {
     let url = try #require(
         URL(string: "https://cdn.example/two-canvas-static.png")
     )

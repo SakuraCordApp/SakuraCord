@@ -1,22 +1,25 @@
 import Observation
 
-/// Hosted runners can starve the main actor for longer than ten seconds while
-/// the suite runs in parallel, so waits allow a minute before failing.
-private let waitDeadline: Duration = .seconds(60)
+// Waits have no wall-clock deadline. Tests run in parallel on one main actor,
+// so a test's elapsed time tracks the whole suite's and says nothing about
+// the test: a loaded machine pushes every test past a per-test limit at once.
+// A condition that never holds hangs instead, and the test runner's process
+// deadline names the unfinished test.
 
-/// Awaits `condition` over `@Observable` state, re-evaluating it on each
-/// observed change; fails after `waitDeadline`.
+/// Awaits `condition`, re-evaluating it on each observed change, which
+/// catches even a brief state, and by polling, which catches state that
+/// changes without an observation signal, such as counts kept out of
+/// observation; false only if the caller is cancelled first.
 @MainActor
 func until(_ condition: @escaping @MainActor @Sendable () -> Bool) async -> Bool {
     await withTaskGroup(of: Bool.self) { group in
         group.addTask { await firstObservation(where: condition) }
-        group.addTask {
-            try? await Task.sleep(for: waitDeadline)
-            return false
+        group.addTask { await firstPoll(where: condition) }
+        for await satisfied in group where satisfied {
+            group.cancelAll()
+            return true
         }
-        let satisfied = await group.next() ?? false
-        group.cancelAll()
-        return satisfied
+        return false
     }
 }
 
@@ -30,27 +33,30 @@ private func firstObservation(
     return false
 }
 
+@MainActor
+private func firstPoll(
+    where condition: @escaping @MainActor @Sendable () -> Bool
+) async -> Bool {
+    await eventually { condition() }
+}
+
 /// Polls `condition` in the caller's isolation until it holds. The fallback
-/// for state that emits no signal, such as actor-isolated state; fails after
-/// `waitDeadline`.
+/// for state that emits no signal, such as actor-isolated state; false only
+/// if the caller is cancelled first.
 func eventually(
     isolation _: isolated (any Actor)? = #isolation,
     _ condition: () async -> Bool
 ) async -> Bool {
-    let deadline = ContinuousClock.now + waitDeadline
-    while ContinuousClock.now < deadline {
-        if await condition() {
-            return true
-        }
+    while !(await condition()) {
         guard (try? await Task.sleep(for: .milliseconds(1))) != nil else {
-            break
+            return false
         }
     }
-    return await condition()
+    return true
 }
 
-/// Awaits `task`, forwarding the caller's cancellation (such as a `.timeLimit`
-/// expiry) so an unstructured child cannot keep a cancelled test waiting.
+/// Awaits `task`, forwarding the caller's cancellation so an unstructured
+/// child cannot keep a cancelled test waiting.
 func cancellableValue<Success: Sendable>(of task: Task<Success, Never>) async -> Success {
     await withTaskCancellationHandler {
         await task.value

@@ -335,7 +335,9 @@ struct ServerInviteContractTests {
             session: URLSession(configuration: configuration), gatewayTransport: ReadyGatewayTransport(socket: socket),
             installationID: "fixture-installation")
         try await provider.startGateway()
-        #expect(await eventually { await provider.gatewaySession?.snapshot().sessionID == "invite-session" })
+        // Wait for the provider, not the session: applying READY replaces the
+        // cached guilds that tests seed.
+        #expect(await eventually { await provider.gatewayReady })
         return provider
     }
 }

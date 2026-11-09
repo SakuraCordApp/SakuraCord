@@ -3212,7 +3212,7 @@ private extension DiscordRESTProvider {
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `completed old account send and edit cannot enter replacement account state`()
+@Test func `completed old account send and edit cannot enter replacement account state`()
     async throws
 {
     let directory = FileManager.default.temporaryDirectory.appending(
@@ -3333,7 +3333,7 @@ private extension DiscordRESTProvider {
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)))
+@Test
 func `completed old account earlier pages cannot enter replacement conversations`()
     async throws
 {
@@ -3402,7 +3402,7 @@ func `completed old account earlier pages cannot enter replacement conversations
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)), arguments: [false, true])
+@Test(arguments: [false, true])
 func `quit warning tracks Discord attachment sends until success or failure`(fails: Bool) async throws {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: true, failsSend: fails)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -3427,7 +3427,7 @@ func `quit warning tracks Discord attachment sends until success or failure`(fai
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)), arguments: [false, true], [false, true])
+@Test(arguments: [false, true], [false, true])
 func `GIF completion preserves newer text and channel drafts`(changesChannel: Bool, fails: Bool) async throws {
     let provider = SuspendedAccountOperationTestProvider(suspendsOperations: true, failsSend: fails)
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
@@ -3462,7 +3462,7 @@ func `GIF completion preserves newer text and channel drafts`(changesChannel: Bo
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `stale GIF send cannot restore an old account draft`() async throws {
+@Test func `stale GIF send cannot restore an old account draft`() async throws {
     let oldProvider = SuspendedAccountOperationTestProvider(suspendsOperations: true)
     let newProvider = SuspendedAccountOperationTestProvider(suspendsOperations: false)
     let model = AppModel(launchMode: .offlineTesting, provider: oldProvider)
@@ -6291,7 +6291,7 @@ func `private calls remain app wide and reconcile incoming ongoing and deleted s
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1))) func `concurrent private call actions stay within one request budget`() async throws {
+@Test func `concurrent private call actions stay within one request budget`() async throws {
     let provider = PrivateCallActionTestProvider()
     let model = AppModel(launchMode: .offlineTesting, provider: provider)
     await model.start()

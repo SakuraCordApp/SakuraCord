@@ -478,7 +478,7 @@ func `profile send retains a Gateway receipt across timeout and history eviction
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)), arguments: [false, true])
+@Test(arguments: [false, true])
 func `timeout during thread creation preserves its unsent message without replacing another thread draft`(navigatesAway: Bool) async throws {
     let permissions = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
         | DiscordPermissionBits.sendMessages | DiscordPermissionBits.sendMessagesInThreads

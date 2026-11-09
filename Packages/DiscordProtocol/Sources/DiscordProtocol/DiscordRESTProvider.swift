@@ -71,6 +71,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     let restSessionConfiguration: URLSessionConfiguration?
     var restSessionGeneration = 0
     let gatewayTransport: any GatewayTransport
+    let gatewayClock: any GatewayClock
     let gatewayCodec: any GatewayCodec
     let gatewayEncoding: String
     let gatewayCompression: GatewayCompression
@@ -462,6 +463,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = resolvedSession
         restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
         gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
+        gatewayClock = ContinuousGatewayClock()
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.current.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -498,6 +500,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = resolvedSession
         restSessionConfiguration = session == nil ? defaultRESTConfiguration : nil
         gatewayTransport = URLSessionGatewayTransport(session: gatewaySession)
+        gatewayClock = ContinuousGatewayClock()
         gatewayCodec = ETFGatewayCodec()
         gatewayEncoding = DiscordProductionBaseline.current.desktopGatewayEncoding
         gatewayCompression = .zstdStream
@@ -519,6 +522,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         handle: CredentialHandle,
         session: URLSession,
         gatewayTransport: any GatewayTransport,
+        gatewayClock: any GatewayClock = ContinuousGatewayClock(),
         gatewayCodec: any GatewayCodec = JSONGatewayCodec(),
         gatewayEncoding: String = "json",
         gatewayCompression: GatewayCompression = .zlibStream,
@@ -535,6 +539,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = session
         restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
+        self.gatewayClock = gatewayClock
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
         self.gatewayCompression = gatewayCompression
@@ -568,6 +573,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
         restSession = session
         restSessionConfiguration = ownsRESTSession ? session.configuration : nil
         self.gatewayTransport = gatewayTransport
+        gatewayClock = ContinuousGatewayClock()
         self.gatewayCodec = gatewayCodec
         self.gatewayEncoding = gatewayEncoding
         self.gatewayCompression = gatewayCompression

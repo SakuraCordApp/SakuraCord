@@ -433,7 +433,7 @@ func `Desktop and sound delivery are independent and share message filters`(appI
 }
 
 @MainActor
-@Test(.timeLimit(.minutes(1)), arguments: [false, true])
+@Test(arguments: [false, true])
 func `DND invalidates native notifications awaiting image preparation`(entersDND: Bool) async throws {
     let preparing = AsyncStream<Void>.makeStream()
     let resume = AsyncStream<Void>.makeStream()
