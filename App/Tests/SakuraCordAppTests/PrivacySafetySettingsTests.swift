@@ -323,7 +323,6 @@ import Testing
     })
 }
 
-
 @MainActor
 @Test func `AppModel applying privacy safety settings synchronizes activity coordinator`() async {
     let defaults = InMemoryPreferences()

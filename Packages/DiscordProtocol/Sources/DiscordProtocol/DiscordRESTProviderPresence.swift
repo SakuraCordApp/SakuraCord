@@ -105,7 +105,9 @@ extension DiscordRESTProvider {
         deferredPresenceTask?.cancel()
         deferredPresenceTask = nil
         let activities = activeActivitiesList()
-        guard gatewayReady, (presenceStatus != lastSentPresenceStatus || activities != lastSentActivities) else { return }
+        let statusChanged = presenceStatus != lastSentPresenceStatus
+        let activitiesChanged = activities != lastSentActivities
+        guard gatewayReady, statusChanged || activitiesChanged else { return }
         let now = Date.now
         presenceSendWindowEnds.removeAll { $0 <= now }
         let budgetReopens = presenceSendWindowEnds.count >= 5 ? presenceSendWindowEnds.first ?? now : now

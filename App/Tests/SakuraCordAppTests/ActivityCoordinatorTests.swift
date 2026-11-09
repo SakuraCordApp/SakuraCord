@@ -4,7 +4,6 @@ import Foundation
 import SakuraCordModels
 import Testing
 
-@Suite
 struct ActivityCoordinatorTests {
     @Test func `coordinator publishes permitted activity to provider`() async throws {
         let mockProvider = MockChatProvider()

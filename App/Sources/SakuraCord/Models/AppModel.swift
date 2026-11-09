@@ -1185,36 +1185,22 @@ final class AppModel {
         self.provider = resolvedProvider
         let resolvedPrivacyStore = privacySafetySettingsStore ?? .shared
         self.privacySafetySettingsStore = resolvedPrivacyStore
-        let loadedPrivacy = resolvedPrivacyStore.load()
-        let initialActivityPreferences = ActivityCoordinatorPreferences(
-            isActivitySharingEnabled: loadedPrivacy.sharesActivity,
-            isAppleMusicPresenceEnabled: loadedPrivacy.sharesAppleMusicActivity,
-            isLocalRPCEnabled: loadedPrivacy.allowsLocalRPC
+        let activityServices = Self.makeActivityServices(
+            launchMode: launchMode,
+            privacyStore: resolvedPrivacyStore,
+            provider: resolvedProvider,
+            coordinator: activityCoordinator,
+            ipcServer: ipcServer,
+            appleMusicMonitor: appleMusicMonitor
         )
-        let resolvedCoordinator = activityCoordinator ?? ActivityCoordinator(provider: resolvedProvider, preferences: initialActivityPreferences)
-        self.activityCoordinator = resolvedCoordinator
-        let resolvedIPCServer = ipcServer ?? DiscordIPCServer(coordinator: resolvedCoordinator)
-        self.ipcServer = resolvedIPCServer
-        if launchMode == .normal && loadedPrivacy.sharesActivity && loadedPrivacy.allowsLocalRPC {
-            try? resolvedIPCServer.start()
-        }
-        let resolvedAppleMusicMonitor = appleMusicMonitor ?? AppleMusicPresenceMonitor(coordinator: resolvedCoordinator)
-        self.appleMusicMonitor = resolvedAppleMusicMonitor
-        if launchMode == .normal && loadedPrivacy.sharesActivity && loadedPrivacy.sharesAppleMusicActivity {
-            resolvedAppleMusicMonitor.start()
-        }
+        self.activityCoordinator = activityServices.coordinator
+        self.ipcServer = activityServices.ipcServer
+        self.appleMusicMonitor = activityServices.monitor
         hasPendingLaunchWelcome = includesOfflineSignIn
         typingState = TypingStateModel()
         self.localTypingTiming = localTypingTiming
         self.reactionMutationTiming = reactionMutationTiming
         self.readAcknowledgementTiming = readAcknowledgementTiming
-        let anonymisesUploadFilenames: @Sendable () async -> Bool = { await resolvedPrivacyStore.load().anonymisesFileNames }
-        let uploadPrivacy = uploadPrivacyPreparation ?? UploadPrivacyPreparation(store: resolvedPrivacyStore)
-        self.uploadPrivacyPreparation = uploadPrivacy
-        let prepareUploadFile: @Sendable (URL) async throws -> PreparedUploadFile = { try await uploadPrivacy.prepare($0) }
-        self.externalAttachmentUploader = externalAttachmentUploader ?? CatboxAttachmentUploader(
-            anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
-        )
         runsChatPerformanceBenchmark =
             runsChatPerformanceBenchmarkOverride
                 ?? AppLaunchConfiguration(
@@ -1233,24 +1219,20 @@ final class AppModel {
                     && Bundle.main.object(
                         forInfoDictionaryKey: "SakuraCordInsecureDebugCredentialsEnabled"
                     ) as? Bool == true)
-        let resolvedCredentialStore = credentialStore ?? Self.defaultCredentialStore(
-            launchMode: launchMode, usesInsecureDebugCredentials: usesInsecureDebugCredentials
+        let uploadAndProviderServices = Self.makeUploadAndProviderServices(
+            launchMode: launchMode,
+            usesInsecureDebugCredentials: usesInsecureDebugCredentials,
+            privacyStore: resolvedPrivacyStore,
+            uploadPrivacyPreparation: uploadPrivacyPreparation,
+            externalAttachmentUploader: externalAttachmentUploader,
+            credentialStore: credentialStore
         )
-        self.credentialStore = resolvedCredentialStore
+        self.uploadPrivacyPreparation = uploadAndProviderServices.uploadPrivacyPreparation
+        self.externalAttachmentUploader = uploadAndProviderServices.externalAttachmentUploader
+        self.credentialStore = uploadAndProviderServices.credentialStore
+        self.authenticatedProviderFactory = authenticatedProviderFactory ?? uploadAndProviderServices.authenticatedProviderFactory
+        self.pendingAuthenticatedProviderFactory = pendingAuthenticatedProviderFactory ?? uploadAndProviderServices.pendingAuthenticatedProviderFactory
         self.savedAccountStore = savedAccountStore ?? UserDefaultsSavedAccountStore.shared
-        self.authenticatedProviderFactory =
-            authenticatedProviderFactory ?? { handle, installationID in
-                DiscordRESTProvider(
-                    credentials: resolvedCredentialStore, handle: handle,
-                    installationID: installationID, anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
-                )
-            }
-        self.pendingAuthenticatedProviderFactory =
-            pendingAuthenticatedProviderFactory ?? { credential, installationID in
-                DiscordRESTProvider(
-                    pendingCredential: credential, installationID: installationID, anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
-                )
-            }
         self.accountDatabaseFactory = accountDatabaseFactory ?? { accountID in
             try? SakuraCordDatabase(accountID: accountID)
         }
@@ -1261,25 +1243,12 @@ final class AppModel {
         database = launchMode == .offlineTesting
             ? try? SakuraCordDatabase(inMemory: true)
             : nil
-        commandComposer.configureFrecencyScope(
-            launchMode == .offlineTesting ? "offline" : "signed-out"
-        )
-        configureEmojiFrecency(scope: launchMode == .offlineTesting ? "offline" : "signed-out")
-        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
         mediaDeviceMonitor = MediaDeviceMonitor { [weak self] snapshot in
             Task { @MainActor [weak self] in
                 await self?.installMediaDeviceSnapshot(snapshot)
             }
         }
-        configureAttachmentMedia()
-        let coordinatorToListen = resolvedCoordinator
-        Task { [weak self] in
-            await coordinatorToListen.setOnActivityChanged { [weak self] payload in
-                Task { @MainActor [weak self] in
-                    self?.applyCurrentUserActivity(payload)
-                }
-            }
-        }
+        postInitSetup(coordinator: activityServices.coordinator)
     }
 
     func applyCurrentUserActivity(_ payload: OutgoingActivityPayload?) {
@@ -1316,7 +1285,7 @@ extension AppModel {
         category: "MessageSend"
     )
 
-    private static func defaultCredentialStore(launchMode: AppLaunchMode, usesInsecureDebugCredentials: Bool) -> any CredentialStore {
+    static func defaultCredentialStore(launchMode: AppLaunchMode, usesInsecureDebugCredentials: Bool) -> any CredentialStore {
         if launchMode == .offlineTesting { return OfflineCredentialStore() }
         if usesInsecureDebugCredentials { return InsecureDebugMigratingCredentialStore() }
         return KeychainCredentialStore()

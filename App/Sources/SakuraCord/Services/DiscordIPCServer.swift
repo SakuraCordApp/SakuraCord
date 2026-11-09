@@ -108,8 +108,8 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 }
                 break
             }
-            let payloadData = readBuffer.subdata(in: 8..<totalFrameSize)
-            readBuffer.removeSubrange(0..<totalFrameSize)
+            let payloadData = readBuffer.subdata(in: 8 ..< totalFrameSize)
+            readBuffer.removeSubrange(0 ..< totalFrameSize)
             handleFrame(opcode: opcode, payloadData: payloadData)
         }
     }
@@ -378,7 +378,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         let baseDir = tempDirs.first ?? "/tmp"
         let dir = baseDir.hasSuffix("/") ? String(baseDir.dropLast()) : baseDir
 
-        return (0...9).map { "\(dir)/discord-ipc-\($0)" }
+        return (0 ... 9).map { "\(dir)/discord-ipc-\($0)" }
     }
 
     public func start() throws {

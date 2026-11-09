@@ -366,4 +366,33 @@ struct AppleMusicPresenceMonitorTests {
         #expect(payload?.timestamps?.start != nil)
         #expect(payload?.timestamps?.end == nil)
     }
+
+    @Test("Spotify long track over 10 minutes retains end timestamp")
+    func testSpotifyLongTrackRetainsEndTimestamp() async {
+        let provider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let monitor = AppleMusicPresenceMonitor(
+            coordinator: coordinator,
+            nowProvider: { fixedDate }
+        )
+
+        let spotifyPayload: [AnyHashable: Any] = [
+            "Player State": "Playing",
+            "Name": "All Too Well (10 Minute Version)",
+            "Artist": "Taylor Swift",
+            "Album": "Red (Taylor's Version)",
+            "Playback Position": 30.0,
+            "Duration": 720000.0,
+            "Track ID": "spotify:track:5enxwA8aAbwZbf5ncge5vh"
+        ]
+
+        let activity = await monitor.handlePlayerInfo(spotifyPayload)
+        #expect(activity != nil)
+        #expect(activity?.name == "Spotify")
+        let expectedStartMs = Int64((1_700_000_000.0 - 30.0) * 1000)
+        let expectedEndMs = expectedStartMs + 720_000
+        #expect(activity?.timestamps?.start == expectedStartMs)
+        #expect(activity?.timestamps?.end == expectedEndMs)
+    }
 }

@@ -5,10 +5,10 @@ import SwiftUI
 
 struct ProfileActivitySection: View {
     let member: Member
-    var richActivity: MemberRichActivity? = nil
+    var richActivity: MemberRichActivity?
     var isCurrentUser: Bool = false
     @Environment(\.colorScheme) private var colorScheme
-    @State private var dynamicArtwork: NSImage? = nil
+    @State private var dynamicArtwork: NSImage?
 
     private var effectiveActivity: MemberRichActivity? {
         richActivity ?? member.richActivity
@@ -91,7 +91,7 @@ struct ProfileActivitySection: View {
                 }
             }
         }
-        if isMusic && isCurrentUser {
+        if isMusic, isCurrentUser {
             if let data = AppleMusicPresenceMonitor.currentArtworkData, let img = NSImage(data: data) {
                 return img
             }
@@ -186,12 +186,12 @@ struct ProfileActivitySection: View {
                 case .success(let image):
                     image
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
+                        .scaledToFill()
                 case .failure:
                     if let local = dynamicArtwork ?? resolvedArtworkImage {
                         Image(nsImage: local)
                             .resizable()
-                            .aspectRatio(contentMode: .fill)
+                            .scaledToFill()
                     } else {
                         fallbackArtIcon
                     }
@@ -199,7 +199,7 @@ struct ProfileActivitySection: View {
                     if let local = dynamicArtwork ?? resolvedArtworkImage {
                         Image(nsImage: local)
                             .resizable()
-                            .aspectRatio(contentMode: .fill)
+                            .scaledToFill()
                     } else {
                         fallbackArtIcon
                     }
@@ -210,7 +210,7 @@ struct ProfileActivitySection: View {
         } else if let image = dynamicArtwork ?? resolvedArtworkImage {
             Image(nsImage: image)
                 .resizable()
-                .aspectRatio(contentMode: .fill)
+                .scaledToFill()
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {

@@ -5,7 +5,6 @@ import Foundation
 import SakuraCordModels
 import Testing
 
-@Suite
 struct DiscordIPCServerTests {
     private func makeTestSocketPath() -> String {
         "/tmp/sakuracord-ipc-test-\(UUID().uuidString).sock"
@@ -73,7 +72,7 @@ struct DiscordIPCServerTests {
         return (opcode, json)
     }
 
-    @Test func `server starts and accepts handshake responding with ready event`() async throws {
+    @Test func `server starts and accepts handshake responding with ready event`() throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
         let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
@@ -199,7 +198,7 @@ struct DiscordIPCServerTests {
         #expect(cleared)
     }
 
-    @Test func `ping frame receives pong response`() async throws {
+    @Test func `ping frame receives pong response`() throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
         let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
@@ -216,7 +215,7 @@ struct DiscordIPCServerTests {
         #expect(pong.json["ping"] as? String == "hello")
     }
 
-    @Test func `large PID does not crash server and SET_ACTIVITY succeeds`() async throws {
+    @Test func `large PID does not crash server and SET_ACTIVITY succeeds`() throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
         let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)

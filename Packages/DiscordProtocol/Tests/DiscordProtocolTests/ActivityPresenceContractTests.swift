@@ -29,10 +29,10 @@ extension DirectMessageProviderContractTests {
         #expect(await socket.sentPayloadCount(opcode: 3) == initialOpcode3Count + 1)
         let presenceData = try #require(await socket.sentPayload(opcode: 3))
         let presenceJson = try #require(JSONSerialization.jsonObject(with: presenceData) as? [String: Any])
-        let d = try #require(presenceJson["d"] as? [String: Any])
-        #expect(d["status"] as? String == "online")
+        let payloadDict = try #require(presenceJson["d"] as? [String: Any])
+        #expect(payloadDict["status"] as? String == "online")
 
-        let activities = try #require(d["activities"] as? [[String: Any]])
+        let activities = try #require(payloadDict["activities"] as? [[String: Any]])
         #expect(activities.count == 1)
         let first = activities[0]
         #expect(first["name"] as? String == "Apple Music")
@@ -73,8 +73,8 @@ extension DirectMessageProviderContractTests {
 
         let presenceData = try #require(await socket.sentPayload(opcode: 3))
         let presenceJson = try #require(JSONSerialization.jsonObject(with: presenceData) as? [String: Any])
-        let d = try #require(presenceJson["d"] as? [String: Any])
-        let activities = try #require(d["activities"] as? [[String: Any]])
+        let payloadDict = try #require(presenceJson["d"] as? [String: Any])
+        let activities = try #require(payloadDict["activities"] as? [[String: Any]])
 
         #expect(activities.count == 2)
         // Playing (rank 1) must precede Listening (rank 5)
@@ -133,8 +133,8 @@ extension DirectMessageProviderContractTests {
 
         let presence = try #require(await socket.sentPayload(opcode: 3))
         let json = try #require(JSONSerialization.jsonObject(with: presence) as? [String: Any])
-        let d = try #require(json["d"] as? [String: Any])
-        let activities = try #require(d["activities"] as? [[String: Any]])
+        let payloadDict = try #require(json["d"] as? [String: Any])
+        let activities = try #require(payloadDict["activities"] as? [[String: Any]])
         #expect(activities.isEmpty)
     }
 }

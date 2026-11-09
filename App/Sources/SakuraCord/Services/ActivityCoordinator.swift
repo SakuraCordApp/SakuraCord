@@ -189,7 +189,7 @@ public actor ActivityCoordinator {
         }
 
         // If completely empty and nothing published, ensure provider has no remaining activities
-        if permitted.isEmpty && publishedSourceIDs.isEmpty {
+        if permitted.isEmpty, publishedSourceIDs.isEmpty {
             guard generation == syncGeneration else { return }
             do {
                 try await provider.clearActivities(sourceID: nil)

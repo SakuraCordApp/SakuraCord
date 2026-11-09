@@ -1134,3 +1134,98 @@ nonisolated struct PreparedMemberListPresentation: Sendable {
         )
     }
 }
+
+extension AppModel {
+    struct ActivityServices {
+        let coordinator: ActivityCoordinator
+        let ipcServer: DiscordIPCServer
+        let monitor: AppleMusicPresenceMonitor
+    }
+
+    static func makeActivityServices(
+        launchMode: AppLaunchMode,
+        privacyStore: PrivacySafetySettingsStore,
+        provider: any ChatProvider,
+        coordinator: ActivityCoordinator?,
+        ipcServer: DiscordIPCServer?,
+        appleMusicMonitor: AppleMusicPresenceMonitor?
+    ) -> ActivityServices {
+        let loadedPrivacy = privacyStore.load()
+        let initialActivityPreferences = ActivityCoordinatorPreferences(
+            isActivitySharingEnabled: loadedPrivacy.sharesActivity,
+            isAppleMusicPresenceEnabled: loadedPrivacy.sharesAppleMusicActivity,
+            isLocalRPCEnabled: loadedPrivacy.allowsLocalRPC
+        )
+        let resolvedCoordinator = coordinator ?? ActivityCoordinator(provider: provider, preferences: initialActivityPreferences)
+        let resolvedIPCServer = ipcServer ?? DiscordIPCServer(coordinator: resolvedCoordinator)
+        if launchMode == .normal, loadedPrivacy.sharesActivity, loadedPrivacy.allowsLocalRPC {
+            try? resolvedIPCServer.start()
+        }
+        let resolvedAppleMusicMonitor = appleMusicMonitor ?? AppleMusicPresenceMonitor(coordinator: resolvedCoordinator)
+        if launchMode == .normal, loadedPrivacy.sharesActivity, loadedPrivacy.sharesAppleMusicActivity {
+            resolvedAppleMusicMonitor.start()
+        }
+        return ActivityServices(coordinator: resolvedCoordinator, ipcServer: resolvedIPCServer, monitor: resolvedAppleMusicMonitor)
+    }
+
+    func postInitSetup(coordinator: ActivityCoordinator) {
+        commandComposer.configureFrecencyScope(
+            launchMode == .offlineTesting ? "offline" : "signed-out"
+        )
+        configureEmojiFrecency(scope: launchMode == .offlineTesting ? "offline" : "signed-out")
+        readState.reset(accountID: launchMode == .offlineTesting ? "offline" : nil)
+        configureAttachmentMedia()
+        Task { [weak self] in
+            await coordinator.setOnActivityChanged { [weak self] payload in
+                Task { @MainActor [weak self] in
+                    self?.applyCurrentUserActivity(payload)
+                }
+            }
+        }
+    }
+
+    struct UploadAndProviderServices {
+        let uploadPrivacyPreparation: UploadPrivacyPreparation
+        let externalAttachmentUploader: any ExternalAttachmentUploading
+        let credentialStore: any CredentialStore
+        let authenticatedProviderFactory: (CredentialHandle, String?) -> any ChatProvider
+        let pendingAuthenticatedProviderFactory: (PendingDiscordCredential, String?) -> any PendingCredentialChatProvider
+    }
+
+    static func makeUploadAndProviderServices(
+        launchMode: AppLaunchMode,
+        usesInsecureDebugCredentials: Bool,
+        privacyStore: PrivacySafetySettingsStore,
+        uploadPrivacyPreparation: UploadPrivacyPreparation?,
+        externalAttachmentUploader: (any ExternalAttachmentUploading)?,
+        credentialStore: (any CredentialStore)?
+    ) -> UploadAndProviderServices {
+        let anonymisesUploadFilenames: @Sendable () async -> Bool = { await privacyStore.load().anonymisesFileNames }
+        let uploadPrivacy = uploadPrivacyPreparation ?? UploadPrivacyPreparation(store: privacyStore)
+        let prepareUploadFile: @Sendable (URL) async throws -> PreparedUploadFile = { try await uploadPrivacy.prepare($0) }
+        let resolvedUploader = externalAttachmentUploader ?? CatboxAttachmentUploader(
+            anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
+        )
+        let resolvedCredentialStore = credentialStore ?? Self.defaultCredentialStore(
+            launchMode: launchMode, usesInsecureDebugCredentials: usesInsecureDebugCredentials
+        )
+        let authenticatedFactory: (CredentialHandle, String?) -> any ChatProvider = { handle, installationID in
+            DiscordRESTProvider(
+                credentials: resolvedCredentialStore, handle: handle,
+                installationID: installationID, anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
+            )
+        }
+        let pendingFactory: (PendingDiscordCredential, String?) -> any PendingCredentialChatProvider = { credential, installationID in
+            DiscordRESTProvider(
+                pendingCredential: credential, installationID: installationID, anonymisesUploadFilenames: anonymisesUploadFilenames, prepareUploadFile: prepareUploadFile
+            )
+        }
+        return UploadAndProviderServices(
+            uploadPrivacyPreparation: uploadPrivacy,
+            externalAttachmentUploader: resolvedUploader,
+            credentialStore: resolvedCredentialStore,
+            authenticatedProviderFactory: authenticatedFactory,
+            pendingAuthenticatedProviderFactory: pendingFactory
+        )
+    }
+}
