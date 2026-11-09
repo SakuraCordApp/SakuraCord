@@ -895,7 +895,7 @@ final class ComposerEmojiImageStore {
     }
 }
 
-final class ComposerNSTextView: ComposerFocusReportingTextView {
+final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscapeConsumer {
     var onReturn: ((NSEvent) -> Bool)?
     var onEscape: (() -> Void)?
     var onEditLatestMessage: (() -> Bool)?
@@ -1085,6 +1085,11 @@ final class ComposerNSTextView: ComposerFocusReportingTextView {
             return
         }
         super.keyDown(with: event)
+    }
+
+    /// Escape closes an open suggestion menu before the modal around it.
+    func consumeModalEscape() -> Bool {
+        isEditable && !hasMarkedText() && onAutocompleteCommand?(.dismiss) == true
     }
 
     private func autocompleteCommand(for event: NSEvent) -> ComposerAutocompleteCommand? {

@@ -23,6 +23,10 @@ enum ComposerResizeMotion {
     /// composer's height, so they need not share its curve.
     static var tile: Animation { .spring(duration: 0.42, bounce: 0.22) }
     static var hover: Animation { .snappy(duration: 0.2) }
+    /// A header rises out of the field rather than dropping in from above.
+    static var headerTransition: AnyTransition {
+        AnyTransition(.blurReplace).combined(with: .offset(y: InterfaceScale.metric(14)))
+    }
 
     static var isReduced: Bool {
         !AppMotionPolicy.animatesUncategorized

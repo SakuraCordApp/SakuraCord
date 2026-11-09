@@ -327,6 +327,7 @@ extension AppModel {
         profileCustomStatus = nil
         profileCustomStatusUserID = nil
         presentedProfileGame = nil
+        forumPostDrafts = [:]
         memberListsByGuildID = [:]
         threadMembersByID = [:]
         memberListGroupsByGuildID = [:]

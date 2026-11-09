@@ -79,7 +79,7 @@ struct ComposerView: View {
                             toggleMention: toggleReplyMention,
                             cancel: cancelReply
                         )
-                        .transition(Self.headerTransition)
+                        .transition(ComposerResizeMotion.headerTransition)
                         Divider()
                             .transition(.opacity)
                     }
@@ -107,7 +107,7 @@ struct ComposerView: View {
                                 model.removeComposerAttachment($0, from: conversation)
                             }
                         )
-                        .transition(Self.headerTransition)
+                        .transition(ComposerResizeMotion.headerTransition)
                         Divider()
                             .padding(.horizontal, InterfaceScale.metric(11))
                             .transition(.opacity)
@@ -1662,10 +1662,6 @@ private extension ComposerView {
     var hasCheckingAttachments: Bool {
         let checking = model.composer.checkingAttachmentIDs
         return !checking.isEmpty && attachments.contains { checking.contains($0.id) }
-    }
-
-    static var headerTransition: AnyTransition {
-        AnyTransition(.blurReplace).combined(with: .offset(y: InterfaceScale.metric(14)))
     }
 
     var chromeKey: ComposerChromeKey {

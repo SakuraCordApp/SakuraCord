@@ -420,6 +420,9 @@ final class AppModel {
     var forumActionError: String?
     var forumPaginationError: String?
     var forumCreateProgress: MessageSendProgress?
+    /// Unposted forum posts by forum, kept for the session so closing the
+    /// composer doesn't lose them.
+    var forumPostDrafts: [ChannelID: ForumPostComposerDraft] = [:]
     var forwardingMessage: Message?
     var forwardingErrorMessage: String?
     var isForwardingMessages = false
