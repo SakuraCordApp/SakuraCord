@@ -45,6 +45,24 @@ def stop(process):
     process.wait(timeout=5)
 
 
+def sample(pid, path):
+    # A loaded machine can stretch sample's attach, sampling and symbol phases
+    # far beyond their nominal length, and killing it discards the report.
+    # SIGINT ends sampling early yet still writes the report, but only once
+    # sampling has started, which sample announces on stderr.
+    with subprocess.Popen(["/usr/bin/sample", pid, "2", "-file", str(path)],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                          text=True) as sampler:
+        if sampler.stderr.readline().startswith("Sampling process"):
+            try:
+                sampler.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                sampler.send_signal(signal.SIGINT)
+        _, error = sampler.communicate()
+    if not path.exists():
+        print(f"Could not sample PID {pid}: {error.strip()}", flush=True)
+
+
 def diagnose(process, directory):
     events = directory / "events.jsonl"
     if events.exists():
@@ -65,16 +83,13 @@ def diagnose(process, directory):
         rows = process_group(process.pid)
         (directory / "processes.txt").write_text("\n".join(rows) + "\n")
         print("\n".join(rows), flush=True)
-        # Sample children before the SwiftPM launcher, with a bounded total cost.
+        # Sample up to six children before the SwiftPM launcher.
         for row in sorted(rows, key=lambda row: int(row.split()[0]) == process.pid)[:6]:
             pid = row.split()[0]
             path = directory / f"{pid}.sample.txt"
             try:
-                subprocess.run(
-                    ["/usr/bin/sample", pid, "2", "-file", str(path)],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8,
-                )
-            except (OSError, subprocess.TimeoutExpired) as error:
+                sample(pid, path)
+            except OSError as error:
                 print(f"Could not sample PID {pid}: {error}", flush=True)
             if path.exists():
                 print(f"Stack sample: {path}", flush=True)

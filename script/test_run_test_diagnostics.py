@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -47,17 +48,19 @@ class TestDiagnosticsTests(unittest.TestCase):
     def test_timeout_samples_and_kills_host_after_output_closes(self):
         # EOF must not disable the deadline while the test host is still alive.
         source = """import os, signal, time
-print(os.getpid(), flush=True)
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 os.close(1)
 os.close(2)
 time.sleep(60)
 """
+        # No wall-clock limit: a broken deadline still ends with the host's
+        # sleep, and sampling on a loaded machine has no fixed duration.
         result = subprocess.run(self.command(source, timeout=0.5),
-                                capture_output=True, text=True, timeout=25)
+                                capture_output=True, text=True)
         self.assertEqual(result.returncode, 124, result.stdout)
         directory = next(self.root.iterdir())
-        pid = int((directory / "console.log").read_text().strip())
+        # The host may not have started Python before the deadline.
+        pid = int(re.search(r"\(PID (\d+),", result.stdout)[1])
         self.assert_stopped(pid)
         self.assertIn(str(pid), (directory / "processes.txt").read_text())
         self.assertTrue(list(directory.glob("*.sample.txt")))
