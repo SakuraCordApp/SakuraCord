@@ -458,29 +458,30 @@ struct ServerRailJoinRequestEntry: Identifiable, Equatable {
     }
 }
 
-/// Unapproved applications, grouped like Discord's Pending Applications folder.
+/// Unapproved applications, grouped like Discord's Pending Applications folder. It opens and closes like the
+/// server folders: the tile grows into the folder's container and the applications unroll beneath it.
 private struct PendingApplicationsRailFolder: View {
     let entries: [ServerRailJoinRequestEntry]
     @Binding var isExpanded: Bool
     @Binding var showsSubmittedTip: Bool
     let select: (GuildID) -> Void
     @State private var isHovering = false
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
     private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
 
     var body: some View {
-        VStack(spacing: InterfaceScale.metric(8)) {
-            Button { isExpanded.toggle() } label: {
+        VStack(spacing: isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing) : 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : ServerRailAnimations.folderExpansion) { isExpanded.toggle() }
+            } label: {
                 HStack(spacing: InterfaceScale.metric(4)) {
                     ServerRailSelectionIndicator(isSelected: !isExpanded && entries.contains(where: \.isSelected),
                                                  isHovering: isHovering && !isExpanded, hasNotification: false)
                     Image(systemName: "hourglass")
                         .font(.interfaceSystem(size: 19, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
-                        .background(Color.gray.opacity(isExpanded ? 0 : 0.18),
-                                    in: RoundedRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous))
                         .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
                 }
                 .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
@@ -508,26 +509,35 @@ private struct PendingApplicationsRailFolder: View {
                 .padding(InterfaceScale.metric(14))
                 .frame(width: InterfaceScale.metric(260))
             }
-            if isExpanded {
+            VStack(spacing: InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing)) {
                 ForEach(entries) { entry in
                     JoinRequestRailButton(entry: entry) { select(entry.id) }
+                        .transition(ServerRailAnimations.membershipTransition)
                 }
             }
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: entries.map(\.id))
+            .modifier(ServerFolderRowsReveal(isExpanded: isExpanded))
         }
-        .padding(.vertical, isExpanded ? InterfaceScale.metric(5) : 0)
+        .padding(.vertical, isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.expandedPadding) : 0)
         .background {
-            if isExpanded {
-                RoundedRectangle(cornerRadius: InterfaceScale.metric(17), style: .continuous)
-                    .fill(Color.gray.opacity(0.12))
+            // The collapsed tile is the container, which grows into the open folder's outline.
+            GeometryReader { geometry in
+                let verticalInset = 3 / displayScale
+                let tile = InterfaceScale.metric(44)
+                let width = isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.containerSize) : tile
+                ConcentricRectangle(cornerRadius: InterfaceScale.metric(isExpanded ? 17 : 13), style: .continuous)
+                    .fill(Color.gray.opacity(isExpanded ? 0.12 : 0.18))
                     .overlay {
-                        RoundedRectangle(cornerRadius: InterfaceScale.metric(17), style: .continuous)
+                        ConcentricRectangle(cornerRadius: InterfaceScale.metric(17) - 0.5, style: .continuous)
                             .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                            .padding(0.5)
+                            .opacity(isExpanded ? 1 : 0)
                     }
-                    .frame(width: InterfaceScale.metric(52))
-                    .frame(maxWidth: .infinity)
+                    .frame(width: width, height: isExpanded ? max(0, geometry.size.height - verticalInset * 2) : tile)
+                    .offset(x: (geometry.size.width - width) / 2, y: isExpanded ? verticalInset : InterfaceScale.metric(1))
             }
+            .allowsHitTesting(false)
         }
-        .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: isExpanded)
     }
 }
 
