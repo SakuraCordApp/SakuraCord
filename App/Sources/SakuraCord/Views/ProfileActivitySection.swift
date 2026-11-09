@@ -187,25 +187,39 @@ struct ProfileActivitySection: View {
     private var artworkView: some View {
         let cornerRadius = InterfaceScale.metric(8)
         let size = InterfaceScale.metric(58)
-        if let image = dynamicArtwork ?? resolvedArtworkImage {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        } else if let remoteURL = resolvedRemoteArtworkURL {
+        if let remoteURL = resolvedRemoteArtworkURL {
             AsyncImage(url: remoteURL) { phase in
                 switch phase {
                 case .success(let image):
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                case .failure:
+                    if let local = dynamicArtwork ?? resolvedArtworkImage {
+                        Image(nsImage: local)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        fallbackArtIcon
+                    }
                 default:
-                    fallbackArtIcon
+                    if let local = dynamicArtwork ?? resolvedArtworkImage {
+                        Image(nsImage: local)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        fallbackArtIcon
+                    }
                 }
             }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else if let image = dynamicArtwork ?? resolvedArtworkImage {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
             fallbackArtIcon
         }

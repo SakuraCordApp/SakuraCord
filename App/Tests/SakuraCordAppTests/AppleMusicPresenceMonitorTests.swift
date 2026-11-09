@@ -5,6 +5,11 @@ import Testing
 
 @Suite("AppleMusicPresenceMonitorTests")
 struct AppleMusicPresenceMonitorTests {
+    private final class TimeBox: @unchecked Sendable {
+        var date: Date
+        init(_ date: Date) { self.date = date }
+    }
+
     @Test("Playing track creates listening activity with timestamps and assets")
     func testPlayingTrackCreatesListeningActivity() async {
         let provider = MockChatProvider()
@@ -78,6 +83,88 @@ struct AppleMusicPresenceMonitorTests {
         ])
         #expect(stoppedResult == nil)
         #expect(await coordinator.currentPermittedActivities().isEmpty)
+    }
+
+    @Test("Resuming paused track retains elapsed position instead of starting at zero")
+    func testResumingPausedTrackRetainsPosition() async {
+        let provider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
+
+        let timeBox = TimeBox(Date(timeIntervalSince1970: 1_700_000_000))
+        let monitor = AppleMusicPresenceMonitor(
+            coordinator: coordinator,
+            nowProvider: { timeBox.date }
+        )
+
+        // 1. Play track starting at position 30s
+        let initialActivity = await monitor.handlePlayerInfo([
+            "Player State": "Playing",
+            "Name": "Starboy",
+            "Artist": "The Weeknd",
+            "Current Position": 30.0,
+            "Total Time": 240000.0
+        ])
+        #expect(initialActivity != nil)
+        let initialStart = initialActivity?.timestamps?.start
+        #expect(initialStart == Int64((1_700_000_000.0 - 30.0) * 1000))
+
+        // 2. Play for 20 seconds
+        timeBox.date = timeBox.date.addingTimeInterval(20) // elapsed is now 50s
+
+        // 3. Pause
+        let pausedActivity = await monitor.handlePlayerInfo([
+            "Player State": "Paused",
+            "Name": "Starboy",
+            "Artist": "The Weeknd"
+        ])
+        #expect(pausedActivity == nil)
+
+        // 4. Stay paused for 10 seconds
+        timeBox.date = timeBox.date.addingTimeInterval(10)
+
+        // 5. Resume playing where notification omits Current Position (defaults to 0)
+        let resumedActivity = await monitor.handlePlayerInfo([
+            "Player State": "Playing",
+            "Name": "Starboy",
+            "Artist": "The Weeknd",
+            "Total Time": 240000.0
+        ])
+        #expect(resumedActivity != nil)
+
+        // The resumed start timestamp should reflect the 50s elapsed playback, NOT 0s
+        let expectedResumedStart = Int64((timeBox.date.timeIntervalSince1970 - 50.0) * 1000)
+        #expect(resumedActivity?.timestamps?.start == expectedResumedStart)
+    }
+
+    @Test("Spotify payload correctly parses app name and playback position")
+    func testSpotifyPayloadParsing() async {
+        let provider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let monitor = AppleMusicPresenceMonitor(
+            coordinator: coordinator,
+            nowProvider: { fixedDate }
+        )
+
+        let spotifyPayload: [AnyHashable: Any] = [
+            "Player State": "Playing",
+            "Name": "Flowers",
+            "Artist": "Miley Cyrus",
+            "Album": "Endless Summer Vacation",
+            "Playback Position": 65.0,
+            "Duration": 200400.0,
+            "Track ID": "spotify:track:4DHsvvY3y6N9N0"
+        ]
+
+        let activity = await monitor.handlePlayerInfo(spotifyPayload)
+        #expect(activity != nil)
+        #expect(activity?.name == "Spotify")
+        #expect(activity?.details == "Flowers")
+        #expect(activity?.state == "Miley Cyrus")
+        #expect(activity?.assets?.largeText == "Endless Summer Vacation")
+
+        let expectedStartMs = Int64((1_700_000_000.0 - 65.0) * 1000)
+        #expect(activity?.timestamps?.start == expectedStartMs)
     }
 
     @Test("Missing or empty track title clears activity")

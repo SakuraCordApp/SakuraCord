@@ -18,6 +18,20 @@
     <true/>
     <key>com.apple.security.files.user-selected.executable</key>
     <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    <key>com.apple.security.scripting-targets</key>
+    <dict>
+        <key>com.apple.Music</key>
+        <array>
+            <string>com.apple.Music.library.read</string>
+            <string>com.apple.Music.playback</string>
+        </array>
+        <key>com.spotify.client</key>
+        <array>
+            <string>com.spotify.client.playback</string>
+        </array>
+    </dict>
     <key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
     <array>
         <string>/Library/Application Support/discord/Local Storage/leveldb/</string>
