@@ -111,24 +111,10 @@ func `media cache reads do not wait for index maintenance`() async throws {
     }
     await indexLoad.waitUntilPaused()
 
-    let read = Task {
-        try await cache.data(for: cachedURL)
-    }
-    let readFinishedFirst = await withTaskGroup(of: Bool.self) { group in
-        group.addTask {
-            (try? await read.value) == expected
-        }
-        group.addTask {
-            try? await Task.sleep(for: .milliseconds(250))
-            return false
-        }
-        let result = await group.next() ?? false
-        await indexLoad.resume()
-        group.cancelAll()
-        return result
-    }
-
-    #expect(readFinishedFirst)
+    // The index load stays suspended until resumed, so a read that waited for
+    // it would never return.
+    #expect(try await cache.data(for: cachedURL) == expected)
+    await indexLoad.resume()
     try await insert.value
 }
 
