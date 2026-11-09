@@ -1623,17 +1623,13 @@ extension NativeMessageTimelineCoordinator {
         preparation: TimelineUpdatePreparation,
         transcriptAnchor anchor: SendTransitionTranscriptAnchor?
     ) {
-        guard let canvas else { return }
-        canvas.reconcileSendTransitions()
-        guard let anchor,
+        guard let canvas, let anchor,
               !preparation.conversationChanged,
               let channelID = parent.conversation.sendTransitionChannelID
         else { return }
-        let shift: () -> CGFloat = { [items] in
-            guard let identifier = anchor.identifier,
-                  let previous = anchor.frameInWindow,
-                  let index = items.lastIndex(where: { $0.identifier == identifier })
-            else { return 0 }
+        let anchorIndex = anchor.identifier.flatMap { identifier in items.lastIndex { $0.identifier == identifier } }
+        let shift: () -> CGFloat = {
+            guard let index = anchorIndex, let previous = anchor.frameInWindow else { return 0 }
             return canvas.convert(canvas.rowFrame(at: index), to: nil).minY - previous.minY
         }
         if didMutateItems,
@@ -1644,9 +1640,7 @@ extension NativeMessageTimelineCoordinator {
             // Starting the flight ends any running row motion, so rows it still
             // holds away from their places, such as above a preview unrolling,
             // glide there with the transcript instead of jumping.
-            let held = anchor.identifier
-                .flatMap { identifier in items.lastIndex { $0.identifier == identifier } }
-                .map(canvas.reactionMotionOffset(at:)) ?? 0
+            let held = anchorIndex.map(canvas.reactionMotionOffset(at:)) ?? 0
             canvas.beginSendTransition(from: pending, rowIndex: index, transcriptShift: shift() + held)
         } else if anchor.isSending, parent.model.animatesMessageSending {
             // The composer resizing as it clears moves the transcript too.
