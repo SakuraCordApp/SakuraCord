@@ -406,6 +406,7 @@ private extension ForumPostComposer {
             guard !Task.isCancelled else { return }
             isSubmitting = false
             submitTask = nil
+            discardUnusedBatches()
             if didCreate {
                 // Cleared here too: the modal may close before `onChange` runs.
                 model.forumPostDrafts[channel.id] = nil
@@ -468,8 +469,10 @@ private extension ForumPostComposer {
         }
     }
 
-    /// Deletes pasted data none of whose files is staged any more.
+    /// Deletes pasted data none of whose files is staged any more. A post
+    /// being sent still reads its files, so this waits until it's done.
     func discardUnusedBatches() {
+        guard submitTask == nil else { return }
         let stagedURLs = Set(attachments.map(\.url))
         ownedAttachmentBatches.removeAll { batch in
             guard !batch.urls.contains(where: stagedURLs.contains) else { return false }
