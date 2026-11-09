@@ -390,10 +390,16 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         return (0 ... 9).map { "\(dir)/discord-ipc-\($0)" }
     }
 
+    public enum SocketListenerStatus: Sendable, Equatable {
+        case active
+        case stale
+        case unverified
+    }
+
     /// Probes whether a process is actively listening on a Unix domain socket path (or a symlink pointing to one).
-    public static func isSocketActivelyListening(at path: String) -> Bool {
+    public static func probeSocketListener(at path: String) -> SocketListenerStatus {
         let testFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard testFD >= 0 else { return false }
+        guard testFD >= 0 else { return .unverified }
         defer { close(testFD) }
 
         var addr = sockaddr_un()
@@ -401,7 +407,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
 
         let pathBytes = path.utf8CString
         guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
-            return false
+            return .unverified
         }
 
         withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
@@ -416,7 +422,16 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             }
         }
 
-        return connectResult == 0
+        if connectResult == 0 {
+            return .active
+        }
+
+        let err = errno
+        if err == ECONNREFUSED || err == ENOENT {
+            return .stale
+        }
+
+        return .unverified
     }
 
     /// Purges stale or broken IPC sockets in a directory if no active process is listening.
@@ -434,14 +449,14 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
                     // Broken symlink (target does not exist) -> safe to purge
                     unlink(socketPath)
                 } else if (targetStat.st_mode & S_IFMT) == S_IFSOCK {
-                    // Symlink points to a socket; safe to purge only if target is dead
-                    if !isSocketActivelyListening(at: socketPath) {
+                    // Symlink points to a socket; safe to purge only if confirmed dead
+                    if probeSocketListener(at: socketPath) == .stale {
                         unlink(socketPath)
                     }
                 }
             } else if fileType == S_IFSOCK {
-                // Unix domain socket file; safe to purge only if dead
-                if !isSocketActivelyListening(at: socketPath) {
+                // Unix domain socket file; safe to purge only if confirmed dead
+                if probeSocketListener(at: socketPath) == .stale {
                     unlink(socketPath)
                 }
             }
@@ -466,23 +481,23 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
                 return true
             }
             if (targetStat.st_mode & S_IFMT) == S_IFSOCK {
-                // Symlink points to a socket; replace only if target socket is dead
-                if !isSocketActivelyListening(at: symlinkPath) {
+                // Symlink points to a socket; replace only if confirmed dead
+                if probeSocketListener(at: symlinkPath) == .stale {
                     unlink(symlinkPath)
                     return true
                 }
             }
-            // Active listener or non-socket target; leave occupied path alone
+            // Active listener, unverified probe, or non-socket target; leave occupied path alone
             return false
         }
 
         if fileType == S_IFSOCK {
-            // Socket file; replace only if dead
-            if !isSocketActivelyListening(at: symlinkPath) {
+            // Socket file; replace only if confirmed dead
+            if probeSocketListener(at: symlinkPath) == .stale {
                 unlink(symlinkPath)
                 return true
             }
-            // Active socket belonging to another client; leave occupied path alone
+            // Active socket belonging to another client or unverified probe; leave occupied path alone
             return false
         }
 
@@ -614,13 +629,15 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             }
         }
 
-        // Probe if another process is actively listening on this socket
-        if Self.isSocketActivelyListening(at: path) {
-            close(fd)
-            return nil
+        var statBuf = stat()
+        if lstat(path, &statBuf) == 0 {
+            // Reclaim occupied path only after confirming no active listener remains
+            guard Self.probeSocketListener(at: path) == .stale else {
+                close(fd)
+                return nil
+            }
+            unlink(path)
         }
-
-        unlink(path)
 
         let bindResult = withUnsafePointer(to: &addr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in

@@ -401,6 +401,7 @@ struct DiscordIPCServerTests {
 
         // Non-existent path can be replaced
         let freePath = "\(tempDir)/free.sock"
+        #expect(DiscordIPCServer.probeSocketListener(at: freePath) == .stale)
         #expect(DiscordIPCServer.canReplaceWithSymlink(at: freePath))
 
         // Active socket cannot be replaced
@@ -410,6 +411,7 @@ struct DiscordIPCServerTests {
             close(activeFD)
             unlink(activeSocketPath)
         }
+        #expect(DiscordIPCServer.probeSocketListener(at: activeSocketPath) == .active)
         #expect(!DiscordIPCServer.canReplaceWithSymlink(at: activeSocketPath))
         #expect(FileManager.default.fileExists(atPath: activeSocketPath))
 
@@ -423,6 +425,7 @@ struct DiscordIPCServerTests {
         // Dead socket can be replaced and gets unlinked
         let deadSocketPath = "\(tempDir)/dead.sock"
         createDeadSocket(at: deadSocketPath)
+        #expect(DiscordIPCServer.probeSocketListener(at: deadSocketPath) == .stale)
         #expect(DiscordIPCServer.canReplaceWithSymlink(at: deadSocketPath))
         #expect(!FileManager.default.fileExists(atPath: deadSocketPath))
 
