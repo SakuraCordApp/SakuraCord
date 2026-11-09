@@ -26,8 +26,12 @@ extension NativeMessageTimelineItem {
         if unread == oldUnread, highlighted == oldHighlighted, row.differsOnlyInReactions(from: oldRow) {
             return .reactions
         }
-        // A send settling is the send transition's to show.
-        guard row.message.outboxState == oldRow.message.outboxState else { return .other }
+        // A send settling is the send transition's to show, unless it brings
+        // content, as a link preview Discord already had cached does.
+        if row.message.outboxState != oldRow.message.outboxState {
+            return row.message.embeds == oldRow.message.embeds && row.message.components == oldRow.message.components
+                ? .other : .content
+        }
         return row.message == oldRow.message ? .regroup : .content
     }
 }
