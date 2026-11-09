@@ -159,6 +159,12 @@ extension AppModel {
         serverRailPresentation.showsGuildJoinRequest = guildID != nil
     }
 
+    /// An application's status page rests on Friends. It gives way only when a server or conversation replaces
+    /// that workspace, so the direct messages list never shows in between.
+    func leaveGuildJoinRequestPage() {
+        if guildJoinRequests.selectedGuildID != nil { selectGuildJoinRequest(nil) }
+    }
+
     /// Opens the application for a server; an invite code is required when the account has no other access to it.
     /// `guild` is the server as the caller already shows it, so the form's header is right before the form loads.
     func openGuildJoinApplication(_ guildID: GuildID, inviteCode: String? = nil, guild: GuildJoinRequestGuild? = nil) {

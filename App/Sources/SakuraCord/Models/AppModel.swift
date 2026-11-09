@@ -640,6 +640,7 @@ final class AppModel {
     var selectedGuildID: GuildID? {
         didSet {
             if oldValue != selectedGuildID { switchMessageSearchScope(from: oldValue) }
+            if selectedGuildID != nil { leaveGuildJoinRequestPage() }
             refreshServerRailSelection()
             refreshSelectedGuildPresentation()
         }
@@ -776,6 +777,7 @@ final class AppModel {
             let keepsGuildPage = selectionChangeKeepsGuildPage
             if !keepsGuildPage {
                 onboarding.presentedGuildID = nil
+                if selectedChannelID != nil { leaveGuildJoinRequestPage() }
             }
             refreshServerRailSelection()
             if !keepsGuildPage { recordConversationNavigation() }

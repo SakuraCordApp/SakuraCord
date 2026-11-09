@@ -31,6 +31,8 @@ nonisolated enum ConversationNavigationTarget: Hashable, Sendable {
 
 extension AppModel {
     func selectGuild(_ guildID: GuildID?) {
+        // Direct Messages may rest on Friends, which selects neither a server nor a conversation.
+        if guildID == nil { leaveGuildJoinRequestPage() }
         startConversationNavigation { model, account in
             await model.activateGuild(guildID, account: account)
         }
@@ -87,9 +89,6 @@ extension AppModel {
         operation: @escaping @MainActor (AppModel, AppModelAccountSession) async -> Void
     ) {
         cancelConversationNavigation()
-        // An application's status page gives way once the destination has replaced it, so the workspace
-        // resting behind it, such as the direct messages list, never shows in between.
-        let leavesJoinRequest = guildJoinRequests.selectedGuildID
         let account = accountSession()
         let task = startAccountChildTask(account: account) { model, account in
             // A task cancelled before it starts never opens a history transaction.
@@ -101,9 +100,6 @@ extension AppModel {
             }
             await ConversationNavigationContext.$isActive.withValue(true) {
                 await operation(model, account)
-            }
-            if let leavesJoinRequest, !Task.isCancelled, model.guildJoinRequests.selectedGuildID == leavesJoinRequest {
-                model.selectGuildJoinRequest(nil)
             }
         }
         guildActivationTask = task
