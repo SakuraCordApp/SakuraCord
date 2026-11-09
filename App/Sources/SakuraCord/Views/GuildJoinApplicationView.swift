@@ -538,8 +538,8 @@ struct GuildJoinRequestSidebar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
-        .animation(.snappy(duration: 0.25), value: preview)
-        .animation(.snappy(duration: 0.25), value: request?.status)
+        .animation(snappyMotion(0.25, in: .sidebar), value: preview)
+        .animation(snappyMotion(0.25, in: .sidebar), value: request?.status)
         .task(id: guildID) { await model.loadGuildJoinRequestPreview(guildID) }
     }
 

@@ -12,14 +12,17 @@ public extension DiscordRESTProvider {
         guard form.guild.map({ $0.id == guildID.description }) ?? true else {
             throw ServerInviteError.failed("Discord returned the application for a different server. Try again.")
         }
+        let domain = try form.domain(guildID: guildID)
         // Submission echoes each field exactly as Discord sent it, plus the answer.
-        cachedJoinApplicationForms[guildID] = (form.version, form.formFields)
-        return try form.domain(guildID: guildID)
+        cachedJoinApplicationForms[guildID] = .init(version: form.version, fields: form.formFields,
+                                                     questions: domain.fields.map(\.question))
+        return domain
     }
 
     /// `fields` are the loaded form's fields with their answers, in the same order.
     func submitGuildJoinApplication(_ guildID: GuildID, fields: [GuildJoinApplicationField]) async throws {
-        guard let cached = cachedJoinApplicationForms[guildID], cached.fields.count == fields.count else {
+        // A later read of the form, such as the status page's, may hold questions the editor never showed.
+        guard let cached = cachedJoinApplicationForms[guildID], cached.questions == fields.map(\.question) else {
             throw ServerInviteError.failed("This application changed. Reopen it and try again.")
         }
         let answered: [JSONValue] = zip(cached.fields, fields).map { wire, field in
@@ -266,5 +269,20 @@ private struct PartialGuildDTO: Decodable {
         guard let guildID = GuildID(id) else { return nil }
         return GuildJoinRequestGuild(id: guildID, name: name,
             iconURL: icon.flatMap { URL(string: "https://cdn.discordapp.com/icons/\(guildID)/\($0).webp?size=128") })
+    }
+}
+
+/// An application form as Discord sent it, and the questions it asks.
+struct LoadedJoinApplicationForm {
+    var version: String
+    var fields: [JSONValue]
+    var questions: [GuildJoinApplicationField]
+}
+
+private extension GuildJoinApplicationField {
+    var question: Self {
+        var question = self
+        question.answer = nil
+        return question
     }
 }

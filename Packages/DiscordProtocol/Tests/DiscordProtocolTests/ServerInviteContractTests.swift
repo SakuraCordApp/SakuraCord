@@ -286,6 +286,19 @@ struct ServerInviteContractTests {
         await provider.disconnect()
     }
 
+    @Test func `an application whose questions changed since the editor read them is not sent`() async throws {
+        let capture = InviteRequestCapture()
+        let provider = try await makeProvider(capture.id)
+        let guildID = GuildID(rawValue: 900)
+        var form = try await provider.guildJoinApplicationForm(guildID, inviteCode: "apply")
+        // A later read, such as the status page's, cached a form whose first question differs from the editor's.
+        form.fields[0].label = "A question the server replaced"
+        form.fields[0].answer = .text("Hello")
+        await #expect(throws: ServerInviteError.self) { try await provider.submitGuildJoinApplication(guildID, fields: form.fields) }
+        #expect(capture.requests.map(\.httpMethod) == ["GET"])
+        await provider.disconnect()
+    }
+
     @Test func `moderators never adopt other people's join requests as their own`() async throws {
         let provider = try await makeProvider(InviteRequestCapture().id)
         let guildID = GuildID(rawValue: 900)

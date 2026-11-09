@@ -539,6 +539,9 @@ private struct JoinRequestRailButton: View {
     let entry: ServerRailJoinRequestEntry
     let action: () -> Void
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
+    @Environment(\.reducesSidebarMotion) private var reducesSidebarMotion
+    private var reduceMotion: Bool { systemReducesMotion || reducesSidebarMotion }
 
     var body: some View {
         let label = "\(entry.name), \(entry.status.membershipDescription)"
@@ -551,6 +554,7 @@ private struct JoinRequestRailButton: View {
                     .modifier(ApplicationStatusBadge(symbol: entry.status == .rejected ? "xmark" : "hourglass",
                                                      tint: entry.status == .rejected ? Color(hex: 0xF23F43) : .gray,
                                                      diameter: 18, offset: 4, isHidden: entry.status == .started))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: entry.status)
                     .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
             }
             .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .topLeading)
@@ -619,7 +623,6 @@ struct ApplicationStatusBadge: ViewModifier {
                 Circle()
                     .frame(width: diameter + gap * 2, height: diameter + gap * 2)
                     .scaleEffect(scale)
-                    .animation(.snappy(duration: 0.25), value: isHidden)
                     .offset(x: offset + gap, y: offset + gap)
                     .blendMode(.destinationOut)
             }
@@ -632,8 +635,6 @@ struct ApplicationStatusBadge: ViewModifier {
                     .frame(width: diameter, height: diameter)
                     .background(tint, in: Circle())
                     .scaleEffect(scale)
-                    .animation(.snappy(duration: 0.25), value: isHidden)
-                    .animation(.snappy(duration: 0.25), value: symbol)
                     .offset(x: offset, y: offset)
             }
     }
