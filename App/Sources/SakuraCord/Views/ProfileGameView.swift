@@ -250,11 +250,14 @@ struct ProfileGameView: View {
     }
 
     private func openAnnouncement(guildID: GuildID, channelID: ChannelID, messageID: MessageID?) {
-        guard let url = URL(string: "https://discord.com/channels/\(guildID)/\(channelID)\(messageID.map { "/\($0)" } ?? "")") else { return }
         // Close the whole profile stack so the channel isn't left behind it.
         dismiss?()
         model.dismissExpandedProfile()
-        openLink(url)
+        if let messageID {
+            model.navigateToSystemMessageTarget(guildID: guildID, channelID: channelID, messageID: messageID)
+        } else {
+            model.navigate(to: guildID, linkedChannelID: channelID)
+        }
     }
 
     // MARK: Loading
