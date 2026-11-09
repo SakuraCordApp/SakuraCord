@@ -179,9 +179,11 @@ public actor ActivityCoordinator {
         // 2. Publish all permitted active activities
         for (source, payload) in permitted {
             guard generation == syncGeneration else { return }
+            guard isSourcePermitted(source) else { return }
             do {
                 try await provider.updateActivity(payload, sourceID: source.sourceID)
                 guard generation == syncGeneration else { return }
+                guard isSourcePermitted(source) else { return }
                 publishedSourceIDs.insert(source.sourceID)
             } catch {
                 logger.debug("Failed to update activity for source \(source.sourceID): \(error.localizedDescription)")
