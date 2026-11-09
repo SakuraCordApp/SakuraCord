@@ -309,6 +309,16 @@ final class WindowModalHostingView: NSHostingView<AnyView> {
         fillWindowFrame()
     }
 
+    /// A right-click the modal's own content doesn't use stops here. Passed up
+    /// the responder chain, it reaches the window's root hosting view, which
+    /// opens the context menu of whatever the modal covers.
+    override func rightMouseDown(with event: NSEvent) {
+        guard isTopmostPresentedOverlay else { return super.rightMouseDown(with: event) }
+        if let menu = menu(for: event) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
+    }
+
     override func cancelOperation(_ sender: Any?) {
         if behavior.capturesEscape, isTopmostPresentedOverlay {
             animationState.handleEscape()

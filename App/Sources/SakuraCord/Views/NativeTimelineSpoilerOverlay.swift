@@ -255,6 +255,7 @@ final class NativeTimelineSpoilerOverlayHost: NSView {
     }
 
     override func resetCursorRects() {
+        guard WindowModalCoordinator.allowsInput(for: self) else { return }
         addCursorRect(bounds, cursor: .pointingHand)
     }
 

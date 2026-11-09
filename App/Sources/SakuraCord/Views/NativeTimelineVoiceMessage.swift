@@ -657,7 +657,7 @@ final class NativeTimelineVoiceMessageOverlay: NSView {
     /// The canvas's cursor rects stop at this view, so an audio file's
     /// controls point here too, at the frames their clicks land on.
     override func resetCursorRects() {
-        guard region.style == .audioFile else { return }
+        guard region.style == .audioFile, WindowModalCoordinator.allowsInput(for: self) else { return }
         let origin = Self.frame(of: region).origin
         for (_, frame) in NativeTimelineCanvasView.controlHitFrames(of: region) where !frame.isNull && !frame.isEmpty {
             addCursorRect(frame.offsetBy(dx: -origin.x, dy: -origin.y), cursor: .pointingHand)
