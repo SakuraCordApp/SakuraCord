@@ -279,9 +279,7 @@ extension NativeTimelineCanvasView {
               editingRowIndex == nil,
               rowDisclosure == nil,
               unreadDividerGap == nil,
-              sendTransitions.isEmpty,
-              // A send about to fly in this update glides the transcript itself.
-              !(presentedConversationID.map { model?.timelineSendTransitionStore.hasPendingSource(for: $0) == true } ?? false)
+              sendTransitions.isEmpty
         else {
             placeDepartedPieces(handOvers.values.flatMap { handOver in
                 (handOver.run?.pieces ?? []).map { (handOver.anchor, $0) }

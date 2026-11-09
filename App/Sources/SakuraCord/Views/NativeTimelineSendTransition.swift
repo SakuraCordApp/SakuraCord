@@ -921,7 +921,10 @@ extension NativeTimelineCanvasView {
             cancelTranscriptGlide()
             return
         }
-        // The flight aims at the row's static place.
+        // The flight aims at the row's static place. Rows a running motion
+        // still holds away from theirs, such as above a preview unrolling,
+        // glide there with the transcript instead of jumping.
+        let transcriptShift = transcriptShift + (index > 0 ? reactionMotionOffset(at: index - 1) : 0)
         finishReactionTransitions()
         guard let window,
               let (geometry, bubbleInWindow) = sendTransitionGeometry(
