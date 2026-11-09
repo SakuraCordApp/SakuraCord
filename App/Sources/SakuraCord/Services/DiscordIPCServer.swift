@@ -46,14 +46,18 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         self.onClose = onClose
     }
 
+    deinit {
+        stop()
+    }
+
     func start() {
-        let source = DispatchSource.makeReadSource(fileDescriptor: clientFD, queue: queue)
+        let fd = clientFD
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in
             self?.handleRead()
         }
-        source.setCancelHandler { [weak self] in
-            guard let self else { return }
-            close(self.clientFD)
+        source.setCancelHandler {
+            close(fd)
         }
         self.readSource = source
         source.resume()
@@ -91,8 +95,17 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                   let length = readBuffer.readUInt32LittleEndian(at: 4) else {
                 break
             }
+            if length > DiscordIPCServer.maxFramePayloadSize {
+                logger.warning("Incoming IPC frame length \(length) exceeds maximum allowed size \(DiscordIPCServer.maxFramePayloadSize); closing session.")
+                stop()
+                return
+            }
             let totalFrameSize = 8 + Int(length)
             guard readBuffer.count >= totalFrameSize else {
+                if readBuffer.count > DiscordIPCServer.maxFramePayloadSize * 2 {
+                    logger.warning("Read buffer size \(self.readBuffer.count) exceeded safety limit; closing session.")
+                    stop()
+                }
                 break
             }
             let payloadData = readBuffer.subdata(in: 8..<totalFrameSize)
@@ -135,8 +148,8 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private func handleCommand(cmd: String, args: [String: Any], nonce: String?) {
         switch cmd {
         case "SET_ACTIVITY":
-            if let pid = args["pid"] as? Int {
-                self.processID = pid_t(pid)
+            if let pid = args["pid"] as? Int, let validPid = pid_t(exactly: pid), validPid > 0 {
+                self.processID = validPid
             }
             let activityDict = args["activity"] as? [String: Any]
             let source = ActivitySource.localRPC(
@@ -285,13 +298,44 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         frame.appendUInt32LittleEndian(opcode)
         frame.appendUInt32LittleEndian(UInt32(jsonData.count))
         frame.append(jsonData)
-        _ = frame.withUnsafeBytes { ptr in
-            write(clientFD, ptr.baseAddress!, frame.count)
+
+        var bytesSent = 0
+        let total = frame.count
+        var retries = 0
+        while bytesSent < total {
+            let written = frame.withUnsafeBytes { ptr in
+                write(clientFD, ptr.baseAddress! + bytesSent, total - bytesSent)
+            }
+            if written > 0 {
+                bytesSent += written
+                retries = 0
+            } else if written < 0 {
+                let err = errno
+                if err == EAGAIN || err == EWOULDBLOCK {
+                    retries += 1
+                    if retries > 20 {
+                        logger.warning("IPC client socket write timed out (EAGAIN); closing connection.")
+                        stop()
+                        return
+                    }
+                    usleep(1000)
+                    continue
+                }
+                logger.debug("Write failed on IPC client socket: errno \(err)")
+                stop()
+                return
+            } else {
+                stop()
+                return
+            }
         }
     }
 }
 
 public nonisolated final class DiscordIPCServer: @unchecked Sendable {
+    public static let maxFramePayloadSize = 1024 * 1024 // 1 MB
+    public static let maxClientCount = 10
+
     public let coordinator: ActivityCoordinator
     private let requestedSocketPath: String?
     private var boundSocketPath: String?
@@ -470,6 +514,15 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             }
         }
         guard clientFD >= 0 else { return }
+
+        var noSigpipe: Int32 = 1
+        _ = setsockopt(clientFD, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size))
+
+        if activeClients.count >= Self.maxClientCount {
+            logger.warning("Max IPC client count reached (\(Self.maxClientCount)); rejecting connection.")
+            close(clientFD)
+            return
+        }
 
         _ = fcntl(clientFD, F_SETFD, FD_CLOEXEC)
         let flags = fcntl(clientFD, F_GETFL, 0)

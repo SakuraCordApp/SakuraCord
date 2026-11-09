@@ -368,6 +368,20 @@ extension AppModel {
         if wasSendingTypingIndicators, !value.sendsTypingIndicators {
             stopLocalTyping(clearThrottle: false)
         }
+        if launchMode == .normal {
+            if value.sharesActivity && value.sharesAppleMusicActivity {
+                appleMusicMonitor.start()
+            } else {
+                appleMusicMonitor.stop()
+            }
+            if value.sharesActivity && value.allowsLocalRPC {
+                if !ipcServer.isServerRunning {
+                    try? ipcServer.start()
+                }
+            } else {
+                ipcServer.stop()
+            }
+        }
         Task {
             await activityCoordinator.updatePreferences(
                 ActivityCoordinatorPreferences(

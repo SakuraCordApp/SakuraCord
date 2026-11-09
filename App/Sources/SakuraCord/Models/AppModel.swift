@@ -1195,12 +1195,12 @@ final class AppModel {
         self.activityCoordinator = resolvedCoordinator
         let resolvedIPCServer = ipcServer ?? DiscordIPCServer(coordinator: resolvedCoordinator)
         self.ipcServer = resolvedIPCServer
-        if launchMode == .normal {
+        if launchMode == .normal && loadedPrivacy.sharesActivity && loadedPrivacy.allowsLocalRPC {
             try? resolvedIPCServer.start()
         }
         let resolvedAppleMusicMonitor = appleMusicMonitor ?? AppleMusicPresenceMonitor(coordinator: resolvedCoordinator)
         self.appleMusicMonitor = resolvedAppleMusicMonitor
-        if launchMode == .normal {
+        if launchMode == .normal && loadedPrivacy.sharesActivity && loadedPrivacy.sharesAppleMusicActivity {
             resolvedAppleMusicMonitor.start()
         }
         hasPendingLaunchWelcome = includesOfflineSignIn

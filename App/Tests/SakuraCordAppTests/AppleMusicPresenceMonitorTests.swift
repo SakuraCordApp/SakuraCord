@@ -349,4 +349,21 @@ struct AppleMusicPresenceMonitorTests {
         #expect(cleared.isListeningToMusic == false)
         #expect(cleared.richActivity == nil)
     }
+
+    @Test("Extreme or non-finite duration does not cause integer overflow or crash")
+    func testExtremeDurationDoesNotOverflow() async {
+        let provider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
+        let monitor = AppleMusicPresenceMonitor(coordinator: coordinator)
+
+        let payload = await monitor.handlePlayerInfo([
+            "Player State": "Playing",
+            "Name": "Infinite Track",
+            "Artist": "Cosmos",
+            "Duration": NSNumber(value: 1e300)
+        ])
+        #expect(payload != nil)
+        #expect(payload?.timestamps?.start != nil)
+        #expect(payload?.timestamps?.end == nil)
+    }
 }

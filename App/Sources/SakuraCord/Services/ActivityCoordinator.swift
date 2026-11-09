@@ -62,6 +62,7 @@ public actor ActivityCoordinator {
     private var preferences: ActivityCoordinatorPreferences
     private var registeredActivities: [ActivitySource: OutgoingActivityPayload] = [:]
     private var publishedSourceIDs: Set<String> = []
+    private var syncGeneration: UInt64 = 0
     private var onActivityChangedHandler: (@Sendable (OutgoingActivityPayload?) -> Void)?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "ActivityCoordinator")
 
@@ -76,12 +77,14 @@ public actor ActivityCoordinator {
     public func setProvider(_ newProvider: any ChatProvider) async {
         self.provider = newProvider
         publishedSourceIDs.removeAll()
+        syncGeneration &+= 1
         await synchronizeProvider()
     }
 
     public func updatePreferences(_ newPreferences: ActivityCoordinatorPreferences) async {
         guard preferences != newPreferences else { return }
         preferences = newPreferences
+        syncGeneration &+= 1
         await synchronizeProvider()
     }
 
@@ -107,16 +110,25 @@ public actor ActivityCoordinator {
         } else {
             registeredActivities.removeValue(forKey: source)
         }
+        syncGeneration &+= 1
         await synchronizeProvider()
     }
 
     public func clearActivity(for source: ActivitySource) async {
         registeredActivities.removeValue(forKey: source)
+        syncGeneration &+= 1
         await synchronizeProvider()
     }
 
     public func clearAllActivities() async {
         registeredActivities.removeAll()
+        syncGeneration &+= 1
+        await synchronizeProvider()
+    }
+
+    public func resendActivities() async {
+        publishedSourceIDs.removeAll()
+        syncGeneration &+= 1
         await synchronizeProvider()
     }
 
@@ -145,6 +157,7 @@ public actor ActivityCoordinator {
     }
 
     private func synchronizeProvider() async {
+        let generation = syncGeneration
         let permitted = currentPermittedActivities()
         let primary = permitted.values.sorted { $0.priorityRank < $1.priorityRank }.first
         onActivityChangedHandler?(primary)
@@ -153,8 +166,10 @@ public actor ActivityCoordinator {
         // 1. Clear any sources that were previously published but are no longer permitted/registered
         let staleSourceIDs = publishedSourceIDs.subtracting(permittedSourceIDs)
         for staleID in staleSourceIDs {
+            guard generation == syncGeneration else { return }
             do {
                 try await provider.clearActivities(sourceID: staleID)
+                guard generation == syncGeneration else { return }
                 publishedSourceIDs.remove(staleID)
             } catch {
                 logger.debug("Failed to clear activity source \(staleID): \(error.localizedDescription)")
@@ -163,8 +178,10 @@ public actor ActivityCoordinator {
 
         // 2. Publish all permitted active activities
         for (source, payload) in permitted {
+            guard generation == syncGeneration else { return }
             do {
                 try await provider.updateActivity(payload, sourceID: source.sourceID)
+                guard generation == syncGeneration else { return }
                 publishedSourceIDs.insert(source.sourceID)
             } catch {
                 logger.debug("Failed to update activity for source \(source.sourceID): \(error.localizedDescription)")
@@ -173,6 +190,7 @@ public actor ActivityCoordinator {
 
         // If completely empty and nothing published, ensure provider has no remaining activities
         if permitted.isEmpty && publishedSourceIDs.isEmpty {
+            guard generation == syncGeneration else { return }
             do {
                 try await provider.clearActivities(sourceID: nil)
             } catch {

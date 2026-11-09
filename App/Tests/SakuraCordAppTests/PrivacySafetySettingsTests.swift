@@ -345,10 +345,10 @@ import Testing
     settings.sharesActivity = true
     settings.sharesAppleMusicActivity = true
     model.applyPrivacySafetySettings(settings)
-    try? await Task.sleep(nanoseconds: 50_000_000)
 
-    let prefs = await model.activityCoordinator.currentPreferences()
-    #expect(prefs.isAppleMusicPresenceEnabled)
-    #expect(prefs.isActivitySharingEnabled)
-    #expect(!prefs.isLocalRPCEnabled)
+    let updated = await eventually {
+        let prefs = await model.activityCoordinator.currentPreferences()
+        return prefs.isAppleMusicPresenceEnabled && prefs.isActivitySharingEnabled && !prefs.isLocalRPCEnabled
+    }
+    #expect(updated)
 }

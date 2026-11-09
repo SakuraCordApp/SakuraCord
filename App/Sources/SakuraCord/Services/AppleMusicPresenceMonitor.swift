@@ -119,22 +119,33 @@ public nonisolated struct AppleMusicTrackInfo: Sendable {
             self.appName = "Apple Music"
         }
 
-        if let num = (userInfo["Playback Position"] ?? userInfo["Current Position"]) as? NSNumber {
-            self.currentPositionSeconds = max(0, num.doubleValue)
-        } else if let val = (userInfo["Playback Position"] ?? userInfo["Current Position"]) as? Double {
-            self.currentPositionSeconds = max(0, val)
+        let rawPos: Double? = {
+            if let num = (userInfo["Playback Position"] ?? userInfo["Current Position"]) as? NSNumber {
+                return num.doubleValue
+            } else if let val = (userInfo["Playback Position"] ?? userInfo["Current Position"]) as? Double {
+                return val
+            }
+            return nil
+        }()
+
+        if let rawPos, rawPos.isFinite, rawPos >= 0, rawPos < 86400 * 7 {
+            self.currentPositionSeconds = rawPos
         } else {
             self.currentPositionSeconds = nil
         }
 
         if let dur = userInfo["Duration"] as? NSNumber {
             let val = dur.doubleValue
-            self.totalTimeMilliseconds = val > 1000 ? val : (val * 1000)
+            if val.isFinite, val > 0, val < 86400 * 7 {
+                self.totalTimeMilliseconds = val > 1000 ? val : (val * 1000)
+            } else {
+                self.totalTimeMilliseconds = nil
+            }
         } else if let num = userInfo["Total Time"] as? NSNumber {
             let val = num.doubleValue
-            self.totalTimeMilliseconds = val > 0 ? val : nil
+            self.totalTimeMilliseconds = (val.isFinite && val > 0 && val < 86400_000 * 7) ? val : nil
         } else if let val = userInfo["Total Time"] as? Double {
-            self.totalTimeMilliseconds = val > 0 ? val : nil
+            self.totalTimeMilliseconds = (val.isFinite && val > 0 && val < 86400_000 * 7) ? val : nil
         } else {
             self.totalTimeMilliseconds = nil
         }
@@ -155,6 +166,8 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private var isMonitoring: Bool = false
     private var currentActiveTrackInfo: AppleMusicTrackInfo?
     private var positionPollTask: Task<Void, Never>?
+    private var activePollingAppName: String?
+    private var artworkFetchGeneration: UInt64 = 0
     private let logger = Logger(subsystem: "dev.sakuracord", category: "AppleMusicPresenceMonitor")
 
     public static let musicNotificationName = Notification.Name("com.apple.Music.playerInfo")
@@ -177,11 +190,8 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
     }
 
-    public static let artworkPath: String = {
-        (NSTemporaryDirectory() as NSString).appendingPathComponent("sakuracord_applemusic_art.png")
-    }()
-
     private struct TrackPlaybackState: Sendable {
+        var appName: String
         var trackName: String
         var artist: String?
         var playbackStartDate: Date
@@ -189,6 +199,19 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         var isPlaying: Bool
     }
     private var lastPlaybackState: TrackPlaybackState?
+
+    private func nextArtworkGeneration() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        artworkFetchGeneration &+= 1
+        return artworkFetchGeneration
+    }
+
+    private func isCurrentArtworkGeneration(_ gen: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return artworkFetchGeneration == gen
+    }
 
     private func updatePlaybackStateOnResume(
         trackName: String,
@@ -204,6 +227,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             resolvedPosition = currentPositionSeconds
         } else if let last = lastPlaybackState,
                   !last.isPlaying,
+                  last.appName == appName,
                   last.trackName == trackName,
                   (artist == nil || last.artist == artist),
                   last.savedElapsedSeconds > 0 {
@@ -215,6 +239,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
         let playbackStartDate = now.addingTimeInterval(-resolvedPosition)
         lastPlaybackState = TrackPlaybackState(
+            appName: appName,
             trackName: trackName,
             artist: artist,
             playbackStartDate: playbackStartDate,
@@ -300,7 +325,13 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private func startPositionPollingIfNeeded(appName: String) {
         lock.lock()
         defer { lock.unlock() }
-        guard isMonitoring, positionPollTask == nil else { return }
+        guard isMonitoring else { return }
+        if activePollingAppName != appName {
+            positionPollTask?.cancel()
+            positionPollTask = nil
+            activePollingAppName = appName
+        }
+        guard positionPollTask == nil else { return }
         positionPollTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -315,6 +346,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         defer { lock.unlock() }
         positionPollTask?.cancel()
         positionPollTask = nil
+        activePollingAppName = nil
     }
 
     private func checkPositionDrift(appName: String) async {
@@ -355,63 +387,120 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         let data = fetchCurrentArtworkData()
         if let data {
             currentArtworkData = data
-            try? data.write(to: URL(fileURLWithPath: artworkPath), options: .atomic)
         }
     }
 
     public static func removeCachedArtwork() {
         currentArtworkData = nil
-        try? FileManager.default.removeItem(atPath: artworkPath)
     }
 
     public func checkCurrentTrack() {
         #if os(macOS)
         guard NSClassFromString("XCTest") == nil else { return }
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return }
+        let isMusicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+        let isSpotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty
+        guard isMusicRunning || isSpotifyRunning else { return }
         #endif
         Task.detached(priority: .utility) { [weak self] in
-            let scriptSource = """
-            tell application "Music"
-                if it is running then
-                    set pState to (player state as string)
-                    if pState is "playing" then
-                        set tName to (name of current track as string)
-                        set tArtist to (artist of current track as string)
-                        set tAlbum to (album of current track as string)
-                        set tPos to (player position as real)
-                        set tDur to (duration of current track as real)
-                        return pState & "|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * 1000)
-                    else if pState is "paused" or pState is "stopped" then
-                        return "stopped"
+            #if os(macOS)
+            let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+            if musicRunning {
+                let scriptSource = """
+                tell application "Music"
+                    if it is running then
+                        set pState to (player state as string)
+                        if pState is "playing" then
+                            set tName to (name of current track as string)
+                            set tArtist to (artist of current track as string)
+                            set tAlbum to (album of current track as string)
+                            set tPos to (player position as real)
+                            set tDur to (duration of current track as real)
+                            return pState & "|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * 1000)
+                        else if pState is "paused" or pState is "stopped" then
+                            return "stopped"
+                        end if
                     end if
-                end if
-                return "unknown"
-            end tell
-            """
-            var errorInfo: NSDictionary?
-            guard let script = NSAppleScript(source: scriptSource) else { return }
-            let descriptor = script.executeAndReturnError(&errorInfo)
-            if errorInfo != nil {
-                // Do not clear activity on AppleScript error
-                return
+                    return "unknown"
+                end tell
+                """
+                var errorInfo: NSDictionary?
+                if let script = NSAppleScript(source: scriptSource) {
+                    let descriptor = script.executeAndReturnError(&errorInfo)
+                    if errorInfo == nil {
+                        let result = descriptor.stringValue ?? ""
+                        if result == "stopped" {
+                            await self?.handleTrackInfo(nil)
+                            return
+                        }
+                        if !result.isEmpty, result != "unknown" {
+                            let parts = result.components(separatedBy: "|||")
+                            if parts.count >= 6 {
+                                let trackInfo = AppleMusicTrackInfo(
+                                    playerState: parts[0],
+                                    name: parts[1],
+                                    artist: parts[2],
+                                    album: parts[3],
+                                    currentPositionSeconds: Double(parts[4]),
+                                    totalTimeMilliseconds: Double(parts[5]),
+                                    appName: "Apple Music"
+                                )
+                                await self?.handleTrackInfo(trackInfo)
+                                return
+                            }
+                        }
+                    }
+                }
             }
-            let result = descriptor.stringValue ?? ""
-            if result == "stopped" {
-                await self?.handleTrackInfo(nil)
-                return
+
+            let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty
+            if spotifyRunning {
+                let scriptSource = """
+                tell application "Spotify"
+                    if it is running then
+                        set pState to (player state as string)
+                        if pState is "playing" then
+                            set tName to (name of current track as string)
+                            set tArtist to (artist of current track as string)
+                            set tAlbum to (album of current track as string)
+                            set tPos to (player position as real)
+                            set tDur to (duration of current track as real)
+                            return pState & "|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & tDur
+                        else if pState is "paused" or pState is "stopped" then
+                            return "stopped"
+                        end if
+                    end if
+                    return "unknown"
+                end tell
+                """
+                var errorInfo: NSDictionary?
+                if let script = NSAppleScript(source: scriptSource) {
+                    let descriptor = script.executeAndReturnError(&errorInfo)
+                    if errorInfo == nil {
+                        let result = descriptor.stringValue ?? ""
+                        if result == "stopped" {
+                            await self?.handleTrackInfo(nil)
+                            return
+                        }
+                        if !result.isEmpty, result != "unknown" {
+                            let parts = result.components(separatedBy: "|||")
+                            if parts.count >= 6 {
+                                let trackInfo = AppleMusicTrackInfo(
+                                    playerState: parts[0],
+                                    name: parts[1],
+                                    artist: parts[2],
+                                    album: parts[3],
+                                    currentPositionSeconds: Double(parts[4]),
+                                    totalTimeMilliseconds: Double(parts[5]),
+                                    appName: "Spotify"
+                                )
+                                await self?.handleTrackInfo(trackInfo)
+                                return
+                            }
+                        }
+                    }
+                }
             }
-            guard !result.isEmpty, result != "unknown" else { return }
-            let parts = result.components(separatedBy: "|||")
-            guard parts.count >= 6 else { return }
-            let trackInfo = AppleMusicTrackInfo(
-                playerState: parts[0],
-                name: parts[1],
-                artist: parts[2],
-                album: parts[3],
-                currentPositionSeconds: Double(parts[4]),
-                totalTimeMilliseconds: Double(parts[5])
-            )
-            await self?.handleTrackInfo(trackInfo)
+            #endif
         }
     }
 
@@ -466,10 +555,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             queue: nil
         ) { [weak self] notification in
             guard let self else { return }
-            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-               app.bundleIdentifier == "com.apple.Music" || app.bundleIdentifier == "com.spotify.client" {
-                Task {
-                    await self.handleTrackInfo(nil)
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                let terminatedApp = app.bundleIdentifier == "com.spotify.client" ? "Spotify" : (app.bundleIdentifier == "com.apple.Music" ? "Apple Music" : nil)
+                if let terminatedApp {
+                    Task {
+                        if self.getCurrentActiveTrackInfo()?.appName == terminatedApp {
+                            await self.handleTrackInfo(nil)
+                        }
+                    }
                 }
             }
         }
@@ -492,6 +585,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         currentActiveTrackInfo = nil
         lock.unlock()
         stopPositionPolling()
+        _ = nextArtworkGeneration()
 
         for token in tokens {
             center.removeObserver(token)
@@ -521,6 +615,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         let now = nowProvider()
 
         guard let trackInfo else {
+            _ = nextArtworkGeneration()
             stopPositionPolling()
             updatePlaybackStateOnPauseOrStop(now: now)
             Self.removeCachedArtwork()
@@ -530,6 +625,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
         guard trackInfo.playerState.caseInsensitiveCompare("Playing") == .orderedSame else {
             logger.debug("Music player state is '\(trackInfo.playerState, privacy: .public)'; clearing activity.")
+            _ = nextArtworkGeneration()
             stopPositionPolling()
             updatePlaybackStateOnPauseOrStop(now: now)
             Self.removeCachedArtwork()
@@ -540,6 +636,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard let trackName = trackInfo.name?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trackName.isEmpty else {
             logger.debug("Music playing track missing title; clearing activity.")
+            _ = nextArtworkGeneration()
             stopPositionPolling()
             updatePlaybackStateOnPauseOrStop(now: now)
             Self.removeCachedArtwork()
@@ -562,10 +659,18 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
         startPositionPollingIfNeeded(appName: trackInfo.appName)
 
-        let startTimestampMs = Int64(playbackStartDate.timeIntervalSince1970 * 1000)
-        let endTimestampMs: Int64? = trackInfo.totalTimeMilliseconds.map { ms in
-            Int64(playbackStartDate.timeIntervalSince1970 * 1000 + ms)
+        let startInterval = playbackStartDate.timeIntervalSince1970
+        guard startInterval.isFinite, startInterval > 0, startInterval < Double(Int64.max / 1000) else {
+            return nil
         }
+        let startTimestampMs = Int64(startInterval * 1000)
+        let endTimestampMs: Int64? = {
+            guard let ms = trackInfo.totalTimeMilliseconds, ms.isFinite, ms > 0, ms < Double(Int64.max - startTimestampMs) else {
+                return nil
+            }
+            let (endMs, overflow) = startTimestampMs.addingReportingOverflow(Int64(ms))
+            return overflow ? nil : endMs
+        }()
 
         let nonIsolatedState: String? = {
             guard let artist, !artist.isEmpty else { return nil }
@@ -602,8 +707,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         await coordinator.setActivity(activity, for: .appleMusic)
 
         // Asynchronously resolve and fetch live high-resolution album artwork (Boring Notch method)
-        Task.detached(priority: .utility) { [coordinator] in
-            Self.updateArtworkCache()
+        let artworkGen = nextArtworkGeneration()
+        Task.detached(priority: .utility) { [weak self, coordinator] in
+            guard let self, self.isCurrentArtworkGeneration(artworkGen) else { return }
+            if trackInfo.appName.caseInsensitiveCompare("Spotify") != .orderedSame {
+                Self.updateArtworkCache()
+            }
 
             if let resolvedArtwork = await MusicArtworkResolver.shared.resolveArtworkURL(
                 title: trackName,
@@ -611,13 +720,15 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                 album: album,
                 spotifyTrackID: trackInfo.trackID
             ) {
+                guard self.isCurrentArtworkGeneration(artworkGen) else { return }
                 if let url = URL(string: resolvedArtwork),
                    let (data, _) = try? await URLSession.shared.data(from: url),
                    NSImage(data: data) != nil {
+                    guard self.isCurrentArtworkGeneration(artworkGen) else { return }
                     Self.currentArtworkData = data
-                    try? data.write(to: URL(fileURLWithPath: Self.artworkPath), options: .atomic)
                 }
 
+                guard self.isCurrentArtworkGeneration(artworkGen) else { return }
                 let updatedAssets = ActivityAssets(
                     largeImage: resolvedArtwork,
                     largeText: largeText,

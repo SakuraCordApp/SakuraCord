@@ -334,6 +334,10 @@ extension AppModel {
         }
         requestCoalescedUnreadPresentationRefresh()
         publishBootstrapAuthenticationState()
+        let coordinator = activityCoordinator
+        Task {
+            await coordinator.resendActivities()
+        }
         if publishesSessionState {
             sessionState = .workspace
         }

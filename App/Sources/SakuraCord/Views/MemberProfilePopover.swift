@@ -343,7 +343,7 @@ struct MemberProfilePopover<Footer: View>: View {
                         privateProfileNotice(profile)
                     }
                     if hasActiveActivity, editor == nil {
-                        ProfileActivitySection(member: member, richActivity: effectiveRichActivity)
+                        ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
                             .padding(.horizontal, InterfaceScale.metric(16))
                     }
                     if let editor, editor.scope == .main || editor.isNitro {

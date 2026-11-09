@@ -73,13 +73,6 @@ struct DiscordIPCServerTests {
         return (opcode, json)
     }
 
-    @Test func `candidate socket paths return discord-ipc-0 through 9`() {
-        let paths = DiscordIPCServer.candidateSocketPaths()
-        #expect(paths.count == 10)
-        #expect(paths.first?.hasSuffix("discord-ipc-0") == true)
-        #expect(paths.last?.hasSuffix("discord-ipc-9") == true)
-    }
-
     @Test func `server starts and accepts handshake responding with ready event`() async throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()
@@ -140,10 +133,12 @@ struct DiscordIPCServerTests {
         #expect(setResponse.json["cmd"] as? String == "SET_ACTIVITY")
         #expect(setResponse.json["nonce"] as? String == "test-nonce-1")
 
-        // Wait briefly for coordinator to update
-        try await Task.sleep(for: .milliseconds(50))
+        // Wait for coordinator to synchronize activity
+        let updated = await eventually {
+            (await mockProvider.currentActivities()).count == 1
+        }
+        #expect(updated)
         let activities = await mockProvider.currentActivities()
-        #expect(activities.count == 1)
         let published = try #require(activities.values.first)
         #expect(published.name == "Minecraft")
         #expect(published.details == "Playing Fabric 1.20.4")
@@ -162,8 +157,10 @@ struct DiscordIPCServerTests {
         #expect(clearResponse.opcode == 1)
         #expect(clearResponse.json["cmd"] as? String == "SET_ACTIVITY")
 
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(await mockProvider.currentActivities().isEmpty)
+        let cleared = await eventually {
+            (await mockProvider.currentActivities()).isEmpty
+        }
+        #expect(cleared)
     }
 
     @Test func `disconnecting client automatically clears its activity`() async throws {
@@ -188,14 +185,18 @@ struct DiscordIPCServerTests {
         ])
         _ = try #require(readClientFrame(fd: clientFD))
 
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(await mockProvider.currentActivities().count == 1)
+        let published = await eventually {
+            (await mockProvider.currentActivities()).count == 1
+        }
+        #expect(published)
 
         // Close client socket abruptly
         close(clientFD)
 
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(await mockProvider.currentActivities().isEmpty)
+        let cleared = await eventually {
+            (await mockProvider.currentActivities()).isEmpty
+        }
+        #expect(cleared)
     }
 
     @Test func `ping frame receives pong response`() async throws {
@@ -213,5 +214,65 @@ struct DiscordIPCServerTests {
         let pong = try #require(readClientFrame(fd: clientFD))
         #expect(pong.opcode == 4)
         #expect(pong.json["ping"] as? String == "hello")
+    }
+
+    @Test func `large PID does not crash server and SET_ACTIVITY succeeds`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+        defer { close(clientFD) }
+
+        sendClientFrame(fd: clientFD, opcode: 0, jsonObject: ["v": 1, "client_id": "app_large_pid"])
+        _ = try #require(readClientFrame(fd: clientFD))
+
+        // Send pid larger than Int32.max (2147483648)
+        sendClientFrame(fd: clientFD, opcode: 1, jsonObject: [
+            "cmd": "SET_ACTIVITY",
+            "args": [
+                "pid": 2_147_483_648 as Int,
+                "activity": ["name": "SafeApp"],
+            ],
+            "nonce": "n-safe",
+        ])
+
+        let res = try #require(readClientFrame(fd: clientFD))
+        #expect(res.opcode == 1)
+        #expect(res.json["cmd"] as? String == "SET_ACTIVITY")
+        #expect(res.json["nonce"] as? String == "n-safe")
+    }
+
+    @Test func `oversized frame disconnects client without crashing`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+        defer { close(clientFD) }
+
+        // Send a frame with length field declared as 2 MB (> 1 MB limit)
+        var data = Data()
+        var op = UInt32(1).littleEndian
+        var len = UInt32(2 * 1024 * 1024).littleEndian
+        withUnsafeBytes(of: &op) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: &len) { data.append(contentsOf: $0) }
+        _ = data.withUnsafeBytes { ptr in
+            Darwin.write(clientFD, ptr.baseAddress!, data.count)
+        }
+
+        // Connection should be closed by server
+        let disconnected = await eventually {
+            var buf = [UInt8](repeating: 0, count: 16)
+            let n = Darwin.read(clientFD, &buf, buf.count)
+            return n <= 0
+        }
+        #expect(disconnected)
     }
 }

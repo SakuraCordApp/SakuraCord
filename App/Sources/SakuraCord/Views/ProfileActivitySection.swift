@@ -6,6 +6,7 @@ import SwiftUI
 struct ProfileActivitySection: View {
     let member: Member
     var richActivity: MemberRichActivity? = nil
+    var isCurrentUser: Bool = false
     @Environment(\.colorScheme) private var colorScheme
     @State private var dynamicArtwork: NSImage? = nil
 
@@ -90,16 +91,10 @@ struct ProfileActivitySection: View {
                 }
             }
         }
-        if isMusic {
+        if isMusic && isCurrentUser {
             if let data = AppleMusicPresenceMonitor.currentArtworkData, let img = NSImage(data: data) {
                 return img
             }
-            if FileManager.default.fileExists(atPath: AppleMusicPresenceMonitor.artworkPath),
-               let data = try? Data(contentsOf: URL(fileURLWithPath: AppleMusicPresenceMonitor.artworkPath)),
-               let img = NSImage(data: data) {
-                return img
-            }
-
         }
         return nil
     }
@@ -153,7 +148,9 @@ struct ProfileActivitySection: View {
                 Spacer(minLength: 0)
             }
 
-            if let start = startTimestamp, let end = endTimestamp, end > start {
+            if let start = startTimestamp, let end = endTimestamp, end > start,
+               !end.subtractingReportingOverflow(start).overflow,
+               (end - start) < 86_400_000 * 7, (end - start) > 0 {
                 playbackProgressBar(start: start, end: end)
             }
         }
@@ -256,37 +253,43 @@ struct ProfileActivitySection: View {
             }
     }
 
+    @ViewBuilder
     private func playbackProgressBar(start: Int64, end: Int64) -> some View {
-        TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
-            let nowMs = Int64(timeline.date.timeIntervalSince1970 * 1000)
-            let totalDurationMs = max(1, end - start)
-            let elapsedMs = max(0, min(totalDurationMs, nowMs - start))
-            let progress = Double(elapsedMs) / Double(totalDurationMs)
-            let elapsedSec = Int(elapsedMs / 1000)
-            let remainingSec = Int(max(0, end - nowMs) / 1000)
+        let (durationMs, overflow) = end.subtractingReportingOverflow(start)
+        if !overflow, durationMs > 0, durationMs < 86_400_000 * 7 {
+            TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
+                let nowMs = Int64(timeline.date.timeIntervalSince1970 * 1000)
+                let (rawElapsed, elapsedOverflow) = nowMs.subtractingReportingOverflow(start)
+                let elapsedMs = elapsedOverflow ? (nowMs < start ? 0 : durationMs) : max(0, min(durationMs, rawElapsed))
+                let progress = Double(elapsedMs) / Double(durationMs)
+                let elapsedSec = Int(elapsedMs / 1000)
+                let (rawRemaining, remainingOverflow) = end.subtractingReportingOverflow(nowMs)
+                let remainingMs = remainingOverflow ? 0 : max(0, rawRemaining)
+                let remainingSec = Int(remainingMs / 1000)
 
-            VStack(spacing: InterfaceScale.metric(4)) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.secondary.opacity(0.2))
-                            .frame(height: InterfaceScale.metric(4))
+                VStack(spacing: InterfaceScale.metric(4)) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.secondary.opacity(0.2))
+                                .frame(height: InterfaceScale.metric(4))
 
-                        Capsule()
-                            .fill(Color.primary.opacity(0.8))
-                            .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(progress))), height: InterfaceScale.metric(4))
+                            Capsule()
+                                .fill(Color.primary.opacity(0.8))
+                                .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(progress))), height: InterfaceScale.metric(4))
+                        }
                     }
-                }
-                .frame(height: InterfaceScale.metric(4))
+                    .frame(height: InterfaceScale.metric(4))
 
-                HStack {
-                    Text(String(format: "%d:%02d", elapsedSec / 60, elapsedSec % 60))
-                        .font(.interfaceSystem(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(String(format: "-%d:%02d", remainingSec / 60, remainingSec % 60))
-                        .font(.interfaceSystem(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text(String(format: "%d:%02d", elapsedSec / 60, elapsedSec % 60))
+                            .font(.interfaceSystem(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(String(format: "-%d:%02d", remainingSec / 60, remainingSec % 60))
+                            .font(.interfaceSystem(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
