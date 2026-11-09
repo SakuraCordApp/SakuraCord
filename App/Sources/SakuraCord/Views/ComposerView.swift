@@ -48,6 +48,7 @@ struct ComposerView: View {
     /// Return was pressed on an `@time` query with no reading.
     @State private var timeQueryNeedsPick = false
     @State private var sendTransitionAnchor = ComposerSendTransitionAnchor()
+    @State private var emojiSuggestionCache = ColonAutocompleteSuggestionCache()
     @State private var holdsPlaceholderForSendTransition = false
     /// A send clears the composer under the message leaving it, so the
     /// composer collapses at once rather than animating.
@@ -893,15 +894,7 @@ struct ComposerView: View {
     }
 
     private func emojiSuggestions(query: String) -> [ColonAutocompleteSuggestion] {
-        ColonAutocompleteSuggestionFactory.suggestions(
-            query: query,
-            customEmojis: model.composerCustomEmojis,
-            customValue: model.composerText(for:),
-            customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
-            discordFavoriteKeys: Set(model.discordFavoriteEmojiKeys),
-            discordUsageScores: model.discordEmojiUsageScores,
-            discordSettingsAreLoaded: model.hasLoadedDiscordEmojiSettings
-        )
+        emojiSuggestionCache.suggestions(query: query, model: model)
     }
 
     private func completeClosedEmojiName(in text: String) -> Bool {

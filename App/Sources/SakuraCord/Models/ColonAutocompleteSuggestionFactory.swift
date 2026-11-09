@@ -111,3 +111,56 @@ enum ColonAutocompleteSuggestionFactory {
         }.map(\.suggestion)
     }
 }
+
+/// The last `:emoji:` ranking for an editor. Hovering a suggestion while
+/// scrolling redraws the editor, and ranking every emoji again on each of
+/// those redraws makes the menu stutter, so the result is kept until the
+/// query or anything it was ranked from changes.
+@MainActor
+final class ColonAutocompleteSuggestionCache {
+    private struct Key: Equatable {
+        let query: String
+        let skinTone: NativeEmojiSkinTone
+        let emojis: [DiscordEmoji]
+        let guildID: GuildID?
+        let premiumType: Int?
+        let fakeNitro: Bool
+        let guildNames: [GuildID: String]
+        let favoriteKeys: [String]
+        let usageScores: [String: Int]
+        let settingsAreLoaded: Bool
+    }
+
+    private var key: Key?
+    private var value: [ColonAutocompleteSuggestion] = []
+
+    func suggestions(query: String, model: AppModel) -> [ColonAutocompleteSuggestion] {
+        let key = Key(
+            query: query,
+            skinTone: .preferred,
+            emojis: model.orderedCustomEmojis,
+            guildID: model.selectedGuildID,
+            premiumType: model.currentUser?.premiumType,
+            fakeNitro: model.featuresSettings.fakeNitroEmojis,
+            // Only names reach the menu, and unread counts replace the guild
+            // map with almost every message.
+            guildNames: model.serverRailGuildsByID.mapValues(\.name),
+            favoriteKeys: model.discordFavoriteEmojiKeys,
+            usageScores: model.discordEmojiUsageScores,
+            settingsAreLoaded: model.hasLoadedDiscordEmojiSettings
+        )
+        if key != self.key {
+            self.key = key
+            value = ColonAutocompleteSuggestionFactory.suggestions(
+                query: query,
+                customEmojis: model.composerCustomEmojis,
+                customValue: model.composerText(for:),
+                customSource: { key.guildNames[$0.guildID] },
+                discordFavoriteKeys: Set(key.favoriteKeys),
+                discordUsageScores: key.usageScores,
+                discordSettingsAreLoaded: key.settingsAreLoaded
+            )
+        }
+        return value
+    }
+}

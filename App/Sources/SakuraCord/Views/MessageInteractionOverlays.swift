@@ -879,6 +879,7 @@ private struct InlineMessageEditor: View {
     @State private var timeQueryNeedsPick = false
     @State private var timeKeyboardSelectionRevision = 0
     @State private var timestampClock = RelativeTimestampDisplayClock()
+    @State private var emojiSuggestionCache = ColonAutocompleteSuggestionCache()
 
     /// Game names and people resolve as they do in the message, and update
     /// as games load.
@@ -973,15 +974,7 @@ private struct InlineMessageEditor: View {
 
     private var suggestions: [ColonAutocompleteSuggestion] {
         guard let context else { return [] }
-        return ColonAutocompleteSuggestionFactory.suggestions(
-            query: context.query,
-            customEmojis: model.composerCustomEmojis,
-            customValue: model.composerText(for:),
-            customSource: { model.serverRailGuildsByID[$0.guildID]?.name },
-            discordFavoriteKeys: Set(model.discordFavoriteEmojiKeys),
-            discordUsageScores: model.discordEmojiUsageScores,
-            discordSettingsAreLoaded: model.hasLoadedDiscordEmojiSettings
-        )
+        return emojiSuggestionCache.suggestions(query: context.query, model: model)
     }
 
     private var timeContext: KeywordMentionContext? {
