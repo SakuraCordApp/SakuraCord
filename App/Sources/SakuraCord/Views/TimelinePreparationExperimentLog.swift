@@ -1,6 +1,16 @@
 import AppKit
 import Foundation
 
+// TEMPORARY EXPERIMENT (do not merge): logs system scroller style changes.
+enum ExperimentScrollerObserver {
+    @MainActor static let token: NSObjectProtocol = NotificationCenter.default.addObserver(
+        forName: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil, queue: nil
+    ) { _ in
+        let line = "FLAKYDIAG preferredScrollerStyleDidChange uptime=\(ProcessInfo.processInfo.systemUptime)\n"
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+}
+
 // TEMPORARY EXPERIMENT (do not merge): records why a pending timeline
 // layout preparation is cancelled or discarded.
 extension NativeMessageTimelineCoordinator {
@@ -22,8 +32,17 @@ extension NativeMessageTimelineCoordinator {
             "journal=\(String(describing: newParent.rowsUpdateJournal.latestRevision))/\(newParent.rowsRevision)",
             "ignored=\(newParent.model.ignoredUsers.ignoredUserIDs.count)/\(newParent.model.ignoredUsers.blockedUserIDs.count)",
         ]
+        let view = scrollView
+        let geometry = [
+            "scroller=\(view?.scrollerStyle.rawValue ?? -1)/preferred \(NSScroller.preferredScrollerStyle.rawValue)",
+            "clip=\(view?.contentView.bounds.width ?? -1)",
+            "vertical=\(view?.hasVerticalScroller ?? false)",
+            "lastViewport=\(lastViewportSize.width)",
+            "suppressHover=\(canvas?.suppressesHoverPresentation ?? false)",
+            "uptime=\(ProcessInfo.processInfo.systemUptime)",
+        ]
         let stack = Thread.callStackSymbols.prefix(8).joined(separator: " | ")
-        let line = "FLAKYDIAG \(reason) " + fields.joined(separator: " ") + " stack: " + stack + "\n"
+        let line = "FLAKYDIAG \(reason) " + (fields + geometry).joined(separator: " ") + " stack: " + stack + "\n"
         FileHandle.standardError.write(Data(line.utf8))
     }
 }

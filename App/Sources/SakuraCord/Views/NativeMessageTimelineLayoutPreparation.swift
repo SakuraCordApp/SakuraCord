@@ -21,6 +21,7 @@ extension NativeMessageTimelineCoordinator {
             inviteRevision = parent.model.serverInvites.revision
             timestampDay = Calendar.autoupdatingCurrent.startOfDay(for: .now)
             self.width = width
+            _ = ExperimentScrollerObserver.token
         }
 
         func matches(_ parent: NativeMessageTimelineView, width: CGFloat) -> Bool {

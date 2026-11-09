@@ -75,14 +75,12 @@ run_package_tests() {
 # TEMPORARY EXPERIMENT (do not merge): repeat the App suite to capture
 # timeline layout preparation diagnostics, then fail so no build is published.
 case "$TARGET" in
-  app)
+  app|protocol|dave|media|packages|packages-core)
     run_tests "$ROOT_DIR/App" || true
-    for i in $(seq 2 80); do
+    for i in $(seq 2 60); do
       echo "=== EXPERIMENT App run $i ==="
       load_pids=()
-      if (( i % 2 == 0 )); then
-        for _ in $(seq 1 $(( $(sysctl -n hw.ncpu) * 2 ))); do yes > /dev/null & load_pids+=($!); done
-      fi
+
       python3 "$ROOT_DIR/script/run_test_diagnostics.py" --label "App-$i" \
         --output-dir "$SAKURACORD_RUNTIME_DIR/test-diagnostics" --events --timeout-seconds 180 -- \
         swift test --package-path "$ROOT_DIR/App" --cache-path "$SAKURACORD_SWIFTPM_CACHE_DIR" \
@@ -90,10 +88,6 @@ case "$TARGET" in
       for pid in ${load_pids[@]+"${load_pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
     done
     echo "Experiment finished; failing deliberately." >&2
-    exit 1
-    ;;
-  protocol|dave|media|packages|packages-core)
-    echo "Experiment branch: only the app suite runs." >&2
     exit 1
     ;;
   protocol)
