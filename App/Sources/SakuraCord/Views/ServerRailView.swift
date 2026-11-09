@@ -467,7 +467,11 @@ private struct PendingApplicationsRailFolder: View {
 
     var body: some View {
         VStack(spacing: isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing) : 0) {
-            Button { isExpanded.toggle() } label: {
+            Button {
+                // Like the server folders' header, a click animates explicitly: a pointer click does not carry the
+                // rail's implicit animation to the header.
+                withAnimation(reduceMotion ? nil : ServerRailAnimations.folderExpansion) { isExpanded.toggle() }
+            } label: {
                 HStack(spacing: InterfaceScale.metric(4)) {
                     ServerRailSelectionIndicator(isSelected: !isExpanded && entries.contains(where: \.isSelected),
                                                  isHovering: isHovering && !isExpanded, hasNotification: false)
