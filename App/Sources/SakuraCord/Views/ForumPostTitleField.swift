@@ -42,7 +42,7 @@ struct ForumPostTitleField: NSViewRepresentable {
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.setAccessibilityLabel(String(localized: "Title"))
         field.delegate = context.coordinator
-        field.editor.onFocusChange = { [weak coordinator = context.coordinator] in
+        field.editor.onFirstResponderChange = { [weak coordinator = context.coordinator] in
             coordinator?.firstResponderDidChange($0)
         }
         return field
@@ -146,22 +146,9 @@ struct ForumPostTitleField: NSViewRepresentable {
         }
     }
 
-    final class TitleEditor: NSTextView {
+    final class TitleEditor: ComposerFocusReportingTextView {
         var canReceiveAttachments: (() -> Bool)?
         var receiveAttachments: ((ComposerIncomingAttachments) -> Void)?
-        var onFocusChange: ((Bool) -> Void)?
-
-        override func becomeFirstResponder() -> Bool {
-            let didBecome = super.becomeFirstResponder()
-            if didBecome { onFocusChange?(true) }
-            return didBecome
-        }
-
-        override func resignFirstResponder() -> Bool {
-            let didResign = super.resignFirstResponder()
-            if didResign { onFocusChange?(false) }
-            return didResign
-        }
 
         private var receivesAttachments: Bool {
             isEditable && receiveAttachments != nil && canReceiveAttachments?() != false

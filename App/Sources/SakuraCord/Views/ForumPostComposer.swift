@@ -115,9 +115,7 @@ struct ForumPostComposer: View {
         .windowModalDismissDisabled(isSubmitting)
         .task {
             // Files kept with the draft are opened again, as when attached.
-            for url in attachments.map(\.url) where url.startAccessingSecurityScopedResource() {
-                securityScopedAttachmentURLs.append(url)
-            }
+            openSecurityScopes(attachments.map(\.url))
             await Task.yield()
             if draft.title.isEmpty { isTitleFocused = true } else { isContentFocused = true }
             let pending = attachments.filter { draft.checkingAttachmentIDs.contains($0.id) }
@@ -204,7 +202,7 @@ struct ForumPostComposer: View {
             open: openAttachment,
             toggleSpoiler: { id in updateAttachment(id) { $0.isSpoiler.toggle() } },
             update: { attachment in updateAttachment(attachment.id) { $0 = attachment } },
-            remove: removeAttachment
+            remove: { removeAttachments([$0]) }
         )
         .padding(.horizontal, InterfaceScale.metric(8))
     }
@@ -459,6 +457,8 @@ private extension ForumPostComposer {
     /// composer closed or reopened still updates what it shows.
     var draft: ForumPostComposerDraft {
         get { model.forumPostDrafts[channel.id] ?? ForumPostComposerDraft() }
+        // Only a blank draft is dropped; one holding just spaces stays, so
+        // typing a space first doesn't undo itself.
         nonmutating set { model.forumPostDrafts[channel.id] = newValue == ForumPostComposerDraft() ? nil : newValue }
     }
 
@@ -485,9 +485,7 @@ private extension ForumPostComposer {
             model.pruneOwnedPromisedAttachmentFiles()
             return
         }
-        for url in urls where url.startAccessingSecurityScopedResource() {
-            securityScopedAttachmentURLs.append(url)
-        }
+        openSecurityScopes(urls)
         let staged = urls.map {
             ForumPostAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
         }
@@ -500,13 +498,9 @@ private extension ForumPostComposer {
     /// if the selected conversation changes or the composer closes first;
     /// the files then stay pending and are checked when it next appears.
     func checkAttachments(_ staged: [ForumPostAttachment]) async {
-        let context = model.attachmentComposerContext(for: .channel)
-        let allowedURLs = Set(await model.attachmentURLsWithinDiscordLimit(staged.map(\.url)))
-        guard !Task.isCancelled, model.attachmentComposerContext(for: .channel) == context else { return }
+        guard let allowedURLs = await model.checkedAttachmentURLsWithinDiscordLimit(staged.map(\.url)).map(Set.init) else { return }
         draft.checkingAttachmentIDs.subtract(staged.map(\.id))
-        for attachment in staged where !allowedURLs.contains(attachment.url) {
-            removeAttachment(attachment.id)
-        }
+        removeAttachments(Set(staged.filter { !allowedURLs.contains($0.url) }.map(\.id)))
     }
 
     func updateAttachment(_ id: UUID, _ change: (inout ForumPostAttachment) -> Void) {
@@ -514,15 +508,26 @@ private extension ForumPostComposer {
         change(&draft.attachments[index])
     }
 
-    func removeAttachment(_ id: UUID) {
-        guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
-        let url = draft.attachments.remove(at: index).url
-        draft.checkingAttachmentIDs.remove(id)
-        if let scoped = securityScopedAttachmentURLs.firstIndex(of: url) {
-            securityScopedAttachmentURLs.remove(at: scoped).stopAccessingSecurityScopedResource()
+    func removeAttachments(_ ids: Set<UUID>) {
+        var updated = draft
+        let removed = updated.attachments.filter { ids.contains($0.id) }
+        guard !removed.isEmpty else { return }
+        updated.attachments.removeAll { ids.contains($0.id) }
+        updated.checkingAttachmentIDs.subtract(ids)
+        draft = updated
+        for url in removed.map(\.url) {
+            if let scoped = securityScopedAttachmentURLs.firstIndex(of: url) {
+                securityScopedAttachmentURLs.remove(at: scoped).stopAccessingSecurityScopedResource()
+            }
         }
         // Pasted files no draft holds any more are deleted.
         model.pruneOwnedPromisedAttachmentFiles()
+    }
+
+    func openSecurityScopes(_ urls: [URL]) {
+        for url in urls where url.startAccessingSecurityScopedResource() {
+            securityScopedAttachmentURLs.append(url)
+        }
     }
 
     func openAttachment(_ id: UUID) {
@@ -535,7 +540,7 @@ private extension ForumPostComposer {
         if attachments.isEmpty || isSubmitting {
             modal?()
         } else {
-            for id in attachments.map(\.id) { removeAttachment(id) }
+            removeAttachments(Set(attachments.map(\.id)))
         }
     }
 
