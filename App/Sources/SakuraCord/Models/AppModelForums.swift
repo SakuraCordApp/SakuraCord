@@ -8,11 +8,13 @@ struct ForumPostComposerDraft: Equatable {
     var title = ""
     var content = ""
     var tagIDs: Set<ForumTagID> = []
+    var attachments: [ForumPostAttachment] = []
 
     var isEmpty: Bool {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && tagIDs.isEmpty
+            && attachments.isEmpty
     }
 }
 

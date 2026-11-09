@@ -273,6 +273,7 @@ extension AppModel {
                 .map(\.standardizedFileURL)
         )
         retainedFileURLs.formUnion(commandComposers.flatMap(\.attachmentURLs).map(\.standardizedFileURL))
+        retainedFileURLs.formUnion(forumPostDrafts.values.flatMap(\.attachments).map(\.url.standardizedFileURL))
         retainedFileURLs.formUnion(promisedAttachmentFilesInFlight)
 
         let staleFileURLs = promisedAttachmentDirectoryByFileURL.keys.filter {

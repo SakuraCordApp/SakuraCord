@@ -53,10 +53,8 @@ struct ForumPostComposer: View {
     let channel: Channel
     @Environment(\.windowModalContext) private var modal
     @State private var draft: ForumPostComposerDraft
-    @State private var attachments: [ForumPostAttachment] = []
     @State private var checkingAttachmentIDs: Set<UUID> = []
     @State private var securityScopedAttachmentURLs: Set<URL> = []
-    @State private var ownedAttachmentBatches: [ComposerPromisedFileBatch] = []
     @State private var isSubmitting = false
     @State private var submitTask: Task<Void, Never>?
     @State private var problem: ForumPostProblem?
@@ -117,14 +115,19 @@ struct ForumPostComposer: View {
         }
         .windowModalDismissDisabled(isSubmitting)
         .task {
+            // Files kept with the draft are opened again, as when attached.
+            for url in attachments.map(\.url) where url.startAccessingSecurityScopedResource() {
+                securityScopedAttachmentURLs.insert(url)
+            }
             await Task.yield()
             if draft.title.isEmpty { isTitleFocused = true } else { isContentFocused = true }
         }
-        .onChange(of: draft) { _, value in
+        .onChange(of: draft) { old, value in
             model.forumPostDrafts[channel.id] = value.isEmpty ? nil : value
             problem = nil
+            // Pasted files no draft holds any more are deleted.
+            if old.attachments.map(\.url) != value.attachments.map(\.url) { model.pruneOwnedPromisedAttachmentFiles() }
         }
-        .onChange(of: attachments.map(\.id)) { problem = nil }
         .onDisappear(perform: releaseAttachments)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("New post in \(channel.name)")
@@ -146,6 +149,9 @@ struct ForumPostComposer: View {
                 .tint(SakuraCordAccentColor.color)
                 .focused($isTitleFocused)
                 .onSubmit { isContentFocused = true }
+                .background {
+                    ForumPostTitlePasteRouter(isActive: isTitleFocused && model.canAttachFilesToForumPosts, receive: receiveAttachments)
+                }
                 .accessibilityLabel("Title")
             if draft.title.count > Self.titleLimit - 20 {
                 Text("\(draft.title.count)/\(Self.titleLimit)")
@@ -284,7 +290,7 @@ struct ForumPostComposer: View {
             ModalGlassButton(symbol: "xmark", label: "Cancel") { modal?() }
                 .disabled(isSubmitting)
             ModalGlassButton(symbol: "paperplane", label: "Post", primary: true, isLoading: isSubmitting, action: submit)
-                .disabled(isSubmitting || draft.isEmpty && attachments.isEmpty || model.guildTimeoutUntil(in: channel.id) != nil)
+                .disabled(isSubmitting || draft.isEmpty || model.guildTimeoutUntil(in: channel.id) != nil)
                 .keyboardShortcut(.return, modifiers: .command)
                 .modifier(ForumPostRejectionShake(trigger: shakes[.post, default: 0]))
                 .padding(.leading, InterfaceScale.metric(4))
@@ -392,7 +398,11 @@ private extension ForumPostComposer {
             return
         }
         isSubmitting = true
+        // Pasted files stay while the post reads them, even if removed meanwhile.
+        let sentURLs = attachments.map(\.url)
+        model.beginUsingOwnedPromisedFiles(sentURLs)
         submitTask = Task {
+            defer { model.endUsingOwnedPromisedFiles(sentURLs) }
             let didCreate = await model.createForumPost(
                 CreateForumPostDraft(
                     channelID: channel.id,
@@ -406,7 +416,6 @@ private extension ForumPostComposer {
             guard !Task.isCancelled else { return }
             isSubmitting = false
             submitTask = nil
-            discardUnusedBatches()
             if didCreate {
                 // Cleared here too: the modal may close before `onChange` runs.
                 model.forumPostDrafts[channel.id] = nil
@@ -456,28 +465,14 @@ private extension ForumPostComposer {
 
     // MARK: Attachments
 
-    /// Pasted data stays in app-owned storage while one of its files is
-    /// staged, since these attachments aren't held by the model.
+    var attachments: [ForumPostAttachment] { draft.attachments }
+
+    /// Pasted data is held by the model, which deletes it once no draft or
+    /// post uses it.
     func receiveAttachments(_ incoming: ComposerIncomingAttachments) {
         switch incoming {
-        case let .external(urls):
-            addAttachments(urls)
-        case let .owned(batch):
-            ownedAttachmentBatches.append(batch)
-            addAttachments(batch.urls)
-            discardUnusedBatches()
-        }
-    }
-
-    /// Deletes pasted data none of whose files is staged any more. A post
-    /// being sent still reads its files, so this waits until it's done.
-    func discardUnusedBatches() {
-        guard submitTask == nil else { return }
-        let stagedURLs = Set(attachments.map(\.url))
-        ownedAttachmentBatches.removeAll { batch in
-            guard !batch.urls.contains(where: stagedURLs.contains) else { return false }
-            batch.discard()
-            return true
+        case let .external(urls): addAttachments(urls)
+        case let .owned(batch): addAttachments(model.adoptPromisedFileBatch(batch))
         }
     }
 
@@ -486,7 +481,10 @@ private extension ForumPostComposer {
     func addAttachments(_ urls: [URL]) {
         let attachedURLs = Set(attachments.map(\.url))
         let urls = model.uploadableFileURLs(urls.filter { !attachedURLs.contains($0) })
-        guard !urls.isEmpty, model.attachmentBatchFits(urls.count, besides: attachments.count) else { return }
+        guard !urls.isEmpty, model.attachmentBatchFits(urls.count, besides: attachments.count) else {
+            model.pruneOwnedPromisedAttachmentFiles()
+            return
+        }
         for url in urls where !securityScopedAttachmentURLs.contains(url) && url.startAccessingSecurityScopedResource() {
             securityScopedAttachmentURLs.insert(url)
         }
@@ -494,28 +492,32 @@ private extension ForumPostComposer {
             ForumPostAttachment(url: $0).applyingFilenamePrivacy(model.privacySafetySettings.anonymisesFileNames)
         }
         let stagedIDs = Set(staged.map(\.id))
-        attachments.append(contentsOf: staged)
+        draft.attachments.append(contentsOf: staged)
         checkingAttachmentIDs.formUnion(stagedIDs)
-        Task {
+        // Saved at once rather than on change, so the model holds pasted
+        // files before anything can prune them.
+        model.forumPostDrafts[channel.id] = draft
+        Task { [channelID = channel.id] in
             let allowedURLs = Set(await model.attachmentURLsWithinDiscordLimit(urls))
             checkingAttachmentIDs.subtract(stagedIDs)
-            for attachment in staged where !allowedURLs.contains(attachment.url) {
-                removeAttachment(attachment.id)
-            }
+            let rejectedIDs = Set(staged.filter { !allowedURLs.contains($0.url) }.map(\.id))
+            for id in rejectedIDs { removeAttachment(id) }
+            // The composer may have closed during the check.
+            model.forumPostDrafts[channelID]?.attachments.removeAll { rejectedIDs.contains($0.id) }
+            model.pruneOwnedPromisedAttachmentFiles()
         }
     }
 
     func updateAttachment(_ id: UUID, _ change: (inout ForumPostAttachment) -> Void) {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
-        change(&attachments[index])
+        change(&draft.attachments[index])
     }
 
     func removeAttachment(_ id: UUID) {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
-        let url = attachments.remove(at: index).url
+        let url = draft.attachments.remove(at: index).url
         checkingAttachmentIDs.remove(id)
         if securityScopedAttachmentURLs.remove(url) != nil { url.stopAccessingSecurityScopedResource() }
-        discardUnusedBatches()
     }
 
     func openAttachment(_ id: UUID) {
@@ -527,8 +529,6 @@ private extension ForumPostComposer {
         submitTask = nil
         for url in securityScopedAttachmentURLs { url.stopAccessingSecurityScopedResource() }
         securityScopedAttachmentURLs.removeAll()
-        for batch in ownedAttachmentBatches { batch.discard() }
-        ownedAttachmentBatches.removeAll()
     }
 }
 
@@ -548,6 +548,60 @@ private struct ForumPostRejectionShake: ViewModifier {
             LinearKeyframe(-3, duration: 0.06)
             LinearKeyframe(3, duration: 0.06)
             LinearKeyframe(0, duration: 0.04)
+        }
+    }
+}
+
+/// The title is a plain text field, so files pasted while it has focus join
+/// the post's attachments, as in the body, rather than pasting as text.
+private struct ForumPostTitlePasteRouter: NSViewRepresentable {
+    let isActive: Bool
+    let receive: (ComposerIncomingAttachments) -> Void
+
+    func makeNSView(context: Context) -> RouterView { RouterView() }
+
+    func updateNSView(_ view: RouterView, context: Context) {
+        view.receive = receive
+        view.isActive = isActive
+    }
+
+    static func dismantleNSView(_ view: RouterView, coordinator: ()) {
+        view.isActive = false
+    }
+
+    final class RouterView: NSView {
+        var receive: ((ComposerIncomingAttachments) -> Void)?
+        var isActive = false { didSet { synchronize() } }
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            synchronize()
+        }
+
+        private func synchronize() {
+            guard isActive, window != nil else {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+                return
+            }
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.window === self.window,
+                      WindowModalCoordinator.allowsInput(for: self),
+                      ComposerUnfocusedTypingMonitor.shouldOfferPaste(characters: event.characters, modifierFlags: event.modifierFlags),
+                      let type = NSPasteboard.general.availableType(from: ComposerPasteboardAttachments.readableTypes),
+                      let attachments = ComposerPasteboardAttachments.attachments(from: .general, type: type)
+                else { return event }
+                receive?(attachments)
+                return nil
+            }
+        }
+
+        isolated deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
         }
     }
 }
