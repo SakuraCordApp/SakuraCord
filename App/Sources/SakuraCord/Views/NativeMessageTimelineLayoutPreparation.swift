@@ -42,6 +42,7 @@ extension NativeMessageTimelineCoordinator {
         scrollView: NSScrollView
     ) -> Bool {
         guard newParent.model.ignoredUsers.ignoredUserIDs.isEmpty, newParent.model.ignoredUsers.blockedUserIDs.isEmpty else {
+            experimentLog("cancel ignoredUsers", parent: newParent, width: 0)
             cancelLayoutPreparation()
             return false
         }
@@ -56,6 +57,7 @@ extension NativeMessageTimelineCoordinator {
               (newParent.rowsUpdateJournal.latestRevision ?? newParent.rowsRevision)
                 == newParent.rowsRevision
         else {
+            experimentLog("cancel guard", parent: newParent, width: width)
             cancelLayoutPreparation()
             return false
         }
@@ -65,6 +67,7 @@ extension NativeMessageTimelineCoordinator {
             preparation.parent = newParent
             return !preparation.isComplete
         }
+        experimentLog("cancel mismatch", parent: newParent, width: width)
         cancelLayoutPreparation()
         guard canvas?.suppressesHoverPresentation == true else { return false }
 
@@ -105,6 +108,10 @@ extension NativeMessageTimelineCoordinator {
                     width: max(220, scrollView.contentView.bounds.width.rounded())
                 ), abs(self.layoutWidth - width) < 0.5
                 else {
+                    self.experimentLog(
+                        "discard", parent: preparation.parent,
+                        width: max(220, scrollView.contentView.bounds.width.rounded())
+                    )
                     self.layoutPreparationTask = nil
                     self.layoutPreparation = nil
                     self.applyUpdate(parent: preparation.parent, scrollView: scrollView)

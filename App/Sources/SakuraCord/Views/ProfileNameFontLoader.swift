@@ -59,6 +59,7 @@ nonisolated enum ProfileNameFontCache {
     }
 
     static func insert(_ descriptor: ProfileNameFontDescriptor, id: Int) {
+        FileHandle.standardError.write(Data("FLAKYDIAG font insert id=\(id)\n".utf8))
         state.withLock {
             $0.descriptors[id] = descriptor
             $0.revision &+= 1
