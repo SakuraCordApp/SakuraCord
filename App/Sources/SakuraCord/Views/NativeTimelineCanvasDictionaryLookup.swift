@@ -28,7 +28,7 @@ extension NativeTimelineCanvasView {
     }
 
     func dictionaryLookupAction(at point: CGPoint, usesSelection: Bool = false) -> (() -> Void)? {
-        guard !sendTransitionBlocksInteractions,
+        guard !glideBlocksPointer,
               WindowModalCoordinator.allowsInput(for: self),
               !overlayBlocksInteractions,
               editingMessageID == nil
@@ -91,7 +91,7 @@ extension NativeTimelineCanvasView {
             // fail for custom-drawn text. Resolve the system dictionary term first.
             return { [weak self] in
                 guard let self,
-                      !self.sendTransitionBlocksInteractions,
+                      !self.glideBlocksPointer,
                       WindowModalCoordinator.allowsInput(for: self),
                       !self.overlayBlocksInteractions,
                       self.editingMessageID == nil

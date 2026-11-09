@@ -145,6 +145,8 @@ struct NativeTimelineRowLayout {
     }
 
     var height: CGFloat = 0
+    /// The space below a short row's content that pads it to its avatar's height.
+    var avatarPadding: CGFloat = 0
     var loaderLayout: NativeTimelineLoaderLayout?
     var beginningLayout: NativeTimelineBeginningLayout?
     var searchSectionRegion: SearchSectionRegion?

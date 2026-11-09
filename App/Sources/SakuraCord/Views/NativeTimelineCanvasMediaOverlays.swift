@@ -238,11 +238,12 @@ extension NativeTimelineCanvasView {
             }
             let identifier = items[index].identifier
             let layout = layouts[index]
-            guard animatedMediaRows[identifier] != nil else {
+            // While an edit's lines glide, its row draws its media still:
+            // live views would sit at their final places.
+            guard animatedMediaRows[identifier] != nil, editedTextBands[identifier] == nil else {
                 index += 1
                 continue
             }
-
             appendAnimatedAvatarOverlays(
                 row: row,
                 identifier: identifier,
@@ -1346,7 +1347,9 @@ extension NativeTimelineCanvasView {
                     frame: item.frame,
                     cornerRadius: item.presentation.cornerRadius
                 ) { [weak self] in
-                    self?.reveal(item.key)
+                    guard let self, !glideBlocksPointer else { return false }
+                    reveal(item.key)
+                    return true
                 }
                 addSubview(
                     overlay,

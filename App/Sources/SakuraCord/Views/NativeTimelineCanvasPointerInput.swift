@@ -13,7 +13,7 @@ extension NativeTimelineCanvasView {
         let hit = super.hitTest(point)
         // Subview controls share the canvas's presentation transform, but
         // AppKit hit testing uses their unanimated frames as well.
-        return sendTransitionBlocksInteractions && hit != nil ? self : hit
+        return glideBlocksPointer && hit != nil ? self : hit
     }
 
     /// Whether the pointer's hover is followed: not while scrolling, nor
@@ -25,7 +25,7 @@ extension NativeTimelineCanvasView {
 
     override func updateTrackingAreas() {
         guard tracksHover,
-              !sendTransitionBlocksInteractions,
+              !glideBlocksPointer,
               !overlayBlocksInteractions
         else {
             pointer.removeTrackingAreas(from: self)
@@ -53,7 +53,7 @@ extension NativeTimelineCanvasView {
         removeAllToolTips()
         guard WindowModalCoordinator.allowsInput(for: self) else { return }
         guard !suppressesHoverPresentation,
-              !sendTransitionBlocksInteractions,
+              !glideBlocksPointer,
               !overlayBlocksInteractions
         else { return }
         super.resetCursorRects()
@@ -208,7 +208,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
             clearPointerHoverTargets()
             return
@@ -262,7 +262,7 @@ extension NativeTimelineCanvasView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered(at: event.locationInWindow) else {
             clearPointerHoverTargets()
             return
@@ -408,7 +408,7 @@ extension NativeTimelineCanvasView {
 
     override func mouseDown(with event: NSEvent) {
         pointer.didForceClickLookup = false
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         window?.makeFirstResponder(self)
         guard event.buttonNumber == 0 else { return }
         dismissTimestampHover()
@@ -526,7 +526,7 @@ extension NativeTimelineCanvasView {
 
     override func mouseDragged(with event: NSEvent) {
         guard !pointer.didForceClickLookup else { return }
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         if dragVoiceMessagePress(to: convert(event.locationInWindow, from: nil)) { return }
         if pressedPollTarget != nil {
             setHoveredPollTarget(pollPointerHit(at: convert(event.locationInWindow, from: nil))?.target)
@@ -587,7 +587,7 @@ extension NativeTimelineCanvasView {
             pointer.didForceClickLookup = false
             return
         }
-        guard !overlayBlocksInteractions, !sendTransitionBlocksInteractions else { return }
+        guard !overlayBlocksInteractions, !glideBlocksPointer else { return }
         if endVoiceMessagePress(at: convert(event.locationInWindow, from: nil)) { return }
         if let pressed = pressedPollTarget {
             pressedPollTarget = nil
@@ -1074,7 +1074,7 @@ extension NativeTimelineCanvasView {
             guard let self,
                   event.window === self.window,
                   !self.overlayBlocksInteractions,
-                  !self.sendTransitionBlocksInteractions
+                  !self.glideBlocksPointer
             else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
             // An inline editor's suggestions and its Cancel and Save can
@@ -1206,7 +1206,7 @@ extension NativeTimelineCanvasView {
     }
 
     func synchronizeHoverWithCurrentPointer() {
-        guard !sendTransitionBlocksInteractions else { return }
+        guard !glideBlocksPointer else { return }
         guard !isPointerCovered() else {
             clearPointerHoverTargets()
             return
