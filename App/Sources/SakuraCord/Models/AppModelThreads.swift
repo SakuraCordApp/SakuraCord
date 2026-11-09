@@ -858,4 +858,11 @@ extension AppModel {
             messageRowCacheOrder.removeAll { $0 == channelID }
         }
     }
+
+    /// Threads and forum posts offered by `#` autocomplete. Discord's composer
+    /// lists only the selected guild's active threads the user has joined.
+    var mentionAutocompleteThreads: [MessageThreadSummary] {
+        guard let selectedGuildID else { return [] }
+        return activeJoinedThreads.filter { $0.guildID == selectedGuildID && !$0.isArchived }
+    }
 }
