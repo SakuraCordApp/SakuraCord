@@ -82,7 +82,8 @@ struct ProfileGameDTO: Decodable {
             Self.webURL(site.url).map { ProfileGameWebsite(category: site.category, url: $0) }
         }
         details.screenshots = (screenshotURLs ?? []).compactMap(Self.webURL)
-        details.artwork = (media?.artwork ?? []).compactMap { assetURL($0, size: nil, format: nil, keepAspectRatio: true) }
+        // Artwork fills the game profile banner, so request it at banner resolution, not the 128px default.
+        details.artwork = (media?.artwork ?? []).compactMap { assetURL($0, size: 2048, format: "webp", keepAspectRatio: true) }
         details.trailers = (trailers ?? []).filter { UInt64($0.id) != nil && UInt64($0.applicationID) != nil && $0.width > 0 && $0.height > 0 }
             .map { ProfileGameTrailer(id: $0.id, applicationID: $0.applicationID, width: $0.width, height: $0.height) }
         if let steam = reviews?.steam {
