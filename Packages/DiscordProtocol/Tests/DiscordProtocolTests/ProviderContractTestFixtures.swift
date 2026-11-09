@@ -40,11 +40,7 @@ struct ReadyGatewayTransport: GatewayTransport {
 /// reconnect the session at a random point.
 struct HeldGatewayClock: GatewayClock {
     func sleep(for _: Duration) async throws {
-        // The stream never yields, so iteration ends only on cancellation.
-        let (never, continuation) = AsyncStream<Never>.makeStream()
-        for await _ in never {}
-        continuation.finish()
-        throw CancellationError()
+        try await Task.sleep(for: .seconds(86_400))
     }
 }
 

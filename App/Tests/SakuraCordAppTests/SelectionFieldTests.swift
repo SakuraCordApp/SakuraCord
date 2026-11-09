@@ -77,7 +77,7 @@ func `dynamic selection search discards a cancelled stale response`() async thro
         "new",
         with: [SelectionFieldOption(id: "new", title: "New Result")]
     )
-    try #require(await selectionSearchSettled(model))
+    try #require(await until { model.state != .loading })
 
     #expect(model.results.map(\.id) == ["new"])
 
@@ -233,14 +233,6 @@ func `cancelled selection searches can restart without changing the query`() asy
     model.activate()
     try #require(await search.waitForQuery("retry"))
     search.resume("retry", with: [SelectionFieldOption(id: "ok", title: "Recovered")])
-    try #require(await selectionSearchSettled(model))
+    try #require(await until { model.state != .loading })
     #expect(model.results.map(\.id) == ["ok"])
-}
-
-/// Observe stable completion without imposing a second, shorter timeout than
-/// the test's cancellation-aware time limit during parallel App load.
-@MainActor
-private func selectionSearchSettled(_ model: SelectionFieldModel<String>) async -> Bool {
-    for await settled in Observations({ model.state != .loading }) where settled { return true }
-    return false
 }
