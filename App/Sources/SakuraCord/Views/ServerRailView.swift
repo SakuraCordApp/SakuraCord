@@ -487,7 +487,9 @@ private struct PendingApplicationsRailFolder: View {
                 isHovering ? ServerRailHoverItem(name: "Pending Applications", bounds: bounds) : nil
             }
             .onServerRailHover { isHovering = $0 }
-            .popover(isPresented: $showsSubmittedTip, arrowEdge: .trailing) {
+            // A popover hosts its anchor in AppKit, which moves without the folder's animation; anchoring it on
+            // an empty background keeps the visible header in the animated layout.
+            .background { Color.clear.popover(isPresented: $showsSubmittedTip, arrowEdge: .trailing) {
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
                     Text("Your application is pending!").font(.interface(.headline))
                     Text("The server admin will get back to you soon.").font(.interface(.callout)).foregroundStyle(.secondary)
@@ -500,7 +502,7 @@ private struct PendingApplicationsRailFolder: View {
                 }
                 .padding(InterfaceScale.metric(14))
                 .frame(width: InterfaceScale.metric(260))
-            }
+            } }
             VStack(spacing: InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing)) {
                 ForEach(entries) { entry in
                     JoinRequestRailButton(entry: entry) { select(entry.id) }
