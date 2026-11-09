@@ -224,8 +224,10 @@ struct ForumPostComposer: View {
                                 customEmojiURL: tag.emojiID.flatMap { model.customEmojiURLsByID[$0] },
                                 isSelected: draft.tagIDs.contains(tag.id)
                             ) { toggleTag(tag) }
-                            .disabled(tag.isModerated && !model.canManageForumPosts
-                                || !draft.tagIDs.contains(tag.id) && appliedTagIDs.count >= Self.tagLimit)
+                            // A selected tag can always be removed, even one
+                            // made moderator-only since the draft was saved.
+                            .disabled(!draft.tagIDs.contains(tag.id)
+                                && (tag.isModerated && !model.canManageForumPosts || appliedTagIDs.count >= Self.tagLimit))
                         }
                     }
                     .padding(.vertical, InterfaceScale.metric(2))
@@ -417,10 +419,9 @@ private extension ForumPostComposer {
     }
 
     func toggleTag(_ tag: ForumTag) {
-        guard !tag.isModerated || model.canManageForumPosts else { return }
         if draft.tagIDs.contains(tag.id) {
             draft.tagIDs.remove(tag.id)
-        } else if appliedTagIDs.count < Self.tagLimit {
+        } else if !tag.isModerated || model.canManageForumPosts, appliedTagIDs.count < Self.tagLimit {
             draft.tagIDs = Set(appliedTagIDs + [tag.id])
         }
     }
