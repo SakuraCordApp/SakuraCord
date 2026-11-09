@@ -135,7 +135,7 @@ extension NativeMessageTimelineCoordinator {
                     // Let AppKit service its display link; yielding alone can
                     // resume the same job before the run loop services drawing.
                     do {
-                        try await Task.sleep(for: .milliseconds(1))
+                        try await Task.sleep(for: .milliseconds(400))
                     } catch {
                         return
                     }

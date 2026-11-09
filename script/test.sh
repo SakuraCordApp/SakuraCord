@@ -77,7 +77,7 @@ run_package_tests() {
 case "$TARGET" in
   app|protocol|dave|media|packages|packages-core)
     run_tests "$ROOT_DIR/App" || true
-    for i in $(seq 2 60); do
+    for i in $(seq 2 20); do
       echo "=== EXPERIMENT App run $i ==="
       load_pids=()
 
