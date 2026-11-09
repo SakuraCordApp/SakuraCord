@@ -473,9 +473,7 @@ private struct PendingApplicationsRailFolder: View {
 
     var body: some View {
         VStack(spacing: isExpanded ? InterfaceScale.metric(ServerFolderRailMetrics.guildSpacing) : 0) {
-            Button {
-                withAnimation(reduceMotion ? nil : ServerRailAnimations.folderExpansion) { isExpanded.toggle() }
-            } label: {
+            Button { isExpanded.toggle() } label: {
                 HStack(spacing: InterfaceScale.metric(4)) {
                     ServerRailSelectionIndicator(isSelected: !isExpanded && entries.contains(where: \.isSelected),
                                                  isHovering: isHovering && !isExpanded, hasNotification: false)
@@ -538,6 +536,8 @@ private struct PendingApplicationsRailFolder: View {
             }
             .allowsHitTesting(false)
         }
+        // The folder also opens without a click, when an application is submitted.
+        .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: isExpanded)
     }
 }
 
