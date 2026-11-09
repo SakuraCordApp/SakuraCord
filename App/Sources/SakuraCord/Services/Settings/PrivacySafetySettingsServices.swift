@@ -385,6 +385,7 @@ extension AppModel {
                 )
             )
             if launchMode == .normal {
+                guard privacySafetySettings == value else { return }
                 if value.sharesActivity, value.sharesAppleMusicActivity {
                     appleMusicMonitor.start()
                 }
