@@ -3,112 +3,226 @@ import SwiftUI
 
 struct ProfileGameDetails: View {
     let metadata: ProfileGameMetadata
-    let open: (URL) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceScale.metric(28)) {
-            VStack(spacing: InterfaceScale.metric(8)) {
-                if let steam = metadata.steamURL { website("Steam", url: steam) }
-                ForEach(metadata.websites.filter { [16, 20, 21, 22, 23].contains($0.category) }) { site in
-                    website(ProfileGameLabels.websites[site.category] ?? "Store", url: site.url)
+        VStack(alignment: .leading, spacing: ProfileGameMetrics.sectionSpacing) {
+            if !stores.isEmpty {
+                ProfileGameSection("Available On") {
+                    ProfileGameGroup {
+                        ForEach(stores) { store in
+                            ProfileGameRow(url: store.url) {
+                                ProfileGameBrandIcon(category: store.category)
+                                Text(ProfileGameLabels.websites[store.category] ?? "Store").font(.interfaceSystem(size: 14, weight: .medium))
+                                Spacer(minLength: InterfaceScale.metric(8))
+                                Image(systemName: "arrow.up.right").font(.interfaceSystem(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
+                            }
+                            .help(store.url.host ?? "")
+                        }
+                    }
                 }
             }
             reviews
-            VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
-                Text("Details", bundle: #bundle).font(.interface(.headline))
-                VStack(spacing: 0) {
-                    detail("Genres", value: ProfileGameLabels.genres(metadata.genres))
-                    detail("Publishers", value: metadata.publishers.joined(separator: ", "))
-                    detail("Developer", value: metadata.developers.joined(separator: ", "))
-                    if let date = metadata.releaseDate { detail("Release Date", value: date.formatted(date: .long, time: .omitted)) }
-                    detail("Platforms", value: ProfileGameLabels.platforms(metadata.platforms))
+            if !details.isEmpty {
+                ProfileGameSection("Details") {
+                    ProfileGameGroup {
+                        ForEach(Array(details.enumerated()), id: \.offset) { _, detail in
+                            ProfileGameRow {
+                                VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                                    Text(detail.title).font(.interfaceSystem(size: 12)).foregroundStyle(.secondary)
+                                    Text(detail.value).font(.interfaceSystem(size: 13, weight: .medium)).textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
                 }
-                .background(.primary.opacity(0.035), in: .rect(cornerRadius: InterfaceScale.metric(14)))
-                .overlay { RoundedRectangle(cornerRadius: InterfaceScale.metric(14)).stroke(.primary.opacity(0.08)) }
             }
-            HStack(spacing: InterfaceScale.metric(12)) {
-                ForEach(ProfileGameLabels.websiteOrder, id: \.self) { category in
-                    if let site = metadata.websites.first(where: { $0.category == category }) {
-                        Button { open(site.url) } label: {
-                            Text(ProfileGameLabels.websites[category] ?? "Website").font(.interface(.caption))
-                        }.buttonStyle(.plain).help(site.url.host ?? "")
+            if !links.isEmpty {
+                ProfileGameSection("Links") {
+                    HStack(spacing: InterfaceScale.metric(8)) {
+                        ForEach(links, id: \.category) { site in
+                            Button { openURL(site.url) } label: {
+                                ProfileGameBrandIcon(category: site.category, size: 16).profileGameActionLabel(isIcon: true)
+                            }
+                            .buttonStyle(.plain)
+                            .profileGameAction(.secondary)
+                            .help(ProfileGameLabels.websites[site.category] ?? site.url.host ?? "")
+                            .accessibilityLabel(ProfileGameLabels.websites[site.category] ?? "Website")
+                        }
                     }
                 }
             }
         }
     }
 
-    private func website(_ title: String, url: URL) -> some View {
-        Button { open(url) } label: { Text(title).font(.interfaceSystem(size: 16, weight: .medium)).frame(maxWidth: .infinity).padding(InterfaceScale.metric(10)) }
-            .buttonStyle(.plain).background(.primary.opacity(0.06), in: .rect(cornerRadius: InterfaceScale.metric(8)))
+    private var stores: [ProfileGameWebsite] {
+        let steam = metadata.steamURL.map { [ProfileGameWebsite(category: 0, url: $0)] } ?? []
+        return steam + metadata.websites.filter { ProfileGameLabels.storeCategories.contains($0.category) }
     }
 
-    @ViewBuilder private func detail(_ title: String, value: String) -> some View {
-        if !value.isEmpty {
-            HStack(alignment: .top, spacing: InterfaceScale.metric(20)) {
-                Text(title).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Text(value).multilineTextAlignment(.trailing).textSelection(.enabled)
-            }.font(.interfaceSystem(size: 13)).padding(InterfaceScale.metric(12))
-            Divider().opacity(0.4)
-        }
+    private var links: [ProfileGameWebsite] {
+        ProfileGameLabels.websiteOrder.compactMap { category in metadata.websites.first { $0.category == category } }
+    }
+
+    private var details: [(title: LocalizedStringResource, value: String)] {
+        [
+            ("Developer", metadata.developers.joined(separator: ", ")),
+            ("Publisher", metadata.publishers.joined(separator: ", ")),
+            ("Release Date", metadata.releaseDate?.formatted(date: .long, time: .omitted) ?? ""),
+            ("Genres", ProfileGameLabels.genres(metadata.genres)),
+            ("Platforms", ProfileGameLabels.platforms(metadata.platforms)),
+        ].filter { !$0.1.isEmpty }
     }
 
     @ViewBuilder private var reviews: some View {
-        if metadata.criticReviews != nil || metadata.steamURL != nil && !metadata.isRetiredFromSteam {
-            VStack(alignment: .leading, spacing: InterfaceScale.metric(12)) {
-                Text("Reviews", bundle: #bundle).font(.interface(.headline))
-                VStack(spacing: 0) {
-                    if let url = metadata.steamURL, !metadata.isRetiredFromSteam {
+        let steamURL = metadata.isRetiredFromSteam ? nil : metadata.steamURL
+        if metadata.criticReviews != nil || steamURL != nil {
+            ProfileGameSection("Reviews") {
+                ProfileGameGroup {
+                    if let url = steamURL {
                         let steam = metadata.steamReviews
-                        if let rating = steam?.recentRating, let count = steam?.recentCount, count >= 10 {
-                            steamReview("Recent Reviews", rating: rating, count: count, recent: true, url: url)
-                            Divider()
+                        let showsRecent = (steam?.recentCount ?? 0) >= 10
+                        if showsRecent {
+                            steamReview("Recent", rating: steam?.recentRating, count: steam?.recentCount, recent: true, url: url)
                         }
                         let localized = steam?.localizedRating != nil && (steam?.localizedCount ?? 0) >= 200 && (steam?.count ?? 0) >= 2000
-                        steamReview(localized ? "English Reviews" : "All Reviews", rating: localized ? steam?.localizedRating : steam?.rating,
+                        steamReview(localized ? "English" : "All Time", rating: localized ? steam?.localizedRating : steam?.rating,
                                     count: localized ? steam?.localizedCount : steam?.count, recent: false, url: url)
                     }
                     if let critic = metadata.criticReviews {
-                        Divider()
-                        Button { open(critic.url) } label: {
-                            HStack {
-                                Text("OpenCritic")
-                                Spacer()
-                                Text(ProfileGameLabels.criticTiers[critic.tier] ?? "")
-                                if critic.rating > 0, (critic.count ?? 0) > 0 {
-                                    Text(Int(critic.rating.rounded(.down)).formatted()).monospacedDigit().fontWeight(.semibold)
-                                        .frame(width: InterfaceScale.metric(30), height: InterfaceScale.metric(30)).background(.tint.opacity(0.1), in: .circle)
-                                }
-                            }.font(.interfaceSystem(size: 13)).padding(InterfaceScale.metric(12))
-                        }.buttonStyle(.plain)
+                        ProfileGameRow(url: critic.url) {
+                            VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                                Text("OpenCritic").font(.interfaceSystem(size: 12)).foregroundStyle(.secondary)
+                                Text(ProfileGameLabels.criticTiers[critic.tier] ?? "").font(.interfaceSystem(size: 13, weight: .semibold))
+                            }
+                            Spacer(minLength: InterfaceScale.metric(8))
+                            if critic.rating > 0, (critic.count ?? 0) > 0 {
+                                ProfileGameCriticScore(rating: critic.rating, tier: critic.tier)
+                            }
+                        }
                     }
                 }
-                .background(.primary.opacity(0.035), in: .rect(cornerRadius: InterfaceScale.metric(14)))
-                .overlay { RoundedRectangle(cornerRadius: InterfaceScale.metric(14)).stroke(.primary.opacity(0.08)) }
             }
         }
     }
 
-    private func steamReview(_ title: String, rating: Double?, count: Int?, recent: Bool, url: URL) -> some View {
-        Button { open(url) } label: {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(ProfileGameLabels.steamRating(rating, count: count, recent: recent)).foregroundStyle(.tint)
-                if let count, count >= 10 { Text("(\(count.formatted()))").foregroundStyle(.secondary) }
-            }.font(.interfaceSystem(size: 12)).padding(InterfaceScale.metric(12))
-        }.buttonStyle(.plain)
+    private func steamReview(_ title: LocalizedStringResource, rating: Double?, count: Int?, recent: Bool, url: URL) -> some View {
+        ProfileGameRow(url: url) {
+            VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) {
+                HStack(spacing: InterfaceScale.metric(4)) {
+                    ProfileGameBrandIcon(category: 0, size: 12)
+                    Text(title)
+                }
+                .font(.interfaceSystem(size: 12)).foregroundStyle(.secondary)
+                Text(ProfileGameLabels.steamRating(rating, count: count, recent: recent))
+                    .font(.interfaceSystem(size: 13, weight: .semibold))
+                    .foregroundStyle(steamTone(rating: rating, count: count))
+            }
+            Spacer(minLength: InterfaceScale.metric(8))
+            if let count, count >= 10 {
+                Text("\(count.formatted(.number.notation(.compactName))) reviews").font(.interfaceSystem(size: 12)).foregroundStyle(.secondary).monospacedDigit()
+                    .help("\(count.formatted()) reviews")
+            }
+        }
+    }
+
+    /// Steam's own review colours, darkened for legibility on light surfaces.
+    private func steamTone(rating: Double?, count: Int?) -> Color {
+        let dark = colorScheme == .dark
+        guard let rating, let count, count >= 10 else { return .secondary }
+        if rating >= 70 { return Color(hex: dark ? 0x66C0F4 : 0x1A78B8) }
+        if rating >= 40 { return Color(hex: dark ? 0xC9A85A : 0x8A6D1F) }
+        return Color(hex: dark ? 0xE8775A : 0xB5452A)
+    }
+}
+
+/// A grouped list surface, matching the profile widget cards. Rows highlight
+/// inset from its edge, like a native list.
+struct ProfileGameGroup<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) { content() }
+            .padding(ProfileGameMetrics.groupInset)
+            .background(.primary.opacity(0.04), in: .rect(cornerRadius: ProfileGameMetrics.cardRadius))
+    }
+}
+
+struct ProfileGameRow<Content: View>: View {
+    var url: URL?
+    @ViewBuilder let content: () -> Content
+    @Environment(\.openURL) private var openURL
+    @State private var isHovered = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: ProfileGameMetrics.cardRadius - ProfileGameMetrics.groupInset)
+        let row = HStack(spacing: InterfaceScale.metric(10)) { content() }
+            .padding(.horizontal, InterfaceScale.metric(10))
+            .padding(.vertical, InterfaceScale.metric(8))
+            .frame(minHeight: InterfaceScale.metric(40))
+            .background(.primary.opacity(isHovered ? 0.06 : 0), in: shape)
+            .contentShape(shape)
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+        if let url {
+            Button { openURL(url) } label: { row }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .onModalHover { isHovered = $0 }
+        } else {
+            row
+        }
+    }
+}
+
+struct ProfileGameBrandIcon: View {
+    let category: Int
+    var size: CGFloat = 18
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Group {
+            if let brand = ProfileGameLabels.brands[category], let image = ConnectionBrand.image(for: brand, colorScheme: colorScheme) {
+                Image(nsImage: image).resizable().scaledToFit()
+            } else {
+                Image(systemName: category == 23 ? "cube.fill" : "globe").resizable().scaledToFit().fontWeight(.medium)
+            }
+        }
+        .frame(width: InterfaceScale.metric(size), height: InterfaceScale.metric(size))
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ProfileGameCriticScore: View {
+    let rating: Double
+    let tier: Int
+
+    var body: some View {
+        let color = ProfileGameLabels.criticTierColors[tier] ?? .secondary
+        Text(Int(rating.rounded(.down)).formatted())
+            .font(.interfaceSystem(size: 13, weight: .bold)).monospacedDigit()
+            .frame(width: InterfaceScale.metric(34), height: InterfaceScale.metric(34))
+            .background(color.opacity(0.16), in: .circle)
+            .overlay { Circle().strokeBorder(color, lineWidth: 2) }
     }
 }
 
 enum ProfileGameLabels {
     static let websiteOrder = [1, 4, 5, 8, 9, 19, 14, 6]
     static let websites = [
-        1: "Website", 4: "Facebook", 5: "X", 6: "Twitch", 8: "Instagram", 9: "YouTube", 14: "Reddit",
+        0: "Steam", 1: "Website", 4: "Facebook", 5: "X", 6: "Twitch", 8: "Instagram", 9: "YouTube", 14: "Reddit",
         16: "Epic Games", 19: "Bluesky", 20: "Battle.net", 21: "Riot Games", 22: "Roblox", 23: "Minecraft"
     ]
+    static let storeCategories: Set = [16, 20, 21, 22, 23]
+    /// Connection icon keys. Category 0 stands for Steam, which arrives as its own URL.
+    static let brands = [
+        0: "steam", 4: "facebook", 5: "twitter", 6: "twitch", 8: "instagram", 9: "youtube", 14: "reddit",
+        16: "epicgames", 19: "bluesky", 20: "battlenet", 21: "riotgames", 22: "roblox"
+    ]
     static let criticTiers = [1: "Mighty", 2: "Strong", 3: "Fair", 4: "Weak"]
+    static let criticTierColors = [1: Color(hex: 0xFC430A), 2: Color(hex: 0xB43CC8), 3: Color(hex: 0x4AA1CE), 4: Color(hex: 0x80B06A)]
 
     static func genres(_ values: [Int]) -> String { values.compactMap { genreNames[$0] }.joined(separator: ", ") }
     static func platforms(_ values: [Int]) -> String {

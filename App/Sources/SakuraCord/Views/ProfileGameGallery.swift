@@ -3,8 +3,8 @@ import SwiftUI
 
 struct ProfileGameGallery: View {
     let game: ProfileGame
+    let present: (NativeTimelineMediaViewerPresentation) -> Void
     @State private var selectedIndex = 0
-    @State private var presentation: NativeTimelineMediaViewerPresentation?
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
 
@@ -28,40 +28,41 @@ struct ProfileGameGallery: View {
 
     var body: some View {
         if !items.isEmpty {
-            VStack(spacing: InterfaceScale.metric(12)) {
+            VStack(spacing: InterfaceScale.metric(10)) {
                 let index = min(selectedIndex, items.count - 1)
                 let item = items[index]
                 Group {
                     if item.kind == .video {
                         ViewerAVPlayer(url: item.url, autoplays: !reducesMotion, mutesOnStart: true, showsFullScreenToggleButton: true)
                     } else {
-                        Button { present(index) } label: {
-                            ProfileWidgetImageView(url: item.url, contentMode: .fit)
-                        }.buttonStyle(.plain).accessibilityLabel("Expand Screenshot")
+                        Button { expand(index) } label: {
+                            ProfileWidgetImageView(url: item.url, contentMode: .fill)
+                        }.buttonStyle(.plain).pointerStyle(.zoomIn).accessibilityLabel("Expand Screenshot")
                     }
                 }
+                .frame(maxWidth: .infinity)
                 .aspectRatio(16 / 9, contentMode: .fit)
-                .background(.black.opacity(0.15), in: .rect(cornerRadius: InterfaceScale.metric(16)))
-                .clipShape(.rect(cornerRadius: InterfaceScale.metric(16)))
-                ScrollView(.horizontal) {
-                    HStack(spacing: InterfaceScale.metric(10)) {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
-                            Button { selectedIndex = offset } label: {
-                                ProfileWidgetImageView(url: thumbnail(item), animates: false, contentMode: .fill)
-                                    .frame(width: InterfaceScale.metric(106), height: InterfaceScale.metric(60)).clipped()
-                                    .overlay { if item.kind == .video { Image(systemName: "play.fill").shadow(radius: InterfaceScale.metric(2)) } }
-                                    .clipShape(.rect(cornerRadius: InterfaceScale.metric(8)))
-                                    .overlay { if index == offset { RoundedRectangle(cornerRadius: InterfaceScale.metric(8)).stroke(.primary, lineWidth: 2) } }
-                            }.buttonStyle(.plain).accessibilityLabel("\(item.kind == .video ? "Trailer" : "Screenshot") \(offset + 1)")
+                .background(.black.opacity(0.2))
+                .clipShape(.rect(cornerRadius: ProfileGameMetrics.cardRadius))
+                if items.count > 1 {
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal) {
+                            HStack(spacing: InterfaceScale.metric(8)) {
+                                ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
+                                    ProfileGameGalleryThumbnail(url: thumbnail(item), isVideo: item.kind == .video, isSelected: index == offset) {
+                                        selectedIndex = offset
+                                    }
+                                    .id(offset)
+                                    .accessibilityLabel("\(item.kind == .video ? "Trailer" : "Screenshot") \(offset + 1)")
+                                }
+                            }
                         }
-                    }.padding(InterfaceScale.metric(2))
+                        .scrollIndicators(.never)
+                        .onChange(of: selectedIndex) { _, value in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(value, anchor: .center) } }
+                    }
                 }
             }
-            .onChange(of: game.id) { _, _ in selectedIndex = 0; presentation = nil }
-            .windowModal(item: $presentation) { value in
-                MediaViewer(presentation: value, close: { presentation = nil }, closeInteractively: { presentation = nil })
-                    .frame(width: InterfaceScale.metric(1180), height: InterfaceScale.metric(760))
-            }
+            .onChange(of: game.id) { _, _ in selectedIndex = 0 }
         }
     }
 
@@ -69,7 +70,7 @@ struct ProfileGameGallery: View {
         let url = item.kind == .video ? item.previewURL ?? item.url : item.url
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false), let host = components.host else { return url }
         var query = components.queryItems ?? []
-        let size = String(Self.supportedSize(106 * displayScale))
+        let size = String(Self.supportedSize(112 * displayScale))
         if ["images-ext-1.discordapp.net", "images-ext-2.discordapp.net"].contains(host), components.path.hasPrefix("/external/") {
             query.removeAll { ["format", "width", "height", "keep_aspect_ratio"].contains($0.name) }
             query += [URLQueryItem(name: "width", value: size), URLQueryItem(name: "height", value: size),
@@ -86,8 +87,41 @@ struct ProfileGameGallery: View {
         [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128, 160, 240, 256, 300, 320, 480, 512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096].first { Double($0) >= size } ?? 4096
     }
 
-    private func present(_ index: Int) {
-        presentation = NativeTimelineMediaViewerPresentation(items: items, selection: index, authorName: game.name,
-                                                            authorAvatarURL: game.iconURL, timestamp: game.metadata?.releaseDate ?? .now)
+    private func expand(_ index: Int) {
+        present(NativeTimelineMediaViewerPresentation(items: items, selection: index, authorName: game.name,
+                                                      authorAvatarURL: game.iconURL, timestamp: game.metadata?.releaseDate ?? .now))
+    }
+}
+
+private struct ProfileGameGalleryThumbnail: View {
+    let url: URL
+    let isVideo: Bool
+    let isSelected: Bool
+    let select: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: ProfileGameMetrics.thumbnailRadius)
+        Button(action: select) {
+            ProfileWidgetImageView(url: url, animates: false, contentMode: .fill)
+                .frame(width: InterfaceScale.metric(112), height: InterfaceScale.metric(63))
+                .clipped()
+                .overlay {
+                    if isVideo {
+                        Image(systemName: "play.fill")
+                            .font(.interfaceSystem(size: 11, weight: .bold)).foregroundStyle(.white)
+                            .frame(width: InterfaceScale.metric(26), height: InterfaceScale.metric(26))
+                            .background(.black.opacity(0.5), in: .circle)
+                    }
+                }
+                .clipShape(shape)
+                .opacity(isSelected || isHovered ? 1 : 0.55)
+                .overlay { if isSelected { shape.strokeBorder(SakuraCordAccentColor.color, lineWidth: 2) } }
+                .animation(.easeOut(duration: 0.12), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .onModalHover { isHovered = $0 }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
