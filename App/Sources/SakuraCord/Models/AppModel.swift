@@ -870,6 +870,36 @@ final class AppModel {
     var errorMessage: String?
     var currentUserActivity: OutgoingActivityPayload?
 
+    var currentUserRichActivity: MemberRichActivity? {
+        guard let current = currentUserActivity else { return nil }
+        return MemberRichActivity(
+            name: current.name,
+            type: current.type.rawValue,
+            details: current.details,
+            state: current.state,
+            startTimestamp: current.timestamps?.start,
+            endTimestamp: current.timestamps?.end,
+            largeImage: current.assets?.largeImage,
+            largeText: current.assets?.largeText,
+            smallImage: current.assets?.smallImage,
+            smallText: current.assets?.smallText,
+            applicationID: current.applicationId
+        )
+    }
+
+    var currentUserActivityDisplayText: String? {
+        guard let activity = currentUserActivity else { return nil }
+        if activity.type == .listening {
+            return activity.details ?? activity.state ?? activity.name
+        } else {
+            return activity.state ?? activity.name
+        }
+    }
+
+    var isCurrentUserListeningToMusic: Bool {
+        currentUserActivity?.type == .listening
+    }
+
     @ObservationIgnored var provider: any ChatProvider
     @ObservationIgnored let activityCoordinator: ActivityCoordinator
     @ObservationIgnored let ipcServer: DiscordIPCServer
@@ -1246,43 +1276,36 @@ final class AppModel {
         Task { [weak self] in
             await coordinatorToListen.setOnActivityChanged { [weak self] payload in
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.currentUserActivity = payload
-                    if let userID = self.currentUser?.id {
-                        let richActivity = payload.map {
-                            MemberRichActivity(
-                                name: $0.name,
-                                type: $0.type.rawValue,
-                                details: $0.details,
-                                state: $0.state,
-                                startTimestamp: $0.timestamps?.start,
-                                endTimestamp: $0.timestamps?.end,
-                                largeImage: $0.assets?.largeImage,
-                                largeText: $0.assets?.largeText,
-                                smallImage: $0.assets?.smallImage,
-                                smallText: $0.assets?.smallText,
-                                applicationID: $0.applicationId
-                            )
-                        }
-                        let activityText = payload?.details ?? payload?.name
-                        let isListening = payload?.type == .listening
-
-                        if var member = self.membersByID[userID] {
-                            member.activityText = activityText
-                            member.isListeningToMusic = isListening
-                            member.richActivity = richActivity
-                            self.membersByID[userID] = member
-                        }
-
-                        if let memberIndex = self.members.firstIndex(where: { $0.id == userID }) {
-                            self.members[memberIndex].activityText = activityText
-                            self.members[memberIndex].isListeningToMusic = isListening
-                            self.members[memberIndex].richActivity = richActivity
-                            self.rebuildMemberSections()
-                        }
-                    }
+                    self?.applyCurrentUserActivity(payload)
                 }
             }
+        }
+    }
+
+    func applyCurrentUserActivity(_ payload: OutgoingActivityPayload?) {
+        currentUserActivity = payload
+        guard let currentUserID = currentUser?.id ?? snapshot?.currentUser.id else { return }
+
+        if let existing = membersByID[currentUserID] {
+            membersByID[currentUserID] = memberWithCurrentStatus(existing)
+        }
+
+        for guildID in membersByGuildID.keys {
+            if let existing = membersByGuildID[guildID]?[currentUserID] {
+                membersByGuildID[guildID]?[currentUserID] = memberWithCurrentStatus(existing)
+            }
+        }
+
+        for guildID in memberListsByGuildID.keys {
+            if let list = memberListsByGuildID[guildID],
+               let idx = list.firstIndex(where: { $0.id == currentUserID }) {
+                memberListsByGuildID[guildID]?[idx] = memberWithCurrentStatus(list[idx])
+            }
+        }
+
+        if let memberIndex = members.firstIndex(where: { $0.id == currentUserID }) {
+            members[memberIndex] = memberWithCurrentStatus(members[memberIndex])
+            rebuildMemberSections()
         }
     }
 }

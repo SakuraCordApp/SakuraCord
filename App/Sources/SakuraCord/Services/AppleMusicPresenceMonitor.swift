@@ -202,13 +202,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         let resolvedPosition: Double
         if let currentPositionSeconds {
             resolvedPosition = currentPositionSeconds
-        } else if let queried = positionQueryProvider(appName), queried >= 0 {
-            resolvedPosition = queried
         } else if let last = lastPlaybackState,
+                  !last.isPlaying,
                   last.trackName == trackName,
                   (artist == nil || last.artist == artist),
                   last.savedElapsedSeconds > 0 {
             resolvedPosition = last.savedElapsedSeconds
+        } else if let queried = positionQueryProvider(appName), queried >= 0 {
+            resolvedPosition = queried
         } else {
             resolvedPosition = 0
         }
@@ -262,6 +263,11 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     }()
 
     public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
+        #if os(macOS)
+        guard NSClassFromString("XCTest") == nil else { return nil }
+        let bundleID = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "com.spotify.client" : "com.apple.Music"
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return nil }
+        #endif
         let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
         guard let script = isSpotify ? spotifyPositionScript : musicPositionScript else { return nil }
         var errorInfo: NSDictionary?
@@ -321,6 +327,10 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     }
 
     public static func fetchCurrentArtworkData() -> Data? {
+        #if os(macOS)
+        guard NSClassFromString("XCTest") == nil else { return nil }
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return nil }
+        #endif
         let scriptSource = """
         tell application "Music"
             if it is running then
@@ -355,6 +365,10 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     }
 
     public func checkCurrentTrack() {
+        #if os(macOS)
+        guard NSClassFromString("XCTest") == nil else { return }
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return }
+        #endif
         Task.detached(priority: .utility) { [weak self] in
             let scriptSource = """
             tell application "Music"

@@ -865,12 +865,13 @@ extension AppModel {
                     // Preserve its timeout in both the self and list stores.
                     value[index].communicationDisabledUntil = onboarding.members[guildID]?.communicationDisabledUntil
                 }
+                let processedMembers = membersWithCurrentStatus(value)
                 AppPerformanceSignposts.measureSync(
                     "MemberListInitialPublication"
                 ) {
                     if let guildID {
-                        memberListsByGuildID[guildID] = value
-                        if let loadedMember = value.first(where: { $0.id == currentUser?.id }) {
+                        memberListsByGuildID[guildID] = processedMembers
+                        if let loadedMember = processedMembers.first(where: { $0.id == currentUser?.id }) {
                             // Initial list hydration supplies timeout evidence;
                             // keep the existing onboarding/role state authoritative.
                             var member = onboarding.members[guildID] ?? loadedMember
@@ -878,12 +879,12 @@ extension AppModel {
                             receiveOnboardingMember(member, guildID: guildID)
                         }
                     }
-                    members = value
+                    members = processedMembers
                     // Keep the pre-subscription GuildMemberStore snapshot for
                     // composer search. Full member-list subscriptions feed the
                     // inspector, but Discord does not use their visual list order
                     // as autocomplete's candidate store.
-                    mentionAutocompleteMembers = value
+                    mentionAutocompleteMembers = processedMembers
                 }
                 if let guildID {
                     await replayMemberListViewportIfNeeded(

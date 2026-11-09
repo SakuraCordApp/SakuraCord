@@ -89,9 +89,25 @@ extension AppModel {
     }
 
     func memberWithCurrentStatus(_ member: Member) -> Member {
-        guard member.id == currentUser?.id, member.status != currentStatus else { return member }
+        guard let currentUserID = currentUser?.id ?? snapshot?.currentUser.id,
+              member.id == currentUserID else { return member }
         var member = member
         member.status = currentStatus
+        if currentUserActivity != nil {
+            member.activityText = currentUserActivityDisplayText
+            member.isListeningToMusic = isCurrentUserListeningToMusic
+            member.richActivity = currentUserRichActivity
+        } else {
+            member.activityText = member.customStatus
+            member.isListeningToMusic = false
+            member.richActivity = nil
+        }
+        if member.id == profileCustomStatusUserID, let text = profileCustomStatus?.displayText {
+            member.customStatus = text
+            if currentUserActivity == nil {
+                member.activityText = text
+            }
+        }
         return member
     }
 

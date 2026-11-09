@@ -1,5 +1,6 @@
 import DiscordProtocol
 import Foundation
+import SakuraCordModels
 @testable import SakuraCord
 import Testing
 
@@ -243,9 +244,8 @@ struct AppleMusicPresenceMonitorTests {
         #expect(await coordinator.currentPermittedActivities().count == 1)
 
         monitor.stop()
-        // Wait briefly for coordinator clear task
-        try? await Task.sleep(nanoseconds: 50_000_000)
-        #expect(await coordinator.currentPermittedActivities().isEmpty)
+        let cleared = await eventually { await coordinator.currentPermittedActivities().isEmpty }
+        #expect(cleared)
     }
 
     @Test("Scrubbing track updates timeline position via position query")
@@ -290,5 +290,63 @@ struct AppleMusicPresenceMonitorTests {
         #expect(scrubbed != nil)
         let expectedScrubbedStart = Int64((timeBox.date.timeIntervalSince1970 - 120.0) * 1000)
         #expect(scrubbed?.timestamps?.start == expectedScrubbedStart)
+    }
+
+    @Test("Current user activity is properly injected into member list rows and cached stores")
+    @MainActor
+    func testCurrentUserActivityInMemberList() async {
+        let model = AppModel(launchMode: .offlineTesting)
+        await model.start()
+        guard model.currentUser?.id != nil else {
+            #expect(Bool(false), "Current user must be present in offline testing")
+            return
+        }
+
+        let activity = OutgoingActivityPayload(
+            name: "Apple Music",
+            type: .listening,
+            details: "Starboy",
+            state: "The Weeknd"
+        )
+
+        // 1. Apply activity
+        model.applyCurrentUserActivity(activity)
+        #expect(model.currentUserActivity?.details == "Starboy")
+        #expect(model.isCurrentUserListeningToMusic == true)
+        #expect(model.currentUserActivityDisplayText == "Starboy")
+
+        // 2. Member list restored for a guild (e.g. from server snapshot where member has no activity)
+        let rawMember = Member(
+            user: model.currentUser!,
+            roleName: "Member",
+            status: .online
+        )
+        #expect(rawMember.activityText == nil)
+        #expect(rawMember.isListeningToMusic == false)
+
+        // 3. membersWithCurrentStatus should inject current user activity
+        let decorated = model.memberWithCurrentStatus(rawMember)
+        #expect(decorated.status == model.currentStatus)
+        #expect(decorated.activityText == "Starboy")
+        #expect(decorated.isListeningToMusic == true)
+        #expect(decorated.richActivity?.name == "Apple Music")
+        #expect(decorated.richActivity?.details == "Starboy")
+        #expect(decorated.memberListActivityText == "Starboy")
+
+        // 4. Custom status priority in member list
+        var memberWithCustom = rawMember
+        memberWithCustom.customStatus = "Coding"
+        let decoratedWithCustom = model.memberWithCurrentStatus(memberWithCustom)
+        #expect(decoratedWithCustom.activityText == "Starboy")
+        #expect(decoratedWithCustom.isListeningToMusic == true)
+        #expect(decoratedWithCustom.memberListActivityText == "Coding")
+        #expect(decoratedWithCustom.memberListShowsMusicSeparator == true)
+
+        // 5. Clearing activity clears member row activity
+        model.applyCurrentUserActivity(nil)
+        let cleared = model.memberWithCurrentStatus(rawMember)
+        #expect(cleared.activityText == nil)
+        #expect(cleared.isListeningToMusic == false)
+        #expect(cleared.richActivity == nil)
     }
 }

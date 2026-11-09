@@ -187,20 +187,7 @@ struct MemberProfilePopover<Footer: View>: View {
 
     private var effectiveRichActivity: MemberRichActivity? {
         if isCurrentUser {
-            guard let current = model?.currentUserActivity else { return nil }
-            return MemberRichActivity(
-                name: current.name,
-                type: current.type.rawValue,
-                details: current.details,
-                state: current.state,
-                startTimestamp: current.timestamps?.start,
-                endTimestamp: current.timestamps?.end,
-                largeImage: current.assets?.largeImage,
-                largeText: current.assets?.largeText,
-                smallImage: current.assets?.smallImage,
-                smallText: current.assets?.smallText,
-                applicationID: current.applicationId
-            )
+            return model?.currentUserRichActivity
         }
         return member.richActivity
     }
