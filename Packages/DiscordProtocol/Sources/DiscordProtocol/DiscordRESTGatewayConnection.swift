@@ -309,6 +309,7 @@ extension DiscordRESTProvider {
                 qosVersion: baseline.qosHeartbeatVersion
             ),
             transport: gatewayTransport,
+            clock: gatewayClock,
             codec: gatewayCodec,
             apiDiagnostics: apiDiagnostics
         )
