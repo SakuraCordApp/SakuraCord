@@ -274,4 +274,43 @@ struct DiscordIPCServerTests {
         }
         #expect(disconnected)
     }
+
+    @Test func `SET_ACTIVITY timestamps in seconds are converted to milliseconds`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+        defer { close(clientFD) }
+
+        sendClientFrame(fd: clientFD, opcode: 0, jsonObject: ["v": 1, "client_id": "craftpresence_app"])
+        _ = try #require(readClientFrame(fd: clientFD))
+
+        let startSeconds: Int64 = 1_700_000_000
+        let activityDict: [String: Any] = [
+            "name": "Minecraft",
+            "details": "In Menus",
+            "type": 0,
+            "timestamps": [
+                "start": startSeconds,
+            ],
+        ]
+        sendClientFrame(fd: clientFD, opcode: 1, jsonObject: [
+            "cmd": "SET_ACTIVITY",
+            "args": ["activity": activityDict],
+            "nonce": "ts-test",
+        ])
+        _ = try #require(readClientFrame(fd: clientFD))
+
+        let updated = await eventually {
+            (await mockProvider.currentActivities()).count == 1
+        }
+        #expect(updated)
+        let activities = await mockProvider.currentActivities()
+        let published = try #require(activities.values.first)
+        #expect(published.timestamps?.start == startSeconds * 1000)
+    }
 }

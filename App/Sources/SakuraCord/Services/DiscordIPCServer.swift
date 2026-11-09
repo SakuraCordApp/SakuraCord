@@ -192,8 +192,16 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
 
         var timestamps: ActivityTimestamps?
         if let tsDict = dict["timestamps"] as? [String: Any] {
-            let start = (tsDict["start"] as? NSNumber)?.int64Value
-            let end = (tsDict["end"] as? NSNumber)?.int64Value
+            var start = (tsDict["start"] as? NSNumber)?.int64Value
+            var end = (tsDict["end"] as? NSNumber)?.int64Value
+            // Local Discord IPC sends timestamps in seconds (< 100_000_000_000).
+            // Convert to milliseconds to align with Gateway and Discord rich presence expectations.
+            if let startSeconds = start, startSeconds > 0, startSeconds < 100_000_000_000 {
+                start = startSeconds * 1000
+            }
+            if let endSeconds = end, endSeconds > 0, endSeconds < 100_000_000_000 {
+                end = endSeconds * 1000
+            }
             if start != nil || end != nil {
                 timestamps = ActivityTimestamps(start: start, end: end)
             }
@@ -339,6 +347,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
     public let coordinator: ActivityCoordinator
     private let requestedSocketPath: String?
     private var boundSocketPath: String?
+    private var boundSymlinkPath: String?
     private var listenFD: Int32 = -1
     private var listenSource: DispatchSourceRead?
     private let queue = DispatchQueue(label: "dev.sakuracord.ipc-server", qos: .userInitiated)
@@ -407,12 +416,27 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             self.listenFD = boundFD
             self.isRunning = true
 
+            // On macOS, if bound inside a user-specific temp directory (TMPDIR), maintain
+            // a symlink in /tmp so cross-platform games/mods hardcoding /tmp can connect.
+            if requestedSocketPath == nil, !path.hasPrefix("/tmp/"), let fileName = path.split(separator: "/").last {
+                let symlinkPath = "/tmp/\(fileName)"
+                // Remove any stale or broken symlink before linking
+                unlink(symlinkPath)
+                if symlink(path, symlinkPath) == 0 {
+                    self.boundSymlinkPath = symlinkPath
+                }
+            }
+
             let source = DispatchSource.makeReadSource(fileDescriptor: boundFD, queue: queue)
             source.setEventHandler { [weak self] in
                 self?.acceptConnection()
             }
+            let symlinkToClean = self.boundSymlinkPath
             source.setCancelHandler {
                 close(boundFD)
+                if let symlinkToClean {
+                    unlink(symlinkToClean)
+                }
                 unlink(path)
             }
             self.listenSource = source
@@ -436,6 +460,10 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
                 close(listenFD)
             }
             listenFD = -1
+            if let boundSymlinkPath {
+                unlink(boundSymlinkPath)
+                self.boundSymlinkPath = nil
+            }
             if let boundSocketPath {
                 unlink(boundSocketPath)
                 self.boundSocketPath = nil

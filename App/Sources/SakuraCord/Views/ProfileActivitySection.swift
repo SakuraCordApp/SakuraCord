@@ -22,6 +22,12 @@ struct ProfileActivitySection: View {
         activityType == 2 || member.isListeningToMusic
     }
 
+    private var cardCornerRadius: CGFloat {
+        // Mathematically concentric alignment with the outer profile popover
+        // (surfaceCornerRadius = 16, horizontal inset = 16, inner radius = 12).
+        InterfaceScale.metric(12)
+    }
+
     private var headerText: String {
         if let activity = effectiveActivity {
             switch activity.type {
@@ -47,25 +53,54 @@ struct ProfileActivitySection: View {
     }
 
     private var primaryText: String {
-        effectiveActivity?.details
-            ?? effectiveActivity?.name
+        if isMusic {
+            return effectiveActivity?.details
+                ?? effectiveActivity?.name
+                ?? member.activityText
+                ?? "Music"
+        }
+        // In native Discord game rich presence:
+        // Line 1 is the game name (bold)
+        return effectiveActivity?.name
             ?? member.activityText
-            ?? "Music"
+            ?? "Game"
     }
 
     private var secondaryText: String? {
-        if let state = effectiveActivity?.state, !state.isEmpty {
-            return isMusic ? "by \(state)" : state
+        if isMusic {
+            if let state = effectiveActivity?.state, !state.isEmpty {
+                return "by \(state)"
+            }
+            if let text = member.activityText, text != primaryText {
+                return "by \(text)"
+            }
+            return nil
         }
-        if isMusic, let text = member.activityText, text != primaryText {
-            return "by \(text)"
+        // Line 2 in Discord game activity: details (current game mode, dimension, etc.)
+        if let details = effectiveActivity?.details, !details.isEmpty, details != primaryText {
+            return details
+        }
+        if let state = effectiveActivity?.state, !state.isEmpty, state != primaryText {
+            return state
         }
         return nil
     }
 
     private var tertiaryText: String? {
-        if let text = effectiveActivity?.largeText, !text.isEmpty, text != primaryText {
-            return isMusic ? "on \(text)" : text
+        if isMusic {
+            if let text = effectiveActivity?.largeText, !text.isEmpty, text != primaryText {
+                return "on \(text)"
+            }
+            return nil
+        }
+        // Line 3 in Discord game activity: state (party, server, status)
+        if let state = effectiveActivity?.state, !state.isEmpty,
+           state != primaryText, state != secondaryText {
+            return state
+        }
+        if let text = effectiveActivity?.largeText, !text.isEmpty,
+           text != primaryText, text != secondaryText {
+            return text
         }
         return nil
     }
@@ -152,16 +187,18 @@ struct ProfileActivitySection: View {
                !end.subtractingReportingOverflow(start).overflow,
                (end - start) < 86_400_000 * 7, (end - start) > 0 {
                 playbackProgressBar(start: start, end: end)
+            } else if let start = startTimestamp, !isMusic {
+                elapsedTimeLabel(start: start)
             }
         }
         .padding(InterfaceScale.metric(12))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous)
+            ConcentricRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.04))
         }
         .overlay {
-            RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous)
+            ConcentricRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
         .onAppear {
@@ -178,7 +215,7 @@ struct ProfileActivitySection: View {
 
     @ViewBuilder
     private var artworkView: some View {
-        let cornerRadius = InterfaceScale.metric(8)
+        let cornerRadius = InterfaceScale.metric(10)
         let size = InterfaceScale.metric(58)
         if let remoteURL = resolvedRemoteArtworkURL {
             AsyncImage(url: remoteURL) { phase in
@@ -220,7 +257,7 @@ struct ProfileActivitySection: View {
 
     @ViewBuilder
     private var fallbackArtIcon: some View {
-        let cornerRadius = InterfaceScale.metric(8)
+        let cornerRadius = InterfaceScale.metric(10)
         let size = InterfaceScale.metric(58)
         if isMusic {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -251,6 +288,28 @@ struct ProfileActivitySection: View {
                     .font(.system(size: 22))
                     .foregroundStyle(.secondary)
             }
+    }
+
+    @ViewBuilder
+    private func elapsedTimeLabel(start: Int64) -> some View {
+        TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
+            let nowMs = Int64(timeline.date.timeIntervalSince1970 * 1000)
+            let (rawElapsed, elapsedOverflow) = nowMs.subtractingReportingOverflow(start)
+            let elapsedMs = elapsedOverflow || rawElapsed < 0 ? 0 : rawElapsed
+            let totalSeconds = Int(elapsedMs / 1000)
+            let hours = totalSeconds / 3600
+            let minutes = (totalSeconds % 3600) / 60
+            let seconds = totalSeconds % 60
+            let formattedTime: String = if hours > 0 {
+                String(format: "%d:%02d:%02d elapsed", hours, minutes, seconds)
+            } else {
+                String(format: "%02d:%02d elapsed", minutes, seconds)
+            }
+
+            Text(formattedTime)
+                .font(.interfaceSystem(size: 11))
+                .foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder
