@@ -85,7 +85,9 @@ struct ForumPostBodyEditor: View {
             isAutocompleteDismissed = false
             autocompleteIndex = 0
         }
-        .onChange(of: mentionContext?.query) { _, _ in updateMemberSearch() }
+        // People not loaded yet are searched for, including for a mention
+        // in a reopened draft.
+        .onChange(of: memberQuery, initial: true) { _, query in model.requestMentionMemberSearch(query: query ?? "") }
         .onChange(of: timeContext?.query) { timeQueryDate = .now }
         // A relative time counts on while it is written, as in the composer.
         .onChange(of: text.contains(":R>"), initial: true) { _, counts in
@@ -233,12 +235,8 @@ struct ForumPostBodyEditor: View {
         ComposerTimeFormatPicker.rows(DiscordNaturalLanguageTimeParser.suggestions(for: context.query, now: timeQueryDate))
     }
 
-    private func updateMemberSearch() {
-        guard let context = mentionContext, context.kind == .member else {
-            model.requestMentionMemberSearch(query: "")
-            return
-        }
-        model.requestMentionMemberSearch(query: context.query)
+    private var memberQuery: String? {
+        mentionContext.flatMap { $0.kind == .member ? $0.query : nil }
     }
 
     // MARK: Keys

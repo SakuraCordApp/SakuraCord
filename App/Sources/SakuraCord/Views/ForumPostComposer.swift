@@ -455,8 +455,8 @@ private extension ForumPostComposer {
 
     // MARK: Attachments
 
-    /// Pasted data stays in app-owned storage until the composer closes,
-    /// since these attachments aren't held by the model.
+    /// Pasted data stays in app-owned storage while one of its files is
+    /// staged, since these attachments aren't held by the model.
     func receiveAttachments(_ incoming: ComposerIncomingAttachments) {
         switch incoming {
         case let .external(urls):
@@ -464,6 +464,17 @@ private extension ForumPostComposer {
         case let .owned(batch):
             ownedAttachmentBatches.append(batch)
             addAttachments(batch.urls)
+            discardUnusedBatches()
+        }
+    }
+
+    /// Deletes pasted data none of whose files is staged any more.
+    func discardUnusedBatches() {
+        let stagedURLs = Set(attachments.map(\.url))
+        ownedAttachmentBatches.removeAll { batch in
+            guard !batch.urls.contains(where: stagedURLs.contains) else { return false }
+            batch.discard()
+            return true
         }
     }
 
@@ -501,6 +512,7 @@ private extension ForumPostComposer {
         let url = attachments.remove(at: index).url
         checkingAttachmentIDs.remove(id)
         if securityScopedAttachmentURLs.remove(url) != nil { url.stopAccessingSecurityScopedResource() }
+        discardUnusedBatches()
     }
 
     func openAttachment(_ id: UUID) {
