@@ -121,7 +121,6 @@ final class ChannelSidebarSelectionCommitter<Selection: Equatable> {
 
 struct ChannelSidebarView: View {
     let voiceModel: AppModel
-    var showsConversations = true
     let guild: Guild?
     let channels: [Channel]
     let channelGroups: [ChannelGroup]
@@ -142,8 +141,9 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if !showsConversations {
-                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let guildID = voiceModel.presentedGuildJoinRequestID {
+                // A pending server has no channels; its sidebar describes it instead.
+                GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
             } else if guild == nil {
                 DirectMessageInboxView(
                     model: voiceModel,

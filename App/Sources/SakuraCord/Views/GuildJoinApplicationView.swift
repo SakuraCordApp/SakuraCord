@@ -459,6 +459,17 @@ private struct GuildJoinApplicationAnswerRow: View {
     }
 }
 
+extension GuildJoinRequest.Status {
+    /// Discord's wording for each state, on the rail's hover label and the status page's sidebar.
+    var membershipDescription: String {
+        switch self {
+        case .started: "Membership Incomplete"
+        case .rejected: "Membership Rejected"
+        default: "Membership In Review"
+        }
+    }
+}
+
 extension GuildJoinRequest.Status? {
     /// The glyph that marks an application's state on its page, its rail badge and the toolbar.
     var symbolName: String {
@@ -472,4 +483,70 @@ extension GuildJoinRequest.Status? {
 
 private extension GuildJoinApplicationField.Kind {
     var isTerms: Bool { if case .terms = self { true } else { false } }
+}
+
+/// The channel list's place while an application is selected: the server applied to, as the application form
+/// describes it, and where the application stands.
+struct GuildJoinRequestSidebar: View {
+    let model: AppModel
+    let guildID: GuildID
+    let bottomContentInset: CGFloat
+
+    private var store: GuildJoinRequestStore { model.guildJoinRequests }
+
+    var body: some View {
+        let preview = store.previews[guildID]
+        let request = store.requests[guildID]
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: InterfaceScale.metric(16)) {
+                HStack(spacing: InterfaceScale.metric(12)) {
+                    GuildIconView(name: model.joinRequestGuildName(guildID), iconURL: model.joinRequestGuildIconURL(guildID),
+                                  size: InterfaceScale.metric(52), cornerRadius: InterfaceScale.metric(15))
+                    VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
+                        Text(model.joinRequestGuildName(guildID))
+                            .font(.interface(.headline))
+                            .lineLimit(2)
+                        if let preview, let members = preview.memberCount {
+                            HStack(spacing: InterfaceScale.metric(10)) {
+                                if let online = preview.onlineCount { count(online, "Online", color: .green) }
+                                count(members, "Members", color: .secondary)
+                            }
+                            .transition(.opacity)
+                        }
+                    }
+                }
+                if let description = preview?.description, !description.isEmpty {
+                    VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
+                        Text("About").font(.interface(.subheadline).weight(.semibold)).foregroundStyle(.secondary)
+                        Text(description).font(.interface(.callout)).textSelection(.enabled)
+                    }
+                    .transition(.opacity)
+                }
+                if let request {
+                    Divider()
+                    VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
+                        Label(request.status.membershipDescription, systemImage: Optional(request.status).symbolName)
+                            .font(.interface(.callout).weight(.semibold))
+                            .contentTransition(.symbolEffect(.replace))
+                        Text("Started \(request.id.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.interface(.caption))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(InterfaceScale.metric(16))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
+        .animation(.snappy(duration: 0.25), value: preview)
+        .animation(.snappy(duration: 0.25), value: request?.status)
+        .task(id: guildID) { await model.loadGuildJoinRequestPreview(guildID) }
+    }
+
+    private func count(_ value: Int, _ label: String, color: Color) -> some View {
+        HStack(spacing: InterfaceScale.metric(4)) {
+            Circle().fill(color).frame(width: InterfaceScale.metric(7), height: InterfaceScale.metric(7))
+            Text("\(value.formatted()) \(label)").font(.interface(.caption)).foregroundStyle(.secondary)
+        }
+    }
 }

@@ -21,6 +21,9 @@ final class GuildJoinRequestStore {
     var guilds: [GuildID: GuildJoinRequestGuild] = [:]
     /// The open application with the answers entered so far.
     var form: GuildJoinApplicationForm?
+    /// Each applied-to server's description and counts, from its application form, for the status page's sidebar.
+    var previews: [GuildID: GuildJoinApplicationForm] = [:]
+    @ObservationIgnored var loadingPreviews: Set<GuildID> = []
     /// Submitted answers, read back from Discord when the applicant views them.
     var answers: [JoinRequestID: [GuildJoinApplicationField]] = [:]
     var modal: Modal?
@@ -57,6 +60,8 @@ final class GuildJoinRequestStore {
     func reset() {
         requests = [:]
         guilds = [:]
+        previews = [:]
+        loadingPreviews = []
         form = nil
         answers = [:]
         modal = nil
@@ -171,6 +176,7 @@ extension AppModel {
             switch result {
             case .success(let form):
                 store.form = form
+                store.previews[guildID] = form
                 if let name = form.guildName { store.guilds[guildID] = .init(id: guildID, name: name, iconURL: form.iconURL) }
             case .failure(let error):
                 store.error = error.localizedDescription
@@ -257,6 +263,19 @@ extension AppModel {
         runGuildJoinRequestAction { try await $0.reapplyToGuild(guildID) } completion: { [weak self] in
             self?.openGuildJoinApplication(guildID)
         }
+    }
+
+    /// Reads the server's description and counts for the status page; the form request carries them.
+    func loadGuildJoinRequestPreview(_ guildID: GuildID) async {
+        let store = guildJoinRequests
+        guard store.previews[guildID] == nil, store.loadingPreviews.insert(guildID).inserted else { return }
+        defer { store.loadingPreviews.remove(guildID) }
+        let account = accountSession()
+        guard let form = try? await account.provider.guildJoinApplicationForm(guildID, inviteCode: store.inviteCodes[guildID]),
+              isCurrentAccountSession(account)
+        else { return }
+        store.previews[guildID] = form
+        if let name = form.guildName { store.guilds[guildID] = .init(id: guildID, name: name, iconURL: form.iconURL) }
     }
 
     func toggleGuildJoinRequestAnswers(_ guildID: GuildID) {

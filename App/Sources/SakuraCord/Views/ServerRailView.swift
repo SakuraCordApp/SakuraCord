@@ -447,15 +447,6 @@ struct ServerRailJoinRequestEntry: Identifiable, Equatable {
     let iconURL: URL?
     let status: GuildJoinRequest.Status
     let isSelected: Bool
-
-    /// Discord's hover wording for each state.
-    var statusDescription: String {
-        switch status {
-        case .started: "Membership Incomplete"
-        case .rejected: "Membership Rejected"
-        default: "Membership In Review"
-        }
-    }
 }
 
 /// Unapproved applications, grouped like Discord's Pending Applications folder. It opens and closes like the
@@ -550,7 +541,7 @@ private struct JoinRequestRailButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        let label = "\(entry.name), \(entry.statusDescription)"
+        let label = "\(entry.name), \(entry.status.membershipDescription)"
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(4)) {
                 ServerRailSelectionIndicator(isSelected: entry.isSelected, isHovering: isHovering, hasNotification: false)

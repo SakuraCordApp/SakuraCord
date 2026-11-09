@@ -237,8 +237,6 @@ private struct ChatRootView: View {
                 .zIndex(200)
                 ChannelSidebarView(
                     voiceModel: model,
-                    // A pending server has no channels; Discord shows only the rail beside its status.
-                    showsConversations: model.presentedGuildJoinRequestID == nil,
                     guild: selectedGuild,
                     channels: model.visibleChannels,
                     channelGroups: model.visibleChannelGroups,
