@@ -390,9 +390,58 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         return (0 ... 9).map { "\(dir)/discord-ipc-\($0)" }
     }
 
+    /// Purges stale or broken IPC sockets in a directory if no active process is listening.
+    public static func purgeStaleSockets(in directory: String = "/tmp") {
+        for index in 0 ... 9 {
+            let socketPath = "\(directory)/discord-ipc-\(index)"
+            var statBuf = stat()
+            // Check if file or symlink exists (lstat catches broken symlinks too)
+            guard lstat(socketPath, &statBuf) == 0 else { continue }
+
+            // If it is a symlink, verify if target is dead or stale
+            if (statBuf.st_mode & S_IFMT) == S_IFLNK {
+                var targetStat = stat()
+                if stat(socketPath, &targetStat) != 0 {
+                    // Target does not exist (broken symlink)
+                    unlink(socketPath)
+                }
+                continue
+            }
+
+            // If it is a Unix domain socket, probe if actively listening
+            if (statBuf.st_mode & S_IFMT) == S_IFSOCK {
+                let testFD = socket(AF_UNIX, SOCK_STREAM, 0)
+                guard testFD >= 0 else { continue }
+                var addr = sockaddr_un()
+                addr.sun_family = sa_family_t(AF_UNIX)
+                let pathBytes = socketPath.utf8CString
+                if pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) {
+                    withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
+                        _ = pathBytes.withUnsafeBufferPointer { buf in
+                            memcpy(ptr, buf.baseAddress!, buf.count)
+                        }
+                    }
+                    let connectResult = withUnsafePointer(to: &addr) { ptr in
+                        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in
+                            Darwin.connect(testFD, sockAddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                        }
+                    }
+                    close(testFD)
+                    // If connection fails, the socket is stale and can be safely purged
+                    if connectResult != 0 {
+                        unlink(socketPath)
+                    }
+                } else {
+                    close(testFD)
+                }
+            }
+        }
+    }
+
     public func start() throws {
         try queue.sync {
             guard !isRunning else { return }
+            Self.purgeStaleSockets(in: "/tmp")
 
             let pathsToTry = requestedSocketPath.map { [$0] } ?? Self.candidateSocketPaths()
             var boundPath: String?
