@@ -67,7 +67,7 @@ public nonisolated struct AppleMusicTrackInfo: Sendable {
     public var name: String?
     public var artist: String?
     public var album: String?
-    public var currentPositionSeconds: Double
+    public var currentPositionSeconds: Double?
     public var totalTimeMilliseconds: Double?
     public var trackID: String?
     public var appName: String
@@ -77,7 +77,7 @@ public nonisolated struct AppleMusicTrackInfo: Sendable {
         name: String? = nil,
         artist: String? = nil,
         album: String? = nil,
-        currentPositionSeconds: Double = 0,
+        currentPositionSeconds: Double? = nil,
         totalTimeMilliseconds: Double? = nil,
         trackID: String? = nil,
         appName: String = "Apple Music"
@@ -111,7 +111,7 @@ public nonisolated struct AppleMusicTrackInfo: Sendable {
         } else if let val = (userInfo["Playback Position"] ?? userInfo["Current Position"]) as? Double {
             self.currentPositionSeconds = max(0, val)
         } else {
-            self.currentPositionSeconds = 0
+            self.currentPositionSeconds = nil
         }
 
         if let dur = userInfo["Duration"] as? NSNumber {
@@ -135,10 +135,13 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private let coordinator: ActivityCoordinator
     private let center: DistributedNotificationCenter
     private let nowProvider: @Sendable () -> Date
+    private let positionQueryProvider: @Sendable (String) -> Double?
     private let lock = NSLock()
     private var observationTokens: [NSObjectProtocol] = []
     private var appTerminateToken: NSObjectProtocol?
     private var isMonitoring: Bool = false
+    private var currentActiveTrackInfo: AppleMusicTrackInfo?
+    private var positionPollTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "AppleMusicPresenceMonitor")
 
     public static let musicNotificationName = Notification.Name("com.apple.Music.playerInfo")
@@ -179,23 +182,24 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private func updatePlaybackStateOnResume(
         trackName: String,
         artist: String?,
-        currentPositionSeconds: Double,
+        currentPositionSeconds: Double?,
+        appName: String,
         now: Date
     ) -> (resolvedPosition: Double, playbackStartDate: Date) {
         lock.lock()
         defer { lock.unlock() }
-        var resolvedPosition: Double = currentPositionSeconds
-        if resolvedPosition <= 0 {
-            if let queried = Self.queryPlayerPosition(), queried > 0 {
-                resolvedPosition = queried
-            } else if let last = lastPlaybackState,
-                      last.trackName == trackName,
-                      (artist == nil || last.artist == artist),
-                      last.savedElapsedSeconds > 0 {
-                resolvedPosition = last.savedElapsedSeconds
-            } else {
-                resolvedPosition = 0
-            }
+        let resolvedPosition: Double
+        if let currentPositionSeconds {
+            resolvedPosition = currentPositionSeconds
+        } else if let queried = positionQueryProvider(appName), queried >= 0 {
+            resolvedPosition = queried
+        } else if let last = lastPlaybackState,
+                  last.trackName == trackName,
+                  (artist == nil || last.artist == artist),
+                  last.savedElapsedSeconds > 0 {
+            resolvedPosition = last.savedElapsedSeconds
+        } else {
+            resolvedPosition = 0
         }
         let playbackStartDate = now.addingTimeInterval(-resolvedPosition)
         lastPlaybackState = TrackPlaybackState(
@@ -211,6 +215,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private func updatePlaybackStateOnPauseOrStop(now: Date) {
         lock.lock()
         defer { lock.unlock() }
+        currentActiveTrackInfo = nil
         if var last = lastPlaybackState, last.isPlaying {
             let elapsed = max(0, now.timeIntervalSince(last.playbackStartDate))
             last.savedElapsedSeconds = elapsed
@@ -219,9 +224,10 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
     }
 
-    public static func queryPlayerPosition() -> Double? {
+    public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
+        let appTarget = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "Spotify" : "Music"
         let scriptSource = """
-        tell application "Music"
+        tell application "\(appTarget)"
             if it is running then
                 return (player position as real)
             end if
@@ -234,6 +240,55 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         if errorInfo != nil { return nil }
         let val = descriptor.doubleValue
         return val >= 0 ? val : nil
+    }
+
+    private func setCurrentActiveTrackInfo(_ info: AppleMusicTrackInfo?) {
+        lock.lock()
+        currentActiveTrackInfo = info
+        lock.unlock()
+    }
+
+    private func getCurrentActiveTrackInfo() -> AppleMusicTrackInfo? {
+        lock.lock()
+        defer { lock.unlock() }
+        return currentActiveTrackInfo
+    }
+
+    private func isDriftExceeded(queried: Double, now: Date) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let last = lastPlaybackState, last.isPlaying else { return false }
+        let expectedElapsed = max(0, now.timeIntervalSince(last.playbackStartDate))
+        return abs(queried - expectedElapsed) > 2.0
+    }
+
+    private func startPositionPollingIfNeeded(appName: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isMonitoring, positionPollTask == nil else { return }
+        positionPollTask = Task.detached(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled, let self else { break }
+                await self.checkPositionDrift(appName: appName)
+            }
+        }
+    }
+
+    private func stopPositionPolling() {
+        lock.lock()
+        defer { lock.unlock() }
+        positionPollTask?.cancel()
+        positionPollTask = nil
+    }
+
+    private func checkPositionDrift(appName: String) async {
+        guard let queried = positionQueryProvider(appName), queried >= 0 else { return }
+        let now = nowProvider()
+        guard isDriftExceeded(queried: queried, now: now) else { return }
+        guard var updated = getCurrentActiveTrackInfo() else { return }
+        updated.currentPositionSeconds = queried
+        await handleTrackInfo(updated)
     }
 
     public static func fetchCurrentArtworkData() -> Data? {
@@ -312,7 +367,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                 name: parts[1],
                 artist: parts[2],
                 album: parts[3],
-                currentPositionSeconds: Double(parts[4]) ?? 0,
+                currentPositionSeconds: Double(parts[4]),
                 totalTimeMilliseconds: Double(parts[5])
             )
             await self?.handleTrackInfo(trackInfo)
@@ -322,11 +377,13 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     public init(
         coordinator: ActivityCoordinator,
         notificationCenter: DistributedNotificationCenter = .default(),
-        nowProvider: @escaping @Sendable () -> Date = { Date() }
+        nowProvider: @escaping @Sendable () -> Date = { Date() },
+        positionQueryProvider: @escaping @Sendable (String) -> Double? = { AppleMusicPresenceMonitor.queryPlayerPosition(appName: $0) }
     ) {
         self.coordinator = coordinator
         self.center = notificationCenter
         self.nowProvider = nowProvider
+        self.positionQueryProvider = positionQueryProvider
     }
 
     deinit {
@@ -391,7 +448,9 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         appTerminateToken = nil
         isMonitoring = false
         lastPlaybackState = nil
+        currentActiveTrackInfo = nil
         lock.unlock()
+        stopPositionPolling()
 
         for token in tokens {
             center.removeObserver(token)
@@ -421,6 +480,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         let now = nowProvider()
 
         guard let trackInfo else {
+            stopPositionPolling()
             updatePlaybackStateOnPauseOrStop(now: now)
             Self.removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
@@ -429,6 +489,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
         guard trackInfo.playerState.caseInsensitiveCompare("Playing") == .orderedSame else {
             logger.debug("Music player state is '\(trackInfo.playerState, privacy: .public)'; clearing activity.")
+            stopPositionPolling()
             updatePlaybackStateOnPauseOrStop(now: now)
             Self.removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
@@ -438,6 +499,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard let trackName = trackInfo.name?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trackName.isEmpty else {
             logger.debug("Music playing track missing title; clearing activity.")
+            stopPositionPolling()
             updatePlaybackStateOnPauseOrStop(now: now)
             Self.removeCachedArtwork()
             await coordinator.clearActivity(for: .appleMusic)
@@ -447,12 +509,17 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         let artist = trackInfo.artist?.trimmingCharacters(in: .whitespacesAndNewlines)
         let album = trackInfo.album?.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        setCurrentActiveTrackInfo(trackInfo)
+
         let (_, playbackStartDate) = updatePlaybackStateOnResume(
             trackName: trackName,
             artist: artist,
             currentPositionSeconds: trackInfo.currentPositionSeconds,
+            appName: trackInfo.appName,
             now: now
         )
+
+        startPositionPollingIfNeeded(appName: trackInfo.appName)
 
         let startTimestampMs = Int64(playbackStartDate.timeIntervalSince1970 * 1000)
         let endTimestampMs: Int64? = trackInfo.totalTimeMilliseconds.map { ms in

@@ -247,4 +247,48 @@ struct AppleMusicPresenceMonitorTests {
         try? await Task.sleep(nanoseconds: 50_000_000)
         #expect(await coordinator.currentPermittedActivities().isEmpty)
     }
+
+    @Test("Scrubbing track updates timeline position via position query")
+    func testScrubbingTrackUpdatesTimeline() async {
+        let provider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
+
+        let timeBox = TimeBox(Date(timeIntervalSince1970: 1_700_000_000))
+        let positionBox = TimeBox(Date(timeIntervalSince1970: 10))
+
+        let monitor = AppleMusicPresenceMonitor(
+            coordinator: coordinator,
+            nowProvider: { timeBox.date },
+            positionQueryProvider: { _ in positionBox.date.timeIntervalSince1970 }
+        )
+
+        // 1. Initial play at 10s
+        let initial = await monitor.handlePlayerInfo([
+            "Player State": "Playing",
+            "Name": "Blinding Lights",
+            "Artist": "The Weeknd",
+            "Current Position": 10.0,
+            "Total Time": 200000.0
+        ])
+        #expect(initial != nil)
+        #expect(initial?.timestamps?.start == Int64((1_700_000_000.0 - 10.0) * 1000))
+
+        // 2. Play 10s naturally (elapsed is 20s, player position is 20s)
+        timeBox.date = timeBox.date.addingTimeInterval(10)
+        positionBox.date = Date(timeIntervalSince1970: 20)
+
+        // 3. User scrubs forward to 120s!
+        positionBox.date = Date(timeIntervalSince1970: 120)
+
+        // Resumed/drift notification without explicit position key
+        let scrubbed = await monitor.handlePlayerInfo([
+            "Player State": "Playing",
+            "Name": "Blinding Lights",
+            "Artist": "The Weeknd",
+            "Total Time": 200000.0
+        ])
+        #expect(scrubbed != nil)
+        let expectedScrubbedStart = Int64((timeBox.date.timeIntervalSince1970 - 120.0) * 1000)
+        #expect(scrubbed?.timestamps?.start == expectedScrubbedStart)
+    }
 }

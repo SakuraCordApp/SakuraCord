@@ -118,6 +118,10 @@ struct GuildActivityDTO: Decodable {
             let parts = [emojiText, activityState].compactMap { $0 }
             return parts.isEmpty ? nil : parts.joined(separator: " ")
         }
+        if type == 2 {
+            let activityDetails = details.flatMap { $0.isEmpty ? nil : $0 }
+            return activityDetails ?? activityState ?? name
+        }
         return activityState ?? name
     }
 }

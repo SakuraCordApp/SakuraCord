@@ -1248,29 +1248,38 @@ final class AppModel {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.currentUserActivity = payload
-                    if let userID = self.currentUser?.id, var member = self.membersByID[userID] {
-                        if let payload {
-                            member.activityText = payload.details ?? payload.name
-                            member.isListeningToMusic = payload.type == .listening
-                            member.richActivity = MemberRichActivity(
-                                name: payload.name,
-                                type: payload.type.rawValue,
-                                details: payload.details,
-                                state: payload.state,
-                                startTimestamp: payload.timestamps?.start,
-                                endTimestamp: payload.timestamps?.end,
-                                largeImage: payload.assets?.largeImage,
-                                largeText: payload.assets?.largeText,
-                                smallImage: payload.assets?.smallImage,
-                                smallText: payload.assets?.smallText,
-                                applicationID: payload.applicationId
+                    if let userID = self.currentUser?.id {
+                        let richActivity = payload.map {
+                            MemberRichActivity(
+                                name: $0.name,
+                                type: $0.type.rawValue,
+                                details: $0.details,
+                                state: $0.state,
+                                startTimestamp: $0.timestamps?.start,
+                                endTimestamp: $0.timestamps?.end,
+                                largeImage: $0.assets?.largeImage,
+                                largeText: $0.assets?.largeText,
+                                smallImage: $0.assets?.smallImage,
+                                smallText: $0.assets?.smallText,
+                                applicationID: $0.applicationId
                             )
-                        } else {
-                            member.activityText = nil
-                            member.isListeningToMusic = false
-                            member.richActivity = nil
                         }
-                        self.membersByID[userID] = member
+                        let activityText = payload?.details ?? payload?.name
+                        let isListening = payload?.type == .listening
+
+                        if var member = self.membersByID[userID] {
+                            member.activityText = activityText
+                            member.isListeningToMusic = isListening
+                            member.richActivity = richActivity
+                            self.membersByID[userID] = member
+                        }
+
+                        if let memberIndex = self.members.firstIndex(where: { $0.id == userID }) {
+                            self.members[memberIndex].activityText = activityText
+                            self.members[memberIndex].isListeningToMusic = isListening
+                            self.members[memberIndex].richActivity = richActivity
+                            self.rebuildMemberSections()
+                        }
                     }
                 }
             }
