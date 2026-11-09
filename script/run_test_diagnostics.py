@@ -17,8 +17,7 @@ import time
 
 def process_group(pid):
     listing = subprocess.check_output(
-        ["ps", "-axo", "pid=,ppid=,pgid=,stat=,etime=,comm="],
-        text=True, timeout=5,
+        ["ps", "-axo", "pid=,ppid=,pgid=,stat=,etime=,comm="], text=True,
     )
     return [line for line in listing.splitlines()
             if len(line.split()) >= 6 and line.split()[2] == str(pid)]
@@ -42,7 +41,9 @@ def stop(process):
                 break
             time.sleep(0.1)
         signal_group(process.pid, signal.SIGKILL)
-    process.wait(timeout=5)
+    # Like ps and sample, a killed process always finishes, but a starved
+    # machine can take longer than any fixed limit.
+    process.wait()
 
 
 def sample(pid, path):
