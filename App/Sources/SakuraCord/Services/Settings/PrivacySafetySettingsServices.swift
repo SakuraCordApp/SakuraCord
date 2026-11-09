@@ -369,16 +369,10 @@ extension AppModel {
             stopLocalTyping(clearThrottle: false)
         }
         if launchMode == .normal {
-            if value.sharesActivity, value.sharesAppleMusicActivity {
-                appleMusicMonitor.start()
-            } else {
+            if !value.sharesActivity || !value.sharesAppleMusicActivity {
                 appleMusicMonitor.stop()
             }
-            if value.sharesActivity, value.allowsLocalRPC {
-                if !ipcServer.isServerRunning {
-                    try? ipcServer.start()
-                }
-            } else {
+            if !value.sharesActivity || !value.allowsLocalRPC {
                 ipcServer.stop()
             }
         }
@@ -390,6 +384,14 @@ extension AppModel {
                     isLocalRPCEnabled: value.allowsLocalRPC
                 )
             )
+            if launchMode == .normal {
+                if value.sharesActivity, value.sharesAppleMusicActivity {
+                    appleMusicMonitor.start()
+                }
+                if value.sharesActivity, value.allowsLocalRPC, !ipcServer.isServerRunning {
+                    try? ipcServer.start()
+                }
+            }
         }
     }
 }

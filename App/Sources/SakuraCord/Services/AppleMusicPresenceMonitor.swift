@@ -202,13 +202,6 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     }
     private var lastPlaybackState: TrackPlaybackState?
 
-    private func nextArtworkGeneration() -> UInt64 {
-        lock.lock()
-        defer { lock.unlock() }
-        artworkFetchGeneration &+= 1
-        return artworkFetchGeneration
-    }
-
     private func cancelArtworkFetchTask() {
         lock.lock()
         defer { lock.unlock() }
