@@ -507,9 +507,10 @@ struct GuildJoinRequestSidebar: View {
                             .font(.interface(.headline))
                             .lineLimit(2)
                         if let preview, let members = preview.memberCount {
-                            HStack(spacing: InterfaceScale.metric(10)) {
-                                if let online = preview.onlineCount { count(online, "Online", color: .green) }
-                                count(members, "Members", color: .secondary)
+                            // A narrow sidebar stacks the counts rather than breaking their words.
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: InterfaceScale.metric(10)) { counts(preview, members: members) }
+                                VStack(alignment: .leading, spacing: InterfaceScale.metric(2)) { counts(preview, members: members) }
                             }
                             .transition(.opacity)
                         }
@@ -543,10 +544,16 @@ struct GuildJoinRequestSidebar: View {
         .task(id: guildID) { await model.loadGuildJoinRequestPreview(guildID) }
     }
 
+    @ViewBuilder private func counts(_ preview: GuildJoinApplicationForm, members: Int) -> some View {
+        if let online = preview.onlineCount { count(online, "Online", color: .green) }
+        count(members, "Members", color: .secondary)
+    }
+
     private func count(_ value: Int, _ label: String, color: Color) -> some View {
         HStack(spacing: InterfaceScale.metric(4)) {
             Circle().fill(color).frame(width: InterfaceScale.metric(7), height: InterfaceScale.metric(7))
             Text("\(value.formatted()) \(label)").font(.interface(.caption)).foregroundStyle(.secondary)
         }
+        .fixedSize()
     }
 }

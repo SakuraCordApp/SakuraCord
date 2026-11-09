@@ -201,6 +201,9 @@ struct ServerRailView: View {
             }
             .padding(.bottom, InterfaceScale.metric(12))
             .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: folderLayoutRevision)
+            // Pending Applications also opens without a click, when an application is submitted; the rows below
+            // move with it.
+            .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: joinRequestsExpanded.wrappedValue)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: directMessages.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: joinRequests.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
@@ -530,8 +533,6 @@ private struct PendingApplicationsRailFolder: View {
             }
             .allowsHitTesting(false)
         }
-        // The folder also opens without a click, when an application is submitted.
-        .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: isExpanded)
     }
 }
 
