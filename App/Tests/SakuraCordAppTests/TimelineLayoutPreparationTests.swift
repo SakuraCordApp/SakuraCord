@@ -32,13 +32,10 @@ func `timeline layout preparation commits a complete update or discards supersed
         onUserScrollBegan: {}, onUserScrollEnded: { _ in }
     )
     let coordinator = timeline.makeCoordinator()
-    // Keep the viewport fixed while preparation yields. The coordinator enables
-    // the vertical scroller even without a document view; a default legacy
-    // scroller can then shrink the clip width during the await. Match production's
-    // overlay scrollers so that AppKit tiling cannot invalidate this fixture.
+    // Keep the viewport fixed while preparation yields; a narrower viewport
+    // rightly discards it.
     let viewport = CGRect(x: 0, y: 0, width: 820, height: 300)
-    let scrollView = NSScrollView(frame: viewport)
-    scrollView.scrollerStyle = .overlay
+    let scrollView = OverlayScrollView(frame: viewport)
     let canvas = NativeTimelineCanvasView(frame: viewport)
     coordinator.canvas = canvas
     defer { withExtendedLifetime(canvas) { coordinator.stopObserving() } }
@@ -74,6 +71,17 @@ func `timeline layout preparation commits a complete update or discards supersed
         #expect(coordinator.recentLayoutCacheHits == (changesPresentation ? coordinator.items.count : 64))
         #expect(coordinator.items.count == coordinator.layouts.count)
         #expect(coordinator.layouts.count == coordinator.rowHeights.count)
+    }
+}
+
+/// Keeps overlay scrollers. AppKit moves every scroll view to the system's
+/// preferred style when it changes, and a hosted runner without a pointing
+/// device settles on legacy scrollers seconds into a run, narrowing the clip
+/// view by the scroller's width.
+private final class OverlayScrollView: NSScrollView {
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set {} // swiftlint:disable:this unused_setter_value
     }
 }
 
