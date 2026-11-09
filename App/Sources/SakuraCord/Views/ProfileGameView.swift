@@ -13,6 +13,7 @@ struct ProfileGameView: View {
     @State private var isLoading = true
     @State private var navigation: [ProfileGame] = []
     @State private var copiedLink = false
+    @State private var mediaPresentation: NativeTimelineMediaViewerPresentation?
     @Environment(\.windowModalContext) private var dismiss
 
     init(model: AppModel, game: ProfileGame, editor: ProfileEditorState? = nil) {
@@ -43,6 +44,14 @@ struct ProfileGameView: View {
         }
         .scrollIndicators(.automatic)
         .overlay(alignment: .top) { chrome }
+        .background {
+            // Hosted here rather than at the root so the viewer opens in the
+            // window showing this profile, including Settings.
+            MediaViewerWindowOverlay(presentation: mediaPresentation, animatesOverlays: { model.animates(.overlays) },
+                                     dismiss: { mediaPresentation = nil })
+                .environment(model.voiceMessagePlayback)
+                .frame(width: 0, height: 0)
+        }
         .clipShape(.rect(cornerRadius: WindowModalSurface.cornerRadius))
         .windowModalSize(width: 1180, height: 760)
         .task(id: game.id) { await load() }
@@ -168,7 +177,7 @@ struct ProfileGameView: View {
         if let metadata = game.metadata {
             HStack(alignment: .top, spacing: ProfileGameMetrics.columnSpacing) {
                 VStack(alignment: .leading, spacing: ProfileGameMetrics.sectionSpacing) {
-                    ProfileGameGallery(game: game) { model.mediaViewerPresentation = $0 }
+                    ProfileGameGallery(game: game) { mediaPresentation = $0 }
                     if let description = metadata.description, !description.isEmpty {
                         ProfileGameSection("About") { ProfileGameDescription(text: description).id(game.id) }
                     }
@@ -207,6 +216,7 @@ struct ProfileGameView: View {
                 }
             }
             .padding(.horizontal, ProfileGameMetrics.inset)
+            .environment(\.openURL, OpenURLAction { url in openLink(url); return .handled })
         }
     }
 

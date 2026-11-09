@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ProfileGameGallery: View {
     let game: ProfileGame
-    /// Opens the app's window-wide viewer, which stacks over this modal.
     let present: (NativeTimelineMediaViewerPresentation) -> Void
     @State private var selectedIndex = 0
     @Environment(\.displayScale) private var displayScale
