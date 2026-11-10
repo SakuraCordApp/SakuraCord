@@ -75,6 +75,8 @@ final class SettingsConversationRestorationStore {
         persist(restoration, forKey: Self.accountKey(accountID))
         if let guildID {
             var channels = storedChannelIDsByGuild(accountID: accountID)
+            // Switching to a server reselects its remembered channel.
+            guard channels[guildID] != channelID else { return }
             channels[guildID] = channelID
             persist(channels, forKey: Self.guildChannelsKey(accountID))
         }
@@ -82,12 +84,11 @@ final class SettingsConversationRestorationStore {
 
     /// Each server reopens on its last channel after a relaunch, as in Discord.
     func lastChannelIDsByGuild(accountID: String) -> [GuildID: ChannelID] {
-        var channels: [GuildID: ChannelID] = [:]
-        for (guildID, channelID) in storedChannelIDsByGuild(accountID: accountID) {
-            guard let guildID = GuildID(guildID), let channelID = ChannelID(channelID) else { continue }
-            channels[guildID] = channelID
+        storedChannelIDsByGuild(accountID: accountID).reduce(into: [:]) { channels, entry in
+            if let guildID = GuildID(entry.key), let channelID = ChannelID(entry.value) {
+                channels[guildID] = channelID
+            }
         }
-        return channels
     }
 
     /// Switching accounts returns to that account's last conversation, the

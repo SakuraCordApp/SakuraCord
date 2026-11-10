@@ -731,8 +731,8 @@ extension AppModel {
                 {
                     // The guild's authoritative list removed the selected channel,
                     // possibly its last one. Reselection closes any open thread.
-                    self.selectedChannelID = Self.preferredInitialChannelID(
-                        in: channels.filter { conversationAccess(for: $0) != .hidden }
+                    self.selectedChannelID = defaultChannelID(
+                        among: channels.filter { conversationAccess(for: $0) != .hidden }, guildID: guildID
                     )
                 }
             }
@@ -949,8 +949,8 @@ extension AppModel {
                    $0.id == selectedChannelID && $0.guildID == selectedGuildID
                }) == true
             {
-                self.selectedChannelID = Self.preferredInitialChannelID(
-                    in: visibleChannels.filter { conversationAccess(for: $0) != .hidden }
+                self.selectedChannelID = defaultChannelID(
+                    among: visibleChannels.filter { conversationAccess(for: $0) != .hidden }, guildID: selectedGuildID
                 )
             }
         }

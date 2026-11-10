@@ -306,9 +306,10 @@ extension AppModel {
             reconcilePrivateCallSounds()
             readState.applyInitialState(initialReadState)
         }
+        let accountID = credentialHandle?.accountID
         let launchRestoration = SettingsConversationRestorationStore.shared
-            .consumeLaunchRestoration(accountID: credentialHandle?.accountID)
-        if let accountID = credentialHandle?.accountID {
+            .consumeLaunchRestoration(accountID: accountID)
+        if let accountID {
             // Choices made since this session started, before a reconnect, are newer.
             lastOpenedChannelIDsByGuild.merge(
                 SettingsConversationRestorationStore.shared.lastChannelIDsByGuild(accountID: accountID)
