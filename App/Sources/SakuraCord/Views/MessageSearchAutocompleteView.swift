@@ -1230,7 +1230,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
             pointSize: pointSize,
             weight: .medium
         ).applying(
-            NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor])
+            NSImage.SymbolConfiguration(paletteColors: [.labelColor])
         )
         guard let image = NSImage(
             systemSymbolName: name,
@@ -1246,7 +1246,8 @@ private final class MessageSearchAutocompleteCanvas: NSView {
             in: destination,
             from: .zero,
             operation: .sourceOver,
-            fraction: 1,
+            // Symbol palettes ignore alpha, so the icons' 70% is applied here.
+            fraction: 0.7,
             respectFlipped: true,
             hints: [.interpolation: NSImageInterpolation.high]
         )
