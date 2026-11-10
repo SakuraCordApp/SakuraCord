@@ -11,6 +11,7 @@ public extension DiscordRESTProvider {
     }
 
     func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
+        presenceGeneration &+= 1
         if let activity {
             activeActivities[sourceID] = activity
         } else {
@@ -20,6 +21,7 @@ public extension DiscordRESTProvider {
     }
 
     func clearActivities(sourceID: String? = nil) async throws {
+        presenceGeneration &+= 1
         if let sourceID {
             activeActivities.removeValue(forKey: sourceID)
         } else {
@@ -84,6 +86,7 @@ extension DiscordRESTProvider {
 
     func setPresenceStatus(_ status: PresenceStatus) {
         guard presenceStatus != status else { return }
+        presenceGeneration &+= 1
         presenceStatus = status
         continuation?.yield(.currentUserStatusChanged(status))
     }
@@ -155,6 +158,13 @@ extension DiscordRESTProvider {
                 body: body
             )
             if let first = dtos.first {
+                if externalAssetCache[url] == nil {
+                    if externalAssetCacheKeys.count >= 128 {
+                        let oldest = externalAssetCacheKeys.removeFirst()
+                        externalAssetCache.removeValue(forKey: oldest)
+                    }
+                    externalAssetCacheKeys.append(url)
+                }
                 externalAssetCache[url] = first.externalAssetPath
                 return first.externalAssetPath
             }
@@ -165,11 +175,9 @@ extension DiscordRESTProvider {
     }
 
     func sendPresence() async throws {
+        let currentGeneration = presenceGeneration
         let status = presenceStatus
         let activities = activeActivitiesList()
-        presenceSendWindowEnds.append(Date.now.addingTimeInterval(20))
-        lastSentPresenceStatus = status
-        lastSentActivities = activities
 
         var activityDictionaries: [[String: Any]] = []
         for activity in activities {
@@ -189,6 +197,10 @@ extension DiscordRESTProvider {
             activityDictionaries.append(dict)
         }
 
+        guard currentGeneration == presenceGeneration else { return }
+        presenceSendWindowEnds.append(Date.now.addingTimeInterval(20))
+        lastSentPresenceStatus = status
+        lastSentActivities = activities
         do {
             try await sendGateway([
                 "op": 3,

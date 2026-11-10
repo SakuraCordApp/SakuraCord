@@ -8,8 +8,9 @@ import os
 public actor MusicArtworkResolver {
     public static let shared = MusicArtworkResolver()
     private var artworkCache: [String: String] = [:]
+    private var artworkCacheKeys: [String] = []
     private var trackURLCache: [String: String] = [:]
-    private var cacheKeys: [String] = []
+    private var trackCacheKeys: [String] = []
     private let maxCacheSize = 64
 
     public func cachedArtworkURL(title: String, artist: String?, album: String?) -> String? {
@@ -28,22 +29,22 @@ public actor MusicArtworkResolver {
 
     private func storeArtworkInCache(key: String, artwork: String) {
         if artworkCache[key] == nil {
-            if cacheKeys.count >= maxCacheSize {
-                let oldest = cacheKeys.removeFirst()
+            if artworkCacheKeys.count >= maxCacheSize {
+                let oldest = artworkCacheKeys.removeFirst()
                 artworkCache.removeValue(forKey: oldest)
             }
-            cacheKeys.append(key)
+            artworkCacheKeys.append(key)
         }
         artworkCache[key] = artwork
     }
 
     private func storeTrackInCache(key: String, trackURL: String) {
         if trackURLCache[key] == nil {
-            if cacheKeys.count >= maxCacheSize {
-                let oldest = cacheKeys.removeFirst()
+            if trackCacheKeys.count >= maxCacheSize {
+                let oldest = trackCacheKeys.removeFirst()
                 trackURLCache.removeValue(forKey: oldest)
             }
-            cacheKeys.append(key)
+            trackCacheKeys.append(key)
         }
         trackURLCache[key] = trackURL
     }
