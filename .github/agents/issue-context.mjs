@@ -48,11 +48,9 @@ const allowedImageUrl = (value) => {
     url.hostname === "github-production-user-asset-6210df.s3.amazonaws.com"
   );
 };
-// GitHub's editor inserts screenshots as HTML; answers often add more.
-// Both syntaxes may entity-encode "&", which signed Discord CDN URLs need intact.
-// Quoted attribute values may contain ">", and hidden comments must not use up image slots.
-// Markdown destinations may be <bracketed> or followed by a title.
-// Bounded repeats keep untrusted 65k-character comments from backtracking for seconds.
+// GitHub's editor inserts screenshots as <img>, so Markdown alone misses most of them.
+// Signed Discord CDN URLs break unless an entity-encoded "&" is decoded.
+// Repeats are bounded so untrusted 65k-character comments can't backtrack for seconds.
 const imageUrls = (text) => [...strip(text, Infinity).matchAll(/!?\[[^\]]{0,1000}\]\(\s{0,10}<?(https:\/\/[^)\s>]{1,4096})>?(?:\s{1,10}(?:"[^"]{0,500}"|'[^']{0,500}'|\([^)]{0,500}\)))?\s{0,10}\)|<img\b(?:[^>"']|"[^"]*"|'[^']*'){0,2000}?\ssrc\s*=\s*(["'])(https:\/\/.{1,4096}?)\2/gi)]
   .map((match) => (match[1] ?? match[3]).replace(/&(?:amp|#0*38|#x0*26);/gi, "&"));
 const urls = [issue.body, ...issue.comments.slice(-30).reverse().map((comment) => comment.body)].flatMap(imageUrls);
