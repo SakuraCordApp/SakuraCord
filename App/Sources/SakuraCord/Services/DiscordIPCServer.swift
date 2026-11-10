@@ -131,7 +131,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 return
             }
             self.clientID = clientID
-            sendReadyEvent(clientID: clientID)
+            sendReadyEvent()
 
         case 1: // FRAME
             guard let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
@@ -316,7 +316,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         sendFrame(opcode: 1, jsonObject: dict)
     }
 
-    private func sendReadyEvent(clientID: String) {
+    private func sendReadyEvent() {
         let readyData: [String: Any] = [
             "cmd": "DISPATCH",
             "data": [
@@ -433,7 +433,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
                 }
             }
         }
-        return paths.isEmpty ? (0 ... 9).map { "/tmp/discord-ipc-\($0)" } : paths
+        return paths
     }
 
     public enum SocketListenerStatus: Sendable, Equatable {
