@@ -33,7 +33,12 @@ const fixApplies = !triage.needsInformation && (result.findings
   ? result.findings.fix === "high" && !duplicate : result.confidence === "high" && !triage.duplicateOf);
 const pending = resolution.commit && resolution.state.startsWith("fixed_") && !duplicate && !fixApplies
   ? " A maintainer will confirm it before the report is marked fixed." : "";
-const pullRequest = fixPullRequest ? ` Pull request #${fixPullRequest} is open to ${triage.kind === "feature" ? "implement" : "fix"} it.` : "";
+// The hub links a pull request rated high, unless it applies a fix instead.
+const linksPull = result.findings?.pullRequest === "high" && !triage.needsInformation && !duplicate &&
+  !(fixApplies && resolution.state.startsWith("fixed_"));
+const pullRequest = !fixPullRequest ? "" : linksPull
+  ? ` Pull request #${fixPullRequest} ${triage.kind === "feature" ? "implements" : "fixes"} it; the hub adds "Fixes #${number}" to it, so it is tracked like any linked pull request.`
+  : ` Pull request #${fixPullRequest} is open to ${triage.kind === "feature" ? "implement" : "fix"} it.`;
 const availability = {
   unresolved: "No existing fix has been verified.",
   possible_regression: `The reported release already contains this change. This may be a regression or incomplete fix and still needs investigation.`,

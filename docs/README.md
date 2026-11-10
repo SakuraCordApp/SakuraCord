@@ -129,12 +129,14 @@ maintain a second backlog there or in a repository `ROADMAP.md`.
 - The agent rates each status finding on its own, apart from its overall
   confidence. The hub verifies and applies only findings rated high, and only
   to New or Needs Info reports or forward from Confirmed or Planned: a fix on
-  nightly moves to In Nightly (Shipped once a release contains it), an open PR
-  into nightly from this repository to In Progress, a regression of a known
-  fix to Confirmed, a duplicate is closed into the original, a wrong category
-  is corrected, and a suggestion that already exists gets a question. Discord
-  notes that the assessment set the status; Manage undoes it. Lower ratings
-  stay suggestions for a maintainer.
+  nightly is recorded as Mark as fixed records it (In Nightly, then Shipped
+  once a release contains it), an open PR into nightly from this repository
+  gets a `Fixes #N` line so PR tracking moves the report, a regression of a
+  known fix moves to Confirmed, a duplicate is closed into the original, a
+  wrong category is corrected, and a suggestion that already exists gets a
+  question. Discord notes that the assessment set the status; Manage undoes it,
+  and removing the line unlinks a PR. Lower ratings stay suggestions for a
+  maintainer.
 - Maintainers can rerun with `agent: investigate` or Discord's Manage menu.
   The label stays until the hub applies the result; retry a failed run in
   Actions. A report body edited during assessment triggers a fresh run.
