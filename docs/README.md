@@ -134,9 +134,9 @@ maintain a second backlog there or in a repository `ROADMAP.md`.
   gets a `Fixes #N` line so PR tracking moves the report, a regression of a
   known fix moves to Confirmed, a duplicate is closed into the original, a
   wrong category is corrected, and a suggestion that already exists gets a
-  question. Discord notes that the assessment set the status; Manage undoes it,
-  and removing the line unlinks a PR. Lower ratings stay suggestions for a
-  maintainer.
+  question. Discord notes that the assessment set the status; Manage undoes it.
+  To undo a wrong PR link, correct the report's status in Manage and remove the
+  line from the PR. Lower ratings stay suggestions for a maintainer.
 - Maintainers can rerun with `agent: investigate` or Discord's Manage menu.
   The label stays until the hub applies the result; retry a failed run in
   Actions. A report body edited during assessment triggers a fresh run.
