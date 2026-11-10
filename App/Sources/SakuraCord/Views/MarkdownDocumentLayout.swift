@@ -122,6 +122,7 @@ struct MarkdownBlockLayout {
                 in: tableIntent, row: row, column: column, outerBlocks: placement.textBlocks, indent: placement.indent
             ) else { return }
             alignment = cell.alignment
+            if content.string == MarkdownTableRows.marker { content.setAttributedString(NSAttributedString()) }
             placement.textBlocks.append(cell.block)
             placement.indent = 0
         case let .footnote(number):
