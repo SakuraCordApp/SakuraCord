@@ -775,7 +775,7 @@ extension AppModel {
         }
         if !keepsFriends, restoredChannelID != nil || !visibleChannels.contains(where: { $0.id == selectedChannelID }) {
             let preferredChannelID = restoredChannelID
-                ?? Self.preferredInitialChannelID(in: selectableChannels)
+                ?? defaultChannelID(among: selectableChannels, guildID: guildID)
             pendingAutomaticChannelAccessID = preferredChannelID.flatMap { id in
                 selectableChannels.first(where: { $0.id == id }).flatMap { channel in
                     conversationAccess(
@@ -815,6 +815,16 @@ extension AppModel {
             "TimelineInvalidationGuildPresentationRestore"
         )
         invalidateTimelinePresentation()
+    }
+
+    /// Without a remembered channel a server opens on the first channel its
+    /// sidebar lists, so channels the user hid stay out of view.
+    func defaultChannelID(among channels: [Channel], guildID: GuildID?) -> ChannelID? {
+        guard guildID != nil else { return Self.preferredInitialChannelID(in: channels) }
+        let listedChannels = selectedChannelGroups(ChannelGroup.make(from: channels), guildID: guildID)
+            .flatMap(\.channels)
+        return Self.preferredInitialChannelID(in: listedChannels)
+            ?? Self.preferredInitialChannelID(in: channels)
     }
 
     nonisolated static func preferredInitialChannelID(in channels: [Channel]) -> ChannelID? {

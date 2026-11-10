@@ -12,7 +12,6 @@ extension DiscordRESTProvider {
             guard channelGuildIDs.insert(guildID).inserted else { return nil }
             return cachedGuilds[guildID] ?? currentGuildsByID[guildID]
         } + currentGuilds.filter { channelGuildIDs.insert($0.id).inserted }
-        let members = [Member(user: user, roleName: "You", status: presenceStatus)]
         var channelsByID = Dictionary(
             (cachedChannels[nil] ?? []).map { ($0.id, $0) },
             uniquingKeysWith: { _, newer in newer }
@@ -69,7 +68,9 @@ extension DiscordRESTProvider {
             forwardChannelStoreOrder: cachedForwardChannelStoreOrder,
             threads: startupThreads,
             activeJoinedThreads: startupActiveJoinedThreads,
-            members: members,
+            // READY carries no member list. A stand-in for the current user
+            // without roles would replace READY's roles in the first server.
+            members: [],
             currentMembersByGuildID: cachedMembers.compactMapValues { members in
                 members.first { $0.id == user.id }
             },

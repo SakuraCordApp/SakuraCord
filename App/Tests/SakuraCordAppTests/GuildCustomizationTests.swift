@@ -91,6 +91,8 @@ struct GuildCustomizationTests {
             channelOverrides: [.init(channelID: selected.id, flags: GuildChannelSelection.selectedFlag)]))
         let groups = ChannelGroup.make(from: channels)
         #expect(model.selectedChannelGroups(groups, guildID: id).flatMap(\.channels).map(\.id) == [selected.id, mention.id])
+        // A server without a remembered channel opens on one the user kept, not the first one listed.
+        #expect(model.defaultChannelID(among: [omitted, selected], guildID: id) == selected.id)
         let voice = Channel(id: .init(rawValue: 204), guildID: id, name: "voice", kind: .voice)
         let mixedGroups = ChannelGroup.make(from: channels + [voice])
         #expect(model.selectedChannelGroups(mixedGroups, guildID: id).flatMap(\.channels).map(\.id) == [selected.id, mention.id])
