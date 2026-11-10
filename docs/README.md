@@ -126,6 +126,15 @@ maintain a second backlog there or in a repository `ROADMAP.md`.
   fixed in code, published in nightly, and published in regular are distinct.
   A build already containing a claimed fix needs regression investigation.
   Verified existing fixes join release tracking; unreleased fixes stay open.
+- The agent rates each status finding on its own, apart from its overall
+  confidence. The hub verifies and applies only findings rated high, and only
+  to New or Needs Info reports or forward from Confirmed or Planned: a fix on
+  nightly moves to In Nightly (Shipped once a release contains it), an open PR
+  from this repository to In Progress, a regression of a known fix to
+  Confirmed, a duplicate is closed into the original, a wrong category is
+  corrected, and a suggestion that already exists gets a question. Discord
+  notes that the assessment set the status; Manage undoes it. Lower ratings
+  stay suggestions for a maintainer.
 - Maintainers can rerun with `agent: investigate` or Discord's Manage menu.
   The label stays until the hub applies the result; retry a failed run in
   Actions. A report body edited during assessment triggers a fresh run.

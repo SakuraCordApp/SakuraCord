@@ -11,6 +11,7 @@ const run = `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env
 const result = JSON.parse(readFileSync(process.env.RESULT_PATH, "utf8"));
 const context = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, "assessment-context.json"), "utf8"));
 const triage = result.triage;
+const fixPullRequest = result.fixPullRequest ?? null;
 // The hub allows a bounded number of question rounds; after that, open
 // questions are left for a maintainer instead of asking the reporter again.
 let openQuestions = [];
@@ -20,23 +21,28 @@ if (context.questionsAllowed === false && triage) {
 }
 if (context.number !== Number(number) || !context.areas.includes(triage?.area) ||
     (triage.duplicateOf !== null && (!context.candidates.includes(triage.duplicateOf) || triage.duplicateOf === Number(number))) ||
-    (triage.needsInformation && !triage.questions.length)) throw new Error("Invalid assessment result");
+    (triage.needsInformation && !triage.questions.length) ||
+    (fixPullRequest !== null && !context.pullRequests.includes(fixPullRequest))) throw new Error("Invalid assessment result");
 const resolution = resolveFix(result.fixCommit, context.refs);
 const releaseLink = resolution.release ? `[${resolution.release.version} (${resolution.release.channel})](${resolution.release.url})` : "";
-// The hub applies a found fix on its own only at high confidence.
-const pending = resolution.commit && resolution.state.startsWith("fixed_") && result.confidence !== "high"
+// The hub applies a finding on its own only when that finding is rated high,
+// or, for results without ratings, a fix at high overall confidence.
+const pending = resolution.commit && resolution.state.startsWith("fixed_") && (result.findings?.fix ?? result.confidence) !== "high"
   ? " A maintainer will confirm it before the report's status changes." : "";
+const pullRequest = fixPullRequest ? ` Pull request #${fixPullRequest} is open to ${triage.kind === "feature" ? "implement" : "fix"} it.` : "";
 const availability = {
   unresolved: "No existing fix has been verified.",
   possible_regression: `The reported release already contains this change. This may be a regression or incomplete fix and still needs investigation.`,
   fixed_regular: `The fix is available in ${releaseLink}. Update and retest on that release.`,
   fixed_nightly: `The fix is available in ${releaseLink}, but not in the latest regular release. You can try nightly or wait for the next regular release.`,
   fixed_unreleased: "The fix is in the app's code, but is not in either latest published release yet. No released update contains it yet.",
-}[resolution.state] + pending;
+}[resolution.state] + pending + pullRequest;
 if (resolution.state === "possible_regression") triage.duplicateOf = null;
-triage.resolution = { state: resolution.state, commit: resolution.commit, releaseTag: resolution.release?.tag ?? null, explanation: availability };
+const duplicate = triage.duplicateOf && result.findings?.duplicate === "high";
+triage.resolution = { state: resolution.state, commit: resolution.commit, releaseTag: resolution.release?.tag ?? null,
+  pullRequest: fixPullRequest, explanation: availability };
 const envelope = JSON.stringify({ version: 1, number: Number(number), sourceTitle: context.sourceTitle,
-  bodyHash: context.bodyHash, confidence: result.confidence, candidates: context.candidates, model: process.env.AGENT_MODEL, triage,
+  bodyHash: context.bodyHash, confidence: result.confidence, findings: result.findings, candidates: context.candidates, model: process.env.AGENT_MODEL, triage,
 }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
 const clean = (text) => String(text ?? "").replace(/@(?=[A-Za-z0-9-])/g, "@​").trim();
 const locations = result.locations
@@ -59,7 +65,10 @@ ${clean(result.classificationReason)}
 
 ### Fix availability
 ${availability}${resolution.commit ? ` [Change](https://github.com/${repo}/commit/${resolution.commit}).` : ""}
-${triage.duplicateOf && triage.duplicateConfidence >= 0.75 ? `
+${duplicate ? `
+### Duplicate
+This matches #${triage.duplicateOf}. ${clean(triage.duplicateReason)}
+` : triage.duplicateOf && triage.duplicateConfidence >= 0.75 ? `
 ### Possible duplicate
 This may match #${triage.duplicateOf}. ${clean(triage.duplicateReason)} A maintainer will decide whether to merge them.
 ` : ""}
