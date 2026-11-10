@@ -24,6 +24,7 @@ struct ActivityMarqueeText: View {
     var isCardHovered: Bool = false
     var height: CGFloat = InterfaceScale.metric(18)
 
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
@@ -58,15 +59,21 @@ struct ActivityMarqueeText: View {
             .mask {
                 if isOverflowing, isCardHovered {
                     HStack(spacing: 0) {
-                        if scrollOffset < -4 {
-                            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: InterfaceScale.metric(8))
-                        }
+                        LinearGradient(
+                            colors: [.black.opacity(scrollOffset < -4 ? 0 : 1), .black],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: InterfaceScale.metric(10))
+
                         Color.black
-                        if scrollOffset > -overflowDistance + 4 {
-                            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: InterfaceScale.metric(10))
-                        }
+
+                        LinearGradient(
+                            colors: [.black, .black.opacity(scrollOffset > -overflowDistance + 4 ? 0 : 1)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: InterfaceScale.metric(10))
                     }
                 } else {
                     Color.black
@@ -80,12 +87,16 @@ struct ActivityMarqueeText: View {
         .onChange(of: isCardHovered) { _, hovered in
             updateScroll(hovered: hovered)
         }
+        .onDisappear {
+            scrollTask?.cancel()
+            scrollTask = nil
+        }
     }
 
     private func updateScroll(hovered: Bool) {
         scrollTask?.cancel()
         scrollTask = nil
-        guard hovered, isOverflowing else {
+        guard hovered, isOverflowing, !systemReduceMotion else {
             withAnimation(.easeOut(duration: 0.25)) {
                 scrollOffset = 0
             }
@@ -117,6 +128,7 @@ struct ProfileActivitySection: View {
     var richActivity: MemberRichActivity?
     var isCurrentUser: Bool = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.serverTagCardModel) private var model
     @State private var dynamicArtwork: NSImage?
     @State private var remoteArtworkOverride: URL?
     @State private var rightColumnHeight: CGFloat = InterfaceScale.metric(64)
@@ -275,7 +287,7 @@ struct ProfileActivitySection: View {
     private var activityDestinationURL: URL? {
         if isMusic {
             let appName = effectiveActivity?.name ?? ""
-            let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame || member.isListeningToMusic
+            let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
             let query = [primaryText, secondaryText].compactMap { $0 }.joined(separator: " ")
             let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             if isSpotify {
@@ -354,7 +366,7 @@ struct ProfileActivitySection: View {
         }
         .onTapGesture {
             if let destination = activityDestinationURL {
-                NSWorkspace.shared.open(destination)
+                _ = MessageLinkActivator.activate(destination, model: model, displayedText: destination.absoluteString)
             }
         }
         .help(activityDestinationURL != nil ? destinationHelpText : "")
@@ -362,6 +374,7 @@ struct ProfileActivitySection: View {
             refreshArtwork()
         }
         .task(id: effectiveActivity) {
+            remoteArtworkOverride = nil
             refreshArtwork()
             await resolveMissingMusicArtwork()
         }
@@ -415,8 +428,11 @@ struct ProfileActivitySection: View {
             }
         }
         .onPreferenceChange(ProfileActivitySectionRightHeightKey.self) { newHeight in
-            if newHeight > 0, abs(rightColumnHeight - newHeight) > 1 {
-                rightColumnHeight = max(InterfaceScale.metric(64), newHeight)
+            if newHeight > 0 {
+                let clamped = max(InterfaceScale.metric(56), newHeight)
+                if abs(rightColumnHeight - clamped) > 1 {
+                    rightColumnHeight = clamped
+                }
             }
         }
     }

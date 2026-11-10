@@ -99,7 +99,10 @@ public actor ActivityCoordinator {
             return preferences.isAppleMusicPresenceEnabled
         case .localRPC:
             return preferences.isLocalRPCEnabled
-        case .custom:
+        case .custom(let sourceID):
+            if sourceID.hasPrefix("game:") {
+                return preferences.isLocalRPCEnabled
+            }
             return true
         }
     }

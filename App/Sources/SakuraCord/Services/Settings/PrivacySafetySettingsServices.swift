@@ -374,6 +374,7 @@ extension AppModel {
             }
             if !value.sharesActivity || !value.allowsLocalRPC {
                 ipcServer.stop()
+                gameMonitor.stop()
             }
         }
         Task {
@@ -391,6 +392,9 @@ extension AppModel {
                 }
                 if value.sharesActivity, value.allowsLocalRPC, !ipcServer.isServerRunning {
                     try? ipcServer.start()
+                }
+                if value.sharesActivity, value.allowsLocalRPC {
+                    gameMonitor.start()
                 }
             }
         }

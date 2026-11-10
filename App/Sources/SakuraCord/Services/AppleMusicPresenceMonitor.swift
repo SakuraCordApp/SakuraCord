@@ -251,6 +251,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         appName: String,
         now: Date
     ) -> (resolvedPosition: Double, playbackStartDate: Date) {
+        let queriedPosition: Double? = if currentPositionSeconds == nil {
+            positionQueryProvider(appName)
+        } else {
+            nil
+        }
+
         lock.lock()
         defer { lock.unlock() }
         let resolvedPosition: Double
@@ -263,7 +269,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                   artist == nil || last.artist == artist,
                   last.savedElapsedSeconds > 0 {
             resolvedPosition = last.savedElapsedSeconds
-        } else if let queried = positionQueryProvider(appName), queried >= 0 {
+        } else if let queried = queriedPosition, queried >= 0 {
             resolvedPosition = queried
         } else {
             resolvedPosition = 0

@@ -16,7 +16,26 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         "com.roblox.RobloxPlayer",
         "com.Roblox.RobloxPlayer",
         "com.roblox.RobloxStudio",
+        "com.Roblox.RobloxStudio",
+        "com.roblox.robloxplayer",
+        "com.roblox.roblox",
     ]
+
+    public static func isRobloxApp(_ app: NSRunningApplication) -> Bool {
+        if let bundleID = app.bundleIdentifier?.lowercased(),
+           bundleID.contains("roblox") {
+            return true
+        }
+        if let localizedName = app.localizedName?.lowercased(),
+           localizedName.contains("roblox") {
+            return true
+        }
+        if let exeName = app.executableURL?.lastPathComponent.lowercased(),
+           exeName.contains("roblox") {
+            return true
+        }
+        return false
+    }
 
     public init(coordinator: ActivityCoordinator) {
         self.coordinator = coordinator
@@ -80,14 +99,13 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     private func handleAppNotification(_ notification: Notification, isLaunch: Bool) {
         #if os(macOS)
-        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-              let bundleID = app.bundleIdentifier else { return }
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
 
-        if Self.robloxBundleIDs.contains(bundleID) {
+        if Self.isRobloxApp(app) {
             if isLaunch {
                 publishRobloxActivity(launchDate: app.launchDate)
             } else {
-                let hasRunning = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).contains { !$0.isTerminated }
+                let hasRunning = NSWorkspace.shared.runningApplications.contains { !$0.isTerminated && Self.isRobloxApp($0) }
                 if !hasRunning {
                     Task { [coordinator] in
                         await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
@@ -100,12 +118,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     public func checkRunningGames() {
         #if os(macOS)
-        for bundleID in Self.robloxBundleIDs {
-            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-            if let first = running.first, !first.isTerminated {
-                publishRobloxActivity(launchDate: first.launchDate)
-                return
-            }
+        let running = NSWorkspace.shared.runningApplications
+        if let first = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
+            publishRobloxActivity(launchDate: first.launchDate)
+            return
         }
         #endif
     }
