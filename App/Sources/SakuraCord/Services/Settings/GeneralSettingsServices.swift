@@ -99,6 +99,7 @@ final class SettingsConversationRestorationStore {
 
     func remove(accountID: String) {
         defaults.removeObject(forKey: Self.accountKey(accountID))
+        defaults.removeObject(forKey: Self.guildChannelsKey(accountID))
         if restoration(forKey: Self.globalKey)?.accountID == accountID {
             defaults.removeObject(forKey: Self.globalKey)
         }
