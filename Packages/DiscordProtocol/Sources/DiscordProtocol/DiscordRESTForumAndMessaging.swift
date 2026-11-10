@@ -717,7 +717,7 @@ extension DiscordRESTProvider {
             merged.firstMessage = existing.firstMessage
             merged.isFirstMessageLoaded = existing.isFirstMessageLoaded
         }
-        merged.mostRecentMessage = incoming.mostRecentMessage ?? existing.mostRecentMessage
+        merged.keepNewerLatestMessage(from: existing)
         merged.thread.lastNonMessageActivityAt = incoming.thread.lastNonMessageActivityAt
             ?? existing.thread.lastNonMessageActivityAt
         merged.owner = incoming.owner ?? existing.owner

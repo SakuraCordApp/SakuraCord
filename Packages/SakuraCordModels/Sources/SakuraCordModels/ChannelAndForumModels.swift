@@ -346,6 +346,22 @@ public struct ForumPost: Identifiable, Codable, Hashable, Sendable {
             ?? thread.archiveTimestamp
             ?? createdAt
     }
+
+    /// For a fetched record merged over `cached`: keeps the cached latest
+    /// message and counts when its last message is newer, so a reply that
+    /// arrived during the read is not rolled back.
+    public mutating func keepNewerLatestMessage(from cached: ForumPost) {
+        guard let cachedLatest = cached.thread.lastMessageID,
+              thread.lastMessageID.map({ cachedLatest > $0 }) ?? true
+        else {
+            mostRecentMessage = mostRecentMessage ?? cached.mostRecentMessage
+            return
+        }
+        thread.lastMessageID = cachedLatest
+        thread.messageCount = cached.thread.messageCount
+        thread.totalMessageSent = cached.thread.totalMessageSent
+        mostRecentMessage = cached.mostRecentMessage ?? mostRecentMessage
+    }
 }
 
 public enum ForumPostScope: Hashable, Sendable {
