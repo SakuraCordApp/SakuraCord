@@ -2,6 +2,7 @@ import AppKit
 import DiscordProtocol
 import Foundation
 import Observation
+import SakuraCordModels
 import ServiceManagement
 
 nonisolated enum SettingsLaunchDestination: String, CaseIterable, Identifiable, Sendable {
@@ -72,6 +73,21 @@ final class SettingsConversationRestorationStore {
         )
         persist(restoration, forKey: Self.globalKey)
         persist(restoration, forKey: Self.accountKey(accountID))
+        if let guildID {
+            var channels = storedChannelIDsByGuild(accountID: accountID)
+            channels[guildID] = channelID
+            persist(channels, forKey: Self.guildChannelsKey(accountID))
+        }
+    }
+
+    /// Each server reopens on its last channel after a relaunch, as in Discord.
+    func lastChannelIDsByGuild(accountID: String) -> [GuildID: ChannelID] {
+        var channels: [GuildID: ChannelID] = [:]
+        for (guildID, channelID) in storedChannelIDsByGuild(accountID: accountID) {
+            guard let guildID = GuildID(guildID), let channelID = ChannelID(channelID) else { continue }
+            channels[guildID] = channelID
+        }
+        return channels
     }
 
     /// Switching accounts returns to that account's last conversation, the
@@ -100,9 +116,21 @@ final class SettingsConversationRestorationStore {
         "\(globalKey).\(accountID)"
     }
 
+    private static func guildChannelsKey(_ accountID: String) -> String {
+        "settings.lastChannelByGuild.v1.\(accountID)"
+    }
+
+    private func storedChannelIDsByGuild(accountID: String) -> [String: String] {
+        decoded([String: String].self, forKey: Self.guildChannelsKey(accountID)) ?? [:]
+    }
+
     private func restoration(forKey key: String) -> SettingsConversationRestoration? {
+        decoded(SettingsConversationRestoration.self, forKey: key)
+    }
+
+    private func decoded<Value: Decodable>(_ type: Value.Type, forKey key: String) -> Value? {
         guard let data = defaults.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(SettingsConversationRestoration.self, from: data)
+        return try? JSONDecoder().decode(type, from: data)
     }
 
     private func persist(_ value: some Encodable, forKey key: String) {

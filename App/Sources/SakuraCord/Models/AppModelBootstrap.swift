@@ -308,6 +308,12 @@ extension AppModel {
         }
         let launchRestoration = SettingsConversationRestorationStore.shared
             .consumeLaunchRestoration(accountID: credentialHandle?.accountID)
+        if let accountID = credentialHandle?.accountID {
+            // Choices made since this session started, before a reconnect, are newer.
+            lastOpenedChannelIDsByGuild.merge(
+                SettingsConversationRestorationStore.shared.lastChannelIDsByGuild(accountID: accountID)
+            ) { current, _ in current }
+        }
         let restoredLaunchChannel = launchRestoration
             .flatMap { ChannelID($0.channelID) }
             .flatMap { restoredID in
