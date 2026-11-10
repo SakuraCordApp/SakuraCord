@@ -130,7 +130,9 @@ struct MemberListLoadingSkeleton: View {
     var body: some View {
         SkeletonShimmerTimeline {
             ZStack {
+                // The list scrolls beneath the toolbar; its rows start below it.
                 Color(nsColor: .controlBackgroundColor).opacity(0.45)
+                    .ignoresSafeArea(.container, edges: .top)
                 GeometryReader { geometry in
                     let items = MemberListSkeletonLayout.itemsFitting(
                         height: geometry.size.height,
