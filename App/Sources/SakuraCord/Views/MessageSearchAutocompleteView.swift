@@ -727,7 +727,11 @@ struct MessageSearchAutocompleteView: View {
                     selectedID: selectedID,
                     keyboardNavigationActive: keyboardNavigationActive,
                     enableMouseFocus: { keyboardNavigationActive = false },
-                    focus: { selectedID = $0 },
+                    // A row the pointer leaves goes back to the keyboard's
+                    // selection, so Return searches rather than taking it.
+                    focus: { id in
+                        if let id { selectedID = id } else { synchronizeSelection(result) }
+                    },
                     activate: activate
                 )
                 .frame(width: width)
@@ -897,7 +901,8 @@ private struct MessageSearchAutocompleteList: NSViewRepresentable {
     let selectedID: String?
     let keyboardNavigationActive: Bool
     let enableMouseFocus: () -> Void
-    let focus: (String) -> Void
+    /// Focuses the row the pointer is over, or nil once it leaves.
+    let focus: (String?) -> Void
     let activate: (MessageSearchAutocompleteSuggestion) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -950,7 +955,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
     private var selectedID: String?
     private var keyboardNavigationActive = true
     private var enableMouseFocus: () -> Void = {}
-    private var focus: (String) -> Void = { _ in }
+    private var focus: (String?) -> Void = { _ in }
     private var activate: (MessageSearchAutocompleteSuggestion) -> Void = { _ in }
     private var hoveredIndex: Int?
     private var pressedIndex: Int?
@@ -969,7 +974,7 @@ private final class MessageSearchAutocompleteCanvas: NSView {
         selectedID: String?,
         keyboardNavigationActive: Bool,
         enableMouseFocus: @escaping () -> Void,
-        focus: @escaping (String) -> Void,
+        focus: @escaping (String?) -> Void,
         activate: @escaping (MessageSearchAutocompleteSuggestion) -> Void
     ) {
         let previousSelection = self.selectedID
@@ -1029,7 +1034,10 @@ private final class MessageSearchAutocompleteCanvas: NSView {
         let index = selectableIndex(at: convert(event.locationInWindow, from: nil))
         guard index != hoveredIndex else { return }
         hoveredIndex = index
-        guard let index else { return }
+        guard let index else {
+            endHover()
+            return
+        }
         if keyboardNavigationActive {
             keyboardNavigationActive = false
             enableMouseFocus()
@@ -1037,7 +1045,14 @@ private final class MessageSearchAutocompleteCanvas: NSView {
         focus(rows[index].id)
     }
 
-    override func mouseExited(with event: NSEvent) { hoveredIndex = nil }
+    override func mouseExited(with event: NSEvent) {
+        hoveredIndex = nil
+        endHover()
+    }
+
+    private func endHover() {
+        if !keyboardNavigationActive { focus(nil) }
+    }
 
     override func mouseDown(with event: NSEvent) {
         pressedIndex = selectableIndex(at: convert(event.locationInWindow, from: nil))
