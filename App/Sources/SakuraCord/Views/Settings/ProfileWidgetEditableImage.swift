@@ -7,7 +7,7 @@ struct ProfileWidgetEditableImage: View {
     let image: ProfileWidgetImage?
     /// Identifies this image slot to the editor, which keeps its upload
     /// progress and failure while the slot's view comes and goes.
-    let slot: String
+    let slot: ProfileWidgetImageSlot
     let purpose: ProfileImagePurpose
     let animates: Bool
     let editor: ProfileEditorState?
