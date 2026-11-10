@@ -6,27 +6,34 @@ import SwiftUI
 struct MessageSearchPanelView: View {
     let model: AppModel
     @State private var scrollRequest: MessageTimelineScrollRequest?
+    @State private var headerHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
 
     var body: some View {
         @Bindable var search = model.messageSearch
-        VStack(spacing: 0) {
+        MessageSearchResultsContent(
+            model: model,
+            search: search,
+            scrollRequest: scrollRequest,
+            headerHeight: headerHeight,
+            footerHeight: footerHeight
+        )
+        // Results scroll beneath the glass controls above and below them,
+        // and the window toolbar.
+        .safeAreaBar(edge: .top, spacing: 0) {
             MessageSearchResultsHeader(model: model, search: search)
-            Divider()
-            MessageSearchResultsContent(
-                model: model,
-                search: search,
-                scrollRequest: scrollRequest
-            )
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+        }
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             MessageSearchPagination(model: model, search: search)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
         }
         .onAppear {
             AppPerformanceSignposts.reportMessageSearchPanelReady()
         }
         .onChange(of: search.submittedQuery) { _, _ in
-            guard let firstID = search.rows.first?.id else { return }
-            scrollRequest = MessageTimelineScrollRequest(
-                target: .message(firstID, anchor: .top)
-            )
+            guard !search.rows.isEmpty else { return }
+            scrollRequest = MessageTimelineScrollRequest(target: .top)
         }
         .onExitCommand {
             _ = model.consumeEscapeForUnfocusedMessageSearch()
@@ -87,13 +94,18 @@ private struct MessageSearchResultsHeader: View {
             Text(resultTitle)
                 .font(.interface(.headline).weight(.semibold))
                 .contentTransition(.numericText())
+                .padding(.horizontal, InterfaceScale.metric(14))
+                .frame(height: MessageSearchFloatingControl.height)
+                .glassEffect(.regular, in: Capsule())
             Spacer(minLength: InterfaceScale.metric(8))
             Button {
                 search.isFilterModalPresented = true
             } label: {
-                Label("Filters", systemImage: "line.3.horizontal.decrease")
+                MessageSearchFloatingControl.circle("Filters", systemImage: "line.3.horizontal.decrease")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Circle())
+            .help("Filters")
 
             Menu {
                 ForEach(MessageSearchSort.allCases, id: \.self) { sort in
@@ -108,13 +120,18 @@ private struct MessageSearchResultsHeader: View {
                     }
                 }
             } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down")
+                MessageSearchFloatingControl.circle("Sort", systemImage: "arrow.up.arrow.down")
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
             .fixedSize()
+            .glassEffect(.regular.interactive(), in: Circle())
+            .help("Sort")
         }
-        .padding(.horizontal, InterfaceScale.metric(12))
-        .frame(height: InterfaceScale.metric(44))
+        .padding(.horizontal, MessageSearchFloatingControl.barInset)
+        .padding(.top, InterfaceScale.metric(4))
+        .padding(.bottom, MessageSearchFloatingControl.barInset)
     }
 
     private var resultTitle: String {
@@ -129,6 +146,8 @@ private struct MessageSearchResultsContent: View {
     let model: AppModel
     let search: MessageSearchState
     let scrollRequest: MessageTimelineScrollRequest?
+    let headerHeight: CGFloat
+    let footerHeight: CGFloat
 
     var body: some View {
         ZStack {
@@ -148,12 +167,13 @@ private struct MessageSearchResultsContent: View {
                     firstMessageStartsDayOverride: false,
                     hasMoreMessages: false,
                     isLoadingEarlier: false,
-                    bottomContentInset: 0,
+                    // The timeline pads its own ends, so the bars' inner
+                    // insets would double up with that padding.
+                    bottomContentInset: max(0, footerHeight - MessageSearchFloatingControl.barInset),
+                    topBarHeight: max(0, headerHeight - MessageSearchFloatingControl.barInset),
                     unreadMessageID: nil,
                     highlightedMessageID: search.selectedMessageID,
-                    initialScrollTarget: search.rows.first.map {
-                        .message($0.id, anchor: .top)
-                    },
+                    initialScrollTarget: .top,
                     scrollRequest: scrollRequest,
                     runsPerformanceAutoScroll: false,
                     loadEarlier: {},
@@ -167,7 +187,8 @@ private struct MessageSearchResultsContent: View {
                         AppPerformanceSignposts.endMessageSearchScroll()
                     }
                 )
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .vertical)
+                .ignoresSafeArea(.container, edges: .vertical)
             } else {
                 ContentUnavailableView(
                     "Search messages",
@@ -195,69 +216,101 @@ private struct MessageSearchResultsContent: View {
     }
 }
 
+/// The search panel's floating glass controls. A circle's glass goes on its
+/// button rather than its label, so a disabled button dims only its symbol.
+private enum MessageSearchFloatingControl {
+    static var height: CGFloat { InterfaceScale.metric(30) }
+    /// Between a bar's controls and the panel's edges and results.
+    static var barInset: CGFloat { InterfaceScale.metric(8) }
+
+    static func circle(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .labelStyle(.iconOnly)
+            .font(.interface(.body).weight(.medium))
+            .frame(width: height, height: height)
+            .contentShape(Circle())
+    }
+}
+
 private struct MessageSearchPagination: View {
     let model: AppModel
     let search: MessageSearchState
+    @State private var pageText = ""
+    @FocusState private var isPageFieldFocused: Bool
 
     var body: some View {
         if let page = search.page, page.totalResults > MessageSearchQuery.pageSize {
-            HStack {
-                Spacer(minLength: 0)
-                ControlGroup {
-                    Button {
-                        model.submitMessageSearch(
-                            page: search.currentPage - 1,
-                            measuresPagination: true
-                        )
-                    } label: {
-                        Label("Previous Page", systemImage: "chevron.left")
-                            .labelStyle(.iconOnly)
-                    }
+            HStack(spacing: InterfaceScale.metric(8)) {
+                pageButton("Previous Page", systemImage: "chevron.left", to: search.currentPage - 1)
                     .disabled(search.currentPage <= 1 || search.isSearching)
-                    .help("Previous Page")
-
-                    Menu {
-                        ForEach(1 ... max(1, search.pageCount), id: \.self) { number in
-                        Button {
-                            model.submitMessageSearch(
-                                page: number,
-                                measuresPagination: true
-                            )
-                        } label: {
-                            if number == search.currentPage {
-                                Label("Page \(number)", systemImage: "checkmark")
-                            } else {
-                                Text("Page \(number)")
-                            }
-                        }
-                        .disabled(search.isSearching || number == search.currentPage)
-                        }
-                    } label: {
-                        Text("Page \(search.currentPage) of \(search.pageCount)")
-                            .monospacedDigit()
-                    }
-                    .disabled(search.isSearching)
-
-                    Button {
-                        model.submitMessageSearch(
-                            page: search.currentPage + 1,
-                            measuresPagination: true
-                        )
-                    } label: {
-                        Label("Next Page", systemImage: "chevron.right")
-                            .labelStyle(.iconOnly)
-                    }
+                pageField
+                pageButton("Next Page", systemImage: "chevron.right", to: search.currentPage + 1)
                     .disabled(search.currentPage >= search.pageCount || search.isSearching)
-                    .help("Next Page")
-                }
-                .controlSize(.regular)
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, InterfaceScale.metric(12))
-            .frame(height: InterfaceScale.metric(46))
+            .padding(MessageSearchFloatingControl.barInset)
             .frame(maxWidth: .infinity)
-            .background(.bar)
+            .onChange(of: search.currentPage, initial: true) { _, page in pageText = String(page) }
+            .onChange(of: isPageFieldFocused) { _, isFocused in
+                // Focusing clears the number, so typing starts a new one.
+                pageText = isFocused ? "" : String(search.currentPage)
+            }
         }
+    }
+
+    /// The page shown, which the reader can type over, and the last page.
+    private var pageField: some View {
+        HStack(spacing: InterfaceScale.metric(4)) {
+            Text("Page")
+                .foregroundStyle(.primary.opacity(0.7))
+            ZStack {
+                // As wide as the last page's number.
+                Text(String(repeating: "8", count: String(search.pageCount).count)).hidden()
+                TextField(String(search.currentPage), text: $pageText)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.center)
+                    .focused($isPageFieldFocused)
+                    .onSubmit(showTypedPage)
+                    // Cancels the edit rather than reaching the panel, which
+                    // closes search.
+                    .onExitCommand { isPageFieldFocused = false }
+            }
+            .fixedSize()
+            Text("of \(search.pageCount)")
+                .foregroundStyle(.primary.opacity(0.7))
+        }
+        // The whole bubble takes the click.
+        .allowsHitTesting(false)
+        .font(.interface(.body).weight(.medium))
+        .monospacedDigit()
+        .padding(.horizontal, InterfaceScale.metric(14))
+        .frame(height: MessageSearchFloatingControl.height)
+        .contentShape(Capsule())
+        .onTapGesture { isPageFieldFocused = true }
+        // Not interactive: the field flickers as pressed glass settles.
+        .glassEffect(.regular, in: Capsule())
+        .disabled(search.isSearching)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Page \(search.currentPage) of \(search.pageCount)")
+    }
+
+    private func pageButton(_ title: String, systemImage: String, to page: Int) -> some View {
+        Button {
+            model.submitMessageSearch(page: page, measuresPagination: true)
+        } label: {
+            MessageSearchFloatingControl.circle(title, systemImage: systemImage)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .help(title)
+    }
+
+    private func showTypedPage() {
+        let typed = Int(pageText)
+        isPageFieldFocused = false
+        guard let typed else { return }
+        let page = min(max(typed, 1), search.pageCount)
+        guard page != search.currentPage else { return }
+        model.submitMessageSearch(page: page, measuresPagination: true)
     }
 }
 
