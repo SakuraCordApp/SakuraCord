@@ -1175,6 +1175,9 @@ public enum DiscordMarkdown {
         }
     }
 
+    /// Subtext and code blocks are this fraction of the body text size.
+    public static let smallTextScale: CGFloat = 0.875
+
     private static func appKitFont(
         block: AppKitPlan.Block,
         traits: AppKitPlan.InlineTraits,
@@ -1185,7 +1188,7 @@ public enum DiscordMarkdown {
         case .heading(1): (base * 1.5, .bold)
         case .heading(2): (base * 1.25, .bold)
         case .heading: (base, .bold)
-        case .subtext, .code: (base * 0.875, .regular)
+        case .subtext, .code: (base * smallTextScale, .regular)
         case .paragraph, .listItem: (base, traits.contains(.bold) ? .semibold : .regular)
         }
 
