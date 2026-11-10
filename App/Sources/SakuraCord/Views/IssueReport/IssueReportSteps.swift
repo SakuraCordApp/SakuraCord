@@ -207,7 +207,7 @@ private struct IssueReportSimilarCard: View {
             Button("Follow #\(number) and Share Details") { model.followExistingIssueReport(number) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("Your description and steps will be posted publicly with your Discord identity. You’ll receive updates on this report.")
+            Text("Your description and steps will be posted publicly with your Discord identity. You’ll be pinged when this report is completed.")
         }
     }
 
