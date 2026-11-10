@@ -206,6 +206,16 @@ If the target is absent from the working set, read `around={message}&limit=1`
 before deciding whether PUT/DELETE is needed. Missing/failed reads prevent the
 mutation; an already satisfied intent sends nothing.
 
+Like the official client, whose reaction path unarchives the thread before its
+PUT (web build `634304`, inspected 10 October 2026), a needed PUT or DELETE in
+a thread the app knows is archived first sends the
+[thread unarchive](#thread-actions-and-browser) PATCH `{"archived":false}`, the
+same provider mutation as Reopen and Mark Unread; the thread stays open even if
+the reaction then fails. Removal follows the same path; no first-party removal
+in an archived thread has been observed. Adding and removing reactions there
+requires the [Reopen permission](#sidebar-threads): Manage Threads for a locked
+thread, otherwise the send permissions.
+
 Reaction changes invalidate the affected emoji's saved previews and pending reads
 in both the model and provider, preserving other emojis' loads and previews.
 Clearing all reactions invalidates the whole message. A response for an affected
