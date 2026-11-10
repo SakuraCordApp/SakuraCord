@@ -174,11 +174,9 @@ extension DiscordRESTProvider {
         return nil
     }
 
-    func sendPresence() async throws {
-        let currentGeneration = presenceGeneration
-        let status = presenceStatus
-        let activities = activeActivitiesList()
-
+    private func buildGatewayActivityDictionaries(
+        activities: [OutgoingActivityPayload]
+    ) async -> [[String: Any]] {
         var activityDictionaries: [[String: Any]] = []
         for activity in activities {
             var dict = activity.gatewayDictionary
@@ -196,9 +194,36 @@ extension DiscordRESTProvider {
             }
             activityDictionaries.append(dict)
         }
+        return activityDictionaries
+    }
+
+    func sendPresence() async throws {
+        let currentGeneration = presenceGeneration
+        let status = presenceStatus
+        let activities = activeActivitiesList()
+
+        let activityDictionaries = await buildGatewayActivityDictionaries(activities: activities)
 
         guard currentGeneration == presenceGeneration else { return }
-        presenceSendWindowEnds.append(Date.now.addingTimeInterval(20))
+        let statusChanged = status != lastSentPresenceStatus
+        let activitiesChanged = activities != lastSentActivities
+        guard statusChanged || activitiesChanged else { return }
+
+        let now = Date.now
+        presenceSendWindowEnds.removeAll { $0 <= now }
+        let budgetReopens = presenceSendWindowEnds.count >= 5 ? presenceSendWindowEnds.first ?? now : now
+        let reopens = max(budgetReopens, gatewayOpcodeRateLimitDates[3] ?? now)
+        if reopens > now {
+            deferredPresenceTask?.cancel()
+            deferredPresenceTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(reopens.timeIntervalSince(now)))
+                guard !Task.isCancelled else { return }
+                await self?.sendDeferredPresence()
+            }
+            return
+        }
+
+        presenceSendWindowEnds.append(now.addingTimeInterval(20))
         lastSentPresenceStatus = status
         lastSentActivities = activities
         do {
