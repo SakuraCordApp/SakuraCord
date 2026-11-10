@@ -29,13 +29,54 @@ import Testing
 }
 
 @MainActor
-@Test func `staged attachments are cleared on navigation so they cannot be sent to another channel`() async {
-    let model = AppModel(launchMode: .offlineTesting, provider: TypingTestProvider())
+@Test func `a left conversation keeps its staged files, uploads and command until it is deleted`() async throws {
+    let permissions = DiscordPermissionBits.viewChannel | DiscordPermissionBits.readMessageHistory
+        | DiscordPermissionBits.sendMessages | DiscordPermissionBits.attachFiles
+    let guild = Guild(id: GuildID(rawValue: 20), name: "Guild", currentUserPermissions: permissions)
+    let provider = TypingTestProvider(guild: guild, suspendsPreuploads: true)
+    let model = AppModel(
+        launchMode: .offlineTesting,
+        provider: provider,
+        privacySafetySettingsStore: PrivacySafetySettingsStore(
+            preferences: SettingsPreferenceStore(defaults: InMemoryPreferences())
+        )
+    )
     await model.start()
-    #expect(await model.addComposerAttachments([URL(fileURLWithPath: "/tmp/sakuracord-composer-0")], to: .channel))
-    #expect(!model.channelComposerAttachments.isEmpty)
-    model.selectedChannelID = ChannelID(rawValue: 12)
+    await model.memberLoadTask?.value
+    defer { model.onboarding.reset() }
+    let channelID = try #require(model.selectedChannelID)
+    let otherChannelID = ChannelID(rawValue: 12)
+    let directory = try ComposerFileDropView.makeReceivingDirectory()
+    let file = directory.appendingPathComponent("kept.bin")
+    try Data("kept".utf8).write(to: file)
+    #expect(await model.addPromisedComposerAttachments(
+        ComposerPromisedFileBatch(directory: directory, urls: [file]), to: .channel
+    ))
+    let staged = try #require(model.channelComposerAttachments.first)
+    model.toggleComposerAttachmentSpoiler(staged.id, in: .channel)
+    let kept = model.channelComposerAttachments
+    #expect(model.attachmentUploads.preuploadFraction(staged.id) != nil)
+
+    // The files cannot be sent to another conversation, which keeps its own command.
+    model.selectedChannelID = otherChannelID
     #expect(model.channelComposerAttachments.isEmpty)
+    let command = try #require(SakuraCordBuiltInCommands.commands.first)
+    model.commandComposer.activate(command)
+    let commandDraft = model.commandComposer.draft
+
+    model.selectedChannelID = channelID
+    #expect(model.channelComposerAttachments == kept)
+    #expect(model.commandComposer.draft == nil)
+    #expect(model.attachmentUploads.preuploadFraction(staged.id) != nil)
+    #expect(FileManager.default.fileExists(atPath: file.path))
+    model.selectedChannelID = otherChannelID
+    #expect(model.commandComposer.draft == commandDraft)
+
+    // A deleted conversation releases its files and early uploads.
+    model.consumeChannelsChanged(guildID: guild.id, channels: [])
+    #expect(model.attachmentUploads.preuploadFraction(staged.id) == nil)
+    #expect(!FileManager.default.fileExists(atPath: directory.path))
+    await provider.finishPreuploads()
 }
 
 @MainActor
@@ -736,9 +777,27 @@ private actor TypingTestProvider: ChatProvider {
     private var didStartSuspendedSend = false
     private var threadCreationStarted: CheckedContinuation<Void, Never>?
     private var threadCreationResponse: CheckedContinuation<MessageThreadSummary, Error>?
+    private let suspendsPreuploads: Bool
+    private var preuploadWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(guild: Guild? = nil) {
+    init(guild: Guild? = nil, suspendsPreuploads: Bool = false) {
         self.guild = guild
+        self.suspendsPreuploads = suspendsPreuploads
+    }
+
+    func preuploadAttachment(
+        _ attachment: ForumPostAttachment,
+        channelID: ChannelID,
+        progress: @escaping @Sendable (MessageSendProgress) -> Void
+    ) async -> Bool {
+        guard suspendsPreuploads else { return false }
+        await withCheckedContinuation { preuploadWaiters.append($0) }
+        return true
+    }
+
+    func finishPreuploads() {
+        preuploadWaiters.forEach { $0.resume() }
+        preuploadWaiters = []
     }
 
     func bootstrap() async throws -> BootstrapSnapshot {

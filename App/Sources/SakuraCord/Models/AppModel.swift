@@ -832,8 +832,8 @@ final class AppModel {
             builtInExpressionPickerRequest = nil
             cancelApplicationCommandAutocompleteTask()
             cancelApplicationCommandMemberSearch()
-            commandComposer.resetForChannelChange()
-            clearComposerAttachments(for: .channel)
+            leaveComposerConversation(.channel, conversationID: oldValue, in: oldValue)
+            restoreComposerConversation(.channel, conversationID: selectedChannelID)
             translation.resetDraft(.channel)
             synchronizeSideConversationsWithSelection(keepsGuildPage: keepsGuildPage)
             if let selectedChannelID {

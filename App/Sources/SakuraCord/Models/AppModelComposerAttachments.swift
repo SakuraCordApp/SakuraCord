@@ -135,6 +135,7 @@ extension AppModel {
         // the check ends, the tiles only hold sending back.
         let staged = urls.map { ForumPostAttachment(url: $0) }
         let stagedIDs = Set(staged.map(\.id))
+        let context = attachmentComposerContext(for: destination)
         setComposerAttachments(composerAttachments(for: destination) + staged, for: destination)
         composer.checkingAttachmentIDs.formUnion(stagedIDs)
         defer { composer.checkingAttachmentIDs.subtract(stagedIDs) }
@@ -147,13 +148,25 @@ extension AppModel {
         ))
         await videosPrepared
         let rejectedIDs = Set(staged.filter { !acceptedURLs.contains($0.url) }.map(\.id))
+        // Leaving during the check rejects every file; leaving while only
+        // videos were being read keeps the accepted files with that conversation.
+        if attachmentComposerContext(for: destination) != context,
+           case let .conversation(conversationID)? = context,
+           var kept = composer.keptDrafts[conversationID]
+        {
+            kept.attachments.removeAll { rejectedIDs.contains($0.id) }
+            composer.keptDrafts[conversationID] = kept.attachments.isEmpty && kept.command == nil ? nil : kept
+            pruneOwnedPromisedAttachmentFiles()
+            preuploadComposerAttachments(kept.attachments.filter { stagedIDs.contains($0.id) }, in: context)
+            return true
+        }
         let current = composerAttachments(for: destination)
         if current.contains(where: { rejectedIDs.contains($0.id) }) {
             setComposerAttachments(current.filter { !rejectedIDs.contains($0.id) }, for: destination)
         }
         preuploadComposerAttachments(
             composerAttachments(for: destination).filter { stagedIDs.contains($0.id) },
-            to: destination
+            in: context
         )
         return true
     }
@@ -177,7 +190,7 @@ extension AppModel {
             }
             preuploadComposerAttachments(
                 composerAttachments(for: destination).filter { addedIDs.contains($0.id) },
-                to: destination
+                in: attachmentComposerContext(for: destination)
             )
         } else {
             pruneOwnedPromisedAttachmentFiles()
@@ -232,10 +245,10 @@ extension AppModel {
     /// strip them, and a stored file cannot be prepared again.
     func preuploadComposerAttachments(
         _ attachments: [ForumPostAttachment],
-        to destination: MessageComposerDestination
+        in context: AttachmentComposerContext?
     ) {
         guard privacySafetySettingsStore.load().removesMediaMetadata,
-              case let .conversation(channelID) = attachmentComposerContext(for: destination)
+              case let .conversation(channelID) = context
         else { return }
         let provider = accountSession().provider
         for attachment in attachments {

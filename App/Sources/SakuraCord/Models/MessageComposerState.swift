@@ -22,6 +22,8 @@ final class MessageComposerState {
     @ObservationIgnored private let preferences: SettingsPreferenceStore?
     var channelAttachments: [ForumPostAttachment] = []
     var threadAttachments: [ForumPostAttachment] = []
+    /// Left conversations' files and slash commands, by conversation.
+    @ObservationIgnored var keptDrafts: [ChannelID: KeptComposerDraft] = [:]
     var isSendQueueFullAlertPresented = false
     @ObservationIgnored var outbox = OutgoingMessageState()
     @ObservationIgnored private var draftWriteTask: Task<Void, Never>?
@@ -125,12 +127,25 @@ final class MessageComposerState {
         threadReplyingTo = nil
         channelAttachments = []
         threadAttachments = []
+        keptDrafts = [:]
         checkingAttachmentIDs = []
         isSendQueueFullAlertPresented = false
         outbox.reset()
         slowmode.reset()
         await pendingWrite?.value
     }
+}
+
+/// A left conversation's staged files and slash command. Like the
+/// first-party client, SakuraCord keeps them, early uploads included, for the
+/// session; text drafts persist separately.
+struct KeptComposerDraft {
+    /// The server and channel whose loss drops the draft: the conversation's
+    /// own channel, or a thread's parent. Direct messages have no server.
+    var guildID: GuildID?
+    var channelID: ChannelID?
+    var attachments: [ForumPostAttachment]
+    var command: ApplicationCommandDraft?
 }
 
 struct OutgoingMessageState {

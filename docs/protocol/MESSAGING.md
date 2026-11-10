@@ -799,9 +799,11 @@ Send posts a stored file by its `uploaded_filename` without uploading it again,
 with the spoiler and filename chosen by then. Files still uploading show their
 progress cards and the message posts once they are stored. Removing a staged file
 stops its PUT, or deletes the stored file with one `DELETE
-/attachments/{uploaded_filename}` attempt. The official client keeps a
-channel's staged files across conversation switches; SakuraCord clears the
-composer on a switch and so deletes them. A thread still being created stores
+/attachments/{uploaded_filename}` attempt. Like the official client, a
+conversation keeps its staged files, and their uploads keep running, while the
+user is elsewhere in the session. They are deleted the same way when that
+conversation, its parent channel or its server is deleted, hidden or left;
+signing out or switching accounts drops them. A thread still being created stores
 its files at Send. With metadata removal off, files also wait for Send, since
 turning it on before then must still strip them.
 

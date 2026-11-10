@@ -259,6 +259,7 @@ extension AppModel {
             presentation.profile?.refreshRoles(from: roles)
             setProfilePresentation(presentation, for: destination)
         }
+        discardUnreachableKeptComposerDrafts()
         guard selectedGuildID == guildID else { return }
         guildRoles = roles
         refreshUnreadPresentation(

@@ -473,6 +473,12 @@ final class ApplicationCommandComposerModel {
         resetSuggestions()
     }
 
+    /// Puts back the command a conversation kept while the user was elsewhere.
+    func restore(_ kept: ApplicationCommandDraft) {
+        draft = kept
+        requestCaret(ApplicationCommandEditorDocument(draft: kept).caret(endOf: kept.focus))
+    }
+
     func resetForChannelChange() {
         conversationGeneration &+= 1
         mentionedCommand = nil
