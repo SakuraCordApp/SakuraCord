@@ -964,24 +964,18 @@ extension NativeTimelineRowPainter {
             }
             labelX = avatarFrame.maxX + metrics.leadingGap
         }
-        mentionLabel(
-            presentation,
+        // The mention's own weight: Discord sets timestamps in regular text.
+        text(
+            presentation.label,
             in: CGRect(
                 x: labelX,
                 y: frame.minY,
                 width: max(1, frame.maxX - labelX - metrics.horizontalPadding),
                 height: frame.height
             ),
-            font: .systemFont(ofSize: fontSize, weight: .semibold),
+            font: .systemFont(ofSize: fontSize, weight: presentation.labelWeight),
             color: color
         )
-    }
-
-    /// A mention's label at `font`'s size and the mention's own weight:
-    /// Discord sets timestamps in regular text.
-    private static func mentionLabel(_ presentation: MentionPresentation, in frame: CGRect, font: NSFont, color: NSColor) {
-        text(presentation.label, in: frame, font: .systemFont(ofSize: font.pointSize, weight: presentation.labelWeight),
-             color: color)
     }
 
     static func inlineEmojiImage(

@@ -559,12 +559,14 @@ nonisolated enum RichMessageAttributedText {
         }
     }
 
-    private static func ranges(of value: String, in source: String) -> [NSRange] {
+    static func ranges(
+        of value: String, in source: String, options: NSString.CompareOptions = []
+    ) -> [NSRange] {
         let source = source as NSString
         var ranges: [NSRange] = []
         var searchRange = NSRange(location: 0, length: source.length)
         while searchRange.length > 0 {
-            let range = source.range(of: value, options: [], range: searchRange)
+            let range = source.range(of: value, options: options, range: searchRange)
             guard range.location != NSNotFound else { break }
             ranges.append(range)
             let nextLocation = NSMaxRange(range)

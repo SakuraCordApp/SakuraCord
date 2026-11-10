@@ -152,6 +152,9 @@ extension AppModel {
         state.isSending = true
         reactionMutations[key] = state
         do {
+            if let thread = knownThreadSummary(key.channelID) {
+                try await reopenIfArchived(thread, account: session)
+            }
             try await session.provider.setReaction(
                 state.emoji,
                 reacted: sentState,

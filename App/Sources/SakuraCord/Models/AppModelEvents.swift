@@ -426,6 +426,7 @@ extension AppModel {
         guard currentUserRoleIDsByGuild[guildID] != roleIDs else { return }
         currentUserRoleIDsByGuild[guildID] = roleIDs
         readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+        discardUnreachableKeptComposerDrafts()
         guard selectedGuildID == guildID else { return }
         refreshUnreadPresentation(
             appliesAccessImmediately: true,
@@ -743,6 +744,7 @@ extension AppModel {
             channels: channels,
             previousChannels: previousChannels
         )
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
@@ -1003,6 +1005,7 @@ extension AppModel {
         }
         reconcileInboxEligibility()
         selectGuild(retainedGuildID)
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeGuildChanged(_ guild: Guild) {
@@ -1066,6 +1069,7 @@ extension AppModel {
         {
             selectGuild(guilds.first?.id)
         }
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeCurrentUserChanged(_ user: User) {

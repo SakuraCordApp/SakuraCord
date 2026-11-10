@@ -24,10 +24,12 @@ final class ProfileEditorState {
     /// Widget images still being cropped or uploaded. Saving and widget
     /// edits wait for them: either could reject or discard the image that
     /// is about to land.
-    private(set) var preparingWidgetImageSlots: Set<String> = []
+    private(set) var preparingWidgetImageSlots: Set<ProfileWidgetImageSlot> = []
     /// Each slot's last upload failure, with the draft it belongs to, kept
     /// here so a rebuilt slot view still shows it and a later draft doesn't.
-    private var widgetImageFailures: [String: (message: String, generation: UUID)] = [:]
+    /// Slots are positional, so edits that move fields or sections remap
+    /// them with `remapWidgetImageFailures`.
+    private var widgetImageFailures: [ProfileWidgetImageSlot: (message: String, generation: UUID)] = [:]
     private(set) var requiresReload = false
     var errorMessage: String?
     var fieldErrors: [String: [String]] = [:]
@@ -393,7 +395,7 @@ final class ProfileEditorState {
     /// and failure, so the slot's view scrolling away or being rebuilt can't
     /// cancel or lose them; widget edits and saving pause until it lands, as
     /// they did behind the crop screen.
-    func prepareWidgetImage(from url: URL, slot: String, purpose: ProfileImagePurpose, aspectRatio: Double,
+    func prepareWidgetImage(from url: URL, slot: ProfileWidgetImageSlot, purpose: ProfileImagePurpose, aspectRatio: Double,
                             apply: @escaping (ProfileWidgetImage) -> Void) {
         preparingWidgetImageSlots.insert(slot)
         widgetImageFailures[slot] = nil
@@ -417,11 +419,22 @@ final class ProfileEditorState {
         }
     }
 
-    func widgetImageFailure(for slot: String) -> String? {
+    func widgetImageFailure(for slot: ProfileWidgetImageSlot) -> String? {
         widgetImageFailures[slot].flatMap { $0.generation == draftGeneration ? $0.message : nil }
     }
 
-    func dismissWidgetImageFailure(for slot: String) { widgetImageFailures[slot] = nil }
+    func dismissWidgetImageFailure(for slot: ProfileWidgetImageSlot) { widgetImageFailures[slot] = nil }
+
+    /// Moves a widget's stored failures along with the fields or sections an
+    /// edit shifted, so they stay on the image that failed. Dropping a slot
+    /// discards its failure. Uploads in flight need no remap: widget edits
+    /// are blocked until they land.
+    func remapWidgetImageFailures(in widgetID: String, _ transform: (ProfileWidgetImageSlot) -> ProfileWidgetImageSlot?) {
+        widgetImageFailures = Dictionary(uniqueKeysWithValues: widgetImageFailures.compactMap { slot, failure in
+            guard slot.widgetID == widgetID else { return (slot, failure) }
+            return transform(slot).map { ($0, failure) }
+        })
+    }
 
     private func croppedWidgetImage(from url: URL, purpose: ProfileImagePurpose, aspectRatio: Double) async throws -> ProfileWidgetImage {
         guard showsEditablePersonalWidget, let session, model.isCurrentAccountSession(session) else { throw CancellationError() }

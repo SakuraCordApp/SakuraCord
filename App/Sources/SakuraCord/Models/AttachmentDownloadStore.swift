@@ -29,6 +29,22 @@ final class AttachmentDownloadStore {
     var resolveRemoteURL: (@MainActor (URL) async -> URL)?
 
     private nonisolated static let session = URLSession(configuration: .ephemeral)
+    private var activationObserver: NotificationCenter.ObservationToken?
+
+    init() {
+        // A saved file is moved or deleted from Finder, so the cards learn
+        // of it when the user comes back, rather than on every draw.
+        activationObserver = NotificationCenter.default.addObserver(
+            of: NSApplication.shared,
+            for: NSApplication.DidBecomeActiveMessage.self
+        ) { [weak self] _ in
+            self?.forgetMissingFiles()
+        }
+    }
+
+    isolated deinit {
+        activationObserver.map(NotificationCenter.default.removeObserver)
+    }
 
     /// The file card's action: download, cancel the running download, or
     /// show the downloaded file in Finder. A file that has since been moved
@@ -85,6 +101,13 @@ final class AttachmentDownloadStore {
                StorageDownloadsSettingsStore.shared.load().revealsCompletedDownloads {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
+        }
+    }
+
+    /// Returns cards whose saved file is gone to their Download state.
+    private func forgetMissingFiles() {
+        for case let (id, .finished(url, folder)) in states where !Self.fileExists(at: url, in: folder) {
+            setState(nil, for: id)
         }
     }
 

@@ -145,6 +145,7 @@ final class ForumBoardScrollView: NSScrollView {
 /// media and menus, and animation.
 final class ForumBoardView: NSView, NSViewToolTipOwner {
     weak var model: AppModel?
+    private var animatesShimmer = true
     var channel: Channel?
     /// The channel's tags by ID, rebuilt when the channel changes, so
     /// presentations resolve tags without building a map per post.
@@ -324,6 +325,11 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         }
         self.model = model
         self.channel = channel
+        // Read through the model so the board updates when the setting does.
+        if animatesShimmer != model.animates([]) {
+            animatesShimmer.toggle()
+            displayOptionsDidChange()
+        }
         guard previousSnapshot != snapshot || channelChanged else {
             // Observation covers model reads; the channel's tags and default
             // reaction arrive as a value, so only a change to it re-resolves.
@@ -792,7 +798,7 @@ final class ForumBoardView: NSView, NSViewToolTipOwner {
         card.updateShimmer(
             frames: frames,
             color: color,
-            animates: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            animates: AppMotionPolicy.animatesUncategorized
                 && window?.occlusionState.contains(.visible) != false
         )
     }

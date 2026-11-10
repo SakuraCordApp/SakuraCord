@@ -152,7 +152,8 @@ extension NativeTimelineCanvasView {
         duration: CFTimeInterval,
         dropsPill: Bool = false
     ) {
-        guard let bounds = frames.reduce(nil, { ($0 as CGRect?)?.union($1) ?? $1 })?.integral,
+        guard AppMotionPolicy.animatesUncategorized,
+              let bounds = frames.reduce(nil, { ($0 as CGRect?)?.union($1) ?? $1 })?.integral,
               !bounds.isEmpty,
               let snapshot = bitmapImageRepForCachingDisplay(in: bounds)
         else { return }
@@ -244,6 +245,10 @@ extension View {
                         .transition(.opacity)
                 }
             }
-            .animation(.easeOut(duration: NativeTimelineSpoilerAppearance.mediaRevealDuration), value: isHidden)
+            .animation(
+                AppMotionPolicy.animatesUncategorized
+                    ? .easeOut(duration: NativeTimelineSpoilerAppearance.mediaRevealDuration) : nil,
+                value: isHidden
+            )
     }
 }

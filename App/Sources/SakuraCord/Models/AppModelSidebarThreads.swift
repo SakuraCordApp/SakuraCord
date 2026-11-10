@@ -72,21 +72,28 @@ extension AppModel {
     /// Discord's Mark Unread (E10) first reopens an archived thread, stopping
     /// if that fails, then joins an unjoined one, continuing if that fails.
     func prepareThreadForMarkUnread(_ thread: MessageThreadSummary, account: AppModelAccountSession) async -> Bool {
-        if thread.isArchived {
-            let post = forumCataloguePosts.first { $0.id == thread.id } ?? ForumPost(thread: thread)
-            do {
-                let updated = try await account.provider.updateForumPost(post, mutation: .archived(false))
-                guard isCurrentAccountSession(account) else { return false }
-                reconcileMutatedThread(updated)
-            } catch {
-                if isCurrentAccountSession(account) { errorMessage = error.localizedDescription }
-                return false
-            }
+        do {
+            try await reopenIfArchived(thread, account: account)
+        } catch {
+            if isCurrentAccountSession(account) { errorMessage = error.localizedDescription }
+            return false
         }
         if thread.notificationSettings == nil {
             await changeThreadMembership(thread, isJoined: true, location: .markUnread, account: account)
         }
         return true
+    }
+
+    /// Discord reopens an archived thread before actions it rejects there,
+    /// such as Mark Unread and reactions. The thread stays open if the
+    /// following action fails. Throws `CancellationError` when the account
+    /// changed meanwhile.
+    func reopenIfArchived(_ thread: MessageThreadSummary, account: AppModelAccountSession) async throws {
+        guard thread.isArchived else { return }
+        let post = forumCataloguePosts.first { $0.id == thread.id } ?? ForumPost(thread: thread)
+        let updated = try await account.provider.updateForumPost(post, mutation: .archived(false))
+        guard isCurrentAccountSession(account) else { throw CancellationError() }
+        reconcileMutatedThread(updated)
     }
 
     /// Close/Reopen, Lock/Unlock and Pin/Unpin from any thread surface.
@@ -138,9 +145,14 @@ extension AppModel {
     /// The freshest known summary of a thread, for actions started from an
     /// older row or card.
     func currentThreadSummary(_ thread: MessageThreadSummary) -> MessageThreadSummary {
-        if openThread?.id == thread.id, let openThread { return openThread }
-        if let post = forumCataloguePosts.first(where: { $0.id == thread.id }) { return post.thread }
-        return sidebarThread(thread.id) ?? thread
+        knownThreadSummary(thread.id) ?? thread
+    }
+
+    func knownThreadSummary(_ id: ChannelID) -> MessageThreadSummary? {
+        if openThread?.id == id, let openThread { return openThread }
+        if let index = forumCatalogueIndexByID[id] { return forumCataloguePosts[index].thread }
+        // An Inbox mention can come from a thread the sidebar doesn't list.
+        return sidebarThread(id) ?? inbox.threads[id]
     }
 
     func isForumThread(_ thread: MessageThreadSummary) -> Bool {
