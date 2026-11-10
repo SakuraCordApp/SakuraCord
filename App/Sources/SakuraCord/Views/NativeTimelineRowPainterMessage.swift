@@ -1142,78 +1142,26 @@ extension NativeTimelineRowPainter {
         )
         let sourceLine = CTLineCreateWithAttributedString(attributed)
         let sourceWidth = CGFloat(CTLineGetTypographicBounds(sourceLine, nil, nil, nil))
-        let line = truncatedLine(
-            sourceLine,
+        let layout = drawSingleLineText(SingleLineTextInput(
+            sourceLine: sourceLine,
             sourceWidth: sourceWidth,
-            maximumWidth: frame.width,
+            frame: frame,
             font: font,
             color: color,
-            lineBreakMode: .byTruncatingTail
-        )
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-        let baseline = max(descent, (frame.height - ascent - descent - leading) / 2 + descent)
-
-        drawReplySummarySpoilers(
-            sourceLine: sourceLine,
-            spoilerRanges: replySummary.spoilerRanges,
-            lineWidth: lineWidth,
-            frame: frame,
-            baseline: baseline,
-            ascent: ascent,
-            descent: descent
-        )
-
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.textMatrix = .identity
-        context.textPosition = CGPoint(x: 0, y: baseline)
-        CTLineDraw(line, context)
-        context.restoreGState()
+            alignment: .left,
+            lineBreakMode: .byTruncatingTail,
+            concealedSpoilerRanges: replySummary.spoilerRanges,
+            context: context
+        ))
 
         drawReplySummaryEmojis(
-            line: line,
+            line: layout.line,
             spoilerRanges: replySummary.spoilerRanges,
             frame: frame,
-            baseline: baseline,
+            baseline: layout.baseline,
+            horizontalPosition: layout.horizontalPosition,
             model: model
         )
-    }
-
-    private static func drawReplySummarySpoilers(
-        sourceLine: CTLine,
-        spoilerRanges: [NSRange],
-        lineWidth: CGFloat,
-        frame: CGRect,
-        baseline: CGFloat,
-        ascent: CGFloat,
-        descent: CGFloat
-    ) {
-        for range in spoilerRanges {
-            let startX = CTLineGetOffsetForStringIndex(sourceLine, range.location, nil)
-            let endX = min(
-                CTLineGetOffsetForStringIndex(sourceLine, NSMaxRange(range), nil),
-                lineWidth
-            )
-            guard endX > startX else { continue }
-            let fragment = CGRect(
-                x: frame.minX + startX,
-                y: frame.maxY - baseline - ascent,
-                width: endX - startX,
-                height: ascent + descent
-            )
-            let box = NativeTimelineTextSpoilerGeometry.coverFrame(fragment, clippedTo: frame)
-            guard !box.isNull else { continue }
-            NativeTimelineSpoilerAppearance.hiddenColor.setFill()
-            NSBezierPath(
-                roundedRect: box,
-                xRadius: NativeTimelineSpoilerAppearance.textCornerRadius,
-                yRadius: NativeTimelineSpoilerAppearance.textCornerRadius
-            ).fill()
-        }
     }
 
     private static func drawReplySummaryEmojis(
@@ -1221,6 +1169,7 @@ extension NativeTimelineRowPainter {
         spoilerRanges: [NSRange],
         frame: CGRect,
         baseline: CGFloat,
+        horizontalPosition: CGFloat = 0,
         model: AppModel?
     ) {
         for case let run as CTRun in CTLineGetGlyphRuns(line) as NSArray {
@@ -1246,7 +1195,7 @@ extension NativeTimelineRowPainter {
             ))
             let xOffset = CTLineGetOffsetForStringIndex(line, stringRange.location, nil)
             let emojiFrame = CGRect(
-                x: frame.minX + xOffset,
+                x: frame.minX + horizontalPosition + xOffset,
                 y: frame.maxY - baseline - runAscent,
                 width: max(1, runWidth),
                 height: max(1, runAscent + runDescent)

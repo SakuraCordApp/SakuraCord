@@ -704,6 +704,7 @@ enum MessageReplySummary {
     nonisolated private static let emojiExpression = RegularExpressionFactory.make(
         #"<a?:[A-Za-z0-9_]+:[0-9]+>"#
     )
+    nonisolated private static let emojiPlaceholder: Character = "\u{E000}"
 
     static let defaultMentionLabel: (RenderedMention) -> String = { mention in
         switch mention.kind {
@@ -826,63 +827,54 @@ enum MessageReplySummary {
             length += valueLength
         }
 
-        func appendTextSlice(_ slice: String, spoilerID: Int?) {
-            for character in slice {
-                if character.isWhitespace {
-                    pendingSpace = !text.isEmpty
-                    continue
-                }
-                if pendingSpace {
-                    append(
-                        " ",
-                        spoilerID: previousSpoilerID == spoilerID ? spoilerID : nil
-                    )
-                    pendingSpace = false
-                }
-                append(String(character), spoilerID: spoilerID)
-                previousSpoilerID = spoilerID
-            }
+        var extractedEmojis: [RenderedEmoji] = []
+        var protectedSource = ""
+        var sourceCursor = source.startIndex
+        let sourceMatches = emojiExpression.matches(
+            in: source,
+            range: NSRange(source.startIndex ..< source.endIndex, in: source)
+        )
+        for match in sourceMatches {
+            guard let range = Range(match.range, in: source) else { continue }
+            let token = String(source[range])
+            guard let emoji = RenderedEmoji(rawToken: token) else { continue }
+            protectedSource += source[sourceCursor ..< range.lowerBound]
+            protectedSource.append(emojiPlaceholder)
+            extractedEmojis.append(emoji)
+            sourceCursor = range.upperBound
         }
+        protectedSource += source[sourceCursor...]
 
-        for run in DiscordMarkdown.plainTextRuns(source) {
-            let runString = run.text as NSString
-            let matches = emojiExpression.matches(
-                in: run.text,
-                range: NSRange(location: 0, length: runString.length)
-            )
-            if matches.isEmpty {
-                appendTextSlice(run.text, spoilerID: run.spoilerID)
-            } else {
-                var cursor = 0
-                for match in matches {
-                    if match.range.location > cursor {
-                        let textBefore = runString.substring(with: NSRange(
-                            location: cursor,
-                            length: match.range.location - cursor
-                        ))
-                        appendTextSlice(textBefore, spoilerID: run.spoilerID)
+        var emojiIndex = 0
+        for run in DiscordMarkdown.plainTextRuns(protectedSource) {
+            for character in run.text {
+                if character == emojiPlaceholder {
+                    guard emojiIndex < extractedEmojis.count else { continue }
+                    let emoji = extractedEmojis[emojiIndex]
+                    emojiIndex += 1
+                    if pendingSpace {
+                        append(
+                            " ",
+                            spoilerID: previousSpoilerID == run.spoilerID ? run.spoilerID : nil
+                        )
+                        pendingSpace = false
                     }
-                    let rawToken = runString.substring(with: match.range)
-                    if let emoji = RenderedEmoji(rawToken: rawToken) {
-                        if pendingSpace {
-                            append(
-                                " ",
-                                spoilerID: previousSpoilerID == run.spoilerID ? run.spoilerID : nil
-                            )
-                            pendingSpace = false
-                        }
-                        let emojiRange = NSRange(location: length, length: 1)
-                        append("\u{FFFC}", spoilerID: run.spoilerID)
-                        emojis.append(EmojiItem(range: emojiRange, emoji: emoji))
-                        previousSpoilerID = run.spoilerID
-                    } else {
-                        appendTextSlice(rawToken, spoilerID: run.spoilerID)
+                    let emojiRange = NSRange(location: length, length: 1)
+                    append("\u{FFFC}", spoilerID: run.spoilerID)
+                    emojis.append(EmojiItem(range: emojiRange, emoji: emoji))
+                    previousSpoilerID = run.spoilerID
+                } else if character.isWhitespace {
+                    pendingSpace = !text.isEmpty
+                } else {
+                    if pendingSpace {
+                        append(
+                            " ",
+                            spoilerID: previousSpoilerID == run.spoilerID ? run.spoilerID : nil
+                        )
+                        pendingSpace = false
                     }
-                    cursor = NSMaxRange(match.range)
-                }
-                if cursor < runString.length {
-                    let textAfter = runString.substring(from: cursor)
-                    appendTextSlice(textAfter, spoilerID: run.spoilerID)
+                    append(String(character), spoilerID: run.spoilerID)
+                    previousSpoilerID = run.spoilerID
                 }
             }
         }

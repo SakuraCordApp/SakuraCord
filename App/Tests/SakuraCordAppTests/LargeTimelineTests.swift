@@ -1150,6 +1150,20 @@ func `reply summaries preserve custom emojis and render them in accessibility te
     let emojiWidth = NativeTimelineReplyMetrics.summaryWidth(summary)
     let plainWidth = NativeTimelineReplyMetrics.summaryWidth(plainSummary)
     #expect(emojiWidth >= plainWidth + NativeTimelineReplyMetrics.emojiSize - 1)
+
+    let underscoreContent = "look <:a_b_c:123> and <:blob_dance:456>"
+    let underscoreSummary = MessageReplySummary.summary(content: underscoreContent)
+    #expect(underscoreSummary.text == "look \u{FFFC} and \u{FFFC}")
+    #expect(underscoreSummary.emojis.count == 2)
+    #expect(underscoreSummary.emojis[0].emoji.name == "a_b_c")
+    #expect(underscoreSummary.emojis[1].emoji.name == "blob_dance")
+    #expect(MessageReplySummary.accessibilityText(content: underscoreContent) == "look :a_b_c: and :blob_dance:")
+
+    let spoilerUnderscoreContent = "look ||<:blob_dance:456>|| bye"
+    let spoilerUnderscoreSummary = MessageReplySummary.summary(content: spoilerUnderscoreContent)
+    #expect(spoilerUnderscoreSummary.text == "look \u{FFFC} bye")
+    #expect(spoilerUnderscoreSummary.spoilerRanges == [NSRange(location: 5, length: 1)])
+    #expect(spoilerUnderscoreSummary.emojis.first?.emoji.name == "blob_dance")
 }
 
 @Test
