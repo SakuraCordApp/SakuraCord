@@ -125,6 +125,10 @@ import Testing
     )
     store.prepareAccountSwitch(to: "300")
     #expect(store.consumeLaunchRestoration(accountID: "300") == nil)
+
+    // A removed account leaves none of its conversations behind.
+    store.remove(accountID: "100")
+    #expect(store.lastChannelIDsByGuild(accountID: "100").isEmpty)
 }
 
 @MainActor
