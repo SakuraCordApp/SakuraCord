@@ -24,10 +24,14 @@ if (context.number !== Number(number) || !context.areas.includes(triage?.area) |
     (triage.needsInformation && !triage.questions.length) ||
     (fixPullRequest !== null && !context.pullRequests.includes(fixPullRequest))) throw new Error("Invalid assessment result");
 const resolution = resolveFix(result.fixCommit, context.refs);
+if (resolution.state === "possible_regression") triage.duplicateOf = null;
+const duplicate = triage.duplicateOf && result.findings?.duplicate === "high";
 const releaseLink = resolution.release ? `[${resolution.release.version} (${resolution.release.channel})](${resolution.release.url})` : "";
-// The hub applies a finding on its own only when that finding is rated high,
-// or, for results without ratings, a fix at high overall confidence.
-const pending = resolution.commit && resolution.state.startsWith("fixed_") && (result.findings?.fix ?? result.confidence) !== "high"
+// Mirrors when the hub applies a fix on its own: rated high (for results without
+// ratings, high overall confidence), no questions, and no duplicate holding it back.
+const fixApplies = !triage.needsInformation && (result.findings
+  ? result.findings.fix === "high" && !duplicate : result.confidence === "high" && !triage.duplicateOf);
+const pending = resolution.commit && resolution.state.startsWith("fixed_") && !duplicate && !fixApplies
   ? " A maintainer will confirm it before the report is marked fixed." : "";
 const pullRequest = fixPullRequest ? ` Pull request #${fixPullRequest} is open to ${triage.kind === "feature" ? "implement" : "fix"} it.` : "";
 const availability = {
@@ -37,8 +41,6 @@ const availability = {
   fixed_nightly: `The fix is available in ${releaseLink}, but not in the latest regular release. You can try nightly or wait for the next regular release.`,
   fixed_unreleased: "The fix is in the app's code, but is not in either latest published release yet. No released update contains it yet.",
 }[resolution.state] + pending + pullRequest;
-if (resolution.state === "possible_regression") triage.duplicateOf = null;
-const duplicate = triage.duplicateOf && result.findings?.duplicate === "high";
 triage.resolution = { state: resolution.state, commit: resolution.commit, releaseTag: resolution.release?.tag ?? null,
   pullRequest: fixPullRequest, explanation: availability };
 const envelope = JSON.stringify({ version: 1, number: Number(number), sourceTitle: context.sourceTitle,
