@@ -49,8 +49,9 @@ const allowedImageUrl = (value) => {
   );
 };
 // GitHub's editor inserts screenshots as HTML; answers often add more.
-const imageUrls = (text) => [...String(text ?? "").matchAll(/!?\[[^\]]*\]\((https:\/\/[^)\s]+)\)|<img\b[^>]*?\bsrc="(https:\/\/[^"]+)"/gi)]
-  .map((match) => match[1] ?? match[2]);
+// Both syntaxes may entity-encode "&", which signed Discord CDN URLs need intact.
+const imageUrls = (text) => [...String(text ?? "").matchAll(/!?\[[^\]]*\]\((https:\/\/[^)\s]+)\)|<img\b[^>]*?\bsrc\s*=\s*(["'])(https:\/\/.+?)\2/gi)]
+  .map((match) => (match[1] ?? match[3]).replace(/&(?:amp|#0*38|#x0*26);/gi, "&"));
 const urls = [issue.body, ...issue.comments.slice(-30).reverse().map((comment) => comment.body)].flatMap(imageUrls);
 const images = [];
 for (const original of [...new Set(urls)].filter(allowedImageUrl).slice(0, 10)) {
