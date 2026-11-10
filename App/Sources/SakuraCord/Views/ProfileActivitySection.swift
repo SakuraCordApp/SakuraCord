@@ -22,6 +22,7 @@ struct ActivityMarqueeText: View {
     @State private var containerWidth: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollTask: Task<Void, Never>?
+    @State private var isActivelyScrolling = false
 
     private let gap: CGFloat = InterfaceScale.metric(36)
 
@@ -56,10 +57,11 @@ struct ActivityMarqueeText: View {
             .clipped()
             .mask {
                 if isOverflowing, isCardHovered {
+                    let hasLeftFade = isActivelyScrolling && scrollOffset < -3
                     LinearGradient(
                         stops: [
-                            .init(color: scrollOffset < -2 ? .clear : .black, location: 0),
-                            .init(color: .black, location: 0.04),
+                            .init(color: hasLeftFade ? .clear : .black, location: 0),
+                            .init(color: .black, location: hasLeftFade ? 0.04 : 0),
                             .init(color: .black, location: 0.96),
                             .init(color: .clear, location: 1.0)
                         ],
@@ -90,6 +92,7 @@ struct ActivityMarqueeText: View {
         .onDisappear {
             scrollTask?.cancel()
             scrollTask = nil
+            isActivelyScrolling = false
         }
     }
 
@@ -121,6 +124,7 @@ struct ActivityMarqueeText: View {
         scrollTask?.cancel()
         scrollTask = nil
         guard hovered, isOverflowing, !systemReduceMotion else {
+            isActivelyScrolling = false
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -133,10 +137,12 @@ struct ActivityMarqueeText: View {
         let duration = max(3.0, Double(distance) / 28.0)
 
         scrollTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 800_000_000)
+            isActivelyScrolling = false
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
 
             while !Task.isCancelled {
+                isActivelyScrolling = true
                 withAnimation(.linear(duration: duration)) {
                     scrollOffset = -distance
                 }
@@ -148,6 +154,9 @@ struct ActivityMarqueeText: View {
                 withTransaction(resetTransaction) {
                     scrollOffset = 0
                 }
+                isActivelyScrolling = false
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled else { return }
             }
         }
     }
