@@ -356,6 +356,7 @@ import Testing
         let rendered = DiscordMarkdown.appKitAttributed(source)
         #expect(rendered.string == source)
         #expect(rendered.attribute(.link, at: 1, effectiveRange: nil) == nil)
+        #expect(rendered.attribute(.link, at: source.utf16.count - 2, effectiveRange: nil) == nil)
     }
     let timestampLink = MessageDocument(source: "[<t:1000000:R>](https://example.com)").segments
     #expect(timestampLink.contains(.mention(RenderedMention(rawToken: "<t:1000000:R>")!)))

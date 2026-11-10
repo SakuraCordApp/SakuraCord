@@ -793,9 +793,12 @@ public enum DiscordMarkdown {
         widgetRules: Bool = false,
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
-        guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector),
-              !MessageDocument.holdsDisallowedLinkLabelMention(source[target.label])
-        else { return nil }
+        guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
+        // Discord shows such a link as the text it was typed as, its address included.
+        if MessageDocument.holdsDisallowedLinkLabelMention(source[target.label]) {
+            let text = String(source[cursor ..< target.end])
+            return ([AppKitPlan.InlineRun(text: text, traits: inheritedTraits, link: nil, color: nil)], target.end)
+        }
         sourceCollector?.collectLink?(target.label, target.end)
         var runs = inlineRuns(
             source[target.label],
