@@ -53,7 +53,7 @@ const imageUrls = (text) => [...String(text ?? "").matchAll(/!?\[[^\]]*\]\((http
   .map((match) => match[1] ?? match[2]);
 const urls = [issue.body, ...issue.comments.slice(-30).reverse().map((comment) => comment.body)].flatMap(imageUrls);
 const images = [];
-for (const original of [...new Set(urls)].filter(allowedImageUrl).slice(0, 4)) {
+for (const original of [...new Set(urls)].filter(allowedImageUrl).slice(0, 10)) {
   try {
     let url = original;
     let response;
