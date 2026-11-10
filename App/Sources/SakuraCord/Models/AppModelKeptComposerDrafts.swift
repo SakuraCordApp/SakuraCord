@@ -16,9 +16,12 @@ extension AppModel {
         let command = commandComposer.draft
         commandComposer.resetForChannelChange()
         let attachments = composerAttachments(for: destination)
-        // A conversation deleted as the user leaves it has nothing to return to.
+        // A conversation deleted or hidden as the user leaves it has nothing
+        // to return to.
         let channel = channelID.flatMap(messagePresentationChannel)
-        guard let conversationID, let channel, !attachments.isEmpty || command != nil else {
+        guard let conversationID, let channel, conversationAccess(for: channel) != .hidden,
+              !attachments.isEmpty || command != nil
+        else {
             clearComposerAttachments(for: destination)
             return
         }
@@ -53,17 +56,20 @@ extension AppModel {
         pruneOwnedPromisedAttachmentFiles()
     }
 
-    /// Drops the drafts of servers the user left and of channels, or
-    /// threads' parents, that were deleted or hidden from them.
+    /// Drops the drafts of servers the user left, of channels, or threads'
+    /// parents, that were deleted or hidden from them, and of direct
+    /// messages that were closed or left.
     func discardUnreachableKeptComposerDrafts() {
-        let guildDrafts = composer.keptDrafts.filter { $0.value.guildID != nil }
-        guard !guildDrafts.isEmpty, let snapshot else { return }
+        guard !composer.keptDrafts.isEmpty, let snapshot else { return }
         let guildIDs = Set(snapshot.guilds.map(\.id))
         let channelsByID = Dictionary(snapshot.channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for (conversationID, kept) in guildDrafts {
-            let channel = kept.channelID.flatMap { channelsByID[$0] }
-            let isReachable = kept.guildID.map(guildIDs.contains) == true
-                && channel.map { conversationAccess(for: $0) != .hidden } == true
+        for (conversationID, kept) in composer.keptDrafts {
+            guard let channel = kept.channelID.flatMap({ channelsByID[$0] }) else {
+                discardKeptComposerDraft(for: conversationID)
+                continue
+            }
+            let isReachable = (kept.guildID.map(guildIDs.contains) ?? true)
+                && conversationAccess(for: channel) != .hidden
             if !isReachable { discardKeptComposerDraft(for: conversationID) }
         }
     }

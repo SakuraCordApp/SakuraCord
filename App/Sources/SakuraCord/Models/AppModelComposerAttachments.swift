@@ -67,12 +67,14 @@ extension AppModel {
         }
     }
 
-    /// Writes a pasted image for `destination`'s conversation. An image the
-    /// user left while it was written doesn't follow them to the next one.
-    private func written(_ image: ComposerPastedImage, for destination: MessageComposerDestination) async -> ComposerPromisedFileBatch? {
-        let context = attachmentComposerContext(for: destination)
+    /// Writes a pasted image for the account and, given a `destination`, its
+    /// conversation. An image the user left while it was written doesn't
+    /// follow them to the next one.
+    func written(_ image: ComposerPastedImage, for destination: MessageComposerDestination?) async -> ComposerPromisedFileBatch? {
+        let generation = accountSessionGeneration
+        let context = destination.map(attachmentComposerContext)
         guard let batch = await image.write() else { return nil }
-        guard attachmentComposerContext(for: destination) == context else {
+        guard generation == accountSessionGeneration, destination.map(attachmentComposerContext) == context else {
             batch.discard()
             return nil
         }
@@ -84,6 +86,9 @@ extension AppModel {
     @discardableResult
     func receiveCommandAttachment(_ incoming: ComposerIncomingAttachments, in destination: MessageComposerDestination = .channel) async -> Bool {
         let commandComposer = commandComposer(for: destination)
+        // Taken before a pasted image is written, so the image fills only the
+        // field it was pasted into.
+        let pasteTarget = commandComposer.attachmentPasteTarget()
         let url: URL?
         switch incoming {
         case let .external(urls): url = uploadableFileURLs(urls).first
@@ -95,7 +100,7 @@ extension AppModel {
         guard let url else { return false }
         beginUsingOwnedPromisedFiles([url])
         defer { endUsingOwnedPromisedFiles([url]) }
-        guard let target = commandComposer.attachmentPasteTarget(),
+        guard let target = pasteTarget,
               !(await attachmentURLsWithinDiscordLimit([url])).isEmpty,
               !Task.isCancelled
         else { return false }

@@ -476,7 +476,7 @@ private extension ForumPostComposer {
         case let .owned(batch): addAttachments(model.adoptPromisedFileBatch(batch))
         case let .pastedImage(image):
             Task {
-                guard let batch = await image.write() else { return }
+                guard let batch = await model.written(image, for: nil) else { return }
                 addAttachments(model.adoptPromisedFileBatch(batch))
             }
         }
