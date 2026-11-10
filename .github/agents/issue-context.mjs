@@ -48,7 +48,10 @@ const allowedImageUrl = (value) => {
     url.hostname === "github-production-user-asset-6210df.s3.amazonaws.com"
   );
 };
-const urls = [...String(issue.body ?? "").matchAll(/!?\[[^\]]*\]\((https:\/\/[^)\s]+)\)/g)].map((match) => match[1]);
+// GitHub's editor inserts screenshots as HTML; answers often add more.
+const imageUrls = (text) => [...String(text ?? "").matchAll(/!?\[[^\]]*\]\((https:\/\/[^)\s]+)\)|<img\b[^>]*?\bsrc="(https:\/\/[^"]+)"/gi)]
+  .map((match) => match[1] ?? match[2]);
+const urls = [issue.body, ...issue.comments.slice(-30).reverse().map((comment) => comment.body)].flatMap(imageUrls);
 const images = [];
 for (const original of [...new Set(urls)].filter(allowedImageUrl).slice(0, 4)) {
   try {
