@@ -665,12 +665,25 @@ enum ReactionActionMenuPresentation {
 }
 
 enum MessageReplySummary {
-    nonisolated struct Prepared: Sendable {
+    nonisolated struct EmojiItem: Sendable, Hashable {
+        let range: NSRange
+        let emoji: RenderedEmoji
+    }
+
+    nonisolated struct Prepared: Sendable, Hashable {
         let source: String
         let text: String
         /// UTF-16 ranges of `text` inside spoilers. Reply bars never reveal
         /// them, so presentation conceals these ranges.
         let spoilerRanges: [NSRange]
+        let emojis: [EmojiItem]
+
+        init(source: String, text: String, spoilerRanges: [NSRange], emojis: [EmojiItem] = []) {
+            self.source = source
+            self.text = text
+            self.spoilerRanges = spoilerRanges
+            self.emojis = emojis
+        }
     }
 
     private final class CachedValue {
@@ -687,6 +700,10 @@ enum MessageReplySummary {
         cache.totalCostLimit = 4 * 1_024 * 1_024
         return cache
     }()
+
+    nonisolated private static let emojiExpression = RegularExpressionFactory.make(
+        #"<a?:[A-Za-z0-9_]+:[0-9]+>"#
+    )
 
     static let defaultMentionLabel: (RenderedMention) -> String = { mention in
         switch mention.kind {
@@ -708,7 +725,7 @@ enum MessageReplySummary {
         summary(content: content, mentionLabel: mentionLabel).text
     }
 
-    /// Single-line text with its spoiler ranges.
+    /// Single-line text with its spoiler ranges and inline custom emojis.
     static func summary(
         content: String,
         mentionLabel: (RenderedMention) -> String = defaultMentionLabel
@@ -722,15 +739,34 @@ enum MessageReplySummary {
         return prepared
     }
 
-    /// Text for accessibility, which reads each spoiler as "Spoiler".
+    /// Text for accessibility, which reads each spoiler as "Spoiler",
+    /// and expands custom emojis to their :name: representation.
     static func accessibilityText(
         content: String,
         mentionLabel: (RenderedMention) -> String = defaultMentionLabel
     ) -> String {
         let prepared = summary(content: content, mentionLabel: mentionLabel)
         let text = NSMutableString(string: prepared.text)
-        for range in prepared.spoilerRanges.reversed() {
-            text.replaceCharacters(in: range, with: "Spoiler")
+
+        struct Replacement {
+            let range: NSRange
+            let value: String
+        }
+        var replacements: [Replacement] = []
+        for range in prepared.spoilerRanges {
+            replacements.append(Replacement(range: range, value: "Spoiler"))
+        }
+        for emoji in prepared.emojis {
+            let isInsideSpoiler = prepared.spoilerRanges.contains { spoilerRange in
+                NSLocationInRange(emoji.range.location, spoilerRange)
+            }
+            if !isInsideSpoiler {
+                replacements.append(Replacement(range: emoji.range, value: ":\(emoji.emoji.name):"))
+            }
+        }
+        replacements.sort { $0.range.location > $1.range.location }
+        for replacement in replacements {
+            text.replaceCharacters(in: replacement.range, with: replacement.value)
         }
         return text as String
     }
@@ -753,7 +789,7 @@ enum MessageReplySummary {
             case let .markdown(value):
                 output += value
             case let .customEmoji(emoji):
-                output += ":\(emoji.name):"
+                output += emoji.rawToken
             case let .mention(mention):
                 output += mentionLabel(mention)
             }
@@ -762,10 +798,12 @@ enum MessageReplySummary {
 
     /// Collapses the rendered text's whitespace to single spaces. A collapsed
     /// space is a spoiler only inside one spoiler, and adjacent spoilers stay
-    /// separate ranges.
+    /// separate ranges. Custom emojis are extracted into `Prepared.emojis` and
+    /// represented as object replacement placeholders in `text`.
     nonisolated static func prepare(_ source: String) -> Prepared {
         var text = ""
         var spoilerRanges: [NSRange] = []
+        var emojis: [EmojiItem] = []
         var length = 0
         var pendingSpace = false
         var previousSpoilerID: Int?
@@ -788,8 +826,8 @@ enum MessageReplySummary {
             length += valueLength
         }
 
-        for run in DiscordMarkdown.plainTextRuns(source) {
-            for character in run.text {
+        func appendTextSlice(_ slice: String, spoilerID: Int?) {
+            for character in slice {
                 if character.isWhitespace {
                     pendingSpace = !text.isEmpty
                     continue
@@ -797,18 +835,61 @@ enum MessageReplySummary {
                 if pendingSpace {
                     append(
                         " ",
-                        spoilerID: previousSpoilerID == run.spoilerID ? run.spoilerID : nil
+                        spoilerID: previousSpoilerID == spoilerID ? spoilerID : nil
                     )
                     pendingSpace = false
                 }
-                append(String(character), spoilerID: run.spoilerID)
-                previousSpoilerID = run.spoilerID
+                append(String(character), spoilerID: spoilerID)
+                previousSpoilerID = spoilerID
+            }
+        }
+
+        for run in DiscordMarkdown.plainTextRuns(source) {
+            let runString = run.text as NSString
+            let matches = emojiExpression.matches(
+                in: run.text,
+                range: NSRange(location: 0, length: runString.length)
+            )
+            if matches.isEmpty {
+                appendTextSlice(run.text, spoilerID: run.spoilerID)
+            } else {
+                var cursor = 0
+                for match in matches {
+                    if match.range.location > cursor {
+                        let textBefore = runString.substring(with: NSRange(
+                            location: cursor,
+                            length: match.range.location - cursor
+                        ))
+                        appendTextSlice(textBefore, spoilerID: run.spoilerID)
+                    }
+                    let rawToken = runString.substring(with: match.range)
+                    if let emoji = RenderedEmoji(rawToken: rawToken) {
+                        if pendingSpace {
+                            append(
+                                " ",
+                                spoilerID: previousSpoilerID == run.spoilerID ? run.spoilerID : nil
+                            )
+                            pendingSpace = false
+                        }
+                        let emojiRange = NSRange(location: length, length: 1)
+                        append("\u{FFFC}", spoilerID: run.spoilerID)
+                        emojis.append(EmojiItem(range: emojiRange, emoji: emoji))
+                        previousSpoilerID = run.spoilerID
+                    } else {
+                        appendTextSlice(rawToken, spoilerID: run.spoilerID)
+                    }
+                    cursor = NSMaxRange(match.range)
+                }
+                if cursor < runString.length {
+                    let textAfter = runString.substring(from: cursor)
+                    appendTextSlice(textAfter, spoilerID: run.spoilerID)
+                }
             }
         }
         guard !text.isEmpty else {
-            return Prepared(source: source, text: "Attachment", spoilerRanges: [])
+            return Prepared(source: source, text: "Attachment", spoilerRanges: [], emojis: [])
         }
-        return Prepared(source: source, text: text, spoilerRanges: spoilerRanges)
+        return Prepared(source: source, text: text, spoilerRanges: spoilerRanges, emojis: emojis)
     }
 
     static func install(_ prepared: Prepared) {

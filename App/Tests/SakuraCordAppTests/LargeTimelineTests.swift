@@ -1130,6 +1130,30 @@ func `reply summaries keep spoilers concealed and their plain text unchanged`() 
 
 @Test
 @MainActor
+func `reply summaries preserve custom emojis and render them in accessibility text`() {
+    let content = "He's a machine <:sus:123456789>"
+    let summary = MessageReplySummary.summary(content: content)
+    #expect(summary.text == "He's a machine \u{FFFC}")
+    #expect(summary.emojis.count == 1)
+    #expect(summary.emojis.first?.emoji.name == "sus")
+    #expect(summary.emojis.first?.emoji.id == "123456789")
+    #expect(summary.emojis.first?.range == NSRange(location: 15, length: 1))
+    #expect(MessageReplySummary.accessibilityText(content: content) == "He's a machine :sus:")
+
+    let spoilerContent = "look ||<:sus:123456789>|| bye"
+    let spoilerSummary = MessageReplySummary.summary(content: spoilerContent)
+    #expect(spoilerSummary.text == "look \u{FFFC} bye")
+    #expect(spoilerSummary.spoilerRanges == [NSRange(location: 5, length: 1)])
+    #expect(MessageReplySummary.accessibilityText(content: spoilerContent) == "look Spoiler bye")
+
+    let plainSummary = MessageReplySummary.summary(content: "He's a machine ")
+    let emojiWidth = NativeTimelineReplyMetrics.summaryWidth(summary)
+    let plainWidth = NativeTimelineReplyMetrics.summaryWidth(plainSummary)
+    #expect(emojiWidth >= plainWidth + NativeTimelineReplyMetrics.emojiSize - 1)
+}
+
+@Test
+@MainActor
 func `adjacent text spoilers hit test and reveal independently`() throws {
     let source = "||one||||two||"
     let value = NativeTimelineCoreText.make(
@@ -1644,6 +1668,30 @@ func `benchmark run finalization does not require coordinator lifetime`() {
             == .avatar(avatarURL)
     )
     #expect(NativeTimelineReplyMediaPolicy.avatarKey(for: nil) == nil)
+}
+
+@MainActor
+@Test func `native reply media dependencies include custom emojis`() throws {
+    let preview = MessageReplyPreview(
+        messageID: MessageID(rawValue: 23),
+        author: User(
+            id: UserID(rawValue: 3),
+            username: "author",
+            displayName: "Author"
+        ),
+        content: "Look at this <:blob_dance:987654321>"
+    )
+    let message = Message(
+        id: MessageID(rawValue: 24),
+        channelID: ChannelID(rawValue: 1),
+        author: preview.author,
+        content: "Replying to message"
+    )
+    let keys = NativeTimelineReplyMediaPolicy.emojiKeys(for: preview, in: message, model: nil)
+    let expectedURL = try #require(
+        URL(string: "https://cdn.discordapp.com/emojis/987654321.png?size=64&quality=lossless")
+    )
+    #expect(keys == [.media(expectedURL, maximumPixelDimension: 64)])
 }
 
 @Test func `native timeline identifies prepended rows without replacing existing rows`() {

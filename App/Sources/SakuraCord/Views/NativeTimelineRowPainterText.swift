@@ -221,7 +221,7 @@ extension NativeTimelineRowPainter {
         context.restoreGState()
     }
 
-    private static func truncatedLine(
+    static func truncatedLine(
         _ sourceLine: CTLine,
         sourceWidth: CGFloat,
         maximumWidth: CGFloat,

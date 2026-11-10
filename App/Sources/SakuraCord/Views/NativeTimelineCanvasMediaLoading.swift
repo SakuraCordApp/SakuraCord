@@ -393,13 +393,19 @@ extension NativeTimelineCanvasView {
         if let url = layout.forwardedSourceRegion?.iconURL {
             keys.append(.avatar(url))
         }
-        if let preview = row.replyPreview,
-           let url = model?.authorPresentation(for: preview, in: message).user.avatarURL {
-            keys.append(.avatar(url))
-        } else if let key = NativeTimelineReplyMediaPolicy.avatarKey(
-            for: row.replyPreview
-        ) {
-            keys.append(key)
+        if let preview = row.replyPreview {
+            if let url = model?.authorPresentation(for: preview, in: message).user.avatarURL {
+                keys.append(.avatar(url))
+            } else if let key = NativeTimelineReplyMediaPolicy.avatarKey(
+                for: row.replyPreview
+            ) {
+                keys.append(key)
+            }
+            keys.append(contentsOf: NativeTimelineReplyMediaPolicy.emojiKeys(
+                for: preview,
+                in: message,
+                model: model
+            ))
         }
         for region in layout.linkedImageRegions {
             keys.append(.media(

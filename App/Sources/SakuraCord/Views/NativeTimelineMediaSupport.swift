@@ -376,6 +376,22 @@ enum NativeTimelineReplyMediaPolicy {
     ) -> NativeTimelineMediaKey? {
         preview?.author.avatarURL.map(NativeTimelineMediaKey.avatar)
     }
+
+    static func emojiKeys(
+        for preview: MessageReplyPreview?,
+        in message: Message,
+        model: AppModel?
+    ) -> [NativeTimelineMediaKey] {
+        guard let preview else { return [] }
+        let summary = NativeTimelineReplyMetrics.summary(for: preview, in: message, model: model)
+        return summary.emojis.compactMap { item in
+            let reference = EmojiReference(rawToken: item.emoji.rawToken)
+            guard let url = reference.id.flatMap({ model?.customEmojiURLsByID[$0] }) ?? reference.imageURL(size: 64) else {
+                return nil
+            }
+            return .media(url, maximumPixelDimension: 64)
+        }
+    }
 }
 
 @MainActor
