@@ -1227,10 +1227,7 @@ enum ComposerPasteboardAttachments {
             let urls = fileURLs(from: pasteboard)
             return urls.isEmpty ? nil : .external(urls)
         }
-        guard let data = pasteboard.data(forType: type) else { return nil }
-        return .pastedImage(ComposerPastedImage(
-            data: data, type: type, filename: pastedImageFilename(html: pasteboard.string(forType: .html))
-        ))
+        return pastedImage(from: pasteboard, type: type).map { .owned($0) }
     }
 
     static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
@@ -1246,6 +1243,21 @@ enum ComposerPasteboardAttachments {
             else { return nil }
             return url
         }
+    }
+
+    /// Writes clipboard image data as a PNG in app-owned storage, which the
+    /// model adopts and removes once no composer or upload retains it.
+    private static func pastedImage(
+        from pasteboard: NSPasteboard,
+        type: NSPasteboard.PasteboardType
+    ) -> ComposerPromisedFileBatch? {
+        guard let data = pasteboard.data(forType: type),
+              let png = type == .png ? data : NSImage(data: data)?.tiffRepresentation
+                  .flatMap(NSBitmapImageRep.init(data:))?
+                  .representation(using: .png, properties: [:])
+        else { return nil }
+        let filename = pastedImageFilename(html: pasteboard.string(forType: .html))
+        return ComposerPromisedFileStorage.makeBatch(writing: png, named: filename)
     }
 
     /// Names a pasted image as Discord does: after the first `<img>` source in

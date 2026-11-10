@@ -1661,8 +1661,7 @@ private extension ComposerView {
 
     var hasCheckingAttachments: Bool {
         let checking = model.composer.checkingAttachmentIDs
-        return model.composer.writingPastedImages[conversation] != nil
-            || !checking.isEmpty && attachments.contains { checking.contains($0.id) }
+        return !checking.isEmpty && attachments.contains { checking.contains($0.id) }
     }
 
     var chromeKey: ComposerChromeKey {

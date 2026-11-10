@@ -474,15 +474,6 @@ private extension ForumPostComposer {
         switch incoming {
         case let .external(urls): addAttachments(urls)
         case let .owned(batch): addAttachments(model.adoptPromisedFileBatch(batch))
-        case let .pastedImage(image):
-            // Posting waits for the image, as for files being checked.
-            let writing = UUID()
-            draft.checkingAttachmentIDs.insert(writing)
-            Task {
-                defer { draft.checkingAttachmentIDs.remove(writing) }
-                guard let batch = await model.written(image, for: nil) else { return }
-                addAttachments(model.adoptPromisedFileBatch(batch))
-            }
         }
     }
 

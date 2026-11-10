@@ -61,30 +61,7 @@ extension AppModel {
             guard !acceptedURLs.isEmpty else { return }
             defer { endUsingOwnedPromisedFiles(acceptedURLs) }
             await sendAttachmentsImmediately(acceptedURLs.map { ForumPostAttachment(url: $0) }, to: destination)
-        case let (.pastedImage(image), _):
-            guard let batch = await written(image, for: destination) else { return }
-            await receiveComposerAttachments(.owned(batch), to: destination, sendingImmediately: sendingImmediately)
         }
-    }
-
-    /// Writes a pasted image for the account and, given a `destination`, its
-    /// conversation. An image the user left while it was written doesn't
-    /// follow them to the next one.
-    func written(_ image: ComposerPastedImage, for destination: MessageComposerDestination?) async -> ComposerPromisedFileBatch? {
-        let generation = accountSessionGeneration
-        let context = destination.map(attachmentComposerContext)
-        if let destination { composer.writingPastedImages[destination, default: 0] += 1 }
-        defer {
-            if let destination, let count = composer.writingPastedImages[destination] {
-                composer.writingPastedImages[destination] = count > 1 ? count - 1 : nil
-            }
-        }
-        guard let batch = await image.write() else { return nil }
-        guard generation == accountSessionGeneration, destination.map(attachmentComposerContext) == context else {
-            batch.discard()
-            return nil
-        }
-        return batch
     }
 
     /// Fills the active slash command's attachment option with the first
@@ -92,21 +69,14 @@ extension AppModel {
     @discardableResult
     func receiveCommandAttachment(_ incoming: ComposerIncomingAttachments, in destination: MessageComposerDestination = .channel) async -> Bool {
         let commandComposer = commandComposer(for: destination)
-        // Taken before a pasted image is written, so the image fills only the
-        // field it was pasted into.
-        let pasteTarget = commandComposer.attachmentPasteTarget()
-        let url: URL?
-        switch incoming {
-        case let .external(urls): url = uploadableFileURLs(urls).first
-        case let .owned(batch): url = adoptPromisedFileBatch(batch).first
-        case let .pastedImage(image):
-            guard let batch = await written(image, for: destination) else { return false }
-            url = adoptPromisedFileBatch(batch).first
+        let url: URL? = switch incoming {
+        case let .external(urls): uploadableFileURLs(urls).first
+        case let .owned(batch): adoptPromisedFileBatch(batch).first
         }
         guard let url else { return false }
         beginUsingOwnedPromisedFiles([url])
         defer { endUsingOwnedPromisedFiles([url]) }
-        guard let target = pasteTarget,
+        guard let target = commandComposer.attachmentPasteTarget(),
               !(await attachmentURLsWithinDiscordLimit([url])).isEmpty,
               !Task.isCancelled
         else { return false }
