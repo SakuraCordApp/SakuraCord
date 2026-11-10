@@ -17,10 +17,9 @@ nonisolated enum NativeAppBadgePresentation {
         }
     }
 
-    static var width: CGFloat { text.width + ServerTagAppearance.horizontalPadding * 2 }
-
-    static func width(isVerified: Bool) -> CGFloat {
-        width + (isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0)
+    static func width(isVerified: Bool, text: NativeIdentityTextPresentation? = nil) -> CGFloat {
+        (text ?? Self.text).width + ServerTagAppearance.horizontalPadding * 2
+            + (isVerified ? ServerTagAppearance.badgeSize + ServerTagAppearance.spacing : 0)
     }
 
     @MainActor private static let checkmark = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?

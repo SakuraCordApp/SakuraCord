@@ -183,6 +183,7 @@ struct NativeTimelineRowLayout {
     var editedText: NativeIdentityTextPresentation?
     var botBadgeFrame: CGRect?
     var botBadgeText: NativeIdentityTextPresentation?
+    var botBadgeIsVerified = false
     var timestampFrame: CGRect?
     var editedFrame: CGRect?
     var activityIndicators: [ActivityIndicator] = []

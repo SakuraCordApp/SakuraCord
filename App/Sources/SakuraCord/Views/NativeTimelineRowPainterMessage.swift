@@ -216,7 +216,10 @@ extension NativeTimelineRowPainter {
     ) {
         if let frame = input.layout.botBadgeFrame,
            let context = NSGraphicsContext.current?.cgContext {
-            NativeAppBadgePresentation.draw(in: frame, color: .sakuraCordAccentColor, context: context, text: input.layout.botBadgeText)
+            NativeAppBadgePresentation.draw(
+                in: frame, color: .sakuraCordAccentColor, context: context,
+                text: input.layout.botBadgeText, isVerified: input.layout.botBadgeIsVerified
+            )
         }
         if let region = input.layout.serverTagRegion,
            let context = NSGraphicsContext.current?.cgContext {
