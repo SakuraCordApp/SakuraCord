@@ -73,6 +73,12 @@ extension AppModel {
     func written(_ image: ComposerPastedImage, for destination: MessageComposerDestination?) async -> ComposerPromisedFileBatch? {
         let generation = accountSessionGeneration
         let context = destination.map(attachmentComposerContext)
+        if let destination { composer.writingPastedImages[destination, default: 0] += 1 }
+        defer {
+            if let destination, let count = composer.writingPastedImages[destination] {
+                composer.writingPastedImages[destination] = count > 1 ? count - 1 : nil
+            }
+        }
         guard let batch = await image.write() else { return nil }
         guard generation == accountSessionGeneration, destination.map(attachmentComposerContext) == context else {
             batch.discard()

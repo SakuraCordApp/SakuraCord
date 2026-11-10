@@ -151,7 +151,8 @@ extension AppModel {
     func knownThreadSummary(_ id: ChannelID) -> MessageThreadSummary? {
         if openThread?.id == id, let openThread { return openThread }
         if let index = forumCatalogueIndexByID[id] { return forumCataloguePosts[index].thread }
-        return sidebarThread(id)
+        // An Inbox mention can come from a thread the sidebar doesn't list.
+        return sidebarThread(id) ?? inbox.threads[id]
     }
 
     func isForumThread(_ thread: MessageThreadSummary) -> Bool {

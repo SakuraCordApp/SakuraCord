@@ -30,6 +30,9 @@ final class MessageComposerState {
     /// Staged files whose privacy and size check is still running. They show
     /// in the composer at once but cannot be sent until it finishes.
     var checkingAttachmentIDs: Set<UUID> = []
+    /// Pasted images each composer is still writing. Like files being
+    /// checked, they hold sending back until they arrive.
+    var writingPastedImages: [MessageComposerDestination: Int] = [:]
     @ObservationIgnored private var animatedResizeUptimes: [MessageComposerDestination: TimeInterval] = [:]
 
     init(preferences: SettingsPreferenceStore? = nil) {
@@ -129,6 +132,7 @@ final class MessageComposerState {
         threadAttachments = []
         keptDrafts = [:]
         checkingAttachmentIDs = []
+        writingPastedImages = [:]
         isSendQueueFullAlertPresented = false
         outbox.reset()
         slowmode.reset()
