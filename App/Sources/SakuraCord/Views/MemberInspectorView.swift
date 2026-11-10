@@ -118,8 +118,7 @@ struct MemberInspectorView: View {
             openProfile: openProfile,
             sendProfileMessage: sendProfileMessage,
             rowMenu: userMenu,
-            rowAccessibilityActions: userAccessibilityActions,
-            isInspector: true
+            rowAccessibilityActions: userAccessibilityActions
         )
         .ignoresSafeArea(.container, edges: .top)
     }

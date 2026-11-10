@@ -24,71 +24,27 @@ struct NativeMemberListView: NSViewRepresentable {
     var rowMenu: ((Member) -> NSMenu?)?
     var rowAccessibilityActions: ((Member) -> [NSAccessibilityCustomAction])?
     var contentIdentity: String?
-    var isInspector = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
-    func makeNSView(context: Context) -> NativeMemberListHostView {
-        NativeMemberListHostView(scrollView: context.coordinator.makeScrollView(), isInspector: isInspector)
+    func makeNSView(context: Context) -> NSScrollView {
+        context.coordinator.makeScrollView()
     }
 
-    func updateNSView(_ host: NativeMemberListHostView, context: Context) {
-        context.coordinator.update(parent: self, scrollView: host.scrollView)
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.update(parent: self, scrollView: scrollView)
     }
 
-    static func dismantleNSView(_ host: NativeMemberListHostView, coordinator: Coordinator) {
-        host.scrollView.inputPerformanceProbe.invalidate()
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        (scrollView as? NativeMemberListScrollView)?
+            .inputPerformanceProbe.invalidate()
         coordinator.stop()
-        host.scrollView.documentView = nil
+        scrollView.documentView = nil
     }
 
     typealias Coordinator = NativeMemberListCoordinator
-}
-
-@MainActor
-final class NativeMemberListHostView: NSView {
-    let scrollView: NativeMemberListScrollView
-
-    /// Every scroll pocket under the toolbar blurs one shared capture, taken
-    /// where the first of them draws: the conversation, before an inspector
-    /// column, so an inspector's rows would be missing from its toolbar band.
-    /// Glass opts its content out of that capture, as it does for a native
-    /// inspector item, so the list's pocket captures its own rows.
-    init(scrollView: NativeMemberListScrollView, isInspector: Bool) {
-        self.scrollView = scrollView
-        super.init(frame: .zero)
-        scrollView.autoresizingMask = [.width, .height]
-        guard isInspector, let glass = NSGlassEffectView.inspector() else {
-            addSubview(scrollView)
-            return
-        }
-        glass.autoresizingMask = [.width, .height]
-        glass.contentView = scrollView
-        addSubview(glass)
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-}
-
-extension NSGlassEffectView {
-    /// The glass of an inspector split item, or nil once its private variant
-    /// is no longer settable: plain glass would not look like an inspector.
-    static func inspector() -> NSGlassEffectView? {
-        let glass = NSGlassEffectView()
-        guard glass.responds(to: NSSelectorFromString("set_variant:")),
-              glass.responds(to: NSSelectorFromString("set_adaptiveAppearance:"))
-        else { return nil }
-        glass.setValue(19, forKey: "_variant")
-        glass.setValue(1, forKey: "_adaptiveAppearance")
-        // An inspector item's glass is square; the view's default rounds it.
-        glass.cornerRadius = 0
-        return glass
-    }
 }
 
 @MainActor

@@ -19,7 +19,6 @@ struct MessageSearchPanelView: View {
             )
             MessageSearchPagination(model: model, search: search)
         }
-        .background(.ultraThinMaterial)
         .onAppear {
             AppPerformanceSignposts.reportMessageSearchPanelReady()
         }
