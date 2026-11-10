@@ -462,4 +462,58 @@ struct DiscordIPCServerTests {
         #expect(FileManager.default.fileExists(atPath: symlinkPath))
         unlink(symlinkPath)
     }
+
+    @Test func `server accepts numeric client id and responds to authenticate command`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+        defer { close(clientFD) }
+
+        // Send numeric snowflake client_id (used by Roblox RPC and Discord GameSDK)
+        sendClientFrame(fd: clientFD, opcode: 0, jsonObject: ["v": 1, "client_id": 1004128076435017778 as NSNumber])
+        let readyResponse = try #require(readClientFrame(fd: clientFD))
+        #expect(readyResponse.opcode == 1)
+        #expect(readyResponse.json["cmd"] as? String == "DISPATCH")
+        #expect(readyResponse.json["evt"] as? String == "READY")
+
+        // Send AUTHENTICATE command
+        sendClientFrame(fd: clientFD, opcode: 1, jsonObject: [
+            "cmd": "AUTHENTICATE",
+            "args": ["access_token": "dummy_token"],
+            "nonce": "auth-nonce-1"
+        ])
+        let authResponse = try #require(readClientFrame(fd: clientFD))
+        #expect(authResponse.opcode == 1)
+        #expect(authResponse.json["cmd"] as? String == "AUTHENTICATE")
+        #expect(authResponse.json["nonce"] as? String == "auth-nonce-1")
+        #expect(authResponse.json["data"] is [String: Any])
+
+        // Set activity without explicit name but with large_text -> resolves name from large_text
+        sendClientFrame(fd: clientFD, opcode: 1, jsonObject: [
+            "cmd": "SET_ACTIVITY",
+            "args": [
+                "pid": 54321,
+                "activity": [
+                    "details": "Playing Murder Mystery 2",
+                    "state": "In Game",
+                    "assets": [
+                        "large_image": "roblox_icon",
+                        "large_text": "Roblox"
+                    ]
+                ]
+            ],
+            "nonce": "act-nonce-1"
+        ])
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let primary = await coordinator.currentPrimaryActivity()
+        #expect(primary?.name == "Roblox")
+        #expect(primary?.details == "Playing Murder Mystery 2")
+        #expect(primary?.state == "In Game")
+    }
 }

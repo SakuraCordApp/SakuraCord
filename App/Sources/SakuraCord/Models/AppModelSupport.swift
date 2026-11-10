@@ -1140,6 +1140,7 @@ extension AppModel {
         let coordinator: ActivityCoordinator
         let ipcServer: DiscordIPCServer
         let monitor: AppleMusicPresenceMonitor
+        let gameMonitor: GamePresenceMonitor
     }
 
     static func makeActivityServices(
@@ -1165,7 +1166,16 @@ extension AppModel {
         if launchMode == .normal, loadedPrivacy.sharesActivity, loadedPrivacy.sharesAppleMusicActivity {
             resolvedAppleMusicMonitor.start()
         }
-        return ActivityServices(coordinator: resolvedCoordinator, ipcServer: resolvedIPCServer, monitor: resolvedAppleMusicMonitor)
+        let resolvedGameMonitor = GamePresenceMonitor(coordinator: resolvedCoordinator)
+        if launchMode == .normal, loadedPrivacy.sharesActivity, loadedPrivacy.allowsLocalRPC {
+            resolvedGameMonitor.start()
+        }
+        return ActivityServices(
+            coordinator: resolvedCoordinator,
+            ipcServer: resolvedIPCServer,
+            monitor: resolvedAppleMusicMonitor,
+            gameMonitor: resolvedGameMonitor
+        )
     }
 
     func postInitSetup(coordinator: ActivityCoordinator) {

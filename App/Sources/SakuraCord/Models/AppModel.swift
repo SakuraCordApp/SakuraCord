@@ -917,6 +917,7 @@ final class AppModel {
     @ObservationIgnored let activityCoordinator: ActivityCoordinator
     @ObservationIgnored let ipcServer: DiscordIPCServer
     @ObservationIgnored let appleMusicMonitor: AppleMusicPresenceMonitor
+    @ObservationIgnored let gameMonitor: GamePresenceMonitor
     @ObservationIgnored var database: SakuraCordDatabase?
     @ObservationIgnored var accountSessionGeneration: UInt64 = 0
     @ObservationIgnored var installedAccountSessionRevision: UInt64 = 0
@@ -1209,6 +1210,7 @@ final class AppModel {
         self.activityCoordinator = activityServices.coordinator
         self.ipcServer = activityServices.ipcServer
         self.appleMusicMonitor = activityServices.monitor
+        self.gameMonitor = activityServices.gameMonitor
         hasPendingLaunchWelcome = includesOfflineSignIn
         typingState = TypingStateModel()
         self.localTypingTiming = localTypingTiming

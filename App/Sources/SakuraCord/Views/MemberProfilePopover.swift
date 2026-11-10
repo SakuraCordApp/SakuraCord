@@ -245,7 +245,9 @@ struct MemberProfilePopover<Footer: View>: View {
             guard editor == nil, newHeight.isFinite, newHeight > 0 else { return }
             let measuredHeight = max(InterfaceScale.metric(250), newHeight)
             guard contentHeight != measuredHeight else { return }
-            contentHeight = measuredHeight
+            withAnimation(!systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.35, dampingFraction: 0.82) : nil) {
+                contentHeight = measuredHeight
+            }
             popoverPresentationContext?.contentSizeDidChange?()
         }
         .task(id: cosmeticPolicy.disables(.gradient, for: member.id) ? nil : theme.source(for: profile, scale: displayScale, allowsTheme: editor?.isNitro)) {
@@ -376,12 +378,7 @@ struct MemberProfilePopover<Footer: View>: View {
         if hasActiveActivity, editor == nil {
             ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
                 .padding(.horizontal, InterfaceScale.metric(16))
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.95, anchor: .top)),
-                        removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .top))
-                    )
-                )
+                .transition(.opacity.combined(with: .offset(y: -4)))
         }
         if let editor, editor.scope == .main || editor.isNitro {
             ProfileInlineBioEditor(value: Binding(get: { editor.bio }, set: { editor.bio = $0 }), displayValue: profile.bio, model: editor.model)

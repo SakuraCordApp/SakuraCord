@@ -137,12 +137,14 @@ struct StablePopoverConfiguration {
     let contentSizing: StablePopoverContentSizing
     let stabilizesInitialContentSize: Bool
     var reusesPresentationOnIdentityChange = false
+    var repositionsOnResize = true
 
     func fixedContentSize(_ size: CGSize) -> Self {
         Self(preferredEdge: preferredEdge, behavior: behavior, animates: animates,
              ignoresMouseEvents: ignoresMouseEvents, contentSizing: .fixed(size),
              stabilizesInitialContentSize: stabilizesInitialContentSize,
-             reusesPresentationOnIdentityChange: reusesPresentationOnIdentityChange)
+             reusesPresentationOnIdentityChange: reusesPresentationOnIdentityChange,
+             repositionsOnResize: repositionsOnResize)
     }
 
     static var hover: StablePopoverConfiguration {
@@ -177,7 +179,7 @@ struct StablePopoverConfiguration {
     }
 
     static var memberProfile: StablePopoverConfiguration {
-        StablePopoverConfiguration(
+        var config = StablePopoverConfiguration(
             preferredEdge: .maxX,
             behavior: .semitransient,
             animates: true,
@@ -186,6 +188,8 @@ struct StablePopoverConfiguration {
             stabilizesInitialContentSize: true,
             reusesPresentationOnIdentityChange: true
         )
+        config.repositionsOnResize = false
+        return config
     }
 
     static var toolbarPanel: StablePopoverConfiguration {
@@ -719,7 +723,8 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
             // Reposition only when the anchor moves, the preferred edge changes, or a
             // resize left the bubble off-center: AppKit keeps a resized popover's origin.
             let resized = resizesInPlace && presentedContentSize != popover.contentSize
-            if !popover.isShown || resized || presentedEdge != placement.edge || presentedAnchorFrame != sourceFrame {
+            let shouldReposition = !popover.isShown || presentedEdge != placement.edge || presentedAnchorFrame != sourceFrame || (resized && configuration.repositionsOnResize)
+            if shouldReposition {
                 if popover.isShown, configuration.reusesPresentationOnIdentityChange {
                     popover.animates = false
                 }
@@ -727,8 +732,11 @@ struct StableAnchoredPopoverPresenter<Content: View>: NSViewRepresentable {
                 presentedEdge = placement.edge
                 presentedAnchorFrame = sourceFrame
                 presentedContentSize = popover.contentSize
-            } else if popover.positioningRect != anchorView.bounds {
-                popover.positioningRect = anchorView.bounds
+            } else {
+                presentedContentSize = popover.contentSize
+                if popover.positioningRect != anchorView.bounds {
+                    popover.positioningRect = anchorView.bounds
+                }
             }
             popover.contentViewController?.view.window?.ignoresMouseEvents =
                 configuration.ignoresMouseEvents

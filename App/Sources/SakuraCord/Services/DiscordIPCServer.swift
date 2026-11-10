@@ -117,8 +117,16 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private func handleFrame(opcode: UInt32, payloadData: Data) {
         switch opcode {
         case 0: // HANDSHAKE
-            guard let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
-                  let clientID = json["client_id"] as? String else {
+            guard let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
+                stop()
+                return
+            }
+            let clientID: String
+            if let str = json["client_id"] as? String {
+                clientID = str
+            } else if let num = json["client_id"] as? NSNumber {
+                clientID = num.stringValue
+            } else {
                 stop()
                 return
             }
@@ -175,13 +183,44 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
             let evt = args["evt"] as? String ?? ""
             sendResponse(cmd: cmd, data: ["evt": evt], nonce: nonce)
 
+        case "AUTHENTICATE", "AUTHORIZE":
+            let data: [String: Any] = [
+                "application": ["id": clientID ?? "1", "name": "SakuraCord"],
+                "user": [
+                    "id": "1",
+                    "username": "SakuraCord",
+                    "discriminator": "0000",
+                    "avatar": NSNull(),
+                ],
+                "scopes": ["rpc", "identify"],
+                "expires": "2099-01-01T00:00:00.000Z",
+            ]
+            sendResponse(cmd: cmd, data: data, nonce: nonce)
+
         default:
             sendResponse(cmd: cmd, data: NSNull(), nonce: nonce)
         }
     }
 
     private func parseActivity(_ dict: [String: Any]) -> OutgoingActivityPayload {
-        let name = (dict["name"] as? String) ?? clientID ?? "Local App"
+        let assetsDict = dict["assets"] as? [String: Any]
+        let rawName = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let largeText = (assetsDict?["large_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name: String = {
+            if let rawName, !rawName.isEmpty, rawName != clientID {
+                return rawName
+            }
+            if let largeText, !largeText.isEmpty, !largeText.lowercased().hasPrefix("http") {
+                return largeText
+            }
+            if let rawName, !rawName.isEmpty {
+                return rawName
+            }
+            if let clientID, !clientID.isEmpty, !clientID.allSatisfy(\.isNumber) {
+                return clientID
+            }
+            return "Game"
+        }()
         let typeRaw = (dict["type"] as? Int) ?? 0
         let type = ActivityType(rawValue: typeRaw) ?? .playing
         let details = dict["details"] as? String
@@ -376,6 +415,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
     }
 
     public static func candidateSocketPaths() -> [String] {
+        var paths: [String] = []
         let tempDirs = [
             ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"],
             ProcessInfo.processInfo.environment["TMPDIR"],
@@ -384,10 +424,16 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             "/tmp",
         ].compactMap { $0 }.filter { !$0.isEmpty }
 
-        let baseDir = tempDirs.first ?? "/tmp"
-        let dir = baseDir.hasSuffix("/") ? String(baseDir.dropLast()) : baseDir
-
-        return (0 ... 9).map { "\(dir)/discord-ipc-\($0)" }
+        for baseDir in tempDirs {
+            let dir = baseDir.hasSuffix("/") ? String(baseDir.dropLast()) : baseDir
+            for index in 0 ... 9 {
+                let candidate = "\(dir)/discord-ipc-\(index)"
+                if !paths.contains(candidate) {
+                    paths.append(candidate)
+                }
+            }
+        }
+        return paths.isEmpty ? (0 ... 9).map { "/tmp/discord-ipc-\($0)" } : paths
     }
 
     public enum SocketListenerStatus: Sendable, Equatable {
@@ -527,6 +573,12 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         try queue.sync {
             guard !isRunning else { return }
             Self.purgeStaleSockets(in: "/tmp")
+            if let tmpdir = ProcessInfo.processInfo.environment["TMPDIR"], !tmpdir.isEmpty {
+                let dir = tmpdir.hasSuffix("/") ? String(tmpdir.dropLast()) : tmpdir
+                if dir != "/tmp" {
+                    Self.purgeStaleSockets(in: dir)
+                }
+            }
 
             let pathsToTry = requestedSocketPath.map { [$0] } ?? Self.candidateSocketPaths()
             var boundPath: String?

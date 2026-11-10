@@ -3,12 +3,124 @@ import DiscordProtocol
 import SakuraCordModels
 import SwiftUI
 
+struct ProfileActivitySectionRightHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 64
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct ProfileActivitySectionMarqueeWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct ActivityMarqueeText: View {
+    let text: String
+    var font: Font = .interfaceSystem(size: 13, weight: .semibold)
+    var foregroundStyle: AnyShapeStyle = AnyShapeStyle(.primary)
+    var isCardHovered: Bool = false
+    var height: CGFloat = InterfaceScale.metric(18)
+
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var scrollOffset: CGFloat = 0
+    @State private var scrollTask: Task<Void, Never>?
+
+    private var overflowDistance: CGFloat {
+        max(0, textWidth - containerWidth)
+    }
+
+    private var isOverflowing: Bool {
+        overflowDistance > 4
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let availableWidth = geo.size.width
+            ZStack(alignment: .leading) {
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(foregroundStyle)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background {
+                        GeometryReader { textGeo in
+                            Color.clear.preference(key: ProfileActivitySectionMarqueeWidthKey.self, value: textGeo.size.width)
+                        }
+                    }
+                    .offset(x: isOverflowing ? scrollOffset : 0)
+            }
+            .frame(width: availableWidth, alignment: .leading)
+            .clipped()
+            .mask {
+                if isOverflowing, isCardHovered {
+                    HStack(spacing: 0) {
+                        if scrollOffset < -4 {
+                            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: InterfaceScale.metric(8))
+                        }
+                        Color.black
+                        if scrollOffset > -overflowDistance + 4 {
+                            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: InterfaceScale.metric(10))
+                        }
+                    }
+                } else {
+                    Color.black
+                }
+            }
+            .onAppear { containerWidth = availableWidth }
+            .onChange(of: availableWidth) { _, newWidth in containerWidth = newWidth }
+        }
+        .frame(height: height)
+        .onPreferenceChange(ProfileActivitySectionMarqueeWidthKey.self) { textWidth = $0 }
+        .onChange(of: isCardHovered) { _, hovered in
+            updateScroll(hovered: hovered)
+        }
+    }
+
+    private func updateScroll(hovered: Bool) {
+        scrollTask?.cancel()
+        scrollTask = nil
+        guard hovered, isOverflowing else {
+            withAnimation(.easeOut(duration: 0.25)) {
+                scrollOffset = 0
+            }
+            return
+        }
+        let distance = overflowDistance + InterfaceScale.metric(12)
+        let duration = max(2.5, Double(distance) / 22.0)
+        scrollTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            while !Task.isCancelled {
+                withAnimation(.linear(duration: duration)) {
+                    scrollOffset = -distance
+                }
+                try? await Task.sleep(nanoseconds: UInt64((duration + 1.2) * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.35)) {
+                    scrollOffset = 0
+                }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard !Task.isCancelled else { return }
+            }
+        }
+    }
+}
+
 struct ProfileActivitySection: View {
     let member: Member
     var richActivity: MemberRichActivity?
     var isCurrentUser: Bool = false
     @Environment(\.colorScheme) private var colorScheme
     @State private var dynamicArtwork: NSImage?
+    @State private var remoteArtworkOverride: URL?
+    @State private var rightColumnHeight: CGFloat = InterfaceScale.metric(64)
+    @State private var isCardHovered = false
 
     private var effectiveActivity: MemberRichActivity? {
         richActivity ?? member.richActivity
@@ -23,9 +135,7 @@ struct ProfileActivitySection: View {
     }
 
     private var cardCornerRadius: CGFloat {
-        // Mathematically concentric alignment with the outer profile popover
-        // (surfaceCornerRadius = 16, horizontal inset = 16, inner radius = 12).
-        InterfaceScale.metric(12)
+        InterfaceScale.metric(18)
     }
 
     private var headerText: String {
@@ -61,8 +171,6 @@ struct ProfileActivitySection: View {
                 ?? member.activityText
                 ?? "Music"
         }
-        // In native Discord game rich presence:
-        // Line 1 is the game name (bold)
         return effectiveActivity?.name
             ?? member.activityText
             ?? "Game"
@@ -78,7 +186,6 @@ struct ProfileActivitySection: View {
             }
             return nil
         }
-        // Line 2 in Discord game activity: details (current game mode, dimension, etc.)
         if let details = effectiveActivity?.details, !details.isEmpty, details != primaryText {
             return details
         }
@@ -95,7 +202,6 @@ struct ProfileActivitySection: View {
             }
             return nil
         }
-        // Line 3 in Discord game activity: state (party, server, status)
         if let state = effectiveActivity?.state, !state.isEmpty,
            state != primaryText, state != secondaryText {
             return state
@@ -137,10 +243,25 @@ struct ProfileActivitySection: View {
     }
 
     private var resolvedRemoteArtworkURL: URL? {
+        if let override = remoteArtworkOverride { return override }
         guard let largeImage = effectiveActivity?.largeImage else { return nil }
         if largeImage.hasPrefix("spotify:") {
             let hash = String(largeImage.dropFirst("spotify:".count))
             return URL(string: "https://i.scdn.co/image/\(hash)")
+        }
+        if largeImage.hasPrefix("mp:external/") {
+            let path = String(largeImage.dropFirst("mp:external/".count))
+            return URL(string: "https://media.discordapp.net/external/\(path)")
+        }
+        if largeImage.hasPrefix("external/") {
+            return URL(string: "https://media.discordapp.net/\(largeImage)")
+        }
+        if largeImage.hasPrefix("mp:attachments/") {
+            let path = String(largeImage.dropFirst("mp:attachments/".count))
+            return URL(string: "https://media.discordapp.net/attachments/\(path)")
+        }
+        if largeImage.hasPrefix("attachments/") {
+            return URL(string: "https://cdn.discordapp.com/\(largeImage)")
         }
         if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
             return URL(string: largeImage)
@@ -151,6 +272,53 @@ struct ProfileActivitySection: View {
         return nil
     }
 
+    private var activityDestinationURL: URL? {
+        if isMusic {
+            let appName = effectiveActivity?.name ?? ""
+            let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame || member.isListeningToMusic
+            let query = [primaryText, secondaryText].compactMap { $0 }.joined(separator: " ")
+            let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            if isSpotify {
+                if let trackID = effectiveActivity?.largeText, trackID.contains("track:") {
+                    let id = trackID.components(separatedBy: "track:").last ?? ""
+                    if !id.isEmpty, let url = URL(string: "https://open.spotify.com/track/\(id)") {
+                        return url
+                    }
+                }
+                return URL(string: "https://open.spotify.com/search/\(encodedQuery)")
+            } else {
+                return URL(string: "https://music.apple.com/search?term=\(encodedQuery)") ?? URL(string: "https://music.apple.com")
+            }
+        }
+        let lowerName = (effectiveActivity?.name ?? "").lowercased()
+        let lowerDetails = (effectiveActivity?.details ?? "").lowercased()
+        if lowerName.contains("roblox") || lowerDetails.contains("roblox") {
+            return URL(string: "https://www.roblox.com")
+        }
+        if lowerName.contains("essential") || lowerDetails.contains("essential") || lowerName.contains("minecraft") {
+            return URL(string: "https://essential.gg")
+        }
+        if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
+            return URL(string: "https://discord.com/app")
+        }
+        return nil
+    }
+
+    private var destinationHelpText: String {
+        if isMusic {
+            let appName = effectiveActivity?.name ?? (member.isListeningToMusic ? "Spotify" : "Apple Music")
+            return "Play in \(appName)"
+        }
+        let lowerName = (effectiveActivity?.name ?? "").lowercased()
+        if lowerName.contains("roblox") {
+            return "Open Roblox"
+        }
+        if lowerName.contains("essential") {
+            return "Open Essential Mod"
+        }
+        return "Open in Browser"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
             Text(headerText)
@@ -158,58 +326,98 @@ struct ProfileActivitySection: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            HStack(alignment: .top, spacing: InterfaceScale.metric(12)) {
-                artworkView
-                    .frame(width: InterfaceScale.metric(64), height: InterfaceScale.metric(64))
+            HStack(alignment: .center, spacing: InterfaceScale.metric(12)) {
+                artworkView(size: rightColumnHeight)
+                    .frame(width: rightColumnHeight, height: rightColumnHeight)
 
-                VStack(alignment: .leading, spacing: InterfaceScale.metric(3)) {
-                    Text(primaryText)
-                        .font(.interfaceSystem(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    if let secondaryText {
-                        Text(secondaryText)
-                            .font(.interfaceSystem(size: 12))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    if let tertiaryText {
-                        Text(tertiaryText)
-                            .font(.interfaceSystem(size: 12))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    if let start = startTimestamp, let end = endTimestamp, end > start,
-                       !end.subtractingReportingOverflow(start).overflow,
-                       (end - start) < 86_400_000 * 7, (end - start) > 0 {
-                        playbackProgressBar(start: start, end: end)
-                            .padding(.top, InterfaceScale.metric(2))
-                    } else if let start = startTimestamp, !isMusic {
-                        elapsedTimeLabel(start: start)
-                            .padding(.top, InterfaceScale.metric(2))
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                rightDetailsColumn
             }
         }
         .padding(InterfaceScale.metric(12))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             ConcentricRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.04))
+                .fill(Color.primary.opacity(isCardHovered ? (colorScheme == .dark ? 0.09 : 0.06) : (colorScheme == .dark ? 0.06 : 0.04)))
         }
         .overlay {
             ConcentricRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(Color.primary.opacity(isCardHovered ? 0.14 : 0.08), lineWidth: 1)
         }
+        .contentShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
+        .onHover { hovering in
+            isCardHovered = hovering
+            if hovering, activityDestinationURL != nil {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onTapGesture {
+            if let destination = activityDestinationURL {
+                NSWorkspace.shared.open(destination)
+            }
+        }
+        .help(activityDestinationURL != nil ? destinationHelpText : "")
         .onAppear {
             refreshArtwork()
         }
         .task(id: effectiveActivity) {
             refreshArtwork()
+            await resolveMissingMusicArtwork()
+        }
+    }
+
+    @ViewBuilder
+    private var rightDetailsColumn: some View {
+        VStack(alignment: .leading, spacing: InterfaceScale.metric(3)) {
+            ActivityMarqueeText(
+                text: primaryText,
+                font: .interfaceSystem(size: 13, weight: .semibold),
+                foregroundStyle: AnyShapeStyle(.primary),
+                isCardHovered: isCardHovered,
+                height: InterfaceScale.metric(18)
+            )
+
+            if let secondaryText {
+                ActivityMarqueeText(
+                    text: secondaryText,
+                    font: .interfaceSystem(size: 12),
+                    foregroundStyle: AnyShapeStyle(.secondary),
+                    isCardHovered: isCardHovered,
+                    height: InterfaceScale.metric(16)
+                )
+            }
+
+            if let tertiaryText {
+                ActivityMarqueeText(
+                    text: tertiaryText,
+                    font: .interfaceSystem(size: 12),
+                    foregroundStyle: AnyShapeStyle(.secondary),
+                    isCardHovered: isCardHovered,
+                    height: InterfaceScale.metric(16)
+                )
+            }
+
+            if let start = startTimestamp, let end = endTimestamp, end > start,
+               !end.subtractingReportingOverflow(start).overflow,
+               (end - start) < 86_400_000 * 7, (end - start) > 0 {
+                playbackProgressBar(start: start, end: end)
+                    .padding(.top, InterfaceScale.metric(2))
+            } else if let start = startTimestamp, !isMusic {
+                elapsedTimeLabel(start: start)
+                    .padding(.top, InterfaceScale.metric(2))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: ProfileActivitySectionRightHeightKey.self, value: proxy.size.height)
+            }
+        }
+        .onPreferenceChange(ProfileActivitySectionRightHeightKey.self) { newHeight in
+            if newHeight > 0, abs(rightColumnHeight - newHeight) > 1 {
+                rightColumnHeight = max(InterfaceScale.metric(64), newHeight)
+            }
         }
     }
 
@@ -217,10 +425,20 @@ struct ProfileActivitySection: View {
         dynamicArtwork = resolvedArtworkImage
     }
 
+    private func resolveMissingMusicArtwork() async {
+        guard isMusic, resolvedRemoteArtworkURL == nil || effectiveActivity?.largeImage == "apple_music" else { return }
+        if let resolved = await MusicArtworkResolver.shared.resolveArtworkURL(
+            title: primaryText,
+            artist: effectiveActivity?.state,
+            album: effectiveActivity?.largeText
+        ), let url = URL(string: resolved) {
+            remoteArtworkOverride = url
+        }
+    }
+
     @ViewBuilder
-    private var artworkView: some View {
-        let cornerRadius = InterfaceScale.metric(10)
-        let size = InterfaceScale.metric(64)
+    private func artworkView(size: CGFloat) -> some View {
+        let cornerRadius = InterfaceScale.metric(14)
         if let remoteURL = resolvedRemoteArtworkURL {
             AsyncImage(url: remoteURL) { phase in
                 switch phase {
@@ -234,7 +452,7 @@ struct ProfileActivitySection: View {
                             .resizable()
                             .scaledToFill()
                     } else {
-                        fallbackArtIcon
+                        fallbackArtIcon(size: size)
                     }
                 default:
                     if let local = dynamicArtwork ?? resolvedArtworkImage {
@@ -242,7 +460,7 @@ struct ProfileActivitySection: View {
                             .resizable()
                             .scaledToFill()
                     } else {
-                        fallbackArtIcon
+                        fallbackArtIcon(size: size)
                     }
                 }
             }
@@ -255,14 +473,13 @@ struct ProfileActivitySection: View {
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
-            fallbackArtIcon
+            fallbackArtIcon(size: size)
         }
     }
 
     @ViewBuilder
-    private var fallbackArtIcon: some View {
-        let cornerRadius = InterfaceScale.metric(10)
-        let size = InterfaceScale.metric(64)
+    private func fallbackArtIcon(size: CGFloat) -> some View {
+        let cornerRadius = InterfaceScale.metric(14)
         if isMusic {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(
@@ -275,21 +492,21 @@ struct ProfileActivitySection: View {
                 .frame(width: size, height: size)
                 .overlay {
                     Image(systemName: "music.note")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: max(16, size * 0.38), weight: .semibold))
                         .foregroundStyle(.white)
                 }
         } else {
-            genericGameIcon
+            genericGameIcon(size: size)
                 .frame(width: size, height: size)
         }
     }
 
-    private var genericGameIcon: some View {
-        RoundedRectangle(cornerRadius: InterfaceScale.metric(8), style: .continuous)
+    private func genericGameIcon(size: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: InterfaceScale.metric(14), style: .continuous)
             .fill(Color.secondary.opacity(0.15))
             .overlay {
                 Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: max(16, size * 0.35)))
                     .foregroundStyle(.secondary)
             }
     }
