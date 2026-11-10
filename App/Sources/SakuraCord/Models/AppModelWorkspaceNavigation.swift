@@ -90,14 +90,19 @@ final class MessageSearchState {
         filters = .init()
         operatorFilters = .init()
         sort = .newest
+        isSearching = false
+        isFilterModalPresented = false
+        lastCompletedLatencyMilliseconds = nil
+        isInputFocused = false
+        clearResults()
+    }
+
+    /// Forgets the results, keeping the query and filters.
+    func clearResults() {
         page = nil
         submittedQuery = nil
         errorMessage = nil
-        isSearching = false
-        isFilterModalPresented = false
         selectedMessageID = nil
-        lastCompletedLatencyMilliseconds = nil
-        isInputFocused = false
         rows = []
         rowsRevision &+= 1
     }
@@ -240,6 +245,13 @@ extension AppModel {
             messageSearch.isPresented = false
         }
         messageSearch.isInputFocused = false
+        // Once the results have slid away, so the next search doesn't show
+        // them while its own results load.
+        let search = messageSearch
+        Task {
+            await WorkspaceLayoutMotion.untilSettled()
+            if !search.isPresented { search.clearResults() }
+        }
     }
 
     func dismissMessageSearchIfInputIsEmpty() {
@@ -348,11 +360,7 @@ extension AppModel {
             )
             AppPerformanceSignposts.cancelMessageSearchRequest()
             AppPerformanceSignposts.cancelMessageSearchPagination()
-            messageSearch.page = nil
-            messageSearch.submittedQuery = nil
-            messageSearch.errorMessage = nil
-            messageSearch.rows = []
-            messageSearch.rowsRevision &+= 1
+            messageSearch.clearResults()
             messageSearch.isPresented = false
             return
         }
