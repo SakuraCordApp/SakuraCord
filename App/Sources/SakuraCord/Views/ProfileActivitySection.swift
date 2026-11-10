@@ -59,8 +59,8 @@ struct ActivityMarqueeText: View {
                     LinearGradient(
                         stops: [
                             .init(color: scrollOffset < -2 ? .clear : .black, location: 0),
-                            .init(color: .black, location: 0.08),
-                            .init(color: .black, location: 0.92),
+                            .init(color: .black, location: 0.04),
+                            .init(color: .black, location: 0.96),
                             .init(color: .clear, location: 1.0)
                         ],
                         startPoint: .leading,
@@ -448,7 +448,7 @@ struct ProfileActivitySection: View {
                 ActivityMarqueeText(
                     text: secondaryText,
                     font: .interfaceSystem(size: 12),
-                    foregroundStyle: AnyShapeStyle(.secondary),
+                    foregroundStyle: AnyShapeStyle(Color.primary.opacity(0.78)),
                     isCardHovered: isCardHovered,
                     height: InterfaceScale.metric(16)
                 )
@@ -458,7 +458,7 @@ struct ProfileActivitySection: View {
                 ActivityMarqueeText(
                     text: tertiaryText,
                     font: .interfaceSystem(size: 12),
-                    foregroundStyle: AnyShapeStyle(.secondary),
+                    foregroundStyle: AnyShapeStyle(Color.primary.opacity(0.68)),
                     isCardHovered: isCardHovered,
                     height: InterfaceScale.metric(16)
                 )

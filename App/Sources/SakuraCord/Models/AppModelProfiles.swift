@@ -443,7 +443,7 @@ extension AppModel {
         presentation.member = profileMember(presentation.member.id, in: presentation.guildID) ?? presentation.member
         if presentation.member.id == currentUser?.id {
             // Member stores do not track our own presence; the account does.
-            presentation.member.status = currentStatus
+            presentation.member = memberWithCurrentStatus(presentation.member)
         }
         if presentation.member.id == profileCustomStatusUserID {
             // Account settings are authoritative for our own status, including clears.

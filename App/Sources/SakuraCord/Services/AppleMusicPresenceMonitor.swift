@@ -226,6 +226,9 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     public static let musicNotificationName = Notification.Name("com.apple.Music.playerInfo")
     public static let legacyiTunesNotificationName = Notification.Name("com.apple.iTunes.playerInfo")
     public static let spotifyNotificationName = Notification.Name("com.spotify.client.PlaybackStateChanged")
+    public static let appleMusicAppID = "1247654840780460125"
+    public static let appleMusicIconAsset = "393590f736eaf7d08120700c39b259d7"
+    public static let appleMusicIconURL = "https://cdn.discordapp.com/app-icons/1247654840780460125/393590f736eaf7d08120700c39b259d7.png"
 
     private static let artworkLock = NSLock()
     nonisolated(unsafe) private static var _cachedArtworkData: Data?
@@ -732,7 +735,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             return trackInfo.appName
         }()
 
-        let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : "846536552416903169"
+        let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : Self.appleMusicAppID
         let cachedArtwork = await MusicArtworkResolver.shared.cachedArtworkURL(title: trackName, artist: artist, album: album)
         let cachedTrackURL = await MusicArtworkResolver.shared.cachedTrackURL(title: trackName, artist: artist, album: album)
         let resolvedMusic = if cachedArtwork != nil, cachedTrackURL != nil {
@@ -745,7 +748,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                 spotifyTrackID: trackInfo.trackID
             )
         }
-        let initialLargeImage = resolvedMusic.artworkURL ?? "apple_music"
+        let initialLargeImage = resolvedMusic.artworkURL ?? Self.appleMusicIconURL
 
         let assets = ActivityAssets(
             largeImage: initialLargeImage,
@@ -796,7 +799,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             }
 
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
-            let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : "846536552416903169"
+            let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : Self.appleMusicAppID
             let resolvedMusic = await MusicArtworkResolver.shared.resolveMusic(
                 title: activity.details ?? "",
                 artist: activity.state,

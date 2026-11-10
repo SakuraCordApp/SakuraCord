@@ -137,19 +137,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     private func handleAppNotification(_ notification: Notification, isLaunch: Bool) {
         #if os(macOS)
-        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-
-        if Self.isRobloxApp(app) {
-            if isLaunch {
-                publishRobloxActivity(app: app)
-            } else {
-                let hasRunning = NSWorkspace.shared.runningApplications.contains { !$0.isTerminated && Self.isRobloxApp($0) }
-                if !hasRunning {
-                    Self.currentRobloxIconData = nil
-                    Task { [coordinator] in
-                        await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
-                    }
-                }
+        checkRunningGames()
+        if isLaunch {
+            queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.checkRunningGames()
             }
         }
         #endif
@@ -161,6 +152,11 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         if let first = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
             publishRobloxActivity(app: first)
             return
+        } else {
+            Self.currentRobloxIconData = nil
+            Task { [coordinator] in
+                await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
+            }
         }
         #endif
     }

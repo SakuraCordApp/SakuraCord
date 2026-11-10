@@ -932,6 +932,15 @@ private struct AccountControlView: View {
 
     private var accountSubtitle: String {
         if user != nil {
+            if let activity = voiceModel.currentUserActivity {
+                if activity.type == .listening {
+                    return activity.name
+                }
+                return voiceModel.currentUserActivityDisplayText ?? activity.name
+            }
+            if let custom = voiceModel.profileCustomStatus?.displayText, !custom.isEmpty {
+                return custom
+            }
             return currentStatus.label
         }
         return isOfflineTesting
@@ -989,15 +998,26 @@ private struct CurrentUserCapsule: View {
                                 weight: .semibold
                             ))
                             .lineLimit(1)
-                        Text(subtitle)
-                            .font(.interfaceSystem(
-                                size: max(
-                                    10,
-                                    InterfaceTypographyMetrics.interfaceTextSize - 2
-                                )
-                            ))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        HStack(spacing: InterfaceScale.metric(3)) {
+                            if model.isCurrentUserListeningToMusic {
+                                Image(systemName: "music.note")
+                                    .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.14, green: 0.73, blue: 0.35))
+                            } else if model.currentUserActivity?.type == .playing {
+                                Image(systemName: "gamecontroller.fill")
+                                    .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3)))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(subtitle)
+                                .font(.interfaceSystem(
+                                    size: max(
+                                        10,
+                                        InterfaceTypographyMetrics.interfaceTextSize - 2
+                                    )
+                                ))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
 
                     Spacer(minLength: InterfaceScale.metric(4))
