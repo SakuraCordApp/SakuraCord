@@ -131,18 +131,70 @@ extension DiscordRESTProvider {
         await sendPresenceIfChanged()
     }
 
+    private struct ExternalAssetDTO: Decodable {
+        let url: String
+        let externalAssetPath: String
+
+        enum CodingKeys: String, CodingKey {
+            case url
+            case externalAssetPath = "external_asset_path"
+        }
+    }
+
+    private func resolveExternalAsset(url: String, applicationID: String) async -> String? {
+        if let cached = externalAssetCache[url] {
+            return cached
+        }
+        do {
+            let body: [String: JSONValue] = [
+                "urls": .array([.string(url)])
+            ]
+            let dtos: [ExternalAssetDTO] = try await request(
+                "/applications/\(applicationID)/external-assets",
+                method: "POST",
+                body: body
+            )
+            if let first = dtos.first {
+                externalAssetCache[url] = first.externalAssetPath
+                return first.externalAssetPath
+            }
+        } catch {
+            gatewayLogger.debug("External asset resolution for \(url) failed: \(error.localizedDescription)")
+        }
+        return nil
+    }
+
     func sendPresence() async throws {
         let status = presenceStatus
         let activities = activeActivitiesList()
         presenceSendWindowEnds.append(Date.now.addingTimeInterval(20))
         lastSentPresenceStatus = status
         lastSentActivities = activities
+
+        var activityDictionaries: [[String: Any]] = []
+        for activity in activities {
+            var dict = activity.gatewayDictionary
+            if let assets = activity.assets,
+               let largeImage = assets.largeImage,
+               largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://"),
+               !largeImage.hasPrefix("mp:external/"),
+               let appID = activity.applicationId,
+               !appID.isEmpty {
+                if let proxied = await resolveExternalAsset(url: largeImage, applicationID: appID) {
+                    var ast = dict["assets"] as? [String: Any] ?? [:]
+                    ast["large_image"] = proxied
+                    dict["assets"] = ast
+                }
+            }
+            activityDictionaries.append(dict)
+        }
+
         do {
             try await sendGateway([
                 "op": 3,
                 "d": [
                     "since": 0,
-                    "activities": activities.map(\.gatewayDictionary),
+                    "activities": activityDictionaries,
                     "status": status.rawValue,
                     "afk": false,
                 ] as [String: Any],

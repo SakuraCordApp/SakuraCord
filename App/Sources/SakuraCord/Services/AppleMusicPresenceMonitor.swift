@@ -13,88 +13,100 @@ public actor MusicArtworkResolver {
     private let maxCacheSize = 64
 
     public func cachedArtworkURL(title: String, artist: String?, album: String?) -> String? {
-        let key = cacheKey(title: title, artist: artist, album: album)
+        let key = cacheKey(service: "Any", title: title, artist: artist, album: album)
         return artworkCache[key]
     }
 
-    public func cachedTrackURL(title: String, artist: String?, album: String?) -> String? {
-        let key = cacheKey(title: title, artist: artist, album: album)
+    public func cachedTrackURL(service: String = "Apple Music", title: String, artist: String?, album: String?) -> String? {
+        let key = cacheKey(service: service, title: title, artist: artist, album: album)
         return trackURLCache[key]
     }
 
-    private func cacheKey(title: String, artist: String?, album: String?) -> String {
-        "\(artist ?? "") - \(title) - \(album ?? "")"
+    private func cacheKey(service: String, title: String, artist: String?, album: String?) -> String {
+        "\(service):\(artist ?? "") - \(title) - \(album ?? "")"
     }
 
-    private func storeInCache(key: String, artwork: String?, trackURL: String?) {
-        if artworkCache[key] == nil, trackURLCache[key] == nil {
+    private func storeArtworkInCache(key: String, artwork: String) {
+        if artworkCache[key] == nil {
             if cacheKeys.count >= maxCacheSize {
                 let oldest = cacheKeys.removeFirst()
                 artworkCache.removeValue(forKey: oldest)
+            }
+            cacheKeys.append(key)
+        }
+        artworkCache[key] = artwork
+    }
+
+    private func storeTrackInCache(key: String, trackURL: String) {
+        if trackURLCache[key] == nil {
+            if cacheKeys.count >= maxCacheSize {
+                let oldest = cacheKeys.removeFirst()
                 trackURLCache.removeValue(forKey: oldest)
             }
             cacheKeys.append(key)
         }
-        if let artwork { artworkCache[key] = artwork }
-        if let trackURL { trackURLCache[key] = trackURL }
+        trackURLCache[key] = trackURL
     }
 
-    public func resolveMusic(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> (artworkURL: String?, trackURL: String?) {
-        let key = cacheKey(title: title, artist: artist, album: album)
-        if let art = artworkCache[key], let track = trackURLCache[key] {
+    private func resolveSpotifyOEmbed(spotifyTrackID: String?) async -> (artworkURL: String?, trackURL: String?) {
+        guard let spotifyTrackID, spotifyTrackID.contains("track:") else { return (nil, nil) }
+        let trackPart = spotifyTrackID.components(separatedBy: "track:").last ?? ""
+        guard !trackPart.isEmpty else { return (nil, nil) }
+        let trackURL = "https://open.spotify.com/track/\(trackPart)"
+        guard let oembedURL = URL(string: "https://open.spotify.com/oembed?url=https://open.spotify.com/track/\(trackPart)") else {
+            return (nil, trackURL)
+        }
+        var request = URLRequest(url: oembedURL)
+        request.timeoutInterval = 3
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let thumb = json["thumbnail_url"] as? String, !thumb.isEmpty else {
+            return (nil, trackURL)
+        }
+        return (thumb, trackURL)
+    }
+
+    private func resolveITunes(title: String, artist: String?) async -> (artworkURL: String?, trackURL: String?)? {
+        var query = title
+        if let artist, !artist.isEmpty {
+            query += " " + artist
+        }
+        if let item = await queryITunes(term: query, entity: "song") {
+            return item
+        }
+        return await queryITunes(term: query, entity: nil)
+    }
+
+    public func resolveMusic(service: String = "Apple Music", title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> (artworkURL: String?, trackURL: String?) {
+        let trackKey = cacheKey(service: service, title: title, artist: artist, album: album)
+        let artKey = cacheKey(service: "Any", title: title, artist: artist, album: album)
+        if let art = artworkCache[artKey], let track = trackURLCache[trackKey] {
             return (art, track)
         }
 
-        var resolvedArt: String? = artworkCache[key]
-        var resolvedTrack: String? = trackURLCache[key]
+        var resolvedArt: String? = artworkCache[artKey]
+        var resolvedTrack: String? = trackURLCache[trackKey]
+        let isSpotify = service.caseInsensitiveCompare("Spotify") == .orderedSame
 
-        // 1. Spotify oEmbed if Spotify track ID is available
-        if let spotifyTrackID, spotifyTrackID.contains("track:") {
-            let trackPart = spotifyTrackID.components(separatedBy: "track:").last ?? ""
-            if !trackPart.isEmpty {
-                if resolvedTrack == nil {
-                    resolvedTrack = "https://open.spotify.com/track/\(trackPart)"
-                }
-                if resolvedArt == nil, let oembedURL = URL(string: "https://open.spotify.com/oembed?url=https://open.spotify.com/track/\(trackPart)") {
-                    var request = URLRequest(url: oembedURL)
-                    request.timeoutInterval = 3
-                    if let (data, _) = try? await URLSession.shared.data(for: request),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let thumb = json["thumbnail_url"] as? String, !thumb.isEmpty {
-                        resolvedArt = thumb
-                    }
-                }
-            }
+        if isSpotify {
+            let spotify = await resolveSpotifyOEmbed(spotifyTrackID: spotifyTrackID)
+            if resolvedArt == nil { resolvedArt = spotify.artworkURL }
+            if resolvedTrack == nil { resolvedTrack = spotify.trackURL }
         }
 
-        // 2. iTunes Search API fallback (as used in Boring Notch for Apple Music and general catalog)
-        if resolvedArt == nil || resolvedTrack == nil {
-            var query = title
-            if let artist, !artist.isEmpty {
-                query += " " + artist
-            }
-
-            if let item = await queryITunes(term: query, entity: "song") {
-                if resolvedArt == nil { resolvedArt = item.artworkURL }
-                if resolvedTrack == nil { resolvedTrack = item.trackURL }
-            } else if let item = await queryITunes(term: query, entity: nil) {
-                if resolvedArt == nil { resolvedArt = item.artworkURL }
-                if resolvedTrack == nil { resolvedTrack = item.trackURL }
-            }
+        if resolvedArt == nil || (!isSpotify && resolvedTrack == nil) {
+            let itunes = await resolveITunes(title: title, artist: artist)
+            if resolvedArt == nil { resolvedArt = itunes?.artworkURL }
+            if !isSpotify, resolvedTrack == nil { resolvedTrack = itunes?.trackURL }
         }
 
-        storeInCache(key: key, artwork: resolvedArt, trackURL: resolvedTrack)
+        if let resolvedArt {
+            storeArtworkInCache(key: artKey, artwork: resolvedArt)
+        }
+        if let resolvedTrack {
+            storeTrackInCache(key: trackKey, trackURL: resolvedTrack)
+        }
         return (resolvedArt, resolvedTrack)
-    }
-
-    public func resolveArtworkURL(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> String? {
-        let result = await resolveMusic(title: title, artist: artist, album: album, spotifyTrackID: spotifyTrackID)
-        return result.artworkURL
-    }
-
-    public func resolveTrackURL(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> String? {
-        let result = await resolveMusic(title: title, artist: artist, album: album, spotifyTrackID: spotifyTrackID)
-        return result.trackURL
     }
 
     private func queryITunes(term: String, entity: String?) async -> (artworkURL: String?, trackURL: String?)? {
@@ -228,7 +240,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     public static let spotifyNotificationName = Notification.Name("com.spotify.client.PlaybackStateChanged")
     public static let appleMusicAppID = "1247654840780460125"
     public static let appleMusicIconAsset = "393590f736eaf7d08120700c39b259d7"
-    public static let appleMusicIconURL = "https://cdn.discordapp.com/app-icons/1247654840780460125/393590f736eaf7d08120700c39b259d7.png"
+    public static let appleMusicIconURL = "https://cdn.discordapp.com/app-icons/\(appleMusicAppID)/\(appleMusicIconAsset).png"
 
     private static let artworkLock = NSLock()
     nonisolated(unsafe) private static var _cachedArtworkData: Data?
@@ -737,11 +749,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
         let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : Self.appleMusicAppID
         let cachedArtwork = await MusicArtworkResolver.shared.cachedArtworkURL(title: trackName, artist: artist, album: album)
-        let cachedTrackURL = await MusicArtworkResolver.shared.cachedTrackURL(title: trackName, artist: artist, album: album)
+        let cachedTrackURL = await MusicArtworkResolver.shared.cachedTrackURL(service: trackInfo.appName, title: trackName, artist: artist, album: album)
         let resolvedMusic = if cachedArtwork != nil, cachedTrackURL != nil {
             (artworkURL: cachedArtwork, trackURL: cachedTrackURL)
         } else {
             await MusicArtworkResolver.shared.resolveMusic(
+                service: trackInfo.appName,
                 title: trackName,
                 artist: artist,
                 album: album,
@@ -801,6 +814,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
             let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : Self.appleMusicAppID
             let resolvedMusic = await MusicArtworkResolver.shared.resolveMusic(
+                service: trackInfo.appName,
                 title: activity.details ?? "",
                 artist: activity.state,
                 album: trackInfo.album?.trimmingCharacters(in: .whitespacesAndNewlines),

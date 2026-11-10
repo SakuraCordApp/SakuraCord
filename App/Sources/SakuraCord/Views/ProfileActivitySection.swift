@@ -84,6 +84,9 @@ struct ActivityMarqueeText: View {
         .onChange(of: text) { _, _ in
             updateScroll(hovered: isCardHovered)
         }
+        .onChange(of: systemReduceMotion) { _, _ in
+            updateScroll(hovered: isCardHovered)
+        }
         .onDisappear {
             scrollTask?.cancel()
             scrollTask = nil
@@ -158,6 +161,7 @@ struct ProfileActivitySection: View {
     @Environment(\.serverTagCardModel) private var model
     @State private var dynamicArtwork: NSImage?
     @State private var remoteArtworkOverride: URL?
+    @State private var resolvedTrackURL: URL?
     @State private var rightColumnHeight: CGFloat = InterfaceScale.metric(64)
     @State private var isCardHovered = false
 
@@ -324,12 +328,8 @@ struct ProfileActivitySection: View {
             if let directURLString = effectiveActivity?.url, let directURL = URL(string: directURLString) {
                 return directURL
             }
-            if let cached = MusicArtworkResolver.shared.cachedTrackURL(
-                title: primaryText,
-                artist: effectiveActivity?.state,
-                album: effectiveActivity?.largeText
-            ), let url = URL(string: cached) {
-                return url
+            if let resolved = resolvedTrackURL {
+                return resolved
             }
             let appName = effectiveActivity?.name ?? ""
             let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
@@ -428,6 +428,7 @@ struct ProfileActivitySection: View {
         }
         .task(id: effectiveActivity) {
             remoteArtworkOverride = nil
+            resolvedTrackURL = nil
             refreshArtwork()
             await resolveMissingMusicArtwork()
         }
@@ -496,15 +497,24 @@ struct ProfileActivitySection: View {
 
     private func resolveMissingMusicArtwork() async {
         guard isMusic else { return }
+        let appName = effectiveActivity?.name ?? ""
+        let service = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "Spotify" : "Apple Music"
+        let spotifyID = service == "Spotify" ? effectiveActivity?.largeText : nil
         let resolved = await MusicArtworkResolver.shared.resolveMusic(
+            service: service,
             title: primaryText,
             artist: effectiveActivity?.state,
-            album: effectiveActivity?.largeText
+            album: effectiveActivity?.largeText,
+            spotifyTrackID: spotifyID
         )
+        guard !Task.isCancelled else { return }
         if resolvedRemoteArtworkURL == nil || effectiveActivity?.largeImage == "apple_music" {
             if let artwork = resolved.artworkURL, let url = URL(string: artwork) {
                 remoteArtworkOverride = url
             }
+        }
+        if let track = resolved.trackURL, let url = URL(string: track) {
+            resolvedTrackURL = url
         }
     }
 

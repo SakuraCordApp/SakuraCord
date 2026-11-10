@@ -15,7 +15,7 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     public static let robloxAppID = "363445589247131668"
     public static let robloxIconAsset = "f2b60e350a2097289b3b0b877495e55f"
-    public static let robloxIconURL = "https://cdn.discordapp.com/app-icons/363445589247131668/f2b60e350a2097289b3b0b877495e55f.png"
+    public static let robloxIconURL = "https://cdn.discordapp.com/app-icons/\(robloxAppID)/\(robloxIconAsset).png"
 
     private static let iconLock = NSLock()
     nonisolated(unsafe) private static var _cachedRobloxIconData: Data?
@@ -32,15 +32,6 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             iconLock.unlock()
         }
     }
-
-    public static let robloxBundleIDs: Set<String> = [
-        "com.roblox.RobloxPlayer",
-        "com.Roblox.RobloxPlayer",
-        "com.roblox.RobloxStudio",
-        "com.Roblox.RobloxStudio",
-        "com.roblox.robloxplayer",
-        "com.roblox.roblox",
-    ]
 
     public static func isRobloxApp(_ app: NSRunningApplication) -> Bool {
         if let bundleID = app.bundleIdentifier?.lowercased(),
