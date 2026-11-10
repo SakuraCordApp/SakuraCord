@@ -108,6 +108,7 @@ struct GuildActivityDTO: Decodable {
 
     var displayText: String? {
         let activityState = state.flatMap { $0.isEmpty ? nil : $0 }
+        let activityDetails = details.flatMap { $0.isEmpty ? nil : $0 }
         if type == 4 {
             let emojiText = emoji.flatMap { emoji -> String? in
                 if let id = emoji.id {
@@ -119,10 +120,22 @@ struct GuildActivityDTO: Decodable {
             return parts.isEmpty ? nil : parts.joined(separator: " ")
         }
         if type == 2 {
-            let activityDetails = details.flatMap { $0.isEmpty ? nil : $0 }
             return activityDetails ?? activityState ?? name
         }
-        return activityState ?? name
+        let activityName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !activityName.isEmpty {
+            if type == 0 {
+                return activityName.lowercased().hasPrefix("playing ") ? activityName : "Playing \(activityName)"
+            } else if type == 1 {
+                return activityName.lowercased().hasPrefix("streaming ") ? activityName : "Streaming \(activityName)"
+            } else if type == 3 {
+                return activityName.lowercased().hasPrefix("watching ") ? activityName : "Watching \(activityName)"
+            } else if type == 5 {
+                return activityName.lowercased().hasPrefix("competing in ") ? activityName : "Competing in \(activityName)"
+            }
+            return activityName
+        }
+        return activityDetails ?? activityState
     }
 }
 

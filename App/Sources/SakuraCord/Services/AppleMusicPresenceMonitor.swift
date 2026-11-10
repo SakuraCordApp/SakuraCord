@@ -53,24 +53,44 @@ public actor MusicArtworkResolver {
         if let artist, !artist.isEmpty {
             query += " " + artist
         }
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let itunesURL = URL(string: "https://itunes.apple.com/search?term=\(encoded)&entity=song&limit=1") else {
-            return nil
+
+        if let itunesArt = await queryITunesArtwork(term: query, entity: "song") {
+            storeInCache(key: key, url: itunesArt)
+            return itunesArt
         }
 
-        var request = URLRequest(url: itunesURL)
-        request.timeoutInterval = 3
-        if let (data, _) = try? await URLSession.shared.data(for: request),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let results = json["results"] as? [[String: Any]],
-           let first = results.first,
-           let art100 = first["artworkUrl100"] as? String {
-            let highRes = art100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
-            storeInCache(key: key, url: highRes)
-            return highRes
+        if let itunesArt = await queryITunesArtwork(term: query, entity: nil) {
+            storeInCache(key: key, url: itunesArt)
+            return itunesArt
         }
 
         return nil
+    }
+
+    private func queryITunesArtwork(term: String, entity: String?) async -> String? {
+        var components = URLComponents(string: "https://itunes.apple.com/search")
+        var queryItems = [
+            URLQueryItem(name: "term", value: term),
+            URLQueryItem(name: "media", value: "music"),
+            URLQueryItem(name: "limit", value: "1")
+        ]
+        if let entity {
+            queryItems.append(URLQueryItem(name: "entity", value: entity))
+        }
+        components?.queryItems = queryItems
+        guard let url = components?.url else { return nil }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 3
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]],
+              let first = results.first,
+              let art100 = first["artworkUrl100"] as? String else {
+            return nil
+        }
+        let highRes = art100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
+        return highRes
     }
 }
 
@@ -298,19 +318,31 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         return script
     }()
 
+    private static func runOnMainThread<T: Sendable>(_ block: @Sendable () -> T) -> T {
+        if Thread.isMainThread {
+            return block()
+        } else {
+            return DispatchQueue.main.sync {
+                block()
+            }
+        }
+    }
+
     public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
         #if os(macOS)
         guard NSClassFromString("XCTest") == nil else { return nil }
         let bundleID = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "com.spotify.client" : "com.apple.Music"
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return nil }
         #endif
-        let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
-        guard let script = isSpotify ? spotifyPositionScript : musicPositionScript else { return nil }
-        var errorInfo: NSDictionary?
-        let descriptor = script.executeAndReturnError(&errorInfo)
-        if errorInfo != nil { return nil }
-        let val = descriptor.doubleValue
-        return val >= 0 ? val : nil
+        return runOnMainThread {
+            let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
+            guard let script = isSpotify ? spotifyPositionScript : musicPositionScript else { return nil }
+            var errorInfo: NSDictionary?
+            let descriptor = script.executeAndReturnError(&errorInfo)
+            if errorInfo != nil { return nil }
+            let val = descriptor.doubleValue
+            return val >= 0 ? val : nil
+        }
     }
 
     private func setCurrentActiveTrackInfo(_ info: AppleMusicTrackInfo?) {
@@ -374,24 +406,26 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard NSClassFromString("XCTest") == nil else { return nil }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return nil }
         #endif
-        let scriptSource = """
-        tell application "Music"
-            if it is running then
-                tell current track
-                    if (count of artworks) > 0 then
-                        return raw data of artwork 1
-                    end if
-                end tell
-            end if
-            return missing value
-        end tell
-        """
-        var errorInfo: NSDictionary?
-        guard let script = NSAppleScript(source: scriptSource) else { return nil }
-        let descriptor = script.executeAndReturnError(&errorInfo)
-        let data = descriptor.data
-        guard !data.isEmpty, NSImage(data: data) != nil else { return nil }
-        return data
+        return runOnMainThread {
+            let scriptSource = """
+            tell application "Music"
+                if it is running then
+                    tell current track
+                        if (count of artworks) > 0 then
+                            return raw data of artwork 1
+                        end if
+                    end tell
+                end if
+                return missing value
+            end tell
+            """
+            var errorInfo: NSDictionary?
+            guard let script = NSAppleScript(source: scriptSource) else { return nil }
+            let descriptor = script.executeAndReturnError(&errorInfo)
+            let data = descriptor.data
+            guard !data.isEmpty, NSImage(data: data) != nil else { return nil }
+            return data
+        }
     }
 
     public static func updateArtworkCache() {
@@ -408,48 +442,50 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private static func queryTrack(for appName: String, bundleID: String, durationMultiplier: Double) -> (isStopped: Bool, track: AppleMusicTrackInfo?) {
         #if os(macOS)
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return (false, nil) }
-        let scriptSource = """
-        tell application "\(appName)"
-            if it is running then
-                set pState to (player state as string)
-                if pState is "playing" then
-                    set tName to (name of current track as string)
-                    set tArtist to (artist of current track as string)
-                    set tAlbum to (album of current track as string)
-                    set tPos to (player position as real)
-                    set tDur to (duration of current track as real)
-                    set tID to ""
-                    try
-                        set tID to (id of current track as string)
-                    end try
-                    return pState & "|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * \(durationMultiplier)) & "|||" & tID
-                else if pState is "paused" or pState is "stopped" then
-                    return "stopped"
+        return runOnMainThread {
+            let scriptSource = """
+            tell application "\(appName)"
+                if it is running then
+                    set pState to (player state as string)
+                    if pState is "playing" then
+                        set tName to (name of current track as string)
+                        set tArtist to (artist of current track as string)
+                        set tAlbum to (album of current track as string)
+                        set tPos to (player position as real)
+                        set tDur to (duration of current track as real)
+                        set tID to ""
+                        try
+                            set tID to (id of current track as string)
+                        end try
+                        return pState & "|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * \(durationMultiplier)) & "|||" & tID
+                    else if pState is "paused" or pState is "stopped" then
+                        return "stopped"
+                    end if
                 end if
-            end if
-            return "unknown"
-        end tell
-        """
-        var errorInfo: NSDictionary?
-        guard let script = NSAppleScript(source: scriptSource) else { return (false, nil) }
-        let descriptor = script.executeAndReturnError(&errorInfo)
-        guard errorInfo == nil else { return (false, nil) }
-        let result = descriptor.stringValue ?? ""
-        if result == "stopped" { return (true, nil) }
-        guard !result.isEmpty, result != "unknown" else { return (false, nil) }
-        let parts = result.components(separatedBy: "|||")
-        guard parts.count >= 6 else { return (false, nil) }
-        let trackID = parts.count >= 7 && !parts[6].isEmpty ? parts[6] : nil
-        return (false, AppleMusicTrackInfo(
-            playerState: parts[0],
-            name: parts[1],
-            artist: parts[2],
-            album: parts[3],
-            currentPositionSeconds: Double(parts[4]),
-            totalTimeMilliseconds: Double(parts[5]),
-            trackID: trackID,
-            appName: appName == "Music" ? "Apple Music" : appName
-        ))
+                return "unknown"
+            end tell
+            """
+            var errorInfo: NSDictionary?
+            guard let script = NSAppleScript(source: scriptSource) else { return (false, nil) }
+            let descriptor = script.executeAndReturnError(&errorInfo)
+            guard errorInfo == nil else { return (false, nil) }
+            let result = descriptor.stringValue ?? ""
+            if result == "stopped" { return (true, nil) }
+            guard !result.isEmpty, result != "unknown" else { return (false, nil) }
+            let parts = result.components(separatedBy: "|||")
+            guard parts.count >= 6 else { return (false, nil) }
+            let trackID = parts.count >= 7 && !parts[6].isEmpty ? parts[6] : nil
+            return (false, AppleMusicTrackInfo(
+                playerState: parts[0],
+                name: parts[1],
+                artist: parts[2],
+                album: parts[3],
+                currentPositionSeconds: Double(parts[4]),
+                totalTimeMilliseconds: Double(parts[5]),
+                trackID: trackID,
+                appName: appName == "Music" ? "Apple Music" : appName
+            ))
+        }
         #else
         return (false, nil)
         #endif
@@ -464,13 +500,17 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         #endif
         Task.detached(priority: .utility) { [weak self, coordinator] in
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
-            let musicResult = Self.queryTrack(for: "Music", bundleID: "com.apple.Music", durationMultiplier: 1000)
+            let musicResult = await MainActor.run {
+                Self.queryTrack(for: "Music", bundleID: "com.apple.Music", durationMultiplier: 1000)
+            }
             if let track = musicResult.track {
                 await self?.handleTrackInfo(track)
                 return
             }
 
-            let spotifyResult = Self.queryTrack(for: "Spotify", bundleID: "com.spotify.client", durationMultiplier: 1)
+            let spotifyResult = await MainActor.run {
+                Self.queryTrack(for: "Spotify", bundleID: "com.spotify.client", durationMultiplier: 1)
+            }
             if let track = spotifyResult.track {
                 await self?.handleTrackInfo(track)
                 return
@@ -656,7 +696,17 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }()
 
         let cachedArtwork = await MusicArtworkResolver.shared.cachedArtworkURL(title: trackName, artist: artist, album: album)
-        let initialLargeImage = cachedArtwork ?? "apple_music"
+        let resolvedArtwork = if let cached = cachedArtwork {
+            cached
+        } else {
+            await MusicArtworkResolver.shared.resolveArtworkURL(
+                title: trackName,
+                artist: artist,
+                album: album,
+                spotifyTrackID: trackInfo.trackID
+            )
+        }
+        let initialLargeImage = resolvedArtwork ?? "apple_music"
 
         let assets = ActivityAssets(
             largeImage: initialLargeImage,
@@ -694,7 +744,9 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
 
             if trackInfo.appName.caseInsensitiveCompare("Spotify") != .orderedSame {
-                Self.updateArtworkCache()
+                await MainActor.run {
+                    Self.updateArtworkCache()
+                }
             }
 
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }

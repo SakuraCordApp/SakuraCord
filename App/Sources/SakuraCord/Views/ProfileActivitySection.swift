@@ -33,23 +33,25 @@ struct ProfileActivitySection: View {
             switch activity.type {
             case 2:
                 let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return "LISTENING TO \(name.isEmpty ? "MUSIC" : name.uppercased())"
+                return "Listening to \(name.isEmpty ? "Music" : name)"
             case 1:
-                return "STREAMING"
+                let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty ? "Streaming" : "Streaming \(name)"
             case 3:
-                return "WATCHING"
+                let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty ? "Watching" : "Watching \(name)"
             case 5:
                 let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return "COMPETING IN \(name.isEmpty ? "GAME" : name.uppercased())"
+                return "Competing in \(name.isEmpty ? "Game" : name)"
             default:
                 let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return name.isEmpty ? "PLAYING A GAME" : "PLAYING \(name.uppercased())"
+                return name.isEmpty ? "Playing a game" : "Playing \(name)"
             }
         }
         if member.isListeningToMusic {
-            return "LISTENING TO MUSIC"
+            return "Listening to Music"
         }
-        return "ACTIVITY"
+        return "Activity"
     }
 
     private var primaryText: String {
@@ -156,9 +158,9 @@ struct ProfileActivitySection: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            HStack(alignment: .center, spacing: InterfaceScale.metric(12)) {
+            HStack(alignment: .top, spacing: InterfaceScale.metric(12)) {
                 artworkView
-                    .frame(width: InterfaceScale.metric(58), height: InterfaceScale.metric(58))
+                    .frame(width: InterfaceScale.metric(64), height: InterfaceScale.metric(64))
 
                 VStack(alignment: .leading, spacing: InterfaceScale.metric(3)) {
                     Text(primaryText)
@@ -179,16 +181,18 @@ struct ProfileActivitySection: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                }
-                Spacer(minLength: 0)
-            }
 
-            if let start = startTimestamp, let end = endTimestamp, end > start,
-               !end.subtractingReportingOverflow(start).overflow,
-               (end - start) < 86_400_000 * 7, (end - start) > 0 {
-                playbackProgressBar(start: start, end: end)
-            } else if let start = startTimestamp, !isMusic {
-                elapsedTimeLabel(start: start)
+                    if let start = startTimestamp, let end = endTimestamp, end > start,
+                       !end.subtractingReportingOverflow(start).overflow,
+                       (end - start) < 86_400_000 * 7, (end - start) > 0 {
+                        playbackProgressBar(start: start, end: end)
+                            .padding(.top, InterfaceScale.metric(2))
+                    } else if let start = startTimestamp, !isMusic {
+                        elapsedTimeLabel(start: start)
+                            .padding(.top, InterfaceScale.metric(2))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(InterfaceScale.metric(12))
@@ -216,7 +220,7 @@ struct ProfileActivitySection: View {
     @ViewBuilder
     private var artworkView: some View {
         let cornerRadius = InterfaceScale.metric(10)
-        let size = InterfaceScale.metric(58)
+        let size = InterfaceScale.metric(64)
         if let remoteURL = resolvedRemoteArtworkURL {
             AsyncImage(url: remoteURL) { phase in
                 switch phase {
@@ -258,7 +262,7 @@ struct ProfileActivitySection: View {
     @ViewBuilder
     private var fallbackArtIcon: some View {
         let cornerRadius = InterfaceScale.metric(10)
-        let size = InterfaceScale.metric(58)
+        let size = InterfaceScale.metric(64)
         if isMusic {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(

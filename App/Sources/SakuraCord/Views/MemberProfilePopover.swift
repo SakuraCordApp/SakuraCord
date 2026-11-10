@@ -182,6 +182,7 @@ struct MemberProfilePopover<Footer: View>: View {
     @Environment(\.profileAnimationsPaused) private var animationsPaused
     @Environment(\.windowModalContext) private var editorModal
     @Environment(\.serverTagCardModel) private var model
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @State private var contentHeight: CGFloat = 320
     @State private var theme = ProfileThemeState()
 
@@ -210,6 +211,10 @@ struct MemberProfilePopover<Footer: View>: View {
                             contentHeight + surfaceInset * 2,
                             maximumPopoverHeight
                         )
+                    )
+                    .animation(
+                        !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.35, dampingFraction: 0.8) : nil,
+                        value: contentHeight
                     )
                     .background { popoverBackground }
             case .expanded:
@@ -331,48 +336,16 @@ struct MemberProfilePopover<Footer: View>: View {
                 }
 
                 if let profile, showsDetails {
-                    if editor == nil, !isCurrentUser {
-                        ProfileMutualSummary(
-                            guilds: profile.mutualGuilds,
-                            friends: profile.mutualFriends,
-                            mutualFriendCount: profile.mutualFriendsCount,
-                            layout: layout
-                        )
-                    }
-                    if profile.isPrivate == true {
-                        privateProfileNotice(profile)
-                    }
-                    if hasActiveActivity, editor == nil {
-                        ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
-                            .padding(.horizontal, InterfaceScale.metric(16))
-                    }
-                    if let editor, editor.scope == .main || editor.isNitro {
-                        ProfileInlineBioEditor(value: Binding(get: { editor.bio }, set: { editor.bio = $0 }), displayValue: profile.bio, model: editor.model)
-                        .id(editor.draftGeneration)
-                        .settingsControlAnchor(.profileBio)
-                        .padding(.horizontal, InterfaceScale.metric(16))
-                    } else if let bio = profile.bio, !bio.isEmpty {
-                        ProfileAboutSection(bio: bio)
-                            .padding(.horizontal, InterfaceScale.metric(16))
-                    }
-                    if openProfile != nil, let widgets = profile.widgets, !widgets.isEmpty {
-                        CompactProfileWidgets(widgets: widgets, resources: profile.widgetResources, animates: animatesRemoteMedia, open: expandProfile)
-                            .padding(.horizontal, InterfaceScale.metric(16))
-                    }
-                    ProfileMembershipSection(createdAt: profile.id.createdAt)
-                    if showsRoles, !profile.roles.isEmpty {
-                        ProfileRolesSection(roles: profile.roles, keepsExpanded: layout == .expanded)
-                            .id(profile.id)
-                    }
-                    if !profile.connectedAccounts.isEmpty {
-                        ProfileConnectionsSection(accounts: profile.connectedAccounts, wraps: layout == .expanded)
-                    }
-
+                    profileDetailsSections(profile)
                 }
 
                 if layout == .popover { Spacer(minLength: 0) }
                 footer
             }
+            .animation(
+                !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.35, dampingFraction: 0.8) : nil,
+                value: hasActiveActivity
+            )
             .frame(width: contentWidth, alignment: .leading)
             // Use the card's minimum, not its previous viewport height, so a
             // loading or expanded card can shrink when its content changes.
@@ -385,6 +358,52 @@ struct MemberProfilePopover<Footer: View>: View {
             }
         }
         .scrollIndicators(editorModal == nil && (editor != nil || contentHeight > maximumPopoverHeight) ? .visible : .hidden)
+    }
+
+    @ViewBuilder
+    private func profileDetailsSections(_ profile: UserProfile) -> some View {
+        if editor == nil, !isCurrentUser {
+            ProfileMutualSummary(
+                guilds: profile.mutualGuilds,
+                friends: profile.mutualFriends,
+                mutualFriendCount: profile.mutualFriendsCount,
+                layout: layout
+            )
+        }
+        if profile.isPrivate == true {
+            privateProfileNotice(profile)
+        }
+        if hasActiveActivity, editor == nil {
+            ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
+                .padding(.horizontal, InterfaceScale.metric(16))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.95, anchor: .top)),
+                        removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .top))
+                    )
+                )
+        }
+        if let editor, editor.scope == .main || editor.isNitro {
+            ProfileInlineBioEditor(value: Binding(get: { editor.bio }, set: { editor.bio = $0 }), displayValue: profile.bio, model: editor.model)
+                .id(editor.draftGeneration)
+                .settingsControlAnchor(.profileBio)
+                .padding(.horizontal, InterfaceScale.metric(16))
+        } else if let bio = profile.bio, !bio.isEmpty {
+            ProfileAboutSection(bio: bio)
+                .padding(.horizontal, InterfaceScale.metric(16))
+        }
+        if openProfile != nil, let widgets = profile.widgets, !widgets.isEmpty {
+            CompactProfileWidgets(widgets: widgets, resources: profile.widgetResources, animates: animatesRemoteMedia, open: expandProfile)
+                .padding(.horizontal, InterfaceScale.metric(16))
+        }
+        ProfileMembershipSection(createdAt: profile.id.createdAt)
+        if showsRoles, !profile.roles.isEmpty {
+            ProfileRolesSection(roles: profile.roles, keepsExpanded: layout == .expanded)
+                .id(profile.id)
+        }
+        if !profile.connectedAccounts.isEmpty {
+            ProfileConnectionsSection(accounts: profile.connectedAccounts, wraps: layout == .expanded)
+        }
     }
 
     @ViewBuilder

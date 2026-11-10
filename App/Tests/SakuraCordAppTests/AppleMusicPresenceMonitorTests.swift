@@ -36,7 +36,7 @@ struct AppleMusicPresenceMonitorTests {
         #expect(activity?.type == .listening)
         #expect(activity?.details == "Blinding Lights")
         #expect(activity?.state == "The Weeknd")
-        #expect(activity?.assets?.largeImage == "apple_music")
+        #expect(activity?.assets?.largeImage == "apple_music" || activity?.assets?.largeImage?.hasPrefix("https://") == true)
         #expect(activity?.assets?.largeText == "After Hours")
 
         let expectedStartMs = Int64((1_700_000_000.0 - 45.0) * 1000)
@@ -205,7 +205,7 @@ struct AppleMusicPresenceMonitorTests {
 
         #expect(result?.details == "Mystery Instrumental")
         #expect(result?.state == nil)
-        #expect(result?.assets?.largeImage == "apple_music")
+        #expect(result?.assets?.largeImage == "apple_music" || result?.assets?.largeImage?.hasPrefix("https://") == true)
         #expect(result?.assets?.largeText == "Apple Music")
         #expect(result?.timestamps?.start != nil)
         #expect(result?.timestamps?.end == nil)
@@ -348,6 +348,32 @@ struct AppleMusicPresenceMonitorTests {
         #expect(cleared.activityText == nil)
         #expect(cleared.isListeningToMusic == false)
         #expect(cleared.richActivity == nil)
+    }
+
+    @Test("Game rich presence displays game name in member list instead of party state")
+    @MainActor
+    func testGameRichPresenceDisplayTextPrioritizesGameName() async {
+        let model = AppModel(launchMode: .offlineTesting)
+        await model.start()
+        guard model.currentUser != nil else { return }
+
+        let gameActivity = OutgoingActivityPayload(
+            name: "Essential Mod",
+            type: .playing,
+            details: "Minecraft 1.21.11",
+            state: "On Server"
+        )
+        model.applyCurrentUserActivity(gameActivity)
+        #expect(model.currentUserActivityDisplayText == "Playing Essential Mod")
+
+        let rawMember = Member(
+            user: model.currentUser!,
+            roleName: "Member",
+            status: .online
+        )
+        let decorated = model.memberWithCurrentStatus(rawMember)
+        #expect(decorated.activityText == "Playing Essential Mod")
+        #expect(decorated.memberListActivityText == "Playing Essential Mod")
     }
 
     @Test("Extreme or non-finite duration does not cause integer overflow or crash")

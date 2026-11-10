@@ -11,7 +11,6 @@ public extension DiscordRESTProvider {
     }
 
     func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws {
-        guard currentUser != nil else { throw ChatProviderError.unauthenticated }
         if let activity {
             activeActivities[sourceID] = activity
         } else {
@@ -21,7 +20,6 @@ public extension DiscordRESTProvider {
     }
 
     func clearActivities(sourceID: String? = nil) async throws {
-        guard currentUser != nil else { throw ChatProviderError.unauthenticated }
         if let sourceID {
             activeActivities.removeValue(forKey: sourceID)
         } else {

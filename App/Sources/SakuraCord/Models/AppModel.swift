@@ -892,7 +892,20 @@ final class AppModel {
         if activity.type == .listening {
             return activity.details ?? activity.state ?? activity.name
         } else {
-            return activity.state ?? activity.name
+            let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty {
+                if activity.type == .playing {
+                    return name.lowercased().hasPrefix("playing ") ? name : "Playing \(name)"
+                } else if activity.type == .streaming {
+                    return name.lowercased().hasPrefix("streaming ") ? name : "Streaming \(name)"
+                } else if activity.type == .watching {
+                    return name.lowercased().hasPrefix("watching ") ? name : "Watching \(name)"
+                } else if activity.type == .competing {
+                    return name.lowercased().hasPrefix("competing in ") ? name : "Competing in \(name)"
+                }
+                return name
+            }
+            return activity.details ?? activity.state
         }
     }
 
