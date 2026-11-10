@@ -147,22 +147,57 @@ struct NativeTimelineAutoModAlertLayout {
         _ alert: AutoModerationAlert, embed: MessageEmbed, message: Message, source: AppModel?
     ) -> NativeTimelineAttributedTextBox? {
         guard !alert.content.isEmpty else { return nil }
-        let rendered = NativeTimelineEmbedLayout.resolvedTextBox(
-            prepared: RichMessageAttributedText.prepare(source: alert.content), scope: "automod",
-            emojiSize: 22, embed: embed, message: message, source: source
-        ).value
-        let value = NSMutableAttributedString(attributedString: rendered)
+        let render = { (content: String) in
+            NativeTimelineEmbedLayout.resolvedTextBox(
+                prepared: RichMessageAttributedText.prepare(source: content), scope: "automod",
+                emojiSize: 22, embed: embed, message: message, source: source
+            ).value
+        }
+        let value = NSMutableAttributedString(attributedString: render(alert.content))
         if let match = alert.matchedContent {
-            let text = value.string as NSString
-            var range = text.range(of: match, options: .caseInsensitive)
-            while range.location != NSNotFound {
+            var ranges = RichMessageAttributedText.ranges(of: match, in: value.string, options: .caseInsensitive)
+            if ranges.isEmpty {
+                ranges = renderedRanges(of: match, in: alert.content, rendered: value.string, render: render)
+            }
+            for range in ranges {
                 value.addAttribute(.autoModerationMatch, value: true, range: range)
-                let next = NSMaxRange(range)
-                range = text.range(of: match, options: .caseInsensitive,
-                                   range: NSRange(location: next, length: text.length - next))
             }
         }
         return NativeTimelineAttributedTextBox(value, layoutHeightAdjustment: drawingHeadroom)
+    }
+
+    /// Where a match that spans formatting, such as `bad **word`, lands in
+    /// the rendered text. The renderer keeps no source positions, so the
+    /// source renders again with each match wrapped in private-use markers,
+    /// and the matches lie between them. Markers that change what renders,
+    /// as inside a mention or a Markdown delimiter, leave the match unmarked.
+    private static func renderedRanges(
+        of match: String, in content: String, rendered: String, render: (String) -> NSAttributedString
+    ) -> [NSRange] {
+        let start: Unicode.Scalar = "\u{E000}", end: Unicode.Scalar = "\u{E001}"
+        let sourceRanges = RichMessageAttributedText.ranges(of: match, in: content, options: .caseInsensitive)
+        guard !sourceRanges.isEmpty else { return [] }
+        let marked = NSMutableString(string: content)
+        for range in sourceRanges.reversed() {
+            marked.insert(String(end), at: NSMaxRange(range))
+            marked.insert(String(start), at: range.location)
+        }
+        var text = ""
+        var ranges: [NSRange] = []
+        var opening: Int?
+        for scalar in render(marked as String).string.unicodeScalars {
+            switch scalar {
+            case start: opening = text.utf16.count
+            case end:
+                if let location = opening {
+                    ranges.append(NSRange(location: location, length: text.utf16.count - location))
+                }
+                opening = nil
+            default: text.unicodeScalars.append(scalar)
+            }
+        }
+        guard ranges.count == sourceRanges.count, text == rendered else { return [] }
+        return ranges
     }
 
     /// Keywords are often patterns, so they show verbatim, never as markdown.
