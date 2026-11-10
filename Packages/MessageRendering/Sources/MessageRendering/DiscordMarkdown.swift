@@ -793,7 +793,9 @@ public enum DiscordMarkdown {
         widgetRules: Bool = false,
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
-        guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
+        guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector),
+              !MessageDocument.holdsDisallowedLinkLabelMention(source[target.label])
+        else { return nil }
         sourceCollector?.collectLink?(target.label, target.end)
         var runs = inlineRuns(
             source[target.label],
@@ -813,6 +815,26 @@ public enum DiscordMarkdown {
     ) -> String.Index? {
         if let collector { return collector.next(character, from: start, before: source.endIndex) }
         return source[start...].firstIndex(of: character)
+    }
+
+    /// The labels of `[label](url)` links in `source`, outside code.
+    static func maskedLinkLabelRanges(_ source: String) -> [NSRange] {
+        guard source.contains("](") else { return [] }
+        let code = sourceCodeRanges(source)
+        let text = source[...]
+        var ranges: [NSRange] = []
+        var cursor = text.startIndex
+        while let open = text[cursor...].firstIndex(of: "[") {
+            let location = NSRange(open ..< text.index(after: open), in: source).location
+            if !code.contains(where: { NSLocationInRange(location, $0) }),
+               let target = markdownLinkTarget(in: text, at: open, collector: nil) {
+                ranges.append(NSRange(target.label, in: source))
+                cursor = target.end
+            } else {
+                cursor = text.index(after: open)
+            }
+        }
+        return ranges
     }
 
     private static func markdownLinkTarget(

@@ -348,6 +348,17 @@ import Testing
     ] {
         #expect(MessageDocument(source: source).segments == [.markdown(source)])
     }
+    // Discord shows a masked link whose label holds a mention, other than a
+    // timestamp, as typed: no pill, and no link on the label.
+    for label in ["</role add:1234>", "<@356875221078245376>", "@everyone", "<@$356875221078245376>"] {
+        let source = "[\(label)](https://example.com)"
+        #expect(MessageDocument(source: source).segments == [.markdown(source)])
+        let rendered = DiscordMarkdown.appKitAttributed(source)
+        #expect(rendered.string == source)
+        #expect(rendered.attribute(.link, at: 1, effectiveRange: nil) == nil)
+    }
+    let timestampLink = MessageDocument(source: "[<t:1000000:R>](https://example.com)").segments
+    #expect(timestampLink.contains(.mention(RenderedMention(rawToken: "<t:1000000:R>")!)))
     let mixed = MessageDocument(source: "`\(raw)` \(raw)")
     let mentions = mixed.segments.compactMap { segment -> RenderedMention? in
         guard case let .mention(mention) = segment else { return nil }
