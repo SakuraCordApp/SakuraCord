@@ -504,7 +504,7 @@ extension AppModel {
             }
             return retainedSelectableChannel
                 ?? rememberedChannel
-                ?? Self.preferredInitialChannelID(in: selectableChannels).flatMap { preferredID in
+                ?? defaultChannelID(among: selectableChannels, guildID: guildID).flatMap { preferredID in
                     selectableChannels.first { $0.id == preferredID }
                 }
         }
