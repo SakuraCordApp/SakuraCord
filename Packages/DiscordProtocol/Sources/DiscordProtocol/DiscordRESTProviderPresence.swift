@@ -149,12 +149,6 @@ extension DiscordRESTProvider {
             let hash = String(url.dropFirst("https://i.scdn.co/image/".count))
             return "spotify:\(hash)"
         }
-        if url.hasPrefix("mp:") {
-            return url
-        }
-        if url.hasPrefix("external/") {
-            return "mp:\(url)"
-        }
         if let cached = externalAssetCache[url] {
             return cached
         }
@@ -204,15 +198,13 @@ extension DiscordRESTProvider {
             let appID = activity.applicationId ?? ""
             if var ast = dict["assets"] as? [String: Any] {
                 if let largeImage = ast["large_image"] as? String,
-                   largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://"),
-                   !largeImage.hasPrefix("mp:") {
+                   largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
                     if let proxied = await resolveExternalAsset(url: largeImage, applicationID: appID) {
                         ast["large_image"] = proxied
                     }
                 }
                 if let smallImage = ast["small_image"] as? String,
-                   smallImage.hasPrefix("http://") || smallImage.hasPrefix("https://"),
-                   !smallImage.hasPrefix("mp:") {
+                   smallImage.hasPrefix("http://") || smallImage.hasPrefix("https://") {
                     if let proxied = await resolveExternalAsset(url: smallImage, applicationID: appID) {
                         ast["small_image"] = proxied
                     }
