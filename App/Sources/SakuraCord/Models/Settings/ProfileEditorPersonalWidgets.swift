@@ -40,7 +40,9 @@ extension ProfileEditorState {
             personal.sections[section] = .fields(fields)
             remapWidgetImageFailures(in: id) { slot in
                 guard slot.section == section, let position = slot.position, position >= removed else { return slot }
-                return position == removed ? nil : ProfileWidgetImageSlot(widgetID: id, section: section, position: position - 1)
+                var moved = slot
+                moved.position = position - 1
+                return position == removed ? nil : moved
             }
         }
     }
@@ -48,7 +50,11 @@ extension ProfileEditorState {
     func insertWidgetCover(id: String) {
         updatePersonalWidget(id: id) { personal in
             personal.sections.insert(.cover(ProfileWidgetCover()), at: 0)
-            remapWidgetImageFailures(in: id) { ProfileWidgetImageSlot(widgetID: id, section: $0.section + 1, position: $0.position) }
+            remapWidgetImageFailures(in: id) { slot in
+                var moved = slot
+                moved.section += 1
+                return moved
+            }
         }
     }
 
@@ -57,7 +63,10 @@ extension ProfileEditorState {
             guard personal.sections.indices.contains(section), case .cover = personal.sections[section] else { return }
             personal.sections.remove(at: section)
             remapWidgetImageFailures(in: id) { slot in
-                slot.section == section ? nil : ProfileWidgetImageSlot(widgetID: id, section: slot.section - (slot.section > section ? 1 : 0), position: slot.position)
+                guard slot.section != section else { return nil }
+                var moved = slot
+                if slot.section > section { moved.section -= 1 }
+                return moved
             }
         }
     }

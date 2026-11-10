@@ -14,7 +14,10 @@ extension AppModel {
     /// Reacting reopens an archived thread first, as Discord does, which
     /// needs the Reopen permission: Manage Threads when locked.
     private func canReopenIfArchived(threadID: ChannelID) -> Bool {
-        guard let thread = knownThreadSummary(threadID), thread.isArchived else { return true }
+        // Most messages are in a channel, not a thread; rows ask on every draw.
+        guard messagePresentationChannelsByID[threadID] == nil,
+              let thread = knownThreadSummary(threadID), thread.isArchived
+        else { return true }
         return threadActionPolicy(thread).canReopen
     }
 

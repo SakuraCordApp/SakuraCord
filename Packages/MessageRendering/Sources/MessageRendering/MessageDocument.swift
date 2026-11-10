@@ -274,6 +274,8 @@ public struct MessageDocument: Hashable, Sendable {
     /// Whether a masked link's label holds a mention Discord doesn't allow
     /// there: anything but a timestamp.
     static func holdsDisallowedLinkLabelMention(_ label: Substring) -> Bool {
+        // Every mention token starts with `<` or `@`, or is a Discord link.
+        guard label.contains(where: { $0 == "<" || $0 == "@" }) || label.contains("://") else { return false }
         let text = String(label)
         return tokenExpression.matches(in: text, range: NSRange(text.startIndex..., in: text)).contains {
             RenderedMention(rawToken: (text as NSString).substring(with: $0.range)).map { $0.kind != .timestamp } ?? false

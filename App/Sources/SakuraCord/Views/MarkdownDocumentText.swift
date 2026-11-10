@@ -422,7 +422,7 @@ private struct MarkdownFence {
 /// marks the first cell of each such row, so the row stays; the layout
 /// empties the cell again. Pipes in code or escaped ones make a row non-empty.
 struct MarkdownTableRows {
-    nonisolated static let marker = "\u{2060}"
+    nonisolated static let marker = MarkdownFootnotes.marker
     private var isInTable = false
     private var previous = ""
 
@@ -506,7 +506,7 @@ enum MarkdownFootnotes {
     }
 
     /// Marks a definition, so text that only looks like one stays as written.
-    private nonisolated static let marker = "\u{2060}"
+    nonisolated static let marker = "\u{2060}"
     private static let definitionPrefix = /\[\u{2060}\^([^\]\s]+)\]:[ \t]*/
 
     /// Readies definitions for Foundation, which would read `[^1]: https://…`

@@ -140,12 +140,13 @@ final class MessageComposerState {
 /// first-party client, SakuraCord keeps them, early uploads included, for the
 /// session; text drafts persist separately.
 struct KeptComposerDraft {
-    /// The server and channel whose loss drops the draft: the conversation's
-    /// own channel, or a thread's parent. Direct messages have no server.
-    var guildID: GuildID?
-    var channelID: ChannelID?
+    /// The channel whose loss drops the draft: the conversation's own
+    /// channel, or a thread's parent.
+    var channelID: ChannelID
     var attachments: [ForumPostAttachment]
     var command: ApplicationCommandDraft?
+
+    var isEmpty: Bool { attachments.isEmpty && command == nil }
 }
 
 struct OutgoingMessageState {

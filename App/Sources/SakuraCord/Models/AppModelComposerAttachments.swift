@@ -155,7 +155,7 @@ extension AppModel {
            var kept = composer.keptDrafts[conversationID]
         {
             kept.attachments.removeAll { rejectedIDs.contains($0.id) }
-            composer.keptDrafts[conversationID] = kept.attachments.isEmpty && kept.command == nil ? nil : kept
+            composer.keptDrafts[conversationID] = kept.isEmpty ? nil : kept
             pruneOwnedPromisedAttachmentFiles()
             preuploadComposerAttachments(kept.attachments.filter { stagedIDs.contains($0.id) }, in: context)
             return true

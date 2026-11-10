@@ -15,22 +15,13 @@ extension AppModel {
         let commandComposer = commandComposer(for: destination)
         let command = commandComposer.draft
         commandComposer.resetForChannelChange()
-        let attachments = composerAttachments(for: destination)
-        // A conversation deleted or hidden as the user leaves it has nothing
-        // to return to.
-        let channel = channelID.flatMap(messagePresentationChannel)
-        guard let conversationID, let channel, conversationAccess(for: channel) != .hidden,
-              !attachments.isEmpty || command != nil
-        else {
+        let kept = channelID.map {
+            KeptComposerDraft(channelID: $0, attachments: composerAttachments(for: destination), command: command)
+        }
+        guard let conversationID, let kept, !kept.isEmpty, canKeepComposerDraft(kept) else {
             clearComposerAttachments(for: destination)
             return
         }
-        let kept = KeptComposerDraft(
-            guildID: channel.guildID,
-            channelID: channelID,
-            attachments: attachments,
-            command: command
-        )
         // Both composers can show one conversation; the last to leave keeps it.
         if let replaced = composer.keptDrafts.updateValue(kept, forKey: conversationID) {
             discardPreuploads(replaced.attachments.map(\.id))
@@ -56,21 +47,19 @@ extension AppModel {
         pruneOwnedPromisedAttachmentFiles()
     }
 
-    /// Drops the drafts of servers the user left, of channels, or threads'
-    /// parents, that were deleted or hidden from them, and of direct
-    /// messages that were closed or left.
+    /// Drops the drafts of conversations the user can no longer return to.
     func discardUnreachableKeptComposerDrafts() {
-        guard !composer.keptDrafts.isEmpty, let snapshot else { return }
-        let guildIDs = Set(snapshot.guilds.map(\.id))
-        let channelsByID = Dictionary(snapshot.channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for (conversationID, kept) in composer.keptDrafts {
-            guard let channel = kept.channelID.flatMap({ channelsByID[$0] }) else {
-                discardKeptComposerDraft(for: conversationID)
-                continue
-            }
-            let isReachable = (kept.guildID.map(guildIDs.contains) ?? true)
-                && conversationAccess(for: channel) != .hidden
-            if !isReachable { discardKeptComposerDraft(for: conversationID) }
+        for (conversationID, kept) in composer.keptDrafts where !canKeepComposerDraft(kept) {
+            discardKeptComposerDraft(for: conversationID)
         }
+    }
+
+    /// Whether a draft's channel still exists and is open to the user: not
+    /// deleted, hidden, or in a server they left. A closed or left direct
+    /// message is gone too.
+    private func canKeepComposerDraft(_ kept: KeptComposerDraft) -> Bool {
+        guard let channel = messagePresentationChannel(kept.channelID) else { return false }
+        return (channel.guildID.map { serverRailGuildsByID[$0] != nil } ?? true)
+            && conversationAccess(for: channel) != .hidden
     }
 }
