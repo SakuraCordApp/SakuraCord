@@ -704,7 +704,6 @@ enum MessageReplySummary {
     nonisolated private static let emojiExpression = RegularExpressionFactory.make(
         #"<a?:[A-Za-z0-9_]+:[0-9]+>"#
     )
-    nonisolated private static let emojiPlaceholder: Character = "\u{E000}"
 
     static let defaultMentionLabel: (RenderedMention) -> String = { mention in
         switch mention.kind {
@@ -801,6 +800,57 @@ enum MessageReplySummary {
     /// space is a spoiler only inside one spoiler, and adjacent spoilers stay
     /// separate ranges. Custom emojis are extracted into `Prepared.emojis` and
     /// represented as object replacement placeholders in `text`.
+    nonisolated private static func protectEmojiTokens(
+        in source: String
+    ) -> (protectedSource: String, emojisByScalar: [UnicodeScalar: RenderedEmoji]) {
+        let matches = emojiExpression.matches(
+            in: source,
+            range: NSRange(source.startIndex ..< source.endIndex, in: source)
+        )
+        guard !matches.isEmpty else { return (source, [:]) }
+
+        let count = UInt32(matches.count)
+        var markerBase: UInt32 = 0xE000
+        while markerBase + count <= 0xF8FF {
+            let candidateRange = markerBase ..< markerBase + count
+            let collides = source.unicodeScalars.contains { candidateRange.contains($0.value) }
+            if !collides { break }
+            markerBase += count + 1
+        }
+        if markerBase + count > 0xF8FF {
+            markerBase = 0xF0000
+            while markerBase + count <= 0xFFFFE {
+                let candidateRange = markerBase ..< markerBase + count
+                let collides = source.unicodeScalars.contains { candidateRange.contains($0.value) }
+                if !collides { break }
+                markerBase += count + 1
+            }
+        }
+
+        var emojisByScalar: [UnicodeScalar: RenderedEmoji] = [:]
+        var protectedSource = ""
+        var sourceCursor = source.startIndex
+        var markerOffset: UInt32 = 0
+        for match in matches {
+            guard let range = Range(match.range, in: source) else { continue }
+            let token = String(source[range])
+            guard let emoji = RenderedEmoji(rawToken: token),
+                  let scalar = UnicodeScalar(markerBase + markerOffset)
+            else { continue }
+            protectedSource += source[sourceCursor ..< range.lowerBound]
+            protectedSource.unicodeScalars.append(scalar)
+            emojisByScalar[scalar] = emoji
+            markerOffset += 1
+            sourceCursor = range.upperBound
+        }
+        protectedSource += source[sourceCursor...]
+        return (protectedSource, emojisByScalar)
+    }
+
+    /// Collapses the rendered text's whitespace to single spaces. A collapsed
+    /// space is a spoiler only inside one spoiler, and adjacent spoilers stay
+    /// separate ranges. Custom emojis are extracted into `Prepared.emojis` and
+    /// represented as object replacement placeholders in `text`.
     nonisolated static func prepare(_ source: String) -> Prepared {
         var text = ""
         var spoilerRanges: [NSRange] = []
@@ -827,31 +877,12 @@ enum MessageReplySummary {
             length += valueLength
         }
 
-        var extractedEmojis: [RenderedEmoji] = []
-        var protectedSource = ""
-        var sourceCursor = source.startIndex
-        let sourceMatches = emojiExpression.matches(
-            in: source,
-            range: NSRange(source.startIndex ..< source.endIndex, in: source)
-        )
-        for match in sourceMatches {
-            guard let range = Range(match.range, in: source) else { continue }
-            let token = String(source[range])
-            guard let emoji = RenderedEmoji(rawToken: token) else { continue }
-            protectedSource += source[sourceCursor ..< range.lowerBound]
-            protectedSource.append(emojiPlaceholder)
-            extractedEmojis.append(emoji)
-            sourceCursor = range.upperBound
-        }
-        protectedSource += source[sourceCursor...]
+        let (protectedSource, emojisByScalar) = protectEmojiTokens(in: source)
 
-        var emojiIndex = 0
         for run in DiscordMarkdown.plainTextRuns(protectedSource) {
             for character in run.text {
-                if character == emojiPlaceholder {
-                    guard emojiIndex < extractedEmojis.count else { continue }
-                    let emoji = extractedEmojis[emojiIndex]
-                    emojiIndex += 1
+                let scalar = character.unicodeScalars.count == 1 ? character.unicodeScalars.first : nil
+                if let scalar, let emoji = emojisByScalar[scalar] {
                     if pendingSpace {
                         append(
                             " ",

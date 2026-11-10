@@ -1164,6 +1164,21 @@ func `reply summaries preserve custom emojis and render them in accessibility te
     #expect(spoilerUnderscoreSummary.text == "look \u{FFFC} bye")
     #expect(spoilerUnderscoreSummary.spoilerRanges == [NSRange(location: 5, length: 1)])
     #expect(spoilerUnderscoreSummary.emojis.first?.emoji.name == "blob_dance")
+
+    let literalMarkerContent = "\u{E000} ||<:secret:123>||"
+    let literalMarkerSummary = MessageReplySummary.summary(content: literalMarkerContent)
+    #expect(literalMarkerSummary.text == "\u{E000} \u{FFFC}")
+    #expect(literalMarkerSummary.spoilerRanges == [NSRange(location: 2, length: 1)])
+    #expect(literalMarkerSummary.emojis.count == 1)
+    #expect(literalMarkerSummary.emojis.first?.emoji.name == "secret")
+    #expect(MessageReplySummary.accessibilityText(content: literalMarkerContent) == "\u{E000} Spoiler")
+
+    let droppedLinkMarkerContent = "[label](http://example.com/<:hidden:123>) <:shown:456>"
+    let droppedLinkMarkerSummary = MessageReplySummary.summary(content: droppedLinkMarkerContent)
+    #expect(droppedLinkMarkerSummary.text == "label \u{FFFC}")
+    #expect(droppedLinkMarkerSummary.emojis.count == 1)
+    #expect(droppedLinkMarkerSummary.emojis.first?.emoji.name == "shown")
+    #expect(MessageReplySummary.accessibilityText(content: droppedLinkMarkerContent) == "label :shown:")
 }
 
 @Test
