@@ -14,6 +14,10 @@ const triage = result.triage;
 if (context.number !== Number(number) || !context.areas.includes(triage?.area) ||
     (triage.duplicateOf !== null && (!context.candidates.includes(triage.duplicateOf) || triage.duplicateOf === Number(number))) ||
     (triage.needsInformation && !triage.questions.length)) throw new Error("Invalid assessment result");
+// The hub allows a bounded number of question rounds; after that, open
+// questions are left for a maintainer instead of asking the reporter again.
+const openQuestions = context.questionsAllowed === false && triage.needsInformation ? triage.questions : [];
+if (openQuestions.length) Object.assign(triage, { needsInformation: false, questions: [] });
 const resolution = resolveFix(result.fixCommit, context.refs);
 const releaseLink = resolution.release ? `[${resolution.release.version} (${resolution.release.channel})](${resolution.release.url})` : "";
 const availability = {
@@ -24,6 +28,9 @@ const availability = {
   fixed_unreleased: "The fix is in the app's code, but is not in either latest published release yet. No released update contains it yet.",
 }[resolution.state];
 if (resolution.state === "possible_regression") triage.duplicateOf = null;
+// The hub applies a found fix on its own only at high confidence.
+const pending = resolution.commit && resolution.state.startsWith("fixed_") && result.confidence !== "high"
+  ? " A maintainer will confirm it before the report's status changes." : "";
 triage.resolution = { state: resolution.state, commit: resolution.commit, releaseTag: resolution.release?.tag ?? null, explanation: availability };
 const envelope = JSON.stringify({ version: 1, number: Number(number), sourceTitle: context.sourceTitle,
   bodyHash: context.bodyHash, confidence: result.confidence, candidates: context.candidates, model: process.env.AGENT_MODEL, triage,
@@ -48,7 +55,7 @@ ${clean(triage.summary)}
 ${clean(result.classificationReason)}
 
 ### Fix availability
-${availability}${resolution.commit ? ` [Change](https://github.com/${repo}/commit/${resolution.commit}).` : ""}
+${availability}${resolution.commit ? ` [Change](https://github.com/${repo}/commit/${resolution.commit}).` : ""}${pending}
 ${triage.duplicateOf && triage.duplicateConfidence >= 0.75 ? `
 ### Possible duplicate
 This may match #${triage.duplicateOf}. ${clean(triage.duplicateReason)} A maintainer will decide whether to merge them.
@@ -56,6 +63,9 @@ This may match #${triage.duplicateOf}. ${clean(triage.duplicateReason)} A mainta
 ${triage.needsInformation ? `
 ### Questions
 ${triage.questions.map((question) => `- ${clean(question)}`).join("\n")}
+` : ""}${openQuestions.length ? `
+### Open questions for a maintainer
+${openQuestions.map((question) => `- ${clean(question)}`).join("\n")}
 ` : ""}
 ### Likely locations
 ${locations || "_No specific location identified._"}
@@ -69,7 +79,7 @@ ${clean(result.suggestedFix)}
 ### Suggested test
 ${clean(result.suggestedTest)}
 
-<sub>🔎 Triage & investigation agent · confidence **${result.confidence}** · ${result.fixable ? "looks fixable — a maintainer can add the `agent: fix` label to open a draft PR" : "probably needs a maintainer"} · [run](${run}) · based on \`${sha.slice(0, 7)}\` (nightly)</sub>
+<sub>🔎 Triage & investigation agent · confidence **${result.confidence}** · ${result.fixable ? "looks fixable — a maintainer can add the `agent: fix` label to open a draft PR" : "probably needs a maintainer"} · [run](${run}) · based on \`${sha.slice(0, 7)}\` (nightly) · read ${context.lastComment ? `replies up to ${context.lastComment.replace("T", " ").slice(0, 16)} UTC` : "the report; there were no replies"}</sub>
 
 <!-- sakuracord:triage-result ${envelope} -->`;
 writeFileSync("comment.md", body);
