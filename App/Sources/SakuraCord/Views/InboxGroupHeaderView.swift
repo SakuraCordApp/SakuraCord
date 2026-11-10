@@ -72,7 +72,7 @@ struct InboxGroupHeaderView: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, InterfaceScale.metric(6))
                             .padding(.vertical, InterfaceScale.metric(2))
-                            .background(Color(hex: 0xF23F43), in: Capsule())
+                            .background(Color(hex: MentionRed.hex), in: Capsule())
                             .accessibilityLabel(header.mentionCount == 1 ? "1 mention" : "\(header.mentionCount) mentions")
                     }
                 }
