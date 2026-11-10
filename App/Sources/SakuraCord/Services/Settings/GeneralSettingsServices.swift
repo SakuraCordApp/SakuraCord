@@ -80,6 +80,13 @@ final class SettingsConversationRestorationStore {
         pendingLaunchRestoration = restoration(forKey: Self.accountKey(accountID))
     }
 
+    func remove(accountID: String) {
+        defaults.removeObject(forKey: Self.accountKey(accountID))
+        if restoration(forKey: Self.globalKey)?.accountID == accountID {
+            defaults.removeObject(forKey: Self.globalKey)
+        }
+    }
+
     func preferredAccountID(for destination: SettingsLaunchDestination) -> String? {
         guard destination == .lastVisitedConversation else { return nil }
         return restoration(forKey: Self.globalKey)?.accountID
