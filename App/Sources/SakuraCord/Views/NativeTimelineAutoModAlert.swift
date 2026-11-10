@@ -155,9 +155,11 @@ struct NativeTimelineAutoModAlertLayout {
         }
         let value = NSMutableAttributedString(attributedString: render(alert.content))
         if let match = alert.matchedContent {
-            var ranges = RichMessageAttributedText.ranges(of: match, in: value.string, options: .caseInsensitive)
+            // Source positions place every match, formatted or not; a plain
+            // search of the rendered text is the fallback when they can't.
+            var ranges = renderedRanges(of: match, in: alert.content, rendered: value.string, render: render)
             if ranges.isEmpty {
-                ranges = renderedRanges(of: match, in: alert.content, rendered: value.string, render: render)
+                ranges = RichMessageAttributedText.ranges(of: match, in: value.string, options: .caseInsensitive)
             }
             for range in ranges {
                 value.addAttribute(.autoModerationMatch, value: true, range: range)
@@ -166,8 +168,8 @@ struct NativeTimelineAutoModAlertLayout {
         return NativeTimelineAttributedTextBox(value, layoutHeightAdjustment: drawingHeadroom)
     }
 
-    /// Where a match that spans formatting, such as `bad **word`, lands in
-    /// the rendered text. The renderer keeps no source positions, so the
+    /// Where each match lands in the rendered text, including one that spans
+    /// formatting, such as `bad **word`. The renderer keeps no source positions, so the
     /// source renders again with each match wrapped in private-use markers,
     /// and the matches lie between them. Markers that change what renders,
     /// as inside a mention or a Markdown delimiter, leave the match unmarked.
