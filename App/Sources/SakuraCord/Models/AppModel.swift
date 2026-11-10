@@ -883,7 +883,8 @@ final class AppModel {
             largeText: current.assets?.largeText,
             smallImage: current.assets?.smallImage,
             smallText: current.assets?.smallText,
-            applicationID: current.applicationId
+            applicationID: current.applicationId,
+            url: current.url
         )
     }
 

@@ -10,13 +10,6 @@ struct ProfileActivitySectionRightHeightKey: PreferenceKey {
     }
 }
 
-struct ProfileActivitySectionMarqueeWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 struct ActivityMarqueeText: View {
     let text: String
     var font: Font = .interfaceSystem(size: 13, weight: .semibold)
@@ -30,6 +23,8 @@ struct ActivityMarqueeText: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollTask: Task<Void, Never>?
 
+    private let gap: CGFloat = InterfaceScale.metric(36)
+
     private var overflowDistance: CGFloat {
         max(0, textWidth - containerWidth)
     }
@@ -38,54 +33,56 @@ struct ActivityMarqueeText: View {
         overflowDistance > 4
     }
 
+    private var loopDistance: CGFloat {
+        textWidth + gap
+    }
+
     var body: some View {
         GeometryReader { geo in
             let availableWidth = geo.size.width
             ZStack(alignment: .leading) {
-                Text(text)
-                    .font(font)
-                    .foregroundStyle(foregroundStyle)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .background {
-                        GeometryReader { textGeo in
-                            Color.clear.preference(key: ProfileActivitySectionMarqueeWidthKey.self, value: textGeo.size.width)
-                        }
+                if isOverflowing, isCardHovered, !systemReduceMotion {
+                    HStack(spacing: gap) {
+                        textView
+                        textView
                     }
-                    .offset(x: isOverflowing ? scrollOffset : 0)
+                    .offset(x: scrollOffset)
+                } else {
+                    textView
+                        .offset(x: 0)
+                }
             }
             .frame(width: availableWidth, alignment: .leading)
             .clipped()
             .mask {
                 if isOverflowing, isCardHovered {
-                    HStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [.black.opacity(scrollOffset < -4 ? 0 : 1), .black],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: InterfaceScale.metric(10))
-
-                        Color.black
-
-                        LinearGradient(
-                            colors: [.black, .black.opacity(scrollOffset > -overflowDistance + 4 ? 0 : 1)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: InterfaceScale.metric(10))
-                    }
+                    LinearGradient(
+                        stops: [
+                            .init(color: scrollOffset < -2 ? .clear : .black, location: 0),
+                            .init(color: .black, location: 0.08),
+                            .init(color: .black, location: 0.92),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 } else {
                     Color.black
                 }
             }
-            .onAppear { containerWidth = availableWidth }
-            .onChange(of: availableWidth) { _, newWidth in containerWidth = newWidth }
+            .onAppear {
+                containerWidth = availableWidth
+            }
+            .onChange(of: availableWidth) { _, newWidth in
+                containerWidth = newWidth
+            }
         }
         .frame(height: height)
-        .onPreferenceChange(ProfileActivitySectionMarqueeWidthKey.self) { textWidth = $0 }
         .onChange(of: isCardHovered) { _, hovered in
             updateScroll(hovered: hovered)
+        }
+        .onChange(of: text) { _, _ in
+            updateScroll(hovered: isCardHovered)
         }
         .onDisappear {
             scrollTask?.cancel()
@@ -93,31 +90,61 @@ struct ActivityMarqueeText: View {
         }
     }
 
+    private var textView: some View {
+        Text(text)
+            .font(font)
+            .foregroundStyle(foregroundStyle)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .background {
+                GeometryReader { textGeo in
+                    Color.clear
+                        .onAppear {
+                            let width = textGeo.size.width
+                            if abs(textWidth - width) > 1 {
+                                textWidth = width
+                            }
+                        }
+                        .onChange(of: textGeo.size.width) { _, width in
+                            if abs(textWidth - width) > 1 {
+                                textWidth = width
+                            }
+                        }
+                }
+            }
+    }
+
     private func updateScroll(hovered: Bool) {
         scrollTask?.cancel()
         scrollTask = nil
         guard hovered, isOverflowing, !systemReduceMotion else {
-            withAnimation(.easeOut(duration: 0.25)) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
                 scrollOffset = 0
             }
             return
         }
-        let distance = overflowDistance + InterfaceScale.metric(12)
-        let duration = max(2.5, Double(distance) / 22.0)
+
+        let distance = loopDistance
+        let duration = max(3.0, Double(distance) / 28.0)
+
         scrollTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled else { return }
+
             while !Task.isCancelled {
                 withAnimation(.linear(duration: duration)) {
                     scrollOffset = -distance
                 }
-                try? await Task.sleep(nanoseconds: UInt64((duration + 1.2) * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.35)) {
+
+                var resetTransaction = Transaction()
+                resetTransaction.disablesAnimations = true
+                withTransaction(resetTransaction) {
                     scrollOffset = 0
                 }
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                guard !Task.isCancelled else { return }
             }
         }
     }
@@ -218,10 +245,6 @@ struct ProfileActivitySection: View {
            state != primaryText, state != secondaryText {
             return state
         }
-        if let text = effectiveActivity?.largeText, !text.isEmpty,
-           text != primaryText, text != secondaryText {
-            return text
-        }
         return nil
     }
 
@@ -235,8 +258,15 @@ struct ProfileActivitySection: View {
 
     private var resolvedArtworkImage: NSImage? {
         if let imageRef = effectiveActivity?.largeImage {
-            if imageRef.hasPrefix("file://"), let url = URL(string: imageRef) {
-                if let data = try? Data(contentsOf: url), let img = NSImage(data: data) {
+            if let data = Data(base64Encoded: imageRef), let img = NSImage(data: data) {
+                return img
+            }
+            if let local = NSImage(named: imageRef) {
+                return local
+            }
+            if imageRef.hasPrefix("data:image"), let comma = imageRef.firstIndex(of: ",") {
+                let base64 = String(imageRef[imageRef.index(after: comma)...])
+                if let data = Data(base64Encoded: base64), let img = NSImage(data: data) {
                     return img
                 }
             }
@@ -248,6 +278,11 @@ struct ProfileActivitySection: View {
         }
         if isMusic, isCurrentUser {
             if let data = AppleMusicPresenceMonitor.currentArtworkData, let img = NSImage(data: data) {
+                return img
+            }
+        }
+        if let lowerName = effectiveActivity?.name.lowercased(), lowerName.contains("roblox") {
+            if let data = GamePresenceMonitor.currentRobloxIconData, let img = NSImage(data: data) {
                 return img
             }
         }
@@ -286,6 +321,16 @@ struct ProfileActivitySection: View {
 
     private var activityDestinationURL: URL? {
         if isMusic {
+            if let directURLString = effectiveActivity?.url, let directURL = URL(string: directURLString) {
+                return directURL
+            }
+            if let cached = MusicArtworkResolver.shared.cachedTrackURL(
+                title: primaryText,
+                artist: effectiveActivity?.state,
+                album: effectiveActivity?.largeText
+            ), let url = URL(string: cached) {
+                return url
+            }
             let appName = effectiveActivity?.name ?? ""
             let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
             let query = [primaryText, secondaryText].compactMap { $0 }.joined(separator: " ")
@@ -365,6 +410,14 @@ struct ProfileActivitySection: View {
             }
         }
         .onTapGesture {
+            if isMusic, isCurrentUser {
+                let appName = effectiveActivity?.name ?? ""
+                if appName.caseInsensitiveCompare("Apple Music") == .orderedSame || appName.isEmpty {
+                    if let musicApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Music" }) {
+                        musicApp.activate(options: .activateIgnoringOtherApps)
+                    }
+                }
+            }
             if let destination = activityDestinationURL {
                 _ = MessageLinkActivator.activate(destination, model: model, displayedText: destination.absoluteString)
             }
@@ -442,13 +495,16 @@ struct ProfileActivitySection: View {
     }
 
     private func resolveMissingMusicArtwork() async {
-        guard isMusic, resolvedRemoteArtworkURL == nil || effectiveActivity?.largeImage == "apple_music" else { return }
-        if let resolved = await MusicArtworkResolver.shared.resolveArtworkURL(
+        guard isMusic else { return }
+        let resolved = await MusicArtworkResolver.shared.resolveMusic(
             title: primaryText,
             artist: effectiveActivity?.state,
             album: effectiveActivity?.largeText
-        ), let url = URL(string: resolved) {
-            remoteArtworkOverride = url
+        )
+        if resolvedRemoteArtworkURL == nil || effectiveActivity?.largeImage == "apple_music" {
+            if let artwork = resolved.artworkURL, let url = URL(string: artwork) {
+                remoteArtworkOverride = url
+            }
         }
     }
 

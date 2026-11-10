@@ -76,6 +76,7 @@ public struct MemberRichActivity: Codable, Hashable, Sendable {
     public var smallImage: String?
     public var smallText: String?
     public var applicationID: String?
+    public var url: String?
 
     public init(
         name: String,
@@ -88,7 +89,8 @@ public struct MemberRichActivity: Codable, Hashable, Sendable {
         largeText: String? = nil,
         smallImage: String? = nil,
         smallText: String? = nil,
-        applicationID: String? = nil
+        applicationID: String? = nil,
+        url: String? = nil
     ) {
         self.name = name
         self.type = type
@@ -101,6 +103,7 @@ public struct MemberRichActivity: Codable, Hashable, Sendable {
         self.smallImage = smallImage
         self.smallText = smallText
         self.applicationID = applicationID
+        self.url = url
     }
 }
 

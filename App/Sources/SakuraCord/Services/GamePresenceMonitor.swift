@@ -9,8 +9,29 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
     private let queue = DispatchQueue(label: "dev.sakuracord.game-presence", qos: .utility)
     private var launchObserver: (any NSObjectProtocol)?
     private var terminateObserver: (any NSObjectProtocol)?
+    private var periodicTimer: (any DispatchSourceTimer)?
     private var isMonitoring = false
     private let logger = Logger(subsystem: "dev.sakuracord", category: "GamePresenceMonitor")
+
+    public static let robloxAppID = "363445589247131668"
+    public static let robloxIconAsset = "f2b60e350a2097289b3b0b877495e55f"
+    public static let robloxIconURL = "https://cdn.discordapp.com/app-icons/363445589247131668/f2b60e350a2097289b3b0b877495e55f.png"
+
+    private static let iconLock = NSLock()
+    nonisolated(unsafe) private static var _cachedRobloxIconData: Data?
+
+    public static var currentRobloxIconData: Data? {
+        get {
+            iconLock.lock()
+            defer { iconLock.unlock() }
+            return _cachedRobloxIconData
+        }
+        set {
+            iconLock.lock()
+            _cachedRobloxIconData = newValue
+            iconLock.unlock()
+        }
+    }
 
     public static let robloxBundleIDs: Set<String> = [
         "com.roblox.RobloxPlayer",
@@ -32,6 +53,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         }
         if let exeName = app.executableURL?.lastPathComponent.lowercased(),
            exeName.contains("roblox") {
+            return true
+        }
+        if let bundlePath = app.bundleURL?.path.lowercased(),
+           bundlePath.contains("roblox") {
             return true
         }
         return false
@@ -69,6 +94,14 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             }
 
             checkRunningGames()
+
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + 15, repeating: 15)
+            timer.setEventHandler { [weak self] in
+                self?.checkRunningGames()
+            }
+            timer.resume()
+            periodicTimer = timer
             #endif
             logger.info("Game presence monitor started.")
         }
@@ -80,6 +113,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             isMonitoring = false
 
             #if os(macOS)
+            if let timer = periodicTimer {
+                timer.cancel()
+                periodicTimer = nil
+            }
             if let launchObserver {
                 NSWorkspace.shared.notificationCenter.removeObserver(launchObserver)
                 self.launchObserver = nil
@@ -90,6 +127,7 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             }
             #endif
 
+            Self.currentRobloxIconData = nil
             Task { [coordinator] in
                 await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
             }
@@ -103,10 +141,11 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
         if Self.isRobloxApp(app) {
             if isLaunch {
-                publishRobloxActivity(launchDate: app.launchDate)
+                publishRobloxActivity(app: app)
             } else {
                 let hasRunning = NSWorkspace.shared.runningApplications.contains { !$0.isTerminated && Self.isRobloxApp($0) }
                 if !hasRunning {
+                    Self.currentRobloxIconData = nil
                     Task { [coordinator] in
                         await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
                     }
@@ -120,24 +159,27 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         #if os(macOS)
         let running = NSWorkspace.shared.runningApplications
         if let first = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
-            publishRobloxActivity(launchDate: first.launchDate)
+            publishRobloxActivity(app: first)
             return
         }
         #endif
     }
 
-    private func publishRobloxActivity(launchDate: Date? = nil) {
-        let startTimeMs = Int64((launchDate ?? Date()).timeIntervalSince1970 * 1000)
+    private func publishRobloxActivity(app: NSRunningApplication? = nil) {
+        let startTimeMs = Int64((app?.launchDate ?? Date()).timeIntervalSince1970 * 1000)
+        if let icon = app?.icon, let tiff = icon.tiffRepresentation {
+            Self.currentRobloxIconData = tiff
+        }
         let payload = OutgoingActivityPayload(
             name: "Roblox",
             type: .playing,
             details: "Playing Roblox",
             timestamps: ActivityTimestamps(start: startTimeMs, end: nil),
             assets: ActivityAssets(
-                largeImage: "https://images.rbxcdn.com/f04a43a059535d50fd92110bd582b1c6.png",
+                largeImage: Self.robloxIconURL,
                 largeText: "Roblox"
             ),
-            applicationId: "roblox"
+            applicationId: Self.robloxAppID
         )
         Task { [coordinator] in
             await coordinator.setActivity(payload, for: .custom(sourceID: "game:roblox"))

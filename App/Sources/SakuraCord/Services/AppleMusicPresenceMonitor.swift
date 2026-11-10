@@ -7,67 +7,97 @@ import os
 /// matching Boring Notch's multi-source fallback mechanism.
 public actor MusicArtworkResolver {
     public static let shared = MusicArtworkResolver()
-    private var cache: [String: String] = [:]
+    private var artworkCache: [String: String] = [:]
+    private var trackURLCache: [String: String] = [:]
     private var cacheKeys: [String] = []
     private let maxCacheSize = 64
 
     public func cachedArtworkURL(title: String, artist: String?, album: String?) -> String? {
-        let key = "\(artist ?? "") - \(title) - \(album ?? "")"
-        return cache[key]
+        let key = cacheKey(title: title, artist: artist, album: album)
+        return artworkCache[key]
     }
 
-    private func storeInCache(key: String, url: String) {
-        if cache[key] == nil {
+    public func cachedTrackURL(title: String, artist: String?, album: String?) -> String? {
+        let key = cacheKey(title: title, artist: artist, album: album)
+        return trackURLCache[key]
+    }
+
+    private func cacheKey(title: String, artist: String?, album: String?) -> String {
+        "\(artist ?? "") - \(title) - \(album ?? "")"
+    }
+
+    private func storeInCache(key: String, artwork: String?, trackURL: String?) {
+        if artworkCache[key] == nil, trackURLCache[key] == nil {
             if cacheKeys.count >= maxCacheSize {
                 let oldest = cacheKeys.removeFirst()
-                cache.removeValue(forKey: oldest)
+                artworkCache.removeValue(forKey: oldest)
+                trackURLCache.removeValue(forKey: oldest)
             }
             cacheKeys.append(key)
         }
-        cache[key] = url
+        if let artwork { artworkCache[key] = artwork }
+        if let trackURL { trackURLCache[key] = trackURL }
     }
 
-    public func resolveArtworkURL(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> String? {
-        let key = "\(artist ?? "") - \(title) - \(album ?? "")"
-        if let cached = cache[key] {
-            return cached
+    public func resolveMusic(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> (artworkURL: String?, trackURL: String?) {
+        let key = cacheKey(title: title, artist: artist, album: album)
+        if let art = artworkCache[key], let track = trackURLCache[key] {
+            return (art, track)
         }
+
+        var resolvedArt: String? = artworkCache[key]
+        var resolvedTrack: String? = trackURLCache[key]
 
         // 1. Spotify oEmbed if Spotify track ID is available
         if let spotifyTrackID, spotifyTrackID.contains("track:") {
             let trackPart = spotifyTrackID.components(separatedBy: "track:").last ?? ""
-            if !trackPart.isEmpty, let oembedURL = URL(string: "https://open.spotify.com/oembed?url=https://open.spotify.com/track/\(trackPart)") {
-                var request = URLRequest(url: oembedURL)
-                request.timeoutInterval = 3
-                if let (data, _) = try? await URLSession.shared.data(for: request),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let thumb = json["thumbnail_url"] as? String, !thumb.isEmpty {
-                    storeInCache(key: key, url: thumb)
-                    return thumb
+            if !trackPart.isEmpty {
+                if resolvedTrack == nil {
+                    resolvedTrack = "https://open.spotify.com/track/\(trackPart)"
+                }
+                if resolvedArt == nil, let oembedURL = URL(string: "https://open.spotify.com/oembed?url=https://open.spotify.com/track/\(trackPart)") {
+                    var request = URLRequest(url: oembedURL)
+                    request.timeoutInterval = 3
+                    if let (data, _) = try? await URLSession.shared.data(for: request),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let thumb = json["thumbnail_url"] as? String, !thumb.isEmpty {
+                        resolvedArt = thumb
+                    }
                 }
             }
         }
 
         // 2. iTunes Search API fallback (as used in Boring Notch for Apple Music and general catalog)
-        var query = title
-        if let artist, !artist.isEmpty {
-            query += " " + artist
+        if resolvedArt == nil || resolvedTrack == nil {
+            var query = title
+            if let artist, !artist.isEmpty {
+                query += " " + artist
+            }
+
+            if let item = await queryITunes(term: query, entity: "song") {
+                if resolvedArt == nil { resolvedArt = item.artworkURL }
+                if resolvedTrack == nil { resolvedTrack = item.trackURL }
+            } else if let item = await queryITunes(term: query, entity: nil) {
+                if resolvedArt == nil { resolvedArt = item.artworkURL }
+                if resolvedTrack == nil { resolvedTrack = item.trackURL }
+            }
         }
 
-        if let itunesArt = await queryITunesArtwork(term: query, entity: "song") {
-            storeInCache(key: key, url: itunesArt)
-            return itunesArt
-        }
-
-        if let itunesArt = await queryITunesArtwork(term: query, entity: nil) {
-            storeInCache(key: key, url: itunesArt)
-            return itunesArt
-        }
-
-        return nil
+        storeInCache(key: key, artwork: resolvedArt, trackURL: resolvedTrack)
+        return (resolvedArt, resolvedTrack)
     }
 
-    private func queryITunesArtwork(term: String, entity: String?) async -> String? {
+    public func resolveArtworkURL(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> String? {
+        let result = await resolveMusic(title: title, artist: artist, album: album, spotifyTrackID: spotifyTrackID)
+        return result.artworkURL
+    }
+
+    public func resolveTrackURL(title: String, artist: String?, album: String?, spotifyTrackID: String? = nil) async -> String? {
+        let result = await resolveMusic(title: title, artist: artist, album: album, spotifyTrackID: spotifyTrackID)
+        return result.trackURL
+    }
+
+    private func queryITunes(term: String, entity: String?) async -> (artworkURL: String?, trackURL: String?)? {
         var components = URLComponents(string: "https://itunes.apple.com/search")
         var queryItems = [
             URLQueryItem(name: "term", value: term),
@@ -85,12 +115,13 @@ public actor MusicArtworkResolver {
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let results = json["results"] as? [[String: Any]],
-              let first = results.first,
-              let art100 = first["artworkUrl100"] as? String else {
+              let first = results.first else {
             return nil
         }
-        let highRes = art100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
-        return highRes
+        let art100 = first["artworkUrl100"] as? String
+        let highRes = art100?.replacingOccurrences(of: "100x100bb", with: "600x600bb")
+        let trackURL = (first["trackViewUrl"] as? String) ?? (first["collectionViewUrl"] as? String)
+        return (artworkURL: highRes, trackURL: trackURL)
     }
 }
 
@@ -701,18 +732,20 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             return trackInfo.appName
         }()
 
+        let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : "846536552416903169"
         let cachedArtwork = await MusicArtworkResolver.shared.cachedArtworkURL(title: trackName, artist: artist, album: album)
-        let resolvedArtwork = if let cached = cachedArtwork {
-            cached
+        let cachedTrackURL = await MusicArtworkResolver.shared.cachedTrackURL(title: trackName, artist: artist, album: album)
+        let resolvedMusic = if cachedArtwork != nil, cachedTrackURL != nil {
+            (artworkURL: cachedArtwork, trackURL: cachedTrackURL)
         } else {
-            await MusicArtworkResolver.shared.resolveArtworkURL(
+            await MusicArtworkResolver.shared.resolveMusic(
                 title: trackName,
                 artist: artist,
                 album: album,
                 spotifyTrackID: trackInfo.trackID
             )
         }
-        let initialLargeImage = resolvedArtwork ?? "apple_music"
+        let initialLargeImage = resolvedMusic.artworkURL ?? "apple_music"
 
         let assets = ActivityAssets(
             largeImage: initialLargeImage,
@@ -724,10 +757,17 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         let activity = OutgoingActivityPayload(
             name: trackInfo.appName,
             type: .listening,
+            url: resolvedMusic.trackURL,
             details: trackName,
             state: nonIsolatedState,
             timestamps: ActivityTimestamps(start: startTimestampMs, end: endTimestampMs),
-            assets: assets
+            assets: assets,
+            party: nil,
+            secrets: nil,
+            instance: false,
+            flags: nil,
+            buttons: nil,
+            applicationId: musicAppID
         )
 
         logger.info("\(trackInfo.appName, privacy: .public) presence updating: '\(trackName, privacy: .public)' by '\(artist ?? "Unknown", privacy: .public)'")
@@ -756,12 +796,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             }
 
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
-            if let resolvedArtwork = await MusicArtworkResolver.shared.resolveArtworkURL(
+            let musicAppID = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "spotify" : "846536552416903169"
+            let resolvedMusic = await MusicArtworkResolver.shared.resolveMusic(
                 title: activity.details ?? "",
                 artist: activity.state,
                 album: trackInfo.album?.trimmingCharacters(in: .whitespacesAndNewlines),
                 spotifyTrackID: trackInfo.trackID
-            ) {
+            )
+            if let resolvedArtwork = resolvedMusic.artworkURL {
                 guard self.isCurrentArtworkGeneration(artworkGen), !Task.isCancelled else { return }
                 guard await coordinator.isSourcePermitted(.appleMusic) else { return }
 
@@ -771,12 +813,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                     guard self.isCurrentArtworkGeneration(artworkGen), !Task.isCancelled else { return }
                     Self.currentArtworkData = data
                 }
+            }
 
-                guard self.isCurrentArtworkGeneration(artworkGen), !Task.isCancelled else { return }
-                guard await coordinator.isSourcePermitted(.appleMusic) else { return }
+            guard self.isCurrentArtworkGeneration(artworkGen), !Task.isCancelled else { return }
+            guard await coordinator.isSourcePermitted(.appleMusic) else { return }
 
+            if resolvedMusic.artworkURL != nil || resolvedMusic.trackURL != nil {
                 let updatedAssets = ActivityAssets(
-                    largeImage: resolvedArtwork,
+                    largeImage: resolvedMusic.artworkURL ?? activity.assets?.largeImage,
                     largeText: activity.assets?.largeText,
                     smallImage: nil,
                     smallText: nil
@@ -784,10 +828,17 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                 let updatedActivity = OutgoingActivityPayload(
                     name: activity.name,
                     type: activity.type,
+                    url: resolvedMusic.trackURL ?? activity.url,
                     details: activity.details,
                     state: activity.state,
                     timestamps: activity.timestamps,
-                    assets: updatedAssets
+                    assets: updatedAssets,
+                    party: activity.party,
+                    secrets: activity.secrets,
+                    instance: activity.instance,
+                    flags: activity.flags,
+                    buttons: activity.buttons,
+                    applicationId: musicAppID
                 )
                 await coordinator.setActivity(updatedActivity, for: .appleMusic)
             }

@@ -75,6 +75,7 @@ struct GuildActivityAssetsDTO: Decodable {
 struct GuildActivityDTO: Decodable {
     var name: String?
     var type: Int?
+    var url: String?
     var details: String?
     var state: String?
     var emoji: GuildActivityEmojiDTO?
@@ -84,7 +85,7 @@ struct GuildActivityDTO: Decodable {
     var syncId: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, type, details, state, emoji, timestamps, assets
+        case name, type, url, details, state, emoji, timestamps, assets
         case applicationId = "application_id"
         case syncId = "sync_id"
     }
@@ -102,7 +103,8 @@ struct GuildActivityDTO: Decodable {
             largeText: assets?.largeText,
             smallImage: assets?.smallImage,
             smallText: assets?.smallText,
-            applicationID: applicationId
+            applicationID: applicationId,
+            url: url
         )
     }
 
