@@ -20,7 +20,7 @@ extension NativeTimelineRowLayout {
         private var translationPresentation: NativeTimelineTranslationPresentation?
         private var usesBubbles = false
         private var isOutgoingBubble = false
-        private var horizontalInset: CGFloat = 0
+        private var horizontalInset: CGFloat { MessageRowLayoutMetrics.horizontalInset }
         private var contentX: CGFloat = 0
         private var contentWidth: CGFloat = 0
         private var ordinaryContentWidth: CGFloat = 0
@@ -137,9 +137,6 @@ extension NativeTimelineRowLayout {
         private mutating func prepareColumns() {
             usesBubbles = bubbleContext.isEnabled && !row.isResource
             isOutgoingBubble = bubbleContext.isOutgoing && !row.isResource
-            horizontalInset = searchContext == nil
-                ? MessageRowLayoutMetrics.horizontalInset
-                : 22
             let columnGap = MessageRowLayoutMetrics.columnGap(timestampGutterWidth: metrics.timestampGutterWidth)
             if isOutgoingBubble {
                 contentPresentation = NativeTimelineTextPresentation.outgoingBubble(contentPresentation)
