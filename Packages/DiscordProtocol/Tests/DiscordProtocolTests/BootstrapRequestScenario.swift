@@ -98,6 +98,7 @@ struct BootstrapRequestScenario {
         #expect(await connected.value)
         #expect(snapshot.currentUser.id == UserID(rawValue: 1))
         #expect(snapshot.guilds.count == 1)
+        #expect(snapshot.members.isEmpty)
         #expect(snapshot.channels.map(\.id) == [ChannelID(rawValue: 401)])
         #expect(snapshot.channels.first?.name == "Maya")
         #expect(snapshot.channels.first?.recipients.map(\.id) == [
