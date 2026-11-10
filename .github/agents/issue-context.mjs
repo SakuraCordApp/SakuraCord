@@ -11,7 +11,7 @@ if (!Number.isSafeInteger(number) || number < 1) throw new Error("Invalid issue 
 const issue = JSON.parse(execFileSync("gh", ["issue", "view", String(number), "--json", "number,title,body,labels,comments"], {
   encoding: "utf8", maxBuffer: 20 * 1024 * 1024,
 }));
-const strip = (text, limit = 12000) => String(text ?? "").replace(/<!--[\s\S]*?(?:-->|$)/g, "").slice(0, limit);
+const strip = (text, limit = 12000) => String(text ?? "").replace(/<!--[\s\S]*?-->/g, "").slice(0, limit);
 const comments = issue.comments.slice(-30).map((comment) =>
   `--- comment by ${comment.author?.login ?? "unknown"} ---\n${strip(comment.body, 2000)}`,
 ).join("\n\n");
