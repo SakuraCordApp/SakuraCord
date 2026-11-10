@@ -23,8 +23,8 @@ if (mode === "--triage") {
   if (!response.ok) throw new Error(`Assessment context unavailable (${response.status})`);
   const context = await response.json();
   if (!Array.isArray(context.areas) || !Array.isArray(context.candidates) || context.candidates.length > 12) throw new Error("Invalid assessment context");
-  // Fork branches are not in the checkout, so only same-repository PRs can be inspected.
-  context.openPullRequests = JSON.parse(execFileSync("gh", ["pr", "list", "--state", "open", "--limit", "40",
+  // Fork branches are not in the checkout, and the hub links only fixes into nightly.
+  context.openPullRequests = JSON.parse(execFileSync("gh", ["pr", "list", "--state", "open", "--base", "nightly", "--limit", "40",
     "--json", "number,title,body,headRefName,isCrossRepository"], { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 }))
     .filter((pull) => !pull.isCrossRepository)
     .map(({ number, title, body, headRefName }) => ({ number, title, body: strip(body, 600), branch: `origin/${headRefName}` }));

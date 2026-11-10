@@ -130,9 +130,9 @@ maintain a second backlog there or in a repository `ROADMAP.md`.
   confidence. The hub verifies and applies only findings rated high, and only
   to New or Needs Info reports or forward from Confirmed or Planned: a fix on
   nightly moves to In Nightly (Shipped once a release contains it), an open PR
-  from this repository to In Progress, a regression of a known fix to
-  Confirmed, a duplicate is closed into the original, a wrong category is
-  corrected, and a suggestion that already exists gets a question. Discord
+  into nightly from this repository to In Progress, a regression of a known
+  fix to Confirmed, a duplicate is closed into the original, a wrong category
+  is corrected, and a suggestion that already exists gets a question. Discord
   notes that the assessment set the status; Manage undoes it. Lower ratings
   stay suggestions for a maintainer.
 - Maintainers can rerun with `agent: investigate` or Discord's Manage menu.

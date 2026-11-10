@@ -28,7 +28,7 @@ const releaseLink = resolution.release ? `[${resolution.release.version} (${reso
 // The hub applies a finding on its own only when that finding is rated high,
 // or, for results without ratings, a fix at high overall confidence.
 const pending = resolution.commit && resolution.state.startsWith("fixed_") && (result.findings?.fix ?? result.confidence) !== "high"
-  ? " A maintainer will confirm it before the report's status changes." : "";
+  ? " A maintainer will confirm it before the report is marked fixed." : "";
 const pullRequest = fixPullRequest ? ` Pull request #${fixPullRequest} is open to ${triage.kind === "feature" ? "implement" : "fix"} it.` : "";
 const availability = {
   unresolved: "No existing fix has been verified.",
@@ -44,7 +44,10 @@ triage.resolution = { state: resolution.state, commit: resolution.commit, releas
 const envelope = JSON.stringify({ version: 1, number: Number(number), sourceTitle: context.sourceTitle,
   bodyHash: context.bodyHash, confidence: result.confidence, findings: result.findings, candidates: context.candidates, model: process.env.AGENT_MODEL, triage,
 }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
-const clean = (text) => String(text ?? "").replace(/@(?=[A-Za-z0-9-])/g, "@​").trim();
+// Model text must not open or close an HTML comment: the hub reads its result
+// from the marker at the end, and a quoted marker could pass for one.
+const clean = (text) => String(text ?? "").replace(/@(?=[A-Za-z0-9-])/g, "@​")
+  .replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;").trim();
 const locations = result.locations
   .filter((location) => /^[\w./ -]+$/.test(location.path))
   .map(
