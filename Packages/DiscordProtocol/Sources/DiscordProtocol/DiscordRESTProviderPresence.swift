@@ -145,19 +145,40 @@ extension DiscordRESTProvider {
     }
 
     private func resolveExternalAsset(url: String, applicationID: String) async -> String? {
+        if url.hasPrefix("https://i.scdn.co/image/") {
+            let hash = String(url.dropFirst("https://i.scdn.co/image/".count))
+            return "spotify:\(hash)"
+        }
+        if url.hasPrefix("mp:") {
+            return url
+        }
+        if url.hasPrefix("external/") {
+            return "mp:\(url)"
+        }
         if let cached = externalAssetCache[url] {
             return cached
         }
+        let targetAppID = applicationID.allSatisfy(\.isNumber) && !applicationID.isEmpty
+            ? applicationID
+            : "1247654840780460125"
         do {
             let body: [String: JSONValue] = [
                 "urls": .array([.string(url)])
             ]
             let dtos: [ExternalAssetDTO] = try await request(
-                "/applications/\(applicationID)/external-assets",
+                "/applications/\(targetAppID)/external-assets",
                 method: "POST",
                 body: body
             )
             if let first = dtos.first {
+                let rawPath = first.externalAssetPath
+                let path: String = if rawPath.hasPrefix("mp:") {
+                    rawPath
+                } else if rawPath.hasPrefix("/") {
+                    "mp:\(rawPath.dropFirst())"
+                } else {
+                    "mp:\(rawPath)"
+                }
                 if externalAssetCache[url] == nil {
                     if externalAssetCacheKeys.count >= 128 {
                         let oldest = externalAssetCacheKeys.removeFirst()
@@ -165,8 +186,8 @@ extension DiscordRESTProvider {
                     }
                     externalAssetCacheKeys.append(url)
                 }
-                externalAssetCache[url] = first.externalAssetPath
-                return first.externalAssetPath
+                externalAssetCache[url] = path
+                return path
             }
         } catch {
             gatewayLogger.debug("External asset resolution for \(url) failed: \(error.localizedDescription)")
@@ -180,17 +201,23 @@ extension DiscordRESTProvider {
         var activityDictionaries: [[String: Any]] = []
         for activity in activities {
             var dict = activity.gatewayDictionary
-            if let assets = activity.assets,
-               let largeImage = assets.largeImage,
-               largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://"),
-               !largeImage.hasPrefix("mp:external/"),
-               let appID = activity.applicationId,
-               !appID.isEmpty {
-                if let proxied = await resolveExternalAsset(url: largeImage, applicationID: appID) {
-                    var ast = dict["assets"] as? [String: Any] ?? [:]
-                    ast["large_image"] = proxied
-                    dict["assets"] = ast
+            let appID = activity.applicationId ?? ""
+            if var ast = dict["assets"] as? [String: Any] {
+                if let largeImage = ast["large_image"] as? String,
+                   largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://"),
+                   !largeImage.hasPrefix("mp:") {
+                    if let proxied = await resolveExternalAsset(url: largeImage, applicationID: appID) {
+                        ast["large_image"] = proxied
+                    }
                 }
+                if let smallImage = ast["small_image"] as? String,
+                   smallImage.hasPrefix("http://") || smallImage.hasPrefix("https://"),
+                   !smallImage.hasPrefix("mp:") {
+                    if let proxied = await resolveExternalAsset(url: smallImage, applicationID: appID) {
+                        ast["small_image"] = proxied
+                    }
+                }
+                dict["assets"] = ast
             }
             activityDictionaries.append(dict)
         }
