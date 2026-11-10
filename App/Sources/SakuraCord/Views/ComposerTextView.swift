@@ -1168,10 +1168,12 @@ final class ComposerNSTextView: ComposerFocusReportingTextView, WindowModalEscap
         guard isEditable else { return false }
         if ComposerPasteboardAttachments.readableTypes.contains(type) {
             // Declining lets AppKit read the next available type.
-            guard receivesAttachments, let onReceiveAttachments,
-                  let attachments = ComposerPasteboardAttachments.attachments(from: pasteboard, type: type)
-            else { return false }
-            return onReceiveAttachments(attachments, false)
+            guard receivesAttachments, let onReceiveAttachments else { return false }
+            return ComposerPasteboardAttachments.readAttachments(from: pasteboard, type: type) { attachments in
+                if !onReceiveAttachments(attachments, false), case let .owned(batch) = attachments {
+                    batch.discard()
+                }
+            }
         }
         guard let text = Self.plainText(from: pasteboard, type: type) else { return false }
         if type == .string, receivesAttachments, let onReceiveAttachments,
@@ -1219,15 +1221,27 @@ enum ComposerPasteboardAttachments {
             .filter { !imageTypes.contains($0) }
     }()
 
-    static func attachments(
+    /// Hands the clipboard's files, or its image as an owned PNG, to
+    /// `receive`, or returns false when it holds neither. Like a promised
+    /// file from a drag, an image arrives later: converting and writing a
+    /// large one would stall the main actor.
+    static func readAttachments(
         from pasteboard: NSPasteboard,
-        type: NSPasteboard.PasteboardType
-    ) -> ComposerIncomingAttachments? {
+        type: NSPasteboard.PasteboardType,
+        receive: @escaping (ComposerIncomingAttachments) -> Void
+    ) -> Bool {
         guard type != .fileURL else {
             let urls = fileURLs(from: pasteboard)
-            return urls.isEmpty ? nil : .external(urls)
+            if !urls.isEmpty { receive(.external(urls)) }
+            return !urls.isEmpty
         }
-        return pastedImage(from: pasteboard, type: type).map { .owned($0) }
+        guard let data = pasteboard.data(forType: type) else { return false }
+        let filename = pastedImageFilename(html: pasteboard.string(forType: .html))
+        Task {
+            guard let batch = await pastedImage(data, type: type, named: filename) else { return }
+            receive(.owned(batch))
+        }
+        return true
     }
 
     static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
@@ -1247,16 +1261,15 @@ enum ComposerPasteboardAttachments {
 
     /// Writes clipboard image data as a PNG in app-owned storage, which the
     /// model adopts and removes once no composer or upload retains it.
-    private static func pastedImage(
-        from pasteboard: NSPasteboard,
-        type: NSPasteboard.PasteboardType
-    ) -> ComposerPromisedFileBatch? {
-        guard let data = pasteboard.data(forType: type),
-              let png = type == .png ? data : NSImage(data: data)?.tiffRepresentation
-                  .flatMap(NSBitmapImageRep.init(data:))?
-                  .representation(using: .png, properties: [:])
+    @concurrent nonisolated private static func pastedImage(
+        _ data: Data,
+        type: NSPasteboard.PasteboardType,
+        named filename: String
+    ) async -> ComposerPromisedFileBatch? {
+        guard let png = type == .png ? data : NSImage(data: data)?.tiffRepresentation
+            .flatMap(NSBitmapImageRep.init(data:))?
+            .representation(using: .png, properties: [:])
         else { return nil }
-        let filename = pastedImageFilename(html: pasteboard.string(forType: .html))
         return ComposerPromisedFileStorage.makeBatch(writing: png, named: filename)
     }
 

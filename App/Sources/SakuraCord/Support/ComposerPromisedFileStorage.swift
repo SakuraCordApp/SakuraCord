@@ -1,6 +1,6 @@
 import Foundation
 
-struct ComposerPromisedFileBatch {
+nonisolated struct ComposerPromisedFileBatch {
     let directory: URL
     let urls: [URL]
 
@@ -20,7 +20,8 @@ enum ComposerIncomingAttachments {
     case owned(ComposerPromisedFileBatch)
 }
 
-enum ComposerPromisedFileStorage {
+// Pasted images are written off the main actor.
+nonisolated enum ComposerPromisedFileStorage {
     static func rootDirectory(fileManager: FileManager = .default) -> URL {
         let applicationIdentifier = Bundle.main.bundleIdentifier
             ?? "dev.sakuracord.SakuraCord"
