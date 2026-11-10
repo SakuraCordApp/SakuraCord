@@ -13,8 +13,11 @@ const context = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, "assessmen
 const triage = result.triage;
 // The hub allows a bounded number of question rounds; after that, open
 // questions are left for a maintainer instead of asking the reporter again.
-const openQuestions = context.questionsAllowed === false && triage?.needsInformation ? triage.questions ?? [] : [];
-if (context.questionsAllowed === false && triage) Object.assign(triage, { needsInformation: false, questions: [] });
+let openQuestions = [];
+if (context.questionsAllowed === false && triage) {
+  if (triage.needsInformation) openQuestions = triage.questions ?? [];
+  Object.assign(triage, { needsInformation: false, questions: [] });
+}
 if (context.number !== Number(number) || !context.areas.includes(triage?.area) ||
     (triage.duplicateOf !== null && (!context.candidates.includes(triage.duplicateOf) || triage.duplicateOf === Number(number))) ||
     (triage.needsInformation && !triage.questions.length)) throw new Error("Invalid assessment result");
