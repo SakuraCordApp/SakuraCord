@@ -1000,10 +1000,9 @@ final class ApplicationCommandTextView: ComposerFocusReportingTextView {
     override func paste(_ sender: Any?) {
         if coordinator?.canReceiveAttachment() == true,
            let type = commandPasteboard.availableType(from: ComposerPasteboardAttachments.readableTypes),
-           ComposerPasteboardAttachments.readAttachments(from: commandPasteboard, type: type, receive: { [weak coordinator] in
-               coordinator?.receiveAttachment($0)
-           })
+           let attachments = ComposerPasteboardAttachments.attachments(from: commandPasteboard, type: type)
         {
+            coordinator?.receiveAttachment(attachments)
             return
         }
         guard var value = commandPasteboard.string(forType: .string) else { return }

@@ -16,12 +16,14 @@ extension AppModel {
         let command = commandComposer.draft
         commandComposer.resetForChannelChange()
         let attachments = composerAttachments(for: destination)
-        guard let conversationID, !attachments.isEmpty || command != nil else {
+        // A conversation deleted as the user leaves it has nothing to return to.
+        let channel = channelID.flatMap(messagePresentationChannel)
+        guard let conversationID, let channel, !attachments.isEmpty || command != nil else {
             clearComposerAttachments(for: destination)
             return
         }
         let kept = KeptComposerDraft(
-            guildID: channelID.flatMap(messagePresentationChannel)?.guildID,
+            guildID: channel.guildID,
             channelID: channelID,
             attachments: attachments,
             command: command
@@ -36,10 +38,12 @@ extension AppModel {
     /// Gives a composer entering a conversation what it kept there.
     func restoreComposerConversation(_ destination: MessageComposerDestination, conversationID: ChannelID?) {
         guard let conversationID, let kept = composer.keptDrafts.removeValue(forKey: conversationID) else { return }
-        setComposerAttachments(kept.attachments, for: destination)
+        // The command first: setting the attachments prunes owned files no
+        // composer holds, which would include the command's.
         if let command = kept.command {
             commandComposer(for: destination).restore(command)
         }
+        setComposerAttachments(kept.attachments, for: destination)
     }
 
     /// Drops a kept draft as clearing its composer would, early uploads included.

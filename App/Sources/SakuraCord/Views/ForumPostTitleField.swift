@@ -165,8 +165,11 @@ struct ForumPostTitleField: NSViewRepresentable {
                 return super.readSelection(from: pasteboard, type: type)
             }
             // Declining lets AppKit read the next available type.
-            guard receivesAttachments, let receiveAttachments else { return false }
-            return ComposerPasteboardAttachments.readAttachments(from: pasteboard, type: type, receive: receiveAttachments)
+            guard receivesAttachments, let receiveAttachments,
+                  let attachments = ComposerPasteboardAttachments.attachments(from: pasteboard, type: type)
+            else { return false }
+            receiveAttachments(attachments)
+            return true
         }
     }
 }

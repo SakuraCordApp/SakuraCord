@@ -61,7 +61,22 @@ extension AppModel {
             guard !acceptedURLs.isEmpty else { return }
             defer { endUsingOwnedPromisedFiles(acceptedURLs) }
             await sendAttachmentsImmediately(acceptedURLs.map { ForumPostAttachment(url: $0) }, to: destination)
+        case let (.pastedImage(image), _):
+            guard let batch = await written(image, for: destination) else { return }
+            await receiveComposerAttachments(.owned(batch), to: destination, sendingImmediately: sendingImmediately)
         }
+    }
+
+    /// Writes a pasted image for `destination`'s conversation. An image the
+    /// user left while it was written doesn't follow them to the next one.
+    private func written(_ image: ComposerPastedImage, for destination: MessageComposerDestination) async -> ComposerPromisedFileBatch? {
+        let context = attachmentComposerContext(for: destination)
+        guard let batch = await image.write() else { return nil }
+        guard attachmentComposerContext(for: destination) == context else {
+            batch.discard()
+            return nil
+        }
+        return batch
     }
 
     /// Fills the active slash command's attachment option with the first
@@ -69,9 +84,13 @@ extension AppModel {
     @discardableResult
     func receiveCommandAttachment(_ incoming: ComposerIncomingAttachments, in destination: MessageComposerDestination = .channel) async -> Bool {
         let commandComposer = commandComposer(for: destination)
-        let url: URL? = switch incoming {
-        case let .external(urls): uploadableFileURLs(urls).first
-        case let .owned(batch): adoptPromisedFileBatch(batch).first
+        let url: URL?
+        switch incoming {
+        case let .external(urls): url = uploadableFileURLs(urls).first
+        case let .owned(batch): url = adoptPromisedFileBatch(batch).first
+        case let .pastedImage(image):
+            guard let batch = await written(image, for: destination) else { return false }
+            url = adoptPromisedFileBatch(batch).first
         }
         guard let url else { return false }
         beginUsingOwnedPromisedFiles([url])
@@ -142,14 +161,14 @@ extension AppModel {
         // A sent message shows at once, so its videos are read while the
         // tiles hold sending back.
         async let videosPrepared: Void = LocalVideo.prepare(urls)
-        let acceptedURLs = Set(await attachmentURLsWithinDiscordLimit(
+        let acceptedURLs = Set(await checkedAttachmentURLsWithinDiscordLimit(
             urls,
-            offeringExternalUploadFor: destination
-        ))
+            offeringExternalUploadFor: destination,
+            keepsAfterLeaving: true
+        ) ?? [])
         await videosPrepared
         let rejectedIDs = Set(staged.filter { !acceptedURLs.contains($0.url) }.map(\.id))
-        // Leaving during the check rejects every file; leaving while only
-        // videos were being read keeps the accepted files with that conversation.
+        // Files the user left while they were checked stay with that conversation.
         if attachmentComposerContext(for: destination) != context,
            case let .conversation(conversationID)? = context,
            var kept = composer.keptDrafts[conversationID]

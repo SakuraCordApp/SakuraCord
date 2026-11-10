@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 nonisolated struct ComposerPromisedFileBatch {
     let directory: URL
@@ -18,6 +18,27 @@ enum ComposerIncomingAttachments {
     case external([URL])
     /// App-owned copies that the model adopts and removes when unused.
     case owned(ComposerPromisedFileBatch)
+    /// A clipboard image, which its receiver writes as an owned PNG.
+    case pastedImage(ComposerPastedImage)
+}
+
+/// Converting and writing a large image would stall the main actor, so a
+/// pasted image arrives as data. Its receiver writes it and decides whether
+/// the result is still wanted, as a promised file from a drag arrives late.
+nonisolated struct ComposerPastedImage {
+    let data: Data
+    let type: NSPasteboard.PasteboardType
+    let filename: String
+
+    /// The image as a PNG in app-owned storage, which the model adopts and
+    /// removes once no composer or upload retains it.
+    @concurrent func write() async -> ComposerPromisedFileBatch? {
+        guard let png = type == .png ? data : NSImage(data: data)?.tiffRepresentation
+            .flatMap(NSBitmapImageRep.init(data:))?
+            .representation(using: .png, properties: [:])
+        else { return nil }
+        return ComposerPromisedFileStorage.makeBatch(writing: png, named: filename)
+    }
 }
 
 // Pasted images are written off the main actor.
