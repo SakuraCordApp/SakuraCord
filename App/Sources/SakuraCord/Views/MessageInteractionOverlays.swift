@@ -800,51 +800,48 @@ enum MessageReplySummary {
     /// space is a spoiler only inside one spoiler, and adjacent spoilers stay
     /// separate ranges. Custom emojis are extracted into `Prepared.emojis` and
     /// represented as object replacement placeholders in `text`.
+    private struct ProtectedEmojiTokens {
+        let protectedSource: String
+        let markerPrefix: String
+        let emojisByIndex: [Int: RenderedEmoji]
+    }
+
     nonisolated private static func protectEmojiTokens(
         in source: String
-    ) -> (protectedSource: String, emojisByScalar: [UnicodeScalar: RenderedEmoji]) {
+    ) -> ProtectedEmojiTokens {
         let matches = emojiExpression.matches(
             in: source,
             range: NSRange(source.startIndex ..< source.endIndex, in: source)
         )
-        guard !matches.isEmpty else { return (source, [:]) }
-
-        let count = UInt32(matches.count)
-        var markerBase: UInt32 = 0xE000
-        while markerBase + count <= 0xF8FF {
-            let candidateRange = markerBase ..< markerBase + count
-            let collides = source.unicodeScalars.contains { candidateRange.contains($0.value) }
-            if !collides { break }
-            markerBase += count + 1
-        }
-        if markerBase + count > 0xF8FF {
-            markerBase = 0xF0000
-            while markerBase + count <= 0xFFFFE {
-                let candidateRange = markerBase ..< markerBase + count
-                let collides = source.unicodeScalars.contains { candidateRange.contains($0.value) }
-                if !collides { break }
-                markerBase += count + 1
-            }
+        guard !matches.isEmpty else {
+            return ProtectedEmojiTokens(protectedSource: source, markerPrefix: "", emojisByIndex: [:])
         }
 
-        var emojisByScalar: [UnicodeScalar: RenderedEmoji] = [:]
+        var markerPrefix = "SakuraEmojiMarker"
+        while source.contains(markerPrefix) {
+            markerPrefix += "X"
+        }
+
+        var emojisByIndex: [Int: RenderedEmoji] = [:]
         var protectedSource = ""
         var sourceCursor = source.startIndex
-        var markerOffset: UInt32 = 0
+        var index = 0
         for match in matches {
             guard let range = Range(match.range, in: source) else { continue }
             let token = String(source[range])
-            guard let emoji = RenderedEmoji(rawToken: token),
-                  let scalar = UnicodeScalar(markerBase + markerOffset)
-            else { continue }
+            guard let emoji = RenderedEmoji(rawToken: token) else { continue }
             protectedSource += source[sourceCursor ..< range.lowerBound]
-            protectedSource.unicodeScalars.append(scalar)
-            emojisByScalar[scalar] = emoji
-            markerOffset += 1
+            protectedSource += "\(markerPrefix)I\(index)I"
+            emojisByIndex[index] = emoji
+            index += 1
             sourceCursor = range.upperBound
         }
         protectedSource += source[sourceCursor...]
-        return (protectedSource, emojisByScalar)
+        return ProtectedEmojiTokens(
+            protectedSource: protectedSource,
+            markerPrefix: markerPrefix,
+            emojisByIndex: emojisByIndex
+        )
     }
 
     /// Collapses the rendered text's whitespace to single spaces. A collapsed
@@ -877,12 +874,56 @@ enum MessageReplySummary {
             length += valueLength
         }
 
-        let (protectedSource, emojisByScalar) = protectEmojiTokens(in: source)
+        func appendTextSlice(_ slice: String, spoilerID: Int?) {
+            for character in slice {
+                if character.isWhitespace {
+                    pendingSpace = !text.isEmpty
+                    continue
+                }
+                if pendingSpace {
+                    append(
+                        " ",
+                        spoilerID: previousSpoilerID == spoilerID ? spoilerID : nil
+                    )
+                    pendingSpace = false
+                }
+                append(String(character), spoilerID: spoilerID)
+                previousSpoilerID = spoilerID
+            }
+        }
+
+        let protection = protectEmojiTokens(in: source)
+        let protectedSource = protection.protectedSource
+        let markerPrefix = protection.markerPrefix
+        let emojisByIndex = protection.emojisByIndex
+        let markerExpression = markerPrefix.isEmpty
+            ? nil
+            : RegularExpressionFactory.make("\(markerPrefix)I([0-9]+)I")
 
         for run in DiscordMarkdown.plainTextRuns(protectedSource) {
-            for character in run.text {
-                let scalar = character.unicodeScalars.count == 1 ? character.unicodeScalars.first : nil
-                if let scalar, let emoji = emojisByScalar[scalar] {
+            guard let markerExpression, run.text.contains(markerPrefix) else {
+                appendTextSlice(run.text, spoilerID: run.spoilerID)
+                continue
+            }
+            let runString = run.text as NSString
+            let markerMatches = markerExpression.matches(
+                in: run.text,
+                range: NSRange(location: 0, length: runString.length)
+            )
+            var cursor = 0
+            for match in markerMatches {
+                if match.range.location > cursor {
+                    let before = runString.substring(with: NSRange(
+                        location: cursor,
+                        length: match.range.location - cursor
+                    ))
+                    appendTextSlice(before, spoilerID: run.spoilerID)
+                }
+                if match.numberOfRanges > 1,
+                   let indexRange = Range(match.range(at: 1), in: run.text),
+                   let index = Int(run.text[indexRange]),
+                   let emoji = emojisByIndex[index]
+                {
                     if pendingSpace {
                         append(
                             " ",
@@ -894,19 +935,12 @@ enum MessageReplySummary {
                     append("\u{FFFC}", spoilerID: run.spoilerID)
                     emojis.append(EmojiItem(range: emojiRange, emoji: emoji))
                     previousSpoilerID = run.spoilerID
-                } else if character.isWhitespace {
-                    pendingSpace = !text.isEmpty
-                } else {
-                    if pendingSpace {
-                        append(
-                            " ",
-                            spoilerID: previousSpoilerID == run.spoilerID ? run.spoilerID : nil
-                        )
-                        pendingSpace = false
-                    }
-                    append(String(character), spoilerID: run.spoilerID)
-                    previousSpoilerID = run.spoilerID
                 }
+                cursor = NSMaxRange(match.range)
+            }
+            if cursor < runString.length {
+                let after = runString.substring(from: cursor)
+                appendTextSlice(after, spoilerID: run.spoilerID)
             }
         }
         guard !text.isEmpty else {
