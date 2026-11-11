@@ -55,15 +55,19 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private let queue: DispatchQueue
     private let onClose: @Sendable (UUID) -> Void
     private let logger = Logger(subsystem: "dev.sakuracord", category: "DiscordIPCClientSession")
+    private let operationLock = NSLock()
     private var lastOperationTask: Task<Void, Never>?
 
     private func enqueueOperation(_ operation: @escaping @Sendable () async -> Void) {
+        operationLock.lock()
         let previous = lastOperationTask
-        lastOperationTask = Task {
+        let task = Task {
             _ = await previous?.value
             guard !Task.isCancelled else { return }
             await operation()
         }
+        lastOperationTask = task
+        operationLock.unlock()
     }
 
     init(

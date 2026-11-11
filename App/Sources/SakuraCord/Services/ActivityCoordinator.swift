@@ -70,6 +70,7 @@ public actor ActivityCoordinator {
     private var preferences: ActivityCoordinatorPreferences
     private var registeredActivities: [ActivitySource: OutgoingActivityPayload] = [:]
     private var publishedSourceIDs: Set<String> = []
+    private var inFlightSourceIDs: Set<String> = []
     private var syncGeneration: UInt64 = 0
     private var onActivityChangedHandler: (@Sendable (OutgoingActivityPayload?) -> Void)?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "ActivityCoordinator")
@@ -85,6 +86,7 @@ public actor ActivityCoordinator {
     public func setProvider(_ newProvider: any ChatProvider) async {
         self.provider = newProvider
         publishedSourceIDs.removeAll()
+        inFlightSourceIDs.removeAll()
         syncGeneration &+= 1
         await synchronizeProvider()
     }
@@ -139,6 +141,7 @@ public actor ActivityCoordinator {
 
     public func resendActivities() async {
         publishedSourceIDs.removeAll()
+        inFlightSourceIDs.removeAll()
         syncGeneration &+= 1
         await synchronizeProvider()
     }
@@ -174,9 +177,9 @@ public actor ActivityCoordinator {
         onActivityChangedHandler?(primary)
         let permittedSourceIDs = Set(permitted.keys.map(\.sourceID))
 
-        // 1. Clear any sources that were previously published or registered but are no longer permitted/active
+        // 1. Clear any sources that were previously published, registered, or in-flight but are no longer permitted/active
         let registeredSourceIDs = Set(registeredActivities.keys.map(\.sourceID))
-        let allKnownSourceIDs = publishedSourceIDs.union(registeredSourceIDs)
+        let allKnownSourceIDs = publishedSourceIDs.union(registeredSourceIDs).union(inFlightSourceIDs)
         let staleSourceIDs = allKnownSourceIDs.subtracting(permittedSourceIDs)
         for staleID in staleSourceIDs {
             guard generation == syncGeneration else { return }
@@ -193,18 +196,32 @@ public actor ActivityCoordinator {
         for (source, payload) in permitted {
             guard generation == syncGeneration else { return }
             guard isSourcePermitted(source) else { return }
+            inFlightSourceIDs.insert(source.sourceID)
             do {
                 try await provider.updateActivity(payload, sourceID: source.sourceID)
-                guard generation == syncGeneration else { return }
-                guard isSourcePermitted(source) else { return }
+                inFlightSourceIDs.remove(source.sourceID)
+                guard generation == syncGeneration else {
+                    // Late update completed after superseding sync; if source is no longer permitted or registered, clean up immediately
+                    if !isSourcePermitted(source) || registeredActivities[source] == nil {
+                        try? await provider.clearActivities(sourceID: source.sourceID)
+                        publishedSourceIDs.remove(source.sourceID)
+                    }
+                    return
+                }
+                guard isSourcePermitted(source) else {
+                    try? await provider.clearActivities(sourceID: source.sourceID)
+                    publishedSourceIDs.remove(source.sourceID)
+                    return
+                }
                 publishedSourceIDs.insert(source.sourceID)
             } catch {
+                inFlightSourceIDs.remove(source.sourceID)
                 logger.debug("Failed to update activity for source \(source.sourceID): \(error.localizedDescription)")
             }
         }
 
-        // If completely empty and nothing published, ensure provider has no remaining activities
-        if permitted.isEmpty, publishedSourceIDs.isEmpty {
+        // If completely empty and nothing published or in flight, ensure provider has no remaining activities
+        if permitted.isEmpty, publishedSourceIDs.isEmpty, inFlightSourceIDs.isEmpty {
             guard generation == syncGeneration else { return }
             do {
                 try await provider.clearActivities(sourceID: nil)

@@ -479,13 +479,9 @@ struct ProfileActivitySection: View {
                 .stroke(Color.primary.opacity(isCardHovered ? 0.14 : 0.08), lineWidth: 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
+        .pointerStyle(activityDestinationURL != nil ? .link : .default)
         .onHover { hovering in
             isCardHovered = hovering
-            if hovering, activityDestinationURL != nil {
-                NSCursor.pointingHand.set()
-            } else if !hovering {
-                NSCursor.arrow.set()
-            }
         }
         .onTapGesture {
             if isMusic, isCurrentUser {
