@@ -641,4 +641,52 @@ struct DiscordIPCServerTests {
         }
         #expect(cleared)
     }
+
+    @Test func `buffered set activity following close frame is discarded without leaking activity`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+        defer { close(clientFD) }
+
+        sendClientFrame(fd: clientFD, opcode: 0, jsonObject: ["v": 1, "client_id": "pipelined_close_app"])
+        _ = try #require(readClientFrame(fd: clientFD))
+
+        // Pipeline opcode 2 (CLOSE) and opcode 1 (SET_ACTIVITY) in one combined buffer
+        let closePayload = "{}".data(using: .utf8)!
+        var closeOp = UInt32(2).littleEndian
+        var closeLen = UInt32(closePayload.count).littleEndian
+
+        let setActivityJSON: [String: Any] = [
+            "cmd": "SET_ACTIVITY",
+            "args": ["activity": ["name": "Zombie Activity"]],
+            "nonce": "zombie-nonce"
+        ]
+        let setPayload = try JSONSerialization.data(withJSONObject: setActivityJSON)
+        var setOp = UInt32(1).littleEndian
+        var setLen = UInt32(setPayload.count).littleEndian
+
+        var combinedData = Data()
+        withUnsafeBytes(of: &closeOp) { combinedData.append(contentsOf: $0) }
+        withUnsafeBytes(of: &closeLen) { combinedData.append(contentsOf: $0) }
+        combinedData.append(closePayload)
+        withUnsafeBytes(of: &setOp) { combinedData.append(contentsOf: $0) }
+        withUnsafeBytes(of: &setLen) { combinedData.append(contentsOf: $0) }
+        combinedData.append(setPayload)
+
+        _ = combinedData.withUnsafeBytes { ptr in
+            Darwin.write(clientFD, ptr.baseAddress!, combinedData.count)
+        }
+
+        // Wait to confirm that zombie activity is never registered on the coordinator or provider
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let acts = await coordinator.currentActivities()
+        #expect(acts.isEmpty)
+        let providerActs = await mockProvider.currentActivities()
+        #expect(providerActs.isEmpty)
+    }
 }

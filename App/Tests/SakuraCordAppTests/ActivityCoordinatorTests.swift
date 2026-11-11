@@ -132,4 +132,26 @@ struct ActivityCoordinatorTests {
         #expect(activities["apple_music"] == nil)
         #expect(activities[gameSource.sourceID] == game)
     }
+
+    @Test func `stale generation updates are ignored by coordinator`() async throws {
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+
+        let initialMusic = OutgoingActivityPayload(name: "Apple Music", type: .listening, details: "Track 1")
+        await coordinator.setActivity(initialMusic, for: .appleMusic, generation: 5)
+        #expect(await mockProvider.currentActivities()["apple_music"] == initialMusic)
+
+        // Stale update with gen 4 is ignored
+        let staleMusic = OutgoingActivityPayload(name: "Apple Music", type: .listening, details: "Stale Track")
+        await coordinator.setActivity(staleMusic, for: .appleMusic, generation: 4)
+        #expect(await mockProvider.currentActivities()["apple_music"] == initialMusic)
+
+        // Clear with generation 6 clears it
+        await coordinator.clearActivity(for: .appleMusic, generation: 6)
+        #expect(await mockProvider.currentActivities()["apple_music"] == nil)
+
+        // Stale set with gen 5 after clear with gen 6 cannot restore it
+        await coordinator.setActivity(staleMusic, for: .appleMusic, generation: 5)
+        #expect(await mockProvider.currentActivities()["apple_music"] == nil)
+    }
 }

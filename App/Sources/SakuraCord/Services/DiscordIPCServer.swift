@@ -57,9 +57,14 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private let logger = Logger(subsystem: "dev.sakuracord", category: "DiscordIPCClientSession")
     private let operationLock = NSLock()
     private var lastOperationTask: Task<Void, Never>?
+    private var isStopped = false
 
     private func enqueueOperation(_ operation: @escaping @Sendable () async -> Void) {
         operationLock.lock()
+        guard !isStopped else {
+            operationLock.unlock()
+            return
+        }
         let previous = lastOperationTask
         let task = Task {
             _ = await previous?.value
@@ -99,7 +104,13 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     }
 
     func stop() {
-        guard readSource != nil else { return }
+        operationLock.lock()
+        guard !isStopped else {
+            operationLock.unlock()
+            return
+        }
+        isStopped = true
+        readBuffer.removeAll()
         readSource?.cancel()
         readSource = nil
         let source = ActivitySource.localRPC(
@@ -107,9 +118,13 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
             clientID: clientID ?? "unknown",
             processID: processID
         )
-        enqueueOperation { [coordinator] in
+        let previous = lastOperationTask
+        let task = Task {
+            _ = await previous?.value
             await coordinator.clearActivity(for: source)
         }
+        lastOperationTask = task
+        operationLock.unlock()
         onClose(id)
     }
 
@@ -126,6 +141,14 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
 
     private func processIncomingFrames() {
         while readBuffer.count >= 8 {
+            operationLock.lock()
+            let stopped = isStopped
+            operationLock.unlock()
+            if stopped {
+                readBuffer.removeAll()
+                break
+            }
+
             guard let opcode = readBuffer.readUInt32LittleEndian(at: 0),
                   let length = readBuffer.readUInt32LittleEndian(at: 4) else {
                 break
@@ -146,6 +169,14 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
             let payloadData = readBuffer.subdata(in: 8 ..< totalFrameSize)
             readBuffer.removeSubrange(0 ..< totalFrameSize)
             handleFrame(opcode: opcode, payloadData: payloadData)
+
+            operationLock.lock()
+            let stoppedAfter = isStopped
+            operationLock.unlock()
+            if stoppedAfter {
+                readBuffer.removeAll()
+                break
+            }
         }
     }
 

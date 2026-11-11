@@ -69,6 +69,7 @@ public actor ActivityCoordinator {
     private var provider: any ChatProvider
     private var preferences: ActivityCoordinatorPreferences
     private var registeredActivities: [ActivitySource: OutgoingActivityPayload] = [:]
+    private var sourceGenerations: [ActivitySource: UInt64] = [:]
     private var publishedSourceIDs: Set<String> = []
     private var inFlightSourceIDs: Set<String> = []
     private var syncGeneration: UInt64 = 0
@@ -118,7 +119,19 @@ public actor ActivityCoordinator {
         }
     }
 
-    public func setActivity(_ activity: OutgoingActivityPayload?, for source: ActivitySource) async {
+    public func setActivity(
+        _ activity: OutgoingActivityPayload?,
+        for source: ActivitySource,
+        generation: UInt64? = nil
+    ) async {
+        if let generation {
+            let lastGen = sourceGenerations[source] ?? 0
+            guard generation >= lastGen else {
+                logger.debug("Discarding stale setActivity for \(source.sourceID): gen \(generation) < \(lastGen)")
+                return
+            }
+            sourceGenerations[source] = generation
+        }
         if let activity {
             registeredActivities[source] = activity
         } else {
@@ -128,7 +141,15 @@ public actor ActivityCoordinator {
         await synchronizeProvider()
     }
 
-    public func clearActivity(for source: ActivitySource) async {
+    public func clearActivity(for source: ActivitySource, generation: UInt64? = nil) async {
+        if let generation {
+            let lastGen = sourceGenerations[source] ?? 0
+            guard generation >= lastGen else {
+                logger.debug("Discarding stale clearActivity for \(source.sourceID): gen \(generation) < \(lastGen)")
+                return
+            }
+            sourceGenerations[source] = generation
+        }
         registeredActivities.removeValue(forKey: source)
         syncGeneration &+= 1
         await synchronizeProvider()
@@ -136,6 +157,7 @@ public actor ActivityCoordinator {
 
     public func clearAllActivities() async {
         registeredActivities.removeAll()
+        sourceGenerations.removeAll()
         syncGeneration &+= 1
         await synchronizeProvider()
     }

@@ -292,12 +292,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     }
 
     private func clearMusicActivity(now: Date) async {
-        _ = nextTrackUpdateGeneration()
+        let gen = nextTrackUpdateGeneration()
         cancelArtworkFetchTask()
         stopPositionPolling()
         updatePlaybackStateOnPauseOrStop(now: now)
         Self.removeCachedArtwork()
-        await coordinator.clearActivity(for: .appleMusic)
+        await coordinator.clearActivity(for: .appleMusic, generation: gen)
     }
 
     private func isCurrentArtworkGeneration(_ gen: UInt64) -> Bool {
@@ -421,6 +421,13 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         return abs(queried - expectedElapsed) > 2.0
     }
 
+    /// Periodic position polling is strictly required to detect playback scrubber adjustments (seeking)
+    /// during continuous playback. macOS distributed notifications (`com.apple.Music.playerInfo` and
+    /// `com.spotify.client.PlaybackStateChanged`) only fire on discrete state transitions (such as track
+    /// changes or play/pause toggles). When a listener scrubs forward or backward within an actively playing
+    /// track, macOS broadcasts NO notification. The poll checks every 3 seconds to measure whether
+    /// the actual player position has drifted beyond 2 seconds from the linearly extrapolated start time,
+    /// and synchronizes Discord presence accordingly.
     private func startPositionPollingIfNeeded(appName: String) {
         lock.lock()
         defer { lock.unlock() }
@@ -701,6 +708,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         lastPlaybackState = nil
         currentActiveTrackInfo = nil
         trackUpdateGeneration &+= 1
+        let stopGen = trackUpdateGeneration
         lock.unlock()
         stopPositionPolling()
         cancelArtworkFetchTask()
@@ -716,7 +724,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
         Self.removeCachedArtwork()
         Task { [coordinator] in
-            await coordinator.clearActivity(for: .appleMusic)
+            await coordinator.clearActivity(for: .appleMusic, generation: stopGen)
         }
         logger.info("Music presence monitor stopped.")
     }
@@ -842,7 +850,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         )
 
         logger.info("\(trackInfo.appName, privacy: .public) presence updating: '\(trackName, privacy: .public)' by '\(artist ?? "Unknown", privacy: .public)'")
-        await coordinator.setActivity(activity, for: .appleMusic)
+        await coordinator.setActivity(activity, for: .appleMusic, generation: currentGeneration)
 
         spawnArtworkFetchTask(trackInfo: trackInfo, activity: activity, trackGeneration: currentGeneration)
         return activity
@@ -932,7 +940,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                       self.isCurrentTrackUpdateGeneration(trackGeneration),
                       !Task.isCancelled
                 else { return }
-                await coordinator.setActivity(updatedActivity, for: .appleMusic)
+                await coordinator.setActivity(updatedActivity, for: .appleMusic, generation: trackGeneration)
             }
         }
         artworkFetchTask = task
