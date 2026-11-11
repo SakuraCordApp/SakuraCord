@@ -413,7 +413,8 @@ extension DiscordRESTProvider {
         }
         return UserPresence(
             status: member.status, customStatus: member.customStatus, activityText: member.activityText,
-            isListeningToMusic: member.isListeningToMusic, isMobileOnly: member.isMobileOnly
+            isListeningToMusic: member.isListeningToMusic, isMobileOnly: member.isMobileOnly,
+            richActivity: member.richActivity
         )
     }
 

@@ -249,7 +249,8 @@ public actor MockChatProvider: ChatProvider {
                     status: $0.id == currentUser.id ? .online : reference?.status ?? .offline,
                     activityText: reference?.activityText,
                     customStatus: reference?.customStatus,
-                    isListeningToMusic: reference?.isListeningToMusic ?? false
+                    isListeningToMusic: reference?.isListeningToMusic ?? false,
+                    richActivity: reference?.richActivity
                 )
                 if let nickname = snapshot.relationshipNicknamesByUserID[$0.id] {
                     member.globalDisplayName = $0.displayName

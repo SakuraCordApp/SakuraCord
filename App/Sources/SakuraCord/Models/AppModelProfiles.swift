@@ -158,6 +158,7 @@ extension AppModel {
                 fallback.activityText = presence.activityText
                 fallback.isListeningToMusic = presence.isListeningToMusic
                 fallback.isMobileOnly = presence.isMobileOnly
+                fallback.richActivity = presence.richActivity
             }
             member = fallback
         }
@@ -226,6 +227,7 @@ extension AppModel {
                 fallback.activityText = presence.activityText
                 fallback.isListeningToMusic = presence.isListeningToMusic
                 fallback.isMobileOnly = presence.isMobileOnly
+                fallback.richActivity = presence.richActivity
             }
             member = fallback
         }
@@ -483,6 +485,9 @@ extension AppModel {
         if let member = (guildID == selectedGuildID ? membersByID[userID] : nil) ?? membersByID[userID] {
             return member
         }
+        if let directMember = members.first(where: { $0.id == userID }) {
+            return directMember
+        }
         for guildMembers in membersByGuildID.values {
             if let member = guildMembers[userID] {
                 return member
@@ -506,6 +511,7 @@ extension AppModel {
             presentation.member.activityText = presence.activityText
             presentation.member.isListeningToMusic = presence.isListeningToMusic
             presentation.member.isMobileOnly = presence.isMobileOnly
+            presentation.member.richActivity = presence.richActivity
         }
         if presentation.member.id == currentUser?.id || presentation.member.id == snapshot?.currentUser.id {
             // Member stores do not track our own presence; the account does.
