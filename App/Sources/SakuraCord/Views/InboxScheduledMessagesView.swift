@@ -32,43 +32,22 @@ struct InboxScheduledMessagesView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let error = state.errorMessage {
-                ScheduledMessagesNotice(systemImage: "exclamationmark.triangle.fill", tint: .orange, text: error) {
+                InboxNotice(systemImage: "exclamationmark.triangle.fill", tint: .orange, text: error) {
                     Button("Retry", action: model.loadScheduledMessages)
                         .buttonStyle(.glass)
                         .controlSize(.small)
                 }
             } else if model.scheduledMessageLimit == 1, state.hasLoaded, !state.messages.isEmpty {
                 // Like the official list, only an account Nitro would help hears about the limit.
-                ScheduledMessagesNotice(
+                InboxNotice(
                     systemImage: "sparkles",
                     tint: SakuraCordAccentColor.color,
-                    text: "Nitro raises your scheduled message limit to \(ScheduledMessagePolicy.limit(premiumType: 2))."
+                    text: "Nitro raises your scheduled message limit to \(ScheduledMessagePolicy.nitroLimit)."
                 ) { EmptyView() }
             }
         }
         .animation(.snappy(duration: 0.25), value: state.messages.map(\.id))
         .animation(.snappy(duration: 0.25), value: state.errorMessage)
-    }
-}
-
-private struct ScheduledMessagesNotice<Accessory: View>: View {
-    let systemImage: String
-    let tint: Color
-    let text: String
-    @ViewBuilder let accessory: () -> Accessory
-
-    var body: some View {
-        HStack(spacing: InterfaceScale.metric(8)) {
-            Image(systemName: systemImage).foregroundStyle(tint)
-            Text(text).font(.interface(.callout)).foregroundStyle(.secondary).lineLimit(2)
-            Spacer(minLength: InterfaceScale.metric(8))
-            accessory()
-        }
-        .padding(.horizontal, InterfaceScale.metric(12))
-        .padding(.vertical, InterfaceScale.metric(8))
-        .background(.primary.opacity(0.06), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(14)))
-        .padding(InterfaceScale.metric(10))
-        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 
@@ -81,14 +60,16 @@ private struct ScheduledMessageCard: View {
     @FocusState private var isEditorFocused: Bool
 
     var body: some View {
+        let channel = model.knownRootChannel(message.channelID)
+            ?? model.sidebarThread(message.channelID).map(model.threadNavigationChannel)
         VStack(alignment: .leading, spacing: InterfaceScale.metric(6)) {
             HStack(spacing: InterfaceScale.metric(8)) {
-                status
+                status(channel: channel)
                 Spacer(minLength: InterfaceScale.metric(8))
                 if isPending {
                     ProgressView().controlSize(.small)
                 } else {
-                    actions
+                    actions(channel: channel)
                 }
             }
             // Like the official list, a message whose channel is gone shows only its error and Cancel.
@@ -115,41 +96,37 @@ private struct ScheduledMessageCard: View {
 
     @ViewBuilder private var content: some View {
         if let editedContent {
-                TextField("Message", text: Binding(get: { editedContent }, set: { self.editedContent = $0 }), axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1 ... 8)
-                    .focused($isEditorFocused)
-                    .padding(InterfaceScale.metric(8))
-                    .background(.primary.opacity(0.06), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(10)))
-                    .onSubmit {
-                        // The editor stays open until the row's other change is answered.
-                        guard !isPending else { return }
-                        model.editScheduledMessage(message, content: editedContent)
-                        self.editedContent = nil
-                    }
-                    .onExitCommand { self.editedContent = nil }
-                Text("Escape to cancel · Return to save")
-                    .font(.interface(.caption2))
-                    .foregroundStyle(.tertiary)
-            } else if !message.content.isEmpty {
-                Text(message.content)
-                    .font(.interface(.body))
-                    .lineLimit(4)
-                    .textSelection(.enabled)
-            }
-            if !details.isEmpty {
-                HStack(spacing: InterfaceScale.metric(10)) {
-                    ForEach(details, id: \.text) { detail in
-                        Label(detail.text, systemImage: detail.systemImage)
-                    }
+            TextField("Message", text: Binding(get: { editedContent }, set: { self.editedContent = $0 }), axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1 ... 8)
+                .focused($isEditorFocused)
+                .padding(InterfaceScale.metric(8))
+                .background(.primary.opacity(0.06), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(10)))
+                .onSubmit {
+                    // The editor stays open until the row's other change is answered.
+                    guard !isPending else { return }
+                    model.editScheduledMessage(message, content: editedContent)
+                    self.editedContent = nil
                 }
-                .font(.interface(.caption))
-                .foregroundStyle(.secondary)
+                .onExitCommand { self.editedContent = nil }
+            Text("Escape to cancel · Return to save")
+                .font(.interface(.caption2))
+                .foregroundStyle(.tertiary)
+        } else if !message.content.isEmpty {
+            Text(message.content)
+                .font(.interface(.body))
+                .lineLimit(4)
+                .textSelection(.enabled)
+        }
+        if !details.isEmpty {
+            HStack(spacing: InterfaceScale.metric(10)) {
+                ForEach(details, id: \.text) { detail in
+                    Label(detail.text, systemImage: detail.systemImage)
+                }
             }
-    }
-
-    private var channel: Channel? {
-        model.knownRootChannel(message.channelID) ?? model.sidebarThread(message.channelID).map(model.threadNavigationChannel)
+            .font(.interface(.caption))
+            .foregroundStyle(.secondary)
+        }
     }
 
     private func channelTitle(_ channel: Channel) -> String {
@@ -159,8 +136,8 @@ private struct ScheduledMessageCard: View {
         return "\(channel.name) · \(guild.name)"
     }
 
-    @ViewBuilder private var status: some View {
-        if let failure {
+    @ViewBuilder private func status(channel: Channel?) -> some View {
+        if let failure = failure(channel: channel) {
             Label(failure, systemImage: "exclamationmark.circle.fill")
                 .foregroundStyle(.red)
         } else {
@@ -173,7 +150,7 @@ private struct ScheduledMessageCard: View {
     }
 
     /// The official list's wording: an unknown channel wins over the state Discord reports.
-    private var failure: LocalizedStringResource? {
+    private func failure(channel: Channel?) -> LocalizedStringResource? {
         if channel == nil, model.snapshot != nil { return "Scheduled message's channel not found." }
         return switch message.state {
         case .scheduled: nil
@@ -193,7 +170,7 @@ private struct ScheduledMessageCard: View {
         return details
     }
 
-    private var actions: some View {
+    private func actions(channel: Channel?) -> some View {
         HoverActionPill {
             if channel != nil {
                 HoverActionButton(systemImage: "paperplane", help: "Send Now") { model.sendScheduledMessageNow(message) }
@@ -203,13 +180,7 @@ private struct ScheduledMessageCard: View {
                 }
                 HoverActionButton(systemImage: "clock", help: "Edit Schedule Time") { isEditingTime = true }
                     .popover(isPresented: $isEditingTime, arrowEdge: .bottom) {
-                        ScheduleMessagePicker(
-                            title: "Update Scheduled Message",
-                            confirmTitle: "Update",
-                            initialDate: message.sendAt,
-                            showsShortcuts: false,
-                            scheduledMessageID: message.id
-                        ) {
+                        ScheduleMessagePicker(initialDate: message.sendAt, scheduledMessageID: message.id) {
                             isEditingTime = false
                             model.rescheduleMessage(message, at: $0)
                         }

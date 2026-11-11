@@ -76,12 +76,13 @@ extension AppModel {
 
     /// An explicit refresh also refetches content that is already shown.
     func reloadInbox() {
+        if inbox.tab == .scheduled { return loadScheduledMessages() }
         rebuildInboxUnreadGroups()
         for index in inbox.groups.indices where inbox.groups[index].isLoaded && !inbox.groups[index].isAgeRestricted {
             inbox.groups[index].needsRevalidation = true
         }
         inbox.needsMentionRevalidation = true
-        inbox.isRefreshing = inbox.tab != .scheduled
+        inbox.isRefreshing = true
         resumeInbox()
     }
 

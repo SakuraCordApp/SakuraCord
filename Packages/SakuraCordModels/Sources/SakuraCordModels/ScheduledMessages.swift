@@ -41,9 +41,12 @@ public struct ScheduledMessage: Identifiable, Equatable, Sendable {
 
 /// The official client's scheduling rules (web build 670026).
 public enum ScheduledMessagePolicy {
-    /// Full Nitro (premium type 2) schedules 25 at a time; every other plan, one.
+    /// How many full Nitro (premium type 2) may hold at once.
+    public static let nitroLimit = 25
+
+    /// Every plan but full Nitro schedules one at a time.
     public static func limit(premiumType: Int) -> Int {
-        premiumType == 2 ? 25 : 1
+        premiumType == 2 ? nitroLimit : 1
     }
 
     /// Discord refuses a time less than ten minutes away.

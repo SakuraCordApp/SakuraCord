@@ -36,6 +36,11 @@ final class ScheduledMessagesState {
         confirmations = [:]
         isLimitAlertPresented = false
     }
+
+    /// Discord lists the latest send time first.
+    func sortLatestFirst() {
+        messages.sort { $0.sendAt > $1.sendAt }
+    }
 }
 
 extension AppModel {
@@ -44,13 +49,16 @@ extension AppModel {
     }
 
     func scheduledSendDate(in destination: MessageComposerDestination) -> Date? {
-        composerSendChannelID(in: destination).flatMap { scheduledMessages.sendDates[$0] }
+        // The composer asks on every keystroke; most never have a time set.
+        guard !scheduledMessages.sendDates.isEmpty else { return nil }
+        return composerSendChannelID(in: destination).flatMap { scheduledMessages.sendDates[$0] }
     }
 
     /// Whether the conversation's message is on its way to Discord; until it
     /// is answered, its time stays and nothing else leaves the composer.
     func isSchedulingMessage(in destination: MessageComposerDestination) -> Bool {
-        composerSendChannelID(in: destination).map(scheduledMessages.submittingChannelIDs.contains) ?? false
+        guard !scheduledMessages.submittingChannelIDs.isEmpty else { return false }
+        return composerSendChannelID(in: destination).map(scheduledMessages.submittingChannelIDs.contains) ?? false
     }
 
     func setScheduledSendDate(_ date: Date?, in destination: MessageComposerDestination) {
@@ -72,11 +80,9 @@ extension AppModel {
             do {
                 let messages = try await session.provider.scheduledMessages()
                 guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
-                // Discord lists the latest send time first.
-                scheduledMessages.messages = messages.sorted { $0.sendAt > $1.sendAt }
+                scheduledMessages.messages = messages
+                scheduledMessages.sortLatestFirst()
                 scheduledMessages.hasLoaded = true
-            } catch is CancellationError {
-                return
             } catch {
                 guard !Task.isCancelled, isCurrentAccountSession(session) else { return }
                 scheduledMessages.errorMessage = error.localizedDescription
@@ -91,18 +97,11 @@ extension AppModel {
         in destination: MessageComposerDestination,
         attachments: [ForumPostAttachment]
     ) async {
-        guard let channelID = composerSendChannelID(in: destination) else { return }
         let content = (destination == .channel ? draft : threadDraft).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty || !attachments.isEmpty, validateAttachmentCount(attachments) else { return }
-        let reply = destination == .channel ? replyingTo : threadReplyingTo
-        let outgoing = SendMessageDraft(
-            channelID: channelID,
-            content: content,
-            replyTo: reply?.id,
-            mentionsRepliedUser: destination == .channel ? replyMentionsAuthor : threadReplyMentionsAuthor,
-            attachments: attachments
-        )
-        guard await submitSchedule(outgoing) else { return }
+        guard !content.isEmpty || !attachments.isEmpty, validateAttachmentCount(attachments),
+              let (outgoing, reply) = scheduledDraft(content: content, attachments: attachments, in: destination),
+              await submitSchedule(outgoing)
+        else { return }
         await removeScheduledDraft(outgoing, reply: reply, from: destination, session: accountSession())
     }
 
@@ -111,21 +110,39 @@ extension AppModel {
     func schedulePickedMessage(
         content: String, stickerIDs: [String] = [], in destination: MessageComposerDestination
     ) async -> Bool {
-        guard let channelID = composerSendChannelID(in: destination) else { return false }
+        guard let (outgoing, reply) = scheduledDraft(content: content, stickerIDs: stickerIDs, in: destination),
+              await submitSchedule(outgoing)
+        else { return false }
+        clearReply(reply, in: destination)
+        return true
+    }
+
+    /// The composer's reply goes with whatever it schedules.
+    private func scheduledDraft(
+        content: String,
+        attachments: [ForumPostAttachment] = [],
+        stickerIDs: [String] = [],
+        in destination: MessageComposerDestination
+    ) -> (SendMessageDraft, reply: Message?)? {
+        guard let channelID = composerSendChannelID(in: destination) else { return nil }
         let reply = destination == .channel ? replyingTo : threadReplyingTo
         let outgoing = SendMessageDraft(
             channelID: channelID,
             content: content,
             replyTo: reply?.id,
             mentionsRepliedUser: destination == .channel ? replyMentionsAuthor : threadReplyMentionsAuthor,
+            attachments: attachments,
             stickerIDs: stickerIDs
         )
-        guard await submitSchedule(outgoing) else { return false }
+        return (outgoing, reply)
+    }
+
+    /// Clears the reply that was scheduled, unless another was chosen meanwhile.
+    private func clearReply(_ reply: Message?, in destination: MessageComposerDestination) {
         switch destination {
         case .channel: if replyingTo?.id == reply?.id { replyingTo = nil }
         case .thread: if threadReplyingTo?.id == reply?.id { threadReplyingTo = nil }
         }
-        return true
     }
 
     /// One create at a time per conversation; returns whether Discord accepted it.
@@ -142,7 +159,7 @@ extension AppModel {
             // A read that finished meanwhile may already list it.
             scheduledMessages.messages.removeAll { $0.id == scheduled.id }
             scheduledMessages.messages.append(scheduled)
-            scheduledMessages.messages.sort { $0.sendAt > $1.sendAt }
+            scheduledMessages.sortLatestFirst()
             scheduledMessages.sendDates[channelID] = nil
             reloadScheduledMessagesIfLoading()
             showScheduledConfirmation(scheduled.sendAt, in: channelID)
@@ -181,17 +198,11 @@ extension AppModel {
             return
         }
         setComposerAttachments(composerAttachments(for: destination).filter { !sent.contains($0.id) }, for: destination)
+        clearReply(reply, in: destination)
         // Text typed meanwhile stays; a draft restored unchanged on return does not.
-        switch destination {
-        case .channel:
-            if replyingTo?.id == reply?.id { replyingTo = nil }
-            guard draft.trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
-            updateDraft("")
-        case .thread:
-            if threadReplyingTo?.id == reply?.id { threadReplyingTo = nil }
-            guard threadDraft.trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
-            updateThreadDraft("")
-        }
+        let text = destination == .channel ? draft : threadDraft
+        guard text.trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
+        if destination == .channel { updateDraft("") } else { updateThreadDraft("") }
         stopLocalTyping(clearThrottle: true)
         translation.resetDraft(destination)
     }
@@ -211,7 +222,9 @@ extension AppModel {
     }
 
     func rescheduleMessage(_ message: ScheduledMessage, at date: Date) {
-        updateScheduledMessage(message) { try await $0.rescheduleMessage(message.id, at: date) }
+        changeScheduledMessage(message, failure: "Failed to update message.") {
+            try await $0.rescheduleMessage(message.id, at: date)
+        }
     }
 
     func editScheduledMessage(_ message: ScheduledMessage, content: String) {
@@ -220,66 +233,53 @@ extension AppModel {
         // its preview lists no attachments.
         guard !content.isEmpty else { return cancelScheduledMessage(message) }
         guard content != message.content else { return }
-        updateScheduledMessage(message) {
+        changeScheduledMessage(message, failure: "Failed to update message.") {
             try await $0.editScheduledMessage(message.id, content: content, flags: message.flags)
         }
     }
 
+    func sendScheduledMessageNow(_ message: ScheduledMessage) {
+        changeScheduledMessage(message, failure: "Failed to send scheduled message.") {
+            try await $0.sendScheduledMessageNow(message.id)
+            return nil
+        }
+    }
+
+    func cancelScheduledMessage(_ message: ScheduledMessage) {
+        changeScheduledMessage(message, failure: "Failed to cancel scheduled message.") {
+            try await $0.cancelScheduledMessage(message.id)
+            return nil
+        }
+    }
+
     /// One change per message at a time, so an older answer cannot land last.
-    private func updateScheduledMessage(
+    /// The row stays, marked pending, until Discord confirms, as in the official
+    /// list; a change answered with no message removes it.
+    private func changeScheduledMessage(
         _ message: ScheduledMessage,
-        _ update: @escaping (any ChatProvider) async throws -> ScheduledMessage
+        failure: String,
+        _ change: @escaping (any ChatProvider) async throws -> ScheduledMessage?
     ) {
         guard scheduledMessages.pendingIDs.insert(message.id).inserted else { return }
         let session = accountSession()
         Task { [weak self] in
             defer { self?.scheduledMessages.pendingIDs.remove(message.id) }
             do {
-                let updated = try await update(session.provider)
+                let updated = try await change(session.provider)
                 guard let self, isCurrentAccountSession(session) else { return }
-                if let index = scheduledMessages.messages.firstIndex(where: { $0.id == updated.id }) {
-                    scheduledMessages.messages[index] = updated
+                if let updated {
+                    if let index = scheduledMessages.messages.firstIndex(where: { $0.id == updated.id }) {
+                        scheduledMessages.messages[index] = updated
+                    }
+                    scheduledMessages.sortLatestFirst()
+                } else {
+                    scheduledMessages.messages.removeAll { $0.id == message.id }
                 }
-                scheduledMessages.messages.sort { $0.sendAt > $1.sendAt }
-                reloadScheduledMessagesIfLoading()
-            } catch {
-                guard let self, isCurrentAccountSession(session) else { return }
-                scheduledMessages.errorMessage = "Failed to update message. \(error.localizedDescription)"
-            }
-        }
-    }
-
-    func sendScheduledMessageNow(_ message: ScheduledMessage) {
-        removeScheduledMessage(message, failure: "Failed to send scheduled message.") {
-            try await $0.sendScheduledMessageNow(message.id)
-        }
-    }
-
-    func cancelScheduledMessage(_ message: ScheduledMessage) {
-        removeScheduledMessage(message, failure: "Failed to cancel scheduled message.") {
-            try await $0.cancelScheduledMessage(message.id)
-        }
-    }
-
-    /// The row stays, marked pending, until Discord confirms, as in the official list.
-    private func removeScheduledMessage(
-        _ message: ScheduledMessage,
-        failure: String,
-        _ operation: @escaping (any ChatProvider) async throws -> Void
-    ) {
-        guard scheduledMessages.pendingIDs.insert(message.id).inserted else { return }
-        let session = accountSession()
-        Task { [weak self] in
-            do {
-                try await operation(session.provider)
-                guard let self, isCurrentAccountSession(session) else { return }
-                scheduledMessages.messages.removeAll { $0.id == message.id }
                 reloadScheduledMessagesIfLoading()
             } catch {
                 guard let self, isCurrentAccountSession(session) else { return }
                 scheduledMessages.errorMessage = "\(failure) \(error.localizedDescription)"
             }
-            self?.scheduledMessages.pendingIDs.remove(message.id)
         }
     }
 }

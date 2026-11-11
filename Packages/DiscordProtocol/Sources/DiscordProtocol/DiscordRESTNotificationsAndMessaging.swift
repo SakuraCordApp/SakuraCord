@@ -273,20 +273,28 @@ extension DiscordRESTProvider {
         do {
             message = try await task.value
         } catch {
-            // Discord rejects a stored file it no longer has (code 50146 once it
-            // expires), so after a rejected post Retry stores the files again.
-            if case let ChatProviderError.transport(status, _) = error, (400 ..< 500).contains(status), status != 429 {
-                for attachment in draft.attachments {
-                    Task { await discardPreuploadedAttachment(attachment.id) }
-                }
-            }
+            settlePreuploads(of: draft, after: error)
             throw error
         }
-        // The message now holds its files. Any other failed send keeps them,
-        // so Retry reuses them, as the official resend does, and discarding
-        // the message deletes them.
-        for attachment in draft.attachments { attachmentPreuploads[attachment.id] = nil }
+        settlePreuploads(of: draft)
         return message
+    }
+
+    /// Once Discord answers a post, the message holds its stored files. Discord
+    /// rejects a stored file it no longer has (code 50146 once it expires), so
+    /// after a rejected post Retry stores the files again. Any other failure
+    /// keeps them, so Retry reuses them, as the official resend does, and
+    /// discarding the message deletes them.
+    func settlePreuploads(of draft: SendMessageDraft, after error: (any Error)? = nil) {
+        guard let error else {
+            for attachment in draft.attachments { attachmentPreuploads[attachment.id] = nil }
+            return
+        }
+        if case let ChatProviderError.transport(status, _) = error, (400 ..< 500).contains(status), status != 429 {
+            for attachment in draft.attachments {
+                Task { await discardPreuploadedAttachment(attachment.id) }
+            }
+        }
     }
 
     func uploadAttachments(

@@ -803,8 +803,11 @@ struct ComposerView: View {
     }
 
     private var hasScheduleHeader: Bool {
-        guard !isCreatingThread, let channelID = model.composerSendChannelID(in: conversation) else { return false }
-        return model.scheduledMessages.sendDates[channelID] != nil || model.scheduledMessages.confirmations[channelID] != nil
+        let state = model.scheduledMessages
+        // Most conversations never schedule; skip resolving this one's channel on each keystroke.
+        guard !state.sendDates.isEmpty || !state.confirmations.isEmpty,
+              !isCreatingThread, let channelID = model.composerSendChannelID(in: conversation) else { return false }
+        return state.sendDates[channelID] != nil || state.confirmations[channelID] != nil
     }
 
     private var autocompleteContext: ColonAutocompleteContext? {
@@ -1575,12 +1578,10 @@ extension ComposerView {
         if let mode { showedSendSlotMode = mode } else { isFocused = false }
     }
 
-    /// With nothing to send, the send button records a voice message instead,
-    /// unless a scheduled time is set: a voice message can't be scheduled.
+    /// With nothing to send, the send button records a voice message instead.
     private var showsVoiceMessageButton: Bool {
         draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && attachments.isEmpty && !hasActiveCommand && !isCreatingThread
-            && model.scheduledSendDate(in: conversation) == nil
             && model.canSendVoiceMessages(in: conversation)
     }
 
@@ -1775,11 +1776,7 @@ extension ComposerView {
     /// The composer's + menu: files, a thread, a poll, a schedule, an Activity and translation.
     @ViewBuilder private var composerActionsMenu: some View {
         if showsSchedulePicker {
-            ScheduleMessagePicker(
-                title: "Schedule Message",
-                confirmTitle: "Set Schedule",
-                initialDate: model.scheduledSendDate(in: conversation)
-            ) {
+            ScheduleMessagePicker(initialDate: model.scheduledSendDate(in: conversation)) {
                 showComposerActions = false
                 model.setScheduledSendDate($0, in: conversation)
                 isFocused = true

@@ -44,15 +44,10 @@ public extension DiscordRESTProvider {
         do {
             dto = try await request(path, method: "POST", body: body, mapFailure: Self.scheduledMessageFailure)
         } catch {
-            // A rejected post leaves the stored files unused; Retry stores them again.
-            if case let ChatProviderError.transport(status, _) = error, (400 ..< 500).contains(status), status != 429 {
-                for attachment in draft.attachments {
-                    Task { await discardPreuploadedAttachment(attachment.id) }
-                }
-            }
+            settlePreuploads(of: draft, after: error)
             throw error
         }
-        for attachment in draft.attachments { attachmentPreuploads[attachment.id] = nil }
+        settlePreuploads(of: draft)
         return dto.domain
     }
 
@@ -135,4 +130,28 @@ private struct ScheduledMessageDTO: Decodable {
 private struct ScheduledMessageReferenceDTO: Decodable {
     var messageID: MessageID?
     enum CodingKeys: String, CodingKey { case messageID = "message_id" }
+}
+
+public extension ChatProvider {
+    func scheduledMessages() async throws -> [ScheduledMessage] { [] }
+
+    func scheduleMessage(_ draft: SendMessageDraft, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func rescheduleMessage(_ id: ScheduledMessageID, at date: Date) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func editScheduledMessage(_ id: ScheduledMessageID, content: String, flags: MessageFlags) async throws -> ScheduledMessage {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func sendScheduledMessageNow(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
+
+    func cancelScheduledMessage(_ id: ScheduledMessageID) async throws {
+        throw ChatProviderError.invalidRequest("Scheduled messages are unavailable.")
+    }
 }

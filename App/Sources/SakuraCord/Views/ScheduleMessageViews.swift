@@ -2,11 +2,9 @@ import SakuraCordModels
 import SwiftUI
 
 /// Picks a send time: the official client's three shortcuts, or any time from
-/// ten minutes to eight days ahead.
+/// ten minutes to eight days ahead. Rescheduling an existing message, like the
+/// official dialog, offers no shortcuts.
 struct ScheduleMessagePicker: View {
-    let title: LocalizedStringResource
-    let confirmTitle: LocalizedStringResource
-    var showsShortcuts = true
     /// Bounds a reschedule to 30 days after its message was first scheduled.
     var scheduledMessageID: ScheduledMessageID?
     var clear: (() -> Void)?
@@ -14,17 +12,11 @@ struct ScheduleMessagePicker: View {
     @State private var date: Date
 
     init(
-        title: LocalizedStringResource,
-        confirmTitle: LocalizedStringResource,
         initialDate: Date?,
-        showsShortcuts: Bool = true,
         scheduledMessageID: ScheduledMessageID? = nil,
         clear: (() -> Void)? = nil,
         commit: @escaping (Date) -> Void
     ) {
-        self.title = title
-        self.confirmTitle = confirmTitle
-        self.showsShortcuts = showsShortcuts
         self.scheduledMessageID = scheduledMessageID
         self.clear = clear
         self.commit = commit
@@ -33,11 +25,11 @@ struct ScheduleMessagePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
-            Text(title)
+            Text(scheduledMessageID == nil ? "Schedule Message" : "Update Scheduled Message")
                 .font(.interface(.headline))
                 .padding(.horizontal, InterfaceScale.metric(8))
                 .padding(.top, InterfaceScale.metric(4))
-            if showsShortcuts {
+            if scheduledMessageID == nil {
                 VStack(spacing: InterfaceScale.metric(2)) {
                     ForEach(Self.shortcuts(), id: \.date) { shortcut in
                         Button { commit(shortcut.date) } label: {
@@ -48,7 +40,7 @@ struct ScheduleMessagePicker: View {
                                     .frame(width: InterfaceScale.metric(20))
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(InterfaceScale.metric(8))
+                            .padding(InterfaceScale.metric(8))
                         }
                     }
                 }
@@ -76,7 +68,7 @@ struct ScheduleMessagePicker: View {
                         .buttonStyle(.glass)
                 }
                 Spacer(minLength: 0)
-                Button { commit(date) } label: { Text(confirmTitle) }
+                Button(scheduledMessageID == nil ? "Set Schedule" : "Update") { commit(date) }
                     .buttonStyle(.glassProminent)
                     .tint(SakuraCordAccentColor.color)
                     .keyboardShortcut(.defaultAction)
@@ -109,13 +101,13 @@ struct ScheduleMessagePicker: View {
         return hour < ScheduledMessagePolicy.earliestSendDate(now: now) ? hour.addingTimeInterval(3600) : hour
     }
 
-    /// 9:00 and 13:00 today, or tomorrow once too close, then next week's Monday at 9:00.
     struct Shortcut {
         let label: String
         let systemImage: String
         let date: Date
     }
 
+    /// 9:00 and 13:00 today, or tomorrow once too close, then next week's Monday at 9:00.
     static func shortcuts(now: Date = .now, calendar: Calendar = .current) -> [Shortcut] {
         let earliest = ScheduledMessagePolicy.earliestSendDate(now: now)
         let today = calendar.startOfDay(for: now)
@@ -169,7 +161,7 @@ struct ComposerScheduleHeader: View {
                     .help("Edit Schedule Time")
                     .popover(isPresented: $isEditing, arrowEdge: .top) {
                         ScheduleMessagePicker(
-                            title: "Schedule Message", confirmTitle: "Set Schedule", initialDate: date,
+                            initialDate: date,
                             clear: {
                                 isEditing = false
                                 model.setScheduledSendDate(nil, in: destination)
