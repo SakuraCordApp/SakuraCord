@@ -337,7 +337,10 @@ read. Rows list the latest send time first. Edit Schedule Time sends
 `MESSAGE_CREATE`, usually before the response; Cancel is
 `DELETE …/{id}` (`204`). Sent and cancelled rows stay, marked pending, until
 Discord confirms. A due message is posted within seconds as an ordinary
-`MESSAGE_CREATE` without a nonce. Every mutation is single-attempt. See
+`MESSAGE_CREATE` without a nonce. A message whose channel was deleted stays
+listed, still state `0` until its time and then `4` (channel not found), until
+it is cancelled; like the official list, its row shows only that its channel
+was not found and Cancel. Every mutation is single-attempt. See
 [ScheduledMessageContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ScheduledMessageContractTests.swift).
 
 ## Forums, threads and commands

@@ -91,6 +91,7 @@ private struct ScheduledMessageCard: View {
                     actions
                 }
             }
+            // Like the official list, a message whose channel is gone shows only its error and Cancel.
             if let channel {
                 Button {
                     model.dismissInbox()
@@ -103,8 +104,17 @@ private struct ScheduledMessageCard: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open Conversation")
+                content
             }
-            if let editedContent {
+        }
+        .padding(InterfaceScale.metric(12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.primary.opacity(0.05), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(16)))
+        .opacity(isPending ? 0.6 : 1)
+    }
+
+    @ViewBuilder private var content: some View {
+        if let editedContent {
                 TextField("Message", text: Binding(get: { editedContent }, set: { self.editedContent = $0 }), axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1 ... 8)
@@ -134,14 +144,11 @@ private struct ScheduledMessageCard: View {
                 .font(.interface(.caption))
                 .foregroundStyle(.secondary)
             }
-        }
-        .padding(InterfaceScale.metric(12))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.primary.opacity(0.05), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(16)))
-        .opacity(isPending ? 0.6 : 1)
     }
 
-    private var channel: Channel? { model.knownRootChannel(message.channelID) }
+    private var channel: Channel? {
+        model.knownRootChannel(message.channelID) ?? model.sidebarThread(message.channelID).map(model.threadNavigationChannel)
+    }
 
     private func channelTitle(_ channel: Channel) -> String {
         guard let guildID = channel.guildID,
@@ -163,10 +170,11 @@ private struct ScheduledMessageCard: View {
         }
     }
 
-    /// The official list's wording for each state Discord reports.
+    /// The official list's wording: an unknown channel wins over the state Discord reports.
     private var failure: LocalizedStringResource? {
-        switch message.state {
-        case .scheduled: channel == nil && model.snapshot != nil ? "Scheduled message's channel not found." : nil
+        if channel == nil, model.snapshot != nil { return "Scheduled message's channel not found." }
+        return switch message.state {
+        case .scheduled: nil
         case .userCannotSchedule: "Message could not be sent, permission was denied"
         case .disabled, .userNotFound, .channelNotFound, .sendFailed: "Message could not be sent"
         }
