@@ -76,6 +76,10 @@ extension AppModel {
         categoryCollapseMutationTasks.removeAll()
         categoryCollapseMutationStates.removeAll()
         optimisticCategoryCollapsedByID.removeAll()
+        channelPinMutationTasks.values.forEach { $0.cancel() }
+        channelPinMutationTasks.removeAll()
+        channelPinMutationStates.removeAll()
+        optimisticChannelPinnedByID.removeAll()
         forumNotificationMutationGeneration &+= 1
         forumNotificationMutationTasks.values.forEach { $0.cancel() }
         forumNotificationMutationTasks.removeAll()

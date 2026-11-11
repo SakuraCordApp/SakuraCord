@@ -109,7 +109,13 @@ nonisolated enum ChannelContextMenuSubject: Equatable, Sendable {
 
 enum ChannelPinMenuAction {
     case unavailable
-    case available(isPinned: Bool, toggle: () -> Void)
+    case available(isPinned: Bool, isServerChannel: Bool = false, toggle: () -> Void)
+
+    var title: String? {
+        guard case let .available(isPinned, isServerChannel, _) = self else { return nil }
+        if isServerChannel { return isPinned ? "Unpin Channel" : "Pin Channel to Top" }
+        return isPinned ? "Unpin" : "Pin"
+    }
 }
 
 /// SwiftUI context menus can discard item images in the macOS 27 adaptation.
@@ -262,10 +268,10 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
             )
             menu.addItem(.separator())
 
-            if case let .available(isPinned, _) = pinAction {
+            if let pinTitle = pinAction.title {
                 menu.addItem(
                     menuItem(
-                        isPinned ? "Unpin" : "Pin",
+                        pinTitle,
                         systemImage: "pin.fill",
                         action: #selector(togglePinFromMenu),
                         isEnabled: allowsMutations && !isMutationPending
@@ -466,7 +472,7 @@ struct ChannelContextMenuBridge: NSViewRepresentable {
         }
 
         @objc private func togglePinFromMenu() {
-            if case let .available(_, toggle) = pinAction {
+            if case let .available(_, _, toggle) = pinAction {
                 toggle()
             }
         }
