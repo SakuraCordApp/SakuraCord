@@ -191,7 +191,7 @@ struct MemberProfilePopover<Footer: View>: View {
         if isCurrentUser {
             act = model?.currentUserRichActivity
         } else {
-            act = member.richActivity
+            act = member.richActivity ?? profile?.richActivity
         }
         if let act, act.type == 4 || act.type == 6 || act.name.contains("<:") || act.name.contains("<a:") {
             return nil

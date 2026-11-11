@@ -421,7 +421,7 @@ extension DiscordRESTProvider {
     func publishRelationshipPresences(complete: Bool, userIDs: [UserID]? = nil) {
         let ids = userIDs ?? Array(cachedRelationships.keys)
         let presences = Dictionary(uniqueKeysWithValues: ids.lazy
-            .filter { self.cachedRelationships[$0] != nil }
+            .filter { self.cachedRelationships[$0] != nil || self.cachedPrivateMembersByID[$0] != nil }
             .map { ($0, self.relationshipPresence(for: $0)) })
         guard complete || !presences.isEmpty else { return }
         continuation?.yield(.relationshipPresencesChanged(presences, isComplete: complete))

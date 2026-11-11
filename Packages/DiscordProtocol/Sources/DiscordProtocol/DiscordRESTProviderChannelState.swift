@@ -199,9 +199,10 @@ extension DiscordRESTProvider {
               let status = PresenceStatus(rawValue: update.status)
         else { return }
         let user =
-            cachedChannels[nil]?.lazy.flatMap(\.recipients)
-                .first(where: { $0.id == userID })
+            cachedPrivateMembersByID[userID]?.user
+                ?? cachedChannels[nil]?.lazy.flatMap(\.recipients).first(where: { $0.id == userID })
                 ?? cachedGatewayUsersByID[update.user.id].flatMap { try? $0.domain() }
+                ?? cachedMembers.values.lazy.flatMap { $0 }.first(where: { $0.id == userID })?.user
         guard let user else { return }
         var member =
             cachedPrivateMembersByID[userID]
@@ -219,6 +220,11 @@ extension DiscordRESTProvider {
                     ?? member.customStatus
             member.isListeningToMusic = primaryActivity?.type == 2
             member.richActivity = primaryActivity?.asRichActivity
+        } else if status == .offline {
+            member.customStatus = nil
+            member.activityText = nil
+            member.isListeningToMusic = false
+            member.richActivity = nil
         }
         cachedPrivateMembersByID[userID] = member
     }

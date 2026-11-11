@@ -150,6 +150,7 @@ extension AppModel {
         var member: Member
         if let resolved = profileMember(user.id, in: guildID) {
             member = resolved
+            applyPresenceIfBetter(to: &member, from: friends.presences[user.id])
         } else {
             var fallback = Member(user: user, roleName: "Member", status: .offline)
             if let presence = friends.presences[user.id] {
@@ -215,6 +216,7 @@ extension AppModel {
         var member: Member
         if let resolved = profileMember(user.id, in: selectedGuildID) ?? membersByID[user.id] {
             member = resolved
+            applyPresenceIfBetter(to: &member, from: friends.presences[user.id])
         } else {
             var fallback = Member(
                 user: user,
@@ -471,6 +473,25 @@ extension AppModel {
         }
     }
 
+    private func applyPresenceIfBetter(to member: inout Member, from presence: UserPresence?) {
+        guard let presence else { return }
+        if member.status == .offline, presence.status.isVisibleOnline {
+            member.status = presence.status
+            member.isMobileOnly = presence.isMobileOnly
+        }
+        if member.richActivity == nil, let rich = presence.richActivity {
+            member.richActivity = rich
+        }
+        let hasNoActivityText = member.activityText == nil || member.activityText?.isEmpty == true
+        if hasNoActivityText, let text = presence.activityText {
+            member.activityText = text
+            member.isListeningToMusic = presence.isListeningToMusic
+        }
+        if member.customStatus == nil, let custom = presence.customStatus {
+            member.customStatus = custom
+        }
+    }
+
     func profileMember(_ userID: UserID, in guildID: GuildID?) -> Member? {
         if let currentUserID = currentUser?.id ?? snapshot?.currentUser.id, userID == currentUserID {
             let base = guildID.flatMap { membersByGuildID[$0]?[userID] }
@@ -504,6 +525,7 @@ extension AppModel {
         guard !presentation.isLocalIdentity else { return presentation }
         if let liveMember = profileMember(presentation.member.id, in: presentation.guildID) {
             presentation.member = liveMember
+            applyPresenceIfBetter(to: &presentation.member, from: friends.presences[presentation.member.id])
         } else if let presence = friends.presences[presentation.member.id] {
             // Live relationship presence applies when no member cache holds this user.
             presentation.member.status = presence.status

@@ -583,9 +583,6 @@ extension DiscordRESTProvider {
         }
         cachePrivateRecipientReferences(supplemental.lazyPrivateChannels)
         cacheLazyPrivateRecipientUsers(supplemental.lazyPrivateChannels)
-        for presence in supplemental.privatePresences {
-            cachePrivatePresence(presence)
-        }
         if !supplemental.lazyPrivateChannels.isEmpty {
             var channels = cachedChannels[nil] ?? []
             var indexByID = Dictionary(
@@ -616,6 +613,9 @@ extension DiscordRESTProvider {
         }
         rehydratePrivateChannelRecipients()
         admitCachedPrivateRecipientUsersToMessageSearch()
+        for presence in supplemental.privatePresences {
+            cachePrivatePresence(presence)
+        }
         if !supplemental.lazyPrivateChannels.isEmpty
             || !supplemental.privatePresences.isEmpty
         {
