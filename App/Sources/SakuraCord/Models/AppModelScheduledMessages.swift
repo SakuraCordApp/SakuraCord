@@ -47,8 +47,16 @@ extension AppModel {
         composerSendChannelID(in: destination).flatMap { scheduledMessages.sendDates[$0] }
     }
 
+    /// Whether the conversation's message is on its way to Discord; until it
+    /// is answered, its time stays and nothing else leaves the composer.
+    func isSchedulingMessage(in destination: MessageComposerDestination) -> Bool {
+        composerSendChannelID(in: destination).map(scheduledMessages.submittingChannelIDs.contains) ?? false
+    }
+
     func setScheduledSendDate(_ date: Date?, in destination: MessageComposerDestination) {
-        guard let channelID = composerSendChannelID(in: destination) else { return }
+        guard let channelID = composerSendChannelID(in: destination),
+              !scheduledMessages.submittingChannelIDs.contains(channelID)
+        else { return }
         scheduledMessages.sendDates[channelID] = date
         scheduledMessages.confirmations[channelID] = nil
     }

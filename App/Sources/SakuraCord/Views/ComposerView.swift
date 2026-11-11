@@ -731,6 +731,7 @@ struct ComposerView: View {
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty,
               !hasCheckingAttachments
         else { return }
+        guard !model.isSchedulingMessage(in: conversation) else { return }
         if !isCreatingThread, model.scheduledSendDate(in: conversation) != nil { return schedule() }
         isSubmitting = true
         draftSelection = nil

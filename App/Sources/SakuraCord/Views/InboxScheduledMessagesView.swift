@@ -122,6 +122,8 @@ private struct ScheduledMessageCard: View {
                     .padding(InterfaceScale.metric(8))
                     .background(.primary.opacity(0.06), in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(10)))
                     .onSubmit {
+                        // The editor stays open until the row's other change is answered.
+                        guard !isPending else { return }
                         model.editScheduledMessage(message, content: editedContent)
                         self.editedContent = nil
                     }
