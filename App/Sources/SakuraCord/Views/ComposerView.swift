@@ -1575,10 +1575,12 @@ extension ComposerView {
         if let mode { showedSendSlotMode = mode } else { isFocused = false }
     }
 
-    /// With nothing to send, the send button records a voice message instead.
+    /// With nothing to send, the send button records a voice message instead,
+    /// unless a scheduled time is set: a voice message can't be scheduled.
     private var showsVoiceMessageButton: Bool {
         draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && attachments.isEmpty && !hasActiveCommand && !isCreatingThread
+            && model.scheduledSendDate(in: conversation) == nil
             && model.canSendVoiceMessages(in: conversation)
     }
 
