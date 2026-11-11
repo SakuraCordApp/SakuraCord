@@ -456,7 +456,7 @@ extension NativeTimelineRowLayout {
                 result.botBadgeText = botText
                 result.botBadgeIsVerified = author.isVerifiedBot
                 result.botBadgeFrame = CGRect(
-                    x: headerX, y: baselineY - botBaseline,
+                    x: headerX, y: baselineY - botBaseline - InterfaceScale.metric(1),
                     width: botWidth, height: badgeHeight
                 )
                 headerX += botWidth
