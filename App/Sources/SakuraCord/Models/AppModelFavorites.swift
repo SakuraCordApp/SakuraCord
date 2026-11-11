@@ -125,12 +125,9 @@ extension AppModel {
     /// Like the official client, fetch favourited threads that no loaded list
     /// carries; a thread that can't be read stays stored but unlisted.
     private func loadFavoriteThreads() {
-        // A fetched private thread is withheld until Discord confirms the
-        // membership again, so revoked access never shows stale content.
-        for (id, thread) in favorites.threads where thread.isPrivate {
-            favorites.threads[id] = nil
-            favorites.requestedThreadIDs.remove(id)
-        }
+        // A fetched private thread asks Discord again each time, since only
+        // its answer states the current membership.
+        for (id, thread) in favorites.threads where thread.isPrivate { favorites.requestedThreadIDs.remove(id) }
         let missing = (favorites.settings?.entries ?? []).filter {
             (10 ... 12).contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
                 && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
@@ -147,6 +144,8 @@ extension AppModel {
                 // A failed read is retried the next time Favorites opens.
                 guard let post else {
                     model.favorites.requestedThreadIDs.remove(entry.id)
+                    // A private thread Discord no longer confirms stops listing.
+                    if entry.channelType == 12 { model.favorites.threads[entry.id] = nil }
                     continue
                 }
                 model.favorites.threads[entry.id] = post.thread
