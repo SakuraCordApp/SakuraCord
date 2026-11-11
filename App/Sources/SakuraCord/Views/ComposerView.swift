@@ -788,8 +788,9 @@ struct ComposerView: View {
 
     /// Hands the message to Discord to send later; the composer clears only
     /// once Discord accepts it.
+    /// The pane may show another conversation before Discord answers, so this
+    /// holds no composer state; the model refuses a second create meanwhile.
     private func schedule() {
-        isSubmitting = true
         let staged = attachments
         model.beginUsingOwnedPromisedFiles(staged.map(\.url))
         Task {
@@ -797,8 +798,6 @@ struct ComposerView: View {
             await model.scheduleComposerMessage(in: conversation, attachments: staged)
             for url in scopedURLs { url.stopAccessingSecurityScopedResource() }
             model.endUsingOwnedPromisedFiles(staged.map(\.url))
-            isSubmitting = false
-            isFocused = true
         }
     }
 

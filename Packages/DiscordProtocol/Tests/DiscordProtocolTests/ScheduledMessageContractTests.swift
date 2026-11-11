@@ -51,6 +51,13 @@ struct ScheduledMessageContractTests {
         #expect((requests[3].body?["flags"] as? NSNumber)?.intValue == 4096)
         #expect(requests[4].body == nil)
 
+        _ = try await provider.scheduleMessage(
+            SendMessageDraft(channelID: ChannelID(rawValue: 41), content: "", stickerIDs: ["77"]), at: date
+        )
+        let sticker = try #require(ScheduledURLProtocol.requests.last?.body)
+        #expect(Set(sticker.keys) == ["channel_id", "content", "scheduled_timestamp", "flags", "sticker_ids", "attachments"])
+        #expect(sticker["sticker_ids"] as? [String] == ["77"])
+
         let message = try #require(listed.first)
         #expect(message.id == ScheduledMessageID(rawValue: 70))
         #expect(message.channelID == ChannelID(rawValue: 41))

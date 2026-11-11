@@ -33,6 +33,9 @@ public extension DiscordRESTProvider {
                 body["allowed_mentions"] = allowedMentions
             }
         }
+        if !draft.stickerIDs.isEmpty {
+            body["sticker_ids"] = .array(draft.stickerIDs.map(JSONValue.string))
+        }
         body["attachments"] = try await .array(
             uploadForumAttachments(draft.attachments, channelID: draft.channelID, progress: { _ in })
         )

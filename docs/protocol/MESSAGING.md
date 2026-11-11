@@ -316,7 +316,9 @@ draft stores any staged files exactly as a send does, then makes one
 `scheduled_timestamp` (ISO 8601 with milliseconds, UTC), `flags` and
 `attachments` (always present, possibly empty), plus `message_reference`
 (`guild_id` when in a server, `channel_id`, `message_id`; no `type`) and the
-quiet-reply `allowed_mentions` for a reply. There is no nonce and no
+quiet-reply `allowed_mentions` for a reply. A GIF or sticker picked while a
+time is set is scheduled the same way (the GIF's URL as content; a sticker as
+`sticker_ids`), leaving the typed draft in place. There is no nonce and no
 `X-Context-Properties` header, and nothing enters the timeline. The composer
 clears only when Discord accepts it, so a refusal loses nothing.
 

@@ -154,8 +154,13 @@ extension AppModel {
         guard let route = stickerSendRoute(for: sticker) else { return false }
         let sent: Bool
         switch route {
+        case .native where scheduledSendDate(in: destination) != nil:
+            sent = await schedulePickedMessage(content: "", stickerIDs: [sticker.id], in: destination)
         case .native:
             sent = await sendSticker(sticker, in: destination)
+        case .fakeNitroUpload where scheduledSendDate(in: destination) != nil:
+            errorMessage = "Stickers sent as images can't be scheduled."
+            return false
         case .fakeNitroUpload:
             sent = await sendStickerAsUpload(sticker, in: destination)
         }
