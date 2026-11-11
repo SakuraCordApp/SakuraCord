@@ -70,6 +70,7 @@ extension AppModel {
         }
         featuresSettings = value
         FeaturesSettingsStore.shared.save(value)
+        dropSyncedLocalFavorites()
         refreshVisibleChannelGroups()
         reconcileSelectedOnboardingChannel()
         if allowedScreenShareSettings(screenShareSettings) != screenShareSettings {

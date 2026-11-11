@@ -33,6 +33,8 @@ final class FavoritesStore {
         lastChannelID = nil
         threads = [:]
         requestedThreadIDs = []
+        localEntries = []
+        localScope = nil
     }
 }
 
@@ -59,10 +61,9 @@ extension AppModel {
     }
 
     private func presentFavorites(_ settings: FavoritesSettings?) {
-        changeFavorites { favorites.settings = settings }
-        // Discord's list wins: a local favourite Discord now carries is dropped.
-        if let settings, favorites.localEntries.contains(where: { settings.contains($0.id) }) {
-            changeLocalFavorites { $0.removeAll { settings.contains($0.id) } }
+        changeFavorites {
+            favorites.settings = settings
+            dropSyncedLocalFavorites()
         }
     }
 
@@ -214,16 +215,15 @@ extension AppModel {
         // counts, so a deleted or hidden channel never blocks an addition.
         var counted = settings
         counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
+        let limit = counted.limitBlockingAddition(premiumType: currentUser?.premiumType ?? 0)
         if isFavorite(channelID) {
             updateFavorites(.remove(channelID))
-        } else if let limit = counted.limitBlockingAddition(premiumType: currentUser?.premiumType ?? 0) {
-            if featuresSettings.unlimitedFavorites {
-                addLocalFavorite(channelID, channelType: channelType)
-            } else {
-                favorites.limitReached = limit
-            }
-        } else {
+        } else if limit == nil {
             updateFavorites(.add(channelID, channelType: channelType))
+        } else if featuresSettings.unlimitedFavorites {
+            addLocalFavorite(channelID, channelType: channelType)
+        } else {
+            favorites.limitReached = limit
         }
     }
 
@@ -241,7 +241,8 @@ extension AppModel {
     }
 
     func updateFavorites(_ edit: FavoritesSettings.Edit) {
-        guard !applyLocalFavoriteEdit(edit), var settings = favorites.settings else { return }
+        if applyLocalFavoriteEdit(edit) { return }
+        guard var settings = favorites.settings else { return }
         settings.apply(edit)
         presentFavorites(settings)
         startAccountChildTask(account: accountSession()) { model, account in

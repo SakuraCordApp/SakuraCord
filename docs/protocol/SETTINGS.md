@@ -356,12 +356,16 @@ path prunes, then counts; the bundle maps no server error to it), but
 SakuraCord still never writes more than the limit: other clients would show a
 different list and an oversized write risks rejection. Local favourites follow
 the synced ones in each section, may sit in a synced category, and can be
-renamed, moved and removed; those edits send nothing. Discord's list stays
+renamed, moved and removed; those edits send nothing, though a local addition
+reveals a hidden Favorites server as a synced one does. Discord's list stays
 authoritative: remote edits apply to the synced part, a local favourite that
 Discord starts carrying becomes synced and leaves the local list, and a synced
 favourite removed elsewhere is not restored. Removing a synced favourite does
 not promote a local one, so every Discord write follows a user action. Turning
-the option off hides local favourites without deleting them.
+the option off hides local favourites without deleting or reconciling them;
+turning it on, or loading the account, reconciles them with Discord's list.
+Signing out or switching accounts clears them from memory before the next
+account's settings arrive.
 
 ## Emoji, GIFs, stickers and sounds
 

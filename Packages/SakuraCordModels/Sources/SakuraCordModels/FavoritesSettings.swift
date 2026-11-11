@@ -13,7 +13,8 @@ public struct FavoritesSettings: Equatable, Sendable {
         public var parentID: ChannelID?
         /// The Discord channel type recorded with the favourite.
         public var channelType: Int?
-        /// Kept only on this device, past Discord's limit; never sent to Discord.
+        /// Marks a shown Unlimited favorites entry kept only on this device,
+        /// past Discord's limit; such entries are never sent to Discord.
         public var isLocal = false
 
         public init(
