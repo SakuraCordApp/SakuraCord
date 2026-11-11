@@ -137,4 +137,35 @@ extension DirectMessageProviderContractTests {
         let activities = try #require(payloadDict["activities"] as? [[String: Any]])
         #expect(activities.isEmpty)
     }
+
+    @Test func `activity buttons serialize to string array and metadata button urls for gateway op 3`() async throws {
+        DirectMessageURLProtocol.reset()
+        let session = try await readyStatusPickProvider(settings: statusSettingsFixture("online", dataVersion: 1))
+        defer { DiscordRESTProvider.removePendingStatusEdit(accountID: session.accountID) }
+
+        let provider = session.provider
+        let socket = session.socket
+
+        let activity = OutgoingActivityPayload(
+            name: "Modrinth",
+            type: .playing,
+            details: "Exploring Mods",
+            buttons: [
+                ActivityButton(label: "Modrinth Page", url: "https://modrinth.com"),
+                ActivityButton(label: "Source", url: "https://github.com"),
+            ]
+        )
+
+        try await provider.updateActivity(activity, sourceID: "rpc:modrinth")
+
+        let presenceData = try #require(await socket.sentPayload(opcode: 3))
+        let presenceJson = try #require(JSONSerialization.jsonObject(with: presenceData) as? [String: Any])
+        let payloadDict = try #require(presenceJson["d"] as? [String: Any])
+        let activities = try #require(payloadDict["activities"] as? [[String: Any]])
+        #expect(activities.count == 1)
+        let first = activities[0]
+        #expect(first["buttons"] as? [String] == ["Modrinth Page", "Source"])
+        let metadata = try #require(first["metadata"] as? [String: Any])
+        #expect(metadata["button_urls"] as? [String] == ["https://modrinth.com", "https://github.com"])
+    }
 }

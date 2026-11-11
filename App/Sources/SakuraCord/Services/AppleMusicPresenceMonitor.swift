@@ -500,7 +500,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             tell application "\(appName)"
                 if it is running then
                     set pState to (player state as string)
-                    if pState is "playing" then
+                    if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
                         set tName to (name of current track as string)
                         set tArtist to (artist of current track as string)
                         set tAlbum to (album of current track as string)
@@ -510,8 +510,8 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                         try
                             set tID to (id of current track as string)
                         end try
-                        return pState & "|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * \(durationMultiplier)) & "|||" & tID
-                    else if pState is "paused" or pState is "stopped" then
+                        return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * \(durationMultiplier)) & "|||" & tID
+                    else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
                         return "stopped"
                     end if
                 end if
@@ -528,8 +528,10 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             let parts = result.components(separatedBy: "|||")
             guard parts.count >= 6 else { return (false, nil) }
             let trackID = parts.count >= 7 && !parts[6].isEmpty ? parts[6] : nil
+            let rawState = parts[0]
+            let normalizedState = (rawState.caseInsensitiveCompare("playing") == .orderedSame || rawState.contains("kPSP")) ? "Playing" : rawState
             return (false, AppleMusicTrackInfo(
-                playerState: parts[0],
+                playerState: normalizedState,
                 name: parts[1],
                 artist: parts[2],
                 album: parts[3],
@@ -695,7 +697,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             return nil
         }
 
-        guard trackInfo.playerState.caseInsensitiveCompare("Playing") == .orderedSame else {
+        guard trackInfo.playerState.caseInsensitiveCompare("Playing") == .orderedSame || trackInfo.playerState.contains("kPSP") else {
             logger.debug("Music player state is '\(trackInfo.playerState, privacy: .public)'; clearing activity.")
             await clearMusicActivity(now: now)
             return nil

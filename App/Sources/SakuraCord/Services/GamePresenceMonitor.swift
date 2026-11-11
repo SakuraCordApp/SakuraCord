@@ -158,13 +158,13 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             Self.currentRobloxIconData = tiff
         }
         let payload = OutgoingActivityPayload(
-            name: "Roblox",
+            name: "ROBLOX",
             type: .playing,
-            details: "Playing Roblox",
+            details: nil,
             timestamps: ActivityTimestamps(start: startTimeMs, end: nil),
             assets: ActivityAssets(
                 largeImage: Self.robloxIconURL,
-                largeText: "Roblox"
+                largeText: "ROBLOX"
             ),
             applicationId: Self.robloxAppID
         )

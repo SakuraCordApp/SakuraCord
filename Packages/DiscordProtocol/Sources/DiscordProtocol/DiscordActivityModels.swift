@@ -205,7 +205,8 @@ public struct OutgoingActivityPayload: Codable, Hashable, Sendable {
         if let instance { dict["instance"] = instance }
         if let flags { dict["flags"] = flags }
         if let buttons, !buttons.isEmpty {
-            dict["buttons"] = buttons.map { ["label": $0.label, "url": $0.url] }
+            dict["buttons"] = buttons.map(\.label)
+            dict["metadata"] = ["button_urls": buttons.map(\.url)]
         }
         if let applicationId, !applicationId.isEmpty {
             dict["application_id"] = applicationId

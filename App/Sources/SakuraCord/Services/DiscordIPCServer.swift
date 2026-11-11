@@ -23,6 +23,28 @@ private extension Data {
 }
 
 nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
+    private static func resolveApplicationInfo(for clientID: String) {
+        guard clientID.allSatisfy(\.isNumber), !clientID.isEmpty else { return }
+        if DiscordIPCServer.cachedAppName(for: clientID) != nil,
+           DiscordIPCServer.cachedAppIcon(for: clientID) != nil {
+            return
+        }
+        guard let url = URL(string: "https://discord.com/api/v9/applications/\(clientID)/rpc") else { return }
+        Task.detached(priority: .utility) {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 5
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return
+            }
+            let name = json["name"] as? String
+            let icon = json["icon"] as? String
+            DiscordIPCServer.cacheAppInfo(clientID: clientID, name: name, icon: icon)
+        }
+    }
+
     let id = UUID()
     let clientFD: Int32
     let coordinator: ActivityCoordinator
@@ -131,6 +153,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 return
             }
             self.clientID = clientID
+            Self.resolveApplicationInfo(for: clientID)
             sendReadyEvent()
 
         case 1: // FRAME
@@ -171,7 +194,11 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 Task { [coordinator] in
                     await coordinator.setActivity(payload, for: source)
                 }
-                sendResponse(cmd: "SET_ACTIVITY", data: activityDict, nonce: nonce)
+                var responseData: [String: Any] = activityDict
+                responseData["application_id"] = clientID ?? ""
+                responseData["name"] = payload.name
+                responseData["type"] = payload.type.rawValue
+                sendResponse(cmd: "SET_ACTIVITY", data: responseData, nonce: nonce)
             } else {
                 Task { [coordinator] in
                     await coordinator.clearActivity(for: source)
@@ -205,13 +232,17 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private func parseActivity(_ dict: [String: Any]) -> OutgoingActivityPayload {
         let assetsDict = dict["assets"] as? [String: Any]
         let rawName = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let largeText = (assetsDict?["large_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawLargeText = (assetsDict?["large_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedLargeText = rawLargeText.map { DiscordIPCServer.cleanApplicationName(from: $0) }
         let name: String = {
             if let rawName, !rawName.isEmpty, rawName != clientID {
                 return rawName
             }
-            if let largeText, !largeText.isEmpty, !largeText.lowercased().hasPrefix("http") {
-                return largeText
+            if let clientID, let cached = DiscordIPCServer.cachedAppName(for: clientID) {
+                return cached
+            }
+            if let cleanedLargeText, !cleanedLargeText.isEmpty, !cleanedLargeText.lowercased().hasPrefix("http") {
+                return cleanedLargeText
             }
             if let rawName, !rawName.isEmpty {
                 return rawName
@@ -383,10 +414,60 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
     public static let maxFramePayloadSize = 1024 * 1024 // 1 MB
     public static let maxClientCount = 10
 
+    public static let knownApplicationNames: [String: String] = [
+        "1123683254248148992": "Modrinth",
+        "363445589247131668": "ROBLOX",
+        "383226320970055681": "Visual Studio Code",
+        "407788484196859904": "Apple Music",
+        "530082442967941142": "Apple Music",
+        "782685898163617802": "Vencord",
+    ]
+
+    private static let appCacheLock = NSLock()
+    nonisolated(unsafe) private static var _cachedAppNames: [String: String] = knownApplicationNames
+    nonisolated(unsafe) private static var _cachedAppIcons: [String: String] = [
+        "363445589247131668": "f2b60e350a2097289b3b0b877495e55f",
+    ]
+
+    public static func cachedAppName(for clientID: String) -> String? {
+        appCacheLock.lock()
+        defer { appCacheLock.unlock() }
+        return _cachedAppNames[clientID]
+    }
+
+    public static func cachedAppIcon(for clientID: String) -> String? {
+        appCacheLock.lock()
+        defer { appCacheLock.unlock() }
+        return _cachedAppIcons[clientID]
+    }
+
+    public static func cacheAppInfo(clientID: String, name: String?, icon: String?) {
+        appCacheLock.lock()
+        defer { appCacheLock.unlock() }
+        if let name, !name.isEmpty {
+            _cachedAppNames[clientID] = name
+        }
+        if let icon, !icon.isEmpty {
+            _cachedAppIcons[clientID] = icon
+        }
+    }
+
+    public static func cleanApplicationName(from text: String) -> String {
+        var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffixes = [" Logo", " logo", " Icon", " icon"]
+        for suffix in suffixes where cleaned.hasSuffix(suffix) {
+            let candidate = String(cleaned.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !candidate.isEmpty {
+                cleaned = candidate
+            }
+        }
+        return cleaned
+    }
+
     public let coordinator: ActivityCoordinator
     private let requestedSocketPath: String?
     private var boundSocketPath: String?
-    private var boundSymlinkPath: String?
+    private var boundSymlinkPaths: [String] = []
     private var listenFD: Int32 = -1
     private var listenSource: DispatchSourceRead?
     private let queue = DispatchQueue(label: "dev.sakuracord.ipc-server", qos: .userInitiated)
@@ -603,11 +684,22 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             self.isRunning = true
 
             // On macOS, if bound inside a user-specific temp directory (TMPDIR), maintain
-            // a symlink in /tmp so cross-platform games/mods hardcoding /tmp can connect.
-            if requestedSocketPath == nil, !path.hasPrefix("/tmp/"), let fileName = path.split(separator: "/").last {
-                let symlinkPath = "/tmp/\(fileName)"
-                if Self.canReplaceWithSymlink(at: symlinkPath), symlink(path, symlinkPath) == 0 {
-                    self.boundSymlinkPath = symlinkPath
+            // symlinks in /tmp and $XDG_RUNTIME_DIR so cross-platform games/mods hardcoding /tmp or $XDG_RUNTIME_DIR can connect.
+            if requestedSocketPath == nil, let fileName = path.split(separator: "/").last {
+                var symlinkTargets: [String] = []
+                if !path.hasPrefix("/tmp/") {
+                    symlinkTargets.append("/tmp/\(fileName)")
+                }
+                if let xdg = ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"], !xdg.isEmpty {
+                    let xdgDir = xdg.hasSuffix("/") ? String(xdg.dropLast()) : xdg
+                    if !path.hasPrefix(xdgDir + "/") {
+                        symlinkTargets.append("\(xdgDir)/\(fileName)")
+                    }
+                }
+                for symlinkPath in symlinkTargets {
+                    if Self.canReplaceWithSymlink(at: symlinkPath), symlink(path, symlinkPath) == 0 {
+                        self.boundSymlinkPaths.append(symlinkPath)
+                    }
                 }
             }
 
@@ -616,10 +708,10 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
                 self?.acceptConnection()
             }
             let socketToClean = path
-            let symlinkToClean = self.boundSymlinkPath
+            let symlinksToClean = self.boundSymlinkPaths
             source.setCancelHandler {
                 close(boundFD)
-                if let symlinkToClean {
+                for symlinkToClean in symlinksToClean {
                     Self.removeSymlinkIfOwned(symlinkPath: symlinkToClean, targetPath: socketToClean)
                 }
                 unlink(socketToClean)
@@ -645,11 +737,11 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
                 close(listenFD)
             }
             listenFD = -1
-            if let boundSymlinkPath {
-                if let boundSocketPath {
+            if let boundSocketPath {
+                for boundSymlinkPath in boundSymlinkPaths {
                     Self.removeSymlinkIfOwned(symlinkPath: boundSymlinkPath, targetPath: boundSocketPath)
                 }
-                self.boundSymlinkPath = nil
+                self.boundSymlinkPaths.removeAll()
             }
             if let boundSocketPath {
                 unlink(boundSocketPath)

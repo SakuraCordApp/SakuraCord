@@ -216,15 +216,21 @@ struct ProfileActivitySection: View {
         return "Activity"
     }
 
+    private var nonStatusActivityText: String? {
+        guard let text = member.activityText, !text.isEmpty else { return nil }
+        if let custom = member.customStatus, text == custom { return nil }
+        return text
+    }
+
     private var primaryText: String {
         if isMusic {
             return effectiveActivity?.details
                 ?? effectiveActivity?.name
-                ?? member.activityText
+                ?? nonStatusActivityText
                 ?? "Music"
         }
         return effectiveActivity?.name
-            ?? member.activityText
+            ?? nonStatusActivityText
             ?? "Game"
     }
 
@@ -233,7 +239,7 @@ struct ProfileActivitySection: View {
             if let state = effectiveActivity?.state, !state.isEmpty {
                 return "by \(state)"
             }
-            if let text = member.activityText, text != primaryText {
+            if let text = nonStatusActivityText, text != primaryText {
                 return "by \(text)"
             }
             return nil
@@ -294,40 +300,46 @@ struct ProfileActivitySection: View {
                 return img
             }
         }
-        if let lowerName = effectiveActivity?.name.lowercased(), lowerName.contains("roblox") {
-            if let data = GamePresenceMonitor.currentRobloxIconData, let img = NSImage(data: data) {
-                return img
-            }
-        }
         return nil
     }
 
     private var resolvedRemoteArtworkURL: URL? {
         if let override = remoteArtworkOverride { return override }
-        guard let largeImage = effectiveActivity?.largeImage else { return nil }
-        if largeImage.hasPrefix("spotify:") {
-            let hash = String(largeImage.dropFirst("spotify:".count))
-            return URL(string: "https://i.scdn.co/image/\(hash)")
-        }
-        if largeImage.hasPrefix("mp:external/") {
-            let path = String(largeImage.dropFirst("mp:external/".count))
-            return URL(string: "https://media.discordapp.net/external/\(path)")
-        }
-        if largeImage.hasPrefix("external/") {
-            return URL(string: "https://media.discordapp.net/\(largeImage)")
-        }
-        if largeImage.hasPrefix("mp:attachments/") {
-            let path = String(largeImage.dropFirst("mp:attachments/".count))
-            return URL(string: "https://media.discordapp.net/attachments/\(path)")
-        }
-        if largeImage.hasPrefix("attachments/") {
-            return URL(string: "https://cdn.discordapp.com/\(largeImage)")
-        }
-        if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
-            return URL(string: largeImage)
+        if let largeImage = effectiveActivity?.largeImage {
+            if largeImage.hasPrefix("spotify:") {
+                let hash = String(largeImage.dropFirst("spotify:".count))
+                return URL(string: "https://i.scdn.co/image/\(hash)")
+            }
+            if largeImage.hasPrefix("mp:external/") {
+                let path = String(largeImage.dropFirst("mp:external/".count))
+                return URL(string: "https://media.discordapp.net/external/\(path)")
+            }
+            if largeImage.hasPrefix("external/") {
+                return URL(string: "https://media.discordapp.net/\(largeImage)")
+            }
+            if largeImage.hasPrefix("mp:attachments/") {
+                let path = String(largeImage.dropFirst("mp:attachments/".count))
+                return URL(string: "https://media.discordapp.net/attachments/\(path)")
+            }
+            if largeImage.hasPrefix("attachments/") {
+                return URL(string: "https://cdn.discordapp.com/\(largeImage)")
+            }
+            if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
+                return URL(string: largeImage)
+            }
+            if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
+                return URL(string: "https://cdn.discordapp.com/app-assets/\(appID)/\(largeImage).png")
+            }
         }
         if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
-            return URL(string: "https://cdn.discordapp.com/app-assets/\(appID)/\(largeImage).png")
+            if appID == GamePresenceMonitor.robloxAppID {
+                return URL(string: GamePresenceMonitor.robloxIconURL)
+            }
+            if let iconHash = DiscordIPCServer.cachedAppIcon(for: appID) {
+                return URL(string: "https://cdn.discordapp.com/app-icons/\(appID)/\(iconHash).png")
+            }
+        } else if let lowerName = effectiveActivity?.name.lowercased(), lowerName.contains("roblox") {
+            return URL(string: GamePresenceMonitor.robloxIconURL)
         }
         return nil
     }

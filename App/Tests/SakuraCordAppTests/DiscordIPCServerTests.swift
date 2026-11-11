@@ -516,4 +516,54 @@ struct DiscordIPCServerTests {
         #expect(primary?.details == "Playing Murder Mystery 2")
         #expect(primary?.state == "In Game")
     }
+
+    @Test func `modrinth app rich presence resolves name cleanly and responds with augmented activity`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+        defer { close(clientFD) }
+
+        // Handshake with Modrinth client ID
+        sendClientFrame(fd: clientFD, opcode: 0, jsonObject: ["v": 1, "client_id": "1123683254248148992"])
+        _ = try #require(readClientFrame(fd: clientFD))
+
+        // Modrinth payload: omits name, has large_text "Modrinth Logo"
+        sendClientFrame(fd: clientFD, opcode: 1, jsonObject: [
+            "cmd": "SET_ACTIVITY",
+            "args": [
+                "pid": 8888,
+                "activity": [
+                    "details": "In Menus",
+                    "state": "Modrinth App v0.9.0",
+                    "assets": [
+                        "large_image": "modrinth_simple",
+                        "large_text": "Modrinth Logo"
+                    ]
+                ]
+            ],
+            "nonce": "modrinth-nonce-1"
+        ])
+
+        let setResponse = try #require(readClientFrame(fd: clientFD))
+        #expect(setResponse.opcode == 1)
+        #expect(setResponse.json["cmd"] as? String == "SET_ACTIVITY")
+        let data = try #require(setResponse.json["data"] as? [String: Any])
+        #expect(data["name"] as? String == "Modrinth")
+        #expect(data["application_id"] as? String == "1123683254248148992")
+        #expect(data["type"] as? Int == 0)
+
+        let updated = await eventually {
+            (await mockProvider.currentActivities()).count == 1
+        }
+        #expect(updated)
+        let activities = await mockProvider.currentActivities()
+        let published = try #require(activities.values.first)
+        #expect(published.name == "Modrinth")
+        #expect(published.applicationId == "1123683254248148992")
+    }
 }
