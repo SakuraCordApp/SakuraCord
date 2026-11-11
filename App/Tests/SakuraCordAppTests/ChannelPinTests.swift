@@ -25,14 +25,14 @@ struct ChannelPinTests {
         // Voice channels follow the rest; equal positions keep override order.
         let pinned = ChannelGroup.pinning(
             [voice.id, earlierTie.id, laterTie.id, first.id, ChannelID(rawValue: 99)],
-            in: groups, excluding: []
+            in: groups, guildID: guildID, excluding: []
         )
         #expect(pinned.map(\.id) == [ChannelGroup.pinnedSectionID, "3"])
         #expect(pinned[0].channels.map(\.id) == [first.id, earlierTie.id, laterTie.id, voice.id])
         #expect(pinned[1].channels == [unpinned])
-        #expect(ChannelGroup.pinning(pinned[0].channels.map(\.id), in: pinned, excluding: []) == pinned)
+        #expect(ChannelGroup.pinning(pinned[0].channels.map(\.id), in: pinned, guildID: guildID, excluding: []) == pinned)
 
-        let hidden = ChannelGroup.pinning([first.id], in: groups, excluding: [first.id])
+        let hidden = ChannelGroup.pinning([first.id], in: groups, guildID: guildID, excluding: [first.id])
         #expect(hidden == groups)
     }
 
@@ -56,8 +56,19 @@ struct ChannelPinTests {
         #expect(model.isChannelPinned(channel))
         #expect(model.pinnedChannelIDs(in: guildID) == [channel.id])
         await model.channelPinMutationTasks[channel.id]?.value
-        #expect(savedFlags() == (original ?? 0) | (1 << 11) | (1 << 12))
+        #expect(savedFlags() == (original ?? 0) | ChannelNotificationOverride.pinnedFlag | GuildChannelSelection.selectedFlag)
         #expect(model.optimisticChannelPinnedByID.isEmpty)
         #expect(model.isChannelPinned(channel))
+
+        // A confirmed pin keeps its override's place, which breaks position ties.
+        let earlier = ChannelID(rawValue: 900), later = ChannelID(rawValue: 901)
+        model.applyNotificationSettings(.init(guildID: guildID, channelOverrides: [
+            .init(channelID: earlier, flags: GuildChannelSelection.selectedFlag),
+            .init(channelID: later, flags: ChannelNotificationOverride.pinnedFlag | GuildChannelSelection.selectedFlag),
+        ]))
+        model.updateLocalChannelNotificationOverride(guildID: guildID, channelID: earlier) {
+            $0.flags |= ChannelNotificationOverride.pinnedFlag
+        }
+        #expect(model.pinnedChannelIDs(in: guildID) == [earlier, later])
     }
 }

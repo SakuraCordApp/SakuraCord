@@ -6,19 +6,17 @@ extension AppModel {
     static let channelPinDebounce: Duration = .seconds(1)
 
     func isChannelPinned(_ channel: Channel) -> Bool {
-        guard let guildID = channel.guildID else { return false }
-        return optimisticChannelPinnedByID[channel.id]
-            ?? readState.notificationOverride(channelID: channel.id, guildID: guildID)?.isPinned
-            ?? false
+        optimisticChannelPinnedByID[channel.id] ?? channelNotificationOverride(for: channel)?.isPinned ?? false
     }
 
     /// A server's pinned channel IDs in its override order, which Discord uses
     /// to break position ties, with pending edits applied.
     func pinnedChannelIDs(in guildID: GuildID) -> [ChannelID] {
         let overrides = readState.notificationSettings(guildID: guildID)?.channelOverrides ?? []
+        let pinned = overrides.filter { optimisticChannelPinnedByID[$0.channelID] ?? $0.isPinned }.map(\.channelID)
+        guard !optimisticChannelPinnedByID.isEmpty else { return pinned }
         let listed = Set(overrides.map(\.channelID))
-        return overrides.filter { optimisticChannelPinnedByID[$0.channelID] ?? $0.isPinned }.map(\.channelID)
-            + optimisticChannelPinnedByID.filter { $0.value && !listed.contains($0.key) }.keys.sorted()
+        return pinned + optimisticChannelPinnedByID.filter { $0.value && !listed.contains($0.key) }.keys.sorted()
     }
 
     func toggleChannelPin(_ channel: Channel) {
@@ -101,12 +99,5 @@ extension AppModel {
         channelPinMutationStates[channelID] = nil
         optimisticChannelPinnedByID[channelID] = nil
         channelPinMutationTasks[channelID] = nil
-    }
-
-    /// Moves a server's pinned channels into Discord's Pinned Channels section.
-    func pinningChannels(_ groups: [ChannelGroup], guildID: GuildID) -> [ChannelGroup] {
-        let pinnedIDs = pinnedChannelIDs(in: guildID)
-        guard !pinnedIDs.isEmpty else { return groups }
-        return ChannelGroup.pinning(pinnedIDs, in: groups, excluding: hiddenChannelIDs)
     }
 }
