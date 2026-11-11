@@ -30,8 +30,11 @@ extension Member {
         memberListActivityContent.displayText
     }
 
+    /// Keeps the full activity, such as the track a custom status replaces
+    /// in the row, with custom emoji named rather than as raw tokens.
     nonisolated var memberListTooltip: String {
-        [user.username, activityText].compactMap { $0 }.joined(separator: "\n")
+        [user.username, activityText.map(NativeMemberActivityPresentation.accessibilityText)]
+            .compactMap { $0 }.joined(separator: "\n")
     }
 }
 
