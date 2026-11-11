@@ -1159,23 +1159,27 @@ extension AppModel {
         )
         let resolvedCoordinator = coordinator ?? ActivityCoordinator(provider: provider, preferences: initialActivityPreferences)
         let resolvedIPCServer = ipcServer ?? DiscordIPCServer(coordinator: resolvedCoordinator)
-        if launchMode == .normal, loadedPrivacy.sharesActivity, loadedPrivacy.allowsLocalRPC {
-            try? resolvedIPCServer.start()
-        }
         let resolvedAppleMusicMonitor = appleMusicMonitor ?? AppleMusicPresenceMonitor(coordinator: resolvedCoordinator)
-        if launchMode == .normal, loadedPrivacy.sharesActivity, loadedPrivacy.sharesAppleMusicActivity {
-            resolvedAppleMusicMonitor.start()
-        }
         let resolvedGameMonitor = GamePresenceMonitor(coordinator: resolvedCoordinator)
-        if launchMode == .normal, loadedPrivacy.sharesActivity, loadedPrivacy.allowsLocalRPC {
-            resolvedGameMonitor.start()
-        }
         return ActivityServices(
             coordinator: resolvedCoordinator,
             ipcServer: resolvedIPCServer,
             monitor: resolvedAppleMusicMonitor,
             gameMonitor: resolvedGameMonitor
         )
+    }
+
+    func startActivityServicesIfNeeded() {
+        guard launchMode == .normal else { return }
+        let loadedPrivacy = privacySafetySettingsStore.load()
+        guard loadedPrivacy.sharesActivity else { return }
+        if loadedPrivacy.allowsLocalRPC {
+            try? ipcServer.start()
+            gameMonitor.start()
+        }
+        if loadedPrivacy.sharesAppleMusicActivity {
+            appleMusicMonitor.start()
+        }
     }
 
     func postInitSetup(coordinator: ActivityCoordinator) {

@@ -360,59 +360,86 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
     }
 
-    nonisolated(unsafe) private static let musicPositionScript: NSAppleScript? = {
-        let script = NSAppleScript(source: """
-        tell application "Music"
-            if it is running then
-                return (player position as real)
-            end if
-            return -1
-        end tell
-        """)
-        script?.compileAndReturnError(nil)
-        return script
-    }()
+    private static func runOnMainThread<T: Sendable>(_ block: @escaping @Sendable () -> T?) -> T? {
+        if Thread.isMainThread {
+            return block()
+        }
+        return DispatchQueue.main.sync { block() }
+    }
 
-    nonisolated(unsafe) private static let spotifyPositionScript: NSAppleScript? = {
-        let script = NSAppleScript(source: """
-        tell application id "com.spotify.client"
-            if it is running then
-                return (player position as real)
-            end if
-            return -1
-        end tell
-        """)
-        script?.compileAndReturnError(nil)
-        return script
-    }()
+    private static func runOsaScript(source: String, timeoutSeconds: Double = 1.5) -> String? {
+        #if os(macOS)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", source]
 
-    private static let scriptQueue = DispatchQueue(label: "dev.sakuracord.applescript", qos: .userInitiated)
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
 
-    private static func runWithTimeout<T: Sendable>(timeoutSeconds: Double = 1.5, _ block: @escaping @Sendable () -> T?) -> T? {
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        let deadline = DispatchTime.now() + timeoutSeconds
         let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var result: T?
-        scriptQueue.async {
-            result = block()
+
+        process.terminationHandler = { _ in
             semaphore.signal()
         }
-        let waitResult = semaphore.wait(timeout: .now() + timeoutSeconds)
-        return waitResult == .timedOut ? nil : result
+
+        if semaphore.wait(timeout: deadline) == .timedOut {
+            process.terminate()
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !output.isEmpty
+        else {
+            return nil
+        }
+        return output
+        #else
+        return nil
+        #endif
     }
 
     public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
         #if os(macOS)
         guard NSClassFromString("XCTest") == nil else { return nil }
-        let bundleID = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "com.spotify.client" : "com.apple.Music"
+        let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
+        let bundleID = isSpotify ? "com.spotify.client" : "com.apple.Music"
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return nil }
-        return runWithTimeout(timeoutSeconds: 1.5) {
-            let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
-            guard let script = isSpotify ? spotifyPositionScript : musicPositionScript else { return nil }
-            var errorInfo: NSDictionary?
-            let descriptor = script.executeAndReturnError(&errorInfo)
-            if errorInfo != nil { return nil }
-            let val = descriptor.doubleValue
-            return val >= 0 ? val : nil
+        let scriptSource: String
+        if isSpotify {
+            scriptSource = """
+            tell application id "com.spotify.client"
+                if it is running then
+                    return (player position as real)
+                end if
+                return -1
+            end tell
+            """
+        } else {
+            scriptSource = """
+            tell application "Music"
+                if it is running then
+                    return (player position as real)
+                end if
+                return -1
+            end tell
+            """
         }
+        guard let output = runOsaScript(source: scriptSource, timeoutSeconds: 1.5),
+              let val = Double(output), val >= 0
+        else {
+            return nil
+        }
+        return val
         #else
         return nil
         #endif
@@ -479,7 +506,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard NSClassFromString("XCTest") == nil else { return nil }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return nil }
         #endif
-        return runWithTimeout(timeoutSeconds: 1.5) {
+        return runOnMainThread {
             let scriptSource = """
             tell application "Music"
                 if it is running then
@@ -516,82 +543,78 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         #if os(macOS)
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return (false, nil) }
         let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
-        return runWithTimeout(timeoutSeconds: 1.5) {
-            let scriptSource: String
-            if isSpotify {
-                scriptSource = """
-                tell application id "com.spotify.client"
-                    if it is running then
-                        set pState to (player state as string)
-                        if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
-                            set tName to (name of current track as string)
-                            set tArtist to (artist of current track as string)
-                            set tAlbum to (album of current track as string)
-                            set tPos to (player position as real)
-                            set tDur to (duration of current track as real)
-                            set tID to ""
-                            try
-                                set tID to (spotify url of current track as string)
-                            on error
-                                try
-                                    set tID to (id of current track as string)
-                                end try
-                            end try
-                            return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & tDur & "|||" & tID
-                        else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
-                            return "stopped"
-                        end if
-                    end if
-                    return "unknown"
-                end tell
-                """
-            } else {
-                scriptSource = """
-                tell application "Music"
-                    if it is running then
-                        set pState to (player state as string)
-                        if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
-                            set tName to (name of current track as string)
-                            set tArtist to (artist of current track as string)
-                            set tAlbum to (album of current track as string)
-                            set tPos to (player position as real)
-                            set tDur to (duration of current track as real)
-                            set tID to ""
+        let scriptSource: String
+        if isSpotify {
+            scriptSource = """
+            tell application id "com.spotify.client"
+                if it is running then
+                    set pState to (player state as string)
+                    if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
+                        set tName to (name of current track as string)
+                        set tArtist to (artist of current track as string)
+                        set tAlbum to (album of current track as string)
+                        set tPos to (player position as real)
+                        set tDur to (duration of current track as real)
+                        set tID to ""
+                        try
+                            set tID to (spotify url of current track as string)
+                        on error
                             try
                                 set tID to (id of current track as string)
                             end try
-                            return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * 1000) & "|||" & tID
-                        else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
-                            return "stopped"
-                        end if
+                        end try
+                        return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & tDur & "|||" & tID
+                    else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
+                        return "stopped"
                     end if
-                    return "unknown"
-                end tell
-                """
-            }
-            var errorInfo: NSDictionary?
-            guard let script = NSAppleScript(source: scriptSource) else { return (false, nil) }
-            let descriptor = script.executeAndReturnError(&errorInfo)
-            guard errorInfo == nil else { return (false, nil) }
-            let result = descriptor.stringValue ?? ""
-            if result == "stopped" { return (true, nil) }
-            guard !result.isEmpty, result != "unknown" else { return (false, nil) }
-            let parts = result.components(separatedBy: "|||")
-            guard parts.count >= 6 else { return (false, nil) }
-            let trackID = parts.count >= 7 && !parts[6].isEmpty ? parts[6] : nil
-            let rawState = parts[0]
-            let normalizedState = (rawState.caseInsensitiveCompare("playing") == .orderedSame || rawState.contains("kPSP")) ? "Playing" : rawState
-            return (false, AppleMusicTrackInfo(
-                playerState: normalizedState,
-                name: parts[1],
-                artist: parts[2],
-                album: parts[3],
-                currentPositionSeconds: Double(parts[4]),
-                totalTimeMilliseconds: Double(parts[5]),
-                trackID: trackID,
-                appName: isSpotify ? "Spotify" : "Apple Music"
-            ))
-        } ?? (false, nil)
+                end if
+                return "unknown"
+            end tell
+            """
+        } else {
+            scriptSource = """
+            tell application "Music"
+                if it is running then
+                    set pState to (player state as string)
+                    if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
+                        set tName to (name of current track as string)
+                        set tArtist to (artist of current track as string)
+                        set tAlbum to (album of current track as string)
+                        set tPos to (player position as real)
+                        set tDur to (duration of current track as real)
+                        set tID to ""
+                        try
+                            set tID to (id of current track as string)
+                        end try
+                        return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * 1000) & "|||" & tID
+                    else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
+                        return "stopped"
+                    end if
+                end if
+                return "unknown"
+            end tell
+            """
+        }
+        guard let result = runOsaScript(source: scriptSource, timeoutSeconds: 1.5) else {
+            return (false, nil)
+        }
+        if result == "stopped" { return (true, nil) }
+        guard !result.isEmpty, result != "unknown" else { return (false, nil) }
+        let parts = result.components(separatedBy: "|||")
+        guard parts.count >= 6 else { return (false, nil) }
+        let trackID = parts.count >= 7 && !parts[6].isEmpty ? parts[6] : nil
+        let rawState = parts[0]
+        let normalizedState = (rawState.caseInsensitiveCompare("playing") == .orderedSame || rawState.contains("kPSP")) ? "Playing" : rawState
+        return (false, AppleMusicTrackInfo(
+            playerState: normalizedState,
+            name: parts[1],
+            artist: parts[2],
+            album: parts[3],
+            currentPositionSeconds: Double(parts[4]),
+            totalTimeMilliseconds: Double(parts[5]),
+            trackID: trackID,
+            appName: isSpotify ? "Spotify" : "Apple Music"
+        ))
         #else
         return (false, nil)
         #endif

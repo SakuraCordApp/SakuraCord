@@ -20,6 +20,7 @@ extension AppModel {
     }
 
     func start(publishesSessionState: Bool = true) async {
+        startActivityServicesIfNeeded()
         guard !awaitsOfflineSignIn else { return }
         let session = accountSession()
         let startSignpost = AppPerformanceSignposts.signposter.beginInterval("SessionStart")
