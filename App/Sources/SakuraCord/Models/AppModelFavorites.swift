@@ -118,6 +118,10 @@ extension AppModel {
         leaveGuildJoinRequestPage()
         setFavoritesPresented(true)
         loadFavoriteThreads()
+        openRememberedFavorite()
+    }
+
+    private func openRememberedFavorite() {
         let conversations = favoriteConversations()
         openFavorite(conversations.first { $0.id == favorites.lastChannelID } ?? conversations.first)
     }
@@ -154,6 +158,11 @@ extension AppModel {
                 }
                 model.favorites.threads[entry.id] = post.thread
             }
+            // Threads that load after Favorites opened empty open like any favourite.
+            if model.favorites.isPresented, model.presentedFavoriteChannelID == nil,
+               !model.favoriteConversations().isEmpty {
+                model.openRememberedFavorite()
+            }
         }
     }
 
@@ -178,13 +187,23 @@ extension AppModel {
         favorites.settings?.contains(channelID) ?? false
     }
 
+    /// Whether Discord would keep this conversation as a favourite: it drops
+    /// channels the account doesn't know or can't view on every save.
+    func canAddFavorite(_ channelID: ChannelID) -> Bool {
+        knownRootChannel(channelID).map { conversationAccess(for: $0) != .hidden } ?? (sidebarThread(channelID) != nil)
+    }
+
     /// Adds or removes a channel, DM or thread. Like Discord, an addition over
     /// the account's limit shows the notice and sends nothing.
     func toggleFavorite(_ channelID: ChannelID, channelType: Int) {
         guard let settings = favorites.settings else { return }
+        // Discord prunes favourites the account can no longer see before it
+        // counts, so a deleted or hidden channel never blocks an addition.
+        var counted = settings
+        counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
         if settings.contains(channelID) {
             updateFavorites(.remove(channelID))
-        } else if let limit = settings.limitBlockingAddition(premiumType: currentUser?.premiumType ?? 0) {
+        } else if let limit = counted.limitBlockingAddition(premiumType: currentUser?.premiumType ?? 0) {
             favorites.limitReached = limit
         } else {
             updateFavorites(.add(channelID, channelType: channelType))

@@ -6,8 +6,8 @@ import SakuraCordModels
 enum FavoritesMenu {
     /// Outside Favorites: Add to Favorites, or Remove for a favourite.
     static func toggleItems(for channelID: ChannelID, channelType: Int, model: AppModel) -> [NSMenuItem] {
-        guard model.favorites.settings != nil else { return [] }
         let isFavorite = model.isFavorite(channelID)
+        guard model.favorites.settings != nil, isFavorite || model.canAddFavorite(channelID) else { return [] }
         return [item(isFavorite ? "Remove from Favorites" : "Add to Favorites",
                      systemImage: isFavorite ? "star.slash" : "star") {
             model.toggleFavorite(channelID, channelType: channelType)
