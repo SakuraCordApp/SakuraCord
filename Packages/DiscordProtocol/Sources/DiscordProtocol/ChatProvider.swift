@@ -149,6 +149,12 @@ public protocol ChatProvider: Sendable {
     func setInboxEventInterested(_ interested: Bool, event: InboxScheduledEvent) async throws
     func updateInboxTab(_ tab: InboxTab) async throws
     func updateInboxCollapsed(_ collapsed: Bool, channelID: ChannelID, guildID: GuildID?) async throws
+    func scheduledMessages() async throws -> [ScheduledMessage]
+    func scheduleMessage(_ draft: SendMessageDraft, at date: Date) async throws -> ScheduledMessage
+    func rescheduleMessage(_ id: ScheduledMessageID, at date: Date) async throws -> ScheduledMessage
+    func editScheduledMessage(_ id: ScheduledMessageID, content: String, flags: MessageFlags) async throws -> ScheduledMessage
+    func sendScheduledMessageNow(_ id: ScheduledMessageID) async throws
+    func cancelScheduledMessage(_ id: ScheduledMessageID) async throws
     func updateGuildRailLayout(_ items: [GuildRailItem]) async throws
     func pinnedMessages(
         in channelID: ChannelID,
@@ -1272,6 +1278,7 @@ public enum ChatProviderError: LocalizedError, Equatable, Sendable {
     case transport(status: Int, requestID: String?)
     case capabilityDisabled(ChatCapability)
     case threadMemberLimitReached
+    case scheduledMessageLimitReached
 
     public var errorDescription: String? {
         switch self {
@@ -1289,6 +1296,7 @@ public enum ChatProviderError: LocalizedError, Equatable, Sendable {
         case let .capabilityDisabled(capability):
             "\(capability.displayName) is not enabled for this account session."
         case .threadMemberLimitReached: "This thread has reached its member limit."
+        case .scheduledMessageLimitReached: "You have too many scheduled messages."
         }
     }
 }

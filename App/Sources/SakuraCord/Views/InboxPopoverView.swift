@@ -7,9 +7,15 @@ struct InboxPopoverView: View {
     var body: some View {
         VStack(spacing: 0) {
             InboxToolbar(model: model)
-            InboxContent(model: model)
-                .animation(.easeOut(duration: 0.18), value: model.inbox.tab)
-            if let error = model.inbox.errorMessage {
+            Group {
+                if model.inbox.tab == .scheduled {
+                    InboxScheduledMessagesView(model: model)
+                } else {
+                    InboxContent(model: model)
+                }
+            }
+            .animation(.easeOut(duration: 0.18), value: model.inbox.tab)
+            if model.inbox.tab != .scheduled, let error = model.inbox.errorMessage {
                 HStack(spacing: InterfaceScale.metric(8)) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     Text(error).font(.interface(.callout)).foregroundStyle(.secondary).lineLimit(2)
@@ -83,7 +89,7 @@ private struct InboxToolbar: View {
                 .help("Filter Mentions")
                 .accessibilityLabel("Filter Mentions")
                 .transition(.opacity)
-            } else {
+            } else if inbox.tab == .unread {
                 if !inbox.undoGroups.isEmpty {
                     HoverActionButton(systemImage: "arrow.uturn.backward", help: "Undo Mark Read", action: model.undoInboxRead)
                         .keyboardShortcut("z", modifiers: .command)
@@ -96,9 +102,10 @@ private struct InboxToolbar: View {
                     }
                     .transition(.opacity)
             }
+            let isRefreshing = inbox.tab == .scheduled ? model.scheduledMessages.isLoading : inbox.isRefreshing
             HoverActionButton(systemImage: "arrow.clockwise", help: "Refresh Inbox", action: model.reloadInbox)
-                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: inbox.isRefreshing)
-                .disabled(inbox.isRefreshing)
+                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: isRefreshing)
+                .disabled(isRefreshing)
         }
         .animation(.snappy(duration: 0.22), value: inbox.tab)
         .animation(.snappy(duration: 0.22), value: inbox.undoGroups.isEmpty)
@@ -125,6 +132,8 @@ private struct InboxTabPicker: View {
             .tag(InboxTab.unread)
             Text("Mentions")
                 .tag(InboxTab.mentions)
+            Text("Scheduled")
+                .tag(InboxTab.scheduled)
         }
         .pickerStyle(.tabs)
         .controlSize(.large)

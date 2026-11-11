@@ -232,6 +232,7 @@ final class AppModel {
     let pinnedMessages = PinnedMessagesState()
     let threadBrowser = ThreadBrowserState()
     let inbox = InboxState()
+    let scheduledMessages = ScheduledMessagesState()
     @ObservationIgnored var lastDirectMessageSelection: DirectMessageSidebarSelection?
     @ObservationIgnored var lastOpenedChannelIDsByGuild: [GuildID: ChannelID] = [:]
     @ObservationIgnored var threadTimelinePosition = TimelineReadingPosition()

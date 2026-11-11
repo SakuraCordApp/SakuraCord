@@ -564,6 +564,18 @@ private struct ChatRootView: View {
         } message: {
             Text("You’re sending messages too quickly!")
         }
+        .alert("Oops! Limit reached.", isPresented: Binding(
+            get: { model.scheduledMessages.isLimitAlertPresented },
+            set: { model.scheduledMessages.isLimitAlertPresented = $0 }
+        )) {
+            Button("Manage Messages", action: model.presentScheduledMessages)
+            Button("Okay", role: .cancel) {}
+        } message: {
+            // The official client offers Nitro where it would raise the limit.
+            Text(model.scheduledMessageLimit == 1
+                ? "Nitro raises your scheduled message limit to \(ScheduledMessagePolicy.limit(premiumType: 2)). You can also cancel a scheduled message to make room."
+                : "You've reached the limit of \(model.scheduledMessageLimit) scheduled messages.")
+        }
         .alert("SakuraCord", isPresented: Binding(get: { model.errorMessage != nil }, set: {
             if !$0 {
                 model.dismissError()

@@ -16,6 +16,8 @@ struct ComposerView: View {
     @State private var showPhotosPicker = false
     @State private var showComposerActions = false
     @State private var showPollCreator = false
+    /// The + menu shows the schedule picker in place of its actions.
+    @State private var showsSchedulePicker = false
     @State private var showActivityShelf = false
     @State private var showGIFPicker = false
     @State private var showStickerPicker = false
@@ -83,6 +85,12 @@ struct ComposerView: View {
                         Divider()
                             .transition(.opacity)
                     }
+                    if !hasActiveCommand, hasScheduleHeader {
+                        ComposerScheduleHeader(model: model, destination: conversation)
+                            .transition(ComposerResizeMotion.headerTransition)
+                        Divider()
+                            .transition(.opacity)
+                    }
                     if !hasActiveCommand, !attachments.isEmpty {
                         ComposerAttachmentTray(
                             attachments: attachments,
@@ -124,6 +132,7 @@ struct ComposerView: View {
                     } else if !isCreatingThread {
                         composerLeadingButton(appearance: appearance)
                         .escapeDismissiblePopover(isPresented: $showComposerActions, arrowEdge: .top) { composerActionsMenu }
+                        .onChange(of: showComposerActions) { if !$1 { showsSchedulePicker = false } }
                         .background { activityShelfPresenter }
                     }
                 }
@@ -631,6 +640,8 @@ struct ComposerView: View {
         guard !model.consumeEscapeForUnfocusedMessageSearch() else { return }
         if model.consumeEscapeForReply(in: conversation) {
             return
+        } else if model.scheduledSendDate(in: conversation) != nil {
+            model.setScheduledSendDate(nil, in: conversation)
         } else if showGIFPicker {
             showGIFPicker = false
         } else if showStickerPicker {
@@ -720,6 +731,7 @@ struct ComposerView: View {
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty,
               !hasCheckingAttachments
         else { return }
+        if !isCreatingThread, model.scheduledSendDate(in: conversation) != nil { return schedule() }
         isSubmitting = true
         draftSelection = nil
         selectionBeforeEmojiPicker = nil
@@ -772,6 +784,27 @@ struct ComposerView: View {
             isSubmitting = false
             isFocused = true
         }
+    }
+
+    /// Hands the message to Discord to send later; the composer clears only
+    /// once Discord accepts it.
+    private func schedule() {
+        isSubmitting = true
+        let staged = attachments
+        model.beginUsingOwnedPromisedFiles(staged.map(\.url))
+        Task {
+            let scopedURLs = staged.map(\.url).filter { $0.startAccessingSecurityScopedResource() }
+            await model.scheduleComposerMessage(in: conversation, attachments: staged)
+            for url in scopedURLs { url.stopAccessingSecurityScopedResource() }
+            model.endUsingOwnedPromisedFiles(staged.map(\.url))
+            isSubmitting = false
+            isFocused = true
+        }
+    }
+
+    private var hasScheduleHeader: Bool {
+        guard !isCreatingThread, let channelID = model.composerSendChannelID(in: conversation) else { return false }
+        return model.scheduledMessages.sendDates[channelID] != nil || model.scheduledMessages.confirmations[channelID] != nil
     }
 
     private var autocompleteContext: ColonAutocompleteContext? {
@@ -1198,8 +1231,13 @@ struct ComposerView: View {
     }
 
     private var hasComposerActions: Bool {
-        canAddAttachments || canCreatePoll || canCreateThread || activityChannel != nil
+        canAddAttachments || canCreatePoll || canCreateThread || canScheduleMessage || activityChannel != nil
             || model.translation.settings.isEnabled
+    }
+
+    /// Like the official composer: a DM, or a channel the account may send in.
+    private var canScheduleMessage: Bool {
+        !isCreatingThread && model.composerSendChannelID(in: conversation) != nil
     }
 
     /// The thread pane composes a thread's first message before Discord has
@@ -1670,7 +1708,8 @@ private extension ComposerView {
             attachmentIDs: hasActiveCommand ? [] : attachments.map(\.id),
             replyID: hasActiveCommand ? nil : activeReply?.id,
             hasActiveCommand: hasActiveCommand,
-            hasTranslationHeader: model.draftTranslation(for: conversation) != nil
+            hasTranslationHeader: model.draftTranslation(for: conversation) != nil,
+            hasScheduleHeader: hasScheduleHeader
         )
     }
 
@@ -1731,8 +1770,24 @@ private extension ComposerView {
 }
 
 extension ComposerView {
-    /// The composer's + menu: files, a thread, a poll, an Activity and translation.
-    private var composerActionsMenu: some View {
+    /// The composer's + menu: files, a thread, a poll, a schedule, an Activity and translation.
+    @ViewBuilder private var composerActionsMenu: some View {
+        if showsSchedulePicker {
+            ScheduleMessagePicker(
+                title: "Schedule Message",
+                confirmTitle: "Set Schedule",
+                initialDate: model.scheduledSendDate(in: conversation)
+            ) {
+                showComposerActions = false
+                model.setScheduledSendDate($0, in: conversation)
+                isFocused = true
+            }
+        } else {
+            composerActionsList
+        }
+    }
+
+    private var composerActionsList: some View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(4)) {
             if canAddAttachments {
                 Button {
@@ -1769,6 +1824,14 @@ extension ComposerView {
                     showPollCreator = true
                 } label: {
                     Label("Create a Poll", systemImage: "chart.bar.xaxis")
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
+                }
+            }
+            if canScheduleMessage {
+                Button {
+                    showsSchedulePicker = true
+                } label: {
+                    Label("Schedule Message", systemImage: "calendar.badge.clock")
                         .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
                 }
             }

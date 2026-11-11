@@ -304,6 +304,42 @@ tally ambiguous; a second overlap reports failure rather than starting polling.
 Poll rejections follow the shared operation-scoped error policy; they do not
 stop unrelated REST or Gateway traffic.
 
+## Scheduled messages
+
+Discord holds a scheduled message and posts it as the account at its time
+(official web build 670026, observed 11 November 2026). The composer's +
+menu offers it wherever the account may send: a DM, a group DM, or a channel
+or thread with `SEND_MESSAGES`. Like the official client, the picked time is
+kept per conversation until it is sent or cleared (× or Escape); sending the
+draft stores any staged files exactly as a send does, then makes one
+`POST /users/@me/scheduled-messages` with `channel_id`, `content`,
+`scheduled_timestamp` (ISO 8601 with milliseconds, UTC), `flags` and
+`attachments` (always present, possibly empty), plus `message_reference`
+(`guild_id` when in a server, `channel_id`, `message_id`; no `type`) and the
+quiet-reply `allowed_mentions` for a reply. There is no nonce and no
+`X-Context-Properties` header, and nothing enters the timeline. The composer
+clears only when Discord accepts it, so a refusal loses nothing.
+
+The time must be at least ten minutes and at most eight days away; a reschedule
+also stays within 30 days of the message's snowflake time. Full Nitro (premium
+type 2) may hold 25 scheduled messages at once and every other plan one. The
+client does not check the count first: Discord answers an extra create with
+`400` code `640003`, which shows the limit alert (with Nitro's higher limit
+where it would help) and a way to manage scheduled messages.
+
+The Inbox's Scheduled tab (tab `7` in the synced Inbox settings) reads
+`GET /users/@me/scheduled-messages` each time it is shown; no Gateway event
+reports scheduled messages, so another client's changes appear on the next
+read. Rows list the latest send time first. Edit Schedule Time sends
+`PATCH …/{id}` with only `scheduled_timestamp`; Edit Message sends only
+`content` and the message's existing `flags`; Send Now is a bodiless
+`POST …/{id}/send` whose message arrives through the ordinary
+`MESSAGE_CREATE`, usually before the response; Cancel is
+`DELETE …/{id}` (`204`). Sent and cancelled rows stay, marked pending, until
+Discord confirms. A due message is posted within seconds as an ordinary
+`MESSAGE_CREATE` without a nonce. Every mutation is single-attempt. See
+[ScheduledMessageContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ScheduledMessageContractTests.swift).
+
 ## Forums, threads and commands
 
 Forum browsing uses `threads/search` and preview `post-data` batches of at most

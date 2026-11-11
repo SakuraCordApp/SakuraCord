@@ -1,0 +1,207 @@
+import SakuraCordModels
+import SwiftUI
+
+/// Picks a send time: the official client's three shortcuts, or any time from
+/// ten minutes to eight days ahead.
+struct ScheduleMessagePicker: View {
+    let title: LocalizedStringResource
+    let confirmTitle: LocalizedStringResource
+    var showsShortcuts = true
+    /// Bounds a reschedule to 30 days after its message was first scheduled.
+    var scheduledMessageID: ScheduledMessageID?
+    var clear: (() -> Void)?
+    let commit: (Date) -> Void
+    @State private var date: Date
+
+    init(
+        title: LocalizedStringResource,
+        confirmTitle: LocalizedStringResource,
+        initialDate: Date?,
+        showsShortcuts: Bool = true,
+        scheduledMessageID: ScheduledMessageID? = nil,
+        clear: (() -> Void)? = nil,
+        commit: @escaping (Date) -> Void
+    ) {
+        self.title = title
+        self.confirmTitle = confirmTitle
+        self.showsShortcuts = showsShortcuts
+        self.scheduledMessageID = scheduledMessageID
+        self.clear = clear
+        self.commit = commit
+        _date = State(initialValue: initialDate ?? Self.nextWholeHour())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: InterfaceScale.metric(8)) {
+            Text(title)
+                .font(.interface(.headline))
+                .padding(.horizontal, InterfaceScale.metric(8))
+                .padding(.top, InterfaceScale.metric(4))
+            if showsShortcuts {
+                VStack(spacing: InterfaceScale.metric(2)) {
+                    ForEach(Self.shortcuts(), id: \.date) { shortcut in
+                        Button { commit(shortcut.date) } label: {
+                            Label(shortcut.label, systemImage: shortcut.systemImage)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(InterfaceScale.metric(8))
+                        }
+                    }
+                }
+                .buttonStyle(PopoverRowButtonStyle())
+                Divider().padding(.horizontal, InterfaceScale.metric(8))
+            }
+            DatePicker(
+                "Send at",
+                selection: $date,
+                in: ScheduledMessagePolicy.earliestSendDate() ... ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID),
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            .datePickerStyle(.field)
+            .labelsHidden()
+            .padding(.horizontal, InterfaceScale.metric(8))
+            if let issue {
+                Label(issue, systemImage: "exclamationmark.circle.fill")
+                    .font(.interface(.caption))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, InterfaceScale.metric(8))
+            }
+            HStack(spacing: InterfaceScale.metric(8)) {
+                if let clear {
+                    Button("Clear", role: .destructive, action: clear)
+                        .buttonStyle(.glass)
+                }
+                Spacer(minLength: 0)
+                Button { commit(date) } label: { Text(confirmTitle) }
+                    .buttonStyle(.glassProminent)
+                    .tint(SakuraCordAccentColor.color)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(issue != nil)
+            }
+            .controlSize(.regular)
+            .padding(InterfaceScale.metric(8))
+        }
+        .padding(InterfaceScale.metric(6))
+        .frame(width: InterfaceScale.metric(260))
+    }
+
+    /// The range can lapse while the picker stays open.
+    private var issue: LocalizedStringResource? {
+        if date < ScheduledMessagePolicy.earliestSendDate() { return "Scheduled time is too soon" }
+        if date > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID) { return "Scheduled time is too far away" }
+        return nil
+    }
+
+    /// The next whole hour, or the one after when that is under ten minutes away.
+    static func nextWholeHour(now: Date = .now, calendar: Calendar = .current) -> Date {
+        let hour = calendar.dateInterval(of: .hour, for: now)?.end ?? now
+        return hour < ScheduledMessagePolicy.earliestSendDate(now: now) ? hour.addingTimeInterval(3600) : hour
+    }
+
+    /// 9:00 and 13:00 today, or tomorrow once too close, then next week's Monday at 9:00.
+    struct Shortcut {
+        let label: String
+        let systemImage: String
+        let date: Date
+    }
+
+    static func shortcuts(now: Date = .now, calendar: Calendar = .current) -> [Shortcut] {
+        let earliest = ScheduledMessagePolicy.earliestSendDate(now: now)
+        let today = calendar.startOfDay(for: now)
+        func time(_ date: Date) -> String { date.formatted(date: .omitted, time: .shortened) }
+        func daily(hour: Int, systemImage: String) -> Shortcut {
+            let todayAt = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: today) ?? today
+            if todayAt > earliest {
+                return Shortcut(label: String(localized: "Today at \(time(todayAt))"), systemImage: systemImage, date: todayAt)
+            }
+            let tomorrowAt = calendar.date(byAdding: .day, value: 1, to: todayAt) ?? todayAt
+            return Shortcut(label: String(localized: "Tomorrow at \(time(tomorrowAt))"), systemImage: systemImage, date: tomorrowAt)
+        }
+        var iso = Calendar(identifier: .iso8601)
+        iso.timeZone = calendar.timeZone
+        let thisWeek = iso.dateInterval(of: .weekOfYear, for: now)?.start ?? today
+        let monday = calendar.date(
+            bySettingHour: 9, minute: 0, second: 0, of: iso.date(byAdding: .weekOfYear, value: 1, to: thisWeek) ?? thisWeek
+        ) ?? thisWeek
+        return [
+            daily(hour: 9, systemImage: "sunrise"),
+            daily(hour: 13, systemImage: "sun.max"),
+            Shortcut(label: String(localized: "Monday at \(time(monday))"), systemImage: "calendar", date: monday),
+        ]
+    }
+}
+
+/// The composer's note that its message will be scheduled, then that it was.
+struct ComposerScheduleHeader: View {
+    let model: AppModel
+    let destination: MessageComposerDestination
+    @State private var isEditing = false
+
+    var body: some View {
+        if let channelID = model.composerSendChannelID(in: destination) {
+            let state = model.scheduledMessages
+            if let confirmed = state.confirmations[channelID] {
+                row(systemImage: "checkmark.circle.fill", tint: .green) {
+                    Button { model.presentScheduledMessages() } label: {
+                        Text("Message scheduled for \(confirmed.formatted(.scheduledSendTime))")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show Scheduled Messages")
+                }
+            } else if let date = state.sendDates[channelID] {
+                row(systemImage: "calendar.badge.clock", tint: SakuraCordAccentColor.color) {
+                    Button { isEditing = true } label: {
+                        Text("Scheduling for \(date.formatted(.scheduledSendTime))")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit Schedule Time")
+                    .popover(isPresented: $isEditing, arrowEdge: .top) {
+                        ScheduleMessagePicker(
+                            title: "Schedule Message", confirmTitle: "Set Schedule", initialDate: date,
+                            clear: {
+                                isEditing = false
+                                model.setScheduledSendDate(nil, in: destination)
+                            },
+                            commit: {
+                                isEditing = false
+                                model.setScheduledSendDate($0, in: destination)
+                            }
+                        )
+                    }
+                    Spacer(minLength: InterfaceScale.metric(8))
+                    if state.submittingChannelIDs.contains(channelID) {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        HoverCloseButton(
+                            help: "Don't Schedule",
+                            accessibilityIdentifier: "composer-schedule-close",
+                            diameter: InterfaceScale.metric(30),
+                            iconSize: 13
+                        ) { model.setScheduledSendDate(nil, in: destination) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(
+        systemImage: String, tint: Color, @ViewBuilder content: () -> some View
+    ) -> some View {
+        HStack(spacing: InterfaceScale.metric(6)) {
+            Image(systemName: systemImage).foregroundStyle(tint)
+            content()
+            Spacer(minLength: 0)
+        }
+        .font(.interface(.callout))
+        .frame(minHeight: InterfaceScale.metric(34))
+        .padding(.leading, InterfaceScale.metric(12))
+        .padding(.trailing, InterfaceScale.metric(8))
+        .background(.primary.opacity(0.035))
+    }
+}
+
+extension FormatStyle where Self == Date.FormatStyle {
+    /// "Nov 12, 9:00 AM" in the person's locale.
+    static var scheduledSendTime: Date.FormatStyle {
+        .dateTime.month(.abbreviated).day().hour().minute()
+    }
+}
