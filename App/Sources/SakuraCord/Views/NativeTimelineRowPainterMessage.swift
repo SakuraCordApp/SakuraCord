@@ -129,7 +129,9 @@ extension NativeTimelineRowPainter {
                 in: CGRect(
                     x: subtitleMinX,
                     y: titleFrame.minY + baselineFromBottom(subtitleFont) - baselineFromBottom(titleFont),
-                    width: region.titleFrame.maxX - subtitleMinX,
+                    // A full-width title leaves none; a negative width
+                    // would read as positive and draw over the title.
+                    width: max(0, region.titleFrame.maxX - subtitleMinX),
                     height: titleFrame.height
                 ),
                 font: subtitleFont,
