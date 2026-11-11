@@ -97,34 +97,44 @@ extension NativeTimelineRowPainter {
     private static func drawMessageSearchContext(_ input: NativeTimelineMessageDrawInput) {
         if let context = input.row.searchContext,
            let region = input.layout.searchSectionRegion {
+            // Symbol palettes ignore alpha, so fade the drawing instead.
+            let cgContext = NSGraphicsContext.current?.cgContext
+            cgContext?.saveGState()
+            cgContext?.setAlpha(0.7)
             NativeTimelineRowPainter.systemSymbol(
                 context.systemImage,
                 in: region.iconFrame,
-                color: .secondaryLabelColor,
+                color: .labelColor,
                 inset: 1,
                 weight: .semibold
             )
-            text(
-                context.sectionTitle,
-                in: region.titleFrame,
-                font: .interfaceSystemFont(
-                    ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize,
-                    weight: .semibold
-                ),
-                color: .labelColor,
-                lineBreakMode: .byTruncatingTail
+            cgContext?.restoreGState()
+            let titleFont = NSFont.interfaceSystemFont(
+                ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize,
+                weight: .semibold
             )
-            if let subtitle = context.sectionSubtitle,
-               let subtitleFrame = region.subtitleFrame
-            {
-                text(
-                    subtitle,
-                    in: subtitleFrame,
-                    font: .interfacePreferredFont(forTextStyle: .caption1),
-                    color: .secondaryLabelColor,
-                    lineBreakMode: .byTruncatingTail
-                )
+            var titleFrame = region.titleFrame
+            titleFrame.size.width = min(titleFrame.width, ceil(measuredTextWidth(context.sectionTitle, font: titleFont)))
+            text(context.sectionTitle, in: titleFrame, font: titleFont, color: .labelColor)
+            guard let subtitle = context.sectionSubtitle else { return }
+            let subtitleFont = NSFont.interfacePreferredFont(forTextStyle: .caption1)
+            // Text is centred in its frame by line height, so shift the
+            // smaller subtitle to share the title's baseline.
+            func baselineFromBottom(_ font: NSFont) -> CGFloat {
+                (titleFrame.height - font.ascender + font.descender - font.leading) / 2 - font.descender
             }
+            let subtitleMinX = titleFrame.maxX + InterfaceScale.metric(6)
+            text(
+                subtitle,
+                in: CGRect(
+                    x: subtitleMinX,
+                    y: titleFrame.minY + baselineFromBottom(subtitleFont) - baselineFromBottom(titleFont),
+                    width: region.titleFrame.maxX - subtitleMinX,
+                    height: titleFrame.height
+                ),
+                font: subtitleFont,
+                color: .secondaryLabelColor
+            )
         }
     }
 
