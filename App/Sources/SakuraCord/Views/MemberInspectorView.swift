@@ -486,11 +486,12 @@ struct MemberRow: View {
                                 HStack(spacing: InterfaceScale.metric(4)) {
                                     if member.isListeningToMusic {
                                         Image(systemName: "music.note")
-                                            .foregroundStyle(Color(hex: 0x1DB954))
-                                        if member.memberListShowsMusicSeparator {
-                                            Text("·")
-                                                .foregroundStyle(.secondary)
-                                        }
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
+                                    } else if member.isPlayingGame {
+                                        Image(systemName: "gamecontroller.fill")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
                                     }
                                     ProfileStatusTextView(
                                         source: activity,

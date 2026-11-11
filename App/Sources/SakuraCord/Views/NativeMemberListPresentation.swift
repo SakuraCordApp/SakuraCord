@@ -41,9 +41,6 @@ extension Member {
 
     nonisolated var memberListActivityIconType: MemberActivityIconType? {
         if isListeningToMusic {
-            if let customStatus, !customStatus.isEmpty {
-                return nil
-            }
             return .music
         }
         if isPlayingGame {
@@ -60,12 +57,18 @@ extension Member {
             if let richActivity {
                 return richActivity.details ?? richActivity.state ?? richActivity.name
             }
-            return activityText
+            if let activityText {
+                if activityText.lowercased().hasPrefix("listening to ") {
+                    return String(activityText.dropFirst("listening to ".count)).trimmingCharacters(in: .whitespaces)
+                }
+                return activityText
+            }
+            return nil
         }
         if isPlayingGame {
             return gameName ?? activityText
         }
-        return activityText ?? customStatus
+        return customStatus ?? activityText
     }
 
     nonisolated var memberListShowsMusicSeparator: Bool {

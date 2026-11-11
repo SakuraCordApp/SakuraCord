@@ -687,16 +687,20 @@ struct ProfileActivitySection: View {
             let hours = totalSeconds / 3600
             let minutes = (totalSeconds % 3600) / 60
             let seconds = totalSeconds % 60
-            let formattedTime: String = if hours > 0 {
-                String(format: "%d:%02d:%02d elapsed", hours, minutes, seconds)
+            let formattedDigits: String = if hours > 0 {
+                String(format: "%02d:%02d:%02d", hours, minutes, seconds)
             } else {
-                String(format: "%02d:%02d elapsed", minutes, seconds)
+                String(format: "%02d:%02d", minutes, seconds)
             }
 
-            Text(formattedTime)
-                .font(.interfaceSystem(size: 11))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+            HStack(spacing: InterfaceScale.metric(4)) {
+                Text(formattedDigits)
+                    .font(.interfaceSystem(size: 11, design: .monospaced))
+                    .monospacedDigit()
+                Text("elapsed")
+                    .font(.interfaceSystem(size: 11))
+            }
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -729,13 +733,13 @@ struct ProfileActivitySection: View {
                     .frame(height: InterfaceScale.metric(4))
 
                     HStack {
-                        Text(String(format: "%d:%02d", elapsedSec / 60, elapsedSec % 60))
-                            .font(.interfaceSystem(size: 11))
+                        Text(String(format: "%02d:%02d", elapsedSec / 60, elapsedSec % 60))
+                            .font(.interfaceSystem(size: 11, design: .monospaced))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text(String(format: "-%d:%02d", remainingSec / 60, remainingSec % 60))
-                            .font(.interfaceSystem(size: 11))
+                        Text(String(format: "-%02d:%02d", remainingSec / 60, remainingSec % 60))
+                            .font(.interfaceSystem(size: 11, design: .monospaced))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
