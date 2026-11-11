@@ -373,7 +373,8 @@ struct AppleMusicPresenceMonitorTests {
         )
         let decorated = model.memberWithCurrentStatus(rawMember)
         #expect(decorated.activityText == "Playing Essential Mod")
-        #expect(decorated.memberListActivityText == "Playing Essential Mod")
+        #expect(decorated.memberListActivityText == "Essential Mod")
+        #expect(decorated.memberListActivityIconType == .game)
     }
 
     @Test("Extreme or non-finite duration does not cause integer overflow or crash")

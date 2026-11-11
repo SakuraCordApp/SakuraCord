@@ -171,3 +171,57 @@ extension NativeMemberListCanvasView {
         )
     }
 }
+
+nonisolated final class MemberActivityIconCache: @unchecked Sendable {
+    static let shared = MemberActivityIconCache()
+    private var cachedIcons: [MemberActivityIconType: CGImage] = [:]
+    private let lock = NSLock()
+
+    func image(for type: MemberActivityIconType) -> CGImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = cachedIcons[type] {
+            return existing
+        }
+        let symbolName = switch type {
+        case .game: "gamecontroller.fill"
+        case .music: "music.note"
+        }
+        let tint = NSColor(srgbRed: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0, alpha: 1.0)
+        let pointSize: CGFloat = 11
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+            .applying(.init(paletteColors: [tint]))
+        guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else {
+            return nil
+        }
+        let pixelScale: CGFloat = 2.0
+        let pixelDimension = ceil(pointSize * pixelScale)
+        guard let bitmapContext = CGContext(
+            data: nil,
+            width: Int(pixelDimension),
+            height: Int(pixelDimension),
+            bitsPerComponent: 8,
+            bytesPerRow: Int(pixelDimension) * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        let nsContext = NSGraphicsContext(cgContext: bitmapContext, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsContext
+        symbol.draw(
+            in: NSRect(origin: .zero, size: NSSize(width: pixelDimension, height: pixelDimension)),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+        NSGraphicsContext.restoreGraphicsState()
+        if let cgImage = bitmapContext.makeImage() {
+            cachedIcons[type] = cgImage
+            return cgImage
+        }
+        return nil
+    }
+}

@@ -359,7 +359,7 @@ struct ProfileActivitySection: View {
             if appID == GamePresenceMonitor.robloxAppID {
                 return URL(string: GamePresenceMonitor.robloxIconURL)
             }
-            if let iconHash = DiscordIPCServer.cachedAppIcon(for: appID) {
+            if effectiveActivity?.largeImage == nil, let iconHash = DiscordIPCServer.cachedAppIcon(for: appID) {
                 return URL(string: "https://cdn.discordapp.com/app-icons/\(appID)/\(iconHash).png")
             }
         } else if let lowerName = effectiveActivity?.name.lowercased() {
@@ -488,13 +488,20 @@ struct ProfileActivitySection: View {
             remoteArtworkOverride = nil
             resolvedTrackURL = nil
             refreshArtwork()
+            guard !Task.isCancelled else { return }
             await resolveMissingMusicArtwork()
-            if resolvedRemoteArtworkURL == nil, let appID = effectiveActivity?.applicationID, !appID.isEmpty {
-                if let url = await DiscordApplicationMetadataResolver.shared.resolveArtworkURL(
-                    applicationID: appID,
-                    assetKey: effectiveActivity?.largeImage
-                ) {
-                    remoteArtworkOverride = url
+            guard !Task.isCancelled else { return }
+            if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
+                let needsAssetResolution = effectiveActivity?.largeImage != nil && remoteArtworkOverride == nil
+                let needsAppIcon = resolvedRemoteArtworkURL == nil
+                if needsAssetResolution || needsAppIcon {
+                    if let url = await DiscordApplicationMetadataResolver.shared.resolveArtworkURL(
+                        applicationID: appID,
+                        assetKey: effectiveActivity?.largeImage
+                    ) {
+                        guard !Task.isCancelled else { return }
+                        remoteArtworkOverride = url
+                    }
                 }
             }
         }
@@ -668,6 +675,7 @@ struct ProfileActivitySection: View {
 
             Text(formattedTime)
                 .font(.interfaceSystem(size: 11))
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
     }
@@ -702,11 +710,13 @@ struct ProfileActivitySection: View {
 
                     HStack {
                         Text(String(format: "%d:%02d", elapsedSec / 60, elapsedSec % 60))
-                            .font(.interfaceSystem(size: 11, design: .monospaced))
+                            .font(.interfaceSystem(size: 11))
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text(String(format: "-%d:%02d", remainingSec / 60, remainingSec % 60))
-                            .font(.interfaceSystem(size: 11, design: .monospaced))
+                            .font(.interfaceSystem(size: 11))
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
                 }

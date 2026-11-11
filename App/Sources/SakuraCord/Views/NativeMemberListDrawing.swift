@@ -351,36 +351,62 @@ extension NativeMemberListCanvasView {
                 maximumPixelDimension: 32
             )
         }
-        if let activity = prepared.activity,
-           let truncationToken = prepared.activityTruncationToken
+        drawMemberActivity(prepared: prepared, row: row, textX: textX, index: index, context: context)
+    }
+
+    private func drawMemberActivity(
+        prepared: PreparedText,
+        row: CGRect,
+        textX: CGFloat,
+        index: Int,
+        context: CGContext
+    ) {
+        guard let activity = prepared.activity,
+              let truncationToken = prepared.activityTruncationToken
+        else { return }
+
+        let iconOffset: CGFloat
+        if let iconType = prepared.activityIconType,
+           let iconImage = MemberActivityIconCache.shared.image(for: iconType)
         {
-            let maximumWidth = max(0, row.maxX - textX - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth))
-            let visibleActivity = cachedFittedTextLine(
-                activity,
-                token: truncationToken,
-                maximumWidth: maximumWidth
+            let iconSize = InterfaceScale.metric(11)
+            let iconRect = CGRect(
+                x: textX,
+                y: row.minY + InterfaceScale.metric(24) + InterfaceScale.metric(1),
+                width: iconSize,
+                height: iconSize
             )
-            let origin = CGPoint(x: textX, y: row.minY + InterfaceScale.metric(24))
-            Self.draw(line: visibleActivity, at: origin, context: context)
-            for region in NativeMemberActivityPresentation.emojiRegions(
-                in: visibleActivity,
-                origin: origin
-            ) {
-                guard let url = activityEmojiURL(for: region.reference) else { continue }
-                if let image = images[url] {
-                    Self.draw(
-                        image: image,
-                        aspectFitIn: region.frame,
-                        context: context
-                    )
-                } else {
-                    requestImageIfNeeded(
-                        url: url,
-                        index: index,
-                        priority: .visible,
-                        maximumPixelDimension: 64
-                    )
-                }
+            Self.draw(image: iconImage, aspectFitIn: iconRect, context: context)
+            iconOffset = iconSize + InterfaceScale.metric(4)
+        } else {
+            iconOffset = 0
+        }
+        let maximumWidth = max(0, row.maxX - (textX + iconOffset) - 4 - InterfaceScale.metric(presentation.trailingAccessoryWidth))
+        let visibleActivity = cachedFittedTextLine(
+            activity,
+            token: truncationToken,
+            maximumWidth: maximumWidth
+        )
+        let origin = CGPoint(x: textX + iconOffset, y: row.minY + InterfaceScale.metric(24))
+        Self.draw(line: visibleActivity, at: origin, context: context)
+        for region in NativeMemberActivityPresentation.emojiRegions(
+            in: visibleActivity,
+            origin: origin
+        ) {
+            guard let url = activityEmojiURL(for: region.reference) else { continue }
+            if let image = images[url] {
+                Self.draw(
+                    image: image,
+                    aspectFitIn: region.frame,
+                    context: context
+                )
+            } else {
+                requestImageIfNeeded(
+                    url: url,
+                    index: index,
+                    priority: .visible,
+                    maximumPixelDimension: 64
+                )
             }
         }
     }

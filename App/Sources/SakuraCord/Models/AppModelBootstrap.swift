@@ -339,6 +339,7 @@ extension AppModel {
             await coordinator.resendActivities()
         }
         await accountPersistence
+        guard canPublishBootstrap(for: account) else { return }
         await completeBootstrapWorkspaceActivation(
             publishesSessionState: publishesSessionState,
             initialGuildID: initialGuildID,

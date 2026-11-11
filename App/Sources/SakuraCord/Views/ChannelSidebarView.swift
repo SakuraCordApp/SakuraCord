@@ -933,7 +933,7 @@ private struct AccountControlView: View {
     private var accountSubtitle: String {
         if user != nil {
             if let activity = voiceModel.currentUserActivity {
-                if activity.type == .listening {
+                if activity.type == .listening || activity.type == .playing {
                     return activity.name
                 }
                 return voiceModel.currentUserActivityDisplayText ?? activity.name
@@ -1006,7 +1006,7 @@ private struct CurrentUserCapsule: View {
                             } else if model.currentUserActivity?.type == .playing {
                                 Image(systemName: "gamecontroller.fill")
                                     .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3)))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Color(red: 0.14, green: 0.73, blue: 0.35))
                             }
                             Text(subtitle)
                                 .font(.interfaceSystem(

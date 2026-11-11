@@ -232,7 +232,7 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
                 largeImage: "https://github.com/athasdev.png",
                 largeText: "Athas"
             ),
-            applicationId: "1247654840780460125"
+            applicationId: nil
         )
         Task { [coordinator] in
             await coordinator.setActivity(payload, for: .custom(sourceID: "app:athas"))

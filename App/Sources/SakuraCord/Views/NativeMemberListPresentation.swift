@@ -4,6 +4,11 @@ import OSLog
 import SakuraCordModels
 import SwiftUI
 
+nonisolated enum MemberActivityIconType: Sendable {
+    case game
+    case music
+}
+
 extension Member {
     nonisolated var isListedOnline: Bool {
         isOnline || user.usesHTTPInteractions
@@ -13,11 +18,54 @@ extension Member {
         user.usesHTTPInteractions ? nil : status
     }
 
-    nonisolated var memberListActivityText: String? {
-        if isListeningToMusic, let customStatus, !customStatus.isEmpty {
-            return customStatus
+    nonisolated var isPlayingGame: Bool {
+        if isListeningToMusic { return false }
+        if let richActivity {
+            return richActivity.type == 0
         }
-        return activityText
+        if let activityText {
+            return activityText.lowercased().hasPrefix("playing ")
+        }
+        return false
+    }
+
+    nonisolated var gameName: String? {
+        if let richActivity, richActivity.type == 0 {
+            return richActivity.name
+        }
+        if let activityText, activityText.lowercased().hasPrefix("playing ") {
+            return String(activityText.dropFirst("playing ".count)).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+
+    nonisolated var memberListActivityIconType: MemberActivityIconType? {
+        if isListeningToMusic {
+            if let customStatus, !customStatus.isEmpty {
+                return nil
+            }
+            return .music
+        }
+        if isPlayingGame {
+            return .game
+        }
+        return nil
+    }
+
+    nonisolated var memberListActivityText: String? {
+        if isListeningToMusic {
+            if let customStatus, !customStatus.isEmpty {
+                return customStatus
+            }
+            if let richActivity {
+                return richActivity.details ?? richActivity.state ?? richActivity.name
+            }
+            return activityText
+        }
+        if isPlayingGame {
+            return gameName ?? activityText
+        }
+        return activityText ?? customStatus
     }
 
     nonisolated var memberListShowsMusicSeparator: Bool {

@@ -197,8 +197,12 @@ extension DiscordRESTProvider {
     private func resolveApplicationAssetID(applicationID: String, assetName: String) async -> String? {
         guard !applicationID.isEmpty, applicationID.allSatisfy(\.isNumber) else { return nil }
         let cacheKey = "\(applicationID):\(assetName)"
+        let catalogKey = "\(applicationID):__catalog_fetched__"
         if let cached = externalAssetCache[cacheKey] {
-            return cached
+            return cached.isEmpty ? nil : cached
+        }
+        if externalAssetCache[catalogKey] != nil {
+            return nil
         }
         do {
             let assets: [ApplicationAssetDTO] = try await request("/oauth2/applications/\(applicationID)/assets")
@@ -206,7 +210,12 @@ extension DiscordRESTProvider {
                 let key = "\(applicationID):\(asset.name)"
                 externalAssetCache[key] = asset.id
             }
-            return externalAssetCache[cacheKey]
+            externalAssetCache[catalogKey] = "1"
+            let resolved = externalAssetCache[cacheKey]
+            if resolved == nil {
+                externalAssetCache[cacheKey] = ""
+            }
+            return resolved
         } catch {
             gatewayLogger.debug("Asset resolution for \(assetName) in application \(applicationID) failed: \(error.localizedDescription)")
             return nil

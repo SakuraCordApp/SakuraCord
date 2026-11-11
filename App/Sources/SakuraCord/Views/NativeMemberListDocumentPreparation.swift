@@ -653,9 +653,7 @@ extension NativeMemberListCanvasView {
                 return NativeMemberActivityPresentation.line(
                     text,
                     font: activityFont,
-                    color: activityColor,
-                    showsMusicIcon: member.isListeningToMusic,
-                    showsMusicSeparator: member.memberListShowsMusicSeparator
+                    color: activityColor
                 )
             }
             let activityTruncationToken = activity.map { _ in
@@ -680,7 +678,8 @@ extension NativeMemberListCanvasView {
                 activityWidth: activity.map {
                     CGFloat(CTLineGetTypographicBounds($0, nil, nil, nil))
                 } ?? 0,
-                serverTag: member.user.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) }
+                serverTag: member.user.primaryGuild.flatMap { NativeServerTagPresentation(identity: $0) },
+                activityIconType: member.memberListActivityIconType
             )
         }
         return preparedText
