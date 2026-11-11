@@ -100,13 +100,16 @@ extension AppModel {
             guard conversationAccess(for: channel) != .hidden else { return nil }
             return FavoriteConversation(entry: entry, channel: channel)
         }
-        guard let thread = sidebarThread(entry.id) ?? favorites.threads[entry.id],
+        let live = sidebarThread(entry.id)
+        guard let thread = live ?? favorites.threads[entry.id],
               let parent = thread.parentID.flatMap(knownRootChannel),
-              conversationAccess(for: parent) != .hidden,
-              // A private thread is listed only to members or thread managers.
-              !thread.isPrivate || thread.notificationSettings != nil
-                || (effectiveMessagePermissions(in: parent) ?? 0) & DiscordPermissionBits.manageThreads != 0
+              conversationAccess(for: parent) != .hidden
         else { return nil }
+        // A private thread is listed only to members or thread managers. The
+        // fetched copy's membership is not kept current, so only the live
+        // record vouches for it.
+        let canManageThreads = (effectiveMessagePermissions(in: parent) ?? 0) & DiscordPermissionBits.manageThreads != 0
+        guard !thread.isPrivate || canManageThreads || live?.notificationSettings != nil else { return nil }
         return FavoriteConversation(entry: entry, channel: threadNavigationChannel(thread), thread: thread)
     }
 
@@ -130,8 +133,13 @@ extension AppModel {
         guard !missing.isEmpty else { return }
         startAccountChildTask(account: accountSession()) { model, account in
             for entry in missing {
-                guard let post = try? await account.provider.forumPost(threadID: entry.id),
-                      model.isCurrentAccountSession(account) else { continue }
+                let post = try? await account.provider.forumPost(threadID: entry.id)
+                guard model.isCurrentAccountSession(account) else { return }
+                // A failed read is retried the next time Favorites opens.
+                guard let post else {
+                    model.favorites.requestedThreadIDs.remove(entry.id)
+                    continue
+                }
                 model.favorites.threads[entry.id] = post.thread
             }
         }
@@ -205,12 +213,17 @@ extension AppModel {
         }
     }
 
+    /// A thread's mute lives in its member settings, not channel overrides.
+    func isFavoriteMuted(_ favorite: FavoriteConversation) -> Bool {
+        favorite.thread.map { SidebarThreadPolicy.isMuted($0, now: .now) } ?? isChannelMuted(favorite.channel)
+    }
+
     /// Whether the rail's Favorites tile shows the unread pill and how many
     /// mentions its badge counts, across every shown favourite.
     var favoritesUnread: (isUnread: Bool, mentions: Int) {
         favoriteConversations().reduce(into: (false, 0)) { result, favorite in
             result.mentions += readState.mentions(channelID: favorite.id)
-            if !result.isUnread, !isChannelMuted(favorite.channel), readState.unread(channelID: favorite.id) {
+            if !result.isUnread, !isFavoriteMuted(favorite), readState.unread(channelID: favorite.id) {
                 result.isUnread = true
             }
         }

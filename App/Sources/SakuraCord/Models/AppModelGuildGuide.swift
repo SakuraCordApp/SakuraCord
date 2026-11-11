@@ -73,7 +73,9 @@ extension AppModel {
     }
 
     var onboardingEntryGuildID: GuildID? {
-        guard let guildID = selectedGuildID,
+        // An empty Favorites server keeps the last server selected but shows none of it.
+        guard !favorites.isPresented || selectedChannelID != nil,
+              let guildID = selectedGuildID,
               serverRailGuildsByID[guildID]?.features.contains("GUILD_ONBOARDING") == true else { return nil }
         let member = onboardingMember(in: guildID)
         return member?.requiresOnboarding == true ? guildID : nil

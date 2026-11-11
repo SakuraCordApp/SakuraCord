@@ -100,9 +100,8 @@ private struct FavoriteRow: View {
     let isSelected: Bool
 
     var body: some View {
-        let channel = favorite.channel
         let mentions = model.readState.mentions(channelID: favorite.id)
-        let isMuted = favorite.thread.map { SidebarThreadPolicy.isMuted($0, now: .now) } ?? model.isChannelMuted(channel)
+        let isMuted = model.isFavoriteMuted(favorite)
         let showsUnread = model.readState.unread(channelID: favorite.id) && !isMuted
         HStack(spacing: InterfaceScale.metric(8)) {
             icon
