@@ -11,7 +11,9 @@
     "fixable",
     "triage",
     "fixCommit",
-    "classificationReason"
+    "classificationReason",
+    "fixPullRequest",
+    "findings"
   ],
   "properties": {
     "summary": {
@@ -143,10 +145,76 @@
       ],
       "description": "Full 40-character commit SHA that fixes precisely this report, only after inspecting its diff and the relevant release source; otherwise null."
     },
+    "fixPullRequest": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Number of an open pull request from openPullRequests that fixes or implements precisely this report, only after reading its diff; otherwise null."
+    },
     "classificationReason": {
       "type": "string",
       "maxLength": 500,
       "description": "Why this is a bug or feature, especially if the reporter chose the wrong category."
+    },
+    "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fix",
+        "pullRequest",
+        "duplicate",
+        "kind",
+        "existingFeature"
+      ],
+      "description": "Each status-changing finding rated on its own evidence, separately from the overall confidence. Rate high only when you verified it in code, diffs, or candidate reports; rate low when it does not apply.",
+      "properties": {
+        "fix": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "fixCommit fixes precisely this report."
+        },
+        "pullRequest": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "fixPullRequest fixes or implements precisely this report."
+        },
+        "duplicate": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "triage.duplicateOf is the same underlying problem or request."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "triage.kind is right, whichever category the reporter chose."
+        },
+        "existingFeature": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "This suggestion asks for something SakuraCord already does, and your question names where."
+        }
+      }
     }
   }
 }

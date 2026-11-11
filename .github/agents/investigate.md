@@ -10,9 +10,11 @@ triage and investigation. Do not implement a fix.
   docs/ARCHITECTURE.md, then search and read relevant source files. Open the
   downloaded screenshots listed in the context when they are useful. You have
   no network access; say when an attachment or evidence is unavailable.
-- The reporter's category is a starting point, not a decision. Classify broken
-  existing behavior or a regression as bug; an absent capability as feature.
-  Explain the classification, especially when correcting the selected category.
+- Decide the category from the evidence before looking at the reporter's
+  choice (`reportedKind`), then compare. Broken existing behavior or a
+  regression is a bug; an absent capability is a feature, however each was
+  filed. Explain the classification, especially when correcting the selected
+  category.
   Do not assume that a feature present only on nightly exists in the regular release. Use an area ID from the supplied context. Priority: critical for
   reproducible crashes, data loss, broken login or an unusable app; high for
   major daily-use blockers; medium for bounded problems; low for polish.
@@ -24,7 +26,7 @@ triage and investigation. Do not implement a fix.
   symptoms, reproduction, and root cause using candidate body excerpts, not just
   similar titles. A report against a release already containing the old fix may
   be a regression or incomplete fix; do not dismiss it as a duplicate.
-  Set duplicateOf to null when uncertain. A maintainer decides whether to merge.
+  Set duplicateOf to null when uncertain.
 - Ask at most three short questions only when answers are needed to act. Read
   recent discussion first; do not ask for details already supplied. Missing
   reproduction steps alone need not block a bug whose cause is clear in code.
@@ -46,6 +48,20 @@ triage and investigation. Do not implement a fix.
   regular release instead of switching to nightly. If the reported release
   contains the purported fix, investigate a regression or ask focused questions.
   When no verified fix exists, the reported release is unknown, or evidence is uncertain, set fixCommit to null.
+- `openPullRequests` lists open pull requests whose branches are in the
+  checkout. If one fixes or implements precisely this report, read its diff
+  (`git diff HEAD...<branch>`) and return its number in fixPullRequest;
+  otherwise null.
+- If a feature suggestion asks for something SakuraCord already does, ask one
+  question naming where, such as "This already exists under Settings → Chat.
+  Does it cover what you need?", and set needsInformation.
+- Rate each entry in `findings` on its own evidence, separately from the
+  overall `confidence`. The hub changes the report's status automatically for
+  a finding rated high: fixed, in progress, closed as a duplicate, confirmed as
+  a regression, reclassified, or asked whether an existing feature covers it.
+  Rate high only what you verified in code, diffs, or candidate reports. An
+  unavailable screenshot can lower the overall confidence without lowering a
+  fix you verified in its diff. Rate low what does not apply.
 - Ground the investigation in real repository paths and lines you have opened.
   Explain probable cause, a focused fix or implementation approach, and a
   useful verification. Distinguish observed code from hypotheses; inspecting

@@ -23,6 +23,11 @@ if (mode === "--triage") {
   if (!response.ok) throw new Error(`Assessment context unavailable (${response.status})`);
   const context = await response.json();
   if (!Array.isArray(context.areas) || !Array.isArray(context.candidates) || context.candidates.length > 12) throw new Error("Invalid assessment context");
+  // Fork branches are not in the checkout, and the hub links only fixes into nightly.
+  context.openPullRequests = JSON.parse(execFileSync("gh", ["pr", "list", "--state", "open", "--base", "nightly", "--limit", "40",
+    "--json", "number,title,body,headRefName,isCrossRepository"], { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 }))
+    .filter((pull) => !pull.isCrossRepository)
+    .map(({ number, title, body, headRefName }) => ({ number, title, body: strip(body, 600), branch: `origin/${headRefName}` }));
   const refs = releaseRefs(context, process.env.SOURCE_SHA ?? "HEAD");
   context.releaseEvidence = refs;
   for (const candidate of context.candidates) {
@@ -34,6 +39,7 @@ if (mode === "--triage") {
     lastComment: issue.comments.filter((comment) => !comment.body?.startsWith("<!-- sakuracord:investigation -->")).at(-1)?.createdAt ?? null,
     number, sourceTitle: issue.title, bodyHash: createHash("sha256").update(issue.body ?? "").digest("hex"),
     areas: context.areas.map((area) => area.id), candidates: context.candidates.map((candidate) => candidate.number),
+    pullRequests: context.openPullRequests.map((pull) => pull.number),
   }));
   extra = `\n<untrusted-assessment-context>\n${JSON.stringify(context)}\n</untrusted-assessment-context>\n`;
 }
