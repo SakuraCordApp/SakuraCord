@@ -63,7 +63,6 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         let previous = lastOperationTask
         let task = Task {
             _ = await previous?.value
-            guard !Task.isCancelled else { return }
             await operation()
         }
         lastOperationTask = task

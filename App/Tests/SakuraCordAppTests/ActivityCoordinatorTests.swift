@@ -109,4 +109,27 @@ struct ActivityCoordinatorTests {
         await coordinator.setProvider(newProvider)
         #expect(await newProvider.currentActivities()["apple_music"] == music)
     }
+
+    @Test func `disabling source while update is pending ensures source is cleared and not restored`() async throws {
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+
+        let music = OutgoingActivityPayload(name: "Apple Music", type: .listening)
+        let game = OutgoingActivityPayload(name: "Roblox", type: .playing)
+        let gameSource = ActivitySource.localRPC(sourceID: "roblox", clientID: "111", processID: 100)
+
+        await coordinator.setActivity(music, for: .appleMusic)
+        await coordinator.setActivity(game, for: gameSource)
+
+        #expect(await mockProvider.currentActivities().count == 2)
+
+        // Disable Apple Music
+        var prefs = await coordinator.currentPreferences()
+        prefs.isAppleMusicPresenceEnabled = false
+        await coordinator.updatePreferences(prefs)
+
+        let activities = await mockProvider.currentActivities()
+        #expect(activities["apple_music"] == nil)
+        #expect(activities[gameSource.sourceID] == game)
+    }
 }

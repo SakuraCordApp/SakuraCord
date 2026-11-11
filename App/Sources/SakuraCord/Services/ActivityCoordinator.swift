@@ -72,6 +72,7 @@ public actor ActivityCoordinator {
     private var publishedSourceIDs: Set<String> = []
     private var inFlightSourceIDs: Set<String> = []
     private var syncGeneration: UInt64 = 0
+    private var syncTask: Task<Void, Never>?
     private var onActivityChangedHandler: (@Sendable (OutgoingActivityPayload?) -> Void)?
     private let logger = Logger(subsystem: "dev.sakuracord", category: "ActivityCoordinator")
 
@@ -172,6 +173,18 @@ public actor ActivityCoordinator {
 
     private func synchronizeProvider() async {
         let generation = syncGeneration
+        let previous = syncTask
+        let task = Task { [weak self] in
+            _ = await previous?.value
+            guard let self else { return }
+            await self.performSynchronize(generation: generation)
+        }
+        syncTask = task
+        await task.value
+    }
+
+    private func performSynchronize(generation: UInt64) async {
+        guard generation == syncGeneration else { return }
         let permitted = currentPermittedActivities()
         let primary = permitted.values.sorted { $0.priorityRank < $1.priorityRank }.first
         onActivityChangedHandler?(primary)
@@ -205,6 +218,8 @@ public actor ActivityCoordinator {
                     if !isSourcePermitted(source) || registeredActivities[source] == nil {
                         try? await provider.clearActivities(sourceID: source.sourceID)
                         publishedSourceIDs.remove(source.sourceID)
+                    } else {
+                        publishedSourceIDs.insert(source.sourceID)
                     }
                     return
                 }

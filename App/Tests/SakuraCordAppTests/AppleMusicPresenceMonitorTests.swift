@@ -422,4 +422,32 @@ struct AppleMusicPresenceMonitorTests {
         #expect(activity?.timestamps?.start == expectedStartMs)
         #expect(activity?.timestamps?.end == expectedEndMs)
     }
+
+    @Test("Fast pause immediately after play invalidates slow playing update")
+    func testFastPauseAfterPlayInvalidatesSlowPlayingUpdate() async {
+        let provider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
+        let monitor = AppleMusicPresenceMonitor(coordinator: coordinator)
+
+        let playTask = Task {
+            await monitor.handlePlayerInfo([
+                "Player State": "Playing",
+                "Name": "Slow Resolving Song",
+                "Artist": "Some Artist"
+            ])
+        }
+
+        let pauseTask = Task {
+            await monitor.handlePlayerInfo([
+                "Player State": "Paused",
+                "Name": "Slow Resolving Song",
+                "Artist": "Some Artist"
+            ])
+        }
+
+        _ = await (playTask.value, pauseTask.value)
+
+        let active = await coordinator.currentPermittedActivities()
+        #expect(active[.appleMusic] == nil)
+    }
 }

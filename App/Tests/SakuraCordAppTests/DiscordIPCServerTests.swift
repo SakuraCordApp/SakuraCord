@@ -611,4 +611,34 @@ struct DiscordIPCServerTests {
             #expect(GamePresenceMonitor.currentAthasIconData != nil)
         }
     }
+
+    @Test func `rapid set activity followed immediately by disconnect clears presence without race`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+
+        sendClientFrame(fd: clientFD, opcode: 0, jsonObject: ["v": 1, "client_id": "fast_close_app"])
+        _ = try #require(readClientFrame(fd: clientFD))
+
+        sendClientFrame(fd: clientFD, opcode: 1, jsonObject: [
+            "cmd": "SET_ACTIVITY",
+            "args": [
+                "activity": ["name": "Fast Game", "details": "Speedrun"],
+            ],
+            "nonce": "n-fast",
+        ])
+        close(clientFD)
+
+        let cleared = await eventually {
+            let providerEmpty = await mockProvider.currentActivities().isEmpty
+            let coordinatorEmpty = await coordinator.currentActivities().isEmpty
+            return providerEmpty && coordinatorEmpty
+        }
+        #expect(cleared)
+    }
 }

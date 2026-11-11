@@ -360,47 +360,6 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
     }
 
-    private static func runOsaScript(source: String, timeoutSeconds: Double = 1.5) -> String? {
-        #if os(macOS)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", source]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        let deadline = DispatchTime.now() + timeoutSeconds
-        let semaphore = DispatchSemaphore(value: 0)
-
-        process.terminationHandler = { _ in
-            semaphore.signal()
-        }
-
-        if semaphore.wait(timeout: deadline) == .timedOut {
-            process.terminate()
-            return nil
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !output.isEmpty
-        else {
-            return nil
-        }
-        return output
-        #else
-        return nil
-        #endif
-    }
-
     public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
         #if os(macOS)
         guard NSClassFromString("XCTest") == nil else { return nil }
@@ -431,12 +390,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             end tell
             """
         }
-        guard let output = runOsaScript(source: scriptSource, timeoutSeconds: 1.0),
-              let val = Double(output), val >= 0
-        else {
-            return nil
-        }
-        return val
+        var errorInfo: NSDictionary?
+        guard let script = NSAppleScript(source: scriptSource) else { return nil }
+        let descriptor = script.executeAndReturnError(&errorInfo)
+        if errorInfo != nil { return nil }
+        let val = descriptor.doubleValue
+        return val >= 0 ? val : nil
         #else
         return nil
         #endif
@@ -546,7 +505,8 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         if isSpotify {
             scriptSource = """
             tell application id "com.spotify.client"
-                if it is running then
+                with timeout of 2 seconds
+                    if it is running then
                     set pState to (player state as string)
                     if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
                         set tName to (name of current track as string)
@@ -568,12 +528,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                     end if
                 end if
                 return "unknown"
+                end timeout
             end tell
             """
         } else {
             scriptSource = """
             tell application "Music"
-                if it is running then
+                with timeout of 2 seconds
+                    if it is running then
                     set pState to (player state as string)
                     if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
                         set tName to (name of current track as string)
@@ -591,12 +553,15 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                     end if
                 end if
                 return "unknown"
+                end timeout
             end tell
             """
         }
-        guard let result = runOsaScript(source: scriptSource, timeoutSeconds: 1.5) else {
-            return (false, nil)
-        }
+        var errorInfo: NSDictionary?
+        guard let script = NSAppleScript(source: scriptSource) else { return (false, nil) }
+        let descriptor = script.executeAndReturnError(&errorInfo)
+        if errorInfo != nil { return (false, nil) }
+        guard let result = descriptor.stringValue else { return (false, nil) }
         if result == "stopped" { return (true, nil) }
         guard !result.isEmpty, result != "unknown" else { return (false, nil) }
         let parts = result.components(separatedBy: "|||")
@@ -735,6 +700,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         isMonitoring = false
         lastPlaybackState = nil
         currentActiveTrackInfo = nil
+        trackUpdateGeneration &+= 1
         lock.unlock()
         stopPositionPolling()
         cancelArtworkFetchTask()
@@ -769,6 +735,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             await clearMusicActivity(now: nowProvider())
             return nil
         }
+        guard isCurrentTrackUpdateGeneration(currentGeneration) else { return nil }
 
         let now = nowProvider()
 
