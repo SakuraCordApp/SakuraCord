@@ -566,6 +566,7 @@ public struct SendMessageDraft: Equatable, Sendable {
 
 /// The attachment metadata Discord requires on a voice message.
 public struct VoiceMessageMetadata: Equatable, Sendable {
+    /// The recording's local file name. The upload uses the desktop recorder's numbered name instead.
     public static let filename = "voice-message.ogg"
 
     public var durationSeconds: Double

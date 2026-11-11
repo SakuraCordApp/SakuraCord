@@ -130,7 +130,7 @@ extension DiscordRESTProvider {
 private extension SendMessageDraft {
     var contextHeader: String {
         if poll != nil {
-            "eyJsb2NhdGlvbiI6InBvbGxfY3JlYXRpb24ifQ=="
+            DiscordClientMetadata.pollCreationContextHeader
         } else if voiceMessage != nil {
             DiscordClientMetadata.voiceMessageContextHeader
         } else {

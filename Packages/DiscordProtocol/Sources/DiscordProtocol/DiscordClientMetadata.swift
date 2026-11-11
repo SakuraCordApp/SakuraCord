@@ -215,6 +215,7 @@ public final class DiscordClientMetadata: @unchecked Sendable {
 
     static let messageContextHeader = Data(#"{"location":"chat_input"}"#.utf8).base64EncodedString()
     static let voiceMessageContextHeader = Data(#"{"location":"voice_message"}"#.utf8).base64EncodedString()
+    static let pollCreationContextHeader = Data(#"{"location":"poll_creation"}"#.utf8).base64EncodedString()
     static let forwardingContextHeader = Data(#"{"location":"forwarding"}"#.utf8)
         .base64EncodedString()
     static let groupDirectMessageMenuContextHeader = Data(#"{"location":"group dm context menu"}"#.utf8)
