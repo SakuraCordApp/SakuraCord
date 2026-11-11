@@ -93,21 +93,28 @@ explain the problem and resulting behaviour. Include:
 Keep the diff focused and address review feedback on the same pull request.
 Draft pull requests are useful for work that still needs feedback or validation.
 
-### Required Greptile review before merging
+### Required automated review before merging
 
-Every pull request must meet both requirements before it can be merged:
+Every pull request needs an automated review of its latest revision from
+Greptile or CodeRabbit before it can be merged:
 
-- Greptile has reviewed the latest revision and given it a **5/5 confidence score**.
-- **No valid Greptile findings remain unresolved**, including findings from
-  earlier review rounds. A 5/5 score alone does not satisfy this requirement.
+- **Greptile:** it has reviewed the latest revision and given it a **5/5
+  confidence score**.
+- **CodeRabbit:** it has reviewed the latest revision. CodeRabbit pauses
+  automatic reviews after a few commits; comment `@coderabbitai review` to have
+  it review the latest one.
 
-Fix each valid finding, push the changes, and wait for Greptile's automatic
-review. If a finding is a false positive, explain why in its review thread with
-supporting evidence; a maintainer must agree before it can be treated as resolved.
-Dismissing a comment or resolving its thread without addressing the finding is
-insufficient.
+Either way, **no valid findings from either reviewer may remain unresolved**,
+including findings from earlier review rounds. A 5/5 score alone does not
+satisfy this requirement.
 
-A missing, pending, or outdated review does not satisfy the requirement. False
-positives may be excluded from the findings requirement, but do not waive the
-5/5 score. These requirements apply alongside the usual checks and maintainer
-review.
+Fix each valid finding, push the changes, and wait for or request a new review.
+If a finding is a false positive, explain why in its review thread with
+supporting evidence; a maintainer must agree before it can be treated as
+resolved. Dismissing a comment or resolving its thread without addressing the
+finding is insufficient.
+
+A missing, pending, paused, or outdated review does not satisfy the
+requirement. False positives may be excluded from the findings requirement, but
+do not waive Greptile's 5/5 score when Greptile is the reviewer. These
+requirements apply alongside the usual checks and maintainer review.
