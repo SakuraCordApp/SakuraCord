@@ -928,7 +928,9 @@ extension AppModel {
         forwardSearchSourceRevision &+= 1
         // A replacement READY is authoritative even when its setting equals
         // the value from before an in-flight toggle started.
-        for guildID in guildNotificationMutationTasks.keys {
+        let pendingGuildIDs = Set(guildNotificationMutationTasks.keys)
+            .union(channelPinMutationStates.values.map(\.guildID))
+        for guildID in pendingGuildIDs {
             guildNotificationSettingsRevisions[guildID, default: 0] &+= 1
         }
         for channelID in readState.replaceSnapshot(value) { cancelNativeNotifications(channelID: channelID) }
