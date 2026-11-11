@@ -196,6 +196,12 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             defaultValue: .string(MessageAppearance.defaultStyle.rawValue)
         ),
         SettingsPreferenceRegistration(
+            id: .messageFontSize,
+            page: .interface,
+            storage: .appWide(key: "settings.appearance.messageFontSize"),
+            defaultValue: .double(InterfaceTypographyMetrics.defaultMessageTextSize)
+        ),
+        SettingsPreferenceRegistration(
             id: .messageDensity,
             page: .interface,
             storage: .appWide(key: "settings.appearance.messageDensity"),

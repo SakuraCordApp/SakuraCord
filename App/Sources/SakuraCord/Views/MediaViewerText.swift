@@ -122,13 +122,13 @@ struct MediaViewerText: View {
         let notice = bytesLeft > 0
             ? "\n\n… \(NativeTimelineFileCard.sizeText(bytesLeft)) more. Download the file to see all of it."
             : ""
-        let fontSize = InterfaceScale.fontSize(13)
+        let fontSize = InterfaceScale.fontSize(InterfaceTypographyMetrics.message(13))
         if markdownLanguages.contains(language) {
             let document = NSMutableAttributedString(
                 attributedString: MarkdownDocumentText.make(MarkdownDocumentText.parse(text), codeBackground: background)
             )
             document.append(NSAttributedString(string: notice, attributes: [
-                .font: NSFont.interfaceSystemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+                .font: NSFont.messageSystemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
             ]))
             return document
         }

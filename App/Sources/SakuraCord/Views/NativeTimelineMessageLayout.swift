@@ -538,10 +538,10 @@ extension NativeTimelineRowLayout {
                     x: contentX,
                     y: verticalOffset,
                     width: contentWidth,
-                    height: InterfaceScale.metric(18)
+                    height: MessageRowLayoutMetrics.forwardedLineHeight - InterfaceScale.metric(4)
                 )
                 forwardedBarStartY = verticalOffset
-                verticalOffset += InterfaceScale.metric(22)
+                verticalOffset += MessageRowLayoutMetrics.forwardedLineHeight
             } else {
                 forwardedBarStartY = nil
             }
@@ -942,7 +942,7 @@ extension NativeTimelineRowLayout {
                     time: .shortened
                 )
                 let sourceText = "\(sourceLabel)  •  \(dateText)  ›"
-                let sourceFont = NSFont.interfaceSystemFont(
+                let sourceFont = NSFont.messageSystemFont(
                     ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
                     weight: .medium
                 )
@@ -958,7 +958,7 @@ extension NativeTimelineRowLayout {
                         x: contentX,
                         y: verticalOffset,
                         width: sourceWidth,
-                        height: InterfaceScale.metric(22)
+                        height: MessageRowLayoutMetrics.forwardedLineHeight
                     ),
                     label: sourceLabel,
                     iconURL: sameGuild ? nil : sourceGuild?.iconURL,
@@ -967,7 +967,7 @@ extension NativeTimelineRowLayout {
                     messageID: reference.messageID,
                     timestamp: snapshot.timestamp
                 )
-                verticalOffset += InterfaceScale.metric(22)
+                verticalOffset += MessageRowLayoutMetrics.forwardedLineHeight
                 hasRichContent = true
             }
             if let forwardedBarStartY {

@@ -298,7 +298,7 @@ struct ComposerTextStyle {
     /// timeline does, rather than in the text's natural lines.
     var usesMessageLineHeight = false
 
-    static var composer: Self { composer(.interfaceSystemFont(ofSize: 15)) }
+    static var composer: Self { composer(.interfaceSystemFont(ofSize: InterfaceTypographyMetrics.messageTextSize)) }
 
     static func composer(_ font: NSFont) -> Self {
         let paragraphStyle = NSMutableParagraphStyle()

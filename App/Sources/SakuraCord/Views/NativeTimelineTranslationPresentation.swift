@@ -37,7 +37,7 @@ struct NativeTimelineTranslationPresentation {
                 preparedText: visibleText.isEmpty ? nil : RichMessageAttributedText.prepare(source: visibleText),
                 linkedImages: [],
                 attributedText: nil,
-                baseFontSize: 15
+                baseFontSize: InterfaceTypographyMetrics.messageTextSize
             )
             let value = NativeTimelineTextPresentation.make(message: row.message, plan: plan, source: model)
             return Self(
@@ -86,7 +86,8 @@ extension NativeTimelineRowLayout {
     }
 
     static var translationCaptionFont: NSFont {
-        NSFont.interfacePreferredFont(forTextStyle: .caption1)
+        let font = NSFont.preferredFont(forTextStyle: .caption1)
+        return font.withSize(InterfaceScale.fontSize(InterfaceTypographyMetrics.message(font.pointSize)))
     }
 
     static func translation(

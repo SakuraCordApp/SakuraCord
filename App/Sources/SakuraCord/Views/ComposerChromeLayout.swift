@@ -33,7 +33,7 @@ struct ComposerChromeLayout<Header: View, Leading: View, Input: View, Accessorie
                     input
                     accessories
                 }
-                .padding(.leading, InterfaceScale.metric(11))
+                .padding(.leading, ChatChromeMetrics.composerTextLeadingInset)
                 .padding(.trailing, ChatChromeMetrics.composerAccessoryEdgeInset)
                 .frame(minHeight: ChatChromeMetrics.composerControlHeight)
             }

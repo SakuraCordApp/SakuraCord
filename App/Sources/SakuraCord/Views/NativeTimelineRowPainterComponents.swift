@@ -718,7 +718,7 @@ extension NativeTimelineRowPainter {
                     width: max(1, region.frame.width - InterfaceScale.metric(22)),
                     height: region.frame.height
                 ),
-                font: .interfaceSystemFont(ofSize: 11),
+                font: .messageSystemFont(ofSize: 11),
                 color: .secondaryLabelColor
             )
         }

@@ -483,7 +483,7 @@ nonisolated enum RichMessageAttributedText {
         mentionPresentations: [String: MentionPresentation]
     ) -> NSAttributedString {
         let resolvedBaseFontSize = baseFontSize
-            ?? (prepared.isEmojiOnly ? emojiSize : InterfaceScale.fontSize(15))
+            ?? (prepared.isEmojiOnly ? emojiSize : InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize))
         let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize)
         let output = NSMutableAttributedString(
             attributedString: NativeTimelineCoreText.scaledMarkdown(

@@ -3,10 +3,12 @@ import SwiftUI
 nonisolated enum ChatChromeMetrics {
     static let sidebarSpring = Spring.smooth(duration: 0.24)
     static var controlHeight: CGFloat { InterfaceScale.metric(48) }
-    static var composerControlHeight: CGFloat { InterfaceScale.metric(36) }
+    /// The input bar grows with the message text it holds and stays a capsule.
+    static var composerControlHeight: CGFloat { composerMetric(36) }
     static var composerCornerRadius: CGFloat { composerControlHeight / 2 }
-    static var composerTextVerticalInset: CGFloat { InterfaceScale.metric(9) }
-    static var composerAccessoryButtonSize: CGFloat { InterfaceScale.metric(32) }
+    static var composerTextVerticalInset: CGFloat { composerMetric(9) }
+    static var composerTextLeadingInset: CGFloat { composerMetric(11) }
+    static var composerAccessoryButtonSize: CGFloat { composerMetric(32) }
     static var composerAccessoryEdgeInset: CGFloat {
         (composerControlHeight - composerAccessoryButtonSize) / 2
     }
@@ -28,6 +30,10 @@ nonisolated enum ChatChromeMetrics {
             width: InterfaceScale.windowLength(860, axis: .horizontal),
             height: InterfaceScale.windowLength(560, axis: .vertical)
         )
+    }
+
+    private static func composerMetric(_ value: CGFloat) -> CGFloat {
+        InterfaceScale.metric(InterfaceTypographyMetrics.messageLength(value))
     }
 
     static func sidebarTitleTopOffset(height: CGFloat) -> CGFloat {

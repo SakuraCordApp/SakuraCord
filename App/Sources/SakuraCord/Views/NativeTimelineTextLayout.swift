@@ -212,7 +212,7 @@ enum NativeTimelineTextPresentation {
                 ?? MentionPresentation.fallback(for: mention)
         }
         mentions = TimestampMentionPresentation.refreshed(mentions, source: message.content, at: date)
-        let emojiSize = InterfaceScale.metric(prepared.isEmojiOnly ? 48 : 22)
+        let emojiSize = InterfaceScale.metric(InterfaceTypographyMetrics.message(prepared.isEmojiOnly ? 48 : 22))
         let cacheKey = NativeTimelineResolvedTextCache.Key(
             messageID: message.id,
             scope: "message",
@@ -374,7 +374,7 @@ nonisolated enum NativeTimelineCoreText {
         let resolvedBaseFontSize =
             prepared.isEmojiOnly
                 ? emojiSize
-                : baseFontSize ?? InterfaceScale.fontSize(15)
+                : baseFontSize ?? InterfaceScale.fontSize(InterfaceTypographyMetrics.messageTextSize)
         let bodyScale = prepared.isEmojiOnly ? 1 : bodyScale
         let baseFont = NSFont.systemFont(ofSize: resolvedBaseFontSize * bodyScale)
         let output = NSMutableAttributedString(
@@ -715,11 +715,10 @@ enum NativeTimelineEmbedLayout {
             let stripeWidth: CGFloat = integratesWithBubble ? 0 : InterfaceScale.metric(4)
             let innerChrome = stripeWidth + cardPadding * 2
             let maximumContentWidth = max(InterfaceScale.metric(80), maximumWidth - innerChrome)
-
             let author = embed.author.map {
                 plainTextBox(
                     $0.name,
-                    font: .interfaceSystemFont(ofSize: 14, weight: .medium),
+                    font: .messageSystemFont(ofSize: 14, weight: .medium),
                     color: .labelColor,
                     link: $0.url
                 )
@@ -727,7 +726,7 @@ enum NativeTimelineEmbedLayout {
             let title = embed.title.map {
                 plainTextBox(
                     $0,
-                    font: .interfaceSystemFont(ofSize: 14, weight: .semibold),
+                    font: .messageSystemFont(ofSize: 14, weight: .semibold),
                     color: embed.url == nil ? .labelColor : .linkColor,
                     link: embed.url
                 )
@@ -736,7 +735,7 @@ enum NativeTimelineEmbedLayout {
                 resolvedTextBox(
                     prepared: RichMessageAttributedText.prepare(source: $0),
                     scope: "description",
-                    emojiSize: 18,
+                    emojiSize: InterfaceTypographyMetrics.message(18),
                     fontSizeAdjustment: -1,
                     embed: embed,
                     message: message,
@@ -748,7 +747,7 @@ enum NativeTimelineEmbedLayout {
                     field: field,
                     name: plainTextBox(
                         field.name,
-                        font: .interfaceSystemFont(ofSize: 11, weight: .bold),
+                        font: .messageSystemFont(ofSize: 11, weight: .bold),
                         color: .labelColor
                     ),
                     value: resolvedTextBox(
@@ -756,7 +755,7 @@ enum NativeTimelineEmbedLayout {
                             source: field.value
                         ),
                         scope: "field:\(index)",
-                        emojiSize: 16,
+                        emojiSize: InterfaceTypographyMetrics.message(16),
                         embed: embed,
                         message: message,
                         source: source
@@ -766,7 +765,7 @@ enum NativeTimelineEmbedLayout {
             let provider = embed.provider?.name.map {
                 plainTextBox(
                     $0,
-                    font: .interfaceSystemFont(ofSize: 11),
+                    font: .messageSystemFont(ofSize: 11),
                     color: .secondaryLabelColor,
                     link: embed.provider?.url
                 )
@@ -778,7 +777,7 @@ enum NativeTimelineEmbedLayout {
             let footer = footerText.map {
                 plainTextBox(
                     $0,
-                    font: .interfaceSystemFont(ofSize: 11),
+                    font: .messageSystemFont(ofSize: 11),
                     color: .secondaryLabelColor
                 )
             }
@@ -1882,9 +1881,9 @@ extension NativeTimelineRowLayout {
         }
 
         init(settings: InterfaceSettingsSnapshot) {
-            authorFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize + 1, weight: .medium)
-            timestampFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 1)
-            editedFont = .interfaceSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize + 1)
+            authorFont = .messageSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .headline).pointSize + 1, weight: .medium)
+            timestampFont = .messageSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 1)
+            editedFont = .messageSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize + 1)
             timestampGutterWidth = NativeTimelineCompactTimestampMetrics.width(settings: settings)
         }
     }

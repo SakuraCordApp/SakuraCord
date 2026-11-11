@@ -1125,7 +1125,9 @@ final class AppModel {
         composer = MessageComposerState(
             preferences: composerPreferences ?? (launchMode == .normal ? .shared : nil)
         )
-        appearanceSettings = AppearanceSettingsStore.shared.load()
+        let appearanceSettings = AppearanceSettingsStore.shared.load()
+        InterfaceTypographyMetrics.updateMessageTextSize(appearanceSettings.messageTextSize)
+        self.appearanceSettings = appearanceSettings
         interfaceSettings = InterfaceSettingsStore.shared.load()
         generalInputSettings = GeneralInputSettingsStore.shared.load()
         featuresSettings = FeaturesSettingsStore.shared.load()

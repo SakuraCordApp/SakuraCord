@@ -151,6 +151,14 @@ nonisolated extension NSFont {
         .systemFont(ofSize: InterfaceScale.fontSize(size), weight: weight)
     }
 
+    /// A message-content font that follows Message Font Size and Interface Size.
+    static func messageSystemFont(
+        ofSize size: CGFloat,
+        weight: NSFont.Weight = .regular
+    ) -> NSFont {
+        interfaceSystemFont(ofSize: InterfaceTypographyMetrics.message(size), weight: weight)
+    }
+
     static func interfaceMonospacedDigitSystemFont(
         ofSize size: CGFloat,
         weight: NSFont.Weight

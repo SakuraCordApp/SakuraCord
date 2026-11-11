@@ -168,6 +168,7 @@ import Testing
         .directMessageAppearance,
         .groupMessageAppearance,
         .messageDensity,
+        .messageFontSize,
         .composerBarAppearance,
         .resetMessageAppearance,
         .timestampFormat,

@@ -63,7 +63,7 @@ private struct ComposerIconEditor: View {
                     )
                     if previewText.isEmpty {
                         Text("Message")
-                            .font(.interfaceSystem(size: 15))
+                            .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                             .foregroundStyle(.tertiary)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)

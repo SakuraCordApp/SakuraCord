@@ -57,7 +57,7 @@ struct ForumPostBodyEditor: View {
         .overlay(alignment: .topLeading) {
             if text.isEmpty {
                 Text("Write your post")
-                    .font(.interfaceSystem(size: 15))
+                    .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
                     .foregroundStyle(.tertiary)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)

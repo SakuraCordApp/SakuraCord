@@ -169,7 +169,7 @@ struct MarkdownLeaf {
 enum MarkdownInlineStyle {
     /// Marks inline and preformatted code, where footnote references aren't read.
     static let codeKey = NSAttributedString.Key("dev.sakuracord.markdown.document-code")
-    static let bodySize = InterfaceTypographyMetrics.messageTextSize
+    static var bodySize: CGFloat { InterfaceTypographyMetrics.messageTextSize }
 
     static func font(for kind: MarkdownLeaf.Kind) -> NSFont {
         switch kind {
