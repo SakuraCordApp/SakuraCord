@@ -90,7 +90,6 @@ extension AppModel {
         let content = (destination == .channel ? draft : threadDraft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty, validateAttachmentCount(attachments) else { return }
         let reply = destination == .channel ? replyingTo : threadReplyingTo
-        let draftRevision = destination == .channel ? composer.draftRevision : composer.threadDraftRevision
         let outgoing = SendMessageDraft(
             channelID: channelID,
             content: content,
@@ -107,7 +106,8 @@ extension AppModel {
             scheduledMessages.messages.append(scheduled)
             scheduledMessages.messages.sort { $0.sendAt > $1.sendAt }
             scheduledMessages.sendDates[channelID] = nil
-            await removeScheduledDraft(outgoing, revision: draftRevision, reply: reply, from: destination, session: session)
+            reloadScheduledMessagesIfLoading()
+            await removeScheduledDraft(outgoing, reply: reply, from: destination, session: session)
             showScheduledConfirmation(scheduled.sendAt, in: channelID)
         } catch ChatProviderError.scheduledMessageLimitReached {
             guard isCurrentAccountSession(session) else { return }
@@ -122,7 +122,6 @@ extension AppModel {
     /// attached meanwhile, including after the user left the conversation.
     private func removeScheduledDraft(
         _ outgoing: SendMessageDraft,
-        revision: UInt64,
         reply: Message?,
         from destination: MessageComposerDestination,
         session: AppModelAccountSession
@@ -143,18 +142,24 @@ extension AppModel {
             return
         }
         setComposerAttachments(composerAttachments(for: destination).filter { !sent.contains($0.id) }, for: destination)
+        // Text typed meanwhile stays; a draft restored unchanged on return does not.
         switch destination {
         case .channel:
             if replyingTo?.id == reply?.id { replyingTo = nil }
-            guard composer.draftRevision == revision else { return }
+            guard draft.trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
             updateDraft("")
         case .thread:
             if threadReplyingTo?.id == reply?.id { threadReplyingTo = nil }
-            guard composer.threadDraftRevision == revision else { return }
+            guard threadDraft.trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content else { return }
             updateThreadDraft("")
         }
         stopLocalTyping(clearThrottle: true)
         translation.resetDraft(destination)
+    }
+
+    /// A read already under way may predate a change Discord just accepted.
+    private func reloadScheduledMessagesIfLoading() {
+        if scheduledMessages.isLoading { loadScheduledMessages() }
     }
 
     private func showScheduledConfirmation(_ date: Date, in channelID: ChannelID) {
@@ -194,6 +199,7 @@ extension AppModel {
                     scheduledMessages.messages[index] = updated
                 }
                 scheduledMessages.messages.sort { $0.sendAt > $1.sendAt }
+                reloadScheduledMessagesIfLoading()
             } catch {
                 guard let self, isCurrentAccountSession(session) else { return }
                 scheduledMessages.errorMessage = "Failed to update message. \(error.localizedDescription)"
@@ -226,6 +232,7 @@ extension AppModel {
                 try await operation(session.provider)
                 guard let self, isCurrentAccountSession(session) else { return }
                 scheduledMessages.messages.removeAll { $0.id == message.id }
+                reloadScheduledMessagesIfLoading()
             } catch {
                 guard let self, isCurrentAccountSession(session) else { return }
                 scheduledMessages.errorMessage = "\(failure) \(error.localizedDescription)"
