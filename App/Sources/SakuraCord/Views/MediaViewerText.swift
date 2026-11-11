@@ -35,7 +35,7 @@ struct MediaViewerText: View {
             }
         }
         .mediaViewerTextPage()
-        .task(id: TextKey(url: url, colorScheme: colorScheme)) {
+        .task(id: TextKey(url: url, colorScheme: colorScheme, messageTextSize: InterfaceTypographyMetrics.messageTextSize)) {
             text = nil
             failed = false
             let loaded = try? await Self.text(of: url)
@@ -110,10 +110,12 @@ struct MediaViewerText: View {
         }
     }
 
-    /// The page follows the window's appearance, so the text is redrawn when it changes.
+    /// The page follows the window's appearance and the message font size,
+    /// so the text is redrawn when either changes.
     private struct TextKey: Equatable {
         let url: URL
         let colorScheme: ColorScheme
+        let messageTextSize: CGFloat
     }
 
     private static func attributed(
