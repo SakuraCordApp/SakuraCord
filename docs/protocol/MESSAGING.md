@@ -832,9 +832,10 @@ official client (web build 670026, observed 11 November 2026):
   `X-Discord-Original-MD5` to the reservation; it uploaded HEIC unchanged in
   this observation, as SakuraCord does.
 
-Each file reports its own progress and can be stopped alone: its PUT is
-cancelled and the message is posted without it. Stopping every file posts
-nothing. The official client resumes a failed PUT by itself every few
+Each file reports its own progress and can be stopped alone: its pending
+reservation and its PUT are cancelled, so the message is posted without it
+and never waits for it, as with the official client's cancel. Stopping every
+file posts nothing. The official client resumes a failed PUT by itself every few
 seconds; SakuraCord does not replay storage PUTs. A file whose early upload
 failed is stored again when the user sends. A failed send keeps its files stored
 on attach: the explicit Retry posts them again as they are, like the official
