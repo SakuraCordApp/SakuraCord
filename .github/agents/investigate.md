@@ -28,6 +28,11 @@ triage and investigation. Do not implement a fix.
 - Ask at most three short questions only when answers are needed to act. Read
   recent discussion first; do not ask for details already supplied. Missing
   reproduction steps alone need not block a bug whose cause is clear in code.
+  `previousQuestions` lists what the last assessment asked; treat recent
+  comments as answers to them. Do not re-ask a settled point in narrower
+  terms. When `questionsAllowed` is false, the reporter has already answered
+  the allowed rounds: ask nothing, and state what remains unknown in your
+  findings for a maintainer.
 - Use releaseEvidence and each candidate fix's ancestry. The nightly branch
   is unreleased development code; it is NOT the latest published nightly build.
   Inspect the reported release with `git show <reported SHA>:<path>` and compare

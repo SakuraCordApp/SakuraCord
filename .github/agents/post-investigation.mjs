@@ -11,18 +11,28 @@ const run = `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env
 const result = JSON.parse(readFileSync(process.env.RESULT_PATH, "utf8"));
 const context = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, "assessment-context.json"), "utf8"));
 const triage = result.triage;
+// The hub allows a bounded number of question rounds; after that, open
+// questions are left for a maintainer instead of asking the reporter again.
+let openQuestions = [];
+if (context.questionsAllowed === false && triage) {
+  if (triage.needsInformation) openQuestions = triage.questions ?? [];
+  Object.assign(triage, { needsInformation: false, questions: [] });
+}
 if (context.number !== Number(number) || !context.areas.includes(triage?.area) ||
     (triage.duplicateOf !== null && (!context.candidates.includes(triage.duplicateOf) || triage.duplicateOf === Number(number))) ||
     (triage.needsInformation && !triage.questions.length)) throw new Error("Invalid assessment result");
 const resolution = resolveFix(result.fixCommit, context.refs);
 const releaseLink = resolution.release ? `[${resolution.release.version} (${resolution.release.channel})](${resolution.release.url})` : "";
+// The hub applies a found fix on its own only at high confidence.
+const pending = resolution.commit && resolution.state.startsWith("fixed_") && result.confidence !== "high"
+  ? " A maintainer will confirm it before the report's status changes." : "";
 const availability = {
   unresolved: "No existing fix has been verified.",
   possible_regression: `The reported release already contains this change. This may be a regression or incomplete fix and still needs investigation.`,
   fixed_regular: `The fix is available in ${releaseLink}. Update and retest on that release.`,
   fixed_nightly: `The fix is available in ${releaseLink}, but not in the latest regular release. You can try nightly or wait for the next regular release.`,
   fixed_unreleased: "The fix is in the app's code, but is not in either latest published release yet. No released update contains it yet.",
-}[resolution.state];
+}[resolution.state] + pending;
 if (resolution.state === "possible_regression") triage.duplicateOf = null;
 triage.resolution = { state: resolution.state, commit: resolution.commit, releaseTag: resolution.release?.tag ?? null, explanation: availability };
 const envelope = JSON.stringify({ version: 1, number: Number(number), sourceTitle: context.sourceTitle,
@@ -56,6 +66,9 @@ This may match #${triage.duplicateOf}. ${clean(triage.duplicateReason)} A mainta
 ${triage.needsInformation ? `
 ### Questions
 ${triage.questions.map((question) => `- ${clean(question)}`).join("\n")}
+` : ""}${openQuestions.length ? `
+### Open questions for a maintainer
+${openQuestions.map((question) => `- ${clean(question)}`).join("\n")}
 ` : ""}
 ### Likely locations
 ${locations || "_No specific location identified._"}
@@ -69,7 +82,7 @@ ${clean(result.suggestedFix)}
 ### Suggested test
 ${clean(result.suggestedTest)}
 
-<sub>🔎 Triage & investigation agent · confidence **${result.confidence}** · ${result.fixable ? "looks fixable — a maintainer can add the `agent: fix` label to open a draft PR" : "probably needs a maintainer"} · [run](${run}) · based on \`${sha.slice(0, 7)}\` (nightly)</sub>
+<sub>🔎 Triage & investigation agent · confidence **${result.confidence}** · ${result.fixable ? "looks fixable — a maintainer can add the `agent: fix` label to open a draft PR" : "probably needs a maintainer"} · [run](${run}) · based on \`${sha.slice(0, 7)}\` (nightly) · read ${context.lastComment ? `replies up to ${context.lastComment.replace("T", " ").slice(0, 16)} UTC` : "the report; there were no replies"}</sub>
 
 <!-- sakuracord:triage-result ${envelope} -->`;
 writeFileSync("comment.md", body);

@@ -29,7 +29,9 @@ if (mode === "--triage") {
     candidate.fixes = (candidate.fixes ?? []).map((fix) => ({ ...fix, evidence: fixEvidence(fix.sha, refs) }));
   }
   writeFileSync(join(dirname(outputPath), "assessment-context.json"), JSON.stringify({
-    refs, reportedKind: context.reportedKind,
+    refs, reportedKind: context.reportedKind, questionsAllowed: context.questionsAllowed !== false,
+    // Lets the assessment say which replies it read; its own earlier result is not discussion.
+    lastComment: issue.comments.filter((comment) => !comment.body?.startsWith("<!-- sakuracord:investigation -->")).at(-1)?.createdAt ?? null,
     number, sourceTitle: issue.title, bodyHash: createHash("sha256").update(issue.body ?? "").digest("hex"),
     areas: context.areas.map((area) => area.id), candidates: context.candidates.map((candidate) => candidate.number),
   }));
