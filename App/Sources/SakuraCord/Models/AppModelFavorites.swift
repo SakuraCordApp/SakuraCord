@@ -144,8 +144,12 @@ extension AppModel {
                 // A failed read is retried the next time Favorites opens.
                 guard let post else {
                     model.favorites.requestedThreadIDs.remove(entry.id)
-                    // A private thread Discord no longer confirms stops listing.
-                    if entry.channelType == 12 { model.favorites.threads[entry.id] = nil }
+                    // A private thread Discord no longer confirms stops listing,
+                    // and an open one is withheld until Discord confirms it again.
+                    if entry.channelType == 12 {
+                        model.favorites.threads[entry.id] = nil
+                        if model.openThread?.id == entry.id { model.beginOpenThreadResolution() }
+                    }
                     continue
                 }
                 model.favorites.threads[entry.id] = post.thread
