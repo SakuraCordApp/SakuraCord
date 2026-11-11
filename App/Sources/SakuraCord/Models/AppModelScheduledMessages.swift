@@ -108,11 +108,17 @@ extension AppModel {
     }
 
     /// Like the official composer, a GIF or sticker picked while a send time is
-    /// set is scheduled for it rather than sent; the typed draft stays.
+    /// set is scheduled for it rather than sent; the typed draft stays. A
+    /// sticker sent as an image goes as its file.
     func schedulePickedMessage(
-        content: String, stickerIDs: [String] = [], in destination: MessageComposerDestination
+        content: String,
+        attachments: [ForumPostAttachment] = [],
+        stickerIDs: [String] = [],
+        in destination: MessageComposerDestination
     ) async -> Bool {
-        guard let (outgoing, reply) = scheduledDraft(content: content, stickerIDs: stickerIDs, in: destination),
+        guard let (outgoing, reply) = scheduledDraft(
+            content: content, attachments: attachments, stickerIDs: stickerIDs, in: destination
+        ),
               await submitSchedule(outgoing)
         else { return false }
         clearReply(reply, in: destination)
