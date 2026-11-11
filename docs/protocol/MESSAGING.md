@@ -332,7 +332,8 @@ The Inbox's Scheduled tab (tab `7` in the synced Inbox settings) reads
 reports scheduled messages, so another client's changes appear on the next
 read. Rows list the latest send time first. Edit Schedule Time sends
 `PATCH …/{id}` with only `scheduled_timestamp`; Edit Message sends only
-`content` and the message's existing `flags`; Send Now is a bodiless
+`content` and the message's existing `flags`, and saving it without text
+cancels the message instead, even one with files; Send Now is a bodiless
 `POST …/{id}/send` whose message arrives through the ordinary
 `MESSAGE_CREATE`, usually before the response; Cancel is
 `DELETE …/{id}` (`204`). Sent and cancelled rows stay, marked pending, until

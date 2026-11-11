@@ -172,8 +172,10 @@ extension AppModel {
 
     func editScheduledMessage(_ message: ScheduledMessage, content: String) {
         let content = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A message with files may lose its text, as in the official editor.
-        guard !content.isEmpty || message.attachmentCount > 0, content != message.content else { return }
+        // The official editor cancels a message saved without text, files or not:
+        // its preview lists no attachments.
+        guard !content.isEmpty else { return cancelScheduledMessage(message) }
+        guard content != message.content else { return }
         updateScheduledMessage(message) {
             try await $0.editScheduledMessage(message.id, content: content, flags: message.flags)
         }
