@@ -104,9 +104,8 @@ extension AppModel {
               let parent = thread.parentID.flatMap(knownRootChannel),
               conversationAccess(for: parent) != .hidden
         else { return nil }
-        // A private thread is listed only to members or thread managers. A
-        // fetched private thread is fetched again each time Favorites opens,
-        // so its membership is as current as that read.
+        // A private thread is listed only to members or thread managers; a
+        // fetched copy is revalidated each time Favorites opens.
         let canManageThreads = (effectiveMessagePermissions(in: parent) ?? 0) & DiscordPermissionBits.manageThreads != 0
         guard !thread.isPrivate || canManageThreads || thread.notificationSettings != nil else { return nil }
         return FavoriteConversation(entry: entry, channel: threadNavigationChannel(thread), thread: thread)
@@ -116,15 +115,20 @@ extension AppModel {
         guard showsFavoritesRailItem else { return }
         leaveGuildJoinRequestPage()
         setFavoritesPresented(true)
+        loadFavoriteThreads()
         let conversations = favoriteConversations()
         openFavorite(conversations.first { $0.id == favorites.lastChannelID } ?? conversations.first)
-        loadFavoriteThreads()
     }
 
     /// Like the official client, fetch favourited threads that no loaded list
     /// carries; a thread that can't be read stays stored but unlisted.
     private func loadFavoriteThreads() {
-        for (id, thread) in favorites.threads where thread.isPrivate { favorites.requestedThreadIDs.remove(id) }
+        // A fetched private thread is withheld until Discord confirms the
+        // membership again, so revoked access never shows stale content.
+        for (id, thread) in favorites.threads where thread.isPrivate {
+            favorites.threads[id] = nil
+            favorites.requestedThreadIDs.remove(id)
+        }
         let threadTypes: Set<Int> = [10, 11, 12]
         let missing = (favorites.settings?.entries ?? []).filter {
             $0.channelType.map(threadTypes.contains) == true && knownRootChannel($0.id) == nil
@@ -133,7 +137,11 @@ extension AppModel {
         guard !missing.isEmpty else { return }
         startAccountChildTask(account: accountSession()) { model, account in
             for entry in missing {
-                let post = try? await account.provider.forumPost(threadID: entry.id)
+                // A private thread (type 12) always asks Discord, whose answer
+                // states the current membership; others may come from cache.
+                let post = try? await (entry.channelType == 12
+                    ? account.provider.resolveThreadAccess(threadID: entry.id)
+                    : account.provider.forumPost(threadID: entry.id))
                 guard model.isCurrentAccountSession(account) else { return }
                 // A failed read is retried the next time Favorites opens.
                 guard let post else {
