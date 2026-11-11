@@ -48,7 +48,8 @@ const availability = {
 }[resolution.state] + pending + pullRequest;
 triage.resolution = { state: resolution.state, commit: resolution.commit, releaseTag: resolution.release?.tag ?? null,
   pullRequest: fixPullRequest, explanation: availability };
-const envelope = JSON.stringify({ version: 1, number: Number(number), sourceTitle: context.sourceTitle,
+// sourceKind lets the hub keep a category a maintainer changed during the run.
+const envelope = JSON.stringify({ version: 1, number: Number(number), sourceTitle: context.sourceTitle, sourceKind: context.reportedKind ?? null,
   bodyHash: context.bodyHash, confidence: result.confidence, findings: result.findings, candidates: context.candidates, model: process.env.AGENT_MODEL, triage,
 }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
 // Model text must not open or close an HTML comment: the hub reads its result
