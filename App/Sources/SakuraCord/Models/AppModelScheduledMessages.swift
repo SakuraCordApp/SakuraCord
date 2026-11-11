@@ -90,6 +90,7 @@ extension AppModel {
         let content = (destination == .channel ? draft : threadDraft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty || !attachments.isEmpty, validateAttachmentCount(attachments) else { return }
         let reply = destination == .channel ? replyingTo : threadReplyingTo
+        let draftRevision = destination == .channel ? composer.draftRevision : composer.threadDraftRevision
         let outgoing = SendMessageDraft(
             channelID: channelID,
             content: content,
@@ -106,19 +107,7 @@ extension AppModel {
             scheduledMessages.messages.append(scheduled)
             scheduledMessages.messages.sort { $0.sendAt > $1.sendAt }
             scheduledMessages.sendDates[channelID] = nil
-            if composerSendChannelID(in: destination) == channelID {
-                stopLocalTyping(clearThrottle: true)
-                switch destination {
-                case .channel:
-                    replyingTo = nil
-                    updateDraft("")
-                case .thread:
-                    threadReplyingTo = nil
-                    updateThreadDraft("")
-                }
-                translation.resetDraft(destination)
-                setComposerAttachments([], for: destination)
-            }
+            await removeScheduledDraft(outgoing, revision: draftRevision, reply: reply, from: destination, session: session)
             showScheduledConfirmation(scheduled.sendAt, in: channelID)
         } catch ChatProviderError.scheduledMessageLimitReached {
             guard isCurrentAccountSession(session) else { return }
@@ -127,6 +116,45 @@ extension AppModel {
             guard isCurrentAccountSession(session) else { return }
             errorMessage = "Failed to schedule message. \(error.localizedDescription)"
         }
+    }
+
+    /// Takes what Discord accepted out of the composer, keeping anything typed or
+    /// attached meanwhile, including after the user left the conversation.
+    private func removeScheduledDraft(
+        _ outgoing: SendMessageDraft,
+        revision: UInt64,
+        reply: Message?,
+        from destination: MessageComposerDestination,
+        session: AppModelAccountSession
+    ) async {
+        let channelID = outgoing.channelID
+        let sent = Set(outgoing.attachments.map(\.id))
+        guard composerSendChannelID(in: destination) == channelID else {
+            if var kept = composer.keptDrafts[channelID] {
+                kept.attachments.removeAll { sent.contains($0.id) }
+                composer.keptDrafts[channelID] = kept.isEmpty ? nil : kept
+            }
+            if let database = session.database,
+               (try? await composer.storedDraft(in: channelID, database: database))?
+               .trimmingCharacters(in: .whitespacesAndNewlines) == outgoing.content
+            {
+                composer.persistDraft("", channelID: channelID, database: database)
+            }
+            return
+        }
+        setComposerAttachments(composerAttachments(for: destination).filter { !sent.contains($0.id) }, for: destination)
+        switch destination {
+        case .channel:
+            if replyingTo?.id == reply?.id { replyingTo = nil }
+            guard composer.draftRevision == revision else { return }
+            updateDraft("")
+        case .thread:
+            if threadReplyingTo?.id == reply?.id { threadReplyingTo = nil }
+            guard composer.threadDraftRevision == revision else { return }
+            updateThreadDraft("")
+        }
+        stopLocalTyping(clearThrottle: true)
+        translation.resetDraft(destination)
     }
 
     private func showScheduledConfirmation(_ date: Date, in channelID: ChannelID) {
@@ -144,7 +172,8 @@ extension AppModel {
 
     func editScheduledMessage(_ message: ScheduledMessage, content: String) {
         let content = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty, content != message.content else { return }
+        // A message with files may lose its text, as in the official editor.
+        guard !content.isEmpty || message.attachmentCount > 0, content != message.content else { return }
         updateScheduledMessage(message) {
             try await $0.editScheduledMessage(message.id, content: content, flags: message.flags)
         }

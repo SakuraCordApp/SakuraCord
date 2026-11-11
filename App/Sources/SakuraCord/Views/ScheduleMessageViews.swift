@@ -58,7 +58,7 @@ struct ScheduleMessagePicker: View {
             DatePicker(
                 "Send at",
                 selection: $date,
-                in: ScheduledMessagePolicy.earliestSendDate() ... ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID),
+                in: Self.allowedRange(for: scheduledMessageID),
                 displayedComponents: [.date, .hourAndMinute]
             )
             .datePickerStyle(.field)
@@ -94,6 +94,13 @@ struct ScheduleMessagePicker: View {
         if date < ScheduledMessagePolicy.earliestSendDate() { return "Scheduled time is too soon" }
         if date > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID) { return "Scheduled time is too far away" }
         return nil
+    }
+
+    /// An old message's 30-day bound can precede the earliest time; the
+    /// picker then shows that time and reports it as too far away.
+    static func allowedRange(for id: ScheduledMessageID?) -> ClosedRange<Date> {
+        let earliest = ScheduledMessagePolicy.earliestSendDate()
+        return earliest ... max(earliest, ScheduledMessagePolicy.latestSendDate(for: id))
     }
 
     /// The next whole hour, or the one after when that is under ten minutes away.
