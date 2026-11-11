@@ -188,9 +188,11 @@ extension AppModel {
     }
 
     /// Whether Discord would keep this conversation as a favourite: it drops
-    /// channels the account doesn't know or can't view on every save.
+    /// channels the account doesn't know or lacks View Channel for on every
+    /// save. Permissions still loading count as viewable.
     func canAddFavorite(_ channelID: ChannelID) -> Bool {
-        knownRootChannel(channelID).map { conversationAccess(for: $0) != .hidden } ?? (sidebarThread(channelID) != nil)
+        guard let channel = knownRootChannel(channelID) else { return sidebarThread(channelID) != nil }
+        return effectiveMessagePermissions(in: channel).map { $0 & DiscordPermissionBits.viewChannel != 0 } ?? true
     }
 
     /// Adds or removes a channel, DM or thread. Like Discord, an addition over
