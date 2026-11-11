@@ -255,9 +255,7 @@ struct SakuraCordSessionLoadingView: View {
         HStack(spacing: 0) {
             messageTimeline
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // As the workspace's columns do, up beneath the toolbar.
-            Divider()
-                .ignoresSafeArea(.container, edges: .top)
+            InspectorDivider()
             memberList
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
