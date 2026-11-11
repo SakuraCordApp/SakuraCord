@@ -96,7 +96,8 @@ extension AppModel {
         }
     }
 
-    var favoritesAreEnabled: Bool { favorites.settings?.isEnabled ?? false }
+    /// Without an explicit choice, shown local favourites keep the server visible too.
+    var favoritesAreEnabled: Bool { displayedFavorites?.isEnabled ?? false }
 
     var showsFavoritesRailItem: Bool { favoritesAreEnabled || favorites.isPresented }
 

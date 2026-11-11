@@ -69,7 +69,8 @@ extension AppModel {
             threadVoiceMessageComposer.discard(playback: voiceMessagePlayback)
         }
         let showsLocalFavorites = value.unlimitedFavorites && !featuresSettings.unlimitedFavorites
-        featuresSettings = value
+        // Hiding local favourites removes the open one like any removal.
+        changeFavorites { featuresSettings = value }
         FeaturesSettingsStore.shared.save(value)
         if showsLocalFavorites {
             dropSyncedLocalFavorites()
