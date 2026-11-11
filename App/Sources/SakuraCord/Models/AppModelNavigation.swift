@@ -516,6 +516,7 @@ extension AppModel {
         messageID: MessageID,
         nearest: Bool = false
     ) {
+        leaveFavoritesUnlessFavorite(channelID)
         let target = ConversationNavigationTarget.message(
             channelID, messageID, fullWidthThread: false
         )

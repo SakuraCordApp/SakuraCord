@@ -58,6 +58,7 @@ extension AppModel {
 
     func openGuildNavigationDestination(_ destination: GuildNavigationMention, in guildID: GuildID) {
         guard hasGuildNavigationDestination(destination, in: guildID) else { return }
+        setFavoritesPresented(false)
         startConversationNavigation { model, account in
             if model.selectedGuildID != guildID { await model.activateGuild(guildID, account: account) }
             guard !Task.isCancelled, model.isCurrentAccountSession(account), model.selectedGuildID == guildID,

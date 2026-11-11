@@ -109,7 +109,7 @@ private struct FavoriteRow: View {
     var body: some View {
         let channel = favorite.channel
         let mentions = model.readState.mentions(channelID: favorite.id)
-        let isMuted = model.isChannelMuted(channel)
+        let isMuted = favorite.thread.map { SidebarThreadPolicy.isMuted($0, now: .now) } ?? model.isChannelMuted(channel)
         let showsUnread = model.readState.unread(channelID: favorite.id) && !isMuted
         HStack(spacing: InterfaceScale.metric(8)) {
             icon
@@ -125,10 +125,25 @@ private struct FavoriteRow: View {
         .interfaceFontOverride(.interfaceSystem(size: InterfaceTypographyMetrics.interfaceTextSize))
         .accessibilityElement(children: .combine)
         .accessibilityValue(mentions > 0 ? "\(mentions) unread mentions" : showsUnread ? "Unread" : "")
-        .overlay {
+        .overlay { contextMenu(isUnread: showsUnread || mentions > 0, mentions: mentions, isMuted: isMuted) }
+    }
+
+    /// A thread keeps its own thread menu, whose notification actions write
+    /// thread-member settings rather than channel overrides.
+    @ViewBuilder
+    private func contextMenu(isUnread: Bool, mentions: Int, isMuted: Bool) -> some View {
+        let channel = favorite.channel
+        if let thread = favorite.thread {
+            ThreadContextMenuBridge(
+                model: model,
+                row: SidebarThreadRow(thread: thread, isUnread: isUnread, mentionCount: mentions, isMuted: isMuted),
+                isSelected: isSelected,
+                favoriteItems: { FavoritesMenu.manageItems(for: favorite, model: model) }
+            )
+        } else {
             ChannelContextMenuBridge(
                 isSelected: isSelected,
-                isUnread: showsUnread || mentions > 0,
+                isUnread: isUnread,
                 isMutationPending: model.isChannelNotificationMutationPending(channel.id),
                 directOverride: model.channelNotificationOverride(for: channel),
                 inheritedLevel: model.inheritedChannelNotificationLevel(for: channel),

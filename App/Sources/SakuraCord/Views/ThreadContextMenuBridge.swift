@@ -7,6 +7,8 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
     let model: AppModel
     let row: SidebarThreadRow
     let isSelected: Bool
+    /// Favorites server items; the channel list offers Add or Remove.
+    var favoriteItems: (() -> [NSMenuItem])?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -41,7 +43,7 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
                 isUnread: row.isUnread || row.mentionCount > 0
             ))
             // Favorites follow Mark as Read, as in Discord's thread menu.
-            let favorites = FavoritesMenu.toggleItems(
+            let favorites = bridge.favoriteItems?() ?? FavoritesMenu.toggleItems(
                 for: row.id, channelType: row.thread.isPrivate ? 12 : 11, model: bridge.model
             )
             if !favorites.isEmpty, let separator = menu.items.firstIndex(where: \.isSeparatorItem) {
