@@ -68,6 +68,12 @@ nonisolated extension SettingsCatalog {
             keywords: ["features", "FakeNitro"], scope: .appWideLocal
         ),
         control(
+            .unlimitedFavorites, page: .features, section: .featuresFakeNitro,
+            label: "Unlimited favorites",
+            help: "Keep favorites past Discord's limit on this Mac. Discord and your other devices only see the ones your account allows.",
+            keywords: ["features", "FakeNitro", "favorites", "favourites", "limit"], scope: .appWideLocal
+        ),
+        control(
             .messageHoverActions, page: .features, section: .featuresTimeline,
             label: "Message hover actions",
             help: "Show the floating reactions and actions menu when hovering a message.",

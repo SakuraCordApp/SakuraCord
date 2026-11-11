@@ -87,6 +87,9 @@ private struct FakeNitroSettingsSection: View {
             Toggle("FakeNitro stream quality", isOn: $value.fakeNitroStreamQuality)
                 .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.fakeNitroStreamQuality, state: state)
+            Toggle("Unlimited favorites", isOn: $value.unlimitedFavorites)
+                .tint(SakuraCordAccentColor.color)
+                .settingsControlAnchor(.unlimitedFavorites, state: state)
         } header: {
             Text("FakeNitro", bundle: #bundle)
         }

@@ -20,6 +20,9 @@ final class FavoritesStore {
     /// as archived ones, fetched when Favorites opens.
     var threads: [ChannelID: MessageThreadSummary] = [:]
     @ObservationIgnored var requestedThreadIDs: Set<ChannelID> = []
+    /// Unlimited favorites' entries past Discord's limit, for `localScope`'s account.
+    var localEntries: [FavoritesSettings.Entry] = []
+    @ObservationIgnored var localScope: String?
 
     func reset() {
         settings = nil
@@ -55,18 +58,25 @@ extension AppModel {
         return true
     }
 
+    private func presentFavorites(_ settings: FavoritesSettings?) {
+        changeFavorites { favorites.settings = settings }
+        // Discord's list wins: a local favourite Discord now carries is dropped.
+        if let settings, favorites.localEntries.contains(where: { settings.contains($0.id) }) {
+            changeLocalFavorites { $0.removeAll { settings.contains($0.id) } }
+        }
+    }
+
     /// Hidden elsewhere, an open Favorites server stays until it is left, as
     /// in Discord. Removing the open favourite opens the one above it.
-    private func presentFavorites(_ settings: FavoritesSettings?) {
-        guard favorites.isPresented, let settings, let current = presentedFavoriteChannelID, !settings.contains(current) else {
-            favorites.settings = settings
-            return
-        }
+    func changeFavorites(_ change: () -> Void) {
+        guard favorites.isPresented, let current = presentedFavoriteChannelID else { return change() }
         let previous = favoriteConversations()
-        favorites.settings = settings
-        guard let index = previous.firstIndex(where: { $0.id == current }) else { return }
+        change()
+        guard let displayed = displayedFavorites, !displayed.contains(current),
+              let index = previous.firstIndex(where: { $0.id == current })
+        else { return }
         let remaining = favoriteConversations()
-        let above = previous[..<index].last { settings.contains($0.id) }
+        let above = previous[..<index].last { displayed.contains($0.id) }
         openFavorite(remaining.first { $0.id == above?.id } ?? remaining.first)
     }
 
@@ -91,7 +101,7 @@ extension AppModel {
     }
 
     func favoriteConversations() -> [FavoriteConversation] {
-        favorites.settings?.sections.flatMap(\.entries).compactMap(favoriteConversation) ?? []
+        displayedFavorites?.sections.flatMap(\.entries).compactMap(favoriteConversation) ?? []
     }
 
     /// Unknown or hidden channels stay stored but unlisted, like Discord's
@@ -132,7 +142,7 @@ extension AppModel {
         // A fetched private thread asks Discord again each time, since only
         // its answer states the current membership.
         for (id, thread) in favorites.threads where thread.isPrivate { favorites.requestedThreadIDs.remove(id) }
-        let missing = (favorites.settings?.entries ?? []).filter {
+        let missing = (displayedFavorites?.entries ?? []).filter {
             (10 ... 12).contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
                 && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
         }
@@ -184,7 +194,7 @@ extension AppModel {
     }
 
     func isFavorite(_ channelID: ChannelID) -> Bool {
-        favorites.settings?.contains(channelID) ?? false
+        displayedFavorites?.contains(channelID) ?? false
     }
 
     /// Whether Discord would keep this conversation as a favourite: it drops
@@ -196,17 +206,22 @@ extension AppModel {
     }
 
     /// Adds or removes a channel, DM or thread. Like Discord, an addition over
-    /// the account's limit shows the notice and sends nothing.
+    /// the account's limit shows the notice and sends nothing, unless
+    /// Unlimited favorites keeps it on this device instead.
     func toggleFavorite(_ channelID: ChannelID, channelType: Int) {
         guard let settings = favorites.settings else { return }
         // Discord prunes favourites the account can no longer see before it
         // counts, so a deleted or hidden channel never blocks an addition.
         var counted = settings
         counted.entries.removeAll { !$0.isCategory && !canAddFavorite($0.id) && !(10 ... 12).contains($0.channelType ?? 0) }
-        if settings.contains(channelID) {
+        if isFavorite(channelID) {
             updateFavorites(.remove(channelID))
         } else if let limit = counted.limitBlockingAddition(premiumType: currentUser?.premiumType ?? 0) {
-            favorites.limitReached = limit
+            if featuresSettings.unlimitedFavorites {
+                addLocalFavorite(channelID, channelType: channelType)
+            } else {
+                favorites.limitReached = limit
+            }
         } else {
             updateFavorites(.add(channelID, channelType: channelType))
         }
@@ -226,7 +241,7 @@ extension AppModel {
     }
 
     func updateFavorites(_ edit: FavoritesSettings.Edit) {
-        guard var settings = favorites.settings else { return }
+        guard !applyLocalFavoriteEdit(edit), var settings = favorites.settings else { return }
         settings.apply(edit)
         presentFavorites(settings)
         startAccountChildTask(account: accountSession()) { model, account in

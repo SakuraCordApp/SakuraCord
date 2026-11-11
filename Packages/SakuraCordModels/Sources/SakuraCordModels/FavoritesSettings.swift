@@ -4,7 +4,7 @@ import Foundation
 /// their categories, and whether the server is shown. Entries keep the stored
 /// map order; new entries are appended, as the first-party client writes them.
 public struct FavoritesSettings: Equatable, Sendable {
-    public struct Entry: Identifiable, Equatable, Sendable {
+    public struct Entry: Identifiable, Equatable, Sendable, Codable {
         public var id: ChannelID
         public var isCategory: Bool
         /// The favourite's name override, or the category name. Empty when unset.
@@ -13,6 +13,8 @@ public struct FavoritesSettings: Equatable, Sendable {
         public var parentID: ChannelID?
         /// The Discord channel type recorded with the favourite.
         public var channelType: Int?
+        /// Kept only on this device, past Discord's limit; never sent to Discord.
+        public var isLocal = false
 
         public init(
             id: ChannelID,
@@ -30,9 +32,10 @@ public struct FavoritesSettings: Equatable, Sendable {
             self.channelType = channelType
         }
 
-        /// Voice and stage favourites follow the others in each section.
+        /// Voice and stage favourites follow the others in each section, and
+        /// local favourites follow the synced ones.
         var sortKey: UInt64 {
-            UInt64(position) + (channelType == 2 || channelType == 13 ? 10_000 : 0)
+            UInt64(position) + (channelType == 2 || channelType == 13 ? 10_000 : 0) + (isLocal ? 1 << 32 : 0)
         }
     }
 

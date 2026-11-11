@@ -349,6 +349,20 @@ SakuraCord does not prune such entries on its next write, because an
 incomplete channel catalogue cannot prove a channel is gone. Category collapse
 stays local: the captured collapse save did not carry it.
 
+**Unlimited favorites** (Features › FakeNitro, app-wide, off by default) keeps
+additions past the account's limit on this device only, per account, in user
+defaults. Discord's limit is enforced by its client alone (the official add
+path prunes, then counts; the bundle maps no server error to it), but
+SakuraCord still never writes more than the limit: other clients would show a
+different list and an oversized write risks rejection. Local favourites follow
+the synced ones in each section, may sit in a synced category, and can be
+renamed, moved and removed; those edits send nothing. Discord's list stays
+authoritative: remote edits apply to the synced part, a local favourite that
+Discord starts carrying becomes synced and leaves the local list, and a synced
+favourite removed elsewhere is not restored. Removing a synced favourite does
+not promote a local one, so every Discord write follows a user action. Turning
+the option off hides local favourites without deleting them.
+
 ## Emoji, GIFs, stickers and sounds
 
 Favourites and usage history share Frecency type 2 but have different encodings

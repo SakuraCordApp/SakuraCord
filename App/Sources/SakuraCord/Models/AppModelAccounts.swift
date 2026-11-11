@@ -242,6 +242,7 @@ extension AppModel {
         didAttemptSessionRestore = true
         commandComposer.configureFrecencyScope(handle.accountID)
         configureEmojiFrecency(scope: handle.accountID)
+        configureLocalFavorites(accountID: handle.accountID)
     }
 
     func resetAccountPresentationState() {
@@ -422,6 +423,7 @@ extension AppModel {
             launchMode == .offlineTesting ? "offline" : "signed-out"
         )
         configureEmojiFrecency(scope: launchMode == .offlineTesting ? "offline" : "signed-out")
+        configureLocalFavorites(accountID: nil)
         let signedOutProvider: any ChatProvider =
             launchMode == .offlineTesting ? MockChatProvider() : SignedOutChatProvider()
         supportedCapabilities = []
@@ -456,6 +458,7 @@ extension AppModel {
         if launchMode == .normal {
             DiscordRESTProvider.removePendingStatusEdit(accountID: accountID)
             DiscordFrecencyStore.removePendingEmojiUsage(scope: accountID)
+            AppModel.removeLocalFavorites(accountID: accountID)
             SettingsConversationRestorationStore.shared.remove(accountID: accountID)
             do {
                 try await clearCaches(accountID)

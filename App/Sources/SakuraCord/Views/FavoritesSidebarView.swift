@@ -10,7 +10,7 @@ struct FavoritesSidebarView: View {
     @State private var collapsedCategoryIDs: Set<ChannelID> = []
 
     var body: some View {
-        if let settings = model.favorites.settings {
+        if let settings = model.displayedFavorites {
             List(selection: selection) {
                 Button {
                     model.favorites.isCreatingCategory = true

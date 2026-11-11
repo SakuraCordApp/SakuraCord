@@ -281,6 +281,7 @@ nonisolated extension SettingsControlID {
     static let fakeNitroStickers = Self(rawValue: "features.fake-nitro-stickers")
     static let fakeNitroSoundboard = Self(rawValue: "features.fake-nitro-soundboard")
     static let fakeNitroStreamQuality = Self(rawValue: "features.fake-nitro-stream-quality")
+    static let unlimitedFavorites = Self(rawValue: "features.unlimited-favorites")
     static let voiceMessageRecording = Self(rawValue: "features.voice-message-recording")
     static let messageHoverActions = Self(rawValue: "features.message-hover-actions")
     static let scrollToBottomButton = Self(rawValue: "features.scroll-to-bottom-button")
