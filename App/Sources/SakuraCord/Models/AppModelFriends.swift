@@ -6,7 +6,9 @@ extension AppModel {
     /// Friends is the Direct Messages home: chosen explicitly, or shown
     /// when no conversation is selected there.
     var isFriendsPresented: Bool {
-        selectedGuildID == nil && onboardingEntryGuildID == nil && (friends.isPresented || selectedChannelID == nil)
+        // An empty Favorites server rests on no conversation, not Friends.
+        selectedGuildID == nil && onboardingEntryGuildID == nil && !favorites.isPresented
+            && (friends.isPresented || selectedChannelID == nil)
     }
 
     var friendsSection: FriendsSection {

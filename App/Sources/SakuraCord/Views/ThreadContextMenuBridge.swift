@@ -7,7 +7,7 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
     let model: AppModel
     let row: SidebarThreadRow
     let isSelected: Bool
-    /// Favorites server items; the channel list offers Add or Remove.
+    /// A favourite's actions inside the Favorites server.
     var favoriteItems: (() -> [NSMenuItem])?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -36,18 +36,19 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
 
         func makeMenu() -> NSMenu {
             let row = bridge.row
-            let menu = renderer.makeMenu(ThreadActionsMenu(
+            let actions = ThreadActionsMenu(
                 model: bridge.model,
                 thread: bridge.model.sidebarThread(row.id) ?? row.thread,
                 surface: .channelList,
                 isUnread: row.isUnread || row.mentionCount > 0
-            ))
-            // Favorites follow Mark as Read, as in Discord's thread menu.
-            let favorites = bridge.favoriteItems?() ?? FavoritesMenu.toggleItems(
-                for: row.id, channelType: row.thread.isPrivate ? 12 : 11, model: bridge.model
             )
-            if !favorites.isEmpty, let separator = menu.items.firstIndex(where: \.isSeparatorItem) {
-                for (offset, item) in (favorites + [.separator()]).enumerated() {
+            guard let favoriteItems = bridge.favoriteItems?() else { return renderer.makeMenu(actions) }
+            // Inside Favorites the favourite's own actions replace Add/Remove.
+            let menu = renderer.makeMenu(ThreadActionsMenu(sections: actions.sections.filter {
+                !$0.contains { $0.id == ThreadActionsMenu.favoriteID }
+            }))
+            if let separator = menu.items.firstIndex(where: \.isSeparatorItem) {
+                for (offset, item) in (favoriteItems + [.separator()]).enumerated() {
                     menu.insertItem(item, at: separator + 1 + offset)
                 }
             }

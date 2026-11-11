@@ -196,6 +196,7 @@ extension AppModel {
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
         onboarding.presentedGuildID = nil
+        leaveFavoritesUnlessFavorite(thread.id)
         let target = ConversationNavigationTarget.thread(thread.id, fullWidth: true)
         if historyDestination == nil, isNavigating(to: target) { return }
         startConversationNavigation(target: target, to: historyDestination) { model, account in

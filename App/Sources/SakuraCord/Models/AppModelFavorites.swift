@@ -16,6 +16,10 @@ final class FavoritesStore {
     var renaming: FavoritesSettings.Entry?
     var isCreatingCategory = false
     @ObservationIgnored var lastChannelID: ChannelID?
+    /// Favourited threads the session's active-thread lists don't carry, such
+    /// as archived ones, fetched once each when Favorites opens.
+    var threads: [ChannelID: MessageThreadSummary] = [:]
+    @ObservationIgnored var requestedThreadIDs: Set<ChannelID> = []
 
     func reset() {
         settings = nil
@@ -24,6 +28,8 @@ final class FavoritesStore {
         renaming = nil
         isCreatingCategory = false
         lastChannelID = nil
+        threads = [:]
+        requestedThreadIDs = []
     }
 }
 
@@ -59,7 +65,18 @@ extension AppModel {
         else { return }
         let remaining = favoriteConversations(in: settings)
         let above = previous[..<index].last { settings.contains($0.id) }
-        if let next = remaining.first(where: { $0.id == above?.id }) ?? remaining.first { selectFavorite(next) }
+        openFavorite(remaining.first { $0.id == above?.id } ?? remaining.first)
+    }
+
+    /// Opens a favourite, or leaves no conversation open when none is listed.
+    private func openFavorite(_ conversation: FavoriteConversation?) {
+        if let conversation {
+            selectFavorite(conversation)
+        } else {
+            cancelConversationNavigation()
+            closeThread()
+            selectedChannelID = nil
+        }
     }
 
     var favoritesAreEnabled: Bool { favorites.settings?.isEnabled ?? false }
@@ -83,9 +100,12 @@ extension AppModel {
             guard conversationAccess(for: channel) != .hidden else { return nil }
             return FavoriteConversation(entry: entry, channel: channel)
         }
-        guard let thread = sidebarThread(entry.id),
+        guard let thread = sidebarThread(entry.id) ?? favorites.threads[entry.id],
               let parent = thread.parentID.flatMap(knownRootChannel),
-              conversationAccess(for: parent) != .hidden
+              conversationAccess(for: parent) != .hidden,
+              // A private thread is listed only to members or thread managers.
+              !thread.isPrivate || thread.notificationSettings != nil
+                || (effectiveMessagePermissions(in: parent) ?? 0) & DiscordPermissionBits.manageThreads != 0
         else { return nil }
         return FavoriteConversation(entry: entry, channel: threadNavigationChannel(thread), thread: thread)
     }
@@ -95,8 +115,26 @@ extension AppModel {
         leaveGuildJoinRequestPage()
         setFavoritesPresented(true)
         let conversations = favoriteConversations()
-        let target = conversations.first { $0.id == favorites.lastChannelID } ?? conversations.first
-        if let target { selectFavorite(target) }
+        openFavorite(conversations.first { $0.id == favorites.lastChannelID } ?? conversations.first)
+        loadFavoriteThreads()
+    }
+
+    /// Like the official client, fetch favourited threads that no loaded list
+    /// carries; a thread that can't be read stays stored but unlisted.
+    private func loadFavoriteThreads() {
+        let threadTypes: Set<Int> = [10, 11, 12]
+        let missing = (favorites.settings?.entries ?? []).filter {
+            $0.channelType.map(threadTypes.contains) == true && knownRootChannel($0.id) == nil
+                && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
+        }
+        guard !missing.isEmpty else { return }
+        startAccountChildTask(account: accountSession()) { model, account in
+            for entry in missing {
+                guard let post = try? await account.provider.forumPost(threadID: entry.id),
+                      model.isCurrentAccountSession(account) else { continue }
+                model.favorites.threads[entry.id] = post.thread
+            }
+        }
     }
 
     func selectFavorite(_ conversation: FavoriteConversation) {

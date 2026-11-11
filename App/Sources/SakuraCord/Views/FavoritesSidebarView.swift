@@ -40,13 +40,6 @@ struct FavoritesSidebarView: View {
                         rows(section)
                     }
                 }
-                if model.favoriteConversations().isEmpty {
-                    Text("Right-click any channel or DM and choose Add to Favorites.")
-                        .font(.interface(.callout))
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, InterfaceScale.metric(6))
-                        .selectionDisabled()
-                }
                 SidebarBottomScrollSpacer(height: bottomContentInset)
             }
         }
