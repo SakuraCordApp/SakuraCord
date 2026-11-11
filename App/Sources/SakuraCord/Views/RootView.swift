@@ -492,7 +492,7 @@ private struct ChatRootView: View {
                 supplementaryPaneFrame = .zero
             }
         }
-        .onChange(of: showsInboxToolbarItem) { _, isShown in
+        .onChange(of: model.isInboxAvailable) { _, isShown in
             if !isShown { model.dismissInbox() }
         }
         .onChange(of: model.openThread?.id) { _, threadID in
@@ -568,7 +568,9 @@ private struct ChatRootView: View {
             get: { model.scheduledMessages.isLimitAlertPresented },
             set: { model.scheduledMessages.isLimitAlertPresented = $0 }
         )) {
-            Button("Manage Messages", action: model.presentScheduledMessages)
+            if model.isInboxAvailable {
+                Button("Manage Messages", action: model.presentScheduledMessages)
+            }
             Button("Okay", role: .cancel) {}
         } message: {
             // The official client offers Nitro where it would raise the limit.
@@ -933,7 +935,7 @@ private struct ChatRootView: View {
                 }
             }
 
-            if showsInboxToolbarItem {
+            if model.isInboxAvailable {
                 if hasToolbarActionBeforeInbox {
                     ToolbarSpacer(.fixed)
                 }
@@ -1283,7 +1285,7 @@ private struct ChatRootView: View {
         let paneThread = conversation.isThread ? model.openThread : nil
         let showsFollow = paneThread.map { ForumPostFollowToolbarButton.isOffered(model: model, thread: $0) } ?? false
         let actionCount = 1 + (showsAddToChannelList ? 1 : 0) + (paneThread != nil ? 1 : 0) + (showsFollow ? 1 : 0)
-        if showsInboxToolbarItem {
+        if model.isInboxAvailable {
             // Keep the primary column's last action inset from the pane edge.
             ToolbarSpacer(.fixed)
             ToolbarSpacer(.fixed)
@@ -1396,11 +1398,6 @@ private struct ChatRootView: View {
 
     /// Inbox belongs beside a text conversation, not on a server's own
     /// pages, Friends or a voice channel.
-    private var showsInboxToolbarItem: Bool {
-        !model.isSwitchingAccounts && model.onboardingEntryGuildID == nil
-            && model.guildWorkspacePage == nil && !model.isFriendsPresented && selectedVoiceChannel == nil
-    }
-
     private var selectedGuild: Guild? {
         model.selectedGuild
     }

@@ -31,7 +31,8 @@ struct ScheduleMessagePicker: View {
                 .padding(.top, InterfaceScale.metric(4))
             if scheduledMessageID == nil {
                 VStack(spacing: InterfaceScale.metric(2)) {
-                    ForEach(Self.shortcuts(), id: \.date) { shortcut in
+                    // Late on a Sunday, tomorrow's 9:00 is also Monday's; the official menu lists both.
+                    ForEach(Self.shortcuts(), id: \.label) { shortcut in
                         Button { commit(shortcut.date) } label: {
                             Label {
                                 Text(shortcut.label)
@@ -149,6 +150,7 @@ struct ComposerScheduleHeader: View {
                         Text("Message scheduled for \(confirmed.formatted(.scheduledSendTime))")
                     }
                     .buttonStyle(.plain)
+                    .allowsHitTesting(model.isInboxAvailable)
                     .help("Show Scheduled Messages")
                     Spacer(minLength: 0)
                 }
