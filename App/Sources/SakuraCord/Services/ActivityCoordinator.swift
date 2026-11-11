@@ -19,6 +19,14 @@ public nonisolated enum ActivitySource: Hashable, Sendable, CustomStringConverti
         }
     }
 
+    public static func == (lhs: ActivitySource, rhs: ActivitySource) -> Bool {
+        lhs.sourceID == rhs.sourceID
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceID)
+    }
+
     public var description: String {
         switch self {
         case .appleMusic:
@@ -166,8 +174,10 @@ public actor ActivityCoordinator {
         onActivityChangedHandler?(primary)
         let permittedSourceIDs = Set(permitted.keys.map(\.sourceID))
 
-        // 1. Clear any sources that were previously published but are no longer permitted/registered
-        let staleSourceIDs = publishedSourceIDs.subtracting(permittedSourceIDs)
+        // 1. Clear any sources that were previously published or registered but are no longer permitted/active
+        let registeredSourceIDs = Set(registeredActivities.keys.map(\.sourceID))
+        let allKnownSourceIDs = publishedSourceIDs.union(registeredSourceIDs)
+        let staleSourceIDs = allKnownSourceIDs.subtracting(permittedSourceIDs)
         for staleID in staleSourceIDs {
             guard generation == syncGeneration else { return }
             do {

@@ -234,6 +234,7 @@ struct ProfileActivitySection: View {
     private var nonStatusActivityText: String? {
         guard let text = member.activityText, !text.isEmpty else { return nil }
         if let custom = member.customStatus, text == custom { return nil }
+        if text.contains("<:") || text.contains("<a:") { return nil }
         return text
     }
 
@@ -259,11 +260,23 @@ struct ProfileActivitySection: View {
             }
             return nil
         }
-        if let details = effectiveActivity?.details, !details.isEmpty, details != primaryText {
-            return details
+        if let details = effectiveActivity?.details, !details.isEmpty {
+            let trimmed = details.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isRedundantWithPrimary = trimmed.caseInsensitiveCompare(primaryText) == .orderedSame
+                || trimmed.caseInsensitiveCompare("Playing \(primaryText)") == .orderedSame
+                || trimmed.caseInsensitiveCompare("Listening to \(primaryText)") == .orderedSame
+            if !isRedundantWithPrimary {
+                return trimmed
+            }
         }
-        if let state = effectiveActivity?.state, !state.isEmpty, state != primaryText {
-            return state
+        if let state = effectiveActivity?.state, !state.isEmpty {
+            let trimmed = state.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isRedundantWithPrimary = trimmed.caseInsensitiveCompare(primaryText) == .orderedSame
+                || trimmed.caseInsensitiveCompare("Playing \(primaryText)") == .orderedSame
+                || trimmed.caseInsensitiveCompare("Listening to \(primaryText)") == .orderedSame
+            if !isRedundantWithPrimary {
+                return trimmed
+            }
         }
         return nil
     }
@@ -275,8 +288,15 @@ struct ProfileActivitySection: View {
             }
             return nil
         }
-        if let state = effectiveActivity?.state, !state.isEmpty, state != primaryText, state != secondaryText {
-            return state
+        if let state = effectiveActivity?.state, !state.isEmpty {
+            let trimmed = state.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isRedundant = trimmed.caseInsensitiveCompare(primaryText) == .orderedSame
+                || trimmed.caseInsensitiveCompare("Playing \(primaryText)") == .orderedSame
+                || trimmed.caseInsensitiveCompare("Listening to \(primaryText)") == .orderedSame
+                || (secondaryText != nil && trimmed.caseInsensitiveCompare(secondaryText!) == .orderedSame)
+            if !isRedundant {
+                return trimmed
+            }
         }
         return nil
     }
@@ -459,9 +479,9 @@ struct ProfileActivitySection: View {
         .onHover { hovering in
             isCardHovered = hovering
             if hovering, activityDestinationURL != nil {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
+                NSCursor.pointingHand.set()
+            } else if !hovering {
+                NSCursor.arrow.set()
             }
         }
         .onTapGesture {

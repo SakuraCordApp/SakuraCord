@@ -120,7 +120,13 @@ extension AppModel {
         if selectedMember?.id == member.id {
             return
         }
-        presentProfile(for: member, in: selectedGuildID, destination: .inspector)
+        let memberToPresent: Member
+        if member.id == currentUser?.id || member.id == snapshot?.currentUser.id {
+            memberToPresent = memberWithCurrentStatus(member)
+        } else {
+            memberToPresent = member
+        }
+        presentProfile(for: memberToPresent, in: selectedGuildID, destination: .inspector)
     }
 
     @discardableResult
@@ -141,8 +147,23 @@ extension AppModel {
             )
             return requestID
         }
-        let member = profileMember(user.id, in: guildID)
-            ?? Member(user: user, roleName: "Member", status: .offline)
+        var member: Member
+        if let resolved = profileMember(user.id, in: guildID) {
+            member = resolved
+        } else {
+            var fallback = Member(user: user, roleName: "Member", status: .offline)
+            if let presence = friends.presences[user.id] {
+                fallback.status = presence.status
+                fallback.customStatus = presence.customStatus
+                fallback.activityText = presence.activityText
+                fallback.isListeningToMusic = presence.isListeningToMusic
+                fallback.isMobileOnly = presence.isMobileOnly
+            }
+            member = fallback
+        }
+        if member.id == currentUser?.id || member.id == snapshot?.currentUser.id {
+            member = memberWithCurrentStatus(member)
+        }
         return presentProfile(for: member, in: guildID, destination: .contextual)
     }
 
@@ -190,13 +211,27 @@ extension AppModel {
 
     func showInspectorProfile(for user: User) {
         isInspectorProfilePresented = true
-        let member =
-            membersByID[user.id]
-                ?? Member(
-                    user: user,
-                    roleName: "Direct Message",
-                    status: .offline
-                )
+        var member: Member
+        if let resolved = profileMember(user.id, in: selectedGuildID) ?? membersByID[user.id] {
+            member = resolved
+        } else {
+            var fallback = Member(
+                user: user,
+                roleName: "Direct Message",
+                status: .offline
+            )
+            if let presence = friends.presences[user.id] {
+                fallback.status = presence.status
+                fallback.customStatus = presence.customStatus
+                fallback.activityText = presence.activityText
+                fallback.isListeningToMusic = presence.isListeningToMusic
+                fallback.isMobileOnly = presence.isMobileOnly
+            }
+            member = fallback
+        }
+        if member.id == currentUser?.id || member.id == snapshot?.currentUser.id {
+            member = memberWithCurrentStatus(member)
+        }
         presentProfile(for: member, in: selectedGuildID, destination: .inspector)
     }
 
@@ -265,6 +300,11 @@ extension AppModel {
         in guildID: GuildID?,
         destination: ProfilePresentationDestination
     ) -> UUID {
+        var member = member
+        let isCurrent = member.id == snapshot?.currentUser.id || member.id == currentUser?.id
+        if isCurrent {
+            member = memberWithCurrentStatus(member)
+        }
         let requestID = UUID()
         let cacheKey = ProfileCacheKey(
             userID: member.id,
@@ -275,7 +315,7 @@ extension AppModel {
             requestID: requestID,
             guildID: guildID,
             member: member,
-            isCurrentUser: member.id == snapshot?.currentUser.id,
+            isCurrentUser: isCurrent,
             profile: cachedProfile,
             isLoading: cachedProfile == nil,
             errorMessage: nil
@@ -430,8 +470,25 @@ extension AppModel {
     }
 
     func profileMember(_ userID: UserID, in guildID: GuildID?) -> Member? {
-        guildID.flatMap { membersByGuildID[$0]?[userID] }
-            ?? (guildID == selectedGuildID ? membersByID[userID] : nil)
+        if let currentUserID = currentUser?.id ?? snapshot?.currentUser.id, userID == currentUserID {
+            let base = guildID.flatMap { membersByGuildID[$0]?[userID] }
+                ?? (guildID == selectedGuildID ? membersByID[userID] : nil)
+                ?? membersByID[userID]
+                ?? snapshot.map { Member(user: $0.currentUser, roleName: "", status: currentStatus) }
+            return base.map(memberWithCurrentStatus)
+        }
+        if let guildID, let member = membersByGuildID[guildID]?[userID] {
+            return member
+        }
+        if let member = (guildID == selectedGuildID ? membersByID[userID] : nil) ?? membersByID[userID] {
+            return member
+        }
+        for guildMembers in membersByGuildID.values {
+            if let member = guildMembers[userID] {
+                return member
+            }
+        }
+        return nil
     }
 
     /// Resolves presence from the member store so presented profiles stay live.
@@ -440,8 +497,17 @@ extension AppModel {
     ) -> ProfilePresentationState? {
         guard var presentation = profilePresentation(for: destination) else { return nil }
         guard !presentation.isLocalIdentity else { return presentation }
-        presentation.member = profileMember(presentation.member.id, in: presentation.guildID) ?? presentation.member
-        if presentation.member.id == currentUser?.id {
+        if let liveMember = profileMember(presentation.member.id, in: presentation.guildID) {
+            presentation.member = liveMember
+        } else if let presence = friends.presences[presentation.member.id] {
+            // Live relationship presence applies when no member cache holds this user.
+            presentation.member.status = presence.status
+            presentation.member.customStatus = presence.customStatus
+            presentation.member.activityText = presence.activityText
+            presentation.member.isListeningToMusic = presence.isListeningToMusic
+            presentation.member.isMobileOnly = presence.isMobileOnly
+        }
+        if presentation.member.id == currentUser?.id || presentation.member.id == snapshot?.currentUser.id {
             // Member stores do not track our own presence; the account does.
             presentation.member = memberWithCurrentStatus(presentation.member)
         }

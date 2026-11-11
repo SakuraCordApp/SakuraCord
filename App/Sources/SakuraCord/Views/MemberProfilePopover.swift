@@ -187,10 +187,16 @@ struct MemberProfilePopover<Footer: View>: View {
     @State private var theme = ProfileThemeState()
 
     private var effectiveRichActivity: MemberRichActivity? {
+        let act: MemberRichActivity?
         if isCurrentUser {
-            return model?.currentUserRichActivity
+            act = model?.currentUserRichActivity
+        } else {
+            act = member.richActivity
         }
-        return member.richActivity
+        if let act, act.type == 4 || act.type == 6 || act.name.contains("<:") || act.name.contains("<a:") {
+            return nil
+        }
+        return act
     }
 
     private var hasActiveActivity: Bool {
@@ -199,6 +205,7 @@ struct MemberProfilePopover<Footer: View>: View {
         }
         if let activity = effectiveRichActivity {
             if activity.type == 4 || activity.type == 6 { return false }
+            if activity.name.contains("<:") || activity.name.contains("<a:") { return false }
             return true
         }
         if member.isListeningToMusic {
@@ -210,7 +217,7 @@ struct MemberProfilePopover<Footer: View>: View {
         if let customStatus = member.customStatus, activityText == customStatus {
             return false
         }
-        if activityText.hasPrefix("<:") || activityText.hasPrefix("<a:") {
+        if activityText.contains("<:") || activityText.contains("<a:") {
             return false
         }
         return true
@@ -338,6 +345,26 @@ struct MemberProfilePopover<Footer: View>: View {
                 }
                 .zIndex(10)
 
+                if let profile, showsDetails {
+                    if editor == nil, !isCurrentUser {
+                        ProfileMutualSummary(
+                            guilds: profile.mutualGuilds,
+                            friends: profile.mutualFriends,
+                            mutualFriendCount: profile.mutualFriendsCount,
+                            layout: layout
+                        )
+                    }
+                    if profile.isPrivate == true {
+                        privateProfileNotice(profile)
+                    }
+                }
+
+                if hasActiveActivity, editor == nil {
+                    ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
+                        .padding(.horizontal, InterfaceScale.metric(16))
+                        .transition(.opacity.combined(with: .offset(y: -4)))
+                }
+
                 if isLoading {
                     HStack(spacing: InterfaceScale.metric(9)) {
                         ProgressView()
@@ -380,22 +407,6 @@ struct MemberProfilePopover<Footer: View>: View {
 
     @ViewBuilder
     private func profileDetailsSections(_ profile: UserProfile) -> some View {
-        if editor == nil, !isCurrentUser {
-            ProfileMutualSummary(
-                guilds: profile.mutualGuilds,
-                friends: profile.mutualFriends,
-                mutualFriendCount: profile.mutualFriendsCount,
-                layout: layout
-            )
-        }
-        if profile.isPrivate == true {
-            privateProfileNotice(profile)
-        }
-        if hasActiveActivity, editor == nil {
-            ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
-                .padding(.horizontal, InterfaceScale.metric(16))
-                .transition(.opacity.combined(with: .offset(y: -4)))
-        }
         if let editor, editor.scope == .main || editor.isNitro {
             ProfileInlineBioEditor(value: Binding(get: { editor.bio }, set: { editor.bio = $0 }), displayValue: profile.bio, model: editor.model)
                 .id(editor.draftGeneration)

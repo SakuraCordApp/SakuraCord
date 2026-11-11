@@ -55,6 +55,16 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private let queue: DispatchQueue
     private let onClose: @Sendable (UUID) -> Void
     private let logger = Logger(subsystem: "dev.sakuracord", category: "DiscordIPCClientSession")
+    private var lastOperationTask: Task<Void, Never>?
+
+    private func enqueueOperation(_ operation: @escaping @Sendable () async -> Void) {
+        let previous = lastOperationTask
+        lastOperationTask = Task {
+            _ = await previous?.value
+            guard !Task.isCancelled else { return }
+            await operation()
+        }
+    }
 
     init(
         clientFD: Int32,
@@ -94,7 +104,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
             clientID: clientID ?? "unknown",
             processID: processID
         )
-        Task { [coordinator] in
+        enqueueOperation { [coordinator] in
             await coordinator.clearActivity(for: source)
         }
         onClose(id)
@@ -191,7 +201,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
 
             if let activityDict {
                 let payload = parseActivity(activityDict)
-                Task { [coordinator] in
+                enqueueOperation { [coordinator] in
                     await coordinator.setActivity(payload, for: source)
                 }
                 var responseData: [String: Any] = activityDict
@@ -200,7 +210,7 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 responseData["type"] = payload.type.rawValue
                 sendResponse(cmd: "SET_ACTIVITY", data: responseData, nonce: nonce)
             } else {
-                Task { [coordinator] in
+                enqueueOperation { [coordinator] in
                     await coordinator.clearActivity(for: source)
                 }
                 sendResponse(cmd: "SET_ACTIVITY", data: NSNull(), nonce: nonce)
@@ -643,8 +653,9 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
         let bytesRead = readlink(symlinkPath, &buffer, buffer.count - 1)
         guard bytesRead > 0 else { return }
-        buffer[bytesRead] = 0
-        let destination = String(cString: buffer)
+        guard let destination = String(bytes: buffer[..<bytesRead].map { UInt8(bitPattern: $0) }, encoding: .utf8) else {
+            return
+        }
         if destination == targetPath {
             unlink(symlinkPath)
         }
@@ -800,7 +811,7 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             return nil
         }
 
-        chmod(path, 0o700)
+        chmod(path, 0o777)
         return fd
     }
     private func acceptConnection() {

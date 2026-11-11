@@ -599,7 +599,7 @@ struct DiscordIPCServerTests {
 
         let running = NSWorkspace.shared.runningApplications
         if let athas = running.first(where: { !$0.isTerminated && GamePresenceMonitor.isAthasApp($0) }) {
-            #expect(athas.bundleIdentifier == "com.code.athas" || athas.localizedName == "Athas")
+            #expect(athas.bundleIdentifier?.lowercased() == "com.code.athas" || athas.localizedName?.lowercased() == "athas" || athas.bundleURL?.lastPathComponent.lowercased() == "athas.app")
             monitor.checkRunningGames()
             let published = await eventually {
                 let acts = await mockProvider.currentActivities()

@@ -234,6 +234,20 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private var activePollingAppName: String?
     private var artworkFetchGeneration: UInt64 = 0
     private var artworkFetchTask: Task<Void, Never>?
+    private var trackUpdateGeneration: UInt64 = 0
+
+    private func nextTrackUpdateGeneration() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        trackUpdateGeneration &+= 1
+        return trackUpdateGeneration
+    }
+
+    private func isCurrentTrackUpdateGeneration(_ gen: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return trackUpdateGeneration == gen
+    }
     private let logger = Logger(subsystem: "dev.sakuracord", category: "AppleMusicPresenceMonitor")
 
     public static let musicNotificationName = Notification.Name("com.apple.Music.playerInfo")
@@ -278,6 +292,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     }
 
     private func clearMusicActivity(now: Date) async {
+        _ = nextTrackUpdateGeneration()
         cancelArtworkFetchTask()
         stopPositionPolling()
         updatePlaybackStateOnPauseOrStop(now: now)
@@ -371,14 +386,17 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         return script
     }()
 
-    private static func runOnMainThread<T: Sendable>(_ block: @Sendable () -> T) -> T {
-        if Thread.isMainThread {
-            return block()
-        } else {
-            return DispatchQueue.main.sync {
-                block()
-            }
+    private static let scriptQueue = DispatchQueue(label: "dev.sakuracord.applescript", qos: .userInitiated)
+
+    private static func runWithTimeout<T: Sendable>(timeoutSeconds: Double = 1.5, _ block: @escaping @Sendable () -> T?) -> T? {
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: T?
+        scriptQueue.async {
+            result = block()
+            semaphore.signal()
         }
+        let waitResult = semaphore.wait(timeout: .now() + timeoutSeconds)
+        return waitResult == .timedOut ? nil : result
     }
 
     public static func queryPlayerPosition(appName: String = "Apple Music") -> Double? {
@@ -386,8 +404,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard NSClassFromString("XCTest") == nil else { return nil }
         let bundleID = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "com.spotify.client" : "com.apple.Music"
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return nil }
-        #endif
-        return runOnMainThread {
+        return runWithTimeout(timeoutSeconds: 1.5) {
             let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
             guard let script = isSpotify ? spotifyPositionScript : musicPositionScript else { return nil }
             var errorInfo: NSDictionary?
@@ -396,6 +413,9 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             let val = descriptor.doubleValue
             return val >= 0 ? val : nil
         }
+        #else
+        return nil
+        #endif
     }
 
     private func setCurrentActiveTrackInfo(_ info: AppleMusicTrackInfo?) {
@@ -459,7 +479,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard NSClassFromString("XCTest") == nil else { return nil }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return nil }
         #endif
-        return runOnMainThread {
+        return runWithTimeout(timeoutSeconds: 1.5) {
             let scriptSource = """
             tell application "Music"
                 if it is running then
@@ -495,29 +515,60 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     private static func queryTrack(for appName: String, bundleID: String, durationMultiplier: Double) -> (isStopped: Bool, track: AppleMusicTrackInfo?) {
         #if os(macOS)
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return (false, nil) }
-        return runOnMainThread {
-            let scriptSource = """
-            tell application id "\(bundleID)"
-                if it is running then
-                    set pState to (player state as string)
-                    if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
-                        set tName to (name of current track as string)
-                        set tArtist to (artist of current track as string)
-                        set tAlbum to (album of current track as string)
-                        set tPos to (player position as real)
-                        set tDur to (duration of current track as real)
-                        set tID to ""
-                        try
-                            set tID to (id of current track as string)
-                        end try
-                        return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * \(durationMultiplier)) & "|||" & tID
-                    else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
-                        return "stopped"
+        let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
+        return runWithTimeout(timeoutSeconds: 1.5) {
+            let scriptSource: String
+            if isSpotify {
+                scriptSource = """
+                tell application id "com.spotify.client"
+                    if it is running then
+                        set pState to (player state as string)
+                        if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
+                            set tName to (name of current track as string)
+                            set tArtist to (artist of current track as string)
+                            set tAlbum to (album of current track as string)
+                            set tPos to (player position as real)
+                            set tDur to (duration of current track as real)
+                            set tID to ""
+                            try
+                                set tID to (spotify url of current track as string)
+                            on error
+                                try
+                                    set tID to (id of current track as string)
+                                end try
+                            end try
+                            return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & tDur & "|||" & tID
+                        else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
+                            return "stopped"
+                        end if
                     end if
-                end if
-                return "unknown"
-            end tell
-            """
+                    return "unknown"
+                end tell
+                """
+            } else {
+                scriptSource = """
+                tell application "Music"
+                    if it is running then
+                        set pState to (player state as string)
+                        if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
+                            set tName to (name of current track as string)
+                            set tArtist to (artist of current track as string)
+                            set tAlbum to (album of current track as string)
+                            set tPos to (player position as real)
+                            set tDur to (duration of current track as real)
+                            set tID to ""
+                            try
+                                set tID to (id of current track as string)
+                            end try
+                            return "playing|||" & tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tPos & "|||" & (tDur * 1000) & "|||" & tID
+                        else if pState is "paused" or pState is "stopped" or pState is "kPSp" or pState contains "kPSp" or pState is "kPSS" or pState contains "kPSS" then
+                            return "stopped"
+                        end if
+                    end if
+                    return "unknown"
+                end tell
+                """
+            }
             var errorInfo: NSDictionary?
             guard let script = NSAppleScript(source: scriptSource) else { return (false, nil) }
             let descriptor = script.executeAndReturnError(&errorInfo)
@@ -538,9 +589,9 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                 currentPositionSeconds: Double(parts[4]),
                 totalTimeMilliseconds: Double(parts[5]),
                 trackID: trackID,
-                appName: appName == "Music" ? "Apple Music" : appName
+                appName: isSpotify ? "Spotify" : "Apple Music"
             ))
-        }
+        } ?? (false, nil)
         #else
         return (false, nil)
         #endif
@@ -555,25 +606,31 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         #endif
         Task.detached(priority: .utility) { [weak self, coordinator] in
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
-            let musicResult = await MainActor.run {
-                Self.queryTrack(for: "Music", bundleID: "com.apple.Music", durationMultiplier: 1000)
-            }
-            if let track = musicResult.track {
-                await self?.handleTrackInfo(track)
-                return
+            #if os(macOS)
+            let isMusicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+            let isSpotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty
+            #else
+            let isMusicRunning = false
+            let isSpotifyRunning = false
+            #endif
+
+            if isMusicRunning {
+                let musicResult = Self.queryTrack(for: "Music", bundleID: "com.apple.Music", durationMultiplier: 1000)
+                if let track = musicResult.track {
+                    await self?.handleTrackInfo(track)
+                    return
+                }
             }
 
-            let spotifyResult = await MainActor.run {
-                Self.queryTrack(for: "Spotify", bundleID: "com.spotify.client", durationMultiplier: 1)
-            }
-            if let track = spotifyResult.track {
-                await self?.handleTrackInfo(track)
-                return
+            if isSpotifyRunning {
+                let spotifyResult = Self.queryTrack(for: "Spotify", bundleID: "com.spotify.client", durationMultiplier: 1)
+                if let track = spotifyResult.track {
+                    await self?.handleTrackInfo(track)
+                    return
+                }
             }
 
-            if musicResult.isStopped || spotifyResult.isStopped {
-                await self?.handleTrackInfo(nil)
-            }
+            await self?.handleTrackInfo(nil)
         }
     }
 
@@ -685,6 +742,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     /// Processes typed track info and updates presence through the coordinator.
     @discardableResult
     public func handleTrackInfo(_ trackInfo: AppleMusicTrackInfo?) async -> OutgoingActivityPayload? {
+        let currentGeneration = nextTrackUpdateGeneration()
         guard await coordinator.isSourcePermitted(.appleMusic) else {
             await clearMusicActivity(now: nowProvider())
             return nil
@@ -764,7 +822,12 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                 spotifyTrackID: trackInfo.trackID
             )
         }
-        let initialLargeImage = resolvedMusic.artworkURL ?? Self.appleMusicIconURL
+        guard isCurrentTrackUpdateGeneration(currentGeneration) else {
+            logger.debug("Discarding stale music update generation \(currentGeneration)")
+            return nil
+        }
+        let isSpotifyApp = trackInfo.appName.caseInsensitiveCompare("Spotify") == .orderedSame
+        let initialLargeImage = resolvedMusic.artworkURL ?? (isSpotifyApp ? nil : Self.appleMusicIconURL)
 
         let assets = ActivityAssets(
             largeImage: initialLargeImage,
