@@ -41,8 +41,13 @@ struct ScheduleMessagePicker: View {
                 VStack(spacing: InterfaceScale.metric(2)) {
                     ForEach(Self.shortcuts(), id: \.date) { shortcut in
                         Button { commit(shortcut.date) } label: {
-                            Label(shortcut.label, systemImage: shortcut.systemImage)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Label {
+                                Text(shortcut.label)
+                            } icon: {
+                                Image(systemName: shortcut.systemImage)
+                                    .frame(width: InterfaceScale.metric(20))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(InterfaceScale.metric(8))
                         }
                     }
@@ -146,6 +151,7 @@ struct ComposerScheduleHeader: View {
                     }
                     .buttonStyle(.plain)
                     .help("Show Scheduled Messages")
+                    Spacer(minLength: 0)
                 }
             } else if let date = state.sendDates[channelID] {
                 row(systemImage: "calendar.badge.clock", tint: SakuraCordAccentColor.color) {
@@ -189,7 +195,6 @@ struct ComposerScheduleHeader: View {
         HStack(spacing: InterfaceScale.metric(6)) {
             Image(systemName: systemImage).foregroundStyle(tint)
             content()
-            Spacer(minLength: 0)
         }
         .font(.interface(.callout))
         .frame(minHeight: InterfaceScale.metric(34))
