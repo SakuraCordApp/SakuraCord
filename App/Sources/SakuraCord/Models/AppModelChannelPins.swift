@@ -64,6 +64,7 @@ extension AppModel {
                 let flags = sentValue
                     ? override.flags(settingPinned: true) | GuildChannelSelection.selectedFlag
                     : override.flags(settingPinned: false)
+                let revision = self.guildNotificationSettingsRevisions[mutation.guildID]
                 do {
                     try await activeProvider.updateChannelPin(
                         guildID: mutation.guildID,
@@ -87,6 +88,8 @@ extension AppModel {
                 else { return }
                 current.confirmedPinned = sentValue
                 self.channelPinMutationStates[channelID] = current
+                // A settings update received meanwhile is newer than this write.
+                guard self.guildNotificationSettingsRevisions[current.guildID] == revision else { continue }
                 self.updateLocalChannelNotificationOverride(
                     guildID: current.guildID,
                     channelID: channelID
