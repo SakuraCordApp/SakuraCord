@@ -1833,6 +1833,8 @@ extension ComposerView {
                     Label("Schedule Message", systemImage: "calendar.badge.clock")
                         .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))
                 }
+                // The time is held until the pending schedule is answered.
+                .disabled(model.isSchedulingMessage(in: conversation))
             }
             startActivityRow
             ComposerTranslateDraftRow(model: model, destination: conversation) {

@@ -161,6 +161,7 @@ struct ComposerScheduleHeader: View {
                     }
                     .buttonStyle(.plain)
                     .help("Edit Schedule Time")
+                    .disabled(state.submissions[channelID] != nil)
                     .popover(isPresented: $isEditing, arrowEdge: .top) {
                         ScheduleMessagePicker(
                             initialDate: date,
