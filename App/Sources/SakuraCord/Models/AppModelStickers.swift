@@ -220,10 +220,10 @@ extension AppModel {
         let session = accountSession()
         guard let remoteURL = sticker.pickerImageLink else { return false }
         do {
-            let attachment = try makeStickerUploadAttachment(for: sticker)
+            let attachment = try await makeStickerUploadAttachment(for: sticker, contents: stickerImage(from: remoteURL))
+            // Held until it is stored, so no other composer's cleanup removes it.
             beginUsingOwnedPromisedFiles([attachment.url])
             defer { endUsingOwnedPromisedFiles([attachment.url]) }
-            try await writeStickerImage(from: remoteURL, to: attachment.url)
             return await schedulePickedMessage(content: "", attachments: [attachment], in: destination)
         } catch {
             guard isCurrentAccountSession(session) else { return false }
@@ -232,25 +232,21 @@ extension AppModel {
         }
     }
 
-    /// An empty promised file named for the sticker, filled before it is posted.
-    private func makeStickerUploadAttachment(for sticker: MessageSticker) throws -> ForumPostAttachment {
-        let directory = try ComposerPromisedFileStorage.makeReceivingDirectory()
-        let fileURL = directory.appending(path: "sticker-\(sticker.id)").appendingPathExtension("webp")
-        do {
-            try Data().write(to: fileURL, options: .atomic)
-            guard let attachmentURL = adoptPromisedFileBatch(ComposerPromisedFileBatch(directory: directory, urls: [fileURL])).first
-            else { throw CocoaError(.fileReadNoSuchFile) }
-            return ForumPostAttachment(url: attachmentURL, filename: "sticker-\(sticker.id).webp")
-        } catch {
-            ComposerPromisedFileStorage.removeDirectory(directory)
-            throw error
-        }
+    /// The sticker's promised file; a send leaves it empty until its turn in the queue.
+    private func makeStickerUploadAttachment(
+        for sticker: MessageSticker, contents: Data = Data()
+    ) throws -> ForumPostAttachment {
+        let filename = "sticker-\(sticker.id).webp"
+        guard let batch = ComposerPromisedFileStorage.makeBatch(writing: contents, named: filename),
+              let url = adoptPromisedFileBatch(batch).first
+        else { throw CocoaError(.fileWriteUnknown) }
+        return ForumPostAttachment(url: url, filename: filename)
     }
 
-    private func writeStickerImage(from sourceURL: URL, to fileURL: URL) async throws {
+    private func stickerImage(from sourceURL: URL) async throws -> Data {
         let data = try await SharedMediaDataLoader.shared.data(for: sourceURL, priority: .visible)
         guard !data.isEmpty else { throw URLError(.zeroByteResource) }
-        try data.write(to: fileURL, options: .atomic)
+        return data
     }
 
     func performStickerUpload(
@@ -268,7 +264,7 @@ extension AppModel {
         let session = accountSession()
         guard let fileURL = outgoing.attachmentURLs.first else { return false }
         do {
-            try await writeStickerImage(from: sourceURL, to: fileURL)
+            try await stickerImage(from: sourceURL).write(to: fileURL, options: .atomic)
             guard isCurrentAccountSession(session) else { return false }
             updateOutgoingState(
                 .sending,
