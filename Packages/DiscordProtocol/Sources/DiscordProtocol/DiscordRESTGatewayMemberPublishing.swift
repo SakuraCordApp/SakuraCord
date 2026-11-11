@@ -19,6 +19,7 @@ extension DiscordRESTProvider {
         cachedMembers[guildID] = DiscordMemberStoreOrdering.merging(
             existing: cachedMembers[guildID] ?? [], updates: [member]
         )
+        cachedMembersByID.removeValue(forKey: guildID)
         if member.id == currentUser?.id,
            previous?.roleIDs != member.roleIDs || previous?.isPending != member.isPending {
             continuation?.yield(
@@ -43,6 +44,7 @@ extension DiscordRESTProvider {
     func removeMember(userID: UserID, guildID: GuildID) {
         memberPresentationRevisions[ProfileCacheKey(userID: userID, guildID: guildID), default: 0] &+= 1
         cachedMembers[guildID]?.removeAll { $0.id == userID }
+        cachedMembersByID.removeValue(forKey: guildID)
         let memberListIDs = cachedMemberListItems[guildID].map { Array($0.keys) } ?? []
         for memberListID in memberListIDs {
             cachedMemberListItems[guildID]?[memberListID]?.removeAll {

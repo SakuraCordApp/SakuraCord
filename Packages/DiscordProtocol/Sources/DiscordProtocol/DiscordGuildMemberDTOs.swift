@@ -155,6 +155,16 @@ struct GuildPresenceDTO: Decodable {
     var activities: [GuildActivityDTO]?
     var clientStatus: ClientStatusDTO?
 
+    init(
+        status: String? = nil,
+        activities: [GuildActivityDTO]? = nil,
+        clientStatus: ClientStatusDTO? = nil
+    ) {
+        self.status = status
+        self.activities = activities
+        self.clientStatus = clientStatus
+    }
+
     enum CodingKeys: String, CodingKey {
         case status, activities
         case clientStatus = "client_status"
@@ -400,6 +410,7 @@ struct GatewayGuildMembersChunkDTO: Decodable {
     var chunkIndex: Int
     var chunkCount: Int
     var notFound: [String]?
+    var presences: [PresenceUpdateDTO]?
 
     enum CodingKeys: String, CodingKey {
         case guildID = "guild_id"
@@ -407,5 +418,6 @@ struct GatewayGuildMembersChunkDTO: Decodable {
         case chunkIndex = "chunk_index"
         case chunkCount = "chunk_count"
         case notFound = "not_found"
+        case presences
     }
 }

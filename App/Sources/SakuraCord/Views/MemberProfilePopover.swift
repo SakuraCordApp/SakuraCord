@@ -214,7 +214,7 @@ struct MemberProfilePopover<Footer: View>: View {
         guard let activityText = member.activityText, !activityText.isEmpty else {
             return false
         }
-        if let customStatus = member.customStatus, activityText == customStatus {
+        if let customStatus = member.customStatus ?? profile?.customStatus, activityText == customStatus {
             return false
         }
         if activityText.contains("<:") || activityText.contains("<a:") {
@@ -683,7 +683,8 @@ private struct ProfileHeroSection: View {
             .padding(.horizontal, horizontalInset)
         }
         .overlay(alignment: .topLeading) {
-            if editor != nil || member.customStatus?.isEmpty == false {
+            let effectiveCustomStatus = member.customStatus ?? profile?.customStatus
+            if editor != nil || effectiveCustomStatus?.isEmpty == false {
                 Group {
                     if let editor, let profile {
                         ProfileCustomStatusControl(
@@ -692,7 +693,7 @@ private struct ProfileHeroSection: View {
                         )
                     } else {
                         ProfileStatusBubble(
-                            text: member.customStatus ?? "",
+                            text: effectiveCustomStatus ?? "",
                             surfaceColor: avatarCutoutColor, width: statusBubbleWidth,
                             isExpandedProfile: isExpandedProfile
                         )

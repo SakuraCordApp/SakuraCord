@@ -58,6 +58,8 @@ public protocol ChatProvider: Sendable {
         visibleRange: ClosedRange<Int>
     ) async throws
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member]
+    @discardableResult
+    func requestMembersByID(_ userIDs: [UserID], guildID: GuildID, presences: Bool) async throws -> [Member]
     /// Members the provider already holds for these users, without a request.
     func knownMembers(in guildID: GuildID, userIDs: [UserID]) async -> [Member]
     func searchMembers(in guildID: GuildID, query: String, limit: Int) async throws -> [Member]
@@ -802,6 +804,11 @@ public extension ChatProvider {
     func resolveMembers(in guildID: GuildID, userIDs: [UserID]) async throws -> [Member] {
         let requested = Set(userIDs.prefix(100))
         return try await members(in: guildID).filter { requested.contains($0.id) }
+    }
+
+    @discardableResult
+    func requestMembersByID(_ userIDs: [UserID], guildID: GuildID, presences: Bool = false) async throws -> [Member] {
+        []
     }
 
     /// Providers without a member cache know no one; falling back to
