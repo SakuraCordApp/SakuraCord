@@ -86,8 +86,7 @@ extension NativeTimelineRowLayout {
     }
 
     static var translationCaptionFont: NSFont {
-        let font = NSFont.preferredFont(forTextStyle: .caption1)
-        return font.withSize(InterfaceScale.fontSize(InterfaceTypographyMetrics.message(font.pointSize)))
+        NSFont.interfacePreferredFont(forTextStyle: .caption1)
     }
 
     static func translation(
