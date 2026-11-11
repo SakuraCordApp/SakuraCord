@@ -120,7 +120,8 @@ extension DiscordRESTProvider {
         voiceMessageCount += 1
         guard case var .object(payload)? = try await uploadAttachmentFiles([file], channelID: channelID, progress: progress).first
         else { throw CancellationError() }
-        payload["duration_secs"] = .number(metadata.durationSeconds)
+        // Discord's recorder reports whole milliseconds.
+        payload["duration_secs"] = .number((metadata.durationSeconds * 1000).rounded() / 1000)
         payload["waveform"] = .string(metadata.waveform)
         return .object(payload)
     }

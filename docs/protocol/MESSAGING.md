@@ -882,7 +882,8 @@ re-observed on 11 November 2026 from the desktop client's own recorder
   numbered filename (`0recording.ogg`, `1recording.ogg`, … per session) and
   `original_content_type: "audio/ogg"`. The message POST sets `flags: 8192`,
   empty `content` and `X-Context-Properties` `{"location":"voice_message"}`;
-  its one attachment entry adds `duration_secs` and `waveform`.
+  its one attachment entry adds `duration_secs`, in whole milliseconds as the
+  recorder reports it, and `waveform`.
 - **Rules.** Guild channels require Send Voice Messages (`1 << 46`). A voice
   message carries no text, stickers or poll, and Discord does not allow it to be
   edited.
