@@ -40,7 +40,12 @@ nonisolated final class AttachmentUploadTaskDelegate: NSObject, URLSessionTaskDe
             return $0.isCancelled
         }
         if isCancelled { reservation.cancel() }
-        return try await reservation.value
+        // The send being cancelled, or a sibling file failing, still ends it.
+        return try await withTaskCancellationHandler {
+            try await reservation.value
+        } onCancel: {
+            reservation.cancel()
+        }
     }
 
     func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
