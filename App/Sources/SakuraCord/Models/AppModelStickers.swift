@@ -219,16 +219,20 @@ extension AppModel {
     ) async -> Bool {
         let session = accountSession()
         guard let remoteURL = sticker.pickerImageLink else { return false }
-        do {
-            let attachment = try await makeStickerUploadAttachment(for: sticker, contents: stickerImage(from: remoteURL))
-            // Held until it is stored, so no other composer's cleanup removes it.
-            beginUsingOwnedPromisedFiles([attachment.url])
-            defer { endUsingOwnedPromisedFiles([attachment.url]) }
-            return await schedulePickedMessage(content: "", attachments: [attachment], in: destination)
-        } catch {
-            guard isCurrentAccountSession(session) else { return false }
-            errorMessage = error.localizedDescription
-            return false
+        var attachment: ForumPostAttachment?
+        // Held until it is stored, so no other composer's cleanup removes it.
+        defer { attachment.map { endUsingOwnedPromisedFiles([$0.url]) } }
+        return await schedulePickedMessage(content: "", in: destination) {
+            do {
+                let file = try await makeStickerUploadAttachment(for: sticker, contents: stickerImage(from: remoteURL))
+                beginUsingOwnedPromisedFiles([file.url])
+                attachment = file
+                return [file]
+            } catch {
+                guard isCurrentAccountSession(session) else { return nil }
+                errorMessage = error.localizedDescription
+                return nil
+            }
         }
     }
 
