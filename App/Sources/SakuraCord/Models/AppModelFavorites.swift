@@ -100,16 +100,15 @@ extension AppModel {
             guard conversationAccess(for: channel) != .hidden else { return nil }
             return FavoriteConversation(entry: entry, channel: channel)
         }
-        let live = sidebarThread(entry.id)
-        guard let thread = live ?? favorites.threads[entry.id],
+        guard let thread = sidebarThread(entry.id) ?? favorites.threads[entry.id],
               let parent = thread.parentID.flatMap(knownRootChannel),
               conversationAccess(for: parent) != .hidden
         else { return nil }
-        // A private thread is listed only to members or thread managers. The
-        // fetched copy's membership is not kept current, so only the live
-        // record vouches for it.
+        // A private thread is listed only to members or thread managers. A
+        // fetched private thread is fetched again each time Favorites opens,
+        // so its membership is as current as that read.
         let canManageThreads = (effectiveMessagePermissions(in: parent) ?? 0) & DiscordPermissionBits.manageThreads != 0
-        guard !thread.isPrivate || canManageThreads || live?.notificationSettings != nil else { return nil }
+        guard !thread.isPrivate || canManageThreads || thread.notificationSettings != nil else { return nil }
         return FavoriteConversation(entry: entry, channel: threadNavigationChannel(thread), thread: thread)
     }
 
@@ -125,6 +124,7 @@ extension AppModel {
     /// Like the official client, fetch favourited threads that no loaded list
     /// carries; a thread that can't be read stays stored but unlisted.
     private func loadFavoriteThreads() {
+        for (id, thread) in favorites.threads where thread.isPrivate { favorites.requestedThreadIDs.remove(id) }
         let threadTypes: Set<Int> = [10, 11, 12]
         let missing = (favorites.settings?.entries ?? []).filter {
             $0.channelType.map(threadTypes.contains) == true && knownRootChannel($0.id) == nil
