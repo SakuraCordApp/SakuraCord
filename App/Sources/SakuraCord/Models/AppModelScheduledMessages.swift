@@ -16,8 +16,10 @@ final class ScheduledMessagesState {
     var errorMessage: String?
     /// Send times picked in a composer, by conversation, until it is sent or cleared.
     var sendDates: [ChannelID: Date] = [:]
-    /// Conversations whose message is being scheduled right now.
-    var submittingChannelIDs: Set<ChannelID> = []
+    /// Conversations whose message is being scheduled right now, each marked by
+    /// its request: an account switch clears them, and the next account may share
+    /// a channel, so a request only ever removes its own mark.
+    var submissions: [ChannelID: UUID] = [:]
     /// The send time just confirmed for a conversation, shown briefly in its composer.
     var confirmations: [ChannelID: Date] = [:]
     var isLimitAlertPresented = false
@@ -32,7 +34,7 @@ final class ScheduledMessagesState {
         pendingIDs = []
         errorMessage = nil
         sendDates = [:]
-        submittingChannelIDs = []
+        submissions = [:]
         confirmations = [:]
         isLimitAlertPresented = false
     }
@@ -57,13 +59,13 @@ extension AppModel {
     /// Whether the conversation's message is on its way to Discord; until it
     /// is answered, its time stays and nothing else leaves the composer.
     func isSchedulingMessage(in destination: MessageComposerDestination) -> Bool {
-        guard !scheduledMessages.submittingChannelIDs.isEmpty else { return false }
-        return composerSendChannelID(in: destination).map(scheduledMessages.submittingChannelIDs.contains) ?? false
+        guard !scheduledMessages.submissions.isEmpty else { return false }
+        return composerSendChannelID(in: destination).map { scheduledMessages.submissions[$0] != nil } ?? false
     }
 
     func setScheduledSendDate(_ date: Date?, in destination: MessageComposerDestination) {
         guard let channelID = composerSendChannelID(in: destination),
-              !scheduledMessages.submittingChannelIDs.contains(channelID)
+              scheduledMessages.submissions[channelID] == nil
         else { return }
         scheduledMessages.sendDates[channelID] = date
         scheduledMessages.confirmations[channelID] = nil
@@ -148,10 +150,13 @@ extension AppModel {
     /// One create at a time per conversation; returns whether Discord accepted it.
     private func submitSchedule(_ outgoing: SendMessageDraft) async -> Bool {
         let channelID = outgoing.channelID
-        guard let date = scheduledMessages.sendDates[channelID],
-              scheduledMessages.submittingChannelIDs.insert(channelID).inserted
+        guard let date = scheduledMessages.sendDates[channelID], scheduledMessages.submissions[channelID] == nil
         else { return false }
-        defer { scheduledMessages.submittingChannelIDs.remove(channelID) }
+        let submission = UUID()
+        scheduledMessages.submissions[channelID] = submission
+        defer {
+            if scheduledMessages.submissions[channelID] == submission { scheduledMessages.submissions[channelID] = nil }
+        }
         let session = accountSession()
         do {
             let scheduled = try await session.provider.scheduleMessage(outgoing, at: date)

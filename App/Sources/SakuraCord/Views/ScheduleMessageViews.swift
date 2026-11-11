@@ -175,7 +175,7 @@ struct ComposerScheduleHeader: View {
                         )
                     }
                     Spacer(minLength: InterfaceScale.metric(8))
-                    if state.submittingChannelIDs.contains(channelID) {
+                    if state.submissions[channelID] != nil {
                         ProgressView().controlSize(.small)
                     } else {
                         HoverCloseButton(
