@@ -190,12 +190,7 @@ extension AppModel {
                 return DirectMessageInboxPolicy.conversations(in: channelsByGuild[nil] ?? [], pinnedChannelIDs: pinnedDirectMessageIDs)
             }
             // Walk each server in its sidebar order, pinned channels first.
-            let groups = ChannelGroup.pinning(
-                pinnedChannelIDs(in: guildID),
-                in: ChannelGroup.make(from: channelsByGuild[guildID] ?? []),
-                guildID: guildID,
-                excluding: hiddenChannelIDs
-            )
+            let groups = pinnedChannelGroups(ChannelGroup.make(from: channelsByGuild[guildID] ?? []), guildID: guildID)
             return shortcutChannelsWithThreads(groups: groups, guildID: guildID)
         }
     }

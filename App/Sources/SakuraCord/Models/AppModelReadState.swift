@@ -1020,15 +1020,7 @@ extension AppModel {
                 guildID: guildID,
                 messageNotifications: .inherit
             )
-        // Keep an existing override in place, as Discord does: pinned
-        // channels with equal positions follow the override order.
-        if let index = settings.channelOverrides.firstIndex(where: { $0.channelID == channelID }) {
-            mutation(&settings.channelOverrides[index])
-        } else {
-            var override = ChannelNotificationOverride(channelID: channelID)
-            mutation(&override)
-            settings.channelOverrides.append(override)
-        }
+        settings.updateChannelOverride(channelID, mutation)
         applyNotificationSettings(settings)
         refreshUnreadPresentation()
     }

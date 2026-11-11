@@ -12,31 +12,40 @@ extension AppModel {
     /// A server's pinned channel IDs in its override order, which Discord uses
     /// to break position ties, with pending edits applied.
     func pinnedChannelIDs(in guildID: GuildID) -> [ChannelID] {
-        let overrides = readState.notificationSettings(guildID: guildID)?.channelOverrides ?? []
-        let pinned = overrides.filter { optimisticChannelPinnedByID[$0.channelID] ?? $0.isPinned }.map(\.channelID)
-        guard !optimisticChannelPinnedByID.isEmpty else { return pinned }
-        let listed = Set(overrides.map(\.channelID))
-        return pinned + optimisticChannelPinnedByID.filter { $0.value && !listed.contains($0.key) }.keys.sorted()
+        // Pending Browse Channels edits can unpin, so read the presented settings.
+        let overrides = presentedGuildChannelSettings(in: guildID).channelOverrides
+        let optimistic = optimisticChannelPinnedByID
+        guard !optimistic.isEmpty else { return overrides.filter(\.isPinned).map(\.channelID) }
+        let pinned = overrides.filter { optimistic[$0.channelID] ?? $0.isPinned }.map(\.channelID)
+        let added = optimistic.filter { id, isPinned in
+            isPinned && !overrides.contains { $0.channelID == id }
+        }
+        return pinned + added.keys.sorted()
+    }
+
+    /// The server's channel groups with its Pinned Channels section in front.
+    func pinnedChannelGroups(_ groups: [ChannelGroup], guildID: GuildID) -> [ChannelGroup] {
+        ChannelGroup.pinning(pinnedChannelIDs(in: guildID), in: groups, guildID: guildID, excluding: hiddenChannelIDs)
     }
 
     func toggleChannelPin(_ channel: Channel) {
         guard let guildID = channel.guildID else { return }
+        let channelID = channel.id
         let isPinned = !isChannelPinned(channel)
-        optimisticChannelPinnedByID[channel.id] = isPinned
+        optimisticChannelPinnedByID[channelID] = isPinned
 
-        if var mutation = channelPinMutationStates[channel.id] {
+        if var mutation = channelPinMutationStates[channelID] {
             mutation.desiredPinned = isPinned
             mutation.editedAt = .now
-            channelPinMutationStates[channel.id] = mutation
+            channelPinMutationStates[channelID] = mutation
             return
         }
-        channelPinMutationStates[channel.id] = ChannelPinMutationState(
+        channelPinMutationStates[channelID] = ChannelPinMutationState(
             guildID: guildID,
             confirmedPinned: !isPinned,
             desiredPinned: isPinned,
             editedAt: .now
         )
-        let channelID = channel.id
         let generation = channelNotificationMutationGeneration
         let session = accountSession()
         let activeProvider = session.provider

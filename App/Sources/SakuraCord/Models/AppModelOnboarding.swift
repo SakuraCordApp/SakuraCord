@@ -349,9 +349,7 @@ extension AppModel {
         guildID: GuildID?
     ) -> [ChannelGroup] {
         guard let guildID else { return groups }
-        let groups = ChannelGroup.pinning(
-            pinnedChannelIDs(in: guildID), in: groups, guildID: guildID, excluding: hiddenChannelIDs
-        )
+        let groups = pinnedChannelGroups(groups, guildID: guildID)
         let guide = onboarding.guides[guildID]?.configuration
         let resources = guide?.enabled == true ? Set(guide?.resourceChannels.map(\.channelID) ?? []) : []
         let settings = presentedGuildChannelSettings(in: guildID)

@@ -144,12 +144,7 @@ public extension MockChatProvider {
     func updateChannelPin(guildID: GuildID?, channelID: ChannelID, flags: UInt64) async throws {
         var settings = snapshot.notificationSettings.first { $0.guildID == guildID }
             ?? GuildNotificationSettings(guildID: guildID, messageNotifications: .inherit)
-        // Discord keeps an existing override's position in the list.
-        if let index = settings.channelOverrides.firstIndex(where: { $0.channelID == channelID }) {
-            settings.channelOverrides[index].flags = flags
-        } else {
-            settings.channelOverrides.append(ChannelNotificationOverride(channelID: channelID, flags: flags))
-        }
+        settings.updateChannelOverride(channelID) { $0.flags = flags }
         snapshot.notificationSettings.removeAll { $0.guildID == guildID }
         snapshot.notificationSettings.append(settings)
         continuation?.yield(.notificationSettingsChanged(settings))

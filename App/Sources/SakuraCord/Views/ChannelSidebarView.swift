@@ -557,10 +557,14 @@ nonisolated struct ChannelGroup: Identifiable, Equatable, Sendable {
             uniquingKeysWith: { first, _ in first }
         )
         var pinned: [(key: (Int, Int), channel: Channel)] = []
+        func isListedPin(_ channel: Channel) -> Bool {
+            order[channel.id] != nil && !hiddenIDs.contains(channel.id)
+        }
         let remaining = groups.compactMap { group -> ChannelGroup? in
+            guard group.channels.contains(where: isListedPin) else { return group }
             var group = group
             group.channels.removeAll { channel in
-                guard let rank = order[channel.id], !hiddenIDs.contains(channel.id) else { return false }
+                guard isListedPin(channel), let rank = order[channel.id] else { return false }
                 pinned.append(((channel.position + (channel.kind == .voice ? 10_000 : 0), rank), channel))
                 return true
             }
@@ -773,7 +777,7 @@ private struct ChannelGroupRows: View {
 
     private var categoryHeader: some View {
             VStack(spacing: 0) {
-                if group.categoryID == nil, let name = group.name {
+                if group.isPinnedSection, let name = group.name {
                     // Discord's Pinned Channels header neither collapses nor has a menu.
                     Text(name)
                         .foregroundStyle(Color.primary.opacity(0.5))
