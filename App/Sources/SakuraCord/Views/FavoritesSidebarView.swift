@@ -49,17 +49,6 @@ struct FavoritesSidebarView: View {
                 }
                 SidebarBottomScrollSpacer(height: bottomContentInset)
             }
-        } else {
-            // Settings load with the session; the rows wait like a server's.
-            VStack(alignment: .leading, spacing: InterfaceScale.metric(14)) {
-                ForEach(0 ..< 6, id: \.self) { index in
-                    SkeletonShape(cornerRadius: InterfaceScale.metric(4))
-                        .frame(width: InterfaceScale.metric(index.isMultiple(of: 2) ? 140 : 110), height: InterfaceScale.metric(12))
-                }
-            }
-            .padding(InterfaceScale.metric(18))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .accessibilityLabel("Loading Favorites")
         }
     }
 

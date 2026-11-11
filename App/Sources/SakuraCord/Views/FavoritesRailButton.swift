@@ -16,7 +16,6 @@ struct FavoritesRailButton: View {
                 ServerRailBadgedIcon(mentionCount: unread.mentions) {
                     Image(systemName: "star.fill")
                         .font(.interface(.title2))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
                         .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
                         .background(
                             isSelected || isHovering ? SakuraCordAccentColor.color : Color.secondary.opacity(0.16),
