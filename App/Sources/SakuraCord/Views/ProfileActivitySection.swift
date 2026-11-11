@@ -348,7 +348,6 @@ struct ProfileActivitySection: View {
     }
 
     private var resolvedRemoteArtworkURL: URL? {
-        if let override = remoteArtworkOverride { return override }
         if let largeImage = effectiveActivity?.largeImage {
             if largeImage.hasPrefix("spotify:") {
                 let hash = String(largeImage.dropFirst("spotify:".count))
@@ -369,12 +368,16 @@ struct ProfileActivitySection: View {
                 return URL(string: "https://cdn.discordapp.com/\(largeImage)")
             }
             if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
+                if largeImage.contains("393590f736eaf7d08120700c39b259d7"), let override = remoteArtworkOverride {
+                    return override
+                }
                 return URL(string: largeImage)
             }
             if let appID = effectiveActivity?.applicationID, !appID.isEmpty, largeImage.allSatisfy(\.isNumber) {
                 return URL(string: "https://cdn.discordapp.com/app-assets/\(appID)/\(largeImage).png")
             }
         }
+        if let override = remoteArtworkOverride { return override }
         if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
             if appID == GamePresenceMonitor.robloxAppID {
                 return URL(string: GamePresenceMonitor.robloxIconURL)
@@ -509,18 +512,34 @@ struct ProfileActivitySection: View {
             resolvedTrackURL = nil
             refreshArtwork()
             guard !Task.isCancelled else { return }
-            await resolveMissingMusicArtwork()
-            guard !Task.isCancelled else { return }
-            if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
-                let needsAssetResolution = effectiveActivity?.largeImage != nil && remoteArtworkOverride == nil
-                let needsAppIcon = resolvedRemoteArtworkURL == nil
-                if needsAssetResolution || needsAppIcon {
-                    if let url = await DiscordApplicationMetadataResolver.shared.resolveArtworkURL(
-                        applicationID: appID,
-                        assetKey: effectiveActivity?.largeImage
-                    ) {
+            if isMusic {
+                await resolveMissingMusicArtwork()
+            } else if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
+                let hasDirectArtwork = if let largeImage = effectiveActivity?.largeImage {
+                    largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") ||
+                    largeImage.hasPrefix("spotify:") || largeImage.hasPrefix("mp:") ||
+                    largeImage.hasPrefix("external/") || largeImage.hasPrefix("attachments/")
+                } else {
+                    false
+                }
+                if !hasDirectArtwork {
+                    let largeKey = effectiveActivity?.largeImage
+                    if let largeKey, !largeKey.allSatisfy(\.isNumber) {
                         guard !Task.isCancelled else { return }
-                        remoteArtworkOverride = url
+                        if let url = await DiscordApplicationMetadataResolver.shared.resolveArtworkURL(
+                            applicationID: appID,
+                            assetKey: largeKey
+                        ) {
+                            guard !Task.isCancelled else { return }
+                            remoteArtworkOverride = url
+                        }
+                    }
+                    if remoteArtworkOverride == nil, resolvedRemoteArtworkURL == nil {
+                        guard !Task.isCancelled else { return }
+                        if let iconURL = await DiscordApplicationMetadataResolver.shared.resolveIconURL(for: appID) {
+                            guard !Task.isCancelled else { return }
+                            remoteArtworkOverride = iconURL
+                        }
                     }
                 }
             }
@@ -600,7 +619,12 @@ struct ProfileActivitySection: View {
             spotifyTrackID: spotifyID
         )
         guard !Task.isCancelled else { return }
-        if resolvedRemoteArtworkURL == nil || effectiveActivity?.largeImage == "apple_music" {
+        let hasRealArtwork = if let largeImage = effectiveActivity?.largeImage {
+            !largeImage.isEmpty && !largeImage.contains("393590f736eaf7d08120700c39b259d7") && largeImage != "apple_music"
+        } else {
+            false
+        }
+        if !hasRealArtwork {
             if let artwork = resolved.artworkURL, let url = URL(string: artwork) {
                 remoteArtworkOverride = url
             }
@@ -613,7 +637,13 @@ struct ProfileActivitySection: View {
     @ViewBuilder
     private func artworkView(size: CGFloat) -> some View {
         let cornerRadius = InterfaceScale.metric(14)
-        if let url = resolvedRemoteArtworkURL {
+        if isMusic, isCurrentUser, let local = dynamicArtwork ?? resolvedArtworkImage {
+            Image(nsImage: local)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else if let url = resolvedRemoteArtworkURL {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case let .success(image):

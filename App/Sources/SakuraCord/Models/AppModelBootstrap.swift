@@ -340,7 +340,7 @@ extension AppModel {
             await coordinator.resendActivities()
         }
         await accountPersistence
-        guard canPublishBootstrap(for: account) else { return }
+        guard canPublishBootstrap(for: account), isAuthenticated || launchMode != .normal else { return }
         await completeBootstrapWorkspaceActivation(
             publishesSessionState: publishesSessionState,
             initialGuildID: initialGuildID,

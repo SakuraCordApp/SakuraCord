@@ -70,6 +70,9 @@ public actor DiscordApplicationMetadataResolver {
         guard !applicationID.isEmpty, applicationID.allSatisfy(\.isNumber) else { return nil }
 
         if let assetKey, !assetKey.isEmpty {
+            if assetKey.hasPrefix("http://") || assetKey.hasPrefix("https://") {
+                return URL(string: assetKey)
+            }
             if assetKey.allSatisfy(\.isNumber) {
                 return URL(string: "https://cdn.discordapp.com/app-assets/\(applicationID)/\(assetKey).png")
             }
@@ -77,6 +80,7 @@ public actor DiscordApplicationMetadataResolver {
             if let assetID = await resolveAssetID(applicationID: applicationID, assetName: assetKey) {
                 return URL(string: "https://cdn.discordapp.com/app-assets/\(applicationID)/\(assetID).png")
             }
+            return nil
         }
 
         return await resolveIconURL(for: applicationID)
