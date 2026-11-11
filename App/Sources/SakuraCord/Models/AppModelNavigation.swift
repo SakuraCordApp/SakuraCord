@@ -27,6 +27,12 @@ nonisolated enum ConversationNavigationTarget: Hashable, Sendable {
     case channel(ChannelID)
     case thread(ChannelID, fullWidth: Bool)
     case message(ChannelID, MessageID, fullWidthThread: Bool)
+
+    var channelID: ChannelID {
+        switch self {
+        case .channel(let id), .thread(let id, _), .message(let id, _, _): id
+        }
+    }
 }
 
 extension AppModel {
@@ -90,6 +96,8 @@ extension AppModel {
         operation: @escaping @MainActor (AppModel, AppModelAccountSession) async -> Void
     ) {
         cancelConversationNavigation()
+        // Following a link out of Favorites opens the conversation where it lives.
+        if let channelID = target?.channelID, !isFavorite(channelID) { setFavoritesPresented(false) }
         let account = accountSession()
         let task = startAccountChildTask(account: account) { model, account in
             // A task cancelled before it starts never opens a history transaction.
@@ -293,7 +301,6 @@ extension AppModel {
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
         onboarding.presentedGuildID = nil
-        leaveFavoritesUnlessFavorite(channelID)
         if let thread = sidebarThread(channelID) {
             openSidebarThread(thread, historyDestination: historyDestination)
             return
@@ -332,7 +339,6 @@ extension AppModel {
         fullWidthThread: Bool = false,
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
-        leaveFavoritesUnlessFavorite(channelID)
         if messageID == nil, knownRootChannel(channelID) != nil {
             navigate(to: channelID, historyDestination: historyDestination)
             return
@@ -516,7 +522,6 @@ extension AppModel {
         messageID: MessageID,
         nearest: Bool = false
     ) {
-        leaveFavoritesUnlessFavorite(channelID)
         let target = ConversationNavigationTarget.message(
             channelID, messageID, fullWidthThread: false
         )

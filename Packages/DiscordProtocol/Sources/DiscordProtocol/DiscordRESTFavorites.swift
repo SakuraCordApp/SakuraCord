@@ -15,8 +15,8 @@ extension DiscordRESTProvider {
             throw ChatProviderError.invalidRequest("Wait for your account settings to finish loading.")
         }
         var edit = edit
-        if case let .add(id, channelType, categoryID) = edit {
-            edit = .add(id, channelType: storedChannelType(id) ?? channelType, categoryID: categoryID)
+        if case let .add(id, channelType) = edit {
+            edit = .add(id, channelType: storedChannelType(id) ?? channelType)
         }
         var next = pendingFavorites ?? DiscordFavoritesProto.settings(from: favoritesMessage)
         next.apply(edit)
@@ -39,7 +39,11 @@ extension DiscordRESTProvider {
         favoritesMessage = stored
         // A pending edit stays presented; its save reconciles with this copy.
         guard pendingFavorites == nil else { return }
-        continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: stored)))
+        publishStoredFavorites()
+    }
+
+    private func publishStoredFavorites() {
+        continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: favoritesMessage ?? Data())))
     }
 
     /// The official client removes a deleted channel from Favorites itself.
@@ -75,13 +79,13 @@ extension DiscordRESTProvider {
                 if error is UserSettingsRejection { await reloadUserSettings() }
                 gatewayLogger.error("Could not save Favorites: \(error.localizedDescription, privacy: .public)")
                 pendingFavorites = nil
-                continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: favoritesMessage ?? Data())))
+                publishStoredFavorites()
                 continuation?.yield(.favoritesSaveFailed(reason: error.localizedDescription))
                 return
             }
             guard pendingFavorites == target else { continue }
             pendingFavorites = nil
-            continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: favoritesMessage ?? Data())))
+            publishStoredFavorites()
         }
     }
 

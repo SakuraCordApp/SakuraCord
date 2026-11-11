@@ -21,12 +21,12 @@ enum DiscordFavoritesProto {
 
     static func settings(from message: Data) -> FavoritesSettings {
         var settings = FavoritesSettings()
-        for field in fields(message) {
+        for field in ProtoReader.fields(message) {
             switch field.field {
             case 1:
                 if let entry = entry(from: field.payload ?? Data()) { settings.entries.append(entry.entry) }
             case 3:
-                settings.storedVisibility = fields(field.payload ?? Data()).last { $0.field == 1 }?.varint.map { $0 != 0 } ?? false
+                settings.storedVisibility = ProtoReader.fields(field.payload ?? Data()).last { $0.field == 1 }?.varint.map { $0 != 0 } ?? false
             default:
                 break
             }
@@ -39,7 +39,7 @@ enum DiscordFavoritesProto {
     static func message(for settings: FavoritesSettings, preserving stored: Data) -> Data {
         var storedValues: [ChannelID: [RawProtoField]] = [:]
         var otherFields: [RawProtoField] = []
-        for field in fields(stored) {
+        for field in ProtoReader.fields(stored) {
             if field.field == 1, let decoded = entry(from: field.payload ?? Data()) {
                 storedValues[decoded.entry.id] = decoded.unmodelled
             } else if field.field != 1, field.field != 3 {
@@ -48,8 +48,7 @@ enum DiscordFavoritesProto {
         }
         var result = Data()
         for entry in settings.entries {
-            var key = Data([0x09])
-            for offset in 0 ..< 8 { key.append(UInt8(truncatingIfNeeded: entry.id.rawValue >> UInt64(offset * 8))) }
+            let key = DiscordSettingsProto.protoFixed64Field(1, entry.id.rawValue)
             let value = entryValue(entry, unmodelled: storedValues[entry.id] ?? [])
             result.append(DiscordSettingsProto.protoLengthDelimitedField(1, key + DiscordSettingsProto.protoLengthDelimitedField(2, value)))
         }
@@ -70,10 +69,7 @@ enum DiscordFavoritesProto {
         if !entry.nickname.isEmpty { value.append(DiscordSettingsProto.protoStringField(1, entry.nickname)) }
         value.append(DiscordSettingsProto.protoVarintField(2, entry.isCategory ? 2 : 1))
         if entry.position > 0 { value.append(DiscordSettingsProto.protoVarintField(3, UInt64(entry.position))) }
-        if let parentID = entry.parentID {
-            value.append(0x21)
-            for offset in 0 ..< 8 { value.append(UInt8(truncatingIfNeeded: parentID.rawValue >> UInt64(offset * 8))) }
-        }
+        if let parentID = entry.parentID { value.append(DiscordSettingsProto.protoFixed64Field(4, parentID.rawValue)) }
         if let channelType = entry.channelType {
             value.append(DiscordSettingsProto.protoLengthDelimitedField(
                 5, channelType == 0 ? Data() : DiscordSettingsProto.protoVarintField(1, UInt64(channelType))
@@ -86,39 +82,25 @@ enum DiscordFavoritesProto {
     private static func entry(from mapEntry: Data) -> (entry: FavoritesSettings.Entry, unmodelled: [RawProtoField])? {
         var id: UInt64?
         var value = Data()
-        for field in fields(mapEntry) {
-            if field.field == 1 { id = fixed64(field) }
+        for field in ProtoReader.fields(mapEntry) {
+            if field.field == 1 { id = field.fixed64 }
             if field.field == 2 { value = field.payload ?? Data() }
         }
         guard let id else { return nil }
         var entry = FavoritesSettings.Entry(id: ChannelID(rawValue: id), position: 0)
         var unmodelled: [RawProtoField] = []
-        for field in fields(value) {
+        for field in ProtoReader.fields(value) {
             switch field.field {
             case 1: entry.nickname = String(bytes: field.payload ?? Data(), encoding: .utf8) ?? ""
             case 2: entry.isCategory = field.varint == 2
             case 3: entry.position = UInt32(truncatingIfNeeded: field.varint ?? 0)
-            case 4: entry.parentID = fixed64(field).flatMap { $0 == 0 ? nil : ChannelID(rawValue: $0) }
+            case 4: entry.parentID = field.fixed64.flatMap { $0 == 0 ? nil : ChannelID(rawValue: $0) }
             case 5:
                 entry.channelType = Int(truncatingIfNeeded: Int32(truncatingIfNeeded:
-                    fields(field.payload ?? Data()).last { $0.field == 1 }?.varint ?? 0))
+                    ProtoReader.fields(field.payload ?? Data()).last { $0.field == 1 }?.varint ?? 0))
             default: unmodelled.append(field)
             }
         }
         return (entry, unmodelled)
-    }
-
-    private static func fixed64(_ field: RawProtoField) -> UInt64? {
-        guard field.wireType == 1 else { return nil }
-        var reader = ProtoReader(data: field.raw)
-        _ = reader.readTag()
-        return reader.readFixed64()
-    }
-
-    private static func fields(_ data: Data) -> [RawProtoField] {
-        var reader = ProtoReader(data: data)
-        var result: [RawProtoField] = []
-        while let field = reader.readRawField() { result.append(field) }
-        return result
     }
 }

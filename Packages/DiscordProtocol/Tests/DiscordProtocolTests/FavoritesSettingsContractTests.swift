@@ -18,7 +18,7 @@ struct FavoritesSettingsContractTests {
 
         try await provider.updateFavorites(.remove(ChannelID(rawValue: 1_569_394_316_240_097_365)))
         await provider.favoritesSaveTask?.value
-        try await provider.updateFavorites(.add(ChannelID(rawValue: 1_466_495_335_391_297_617), channelType: 1, categoryID: nil))
+        try await provider.updateFavorites(.add(ChannelID(rawValue: 1_466_495_335_391_297_617), channelType: 1))
         await provider.favoritesSaveTask?.value
 
         #expect(FavoritesURLProtocol.requests.map(\.method) == ["PATCH", "PATCH"])

@@ -316,9 +316,7 @@ extension AppModel {
         // The approval can reach the applicant before the guild's GUILD_CREATE.
         startAccountChildTask(account: accountSession()) { model, account in
             guard let guild = try? await model.awaitJoinedGuild(guildID, account: account) else { return }
-            model.startConversationNavigation { model, account in
-                await model.activateGuild(guildID, account: account)
-            }
+            model.selectGuild(guildID)
             if guild.features.contains("GUILD_ONBOARDING") { model.openChannelsAndRoles(in: guildID) }
         }
     }

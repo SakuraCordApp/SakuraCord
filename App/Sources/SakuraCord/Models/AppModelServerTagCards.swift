@@ -156,8 +156,6 @@ extension AppModel {
     private func navigateToServerTagGuild(_ guildID: GuildID) {
         dismissContextualProfile()
         dismissExpandedProfile()
-        startConversationNavigation { model, account in
-            await model.activateGuild(guildID, account: account)
-        }
+        selectGuild(guildID)
     }
 }

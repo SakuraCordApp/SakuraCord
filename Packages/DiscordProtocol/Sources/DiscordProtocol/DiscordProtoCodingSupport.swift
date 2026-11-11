@@ -90,12 +90,29 @@ struct ProtoReader {
     }
 }
 
+extension ProtoReader {
+    static func fields(_ data: Data) -> [RawProtoField] {
+        var reader = ProtoReader(data: data)
+        var result: [RawProtoField] = []
+        while let field = reader.readRawField() { result.append(field) }
+        return result
+    }
+}
+
 struct RawProtoField {
     var field: Int
     var wireType: Int
     var payload: Data?
     var varint: UInt64?
     var raw: Data
+
+    /// The value of a fixed64 field, such as a snowflake map key.
+    var fixed64: UInt64? {
+        guard wireType == 1 else { return nil }
+        var reader = ProtoReader(data: raw)
+        _ = reader.readTag()
+        return reader.readFixed64()
+    }
 }
 
 struct LossyList<Element: Decodable>: Decodable {

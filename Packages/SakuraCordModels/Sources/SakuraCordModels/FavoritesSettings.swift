@@ -58,11 +58,6 @@ public struct FavoritesSettings: Equatable, Sendable {
     /// Without an explicit choice the server shows once anything is favourited.
     public var isEnabled: Bool { storedVisibility ?? !entries.isEmpty }
 
-    /// Full Nitro raises the channel limit from 3 to 200; categories don't count.
-    public static func channelLimit(premiumType: Int) -> Int {
-        premiumType == 2 ? maximumEntries : 3
-    }
-
     public func contains(_ id: ChannelID) -> Bool {
         entries.contains { $0.id == id && !$0.isCategory }
     }
@@ -74,16 +69,18 @@ public struct FavoritesSettings: Equatable, Sendable {
             .map(\.element)
     }
 
-    /// The limit an addition would exceed, if any.
+    /// The limit an addition would exceed, if any. Full Nitro raises the
+    /// channel limit from 3 to 200; categories don't count.
     public func limitBlockingAddition(premiumType: Int) -> Int? {
         if entries.count >= Self.maximumEntries { return Self.maximumEntries }
-        let limit = Self.channelLimit(premiumType: premiumType)
+        let limit = premiumType == 2 ? Self.maximumEntries : 3
         return entries.count(where: { !$0.isCategory }) >= limit ? limit : nil
     }
 
     /// Uncategorised favourites, then each category by position. A favourite
     /// whose category no longer exists is uncategorised.
     public var sections: [Section] {
+        let categories = categories
         let categoryIDs = Set(categories.map(\.id))
         let rows = entries.enumerated()
             .filter { !$0.element.isCategory }
@@ -98,7 +95,7 @@ public struct FavoritesSettings: Equatable, Sendable {
 
     public enum Edit: Equatable, Sendable {
         case setVisible(Bool)
-        case add(ChannelID, channelType: Int?, categoryID: ChannelID?)
+        case add(ChannelID, channelType: Int)
         case remove(ChannelID)
         case rename(ChannelID, nickname: String)
         case createCategory(ChannelID, name: String)
@@ -110,11 +107,11 @@ public struct FavoritesSettings: Equatable, Sendable {
         switch edit {
         case .setVisible(let isVisible):
             storedVisibility = isVisible
-        case .add(let id, let channelType, let categoryID):
+        case .add(let id, let channelType):
             guard !contains(id) else { return }
             // The first favourite reveals a hidden Favorites server.
             if !isEnabled { storedVisibility = true }
-            entries.append(Entry(id: id, position: nextPosition, parentID: categoryID, channelType: channelType))
+            entries.append(Entry(id: id, position: nextPosition, channelType: channelType))
         case .remove(let id):
             guard let removed = entries.first(where: { $0.id == id }) else { return }
             entries.removeAll { $0.id == id }

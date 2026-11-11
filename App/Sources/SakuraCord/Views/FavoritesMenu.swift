@@ -5,7 +5,7 @@ import SakuraCordModels
 @MainActor
 enum FavoritesMenu {
     /// Outside Favorites: Add to Favorites, or Remove for a favourite.
-    static func toggleItems(for channelID: ChannelID, channelType: Int?, model: AppModel) -> [NSMenuItem] {
+    static func toggleItems(for channelID: ChannelID, channelType: Int, model: AppModel) -> [NSMenuItem] {
         guard model.favorites.settings != nil else { return [] }
         let isFavorite = model.isFavorite(channelID)
         return [item(isFavorite ? "Remove from Favorites" : "Add to Favorites",
@@ -19,6 +19,7 @@ enum FavoritesMenu {
         var items: [NSMenuItem] = []
         if let guildID = favorite.channel.guildID {
             items.append(item("Go to Server", systemImage: "arrow.uturn.right") {
+                // Leaves Favorites even though the destination is a favourite.
                 model.setFavoritesPresented(false)
                 model.navigate(to: guildID, linkedChannelID: favorite.id)
             })

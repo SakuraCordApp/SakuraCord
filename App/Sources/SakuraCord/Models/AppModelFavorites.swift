@@ -17,7 +17,7 @@ final class FavoritesStore {
     var isCreatingCategory = false
     @ObservationIgnored var lastChannelID: ChannelID?
     /// Favourited threads the session's active-thread lists don't carry, such
-    /// as archived ones, fetched once each when Favorites opens.
+    /// as archived ones, fetched when Favorites opens.
     var threads: [ChannelID: MessageThreadSummary] = [:]
     @ObservationIgnored var requestedThreadIDs: Set<ChannelID> = []
 
@@ -58,12 +58,14 @@ extension AppModel {
     /// Hidden elsewhere, an open Favorites server stays until it is left, as
     /// in Discord. Removing the open favourite opens the one above it.
     private func presentFavorites(_ settings: FavoritesSettings?) {
+        guard favorites.isPresented, let settings, let current = presentedFavoriteChannelID, !settings.contains(current) else {
+            favorites.settings = settings
+            return
+        }
         let previous = favoriteConversations()
         favorites.settings = settings
-        guard favorites.isPresented, let settings, let current = presentedFavoriteChannelID,
-              !settings.contains(current), let index = previous.firstIndex(where: { $0.id == current })
-        else { return }
-        let remaining = favoriteConversations(in: settings)
+        guard let index = previous.firstIndex(where: { $0.id == current }) else { return }
+        let remaining = favoriteConversations()
         let above = previous[..<index].last { settings.contains($0.id) }
         openFavorite(remaining.first { $0.id == above?.id } ?? remaining.first)
     }
@@ -88,8 +90,8 @@ extension AppModel {
         isThreadFullWidth ? openThread?.id ?? selectedChannelID : selectedChannelID
     }
 
-    func favoriteConversations(in settings: FavoritesSettings? = nil) -> [FavoriteConversation] {
-        (settings ?? favorites.settings)?.sections.flatMap(\.entries).compactMap(favoriteConversation) ?? []
+    func favoriteConversations() -> [FavoriteConversation] {
+        favorites.settings?.sections.flatMap(\.entries).compactMap(favoriteConversation) ?? []
     }
 
     /// Unknown or hidden channels stay stored but unlisted, like Discord's
@@ -129,9 +131,8 @@ extension AppModel {
             favorites.threads[id] = nil
             favorites.requestedThreadIDs.remove(id)
         }
-        let threadTypes: Set<Int> = [10, 11, 12]
         let missing = (favorites.settings?.entries ?? []).filter {
-            $0.channelType.map(threadTypes.contains) == true && knownRootChannel($0.id) == nil
+            (10 ... 12).contains($0.channelType ?? 0) && knownRootChannel($0.id) == nil
                 && sidebarThread($0.id) == nil && favorites.requestedThreadIDs.insert($0.id).inserted
         }
         guard !missing.isEmpty else { return }
@@ -170,25 +171,20 @@ extension AppModel {
         refreshServerRailSelection()
     }
 
-    /// Following a link out of Favorites opens the conversation where it lives.
-    func leaveFavoritesUnlessFavorite(_ channelID: ChannelID) {
-        if !isFavorite(channelID) { setFavoritesPresented(false) }
-    }
-
     func isFavorite(_ channelID: ChannelID) -> Bool {
         favorites.settings?.contains(channelID) ?? false
     }
 
     /// Adds or removes a channel, DM or thread. Like Discord, an addition over
     /// the account's limit shows the notice and sends nothing.
-    func toggleFavorite(_ channelID: ChannelID, channelType: Int?) {
+    func toggleFavorite(_ channelID: ChannelID, channelType: Int) {
         guard let settings = favorites.settings else { return }
         if settings.contains(channelID) {
             updateFavorites(.remove(channelID))
         } else if let limit = settings.limitBlockingAddition(premiumType: currentUser?.premiumType ?? 0) {
             favorites.limitReached = limit
         } else {
-            updateFavorites(.add(channelID, channelType: channelType, categoryID: nil))
+            updateFavorites(.add(channelID, channelType: channelType))
         }
     }
 
@@ -196,8 +192,7 @@ extension AppModel {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, (favorites.settings?.entries.count ?? .max) < FavoritesSettings.maximumEntries else { return }
         // Discord names a new category with a snowflake for the current time.
-        let milliseconds = UInt64(Date.now.timeIntervalSince1970 * 1_000) - 1_420_070_400_000
-        updateFavorites(.createCategory(ChannelID(rawValue: milliseconds << 22), name: name))
+        updateFavorites(.createCategory(ChannelID(timestamp: .now), name: name))
     }
 
     func setFavoritesEnabled(_ isEnabled: Bool) {
