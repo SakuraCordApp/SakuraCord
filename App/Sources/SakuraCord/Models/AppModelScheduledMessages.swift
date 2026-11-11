@@ -117,11 +117,9 @@ extension AppModel {
         in destination: MessageComposerDestination,
         attachments: () async -> [ForumPostAttachment]? = { [] }
     ) async -> Bool {
-        guard var (outgoing, reply) = scheduledDraft(content: content, stickerIDs: stickerIDs, in: destination),
-              let files = await attachments()
+        guard let (outgoing, reply) = scheduledDraft(content: content, stickerIDs: stickerIDs, in: destination),
+              await submitSchedule(outgoing, attachments: attachments)
         else { return false }
-        outgoing.attachments = files
-        guard await submitSchedule(outgoing) else { return false }
         clearReply(reply, in: destination)
         return true
     }
@@ -155,7 +153,13 @@ extension AppModel {
     }
 
     /// One create at a time per conversation; returns whether Discord accepted it.
-    private func submitSchedule(_ outgoing: SendMessageDraft) async -> Bool {
+    /// Files still to be fetched come after the conversation is marked, so
+    /// nothing else takes its send time meanwhile.
+    private func submitSchedule(
+        _ outgoing: SendMessageDraft,
+        attachments: () async -> [ForumPostAttachment]? = { [] }
+    ) async -> Bool {
+        var outgoing = outgoing
         let channelID = outgoing.channelID
         guard let date = scheduledMessages.sendDates[channelID], scheduledMessages.submissions[channelID] == nil
         else { return false }
@@ -165,6 +169,8 @@ extension AppModel {
             if scheduledMessages.submissions[channelID] == submission { scheduledMessages.submissions[channelID] = nil }
         }
         let session = accountSession()
+        guard let files = await attachments(), isCurrentAccountSession(session) else { return false }
+        outgoing.attachments += files
         do {
             let scheduled = try await session.provider.scheduleMessage(outgoing, at: date)
             guard isCurrentAccountSession(session) else { return false }
