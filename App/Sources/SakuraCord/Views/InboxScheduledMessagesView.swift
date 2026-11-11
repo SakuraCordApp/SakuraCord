@@ -118,6 +118,14 @@ private struct ScheduledMessageCard: View {
                 .lineLimit(4)
                 .textSelection(.enabled)
         }
+        if !message.stickers.isEmpty {
+            HStack(spacing: InterfaceScale.metric(8)) {
+                ForEach(message.stickers) { sticker in
+                    StickerPreview(sticker: sticker)
+                        .frame(width: InterfaceScale.metric(80), height: InterfaceScale.metric(80))
+                }
+            }
+        }
         if !details.isEmpty {
             HStack(spacing: InterfaceScale.metric(10)) {
                 ForEach(details, id: \.text) { detail in

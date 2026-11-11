@@ -66,6 +66,7 @@ struct ScheduledMessageContractTests {
         #expect(message.flags == .suppressNotifications)
         #expect(message.state == .scheduled)
         #expect(message.attachmentCount == 1)
+        #expect(message.stickers.map(\.id) == ["77"])
     }
 
     @Test func `the scheduled message limit is its own error`() async throws {
@@ -170,7 +171,8 @@ private final class ScheduledURLProtocol: URLProtocol, @unchecked Sendable {
         "channel_id":"41","flags":4096,"allowed_mentions":null,"poll":null,"sticker_ids":[],"forward_only":null},
       "send_at_timestamp":"2026-11-11T08:00:00+00:00","state":0,
       "attachment_uploads":[{"filename":"a.png","uploaded_filename":"x/a.png","description":null,"title":null}],
-      "message_preview":{"id":"70","type":19,"content":"later","channel_id":"41"}
+      "message_preview":{"id":"70","type":19,"content":"later","channel_id":"41",
+        "sticker_items":[{"id":"77","name":"Wave","format_type":1}]}
     }
     """#
 

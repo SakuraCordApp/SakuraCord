@@ -333,7 +333,8 @@ where it would help) and a way to manage scheduled messages.
 The Inbox's Scheduled tab (tab `7` in the synced Inbox settings) reads
 `GET /users/@me/scheduled-messages` each time it is shown; no Gateway event
 reports scheduled messages, so another client's changes appear on the next
-read. Rows list the latest send time first. Edit Schedule Time sends
+read. Rows list the latest send time first; a sticker appears only in the
+object's `message_preview.sticker_items`. Edit Schedule Time sends
 `PATCH …/{id}` with only `scheduled_timestamp`; Edit Message sends only
 `content` and the message's existing `flags`, and saving it without text
 cancels the message instead, even one with files; Send Now is a bodiless

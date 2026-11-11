@@ -23,10 +23,12 @@ public struct ScheduledMessage: Identifiable, Equatable, Sendable {
     public var replyTo: MessageID?
     public var state: State
     public var attachmentCount: Int
+    public var stickers: [MessageSticker]
 
     public init(
         id: ScheduledMessageID, channelID: ChannelID, sendAt: Date, content: String,
-        flags: MessageFlags = [], replyTo: MessageID? = nil, state: State = .scheduled, attachmentCount: Int = 0
+        flags: MessageFlags = [], replyTo: MessageID? = nil, state: State = .scheduled, attachmentCount: Int = 0,
+        stickers: [MessageSticker] = []
     ) {
         self.id = id
         self.channelID = channelID
@@ -36,6 +38,7 @@ public struct ScheduledMessage: Identifiable, Equatable, Sendable {
         self.replyTo = replyTo
         self.state = state
         self.attachmentCount = attachmentCount
+        self.stickers = stickers
     }
 }
 
