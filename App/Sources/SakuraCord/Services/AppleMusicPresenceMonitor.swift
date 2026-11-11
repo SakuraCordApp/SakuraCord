@@ -360,13 +360,6 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         }
     }
 
-    private static func runOnMainThread<T: Sendable>(_ block: @escaping @Sendable () -> T?) -> T? {
-        if Thread.isMainThread {
-            return block()
-        }
-        return DispatchQueue.main.sync { block() }
-    }
-
     private static func runOsaScript(source: String, timeoutSeconds: Double = 1.5) -> String? {
         #if os(macOS)
         let process = Process()
@@ -509,29 +502,29 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         #if os(macOS)
         guard NSClassFromString("XCTest") == nil else { return nil }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return nil }
+        let scriptSource = """
+        tell application "Music"
+            with timeout of 2 seconds
+                if it is running then
+                    tell current track
+                        if (count of artworks) > 0 then
+                            return raw data of artwork 1
+                        end if
+                    end tell
+                end if
+                return missing value
+            end timeout
+        end tell
+        """
+        var errorInfo: NSDictionary?
+        guard let script = NSAppleScript(source: scriptSource) else { return nil }
+        let descriptor = script.executeAndReturnError(&errorInfo)
+        let data = descriptor.data
+        guard !data.isEmpty, NSImage(data: data) != nil else { return nil }
+        return data
+        #else
+        return nil
         #endif
-        return runOnMainThread {
-            let scriptSource = """
-            tell application "Music"
-                with timeout of 2 seconds
-                    if it is running then
-                        tell current track
-                            if (count of artworks) > 0 then
-                                return raw data of artwork 1
-                            end if
-                        end tell
-                    end if
-                    return missing value
-                end timeout
-            end tell
-            """
-            var errorInfo: NSDictionary?
-            guard let script = NSAppleScript(source: scriptSource) else { return nil }
-            let descriptor = script.executeAndReturnError(&errorInfo)
-            let data = descriptor.data
-            guard !data.isEmpty, NSImage(data: data) != nil else { return nil }
-            return data
-        }
     }
 
     public static func updateArtworkCache() {
@@ -906,9 +899,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
 
             if trackInfo.appName.caseInsensitiveCompare("Spotify") != .orderedSame {
-                await MainActor.run {
-                    Self.updateArtworkCache()
-                }
+                Self.updateArtworkCache()
             }
 
             guard self.isCurrentArtworkGeneration(artworkGen),

@@ -31,7 +31,7 @@ nonisolated extension SettingsCatalog {
         control(
             .localDiscordRPC, page: .privacySafety,
             section: .privacyDiscordActivity, label: "Allow Local Discord RPC & Game Activity",
-            help: "Allow local apps and games on your Mac to connect via Discord IPC socket, and share detected game activities like Roblox.",
+            help: "Allow local apps and games on your Mac to connect via Discord IPC socket, and share detected game activities like Roblox (including detection without an IPC connection).",
             keywords: ["rpc", "ipc", "socket", "games", "roblox", "rich presence"],
             scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
         ),

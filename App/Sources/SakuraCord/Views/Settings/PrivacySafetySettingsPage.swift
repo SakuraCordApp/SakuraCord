@@ -326,7 +326,7 @@ private struct PrivacyDiscordActivitySection: View {
                 .tint(SakuraCordAccentColor.color)
                 .disabled(!value.sharesActivity)
                 .settingsControlAnchor(.appleMusicPresence, state: state)
-            Toggle("Allow local apps & games to share activity (Discord RPC, Roblox)", isOn: $value.allowsLocalRPC)
+            Toggle("Allow local apps & games to share activity (Discord RPC, Roblox detection without IPC)", isOn: $value.allowsLocalRPC)
                 .tint(SakuraCordAccentColor.color)
                 .disabled(!value.sharesActivity)
                 .settingsControlAnchor(.localDiscordRPC, state: state)
