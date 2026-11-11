@@ -57,20 +57,26 @@ extension AppModel {
     }
 
     /// Applies a remove, rename or move of a shown local favourite; false
-    /// for anything Discord owns.
+    /// for anything Discord owns, which Discord's entry then receives.
     func applyLocalFavoriteEdit(_ edit: FavoritesSettings.Edit) -> Bool {
         switch edit {
+        case .remove(let id) where favorites.settings?.contains(id) == true:
+            // Removing Discord's favourite also removes a local copy it hides.
+            if favorites.localEntries.contains(where: { $0.id == id }) {
+                changeLocalFavorites { $0.removeAll { $0.id == id } }
+            }
+            return false
         case .remove(let id):
-            changeLocalFavorite(id) { entries, index in entries.remove(at: index) }
+            return changeLocalFavorite(id) { entries, index in entries.remove(at: index) }
         case .rename(let id, let nickname):
-            changeLocalFavorite(id) { entries, index in entries[index].nickname = nickname }
+            return changeLocalFavorite(id) { entries, index in entries[index].nickname = nickname }
         case .move(let id, let categoryID):
-            changeLocalFavorite(id) { [position = nextLocalFavoritePosition] entries, index in
+            return changeLocalFavorite(id) { [position = nextLocalFavoritePosition] entries, index in
                 entries[index].parentID = categoryID
                 entries[index].position = position
             }
         default:
-            false
+            return false
         }
     }
 
@@ -81,7 +87,7 @@ extension AppModel {
     private func changeLocalFavorite(
         _ id: ChannelID, _ change: (inout [FavoritesSettings.Entry], Int) -> Void
     ) -> Bool {
-        guard featuresSettings.unlimitedFavorites,
+        guard featuresSettings.unlimitedFavorites, favorites.settings?.contains(id) != true,
               let index = favorites.localEntries.firstIndex(where: { $0.id == id })
         else { return false }
         changeLocalFavorites { change(&$0, index) }

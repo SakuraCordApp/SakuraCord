@@ -362,7 +362,9 @@ authoritative: remote edits apply to the synced part, a local favourite that
 Discord confirms carrying becomes synced and leaves the local list (never on an
 edit still awaiting Discord's answer, so a rejected save loses nothing), and a synced
 favourite removed elsewhere is not restored. Removing a synced favourite does
-not promote a local one, so every Discord write follows a user action. Turning
+not promote a local one, so every Discord write follows a user action. Edits
+always reach the entry shown, Discord's when it carries the favourite, and
+removing a shown favourite also removes a local copy it hides. Turning
 the option off hides local favourites without deleting or reconciling them;
 turning it on, or loading the account, reconciles them with Discord's list.
 Signing out or switching accounts clears them from memory before the next
