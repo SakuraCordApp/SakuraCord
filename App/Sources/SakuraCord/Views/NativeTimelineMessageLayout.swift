@@ -20,7 +20,10 @@ extension NativeTimelineRowLayout {
         private var translationPresentation: NativeTimelineTranslationPresentation?
         private var usesBubbles = false
         private var isOutgoingBubble = false
-        private var horizontalInset: CGFloat { MessageRowLayoutMetrics.horizontalInset }
+        // The narrow search sidebar keeps less of its width as margin.
+        private var horizontalInset: CGFloat {
+            searchContext == nil ? MessageRowLayoutMetrics.horizontalInset : InterfaceScale.metric(12)
+        }
         private var contentX: CGFloat = 0
         private var contentWidth: CGFloat = 0
         private var ordinaryContentWidth: CGFloat = 0
