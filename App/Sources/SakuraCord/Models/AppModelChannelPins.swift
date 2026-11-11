@@ -66,8 +66,10 @@ extension AppModel {
                 }
 
                 let sentValue = mutation.desiredPinned
-                let override = self.readState.notificationOverride(channelID: channelID, guildID: mutation.guildID)
-                    ?? ChannelNotificationOverride(channelID: channelID)
+                // Build on pending Browse Channels edits too, so this save
+                // never reverts an opt-in or opt-out made meanwhile.
+                let override = self.presentedGuildChannelSettings(in: mutation.guildID).channelOverrides
+                    .first { $0.channelID == channelID } ?? ChannelNotificationOverride(channelID: channelID)
                 // Pinning also opts the channel in, as Discord does, so Browse
                 // Channels keeps it listed; unpinning leaves that choice alone.
                 let flags = sentValue
