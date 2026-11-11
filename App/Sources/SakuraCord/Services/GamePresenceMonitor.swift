@@ -19,6 +19,7 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
 
     private static let iconLock = NSLock()
     nonisolated(unsafe) private static var _cachedRobloxIconData: Data?
+    nonisolated(unsafe) private static var _cachedAthasIconData: Data?
 
     public static var currentRobloxIconData: Data? {
         get {
@@ -29,6 +30,19 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         set {
             iconLock.lock()
             _cachedRobloxIconData = newValue
+            iconLock.unlock()
+        }
+    }
+
+    public static var currentAthasIconData: Data? {
+        get {
+            iconLock.lock()
+            defer { iconLock.unlock() }
+            return _cachedAthasIconData
+        }
+        set {
+            iconLock.lock()
+            _cachedAthasIconData = newValue
             iconLock.unlock()
         }
     }
@@ -48,6 +62,26 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         }
         if let bundlePath = app.bundleURL?.path.lowercased(),
            bundlePath.contains("roblox") {
+            return true
+        }
+        return false
+    }
+
+    public static func isAthasApp(_ app: NSRunningApplication) -> Bool {
+        if let bundleID = app.bundleIdentifier?.lowercased() {
+            if bundleID == "com.code.athas" {
+                return true
+            }
+            if bundleID.starts(with: "com.apple.") {
+                return false
+            }
+        }
+        if let bundleURL = app.bundleURL?.lastPathComponent.lowercased(),
+           bundleURL == "athas.app" {
+            return true
+        }
+        if let localizedName = app.localizedName?.lowercased(),
+           localizedName == "athas" {
             return true
         }
         return false
@@ -119,8 +153,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             #endif
 
             Self.currentRobloxIconData = nil
+            Self.currentAthasIconData = nil
             Task { [coordinator] in
                 await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
+                await coordinator.clearActivity(for: .custom(sourceID: "app:athas"))
             }
             logger.info("Game presence monitor stopped.")
         }
@@ -140,13 +176,22 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
     public func checkRunningGames() {
         #if os(macOS)
         let running = NSWorkspace.shared.runningApplications
-        if let first = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
-            publishRobloxActivity(app: first)
-            return
+
+        if let roblox = running.first(where: { !$0.isTerminated && Self.isRobloxApp($0) }) {
+            publishRobloxActivity(app: roblox)
         } else {
             Self.currentRobloxIconData = nil
             Task { [coordinator] in
                 await coordinator.clearActivity(for: .custom(sourceID: "game:roblox"))
+            }
+        }
+
+        if let athas = running.first(where: { !$0.isTerminated && Self.isAthasApp($0) }) {
+            publishAthasActivity(app: athas)
+        } else {
+            Self.currentAthasIconData = nil
+            Task { [coordinator] in
+                await coordinator.clearActivity(for: .custom(sourceID: "app:athas"))
             }
         }
         #endif
@@ -170,6 +215,27 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
         )
         Task { [coordinator] in
             await coordinator.setActivity(payload, for: .custom(sourceID: "game:roblox"))
+        }
+    }
+
+    private func publishAthasActivity(app: NSRunningApplication? = nil) {
+        let startTimeMs = Int64((app?.launchDate ?? Date()).timeIntervalSince1970 * 1000)
+        if let icon = app?.icon, let tiff = icon.tiffRepresentation {
+            Self.currentAthasIconData = tiff
+        }
+        let payload = OutgoingActivityPayload(
+            name: "Athas",
+            type: .playing,
+            details: nil,
+            timestamps: ActivityTimestamps(start: startTimeMs, end: nil),
+            assets: ActivityAssets(
+                largeImage: "athas",
+                largeText: "Athas"
+            ),
+            applicationId: nil
+        )
+        Task { [coordinator] in
+            await coordinator.setActivity(payload, for: .custom(sourceID: "app:athas"))
         }
     }
 }

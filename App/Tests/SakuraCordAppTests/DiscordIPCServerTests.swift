@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 @testable import DiscordProtocol
 import Foundation
@@ -565,5 +566,49 @@ struct DiscordIPCServerTests {
         let published = try #require(activities.values.first)
         #expect(published.name == "Modrinth")
         #expect(published.applicationId == "1123683254248148992")
+    }
+
+    @Test func `activity coordinator permits app prefix under local rpc preferences`() async throws {
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(
+            provider: mockProvider,
+            preferences: ActivityCoordinatorPreferences(
+                isActivitySharingEnabled: true,
+                isAppleMusicPresenceEnabled: false,
+                isLocalRPCEnabled: true
+            )
+        )
+        #expect(await coordinator.isSourcePermitted(.custom(sourceID: "app:athas")))
+        #expect(await coordinator.isSourcePermitted(.custom(sourceID: "game:roblox")))
+
+        await coordinator.updatePreferences(
+            ActivityCoordinatorPreferences(
+                isActivitySharingEnabled: true,
+                isAppleMusicPresenceEnabled: false,
+                isLocalRPCEnabled: false
+            )
+        )
+        #expect(!(await coordinator.isSourcePermitted(.custom(sourceID: "app:athas"))))
+        #expect(!(await coordinator.isSourcePermitted(.custom(sourceID: "game:roblox"))))
+    }
+
+    @Test func `game presence monitor checks athas app when present`() async throws {
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let monitor = GamePresenceMonitor(coordinator: coordinator)
+
+        let running = NSWorkspace.shared.runningApplications
+        if let athas = running.first(where: { !$0.isTerminated && GamePresenceMonitor.isAthasApp($0) }) {
+            #expect(athas.bundleIdentifier == "com.code.athas" || athas.localizedName == "Athas")
+            monitor.checkRunningGames()
+            let published = await eventually {
+                let acts = await mockProvider.currentActivities()
+                return acts["custom:app:athas"] != nil
+            }
+            #expect(published)
+            let acts = await mockProvider.currentActivities()
+            #expect(acts["custom:app:athas"]?.name == "Athas")
+            #expect(GamePresenceMonitor.currentAthasIconData != nil)
+        }
     }
 }

@@ -100,7 +100,7 @@ public actor ActivityCoordinator {
         case .localRPC:
             return preferences.isLocalRPCEnabled
         case .custom(let sourceID):
-            if sourceID.hasPrefix("game:") {
+            if sourceID.hasPrefix("game:") || sourceID.hasPrefix("app:") {
                 return preferences.isLocalRPCEnabled
             }
             return true

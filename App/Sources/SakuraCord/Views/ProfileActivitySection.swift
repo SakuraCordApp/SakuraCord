@@ -186,6 +186,21 @@ struct ProfileActivitySection: View {
         activityType == 2 || member.isListeningToMusic
     }
 
+    private var isSpotifyMusicActivity: Bool {
+        if let name = effectiveActivity?.name {
+            if name.caseInsensitiveCompare("Spotify") == .orderedSame {
+                return true
+            }
+            if name.caseInsensitiveCompare("Apple Music") == .orderedSame {
+                return false
+            }
+        }
+        if let largeImage = effectiveActivity?.largeImage, largeImage.hasPrefix("spotify:") {
+            return true
+        }
+        return false
+    }
+
     private var cardCornerRadius: CGFloat {
         InterfaceScale.metric(18)
     }
@@ -198,16 +213,16 @@ struct ProfileActivitySection: View {
                 return "Listening to \(name.isEmpty ? "Music" : name)"
             case 1:
                 let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return name.isEmpty ? "Streaming" : "Streaming \(name)"
+                return "Streaming \(name.isEmpty ? "Content" : name)"
             case 3:
                 let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return name.isEmpty ? "Watching" : "Watching \(name)"
+                return "Watching \(name.isEmpty ? "Content" : name)"
             case 5:
                 let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return "Competing in \(name.isEmpty ? "Game" : name)"
+                return "Competing in \(name.isEmpty ? "Event" : name)"
             default:
                 let name = activity.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return name.isEmpty ? "Playing a game" : "Playing \(name)"
+                return "Playing \(name.isEmpty ? "Game" : name)"
             }
         }
         if member.isListeningToMusic {
@@ -260,8 +275,7 @@ struct ProfileActivitySection: View {
             }
             return nil
         }
-        if let state = effectiveActivity?.state, !state.isEmpty,
-           state != primaryText, state != secondaryText {
+        if let state = effectiveActivity?.state, !state.isEmpty, state != primaryText, state != secondaryText {
             return state
         }
         return nil
@@ -297,6 +311,17 @@ struct ProfileActivitySection: View {
         }
         if isMusic, isCurrentUser {
             if let data = AppleMusicPresenceMonitor.currentArtworkData, let img = NSImage(data: data) {
+                return img
+            }
+        }
+        let lowerName = (effectiveActivity?.name ?? "").lowercased()
+        if lowerName.contains("athas") {
+            if let data = GamePresenceMonitor.currentAthasIconData, let img = NSImage(data: data) {
+                return img
+            }
+        }
+        if lowerName.contains("roblox") {
+            if let data = GamePresenceMonitor.currentRobloxIconData, let img = NSImage(data: data) {
                 return img
             }
         }
@@ -338,8 +363,13 @@ struct ProfileActivitySection: View {
             if let iconHash = DiscordIPCServer.cachedAppIcon(for: appID) {
                 return URL(string: "https://cdn.discordapp.com/app-icons/\(appID)/\(iconHash).png")
             }
-        } else if let lowerName = effectiveActivity?.name.lowercased(), lowerName.contains("roblox") {
-            return URL(string: GamePresenceMonitor.robloxIconURL)
+        } else if let lowerName = effectiveActivity?.name.lowercased() {
+            if lowerName.contains("roblox") {
+                return URL(string: GamePresenceMonitor.robloxIconURL)
+            }
+            if lowerName.contains("athas") {
+                return URL(string: "https://github.com/athasdev.png")
+            }
         }
         return nil
     }
@@ -352,8 +382,7 @@ struct ProfileActivitySection: View {
             if let resolved = resolvedTrackURL {
                 return resolved
             }
-            let appName = effectiveActivity?.name ?? ""
-            let isSpotify = appName.caseInsensitiveCompare("Spotify") == .orderedSame
+            let isSpotify = isSpotifyMusicActivity
             let query = [primaryText, secondaryText].compactMap { $0 }.joined(separator: " ")
             let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             if isSpotify {
@@ -370,6 +399,9 @@ struct ProfileActivitySection: View {
         }
         let lowerName = (effectiveActivity?.name ?? "").lowercased()
         let lowerDetails = (effectiveActivity?.details ?? "").lowercased()
+        if lowerName.contains("athas") || lowerDetails.contains("athas") {
+            return URL(string: "https://github.com/athasdev/athas")
+        }
         if lowerName.contains("roblox") || lowerDetails.contains("roblox") {
             return URL(string: "https://www.roblox.com")
         }
@@ -384,10 +416,13 @@ struct ProfileActivitySection: View {
 
     private var destinationHelpText: String {
         if isMusic {
-            let appName = effectiveActivity?.name ?? (member.isListeningToMusic ? "Spotify" : "Apple Music")
+            let appName = effectiveActivity?.name ?? (isSpotifyMusicActivity ? "Spotify" : "Apple Music")
             return "Play in \(appName)"
         }
         let lowerName = (effectiveActivity?.name ?? "").lowercased()
+        if lowerName.contains("athas") {
+            return "Open Athas"
+        }
         if lowerName.contains("roblox") {
             return "Open Roblox"
         }
@@ -432,10 +467,13 @@ struct ProfileActivitySection: View {
         }
         .onTapGesture {
             if isMusic, isCurrentUser {
-                let appName = effectiveActivity?.name ?? ""
-                if appName.caseInsensitiveCompare("Apple Music") == .orderedSame || appName.isEmpty {
+                if !isSpotifyMusicActivity {
                     if let musicApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.Music" }) {
-                        musicApp.activate(options: .activateIgnoringOtherApps)
+                        musicApp.activate()
+                    }
+                } else {
+                    if let spotifyApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.spotify.client" }) {
+                        spotifyApp.activate()
                     }
                 }
             }
@@ -518,8 +556,7 @@ struct ProfileActivitySection: View {
 
     private func resolveMissingMusicArtwork() async {
         guard isMusic else { return }
-        let appName = effectiveActivity?.name ?? ""
-        let service = appName.caseInsensitiveCompare("Spotify") == .orderedSame ? "Spotify" : "Apple Music"
+        let service = isSpotifyMusicActivity ? "Spotify" : "Apple Music"
         let spotifyID = service == "Spotify" ? effectiveActivity?.largeText : nil
         let resolved = await MusicArtworkResolver.shared.resolveMusic(
             service: service,
@@ -542,21 +579,13 @@ struct ProfileActivitySection: View {
     @ViewBuilder
     private func artworkView(size: CGFloat) -> some View {
         let cornerRadius = InterfaceScale.metric(14)
-        if let remoteURL = resolvedRemoteArtworkURL {
-            AsyncImage(url: remoteURL) { phase in
+        if let url = resolvedRemoteArtworkURL {
+            AsyncImage(url: url) { phase in
                 switch phase {
-                case .success(let image):
+                case let .success(image):
                     image
                         .resizable()
                         .scaledToFill()
-                case .failure:
-                    if let local = dynamicArtwork ?? resolvedArtworkImage {
-                        Image(nsImage: local)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        fallbackArtIcon(size: size)
-                    }
                 default:
                     if let local = dynamicArtwork ?? resolvedArtworkImage {
                         Image(nsImage: local)

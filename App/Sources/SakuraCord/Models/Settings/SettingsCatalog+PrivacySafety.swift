@@ -23,16 +23,16 @@ nonisolated extension SettingsCatalog {
         ),
         control(
             .appleMusicPresence, page: .privacySafety,
-            section: .privacyDiscordActivity, label: "Share Apple Music Playback",
-            help: "Display the song currently playing in macOS Apple Music as your listening activity.",
-            keywords: ["apple music", "music", "song", "listening", "presence"],
+            section: .privacyDiscordActivity, label: "Share Apple Music & Spotify Playback",
+            help: "Display the song currently playing in macOS Apple Music or Spotify as your listening activity.",
+            keywords: ["apple music", "spotify", "music", "song", "listening", "presence"],
             scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
         ),
         control(
             .localDiscordRPC, page: .privacySafety,
-            section: .privacyDiscordActivity, label: "Allow Local Discord RPC",
-            help: "Allow local apps and games on your Mac to connect via Discord IPC socket and set rich presence.",
-            keywords: ["rpc", "ipc", "socket", "games", "rich presence"],
+            section: .privacyDiscordActivity, label: "Allow Local Discord RPC & Game Activity",
+            help: "Allow local apps and games on your Mac to connect via Discord IPC socket, and share detected game activities like Roblox.",
+            keywords: ["rpc", "ipc", "socket", "games", "roblox", "rich presence"],
             scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
         ),
         control(
