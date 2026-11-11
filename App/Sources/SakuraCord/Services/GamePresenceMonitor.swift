@@ -203,13 +203,13 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             Self.currentRobloxIconData = tiff
         }
         let payload = OutgoingActivityPayload(
-            name: "ROBLOX",
+            name: "Roblox",
             type: .playing,
-            details: nil,
+            details: "Playing Roblox",
             timestamps: ActivityTimestamps(start: startTimeMs, end: nil),
             assets: ActivityAssets(
                 largeImage: Self.robloxIconURL,
-                largeText: "ROBLOX"
+                largeText: "Roblox"
             ),
             applicationId: Self.robloxAppID
         )
@@ -229,10 +229,10 @@ public nonisolated final class GamePresenceMonitor: @unchecked Sendable {
             details: nil,
             timestamps: ActivityTimestamps(start: startTimeMs, end: nil),
             assets: ActivityAssets(
-                largeImage: "athas",
+                largeImage: "https://github.com/athasdev.png",
                 largeText: "Athas"
             ),
-            applicationId: nil
+            applicationId: "1247654840780460125"
         )
         Task { [coordinator] in
             await coordinator.setActivity(payload, for: .custom(sourceID: "app:athas"))

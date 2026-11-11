@@ -338,6 +338,27 @@ extension AppModel {
         Task {
             await coordinator.resendActivities()
         }
+        await accountPersistence
+        await completeBootstrapWorkspaceActivation(
+            publishesSessionState: publishesSessionState,
+            initialGuildID: initialGuildID,
+            initialHistoryChannelID: initialHistoryChannelID,
+            retainedChannel: retainedChannel,
+            account: account,
+            value: value,
+            statusRevision: statusRevision
+        )
+    }
+
+    private func completeBootstrapWorkspaceActivation(
+        publishesSessionState: Bool,
+        initialGuildID: GuildID?,
+        initialHistoryChannelID: ChannelID?,
+        retainedChannel: Channel?,
+        account: AppModelAccountSession?,
+        value: BootstrapSnapshot,
+        statusRevision: UInt64
+    ) async {
         if publishesSessionState {
             sessionState = .workspace
         }
@@ -367,7 +388,6 @@ extension AppModel {
         {
             selectedChannelID = retainedChannel.id
         }
-        await accountPersistence
         guard canPublishBootstrap(for: account) else { return }
         await waitForUnreadPresentationPreparation()
         guard canPublishBootstrap(for: account) else { return }

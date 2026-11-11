@@ -321,9 +321,8 @@ struct ProfileActivitySection: View {
             }
         }
         if lowerName.contains("roblox") {
-            if let data = GamePresenceMonitor.currentRobloxIconData, let img = NSImage(data: data) {
-                return img
-            }
+            // For Roblox, consistently use the official high-resolution Roblox icon asset
+            return nil
         }
         return nil
     }
@@ -352,7 +351,7 @@ struct ProfileActivitySection: View {
             if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
                 return URL(string: largeImage)
             }
-            if let appID = effectiveActivity?.applicationID, !appID.isEmpty {
+            if let appID = effectiveActivity?.applicationID, !appID.isEmpty, largeImage.allSatisfy(\.isNumber) {
                 return URL(string: "https://cdn.discordapp.com/app-assets/\(appID)/\(largeImage).png")
             }
         }
@@ -490,6 +489,14 @@ struct ProfileActivitySection: View {
             resolvedTrackURL = nil
             refreshArtwork()
             await resolveMissingMusicArtwork()
+            if resolvedRemoteArtworkURL == nil, let appID = effectiveActivity?.applicationID, !appID.isEmpty {
+                if let url = await DiscordApplicationMetadataResolver.shared.resolveArtworkURL(
+                    applicationID: appID,
+                    assetKey: effectiveActivity?.largeImage
+                ) {
+                    remoteArtworkOverride = url
+                }
+            }
         }
     }
 

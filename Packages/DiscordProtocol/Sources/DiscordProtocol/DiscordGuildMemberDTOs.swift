@@ -143,7 +143,10 @@ struct GuildActivityDTO: Decodable {
 
 extension [GuildActivityDTO] {
     var memberListActivity: GuildActivityDTO? {
-        first(where: { $0.type == 2 }) ?? first(where: { $0.type != 4 })
+        first(where: { $0.type == 2 }) ?? first(where: {
+            guard let type = $0.type else { return false }
+            return type != 4 && type != 6
+        })
     }
 }
 

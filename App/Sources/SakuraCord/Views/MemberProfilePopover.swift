@@ -197,13 +197,20 @@ struct MemberProfilePopover<Footer: View>: View {
         if isCurrentUser {
             return effectiveRichActivity != nil
         }
-        if effectiveRichActivity != nil || member.isListeningToMusic {
+        if let activity = effectiveRichActivity {
+            if activity.type == 4 || activity.type == 6 { return false }
+            return true
+        }
+        if member.isListeningToMusic {
             return true
         }
         guard let activityText = member.activityText, !activityText.isEmpty else {
             return false
         }
         if let customStatus = member.customStatus, activityText == customStatus {
+            return false
+        }
+        if activityText.hasPrefix("<:") || activityText.hasPrefix("<a:") {
             return false
         }
         return true

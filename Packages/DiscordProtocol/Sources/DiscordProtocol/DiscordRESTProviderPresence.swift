@@ -189,6 +189,30 @@ extension DiscordRESTProvider {
         return nil
     }
 
+    private struct ApplicationAssetDTO: Decodable {
+        let id: String
+        let name: String
+    }
+
+    private func resolveApplicationAssetID(applicationID: String, assetName: String) async -> String? {
+        guard !applicationID.isEmpty, applicationID.allSatisfy(\.isNumber) else { return nil }
+        let cacheKey = "\(applicationID):\(assetName)"
+        if let cached = externalAssetCache[cacheKey] {
+            return cached
+        }
+        do {
+            let assets: [ApplicationAssetDTO] = try await request("/oauth2/applications/\(applicationID)/assets")
+            for asset in assets {
+                let key = "\(applicationID):\(asset.name)"
+                externalAssetCache[key] = asset.id
+            }
+            return externalAssetCache[cacheKey]
+        } catch {
+            gatewayLogger.debug("Asset resolution for \(assetName) in application \(applicationID) failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     private func buildGatewayActivityDictionaries(
         activities: [OutgoingActivityPayload]
     ) async -> [[String: Any]] {
@@ -197,16 +221,26 @@ extension DiscordRESTProvider {
             var dict = activity.gatewayDictionary
             let appID = activity.applicationId ?? ""
             if var ast = dict["assets"] as? [String: Any] {
-                if let largeImage = ast["large_image"] as? String,
-                   largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
-                    if let proxied = await resolveExternalAsset(url: largeImage, applicationID: appID) {
-                        ast["large_image"] = proxied
+                if let largeImage = ast["large_image"] as? String {
+                    if largeImage.hasPrefix("http://") || largeImage.hasPrefix("https://") {
+                        if let proxied = await resolveExternalAsset(url: largeImage, applicationID: appID) {
+                            ast["large_image"] = proxied
+                        }
+                    } else if !largeImage.allSatisfy(\.isNumber), !largeImage.hasPrefix("spotify:"), !largeImage.hasPrefix("mp:"), !appID.isEmpty {
+                        if let assetID = await resolveApplicationAssetID(applicationID: appID, assetName: largeImage) {
+                            ast["large_image"] = assetID
+                        }
                     }
                 }
-                if let smallImage = ast["small_image"] as? String,
-                   smallImage.hasPrefix("http://") || smallImage.hasPrefix("https://") {
-                    if let proxied = await resolveExternalAsset(url: smallImage, applicationID: appID) {
-                        ast["small_image"] = proxied
+                if let smallImage = ast["small_image"] as? String {
+                    if smallImage.hasPrefix("http://") || smallImage.hasPrefix("https://") {
+                        if let proxied = await resolveExternalAsset(url: smallImage, applicationID: appID) {
+                            ast["small_image"] = proxied
+                        }
+                    } else if !smallImage.allSatisfy(\.isNumber), !smallImage.hasPrefix("spotify:"), !smallImage.hasPrefix("mp:"), !appID.isEmpty {
+                        if let assetID = await resolveApplicationAssetID(applicationID: appID, assetName: smallImage) {
+                            ast["small_image"] = assetID
+                        }
                     }
                 }
                 dict["assets"] = ast

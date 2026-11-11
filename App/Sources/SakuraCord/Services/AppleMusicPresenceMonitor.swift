@@ -360,7 +360,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
 
     nonisolated(unsafe) private static let spotifyPositionScript: NSAppleScript? = {
         let script = NSAppleScript(source: """
-        tell application "Spotify"
+        tell application id "com.spotify.client"
             if it is running then
                 return (player position as real)
             end if
@@ -497,7 +497,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { return (false, nil) }
         return runOnMainThread {
             let scriptSource = """
-            tell application "\(appName)"
+            tell application id "\(bundleID)"
                 if it is running then
                     set pState to (player state as string)
                     if pState is "playing" or pState is "kPSP" or pState contains "kPSP" then
