@@ -208,9 +208,9 @@ struct DisabledComposerView<Accessory: View>: View {
             .accessibilityElement(children: .combine)
             accessory
         }
-        .font(.interfaceSystem(size: 15))
+        .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
         .foregroundStyle(timeoutUntil == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.white))
-        .padding(.horizontal, usesDefaultStyle ? InterfaceScale.metric(11) : InterfaceScale.metric(24))
+        .padding(.horizontal, usesDefaultStyle ? ChatChromeMetrics.composerTextLeadingInset : InterfaceScale.metric(24))
         .frame(
             height: usesDefaultStyle
                 ? ChatChromeMetrics.composerControlHeight

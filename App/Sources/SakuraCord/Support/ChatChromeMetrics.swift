@@ -8,6 +8,9 @@ nonisolated enum ChatChromeMetrics {
     static var composerCornerRadius: CGFloat { composerControlHeight / 2 }
     static var composerTextVerticalInset: CGFloat { composerMetric(9) }
     static var composerTextLeadingInset: CGFloat { composerMetric(11) }
+    /// Modal text fields hold interface text, so they keep the input bar's
+    /// default radius at every message font size.
+    static var modalFieldCornerRadius: CGFloat { InterfaceScale.metric(18) }
     static var composerAccessoryButtonSize: CGFloat { composerMetric(32) }
     static var composerAccessoryEdgeInset: CGFloat {
         (composerControlHeight - composerAccessoryButtonSize) / 2
