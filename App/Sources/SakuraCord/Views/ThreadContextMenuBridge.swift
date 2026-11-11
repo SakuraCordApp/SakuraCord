@@ -34,12 +34,22 @@ struct ThreadContextMenuBridge: NSViewRepresentable {
 
         func makeMenu() -> NSMenu {
             let row = bridge.row
-            return renderer.makeMenu(ThreadActionsMenu(
+            let menu = renderer.makeMenu(ThreadActionsMenu(
                 model: bridge.model,
                 thread: bridge.model.sidebarThread(row.id) ?? row.thread,
                 surface: .channelList,
                 isUnread: row.isUnread || row.mentionCount > 0
             ))
+            // Favorites follow Mark as Read, as in Discord's thread menu.
+            let favorites = FavoritesMenu.toggleItems(
+                for: row.id, channelType: row.thread.isPrivate ? 12 : 11, model: bridge.model
+            )
+            if !favorites.isEmpty, let separator = menu.items.firstIndex(where: \.isSeparatorItem) {
+                for (offset, item) in (favorites + [.separator()]).enumerated() {
+                    menu.insertItem(item, at: separator + 1 + offset)
+                }
+            }
+            return menu
         }
     }
 }

@@ -29,6 +29,7 @@ struct ServerRailContainer: View {
             selectJoinRequest: model.selectGuildJoinRequest,
             home: model.serverRailPresentation.home,
             selectHome: { model.selectGuild(nil) },
+            favoritesModel: model.showsFavoritesRailItem ? model : nil,
             selectDirectMessage: { model.navigate(to: $0) },
             selectGuild: model.selectGuild,
             joinServer: { invites.showsJoinDialog = true },
@@ -132,6 +133,7 @@ struct ServerRailContainer: View {
         } message: {
             Text(invites.leaveError ?? "")
         }
+        .modifier(FavoritesDialogs(model: model))
     }
 }
 
@@ -145,6 +147,7 @@ struct ServerRailView: View {
     var selectJoinRequest: (GuildID?) -> Void = { _ in }
     let home: ServerRailHomeEntry
     let selectHome: () -> Void
+    var favoritesModel: AppModel?
     let selectDirectMessage: (ChannelID) -> Void
     let selectGuild: (GuildID?) -> Void
     var joinServer: () -> Void = {}
@@ -176,6 +179,11 @@ struct ServerRailView: View {
                     action: selectHome
                 )
 
+                if let favoritesModel {
+                    FavoritesRailButton(model: favoritesModel)
+                        .transition(ServerRailAnimations.membershipTransition)
+                }
+
                 ForEach(directMessages) { entry in
                     DirectMessageRailButton(entry: entry) {
                         selectDirectMessage(entry.id)
@@ -205,6 +213,7 @@ struct ServerRailView: View {
             // move with it.
             .animation(reduceMotion ? nil : ServerRailAnimations.folderExpansion, value: joinRequestsExpanded.wrappedValue)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: directMessages.map(\.id))
+            .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: favoritesModel != nil)
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: joinRequests.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: items.map(\.id))
             .animation(reduceMotion ? nil : ServerRailAnimations.reorder, value: folderGuildIDs)

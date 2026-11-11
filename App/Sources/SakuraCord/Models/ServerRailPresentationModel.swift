@@ -325,8 +325,13 @@ final class ServerRailPresentationStore {
         didSet { refreshHomeSelection() }
     }
 
+    /// The Favorites server is selected instead of its conversation's own server.
+    var showsFavorites = false {
+        didSet { refreshHomeSelection() }
+    }
+
     private func refreshHomeSelection() {
-        home.isSelected = selectedGuildID == nil && !showsGuildJoinRequest
+        home.isSelected = selectedGuildID == nil && !showsGuildJoinRequest && !showsFavorites
             && selectedChannelID.flatMap { directMessageEntriesByID[$0] } == nil
     }
 
@@ -343,9 +348,10 @@ final class ServerRailPresentationStore {
 
 extension AppModel {
     func refreshServerRailSelection() {
+        serverRailPresentation.showsFavorites = favorites.isPresented
         serverRailPresentation.updateSelection(
-            selectedGuildID,
-            channelID: selectedChannelID
+            favorites.isPresented ? nil : selectedGuildID,
+            channelID: favorites.isPresented ? nil : selectedChannelID
         )
     }
 

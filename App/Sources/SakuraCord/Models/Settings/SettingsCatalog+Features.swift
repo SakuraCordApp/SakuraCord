@@ -3,9 +3,9 @@ import Foundation
 nonisolated extension SettingsCatalog {
     static let featuresPage = page(
         .features, group: .preferences, title: "Features", image: "square.stack.3d.up.fill",
-        help: "Manage hidden channels, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
+        help: "Manage hidden channels, the Favorites server, FakeNitro, the message timeline, voice messages, attachments, and on-device translation.",
         keywords: [
-            "channels", "hidden", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
+            "channels", "hidden", "favorites", "FakeNitro", "emoji", "stickers", "soundboard", "stream", "timeline", "voice messages", "uploads", "translation",
             "language",
         ]
     )
@@ -35,6 +35,12 @@ nonisolated extension SettingsCatalog {
             .channelManagement, page: .features, section: .featuresChannels,
             label: "Channel customization", help: "Use each server’s channel selections. Turn off to show all channels and hide channel customization controls without changing server selections.",
             keywords: ["onboarding", "channels", "roles", "default channels"], scope: .appWideLocal
+        ),
+        control(
+            .showFavoritesServer, page: .features, section: .featuresChannels,
+            label: "Show Favorites server", help: "Show your favourite channels and DMs as a server above your server list. Your Favorites stay saved when this is off.",
+            keywords: ["favorites", "favourites", "star", "server"],
+            owner: .appModel, scope: .discordSynchronized, persistence: .discordManaged, reset: .notApplicable
         ),
         control(
             .showHiddenChannels, page: .features, section: .featuresChannels,

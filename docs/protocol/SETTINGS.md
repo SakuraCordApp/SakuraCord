@@ -12,6 +12,7 @@
 | Group DM name, icon, leaving and 1:1 DM closing | [DiscordRESTGroupDirectMessages.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTGroupDirectMessages.swift); [AppModelGroupDirectMessages.swift](../../App/Sources/SakuraCord/Models/AppModelGroupDirectMessages.swift) | [GroupDirectMessageEditTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GroupDirectMessageEditTests.swift); [ProfileEditorStateTests.swift](../../App/Tests/SakuraCordAppTests/ProfileEditorStateTests.swift) |
 | Status | [DiscordProfileSettingsProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordProfileSettingsProto.swift); [DiscordRESTProfileCustomStatus.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTProfileCustomStatus.swift) | [StatusPickContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/StatusPickContractTests.swift) |
 | Server folders | [DiscordSettingsProtoMerging.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoMerging.swift) | [GuildFolderSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GuildFolderSettingsContractTests.swift) |
+| Favorites server | [DiscordFavoritesProto.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordFavoritesProto.swift); [DiscordRESTFavorites.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTFavorites.swift); [FavoritesSettings.swift](../../Packages/SakuraCordModels/Sources/SakuraCordModels/FavoritesSettings.swift) | [FavoritesSettingsContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/FavoritesSettingsContractTests.swift) |
 | Emoji usage and shared saves | [AppModelEmojiFrecency.swift](../../App/Sources/SakuraCord/Models/AppModelEmojiFrecency.swift); [DiscordRESTEmojiFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordRESTEmojiFrecency.swift) | [EmojiFrecencyTests.swift](../../App/Tests/SakuraCordAppTests/EmojiFrecencyTests.swift); [QuickReactionPolicyTests.swift](../../App/Tests/SakuraCordAppTests/QuickReactionPolicyTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift) |
 | Favourites/frecency | [DiscordSettingsProtoStickers.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoStickers.swift); [DiscordSettingsProtoSoundboard.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoSoundboard.swift); [DiscordSettingsProtoCommandFrecency.swift](../../Packages/DiscordProtocol/Sources/DiscordProtocol/DiscordSettingsProtoCommandFrecency.swift) | [ProviderRequestContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ProviderRequestContractTests.swift); [GIFProviderContractTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/GIFProviderContractTests.swift); [ApplicationCommandFrecencyCodecTests.swift](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/ApplicationCommandFrecencyCodecTests.swift) |
 
@@ -315,6 +316,38 @@ DM pins use flags in the account's `@me` channel notification overrides, preserv
 unrelated flags/settings. The app projects pinned ordering without mutating the
 provider's channel catalogue or persisting a workspace snapshot. See
 [pin contracts](../../Packages/DiscordProtocol/Tests/DiscordProtocolTests/DirectMessagePinSettingsTests.swift).
+
+## Favorites server
+
+Discord's Favorites server lives in type-1 field 15 (`Favorites`): a
+`favorite_channels` map keyed by channel ID (field 1), and `guild_visible`
+(field 3, a BoolValue) for the off-by-default **Show Favourites server**
+toggle. Without `guild_visible` the server shows once anything is favourited.
+A `FavoriteChannel` records a nickname (1), type (2: 1 favourite, 2 category),
+position (3), parent category (4) and the Discord channel type (5, an
+Int32Value written empty for text channels). Every edit PATCHes the complete
+Favorites message alone, without `required_data_version`; preserve stored map
+order, append new entries, and carry over fields the app does not model
+(category collapse, thread automation, `muted`).
+
+The official client (web build 670026, 11 November 2026) saves favourite edits
+and the toggle with a 0-second delay and drops edits made while a save is in
+flight. SakuraCord also saves at once but sends one follow-up of the newest
+state after the response, so rapid toggling settles on the last choice. A new
+favourite takes position max + 1 over every entry; moving one renumbers every
+favourite in display order while categories keep their positions. The list
+shows uncategorised favourites first, then categories by position, with voice
+and stage favourites after the others in each section. Nickname overrides apply
+to server channels, not DMs. Accounts without full Nitro (`premium_type` 2) may
+keep 3 favourites, Nitro 200; categories don't count, and no entry may exceed
+200 in total. A blocked addition shows the notice and sends nothing.
+
+When a favourited channel is deleted, the official client removes it from
+Favorites itself after `CHANNEL_DELETE`; SakuraCord does the same. A channel the
+account can no longer see stays stored but hidden. Unlike the official client,
+SakuraCord does not prune such entries on its next write, because an
+incomplete channel catalogue cannot prove a channel is gone. Category collapse
+stays local: the captured collapse save did not carry it.
 
 ## Emoji, GIFs, stickers and sounds
 

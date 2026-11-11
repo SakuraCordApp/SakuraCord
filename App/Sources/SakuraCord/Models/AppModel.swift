@@ -169,6 +169,7 @@ final class AppModel {
     @ObservationIgnored let onboarding = GuildOnboardingStore()
     @ObservationIgnored let serverInvites = ServerInvitePresentationStore()
     @ObservationIgnored let guildJoinRequests = GuildJoinRequestStore()
+    @ObservationIgnored let favorites = FavoritesStore()
     @ObservationIgnored let embeddedActivities = EmbeddedActivityStore()
     @ObservationIgnored let captcha = HumanCaptchaStore()
     @ObservationIgnored let friends = FriendsState()

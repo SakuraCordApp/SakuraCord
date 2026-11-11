@@ -31,6 +31,7 @@ nonisolated enum ConversationNavigationTarget: Hashable, Sendable {
 
 extension AppModel {
     func selectGuild(_ guildID: GuildID?) {
+        setFavoritesPresented(false)
         // Direct Messages may rest on Friends, which selects neither a server nor a conversation.
         if guildID == nil { leaveGuildJoinRequestPage() }
         startConversationNavigation { model, account in
@@ -292,6 +293,7 @@ extension AppModel {
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
         onboarding.presentedGuildID = nil
+        leaveFavoritesUnlessFavorite(channelID)
         if let thread = sidebarThread(channelID) {
             openSidebarThread(thread, historyDestination: historyDestination)
             return
@@ -330,6 +332,7 @@ extension AppModel {
         fullWidthThread: Bool = false,
         historyDestination: ConversationNavigationHistory.Destination? = nil
     ) {
+        leaveFavoritesUnlessFavorite(channelID)
         if messageID == nil, knownRootChannel(channelID) != nil {
             navigate(to: channelID, historyDestination: historyDestination)
             return

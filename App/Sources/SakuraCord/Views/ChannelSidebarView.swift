@@ -141,7 +141,9 @@ struct ChannelSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if let guildID = voiceModel.presentedGuildJoinRequestID {
+            if voiceModel.favorites.isPresented {
+                FavoritesSidebarView(model: voiceModel, bottomContentInset: accountControlHeight)
+            } else if let guildID = voiceModel.presentedGuildJoinRequestID {
                 // A pending server has no channels; its sidebar describes it instead.
                 GuildJoinRequestSidebar(model: voiceModel, guildID: guildID, bottomContentInset: accountControlHeight)
             } else if guild == nil {
@@ -1487,6 +1489,9 @@ private struct ChannelRow: View {
                             channelID: channel.id
                         )
                     )
+                },
+                favoriteItems: {
+                    FavoritesMenu.toggleItems(for: channel.id, channelType: channel.favoriteChannelType, model: model)
                 }
             )
         }

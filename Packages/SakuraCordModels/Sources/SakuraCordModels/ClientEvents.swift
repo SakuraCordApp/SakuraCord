@@ -13,6 +13,8 @@ public enum ClientEvent: Equatable, Sendable {
     case channelPinsInvalidated(channelID: ChannelID)
     case inboxMentionDismissed(MessageID)
     case inboxSettingsChanged(InboxSettings)
+    case favoritesChanged(FavoritesSettings)
+    case favoritesSaveFailed(reason: String)
     case inboxScheduledEventsChanged(InboxScheduledEvents)
     case readStateSnapshot([ChannelReadState], version: Int? = nil)
     case readStateChanged(ChannelReadState)

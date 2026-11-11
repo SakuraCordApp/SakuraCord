@@ -25,6 +25,14 @@ struct FeaturesSettingsPage: View {
                 Toggle("Show hidden channels", isOn: value.showHiddenChannels)
                     .tint(SakuraCordAccentColor.color)
                     .settingsControlAnchor(.showHiddenChannels, state: state)
+                Toggle("Show Favorites server", isOn: Binding(
+                    get: { model.favoritesAreEnabled },
+                    set: { model.setFavoritesEnabled($0) }
+                ))
+                .tint(SakuraCordAccentColor.color)
+                .disabled(model.favorites.settings == nil)
+                .settingsControlAnchor(.showFavoritesServer, state: state)
+                .help("Syncs with Discord. Your Favorites stay saved when this is off.")
             } header: {
                 Text("Channels", bundle: #bundle)
             }

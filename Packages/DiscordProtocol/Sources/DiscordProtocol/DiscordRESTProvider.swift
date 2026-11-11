@@ -168,6 +168,13 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var profileDeveloperSettingsDataVersion: UInt32?
     var guildLayoutDataVersion: UInt32?
     var inboxSettingsFieldVersions: [Int: UInt32] = [:]
+    /// The confirmed settings-proto/1 Favorites message; nil until settings load.
+    var favoritesMessage: Data?
+    var favoritesDataVersion: UInt32?
+    /// The optimistic Favorites state while a save is pending or in flight.
+    var pendingFavorites: FavoritesSettings?
+    var favoritesSaveTask: Task<Void, Never>?
+    var favoritesGeneration: UInt64 = 0
     var lastSentPresenceStatus: PresenceStatus?
     var presenceSendWindowEnds: [Date] = []
     var deferredPresenceTask: Task<Void, Never>?

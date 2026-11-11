@@ -150,6 +150,9 @@ public protocol ChatProvider: Sendable {
     func updateInboxTab(_ tab: InboxTab) async throws
     func updateInboxCollapsed(_ collapsed: Bool, channelID: ChannelID, guildID: GuildID?) async throws
     func updateGuildRailLayout(_ items: [GuildRailItem]) async throws
+    /// The Favorites server, nil until the account's settings load.
+    func favoritesSettings() async -> FavoritesSettings?
+    func updateFavorites(_ edit: FavoritesSettings.Edit) async throws
     func pinnedMessages(
         in channelID: ChannelID,
         before: Date?,
@@ -399,6 +402,10 @@ public protocol PendingCredentialChatProvider: ChatProvider {
 public extension ChatProvider {
     func updateGuildRailLayout(_ items: [GuildRailItem]) async throws {
         throw ChatProviderError.invalidRequest("Rearranging servers is unavailable for this session.")
+    }
+    func favoritesSettings() async -> FavoritesSettings? { nil }
+    func updateFavorites(_ edit: FavoritesSettings.Edit) async throws {
+        throw ChatProviderError.invalidRequest("Favorites are unavailable for this session.")
     }
     func guildGuide(in guildID: GuildID) async throws -> GuildGuide { throw ChatProviderError.invalidRequest("Server Guide is unavailable.") }
     func guildProfile(in guildID: GuildID) async throws -> GuildProfile { throw ChatProviderError.invalidRequest("Server profile is unavailable.") }

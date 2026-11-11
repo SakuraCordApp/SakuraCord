@@ -294,7 +294,10 @@ private struct DirectMessageInboxRow: View {
                     : nil,
                 closeDirectMessage: model.offersCloseDirectMessage(channel)
                     ? { model.closeDirectMessage(channel) }
-                    : nil
+                    : nil,
+                favoriteItems: {
+                    FavoritesMenu.toggleItems(for: channel.id, channelType: channel.favoriteChannelType, model: model)
+                }
             )
         }
     }

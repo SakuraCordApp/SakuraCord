@@ -1034,6 +1034,7 @@ private struct ChatRootView: View {
 
     private var sidebarDisplayName: String {
         if let guildID = model.presentedGuildJoinRequestID { return model.joinRequestGuildName(guildID) }
+        if model.favorites.isPresented { return "Favorites" }
         guard let guild = selectedGuild else { return "Messages" }
         return guild.name.isEmpty ? "Unnamed Server" : guild.name
     }

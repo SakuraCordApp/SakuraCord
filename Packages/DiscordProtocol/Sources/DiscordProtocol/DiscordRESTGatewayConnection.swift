@@ -200,6 +200,7 @@ extension DiscordRESTProvider {
         captchaPresentations = [:]
         resetMemberListSubscriptionWork()
         await finishGuildFoldersEdits()
+        await finishFavoritesEdits()
         currentAccountDetails = nil
         currentAuthSessionIDHash = nil
         accountInformationRevision = UUID()
