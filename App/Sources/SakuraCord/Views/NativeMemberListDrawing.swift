@@ -367,17 +367,18 @@ extension NativeMemberListCanvasView {
 
         let iconOffset: CGFloat
         if let iconType = prepared.activityIconType,
-           let iconImage = MemberActivityIconCache.shared.image(for: iconType)
+           let iconData = MemberActivityIconCache.shared.icon(for: iconType)
         {
-            let iconSize = InterfaceScale.metric(11)
+            let iconWidth = InterfaceScale.metric(iconData.size.width)
+            let iconHeight = InterfaceScale.metric(iconData.size.height)
             let iconRect = CGRect(
                 x: textX,
-                y: row.minY + InterfaceScale.metric(24) + InterfaceScale.metric(1),
-                width: iconSize,
-                height: iconSize
+                y: row.minY + InterfaceScale.metric(24) + (InterfaceScale.metric(14) - iconHeight) / 2,
+                width: iconWidth,
+                height: iconHeight
             )
-            Self.draw(image: iconImage, aspectFitIn: iconRect, context: context)
-            iconOffset = iconSize + InterfaceScale.metric(4)
+            Self.draw(image: iconData.image, in: iconRect, context: context, fills: false)
+            iconOffset = iconWidth + InterfaceScale.metric(4)
         } else {
             iconOffset = 0
         }

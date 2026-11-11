@@ -174,10 +174,10 @@ extension NativeMemberListCanvasView {
 
 nonisolated final class MemberActivityIconCache: @unchecked Sendable {
     static let shared = MemberActivityIconCache()
-    private var cachedIcons: [MemberActivityIconType: CGImage] = [:]
+    private var cachedIcons: [MemberActivityIconType: (image: CGImage, size: CGSize)] = [:]
     private let lock = NSLock()
 
-    func image(for type: MemberActivityIconType) -> CGImage? {
+    func icon(for type: MemberActivityIconType) -> (image: CGImage, size: CGSize)? {
         lock.lock()
         defer { lock.unlock() }
         if let existing = cachedIcons[type] {
@@ -188,21 +188,26 @@ nonisolated final class MemberActivityIconCache: @unchecked Sendable {
         case .music: "music.note"
         }
         let tint = NSColor(srgbRed: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0, alpha: 1.0)
-        let pointSize: CGFloat = 11
+        let pointSize: CGFloat = switch type {
+        case .game: 10.0
+        case .music: 10.5
+        }
         let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
             .applying(.init(paletteColors: [tint]))
         guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(config) else {
             return nil
         }
+        let logicalSize = symbol.size
         let pixelScale: CGFloat = 2.0
-        let pixelDimension = ceil(pointSize * pixelScale)
+        let pixelWidth = ceil(logicalSize.width * pixelScale)
+        let pixelHeight = ceil(logicalSize.height * pixelScale)
         guard let bitmapContext = CGContext(
             data: nil,
-            width: Int(pixelDimension),
-            height: Int(pixelDimension),
+            width: Int(pixelWidth),
+            height: Int(pixelHeight),
             bitsPerComponent: 8,
-            bytesPerRow: Int(pixelDimension) * 4,
+            bytesPerRow: Int(pixelWidth) * 4,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
@@ -212,15 +217,16 @@ nonisolated final class MemberActivityIconCache: @unchecked Sendable {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsContext
         symbol.draw(
-            in: NSRect(origin: .zero, size: NSSize(width: pixelDimension, height: pixelDimension)),
+            in: NSRect(origin: .zero, size: NSSize(width: pixelWidth, height: pixelHeight)),
             from: .zero,
             operation: .sourceOver,
             fraction: 1.0
         )
         NSGraphicsContext.restoreGraphicsState()
         if let cgImage = bitmapContext.makeImage() {
-            cachedIcons[type] = cgImage
-            return cgImage
+            let entry = (image: cgImage, size: logicalSize)
+            cachedIcons[type] = entry
+            return entry
         }
         return nil
     }

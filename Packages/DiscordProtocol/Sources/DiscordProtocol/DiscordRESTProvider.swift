@@ -172,6 +172,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var activeActivities: [String: OutgoingActivityPayload] = [:]
     var externalAssetCache: [String: String] = [:]
     var externalAssetCacheKeys: [String] = []
+    var applicationAssetCatalogs: [String: (assets: [String: String], expiresAt: Date)] = [:]
     var lastSentActivities: [OutgoingActivityPayload]?
     var presenceSendWindowEnds: [Date] = []
     var deferredPresenceTask: Task<Void, Never>?
