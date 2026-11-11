@@ -394,7 +394,7 @@ extension AppModel {
         guildID: GuildID?,
         requestID: UUID,
         destination: ProfilePresentationDestination,
-        session: any AccountSession
+        session: AppModelAccountSession
     ) {
         let task = Task { [weak self] in
             guard let self else { return }
@@ -420,7 +420,7 @@ extension AppModel {
         destination: ProfilePresentationDestination,
         isCurrent: Bool,
         isOffline: Bool,
-        session: any AccountSession
+        session: AppModelAccountSession
     ) {
         let task = Task { [weak self] in
             guard let self else { return }
