@@ -37,10 +37,13 @@ extension AppModel {
         return settings
     }
 
-    /// Discord's list wins: a local favourite Discord now carries is dropped.
-    /// While the option is off, local favourites are left untouched.
+    /// Discord's list wins: a local favourite Discord has confirmed carrying is
+    /// dropped, never on an edit still awaiting Discord's answer. While the
+    /// option is off, local favourites are left untouched.
     func dropSyncedLocalFavorites() {
-        guard featuresSettings.unlimitedFavorites, let settings = favorites.settings else { return }
+        guard featuresSettings.unlimitedFavorites, favorites.settingsAreConfirmed,
+              let settings = favorites.settings
+        else { return }
         let count = favorites.localEntries.count
         favorites.localEntries.removeAll { settings.contains($0.id) }
         if favorites.localEntries.count != count { saveLocalFavorites() }

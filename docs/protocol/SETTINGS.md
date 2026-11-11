@@ -359,7 +359,8 @@ the synced ones in each section, may sit in a synced category, and can be
 renamed, moved and removed; those edits send nothing, though a local addition
 reveals a hidden Favorites server as a synced one does. Discord's list stays
 authoritative: remote edits apply to the synced part, a local favourite that
-Discord starts carrying becomes synced and leaves the local list, and a synced
+Discord confirms carrying becomes synced and leaves the local list (never on an
+edit still awaiting Discord's answer, so a rejected save loses nothing), and a synced
 favourite removed elsewhere is not restored. Removing a synced favourite does
 not promote a local one, so every Discord write follows a user action. Turning
 the option off hides local favourites without deleting or reconciling them;

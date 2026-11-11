@@ -13,7 +13,8 @@ public enum ClientEvent: Equatable, Sendable {
     case channelPinsInvalidated(channelID: ChannelID)
     case inboxMentionDismissed(MessageID)
     case inboxSettingsChanged(InboxSettings)
-    case favoritesChanged(FavoritesSettings)
+    /// `isConfirmed` is false while an edit awaits Discord's answer.
+    case favoritesChanged(FavoritesSettings, isConfirmed: Bool)
     case favoritesSaveFailed(reason: String)
     case inboxScheduledEventsChanged(InboxScheduledEvents)
     case readStateSnapshot([ChannelReadState], version: Int? = nil)

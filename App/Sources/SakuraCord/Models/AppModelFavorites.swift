@@ -23,6 +23,8 @@ final class FavoritesStore {
     /// Unlimited favorites' entries past Discord's limit, for `localScope`'s account.
     var localEntries: [FavoritesSettings.Entry] = []
     @ObservationIgnored var localScope: String?
+    /// Whether `settings` is Discord's answer rather than an edit awaiting it.
+    @ObservationIgnored var settingsAreConfirmed = false
 
     func reset() {
         settings = nil
@@ -35,6 +37,7 @@ final class FavoritesStore {
         requestedThreadIDs = []
         localEntries = []
         localScope = nil
+        settingsAreConfirmed = false
     }
 }
 
@@ -53,16 +56,17 @@ struct FavoriteConversation: Identifiable, Equatable {
 extension AppModel {
     func consumeFavoritesEvent(_ event: ClientEvent) -> Bool {
         switch event {
-        case .favoritesChanged(let settings): presentFavorites(settings)
+        case let .favoritesChanged(settings, isConfirmed): presentFavorites(settings, isConfirmed: isConfirmed)
         case .favoritesSaveFailed(let reason): errorMessage = "Discord did not save your Favorites. \(reason)"
         default: return false
         }
         return true
     }
 
-    private func presentFavorites(_ settings: FavoritesSettings?) {
+    private func presentFavorites(_ settings: FavoritesSettings?, isConfirmed: Bool) {
         changeFavorites {
             favorites.settings = settings
+            favorites.settingsAreConfirmed = isConfirmed
             dropSyncedLocalFavorites()
         }
     }
@@ -139,7 +143,7 @@ extension AppModel {
 
     /// Like the official client, fetch favourited threads that no loaded list
     /// carries; a thread that can't be read stays stored but unlisted.
-    private func loadFavoriteThreads() {
+    func loadFavoriteThreads() {
         // A fetched private thread asks Discord again each time, since only
         // its answer states the current membership.
         for (id, thread) in favorites.threads where thread.isPrivate { favorites.requestedThreadIDs.remove(id) }
@@ -244,14 +248,14 @@ extension AppModel {
         if applyLocalFavoriteEdit(edit) { return }
         guard var settings = favorites.settings else { return }
         settings.apply(edit)
-        presentFavorites(settings)
+        presentFavorites(settings, isConfirmed: false)
         startAccountChildTask(account: accountSession()) { model, account in
             do {
                 try await account.provider.updateFavorites(edit)
             } catch {
                 guard model.isCurrentAccountSession(account) else { return }
                 model.errorMessage = error.localizedDescription
-                model.presentFavorites(await account.provider.favoritesSettings())
+                model.presentFavorites(await account.provider.favoritesSettings(), isConfirmed: false)
             }
         }
     }

@@ -68,9 +68,13 @@ extension AppModel {
             channelVoiceMessageComposer.discard(playback: voiceMessagePlayback)
             threadVoiceMessageComposer.discard(playback: voiceMessagePlayback)
         }
+        let showsLocalFavorites = value.unlimitedFavorites && !featuresSettings.unlimitedFavorites
         featuresSettings = value
         FeaturesSettingsStore.shared.save(value)
-        dropSyncedLocalFavorites()
+        if showsLocalFavorites {
+            dropSyncedLocalFavorites()
+            if favorites.isPresented { loadFavoriteThreads() }
+        }
         refreshVisibleChannelGroups()
         reconcileSelectedOnboardingChannel()
         if allowedScreenShareSettings(screenShareSettings) != screenShareSettings {

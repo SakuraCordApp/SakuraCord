@@ -21,7 +21,7 @@ extension DiscordRESTProvider {
         var next = pendingFavorites ?? DiscordFavoritesProto.settings(from: favoritesMessage)
         next.apply(edit)
         pendingFavorites = next
-        continuation?.yield(.favoritesChanged(next))
+        continuation?.yield(.favoritesChanged(next, isConfirmed: false))
         guard favoritesSaveTask == nil else { return }
         let generation = favoritesGeneration
         favoritesSaveTask = Task { await saveFavorites(generation: generation) }
@@ -43,7 +43,7 @@ extension DiscordRESTProvider {
     }
 
     private func publishStoredFavorites() {
-        continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: favoritesMessage ?? Data())))
+        continuation?.yield(.favoritesChanged(DiscordFavoritesProto.settings(from: favoritesMessage ?? Data()), isConfirmed: true))
     }
 
     /// The official client removes a deleted channel from Favorites itself.
