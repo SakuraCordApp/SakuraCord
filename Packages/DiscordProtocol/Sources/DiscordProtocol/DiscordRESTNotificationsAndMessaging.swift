@@ -440,7 +440,7 @@ extension DiscordRESTProvider {
                 let delegate = delegates[index]
                 group.addTask {
                     do {
-                        let slot = try await self.reserveAttachmentSlot(descriptor, channelID: channelID)
+                        let slot = try await delegate.reserve { try await self.reserveAttachmentSlot(descriptor, channelID: channelID) }
                         try await self.uploadAttachmentFile(file, to: slot, delegate: delegate, progress: progress)
                         return (index, slot.uploadFilename)
                     } catch where delegate.isCancelled {
