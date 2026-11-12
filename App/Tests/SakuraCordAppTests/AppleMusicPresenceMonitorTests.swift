@@ -450,4 +450,42 @@ struct AppleMusicPresenceMonitorTests {
         let active = await coordinator.currentPermittedActivities()
         #expect(active[.appleMusic] == nil)
     }
+
+    @Test("Song change invalidates stale artwork to prevent out-of-sync cover at track start")
+    func testSongChangeInvalidatesStaleArtwork() async {
+        let provider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: provider, preferences: .enabledAll)
+        let monitor = AppleMusicPresenceMonitor(coordinator: coordinator)
+
+        let fakeDataA = Data([0xDE, 0xAD, 0xBE, 0xEF])
+        let trackKeyA = AppleMusicPresenceMonitor.trackSignature(title: "Track A", artist: "Artist A", album: "Album A")
+        AppleMusicPresenceMonitor.setCachedArtworkData(fakeDataA, for: trackKeyA)
+
+        // Track A should match
+        #expect(AppleMusicPresenceMonitor.currentArtworkData(for: "Track A", artist: "Artist A", album: "Album A") == fakeDataA)
+        // Querying for Track B with Track A cached should NOT return Track A data
+        #expect(AppleMusicPresenceMonitor.currentArtworkData(for: "Track B", artist: "Artist B", album: "Album B") == nil)
+
+        // Now handle track change to Track B
+        await monitor.handlePlayerInfo([
+            "Player State": "Playing",
+            "Name": "Track B",
+            "Artist": "Artist B",
+            "Album": "Album B"
+        ])
+
+        // Immediately after song change, cached artwork must not be stale Track A data
+        #expect(AppleMusicPresenceMonitor.currentArtworkData(for: "Track B", artist: "Artist B", album: "Album B") == nil)
+
+        // When fresh artwork arrives for Track B, it should be retrieved
+        let fakeDataB = Data([0xCA, 0xFE, 0xBA, 0xBE])
+        let trackKeyB = AppleMusicPresenceMonitor.trackSignature(title: "Track B", artist: "Artist B", album: "Album B")
+        AppleMusicPresenceMonitor.setCachedArtworkData(fakeDataB, for: trackKeyB)
+
+        #expect(AppleMusicPresenceMonitor.currentArtworkData(for: "Track B", artist: "Artist B", album: "Album B") == fakeDataB)
+        #expect(AppleMusicPresenceMonitor.currentArtworkData(for: "Track A", artist: "Artist A", album: "Album A") == nil)
+
+        // Clean up
+        AppleMusicPresenceMonitor.removeCachedArtwork()
+    }
 }

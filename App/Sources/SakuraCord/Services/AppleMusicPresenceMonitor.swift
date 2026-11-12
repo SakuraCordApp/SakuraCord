@@ -257,8 +257,34 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
     public static let appleMusicIconAsset = "393590f736eaf7d08120700c39b259d7"
     public static let appleMusicIconURL = "https://cdn.discordapp.com/app-icons/\(appleMusicAppID)/\(appleMusicIconAsset).png"
 
+    public static let artworkDidChangeNotification = Notification.Name("SakuraCord.AppleMusicPresenceMonitor.artworkDidChange")
+
     private static let artworkLock = NSLock()
     nonisolated(unsafe) private static var _cachedArtworkData: Data?
+    nonisolated(unsafe) private static var _cachedArtworkTrackKey: String?
+
+    public static func trackSignature(title: String, artist: String?, album: String?) -> String {
+        "\(artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") - \(title.trimmingCharacters(in: .whitespacesAndNewlines)) - \(album?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")"
+    }
+
+    public static func setCachedArtworkData(_ data: Data?, for trackKey: String?) {
+        artworkLock.lock()
+        _cachedArtworkData = data
+        _cachedArtworkTrackKey = trackKey
+        artworkLock.unlock()
+        NotificationCenter.default.post(name: artworkDidChangeNotification, object: nil)
+    }
+
+    public static func currentArtworkData(for title: String, artist: String? = nil, album: String? = nil) -> Data? {
+        artworkLock.lock()
+        defer { artworkLock.unlock() }
+        guard let data = _cachedArtworkData else { return nil }
+        guard let cachedKey = _cachedArtworkTrackKey else { return data }
+        let currentKey = trackSignature(title: title, artist: artist, album: album)
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cachedKey == currentKey || cachedKey.contains(trimmedTitle) else { return nil }
+        return data
+    }
 
     public static var currentArtworkData: Data? {
         get {
@@ -270,6 +296,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             artworkLock.lock()
             _cachedArtworkData = newValue
             artworkLock.unlock()
+            NotificationCenter.default.post(name: artworkDidChangeNotification, object: nil)
         }
     }
 
@@ -464,14 +491,29 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         await handleTrackInfo(updated)
     }
 
-    public static func fetchCurrentArtworkData() -> Data? {
+    public static func fetchCurrentArtworkData(matchingTitle: String? = nil) -> Data? {
         #if os(macOS)
         guard NSClassFromString("XCTest") == nil else { return nil }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty else { return nil }
+        let titleCondition: String
+        if let matchingTitle, !matchingTitle.isEmpty {
+            let escaped = matchingTitle
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            titleCondition = """
+                    set curName to (name of current track as string)
+                    if curName does not contain "\(escaped)" and "\(escaped)" does not contain curName then
+                        return missing value
+                    end if
+            """
+        } else {
+            titleCondition = ""
+        }
         let scriptSource = """
         tell application "Music"
             with timeout of 2 seconds
                 if it is running then
+                    \(titleCondition)
                     tell current track
                         if (count of artworks) > 0 then
                             return raw data of artwork 1
@@ -493,15 +535,15 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         #endif
     }
 
-    public static func updateArtworkCache() {
-        let data = fetchCurrentArtworkData()
+    public static func updateArtworkCache(for trackKey: String? = nil, matchingTitle: String? = nil) {
+        let data = fetchCurrentArtworkData(matchingTitle: matchingTitle)
         if let data {
-            currentArtworkData = data
+            setCachedArtworkData(data, for: trackKey)
         }
     }
 
     public static func removeCachedArtwork() {
-        currentArtworkData = nil
+        setCachedArtworkData(nil, for: nil)
     }
 
     private static func queryTrack(for appName: String, bundleID: String, durationMultiplier: Double) -> (isStopped: Bool, track: AppleMusicTrackInfo?) {
@@ -768,6 +810,18 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
         let artist = trackInfo.artist?.trimmingCharacters(in: .whitespacesAndNewlines)
         let album = trackInfo.album?.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let trackKey = Self.trackSignature(title: trackName, artist: artist, album: album)
+        // Invalidate stale artwork from previous tracks immediately at the start of a song change
+        Self.setCachedArtworkData(nil, for: trackKey)
+
+        #if os(macOS)
+        if trackInfo.appName.caseInsensitiveCompare("Spotify") != .orderedSame {
+            if let immediateData = Self.fetchCurrentArtworkData(matchingTitle: trackName) {
+                Self.setCachedArtworkData(immediateData, for: trackKey)
+            }
+        }
+        #endif
+
         setCurrentActiveTrackInfo(trackInfo)
 
         let (_, playbackStartDate) = updatePlaybackStateOnResume(
@@ -789,13 +843,14 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             guard let ms = trackInfo.totalTimeMilliseconds, ms.isFinite, ms > 0, ms < Double(Int64.max - startTimestampMs) else {
                 return nil
             }
-            let (endMs, overflow) = startTimestampMs.addingReportingOverflow(Int64(ms))
-            return overflow ? nil : endMs
+            return startTimestampMs + Int64(ms)
         }()
 
         let nonIsolatedState: String? = {
-            guard let artist, !artist.isEmpty else { return nil }
-            return artist
+            if let artist, !artist.isEmpty {
+                return artist
+            }
+            return nil
         }()
 
         let largeText: String? = {
@@ -873,8 +928,25 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
             else { return }
             guard await coordinator.isSourcePermitted(.appleMusic) else { return }
 
+            let trackKey = Self.trackSignature(
+                title: activity.details ?? trackInfo.name ?? "",
+                artist: activity.state ?? trackInfo.artist,
+                album: trackInfo.album
+            )
+            let trackTitle = activity.details ?? trackInfo.name
+
             if trackInfo.appName.caseInsensitiveCompare("Spotify") != .orderedSame {
-                Self.updateArtworkCache()
+                for delay in [100_000_000, 250_000_000, 500_000_000] {
+                    if let data = Self.fetchCurrentArtworkData(matchingTitle: trackTitle) {
+                        Self.setCachedArtworkData(data, for: trackKey)
+                        break
+                    }
+                    try? await Task.sleep(nanoseconds: UInt64(delay))
+                    guard !Task.isCancelled,
+                          self.isCurrentArtworkGeneration(artworkGen),
+                          self.isCurrentTrackUpdateGeneration(trackGeneration) else { return }
+                }
+                Self.updateArtworkCache(for: trackKey, matchingTitle: trackTitle)
             }
 
             guard self.isCurrentArtworkGeneration(artworkGen),
@@ -904,7 +976,7 @@ public nonisolated final class AppleMusicPresenceMonitor: @unchecked Sendable {
                           self.isCurrentTrackUpdateGeneration(trackGeneration),
                           !Task.isCancelled
                     else { return }
-                    Self.currentArtworkData = data
+                    Self.setCachedArtworkData(data, for: trackKey)
                 }
             }
 

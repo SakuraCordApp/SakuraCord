@@ -1006,10 +1006,12 @@ private struct CurrentUserCapsule: View {
                                 Image(systemName: "music.note")
                                     .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .semibold))
                                     .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
+                                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
                             } else if model.currentUserActivity?.type == .playing {
                                 Image(systemName: "gamecontroller.fill")
                                     .font(.system(size: max(9, InterfaceTypographyMetrics.interfaceTextSize - 3), weight: .semibold))
                                     .foregroundStyle(Color(red: 35 / 255.0, green: 165 / 255.0, blue: 90 / 255.0))
+                                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
                             }
                             Text(subtitle)
                                 .font(.interfaceSystem(
@@ -1020,7 +1022,12 @@ private struct CurrentUserCapsule: View {
                                 ))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
+                                .id(subtitle)
+                                .transition(.opacity)
                         }
+                        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: model.isCurrentUserListeningToMusic)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: model.currentUserActivity?.type)
+                        .animation(.easeInOut(duration: 0.2), value: subtitle)
                     }
 
                     Spacer(minLength: InterfaceScale.metric(4))

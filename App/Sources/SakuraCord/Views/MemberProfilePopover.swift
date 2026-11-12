@@ -236,7 +236,7 @@ struct MemberProfilePopover<Footer: View>: View {
                         )
                     )
                     .animation(
-                        !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.35, dampingFraction: 0.8) : nil,
+                        !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.40, dampingFraction: 0.82, blendDuration: 0.15) : nil,
                         value: contentHeight
                     )
                     .background { popoverBackground }
@@ -268,7 +268,7 @@ struct MemberProfilePopover<Footer: View>: View {
             guard editor == nil, newHeight.isFinite, newHeight > 0 else { return }
             let measuredHeight = max(InterfaceScale.metric(250), newHeight)
             guard contentHeight != measuredHeight else { return }
-            withAnimation(!systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.35, dampingFraction: 0.82) : nil) {
+            withAnimation(!systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.40, dampingFraction: 0.82, blendDuration: 0.15) : nil) {
                 contentHeight = measuredHeight
             }
             popoverPresentationContext?.contentSizeDidChange?()
@@ -362,7 +362,17 @@ struct MemberProfilePopover<Footer: View>: View {
                 if hasActiveActivity, editor == nil {
                     ProfileActivitySection(member: member, richActivity: effectiveRichActivity, isCurrentUser: isCurrentUser)
                         .padding(.horizontal, InterfaceScale.metric(16))
-                        .transition(.opacity.combined(with: .offset(y: -4)))
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity
+                                    .combined(with: .scale(scale: 0.94, anchor: .top))
+                                    .combined(with: .offset(y: -8)),
+                                removal: .opacity
+                                    .combined(with: .scale(scale: 0.96, anchor: .top))
+                                    .combined(with: .offset(y: -6))
+                            )
+                        )
+                        .clipped()
                 }
 
                 if isLoading {
@@ -388,7 +398,7 @@ struct MemberProfilePopover<Footer: View>: View {
                 footer
             }
             .animation(
-                !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.35, dampingFraction: 0.8) : nil,
+                !systemReduceMotion && AppMotionPolicy.animates(.overlays) ? .spring(response: 0.40, dampingFraction: 0.82, blendDuration: 0.15) : nil,
                 value: hasActiveActivity
             )
             .frame(width: contentWidth, alignment: .leading)

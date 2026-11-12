@@ -102,6 +102,8 @@ struct ActivityMarqueeText: View {
             .foregroundStyle(foregroundStyle)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
+            .id(text)
+            .transition(.opacity)
             .background {
                 GeometryReader { textGeo in
                     Color.clear
@@ -330,7 +332,11 @@ struct ProfileActivitySection: View {
             }
         }
         if isMusic, isCurrentUser {
-            if let data = AppleMusicPresenceMonitor.currentArtworkData, let img = NSImage(data: data) {
+            if let data = AppleMusicPresenceMonitor.currentArtworkData(
+                for: primaryText,
+                artist: effectiveActivity?.state,
+                album: effectiveActivity?.largeText
+            ), let img = NSImage(data: data) {
                 return img
             }
         }
@@ -436,6 +442,12 @@ struct ProfileActivitySection: View {
         return nil
     }
 
+    private var artworkIdentity: String {
+        let localArtKey = (dynamicArtwork ?? resolvedArtworkImage) != nil ? "local" : "none"
+        let remoteArtKey = resolvedRemoteArtworkURL?.absoluteString ?? "none"
+        return "\(primaryText)|\(secondaryText ?? "")|\(localArtKey)|\(remoteArtKey)"
+    }
+
     private var destinationHelpText: String {
         if isMusic {
             let appName = effectiveActivity?.name ?? (isSpotifyMusicActivity ? "Spotify" : "Apple Music")
@@ -464,9 +476,12 @@ struct ProfileActivitySection: View {
             HStack(alignment: .center, spacing: InterfaceScale.metric(12)) {
                 artworkView(size: rightColumnHeight)
                     .frame(width: rightColumnHeight, height: rightColumnHeight)
+                    .id(artworkIdentity)
+                    .transition(.opacity)
 
                 rightDetailsColumn
             }
+            .animation(.easeInOut(duration: 0.28), value: artworkIdentity)
         }
         .padding(InterfaceScale.metric(12))
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -503,10 +518,20 @@ struct ProfileActivitySection: View {
         .onAppear {
             refreshArtwork()
         }
+        .onReceive(NotificationCenter.default.publisher(for: AppleMusicPresenceMonitor.artworkDidChangeNotification)) { _ in
+            withAnimation(.easeInOut(duration: 0.28)) {
+                refreshArtwork()
+            }
+        }
+        .animation(.spring(response: 0.38, dampingFraction: 0.84), value: primaryText)
+        .animation(.spring(response: 0.38, dampingFraction: 0.84), value: secondaryText)
+        .animation(.spring(response: 0.36, dampingFraction: 0.82), value: rightColumnHeight)
         .task(id: effectiveActivity) {
-            remoteArtworkOverride = nil
-            resolvedTrackURL = nil
-            refreshArtwork()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                remoteArtworkOverride = nil
+                resolvedTrackURL = nil
+                refreshArtwork()
+            }
             guard !Task.isCancelled else { return }
             if isMusic {
                 await resolveMissingMusicArtwork()
@@ -593,7 +618,9 @@ struct ProfileActivitySection: View {
             if newHeight > 0 {
                 let clamped = max(InterfaceScale.metric(56), newHeight)
                 if abs(rightColumnHeight - clamped) > 1 {
-                    rightColumnHeight = clamped
+                    withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+                        rightColumnHeight = clamped
+                    }
                 }
             }
         }
@@ -622,11 +649,15 @@ struct ProfileActivitySection: View {
         }
         if !hasRealArtwork {
             if let artwork = resolved.artworkURL, let url = URL(string: artwork) {
-                remoteArtworkOverride = url
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    remoteArtworkOverride = url
+                }
             }
         }
         if let track = resolved.trackURL, let url = URL(string: track) {
-            resolvedTrackURL = url
+            withAnimation(.easeInOut(duration: 0.28)) {
+                resolvedTrackURL = url
+            }
         }
     }
 
@@ -754,6 +785,7 @@ struct ProfileActivitySection: View {
                             Capsule()
                                 .fill(Color.primary.opacity(0.8))
                                 .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(progress))), height: InterfaceScale.metric(4))
+                                .animation(.linear(duration: 0.2), value: progress)
                         }
                     }
                     .frame(height: InterfaceScale.metric(4))
