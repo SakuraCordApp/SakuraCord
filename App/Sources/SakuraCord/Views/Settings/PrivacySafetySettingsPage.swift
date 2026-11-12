@@ -405,7 +405,7 @@ private struct ActivityStackPriorityCard: View {
                 Text("Activity Stack Priority", bundle: #bundle)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Picker("Preset", selection: Binding(
+                Picker("Priority Preset", selection: Binding(
                     get: { currentPreset },
                     set: { newPreset in
                         if let newOrder = newPreset.order {
@@ -421,8 +421,10 @@ private struct ActivityStackPriorityCard: View {
                         }
                     }
                 }
+                .labelsHidden()
                 .pickerStyle(.menu)
                 .fixedSize()
+                .accessibilityLabel("Activity stack priority preset")
             }
 
             Text("Drag and arrange categories horizontally to customize priority. Top priority (leftmost) is displayed as your primary activity.", bundle: #bundle)
@@ -494,9 +496,6 @@ private struct ActivityStackBlockTile: View {
                 }
             }
 
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: InterfaceScale.metric(9), weight: .semibold))
-                .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, InterfaceScale.metric(10))
         .padding(.vertical, InterfaceScale.metric(8))
