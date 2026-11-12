@@ -52,7 +52,9 @@ struct InboxScheduledMessagesView: View {
         .animation(.snappy(duration: 0.25), value: state.messages.map(\.id))
         .animation(.snappy(duration: 0.25), value: state.errorMessage)
         .windowModal(item: $editingTime, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) { message in
-            ScheduleMessageDialog(initialDate: message.sendAt, scheduledMessageID: message.id) {
+            ScheduleMessageDialog(
+                initialDate: message.sendAt, timeFormat: model.interfaceSettings.timestampFormat, scheduledMessageID: message.id
+            ) {
                 model.rescheduleMessage(message, at: $0)
             }
         }
@@ -158,7 +160,7 @@ private struct ScheduledMessageCard: View {
                 .foregroundStyle(.red)
         } else {
             Label {
-                Text(message.sendAt.formatted(date: .abbreviated, time: .shortened))
+                Text(ScheduleTimeText.dayAndTime(message.sendAt, format: model.interfaceSettings.timestampFormat, includesYear: true))
             } icon: {
                 Image(systemName: "clock").foregroundStyle(SakuraCordAccentColor.color)
             }

@@ -1,10 +1,13 @@
+import AppKit
 import SakuraCordModels
 import SwiftUI
 
 /// SakuraCord's schedule dialog: a day from today to Discord's last allowed
 /// day and a time in the official dialog's 15-minute steps. Arrow keys move
-/// the day (left and right) and the time (up and down).
+/// the day (left and right) and the time (up and down); scrolling or dragging
+/// the time runs through the allowed days.
 struct ScheduleMessageDialog: View {
+    let timeFormat: InterfaceTimestampFormat
     /// Bounds a reschedule to 30 days after its message was first scheduled.
     var scheduledMessageID: ScheduledMessageID?
     let commit: (Date) -> Void
@@ -18,11 +21,19 @@ struct ScheduleMessageDialog: View {
     @State private var day: Date
     /// Minutes after midnight; a time set elsewhere may fall between steps.
     @State private var minute: Int
+    /// Steps already taken by the drag under way.
+    @State private var draggedSteps = 0
     @FocusState private var isFocused: Bool
 
-    init(initialDate: Date?, scheduledMessageID: ScheduledMessageID? = nil, commit: @escaping (Date) -> Void) {
+    init(
+        initialDate: Date?,
+        timeFormat: InterfaceTimestampFormat,
+        scheduledMessageID: ScheduledMessageID? = nil,
+        commit: @escaping (Date) -> Void
+    ) {
         let calendar = Calendar.current
         let date = initialDate ?? Self.nextWholeHour()
+        self.timeFormat = timeFormat
         self.scheduledMessageID = scheduledMessageID
         self.commit = commit
         let last = calendar.startOfDay(for: ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID))
@@ -52,7 +63,7 @@ struct ScheduleMessageDialog: View {
                         if let issue {
                             Label(issue, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
                         } else {
-                            Label("Sends \(date.formatted(.dateTime.weekday(.wide).day().month(.wide))) at \(date.formatted(date: .omitted, time: .shortened))", systemImage: "paperplane")
+                            Label("Sends \(date.formatted(.dateTime.weekday(.wide).day().month(.wide))) at \(ScheduleTimeText.time(date, format: timeFormat))", systemImage: "paperplane")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -121,11 +132,29 @@ struct ScheduleMessageDialog: View {
     private var timePicker: some View {
         HStack(spacing: 12) {
             stepButton(systemImage: "chevron.left", help: "15 Minutes Earlier") { _ = step(by: -1) }
-            Text(date.formatted(date: .omitted, time: .shortened))
+            Text(ScheduleTimeText.time(date, format: timeFormat))
                 .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
                 .contentTransition(.numericText())
-                .animation(.snappy(duration: 0.2), value: minute)
-                .frame(maxWidth: .infinity)
+                .animation(.snappy(duration: 0.2), value: date)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .background(ScrollStepInput { scrub(by: $0) })
+                .gesture(
+                    DragGesture(minimumDistance: 3)
+                        .onChanged { value in
+                            // Up or right is later, as with scrolling.
+                            let steps = Int(((value.translation.width - value.translation.height) / 16).rounded(.towardZero))
+                            while draggedSteps != steps {
+                                let direction = steps > draggedSteps ? 1 : -1
+                                guard scrub(by: direction) else {
+                                    draggedSteps = steps
+                                    break
+                                }
+                                draggedSteps += direction
+                            }
+                        }
+                        .onEnded { _ in draggedSteps = 0 }
+                )
             stepButton(systemImage: "chevron.right", help: "15 Minutes Later") { _ = step(by: 1) }
         }
         .padding(6)
@@ -163,6 +192,19 @@ struct ScheduleMessageDialog: View {
         return .handled
     }
 
+    /// Scrolling and dragging run through the allowed days in 15-minute steps
+    /// and stop at either end, each step ticking like the theme editor's controls.
+    private func scrub(by direction: Int) -> Bool {
+        let steps = direction > 0 ? minute / 15 + 1 : (minute + 14) / 15 - 1
+        guard let candidate = Calendar.current.date(byAdding: .minute, value: steps * 15, to: day) else { return false }
+        if direction > 0, candidate > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID) { return false }
+        if direction < 0, candidate < ScheduledMessagePolicy.earliestSendDate() { return false }
+        day = Calendar.current.startOfDay(for: candidate)
+        minute = Self.minutes(of: candidate)
+        ColorPickerHaptics.performStep()
+        return true
+    }
+
     private func moveDay(by offset: Int) -> KeyPress.Result {
         guard let index = days.firstIndex(of: day) else { return .ignored }
         day = days[min(max(index + offset, 0), days.count - 1)]
@@ -177,5 +219,61 @@ struct ScheduleMessageDialog: View {
     static func nextWholeHour(now: Date = .now, calendar: Calendar = .current) -> Date {
         let hour = calendar.dateInterval(of: .hour, for: now)?.end ?? now
         return hour < ScheduledMessagePolicy.earliestSendDate(now: now) ? hour.addingTimeInterval(3600) : hour
+    }
+}
+
+/// Turns scrolling over a view into whole steps, up or right being later: a
+/// trackpad every few points, momentum included, and a mouse wheel per notch.
+private struct ScrollStepInput: NSViewRepresentable {
+    /// Returns whether the step was taken; a refused step drops the remainder.
+    let step: (Int) -> Bool
+
+    func makeNSView(context: Context) -> InputView { InputView() }
+    func updateNSView(_ view: InputView, context: Context) { view.step = step }
+    static func dismantleNSView(_ view: InputView, coordinator: ()) { view.stopMonitoring() }
+
+    final class InputView: NSView {
+        var step: (Int) -> Bool = { _ in false }
+        private var monitor: Any?
+        private var pending: CGFloat = 0
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stopMonitoring()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let window = self.window, event.window === window,
+                      self.bounds.contains(self.convert(event.locationInWindow, from: nil)),
+                      WindowModalCoordinator.allowsInput(for: self)
+                else { return event }
+                self.handle(event)
+                return nil
+            }
+        }
+
+        private func handle(_ event: NSEvent) {
+            let direction: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
+            let delta = direction * (event.scrollingDeltaX - event.scrollingDeltaY)
+            guard event.hasPreciseScrollingDeltas else {
+                if delta != 0 { _ = step(delta > 0 ? 1 : -1) }
+                return
+            }
+            if event.phase.contains(.began) { pending = 0 }
+            pending += delta
+            while abs(pending) >= 18 {
+                guard step(pending > 0 ? 1 : -1) else {
+                    pending = 0
+                    return
+                }
+                pending -= pending > 0 ? 18 : -18
+            }
+        }
+
+        func stopMonitoring() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
     }
 }

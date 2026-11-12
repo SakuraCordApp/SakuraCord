@@ -4,6 +4,7 @@ import SwiftUI
 /// The official client's three send-time shortcuts, and Custom…, which opens
 /// the schedule dialog.
 struct ScheduleMessageShortcuts: View {
+    let timeFormat: InterfaceTimestampFormat
     let pick: (Date) -> Void
     let custom: () -> Void
 
@@ -15,7 +16,7 @@ struct ScheduleMessageShortcuts: View {
                 .padding(.top, InterfaceScale.metric(4))
             VStack(spacing: InterfaceScale.metric(2)) {
                 // Late on a Sunday, tomorrow's 9:00 is also Monday's; the official menu lists both.
-                ForEach(Self.shortcuts(), id: \.label) { shortcut in
+                ForEach(Self.shortcuts(timeFormat: timeFormat), id: \.label) { shortcut in
                     row(shortcut.label, systemImage: shortcut.systemImage) { pick(shortcut.date) }
                 }
                 row(String(localized: "Custom…"), systemImage: "calendar.badge.plus", action: custom)
@@ -42,10 +43,10 @@ struct ScheduleMessageShortcuts: View {
     }
 
     /// 9:00 and 13:00 today, or tomorrow once too close, then next week's Monday at 9:00.
-    static func shortcuts(now: Date = .now, calendar: Calendar = .current) -> [Shortcut] {
+    static func shortcuts(timeFormat: InterfaceTimestampFormat, now: Date = .now, calendar: Calendar = .current) -> [Shortcut] {
         let earliest = ScheduledMessagePolicy.earliestSendDate(now: now)
         let today = calendar.startOfDay(for: now)
-        func time(_ date: Date) -> String { date.formatted(date: .omitted, time: .shortened) }
+        func time(_ date: Date) -> String { ScheduleTimeText.time(date, format: timeFormat) }
         func daily(hour: Int, systemImage: String) -> Shortcut {
             let todayAt = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: today) ?? today
             if todayAt > earliest {
@@ -79,10 +80,11 @@ struct ComposerScheduleHeader: View {
     var body: some View {
         if let channelID = model.composerSendChannelID(in: destination) {
             let state = model.scheduledMessages
+            let timeFormat = model.interfaceSettings.timestampFormat
             if let confirmed = state.confirmations[channelID] {
                 row(systemImage: "checkmark.circle.fill", tint: .green) {
                     Button { model.presentScheduledMessages() } label: {
-                        Text("Message scheduled for \(confirmed.formatted(.scheduledSendTime))")
+                        Text("Message scheduled for \(ScheduleTimeText.dayAndTime(confirmed, format: timeFormat))")
                     }
                     .buttonStyle(.plain)
                     .allowsHitTesting(model.isInboxAvailable)
@@ -92,13 +94,13 @@ struct ComposerScheduleHeader: View {
             } else if let date = state.sendDates[channelID] {
                 row(systemImage: "calendar.badge.clock", tint: SakuraCordAccentColor.color) {
                     Button { isEditing = true } label: {
-                        Text("Scheduling for \(date.formatted(.scheduledSendTime))")
+                        Text("Scheduling for \(ScheduleTimeText.dayAndTime(date, format: timeFormat))")
                     }
                     .buttonStyle(.plain)
                     .help("Edit Schedule Time")
                     .disabled(state.submissions[channelID] != nil)
                     .popover(isPresented: $isEditing, arrowEdge: .top) {
-                        ScheduleMessageShortcuts { date in
+                        ScheduleMessageShortcuts(timeFormat: timeFormat) { date in
                             isEditing = false
                             model.setScheduledSendDate(date, in: destination)
                         } custom: {
@@ -137,9 +139,15 @@ struct ComposerScheduleHeader: View {
     }
 }
 
-extension FormatStyle where Self == Date.FormatStyle {
-    /// "Nov 12, 9:00 AM" in the person's locale.
-    static var scheduledSendTime: Date.FormatStyle {
-        .dateTime.month(.abbreviated).day().hour().minute()
+/// The feature's times follow the message timestamp setting.
+enum ScheduleTimeText {
+    static func time(_ date: Date, format: InterfaceTimestampFormat) -> String {
+        InterfaceTimestampFormatter.text(for: date, format: format, includesSeconds: false)
+    }
+
+    /// "16 Nov at 03:00", with the year where a list can span one.
+    static func dayAndTime(_ date: Date, format: InterfaceTimestampFormat, includesYear: Bool = false) -> String {
+        let day = date.formatted(includesYear ? .dateTime.day().month(.abbreviated).year() : .dateTime.day().month(.abbreviated))
+        return String(localized: "\(day) at \(time(date, format: format))")
     }
 }

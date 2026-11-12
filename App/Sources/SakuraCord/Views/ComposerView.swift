@@ -356,7 +356,7 @@ struct ComposerView: View {
             }
         }
         .windowModal(isPresented: $showsScheduleDialog, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
-            ScheduleMessageDialog(initialDate: model.scheduledSendDate(in: conversation)) {
+            ScheduleMessageDialog(initialDate: model.scheduledSendDate(in: conversation), timeFormat: model.interfaceSettings.timestampFormat) {
                 model.setScheduledSendDate($0, in: conversation)
                 isFocused = true
             }
@@ -1784,7 +1784,7 @@ extension ComposerView {
     /// The composer's + menu: files, a thread, a poll, a schedule, an Activity and translation.
     @ViewBuilder private var composerActionsMenu: some View {
         if showsScheduleShortcuts {
-            ScheduleMessageShortcuts { date in
+            ScheduleMessageShortcuts(timeFormat: model.interfaceSettings.timestampFormat) { date in
                 showComposerActions = false
                 model.setScheduledSendDate(date, in: conversation)
                 isFocused = true
