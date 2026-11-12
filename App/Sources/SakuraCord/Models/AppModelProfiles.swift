@@ -331,7 +331,7 @@ extension AppModel {
         let memberID = member.id
         let isOffline = member.status == .offline
         if let cachedProfile {
-            if !isCurrent, (isOffline || member.richActivity == nil), let targetGuildID = guildID ?? cachedProfile.mutualGuilds.first?.id {
+            if !isCurrent, isOffline || member.richActivity == nil, let targetGuildID = guildID ?? cachedProfile.mutualGuilds.first?.id {
                 refreshCachedProfilePresence(
                     memberID: memberID, targetGuildID: targetGuildID, guildID: guildID,
                     requestID: requestID, destination: destination, session: session
@@ -614,7 +614,7 @@ extension AppModel {
                     merged.isListeningToMusic = better.isListeningToMusic || merged.isListeningToMusic
                     merged.isMobileOnly = better.isMobileOnly || merged.isMobileOnly
                     merged.richActivity = better.richActivity ?? merged.richActivity
-                    if merged.status.isVisibleOnline && merged.richActivity != nil {
+                    if merged.status.isVisibleOnline, merged.richActivity != nil {
                         return merged
                     }
                 }
@@ -634,7 +634,7 @@ extension AppModel {
                     base.isListeningToMusic = member.isListeningToMusic || base.isListeningToMusic
                     base.isMobileOnly = member.isMobileOnly || base.isMobileOnly
                     base.richActivity = member.richActivity ?? base.richActivity
-                    if base.status.isVisibleOnline && base.richActivity != nil {
+                    if base.status.isVisibleOnline, base.richActivity != nil {
                         return base
                     }
                     baseMember = base
@@ -666,7 +666,7 @@ extension AppModel {
                 updated.activityText = existing
                 updated.isListeningToMusic = presentation.member.isListeningToMusic
             }
-            if !updated.status.isVisibleOnline && presentation.member.status.isVisibleOnline {
+            if !updated.status.isVisibleOnline, presentation.member.status.isVisibleOnline {
                 updated.status = presentation.member.status
             }
             presentation.member = updated
