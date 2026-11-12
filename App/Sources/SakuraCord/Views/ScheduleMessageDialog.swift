@@ -1,4 +1,3 @@
-import AppKit
 import SakuraCordModels
 import SwiftUI
 
@@ -14,7 +13,7 @@ struct ScheduleMessageDialog: View {
     @Environment(\.windowModalContext) private var modal
     /// Today through the last day Discord accepts; an old message's 30-day
     /// bound may leave only today, which then reads as too far away.
-    private let days: [Date]
+    private let days: [Day]
     /// The time as given, kept while its day and time stay unchanged, so a
     /// reschedule never shifts it, as within a repeated daylight-saving hour.
     private let initialDate: Date
@@ -37,11 +36,11 @@ struct ScheduleMessageDialog: View {
         self.scheduledMessageID = scheduledMessageID
         self.commit = commit
         let last = calendar.startOfDay(for: ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID))
-        var days = [calendar.startOfDay(for: .now)]
-        while let next = calendar.date(byAdding: .day, value: 1, to: days[days.count - 1]), next <= last {
-            days.append(next)
+        var dates = [calendar.startOfDay(for: .now)]
+        while let next = calendar.date(byAdding: .day, value: 1, to: dates[dates.count - 1]), next <= last {
+            dates.append(next)
         }
-        self.days = days
+        days = dates.map(Day.init)
         self.initialDate = date
         _day = State(initialValue: calendar.startOfDay(for: date))
         _minute = State(initialValue: Self.minutes(of: date))
@@ -106,14 +105,14 @@ struct ScheduleMessageDialog: View {
 
     private var dayPicker: some View {
         HStack(spacing: 6) {
-            ForEach(days, id: \.self) { candidate in
-                let isSelected = candidate == day
-                Button { day = candidate } label: {
+            ForEach(days, id: \.date) { candidate in
+                let isSelected = candidate.date == day
+                Button { day = candidate.date } label: {
                     VStack(spacing: 2) {
-                        Text(candidate.formatted(.dateTime.weekday(.abbreviated)))
+                        Text(candidate.weekday)
                             .font(.caption)
                             .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
-                        Text(candidate.formatted(.dateTime.day()))
+                        Text(candidate.number)
                             .font(.body.weight(.semibold).monospacedDigit())
                             .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                     }
@@ -123,7 +122,7 @@ struct ScheduleMessageDialog: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect(isSelected ? .regular.tint(SakuraCordAccentColor.color).interactive() : .regular.interactive(), in: Capsule())
-                .help(candidate.formatted(date: .complete, time: .omitted))
+                .help(candidate.help)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
@@ -142,15 +141,12 @@ struct ScheduleMessageDialog: View {
                 .gesture(
                     DragGesture(minimumDistance: 3)
                         .onChanged { value in
-                            // Up or right is later, as with scrolling.
+                            // Up or right is later, as with scrolling; a refused step drops the rest.
                             let steps = Int(((value.translation.width - value.translation.height) / 16).rounded(.towardZero))
-                            while draggedSteps != steps {
-                                let direction = steps > draggedSteps ? 1 : -1
-                                guard scrub(by: direction) else {
-                                    draggedSteps = steps
-                                    break
-                                }
-                                draggedSteps += direction
+                            let delta = steps - draggedSteps
+                            draggedSteps = steps
+                            for _ in 0 ..< abs(delta) {
+                                guard scrub(by: delta.signum()) else { break }
                             }
                         }
                         .onEnded { _ in draggedSteps = 0 }
@@ -187,27 +183,31 @@ struct ScheduleMessageDialog: View {
 
     /// Moves to the neighbouring 15-minute mark within the day.
     private func step(by direction: Int) -> KeyPress.Result {
-        let steps = direction > 0 ? minute / 15 + 1 : (minute + 14) / 15 - 1
-        minute = min(max(steps, 0), 95) * 15
+        minute = min(max(neighbouringMark(direction), 0), 95) * 15
         return .handled
     }
 
+    /// The next 15-minute mark from the time, counted from midnight.
+    private func neighbouringMark(_ direction: Int) -> Int {
+        direction > 0 ? minute / 15 + 1 : (minute + 14) / 15 - 1
+    }
+
     /// Scrolling and dragging run through the allowed days in 15-minute steps
-    /// and stop at either end, each step ticking like the theme editor's controls.
+    /// and stop at either end, each step ticking.
     private func scrub(by direction: Int) -> Bool {
-        let steps = direction > 0 ? minute / 15 + 1 : (minute + 14) / 15 - 1
-        guard let candidate = Calendar.current.date(byAdding: .minute, value: steps * 15, to: day) else { return false }
+        guard let candidate = Calendar.current.date(byAdding: .minute, value: neighbouringMark(direction) * 15, to: day)
+        else { return false }
         if direction > 0, candidate > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID) { return false }
         if direction < 0, candidate < ScheduledMessagePolicy.earliestSendDate() { return false }
         day = Calendar.current.startOfDay(for: candidate)
         minute = Self.minutes(of: candidate)
-        ColorPickerHaptics.performStep()
+        StepHaptics.performStep()
         return true
     }
 
     private func moveDay(by offset: Int) -> KeyPress.Result {
-        guard let index = days.firstIndex(of: day) else { return .ignored }
-        day = days[min(max(index + offset, 0), days.count - 1)]
+        guard let index = days.firstIndex(where: { $0.date == day }) else { return .ignored }
+        day = days[min(max(index + offset, 0), days.count - 1)].date
         return .handled
     }
 
@@ -220,60 +220,19 @@ struct ScheduleMessageDialog: View {
         let hour = calendar.dateInterval(of: .hour, for: now)?.end ?? now
         return hour < ScheduledMessagePolicy.earliestSendDate(now: now) ? hour.addingTimeInterval(3600) : hour
     }
-}
 
-/// Turns scrolling over a view into whole steps, up or right being later: a
-/// trackpad every few points, momentum included, and a mouse wheel per notch.
-private struct ScrollStepInput: NSViewRepresentable {
-    /// Returns whether the step was taken; a refused step drops the remainder.
-    let step: (Int) -> Bool
+    /// A selectable day, its labels formatted once rather than on every step.
+    private struct Day {
+        let date: Date
+        let weekday: String
+        let number: String
+        let help: String
 
-    func makeNSView(context: Context) -> InputView { InputView() }
-    func updateNSView(_ view: InputView, context: Context) { view.step = step }
-    static func dismantleNSView(_ view: InputView, coordinator: ()) { view.stopMonitoring() }
-
-    final class InputView: NSView {
-        var step: (Int) -> Bool = { _ in false }
-        private var monitor: Any?
-        private var pending: CGFloat = 0
-
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            stopMonitoring()
-            guard window != nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                guard let self, let window = self.window, event.window === window,
-                      self.bounds.contains(self.convert(event.locationInWindow, from: nil)),
-                      WindowModalCoordinator.allowsInput(for: self)
-                else { return event }
-                self.handle(event)
-                return nil
-            }
-        }
-
-        private func handle(_ event: NSEvent) {
-            let direction: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
-            let delta = direction * (event.scrollingDeltaX - event.scrollingDeltaY)
-            guard event.hasPreciseScrollingDeltas else {
-                if delta != 0 { _ = step(delta > 0 ? 1 : -1) }
-                return
-            }
-            if event.phase.contains(.began) { pending = 0 }
-            pending += delta
-            while abs(pending) >= 18 {
-                guard step(pending > 0 ? 1 : -1) else {
-                    pending = 0
-                    return
-                }
-                pending -= pending > 0 ? 18 : -18
-            }
-        }
-
-        func stopMonitoring() {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-            monitor = nil
+        init(_ date: Date) {
+            self.date = date
+            weekday = date.formatted(.dateTime.weekday(.abbreviated))
+            number = date.formatted(.dateTime.day())
+            help = date.formatted(date: .complete, time: .omitted)
         }
     }
 }
