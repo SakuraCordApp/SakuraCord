@@ -154,4 +154,31 @@ struct ActivityCoordinatorTests {
         await coordinator.setActivity(staleMusic, for: .appleMusic, generation: 5)
         #expect(await mockProvider.currentActivities()["apple_music"] == nil)
     }
+
+    @Test func `custom activity category order reprioritizes primary activity`() async throws {
+        let mockProvider = MockChatProvider()
+        var prefs = ActivityCoordinatorPreferences.enabledAll
+        prefs.activityCategoryOrder = [.music, .games, .streaming, .other]
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: prefs)
+
+        let music = OutgoingActivityPayload(name: "Apple Music", type: .listening)
+        let game = OutgoingActivityPayload(name: "Minecraft", type: .playing)
+        let gameSource = ActivitySource.localRPC(sourceID: "game", clientID: "111", processID: nil)
+
+        await coordinator.setActivity(game, for: gameSource)
+        await coordinator.setActivity(music, for: .appleMusic)
+
+        // Music should be primary because it is ordered first
+        let primary = await coordinator.currentPrimaryActivity()
+        #expect(primary?.name == "Apple Music")
+        #expect(primary?.type == .listening)
+
+        // Swap order back to games first
+        prefs.activityCategoryOrder = [.games, .music, .streaming, .other]
+        await coordinator.updatePreferences(prefs)
+
+        let reprioritizedPrimary = await coordinator.currentPrimaryActivity()
+        #expect(reprioritizedPrimary?.name == "Minecraft")
+        #expect(reprioritizedPrimary?.type == .playing)
+    }
 }

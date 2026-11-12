@@ -1155,7 +1155,8 @@ extension AppModel {
         let initialActivityPreferences = ActivityCoordinatorPreferences(
             isActivitySharingEnabled: loadedPrivacy.sharesActivity,
             isAppleMusicPresenceEnabled: loadedPrivacy.sharesAppleMusicActivity,
-            isLocalRPCEnabled: loadedPrivacy.allowsLocalRPC
+            isLocalRPCEnabled: loadedPrivacy.allowsLocalRPC,
+            activityCategoryOrder: loadedPrivacy.activityStackOrder
         )
         let resolvedCoordinator = coordinator ?? ActivityCoordinator(provider: provider, preferences: initialActivityPreferences)
         let resolvedIPCServer = ipcServer ?? DiscordIPCServer(coordinator: resolvedCoordinator)

@@ -43,22 +43,26 @@ public nonisolated struct ActivityCoordinatorPreferences: Equatable, Sendable {
     public var isActivitySharingEnabled: Bool
     public var isAppleMusicPresenceEnabled: Bool
     public var isLocalRPCEnabled: Bool
+    public var activityCategoryOrder: [ActivityCategory]
 
     public init(
         isActivitySharingEnabled: Bool = false,
         isAppleMusicPresenceEnabled: Bool = false,
-        isLocalRPCEnabled: Bool = false
+        isLocalRPCEnabled: Bool = false,
+        activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
     ) {
         self.isActivitySharingEnabled = isActivitySharingEnabled
         self.isAppleMusicPresenceEnabled = isAppleMusicPresenceEnabled
         self.isLocalRPCEnabled = isLocalRPCEnabled
+        self.activityCategoryOrder = ActivityCategory.normalizedOrder(activityCategoryOrder)
     }
 
     public static var enabledAll: ActivityCoordinatorPreferences {
         ActivityCoordinatorPreferences(
             isActivitySharingEnabled: true,
             isAppleMusicPresenceEnabled: true,
-            isLocalRPCEnabled: true
+            isLocalRPCEnabled: true,
+            activityCategoryOrder: ActivityCategory.defaultOrder
         )
     }
 }
@@ -180,7 +184,10 @@ public actor ActivityCoordinator {
 
     public func currentPrimaryActivity() -> OutgoingActivityPayload? {
         let permitted = currentPermittedActivities()
-        return permitted.values.sorted { $0.priorityRank < $1.priorityRank }.first
+        let order = preferences.activityCategoryOrder
+        return permitted.values.sorted {
+            $0.priorityRank(using: order) < $1.priorityRank(using: order)
+        }.first
     }
 
     public func isSourceActive(_ source: ActivitySource) -> Bool {
@@ -208,8 +215,12 @@ public actor ActivityCoordinator {
     private func performSynchronize(generation: UInt64) async {
         guard generation == syncGeneration else { return }
         let permitted = currentPermittedActivities()
-        let primary = permitted.values.sorted { $0.priorityRank < $1.priorityRank }.first
+        let order = preferences.activityCategoryOrder
+        let primary = permitted.values.sorted {
+            $0.priorityRank(using: order) < $1.priorityRank(using: order)
+        }.first
         onActivityChangedHandler?(primary)
+        try? await provider.updateActivityCategoryOrder(order)
         let permittedSourceIDs = Set(permitted.keys.map(\.sourceID))
 
         // 1. Clear any sources that were previously published, registered, or in-flight but are no longer permitted/active

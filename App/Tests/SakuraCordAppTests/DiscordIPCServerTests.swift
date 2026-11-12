@@ -518,6 +518,52 @@ struct DiscordIPCServerTests {
         #expect(primary?.state == "In Game")
     }
 
+    @Test func `sonora rich presence resolves to Sonora and listening music type`() async throws {
+        let socketPath = makeTestSocketPath()
+        let mockProvider = MockChatProvider()
+        let coordinator = ActivityCoordinator(provider: mockProvider, preferences: .enabledAll)
+        let server = DiscordIPCServer(coordinator: coordinator, socketPath: socketPath)
+        try server.start()
+        defer { server.stop() }
+
+        let clientFD = try #require(connectClient(to: socketPath))
+        defer { close(clientFD) }
+
+        // Handshake with Sonora client ID
+        sendClientFrame(fd: clientFD, opcode: 0, jsonObject: ["v": 1, "client_id": "1236053360212873216"])
+        _ = try #require(readClientFrame(fd: clientFD))
+
+        // Sonora sends SET_ACTIVITY with details (track) and state (artist), omitting type (or type 0) and name
+        sendClientFrame(fd: clientFD, opcode: 1, jsonObject: [
+            "cmd": "SET_ACTIVITY",
+            "args": [
+                "pid": 4321,
+                "activity": [
+                    "details": "Starboy",
+                    "state": "The Weeknd",
+                    "assets": [
+                        "large_image": "https://i.scdn.co/image/ab67616d0000b2734718e2b124f79258be7bc452",
+                        "large_text": "Starboy"
+                    ]
+                ]
+            ],
+            "nonce": "sonora-nonce-1"
+        ])
+
+        let response = try #require(readClientFrame(fd: clientFD))
+        #expect(response.json["cmd"] as? String == "SET_ACTIVITY")
+        let data = try #require(response.json["data"] as? [String: Any])
+        #expect(data["name"] as? String == "Sonora")
+        #expect(data["type"] as? Int == 2)
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let primary = await coordinator.currentPrimaryActivity()
+        #expect(primary?.name == "Sonora")
+        #expect(primary?.type == .listening)
+        #expect(primary?.details == "Starboy")
+        #expect(primary?.state == "The Weeknd")
+    }
+
     @Test func `modrinth app rich presence resolves name cleanly and responds with augmented activity`() async throws {
         let socketPath = makeTestSocketPath()
         let mockProvider = MockChatProvider()

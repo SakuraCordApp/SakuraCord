@@ -133,6 +133,7 @@ public protocol ChatProvider: Sendable {
     func currentActivities() async -> [String: OutgoingActivityPayload]
     func updateActivity(_ activity: OutgoingActivityPayload?, sourceID: String) async throws
     func clearActivities(sourceID: String?) async throws
+    func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws
     func updateProfileCustomStatus(_ status: ProfileCustomStatus?) async throws -> ProfileCustomStatus?
     func messages(in channelID: ChannelID, before: MessageID?, limit: Int) async throws -> MessagePage
     func messages(
@@ -452,6 +453,7 @@ public extension ChatProvider {
     func clearActivities(sourceID: String?) async throws {
         throw ChatProviderError.unauthenticated
     }
+    func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws {}
 
     func guildJoinApplicationForm(_ guildID: GuildID, inviteCode: String?) async throws -> GuildJoinApplicationForm {
         throw ServerInviteError.unsupported("Server applications are unavailable for this session.")

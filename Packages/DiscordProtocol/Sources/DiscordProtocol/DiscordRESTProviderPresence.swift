@@ -30,6 +30,14 @@ public extension DiscordRESTProvider {
         await sendPresenceIfChanged()
     }
 
+    func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws {
+        let normalized = ActivityCategory.normalizedOrder(order)
+        guard activityCategoryOrder != normalized else { return }
+        presenceGeneration &+= 1
+        activityCategoryOrder = normalized
+        await sendPresenceIfChanged()
+    }
+
     // Official stable622805 module827827 and module594061 `markDirty`.
     /// Applies a pick at once and saves it; only this first save reports a failure.
     func updateStatus(_ status: PresenceStatus) async throws {
@@ -93,8 +101,10 @@ extension DiscordRESTProvider {
 
     func activeActivitiesList() -> [OutgoingActivityPayload] {
         activeActivities.values.sorted { lhs, rhs in
-            if lhs.priorityRank != rhs.priorityRank {
-                return lhs.priorityRank < rhs.priorityRank
+            let lRank = lhs.priorityRank(using: activityCategoryOrder)
+            let rRank = rhs.priorityRank(using: activityCategoryOrder)
+            if lRank != rRank {
+                return lRank < rRank
             }
             return lhs.name < rhs.name
         }

@@ -1,3 +1,4 @@
+import DiscordProtocol
 import Foundation
 import MediaPipeline
 
@@ -294,6 +295,12 @@ nonisolated struct SettingsPreferenceRegistry: Sendable {
             page: .privacySafety,
             storage: .appWide(key: "settings.privacy.localDiscordRPC"),
             defaultValue: .bool(false)
+        ),
+        SettingsPreferenceRegistration(
+            id: .activityStackOrder,
+            page: .privacySafety,
+            storage: .appWide(key: "settings.privacy.activityStackOrder"),
+            defaultValue: .strings(ActivityCategory.defaultOrder.map(\.rawValue))
         ),
         SettingsPreferenceRegistration(
             id: .removeMediaMetadata,

@@ -1,3 +1,4 @@
+import DiscordProtocol
 import AppKit
 import Foundation
 
@@ -62,7 +63,8 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
         trustedDomains: ExternalLinkTrustedDomain.defaults,
         sharesActivity: false,
         sharesAppleMusicActivity: false,
-        allowsLocalRPC: false
+        allowsLocalRPC: false,
+        activityStackOrder: ActivityCategory.defaultOrder
     )
 
     var removesMediaMetadata = true
@@ -73,6 +75,7 @@ nonisolated struct PrivacySafetySettingsSnapshot: Equatable, Sendable {
     var sharesActivity: Bool = false
     var sharesAppleMusicActivity: Bool = false
     var allowsLocalRPC: Bool = false
+    var activityStackOrder: [ActivityCategory] = ActivityCategory.defaultOrder
 }
 
 @MainActor
@@ -96,6 +99,10 @@ final class PrivacySafetySettingsStore {
         }
         if case let .bool(saved) = preferences.value(for: .localDiscordRPC) {
             value.allowsLocalRPC = saved
+        }
+        if case let .strings(order) = preferences.value(for: .activityStackOrder) {
+            let categories = order.compactMap(ActivityCategory.init(rawValue:))
+            value.activityStackOrder = ActivityCategory.normalizedOrder(categories)
         }
         if case let .bool(saved) = preferences.value(for: .removeMediaMetadata) {
             value.removesMediaMetadata = saved
@@ -121,6 +128,10 @@ final class PrivacySafetySettingsStore {
         preferences.set(.bool(value.sharesActivity), for: .activitySharing)
         preferences.set(.bool(value.sharesAppleMusicActivity), for: .appleMusicPresence)
         preferences.set(.bool(value.allowsLocalRPC), for: .localDiscordRPC)
+        preferences.set(
+            .strings(value.activityStackOrder.map(\.rawValue)),
+            for: .activityStackOrder
+        )
         preferences.set(.bool(value.removesMediaMetadata), for: .removeMediaMetadata)
         preferences.set(.bool(value.anonymisesFileNames), for: .anonymiseFileNames)
         preferences.set(.bool(value.sendsTypingIndicators), for: .privacyTypingIndicators)
@@ -382,7 +393,8 @@ extension AppModel {
                 ActivityCoordinatorPreferences(
                     isActivitySharingEnabled: value.sharesActivity,
                     isAppleMusicPresenceEnabled: value.sharesAppleMusicActivity,
-                    isLocalRPCEnabled: value.allowsLocalRPC
+                    isLocalRPCEnabled: value.allowsLocalRPC,
+                    activityCategoryOrder: value.activityStackOrder
                 )
             )
             if launchMode == .normal {

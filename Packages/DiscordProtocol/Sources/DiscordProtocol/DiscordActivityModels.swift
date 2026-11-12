@@ -9,6 +9,59 @@ public enum ActivityType: Int, Codable, CaseIterable, Hashable, Sendable {
     case competing = 5
 }
 
+public enum ActivityCategory: String, CaseIterable, Codable, Identifiable, Sendable {
+    case games
+    case music
+    case streaming
+    case other
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .games: return "Games"
+        case .music: return "Music"
+        case .streaming: return "Streaming"
+        case .other: return "Other Activities"
+        }
+    }
+
+    public var iconName: String {
+        switch self {
+        case .games: return "gamecontroller.fill"
+        case .music: return "music.note"
+        case .streaming: return "antenna.radiowaves.left.and.right"
+        case .other: return "sparkles"
+        }
+    }
+
+    public static let defaultOrder: [ActivityCategory] = [.games, .streaming, .music, .other]
+
+    public static func category(for type: ActivityType) -> ActivityCategory {
+        switch type {
+        case .playing, .competing:
+            return .games
+        case .listening:
+            return .music
+        case .streaming:
+            return .streaming
+        case .watching, .custom:
+            return .other
+        }
+    }
+
+    public static func normalizedOrder(_ list: [ActivityCategory]) -> [ActivityCategory] {
+        var result: [ActivityCategory] = []
+        for item in list where !result.contains(item) {
+            result.append(item)
+        }
+        for item in defaultOrder where !result.contains(item) {
+            result.append(item)
+        }
+        return result
+    }
+}
+
 public struct ActivityTimestamps: Codable, Hashable, Sendable {
     public var start: Int64?
     public var end: Int64?
@@ -154,15 +207,21 @@ public struct OutgoingActivityPayload: Codable, Hashable, Sendable {
         self.applicationId = applicationId
     }
 
-    public var priorityRank: Int {
+    public func priorityRank(using categoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder) -> Int {
+        let cat = ActivityCategory.category(for: type)
+        let normalized = ActivityCategory.normalizedOrder(categoryOrder)
+        let categoryRank = normalized.firstIndex(of: cat) ?? normalized.count
+        let subRank: Int
         switch type {
-        case .playing: return 1
-        case .competing: return 2
-        case .streaming: return 3
-        case .watching: return 4
-        case .listening: return 5
-        case .custom: return 6
+        case .playing: subRank = 0
+        case .competing: subRank = 1
+        default: subRank = 0
         }
+        return categoryRank * 10 + subRank
+    }
+
+    public var priorityRank: Int {
+        priorityRank(using: ActivityCategory.defaultOrder)
     }
 
     public var gatewayDictionary: [String: Any] {

@@ -36,6 +36,13 @@ nonisolated extension SettingsCatalog {
             scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
         ),
         control(
+            .activityStackOrder, page: .privacySafety,
+            section: .privacyDiscordActivity, label: "Activity Stack Priority",
+            help: "Customize the order in which multiple activities appear on your profile and status.",
+            keywords: ["activity", "priority", "stack", "order", "music", "games", "rpc"],
+            scope: .appWideLocal, persistence: .appPreferences, reset: .registeredLocalValue
+        ),
+        control(
             .removeMediaMetadata, page: .privacySafety,
             section: .privacyDiscordActivity, label: "Remove metadata from images and videos",
             help: "Remove location, camera and other personal metadata before Discord or external uploads, preserving media quality.",

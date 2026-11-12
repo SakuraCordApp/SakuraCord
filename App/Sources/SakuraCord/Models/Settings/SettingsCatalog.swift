@@ -379,6 +379,7 @@ nonisolated extension SettingsControlID {
     static let activitySharing = Self(rawValue: "privacy.activity-sharing")
     static let appleMusicPresence = Self(rawValue: "privacy.apple-music-presence")
     static let localDiscordRPC = Self(rawValue: "privacy.local-discord-rpc")
+    static let activityStackOrder = Self(rawValue: "privacy.activity-stack-order")
     static let removeMediaMetadata = Self(rawValue: "privacy.remove-media-metadata")
     static let anonymiseFileNames = Self(rawValue: "privacy.anonymise-file-names")
     static let privacyTypingIndicators = Self(rawValue: "privacy.typing-indicators")

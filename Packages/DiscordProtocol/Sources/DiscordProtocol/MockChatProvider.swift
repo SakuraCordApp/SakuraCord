@@ -44,7 +44,8 @@ public actor MockChatProvider: ChatProvider {
     var forumQueriesByChannel: [ChannelID: [ForumPostQuery]] = [:]
     var relationshipPresences: [UserID: UserPresence]?
     var presenceChurnTask: Task<Void, Never>?
-    var activeActivities: [String: OutgoingActivityPayload] = [:]
+    public var activeActivities: [String: OutgoingActivityPayload] = [:]
+    public var activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
 #if SAKURACORD_MOTION_BENCHMARK
     /// Threads seeded for the side-chat animation benchmark, and the latency
     /// simulated before their history is served.
@@ -318,6 +319,10 @@ public actor MockChatProvider: ChatProvider {
         } else {
             activeActivities.removeAll()
         }
+    }
+
+    public func updateActivityCategoryOrder(_ order: [ActivityCategory]) async throws {
+        activityCategoryOrder = ActivityCategory.normalizedOrder(order)
     }
 
     public func updateStatus(_ status: PresenceStatus) async throws {

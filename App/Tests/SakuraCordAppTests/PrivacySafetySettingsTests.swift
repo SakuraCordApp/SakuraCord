@@ -75,6 +75,7 @@ import Testing
     value.sharesActivity = true
     value.sharesAppleMusicActivity = true
     value.allowsLocalRPC = true
+    value.activityStackOrder = [.music, .games, .streaming, .other]
     store.save(value)
     let reloaded = store.load()
     #expect(!reloaded.removesMediaMetadata)
@@ -84,12 +85,14 @@ import Testing
     #expect(reloaded.sharesActivity)
     #expect(reloaded.sharesAppleMusicActivity)
     #expect(reloaded.allowsLocalRPC)
+    #expect(reloaded.activityStackOrder == [.music, .games, .streaming, .other])
 
     let export = preferences.export(scope: .appWide, page: .privacySafety)
     #expect(export.values == [
         SettingsControlID.activitySharing.rawValue: .bool(true),
         SettingsControlID.appleMusicPresence.rawValue: .bool(true),
         SettingsControlID.localDiscordRPC.rawValue: .bool(true),
+        SettingsControlID.activityStackOrder.rawValue: .strings(["music", "games", "streaming", "other"]),
         SettingsControlID.removeMediaMetadata.rawValue: .bool(false),
         SettingsControlID.anonymiseFileNames.rawValue: .bool(true),
         SettingsControlID.privacyTypingIndicators.rawValue: .bool(true),
@@ -263,7 +266,7 @@ import Testing
         .privacyTypingIndicators, .anonymiseFileNames, .removeMediaMetadata,
         .externalLinkProtection, .trustedDomains,
         .clearLocalActivity, .ignoredAccounts, .blockedAccounts,
-        .activitySharing, .appleMusicPresence, .localDiscordRPC,
+        .activitySharing, .appleMusicPresence, .localDiscordRPC, .activityStackOrder,
     ]
     let controls = SettingsCatalog.foundation.controls.filter {
         $0.destination.page == .privacySafety
@@ -280,6 +283,7 @@ import Testing
         ("GPS", .removeMediaMetadata),
         ("forward history", .clearLocalActivity),
         ("recent emoji", .clearLocalActivity),
+        ("stack", SettingsControlID.activityStackOrder),
     ] {
         state.searchText = term
         #expect(state.searchResults.contains { $0.id == control })

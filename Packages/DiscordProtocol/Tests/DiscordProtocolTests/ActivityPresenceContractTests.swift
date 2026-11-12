@@ -84,6 +84,44 @@ extension DirectMessageProviderContractTests {
         #expect(activities[1]["type"] as? Int == 2)
     }
 
+    @Test func `customizing activity category order reprioritizes gateway presence activities`() async throws {
+        DirectMessageURLProtocol.reset()
+        let session = try await readyStatusPickProvider(settings: statusSettingsFixture("online", dataVersion: 1))
+        defer { DiscordRESTProvider.removePendingStatusEdit(accountID: session.accountID) }
+
+        let provider = session.provider
+        let socket = session.socket
+
+        let musicActivity = OutgoingActivityPayload(
+            name: "Apple Music",
+            type: .listening,
+            details: "Song Title"
+        )
+        try await provider.updateActivity(musicActivity, sourceID: "apple_music")
+
+        let gameActivity = OutgoingActivityPayload(
+            name: "Minecraft",
+            type: .playing,
+            details: "Mining Diamonds"
+        )
+        try await provider.updateActivity(gameActivity, sourceID: "rpc:game")
+
+        // Prioritize music over games
+        try await provider.updateActivityCategoryOrder([.music, .games, .streaming, .other])
+
+        let presenceData = try #require(await socket.sentPayload(opcode: 3))
+        let presenceJson = try #require(JSONSerialization.jsonObject(with: presenceData) as? [String: Any])
+        let payloadDict = try #require(presenceJson["d"] as? [String: Any])
+        let activities = try #require(payloadDict["activities"] as? [[String: Any]])
+
+        #expect(activities.count == 2)
+        // With music prioritized, Listening must precede Playing
+        #expect(activities[0]["name"] as? String == "Apple Music")
+        #expect(activities[0]["type"] as? Int == 2)
+        #expect(activities[1]["name"] as? String == "Minecraft")
+        #expect(activities[1]["type"] as? Int == 0)
+    }
+
     @Test func `clearing activity removes it from gateway presence payload`() async throws {
         DirectMessageURLProtocol.reset()
         let session = try await readyStatusPickProvider(settings: statusSettingsFixture("online", dataVersion: 1))

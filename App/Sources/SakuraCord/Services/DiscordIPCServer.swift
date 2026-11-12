@@ -1,3 +1,6 @@
+#if canImport(AppKit)
+import AppKit
+#endif
 import Darwin
 import DiscordProtocol
 import Foundation
@@ -58,6 +61,28 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
     private let operationLock = NSLock()
     private var lastOperationTask: Task<Void, Never>?
     private var isStopped = false
+    private var lastActivityDict: [String: Any]?
+
+    func reapplyLastActivity() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.operationLock.lock()
+            let activityDict = self.lastActivityDict
+            let isStoppedNow = self.isStopped
+            self.operationLock.unlock()
+            guard !isStoppedNow, let activityDict else { return }
+
+            let source = ActivitySource.localRPC(
+                sourceID: self.id.uuidString,
+                clientID: self.clientID ?? "unknown",
+                processID: self.processID
+            )
+            let payload = self.parseActivity(activityDict)
+            self.enqueueOperation { [coordinator = self.coordinator] in
+                await coordinator.setActivity(payload, for: source)
+            }
+        }
+    }
 
     private func enqueueOperation(_ operation: @escaping @Sendable () async -> Void) {
         operationLock.lock()
@@ -197,6 +222,9 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 return
             }
             self.clientID = clientID
+            DiscordIPCServer.registerAppInfoListener(for: clientID) { [weak self] in
+                self?.reapplyLastActivity()
+            }
             Self.resolveApplicationInfo(for: clientID)
             sendReadyEvent()
 
@@ -227,6 +255,9 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
                 self.processID = validPid
             }
             let activityDict = args["activity"] as? [String: Any]
+            operationLock.lock()
+            self.lastActivityDict = activityDict
+            operationLock.unlock()
             let source = ActivitySource.localRPC(
                 sourceID: id.uuidString,
                 clientID: clientID ?? "unknown",
@@ -273,106 +304,161 @@ nonisolated final class DiscordIPCClientSession: @unchecked Sendable {
         }
     }
 
+    static func detectedProcessName(for pid: pid_t) -> String? {
+        guard pid > 0 else { return nil }
+        #if canImport(AppKit)
+        if let app = NSRunningApplication(processIdentifier: pid) {
+            if let name = app.localizedName, !name.isEmpty {
+                return name
+            }
+            if let bundleID = app.bundleIdentifier, !bundleID.isEmpty {
+                let parts = bundleID.split(separator: ".")
+                if let last = parts.last {
+                    return String(last).capitalized
+                }
+            }
+        }
+        #endif
+        return nil
+    }
+
+    static func isSonoraApp(rawName: String?, clientID: String?, pid: pid_t?) -> Bool {
+        if let rawName, rawName.localizedCaseInsensitiveContains("sonora") {
+            return true
+        }
+        if clientID == "1236053360212873216" || clientID == "1152994473210167347" {
+            return true
+        }
+        if let pid, pid > 0 {
+            #if canImport(AppKit)
+            if let app = NSRunningApplication(processIdentifier: pid) {
+                let name = app.localizedName ?? ""
+                let bundle = app.bundleIdentifier ?? ""
+                let exec = app.executableURL?.lastPathComponent ?? ""
+                if name.localizedCaseInsensitiveContains("sonora") ||
+                   bundle.localizedCaseInsensitiveContains("sonora") ||
+                   exec.localizedCaseInsensitiveContains("sonora") {
+                    return true
+                }
+            }
+            #endif
+        }
+        return false
+    }
+
+    private func resolveActivityName(
+        rawName: String?,
+        cleanedLargeText: String?,
+        isSonora: Bool,
+        detected: String?
+    ) -> String {
+        if let rawName, !rawName.isEmpty, rawName != clientID {
+            return rawName
+        }
+        if let clientID, let cached = DiscordIPCServer.cachedAppName(for: clientID) {
+            return cached
+        }
+        if isSonora {
+            return "Sonora"
+        }
+        if let detected, !detected.isEmpty {
+            return detected
+        }
+        if let cleanedLargeText, !cleanedLargeText.isEmpty, !cleanedLargeText.lowercased().hasPrefix("http") {
+            return cleanedLargeText
+        }
+        if let rawName, !rawName.isEmpty {
+            return rawName
+        }
+        if let clientID, !clientID.isEmpty, !clientID.allSatisfy(\.isNumber) {
+            return clientID
+        }
+        return "Game"
+    }
+
+    private func resolveActivityTimestamps(_ tsDict: [String: Any]?) -> ActivityTimestamps? {
+        guard let tsDict else { return nil }
+        var start = (tsDict["start"] as? NSNumber)?.int64Value
+        var end = (tsDict["end"] as? NSNumber)?.int64Value
+        if let startSeconds = start, startSeconds > 0, startSeconds < 100_000_000_000 {
+            start = startSeconds * 1000
+        }
+        if let endSeconds = end, endSeconds > 0, endSeconds < 100_000_000_000 {
+            end = endSeconds * 1000
+        }
+        guard start != nil || end != nil else { return nil }
+        return ActivityTimestamps(start: start, end: end)
+    }
+
+    private func resolveActivityAssets(_ assetsDict: [String: Any]?) -> ActivityAssets? {
+        guard let assetsDict else { return nil }
+        return ActivityAssets(
+            largeImage: assetsDict["large_image"] as? String,
+            largeText: assetsDict["large_text"] as? String,
+            smallImage: assetsDict["small_image"] as? String,
+            smallText: assetsDict["small_text"] as? String
+        )
+    }
+
+    private func resolveActivityParty(_ partyDict: [String: Any]?) -> ActivityParty? {
+        guard let partyDict else { return nil }
+        let id = partyDict["id"] as? String
+        let size = partyDict["size"] as? [Int]
+        return ActivityParty(
+            id: id,
+            currentSize: size?.indices.contains(0) == true ? size?[0] : nil,
+            maxSize: size?.indices.contains(1) == true ? size?[1] : nil
+        )
+    }
+
+    private func resolveActivitySecrets(_ secretsDict: [String: Any]?) -> ActivitySecrets? {
+        guard let secretsDict else { return nil }
+        return ActivitySecrets(
+            join: secretsDict["join"] as? String,
+            spectate: secretsDict["spectate"] as? String,
+            match: secretsDict["match"] as? String
+        )
+    }
+
+    private func resolveActivityButtons(_ buttonsList: [[String: Any]]?) -> [ActivityButton]? {
+        guard let buttonsList else { return nil }
+        return buttonsList.compactMap { btn in
+            guard let label = btn["label"] as? String,
+                  let url = btn["url"] as? String else { return nil }
+            return ActivityButton(label: label, url: url)
+        }
+    }
+
     private func parseActivity(_ dict: [String: Any]) -> OutgoingActivityPayload {
         let assetsDict = dict["assets"] as? [String: Any]
         let rawName = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let rawLargeText = (assetsDict?["large_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedLargeText = rawLargeText.map { DiscordIPCServer.cleanApplicationName(from: $0) }
-        let name: String = {
-            if let rawName, !rawName.isEmpty, rawName != clientID {
-                return rawName
-            }
-            if let clientID, let cached = DiscordIPCServer.cachedAppName(for: clientID) {
-                return cached
-            }
-            if let cleanedLargeText, !cleanedLargeText.isEmpty, !cleanedLargeText.lowercased().hasPrefix("http") {
-                return cleanedLargeText
-            }
-            if let rawName, !rawName.isEmpty {
-                return rawName
-            }
-            if let clientID, !clientID.isEmpty, !clientID.allSatisfy(\.isNumber) {
-                return clientID
-            }
-            return "Game"
-        }()
-        let typeRaw = (dict["type"] as? Int) ?? 0
-        let type = ActivityType(rawValue: typeRaw) ?? .playing
-        let details = dict["details"] as? String
-        let state = dict["state"] as? String
-        let url = dict["url"] as? String
-        let instance = dict["instance"] as? Bool
-        let flags = dict["flags"] as? Int
-
-        var timestamps: ActivityTimestamps?
-        if let tsDict = dict["timestamps"] as? [String: Any] {
-            var start = (tsDict["start"] as? NSNumber)?.int64Value
-            var end = (tsDict["end"] as? NSNumber)?.int64Value
-            // Local Discord IPC sends timestamps in seconds (< 100_000_000_000).
-            // Convert to milliseconds to align with Gateway and Discord rich presence expectations.
-            if let startSeconds = start, startSeconds > 0, startSeconds < 100_000_000_000 {
-                start = startSeconds * 1000
-            }
-            if let endSeconds = end, endSeconds > 0, endSeconds < 100_000_000_000 {
-                end = endSeconds * 1000
-            }
-            if start != nil || end != nil {
-                timestamps = ActivityTimestamps(start: start, end: end)
-            }
-        }
-
-        var assets: ActivityAssets?
-        if let assetsDict = dict["assets"] as? [String: Any] {
-            assets = ActivityAssets(
-                largeImage: assetsDict["large_image"] as? String,
-                largeText: assetsDict["large_text"] as? String,
-                smallImage: assetsDict["small_image"] as? String,
-                smallText: assetsDict["small_text"] as? String
-            )
-        }
-
-        var party: ActivityParty?
-        if let partyDict = dict["party"] as? [String: Any] {
-            let id = partyDict["id"] as? String
-            let size = partyDict["size"] as? [Int]
-            party = ActivityParty(
-                id: id,
-                currentSize: size?.indices.contains(0) == true ? size?[0] : nil,
-                maxSize: size?.indices.contains(1) == true ? size?[1] : nil
-            )
-        }
-
-        var secrets: ActivitySecrets?
-        if let secretsDict = dict["secrets"] as? [String: Any] {
-            secrets = ActivitySecrets(
-                join: secretsDict["join"] as? String,
-                spectate: secretsDict["spectate"] as? String,
-                match: secretsDict["match"] as? String
-            )
-        }
-
-        var buttons: [ActivityButton]?
-        if let buttonsList = dict["buttons"] as? [[String: Any]] {
-            buttons = buttonsList.compactMap { btn in
-                guard let label = btn["label"] as? String,
-                      let url = btn["url"] as? String else { return nil }
-                return ActivityButton(label: label, url: url)
-            }
-        }
+        let isSonora = Self.isSonoraApp(rawName: rawName, clientID: clientID, pid: processID)
+        let detected = processID.flatMap { Self.detectedProcessName(for: $0) }
+        let name = resolveActivityName(
+            rawName: rawName,
+            cleanedLargeText: cleanedLargeText,
+            isSonora: isSonora,
+            detected: detected
+        )
+        let isMusicApp = isSonora || DiscordIPCServer.knownMusicApplicationNames.contains(name)
+        let typeRaw = (dict["type"] as? Int) ?? (isMusicApp ? 2 : 0)
+        let type = ActivityType(rawValue: typeRaw) ?? (isMusicApp ? .listening : .playing)
 
         return OutgoingActivityPayload(
             name: name,
             type: type,
-            url: url,
-            details: details,
-            state: state,
-            timestamps: timestamps,
-            assets: assets,
-            party: party,
-            secrets: secrets,
-            instance: instance,
-            flags: flags,
-            buttons: buttons,
+            url: dict["url"] as? String,
+            details: dict["details"] as? String,
+            state: dict["state"] as? String,
+            timestamps: resolveActivityTimestamps(dict["timestamps"] as? [String: Any]),
+            assets: resolveActivityAssets(assetsDict),
+            party: resolveActivityParty(dict["party"] as? [String: Any]),
+            secrets: resolveActivitySecrets(dict["secrets"] as? [String: Any]),
+            instance: dict["instance"] as? Bool,
+            flags: dict["flags"] as? Int,
+            buttons: resolveActivityButtons(dict["buttons"] as? [[String: Any]]),
             applicationId: clientID
         )
     }
@@ -465,6 +551,18 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         "407788484196859904": "Apple Music",
         "530082442967941142": "Apple Music",
         "782685898163617802": "Vencord",
+        "1236053360212873216": "Sonora",
+        "1152994473210167347": "Sonora",
+    ]
+
+    public static let knownMusicApplicationNames: Set<String> = [
+        "Sonora",
+        "Apple Music",
+        "Spotify",
+        "Cider",
+        "MusicBee",
+        "Foobar2000",
+        "Feishin",
     ]
 
     private static let appCacheLock = NSLock()
@@ -493,6 +591,26 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         }
         if let icon, !icon.isEmpty {
             _cachedAppIcons[clientID] = icon
+        }
+        notifyAppInfoListeners(for: clientID)
+    }
+
+    private static let listenersLock = NSLock()
+    nonisolated(unsafe) private static var appInfoListeners: [String: [@Sendable () -> Void]] = [:]
+
+    static func registerAppInfoListener(for clientID: String, listener: @escaping @Sendable () -> Void) {
+        listenersLock.lock()
+        defer { listenersLock.unlock() }
+        appInfoListeners[clientID, default: []].append(listener)
+    }
+
+    private static func notifyAppInfoListeners(for clientID: String) {
+        listenersLock.lock()
+        let listeners = appInfoListeners[clientID] ?? []
+        appInfoListeners.removeValue(forKey: clientID)
+        listenersLock.unlock()
+        for listener in listeners {
+            listener()
         }
     }
 
@@ -695,16 +813,48 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
         }
     }
 
+    private static func purgeCandidateDirectories() {
+        purgeStaleSockets(in: "/tmp")
+        if let tmpdir = ProcessInfo.processInfo.environment["TMPDIR"], !tmpdir.isEmpty {
+            let dir = tmpdir.hasSuffix("/") ? String(tmpdir.dropLast()) : tmpdir
+            if dir != "/tmp" {
+                purgeStaleSockets(in: dir)
+            }
+        }
+        if let xdg = ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"], !xdg.isEmpty {
+            let dir = xdg.hasSuffix("/") ? String(xdg.dropLast()) : xdg
+            purgeStaleSockets(in: dir)
+        }
+    }
+
+    private func createSymlinks(for fileName: String, boundPath: String) {
+        var symlinkTargets: [String] = []
+        if !boundPath.hasPrefix("/tmp/") {
+            symlinkTargets.append("/tmp/\(fileName)")
+        }
+        if let tmpdir = ProcessInfo.processInfo.environment["TMPDIR"], !tmpdir.isEmpty {
+            let dir = tmpdir.hasSuffix("/") ? String(tmpdir.dropLast()) : tmpdir
+            if !boundPath.hasPrefix(dir + "/") {
+                symlinkTargets.append("\(dir)/\(fileName)")
+            }
+        }
+        if let xdg = ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"], !xdg.isEmpty {
+            let xdgDir = xdg.hasSuffix("/") ? String(xdg.dropLast()) : xdg
+            if !boundPath.hasPrefix(xdgDir + "/") {
+                symlinkTargets.append("\(xdgDir)/\(fileName)")
+            }
+        }
+        for symlinkPath in symlinkTargets {
+            if Self.canReplaceWithSymlink(at: symlinkPath), symlink(boundPath, symlinkPath) == 0 {
+                self.boundSymlinkPaths.append(symlinkPath)
+            }
+        }
+    }
+
     public func start() throws {
         try queue.sync {
             guard !isRunning else { return }
-            Self.purgeStaleSockets(in: "/tmp")
-            if let tmpdir = ProcessInfo.processInfo.environment["TMPDIR"], !tmpdir.isEmpty {
-                let dir = tmpdir.hasSuffix("/") ? String(tmpdir.dropLast()) : tmpdir
-                if dir != "/tmp" {
-                    Self.purgeStaleSockets(in: dir)
-                }
-            }
+            Self.purgeCandidateDirectories()
 
             let pathsToTry = requestedSocketPath.map { [$0] } ?? Self.candidateSocketPaths()
             var boundPath: String?
@@ -728,24 +878,8 @@ public nonisolated final class DiscordIPCServer: @unchecked Sendable {
             self.listenFD = boundFD
             self.isRunning = true
 
-            // On macOS, if bound inside a user-specific temp directory (TMPDIR), maintain
-            // symlinks in /tmp and $XDG_RUNTIME_DIR so cross-platform games/mods hardcoding /tmp or $XDG_RUNTIME_DIR can connect.
             if requestedSocketPath == nil, let fileName = path.split(separator: "/").last {
-                var symlinkTargets: [String] = []
-                if !path.hasPrefix("/tmp/") {
-                    symlinkTargets.append("/tmp/\(fileName)")
-                }
-                if let xdg = ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"], !xdg.isEmpty {
-                    let xdgDir = xdg.hasSuffix("/") ? String(xdg.dropLast()) : xdg
-                    if !path.hasPrefix(xdgDir + "/") {
-                        symlinkTargets.append("\(xdgDir)/\(fileName)")
-                    }
-                }
-                for symlinkPath in symlinkTargets {
-                    if Self.canReplaceWithSymlink(at: symlinkPath), symlink(path, symlinkPath) == 0 {
-                        self.boundSymlinkPaths.append(symlinkPath)
-                    }
-                }
+                createSymlinks(for: String(fileName), boundPath: path)
             }
 
             let source = DispatchSource.makeReadSource(fileDescriptor: boundFD, queue: queue)

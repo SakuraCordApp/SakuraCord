@@ -170,6 +170,7 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     var presenceGeneration: UInt64 = 0
     var lastSentPresenceStatus: PresenceStatus?
     var activeActivities: [String: OutgoingActivityPayload] = [:]
+    var activityCategoryOrder: [ActivityCategory] = ActivityCategory.defaultOrder
     var externalAssetCache: [String: String] = [:]
     var externalAssetCacheKeys: [String] = []
     var applicationAssetCatalogs: [String: (assets: [String: String], expiresAt: Date)] = [:]
