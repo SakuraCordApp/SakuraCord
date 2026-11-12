@@ -17,7 +17,7 @@ struct ComposerView: View {
     @State private var showComposerActions = false
     @State private var showPollCreator = false
     /// The + menu shows the schedule shortcuts in place of its actions.
-    @State private var showsSchedulePicker = false
+    @State private var showsScheduleShortcuts = false
     @State private var showsScheduleDialog = false
     @State private var showActivityShelf = false
     @State private var showGIFPicker = false
@@ -133,7 +133,7 @@ struct ComposerView: View {
                     } else if !isCreatingThread {
                         composerLeadingButton(appearance: appearance)
                         .escapeDismissiblePopover(isPresented: $showComposerActions, arrowEdge: .top) { composerActionsMenu }
-                        .onChange(of: showComposerActions) { if !$1 { showsSchedulePicker = false } }
+                        .onChange(of: showComposerActions) { if !$1 { showsScheduleShortcuts = false } }
                         .background { activityShelfPresenter }
                     }
                 }
@@ -1759,7 +1759,8 @@ private extension ComposerView {
     }
 }
 
-private struct ComposerActionLabelStyle: LabelStyle {
+/// An icon column then the title, as the + menu and the schedule shortcuts list them.
+struct ComposerActionLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: InterfaceScale.metric(8)) {
             configuration.icon.frame(width: InterfaceScale.metric(20), alignment: .center)
@@ -1782,7 +1783,7 @@ private extension ComposerView {
 extension ComposerView {
     /// The composer's + menu: files, a thread, a poll, a schedule, an Activity and translation.
     @ViewBuilder private var composerActionsMenu: some View {
-        if showsSchedulePicker {
+        if showsScheduleShortcuts {
             ScheduleMessageShortcuts { date in
                 showComposerActions = false
                 model.setScheduledSendDate(date, in: conversation)
@@ -1838,7 +1839,7 @@ extension ComposerView {
             }
             if canScheduleMessage {
                 Button {
-                    showsSchedulePicker = true
+                    showsScheduleShortcuts = true
                 } label: {
                     Label("Schedule Message", systemImage: "calendar.badge.clock")
                         .frame(maxWidth: .infinity, alignment: .leading).padding(InterfaceScale.metric(8))

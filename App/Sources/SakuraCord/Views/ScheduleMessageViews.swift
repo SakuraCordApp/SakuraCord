@@ -28,20 +28,11 @@ struct ScheduleMessageShortcuts: View {
 
     private func row(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: systemImage).frame(width: InterfaceScale.metric(20))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(InterfaceScale.metric(8))
+            Label(title, systemImage: systemImage)
+                .labelStyle(ComposerActionLabelStyle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(InterfaceScale.metric(8))
         }
-    }
-
-    /// The next whole hour, or the one after when that is under ten minutes away.
-    static func nextWholeHour(now: Date = .now, calendar: Calendar = .current) -> Date {
-        let hour = calendar.dateInterval(of: .hour, for: now)?.end ?? now
-        return hour < ScheduledMessagePolicy.earliestSendDate(now: now) ? hour.addingTimeInterval(3600) : hour
     }
 
     struct Shortcut {

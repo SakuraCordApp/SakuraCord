@@ -9,18 +9,27 @@ struct ScheduleMessageDialog: View {
     var scheduledMessageID: ScheduledMessageID?
     let commit: (Date) -> Void
     @Environment(\.windowModalContext) private var modal
+    /// Today through the last day Discord accepts; an old message's 30-day
+    /// bound may leave only today, which then reads as too far away.
+    private let days: [Date]
     @State private var day: Date
     /// Minutes after midnight; a time set elsewhere may fall between steps.
     @State private var minute: Int
     @FocusState private var isFocused: Bool
 
     init(initialDate: Date?, scheduledMessageID: ScheduledMessageID? = nil, commit: @escaping (Date) -> Void) {
-        let date = initialDate ?? ScheduleMessageShortcuts.nextWholeHour()
-        let time = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let calendar = Calendar.current
+        let date = initialDate ?? Self.nextWholeHour()
         self.scheduledMessageID = scheduledMessageID
         self.commit = commit
-        _day = State(initialValue: Calendar.current.startOfDay(for: date))
-        _minute = State(initialValue: (time.hour ?? 0) * 60 + (time.minute ?? 0))
+        let last = calendar.startOfDay(for: ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID))
+        var days = [calendar.startOfDay(for: .now)]
+        while let next = calendar.date(byAdding: .day, value: 1, to: days[days.count - 1]), next <= last {
+            days.append(next)
+        }
+        self.days = days
+        _day = State(initialValue: calendar.startOfDay(for: date))
+        _minute = State(initialValue: calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date))
     }
 
     var body: some View {
@@ -83,7 +92,7 @@ struct ScheduleMessageDialog: View {
     private var dayPicker: some View {
         HStack(spacing: 6) {
             ForEach(days, id: \.self) { candidate in
-                let isSelected = Calendar.current.isDate(candidate, inSameDayAs: day)
+                let isSelected = candidate == day
                 Button { day = candidate } label: {
                     VStack(spacing: 2) {
                         Text(candidate.formatted(.dateTime.weekday(.abbreviated)))
@@ -136,18 +145,6 @@ struct ScheduleMessageDialog: View {
         Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: day) ?? day
     }
 
-    /// Today through the last day Discord accepts; an old message's 30-day
-    /// bound may leave only today, which then reads as too far away.
-    private var days: [Date] {
-        let calendar = Calendar.current
-        let last = calendar.startOfDay(for: ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID))
-        var days = [calendar.startOfDay(for: .now)]
-        while let next = calendar.date(byAdding: .day, value: 1, to: days[days.count - 1]), next <= last {
-            days.append(next)
-        }
-        return days
-    }
-
     private func issue(now: Date) -> LocalizedStringResource? {
         if date < ScheduledMessagePolicy.earliestSendDate(now: now) { return "Scheduled time is too soon" }
         if date > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID, now: now) { return "Scheduled time is too far away" }
@@ -162,9 +159,14 @@ struct ScheduleMessageDialog: View {
     }
 
     private func moveDay(by offset: Int) -> KeyPress.Result {
-        let days = days
-        guard let index = days.firstIndex(where: { Calendar.current.isDate($0, inSameDayAs: day) }) else { return .ignored }
+        guard let index = days.firstIndex(of: day) else { return .ignored }
         day = days[min(max(index + offset, 0), days.count - 1)]
         return .handled
+    }
+
+    /// The next whole hour, or the one after when that is under ten minutes away.
+    static func nextWholeHour(now: Date = .now, calendar: Calendar = .current) -> Date {
+        let hour = calendar.dateInterval(of: .hour, for: now)?.end ?? now
+        return hour < ScheduledMessagePolicy.earliestSendDate(now: now) ? hour.addingTimeInterval(3600) : hour
     }
 }
