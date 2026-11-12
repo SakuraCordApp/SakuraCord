@@ -158,6 +158,7 @@ extension DiscordRESTProvider {
             }
         }
         if !updatedPresenceUserIDs.isEmpty {
+            continuation?.yield(.privateMembersChanged(privateMembersInChannelOrder()))
             publishRelationshipPresences(complete: false, userIDs: updatedPresenceUserIDs)
         }
         let responseUserIDs = Set(decodedMembers.map(\.id)).union(
