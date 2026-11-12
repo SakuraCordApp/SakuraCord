@@ -323,12 +323,19 @@ typed draft in place. There is no nonce and no
 `X-Context-Properties` header, and nothing enters the timeline. The composer
 clears only when Discord accepts it, so a refusal loses nothing.
 
-The time must be at least ten minutes and at most eight days away; a reschedule
-also stays within 30 days of the message's snowflake time. Full Nitro (premium
-type 2) may hold 25 scheduled messages at once and every other plan one. The
-client does not check the count first: Discord answers an extra create with
-`400` code `640003`, which shows the limit alert (with Nitro's higher limit
-where it would help) and a way to manage scheduled messages.
+Discord's server, for both create and Edit Schedule Time, refuses a time in
+the past (`400` code `640001`), more than eight days away (`640002`) or less
+than ten minutes away (`640004`), checking the time before the account's limit
+(observed 13 November 2026). It accepts any minute; the official dialog offers
+today through the eighth day ahead and 15-minute steps, defaulting to the next
+whole hour, and SakuraCord's dialog does the same. A reschedule also stays
+within 30 days of the message's snowflake time (official client; not
+reproducible live). Failures show Discord's reason after the action's title, as
+the official client does. Full Nitro (premium type 2) may hold 25 scheduled
+messages at once and every other plan one. The client does not check the count
+first: Discord answers an extra create with `400` code `640003`, which shows
+the limit alert (with Nitro's higher limit where it would help) and a way to
+manage scheduled messages.
 
 The Inbox's Scheduled tab (tab `7` in the synced Inbox settings) reads
 `GET /users/@me/scheduled-messages` each time it is shown; no Gateway event

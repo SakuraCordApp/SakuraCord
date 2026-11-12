@@ -5,6 +5,7 @@ import SwiftUI
 /// official actions, Send Now, Edit Message, Edit Schedule Time and Cancel.
 struct InboxScheduledMessagesView: View {
     let model: AppModel
+    @State private var editingTime: ScheduledMessage?
 
     var body: some View {
         let state = model.scheduledMessages
@@ -22,7 +23,9 @@ struct InboxScheduledMessagesView: View {
                 ScrollView {
                     LazyVStack(spacing: InterfaceScale.metric(8)) {
                         ForEach(state.messages) { message in
-                            ScheduledMessageCard(model: model, message: message, isPending: state.pendingIDs.contains(message.id))
+                            ScheduledMessageCard(model: model, message: message, isPending: state.pendingIDs.contains(message.id)) {
+                                editingTime = message
+                            }
                         }
                     }
                     .padding(InterfaceScale.metric(10))
@@ -48,6 +51,11 @@ struct InboxScheduledMessagesView: View {
         }
         .animation(.snappy(duration: 0.25), value: state.messages.map(\.id))
         .animation(.snappy(duration: 0.25), value: state.errorMessage)
+        .windowModal(item: $editingTime, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) { message in
+            ScheduleMessageDialog(initialDate: message.sendAt, scheduledMessageID: message.id) {
+                model.rescheduleMessage(message, at: $0)
+            }
+        }
     }
 }
 
@@ -55,7 +63,7 @@ private struct ScheduledMessageCard: View {
     let model: AppModel
     let message: ScheduledMessage
     let isPending: Bool
-    @State private var isEditingTime = false
+    let editTime: () -> Void
     @State private var editedContent: String?
     @FocusState private var isEditorFocused: Bool
 
@@ -186,13 +194,7 @@ private struct ScheduledMessageCard: View {
                     editedContent = message.content
                     isEditorFocused = true
                 }
-                HoverActionButton(systemImage: "clock", help: "Edit Schedule Time") { isEditingTime = true }
-                    .popover(isPresented: $isEditingTime, arrowEdge: .bottom) {
-                        ScheduleMessagePicker(initialDate: message.sendAt, scheduledMessageID: message.id) {
-                            isEditingTime = false
-                            model.rescheduleMessage(message, at: $0)
-                        }
-                    }
+                HoverActionButton(systemImage: "clock", help: "Edit Schedule Time", action: editTime)
             }
             HoverActionButton(systemImage: "xmark.circle", help: "Cancel Scheduled Message", role: .destructive) {
                 model.cancelScheduledMessage(message)

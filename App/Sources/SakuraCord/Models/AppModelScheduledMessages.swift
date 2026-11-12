@@ -240,7 +240,7 @@ extension AppModel {
     }
 
     func rescheduleMessage(_ message: ScheduledMessage, at date: Date) {
-        changeScheduledMessage(message, failure: "Failed to update message.") {
+        changeScheduledMessage(message, failure: "Failed to update scheduled message.") {
             try await $0.rescheduleMessage(message.id, at: date)
         }
     }
@@ -251,7 +251,7 @@ extension AppModel {
         // its preview lists no attachments.
         guard !content.isEmpty else { return cancelScheduledMessage(message) }
         guard content != message.content else { return }
-        changeScheduledMessage(message, failure: "Failed to update message.") {
+        changeScheduledMessage(message, failure: "Failed to update scheduled message.") {
             try await $0.editScheduledMessage(message.id, content: content, flags: message.flags)
         }
     }

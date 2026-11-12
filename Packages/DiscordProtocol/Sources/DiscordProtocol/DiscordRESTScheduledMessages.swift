@@ -78,8 +78,15 @@ extension DiscordRESTProvider {
         return dto.domain
     }
 
+    /// Discord's own reasons, which the official client shows after its failure title.
     nonisolated static func scheduledMessageFailure(status: Int, code: Int?) -> (any Error)? {
-        code == 640_003 ? ChatProviderError.scheduledMessageLimitReached : nil
+        switch code {
+        case 640_001: ChatProviderError.invalidRequest("Message cannot be scheduled for the past")
+        case 640_002: ChatProviderError.invalidRequest("Message cannot be scheduled that far in the future")
+        case 640_003: ChatProviderError.scheduledMessageLimitReached
+        case 640_004: ChatProviderError.invalidRequest("Message must be scheduled further in the future")
+        default: nil
+        }
     }
 }
 

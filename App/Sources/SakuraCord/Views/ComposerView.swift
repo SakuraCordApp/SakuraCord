@@ -16,8 +16,9 @@ struct ComposerView: View {
     @State private var showPhotosPicker = false
     @State private var showComposerActions = false
     @State private var showPollCreator = false
-    /// The + menu shows the schedule picker in place of its actions.
+    /// The + menu shows the schedule shortcuts in place of its actions.
     @State private var showsSchedulePicker = false
+    @State private var showsScheduleDialog = false
     @State private var showActivityShelf = false
     @State private var showGIFPicker = false
     @State private var showStickerPicker = false
@@ -86,7 +87,7 @@ struct ComposerView: View {
                             .transition(.opacity)
                     }
                     if !hasActiveCommand, hasScheduleHeader {
-                        ComposerScheduleHeader(model: model, destination: conversation)
+                        ComposerScheduleHeader(model: model, destination: conversation) { showsScheduleDialog = true }
                             .transition(ComposerResizeMotion.headerTransition)
                         Divider()
                             .transition(.opacity)
@@ -352,6 +353,12 @@ struct ComposerView: View {
         .windowModal(isPresented: $showPollCreator, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
             if let channelID = activeConversationID {
                 PollCreationView(model: model, channelID: channelID)
+            }
+        }
+        .windowModal(isPresented: $showsScheduleDialog, cornerRadius: InterfaceScale.metric(32), cornerStyle: .circular) {
+            ScheduleMessageDialog(initialDate: model.scheduledSendDate(in: conversation)) {
+                model.setScheduledSendDate($0, in: conversation)
+                isFocused = true
             }
         }
         .modifier(ComposerPhotosPicker(
@@ -1776,10 +1783,13 @@ extension ComposerView {
     /// The composer's + menu: files, a thread, a poll, a schedule, an Activity and translation.
     @ViewBuilder private var composerActionsMenu: some View {
         if showsSchedulePicker {
-            ScheduleMessagePicker(initialDate: model.scheduledSendDate(in: conversation)) {
+            ScheduleMessageShortcuts { date in
                 showComposerActions = false
-                model.setScheduledSendDate($0, in: conversation)
+                model.setScheduledSendDate(date, in: conversation)
                 isFocused = true
+            } custom: {
+                showComposerActions = false
+                showsScheduleDialog = true
             }
         } else {
             composerActionsList
