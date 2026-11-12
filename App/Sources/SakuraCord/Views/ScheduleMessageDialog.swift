@@ -12,6 +12,9 @@ struct ScheduleMessageDialog: View {
     /// Today through the last day Discord accepts; an old message's 30-day
     /// bound may leave only today, which then reads as too far away.
     private let days: [Date]
+    /// The time as given, kept while its day and time stay unchanged, so a
+    /// reschedule never shifts it, as within a repeated daylight-saving hour.
+    private let initialDate: Date
     @State private var day: Date
     /// Minutes after midnight; a time set elsewhere may fall between steps.
     @State private var minute: Int
@@ -28,8 +31,9 @@ struct ScheduleMessageDialog: View {
             days.append(next)
         }
         self.days = days
+        self.initialDate = date
         _day = State(initialValue: calendar.startOfDay(for: date))
-        _minute = State(initialValue: calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date))
+        _minute = State(initialValue: Self.minutes(of: date))
     }
 
     var body: some View {
@@ -142,7 +146,8 @@ struct ScheduleMessageDialog: View {
     }
 
     private var date: Date {
-        Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: day) ?? day
+        if day == Calendar.current.startOfDay(for: initialDate), minute == Self.minutes(of: initialDate) { return initialDate }
+        return Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: day) ?? day
     }
 
     private func issue(now: Date) -> LocalizedStringResource? {
@@ -162,6 +167,10 @@ struct ScheduleMessageDialog: View {
         guard let index = days.firstIndex(of: day) else { return .ignored }
         day = days[min(max(index + offset, 0), days.count - 1)]
         return .handled
+    }
+
+    private static func minutes(of date: Date) -> Int {
+        Calendar.current.component(.hour, from: date) * 60 + Calendar.current.component(.minute, from: date)
     }
 
     /// The next whole hour, or the one after when that is under ten minutes away.

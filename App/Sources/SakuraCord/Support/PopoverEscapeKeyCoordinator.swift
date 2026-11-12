@@ -118,6 +118,8 @@ final class PopoverEscapeKeyCoordinator {
         guard !PopoverSheetLifecycle.hasSheet(in: registration.popoverWindow),
               !PopoverSheetLifecycle.hasSheet(in: registration.presentingWindow)
         else { return false }
+        // A modal open inside the popover closes first.
+        if WindowModalCoordinator.handleEscape(in: registration.popoverWindow) { return true }
 
         registration.dismiss()
         return true
