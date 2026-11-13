@@ -14,12 +14,8 @@ struct ScheduleMessageDialog: View {
     /// Today through the last day Discord accepts; an old message's 30-day
     /// bound may leave only today, which then reads as too far away.
     private let days: [Day]
-    /// The time as given, kept while its day and time stay unchanged, so a
-    /// reschedule never shifts it, as within a repeated daylight-saving hour.
-    private let initialDate: Date
-    @State private var day: Date
-    /// Minutes after midnight; a time set elsewhere may fall between steps.
-    @State private var minute: Int
+    /// A time set elsewhere may fall between steps.
+    @State private var date: Date
     /// Steps already taken by the drag under way.
     @State private var draggedSteps = 0
     @FocusState private var isFocused: Bool
@@ -31,7 +27,6 @@ struct ScheduleMessageDialog: View {
         commit: @escaping (Date) -> Void
     ) {
         let calendar = Calendar.current
-        let date = initialDate ?? Self.nextWholeHour()
         self.timeFormat = timeFormat
         self.scheduledMessageID = scheduledMessageID
         self.commit = commit
@@ -41,9 +36,7 @@ struct ScheduleMessageDialog: View {
             dates.append(next)
         }
         days = dates.map(Day.init)
-        self.initialDate = date
-        _day = State(initialValue: calendar.startOfDay(for: date))
-        _minute = State(initialValue: Self.minutes(of: date))
+        _date = State(initialValue: initialDate ?? Self.nextWholeHour())
     }
 
     var body: some View {
@@ -107,7 +100,7 @@ struct ScheduleMessageDialog: View {
         HStack(spacing: 6) {
             ForEach(days, id: \.date) { candidate in
                 let isSelected = candidate.date == day
-                Button { day = candidate.date } label: {
+                Button { select(candidate.date) } label: {
                     VStack(spacing: 2) {
                         Text(candidate.weekday)
                             .font(.caption)
@@ -170,10 +163,10 @@ struct ScheduleMessageDialog: View {
         .accessibilityLabel(Text(help))
     }
 
-    private var date: Date {
-        if day == Calendar.current.startOfDay(for: initialDate), minute == Self.minutes(of: initialDate) { return initialDate }
-        return Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: day) ?? day
-    }
+    private var day: Date { Calendar.current.startOfDay(for: date) }
+
+    /// Minutes after midnight.
+    private var minute: Int { Self.minutes(of: date) }
 
     private func issue(now: Date) -> LocalizedStringResource? {
         if date < ScheduledMessagePolicy.earliestSendDate(now: now) { return "Scheduled time is too soon" }
@@ -181,34 +174,43 @@ struct ScheduleMessageDialog: View {
         return nil
     }
 
-    /// Moves to the neighbouring 15-minute mark within the day.
+    /// Moves to the neighbouring quarter hour within the day.
     private func step(by direction: Int) -> KeyPress.Result {
-        minute = min(max(neighbouringMark(direction), 0), 95) * 15
+        let candidate = quarterHour(direction)
+        if Calendar.current.isDate(candidate, inSameDayAs: date) { date = candidate }
         return .handled
     }
 
-    /// The next 15-minute mark from the time, counted from midnight.
-    private func neighbouringMark(_ direction: Int) -> Int {
-        direction > 0 ? minute / 15 + 1 : (minute + 14) / 15 - 1
+    /// The neighbouring quarter hour in elapsed time, so steps pass through both
+    /// runs of a repeated daylight-saving hour. Every time zone's offset is a
+    /// multiple of 15 minutes, so it is a quarter hour on the clock too.
+    private func quarterHour(_ direction: Int) -> Date {
+        let quarters = date.timeIntervalSinceReferenceDate / 900
+        return Date(timeIntervalSinceReferenceDate: (direction > 0 ? quarters.rounded(.down) + 1 : quarters.rounded(.up) - 1) * 900)
     }
 
     /// Scrolling and dragging run through the allowed days in 15-minute steps
     /// and stop at either end, each step ticking.
     private func scrub(by direction: Int) -> Bool {
-        guard let candidate = Calendar.current.date(byAdding: .minute, value: neighbouringMark(direction) * 15, to: day)
-        else { return false }
+        let candidate = quarterHour(direction)
         if direction > 0, candidate > ScheduledMessagePolicy.latestSendDate(for: scheduledMessageID) { return false }
         if direction < 0, candidate < ScheduledMessagePolicy.earliestSendDate() { return false }
-        day = Calendar.current.startOfDay(for: candidate)
-        minute = Self.minutes(of: candidate)
+        date = candidate
         StepHaptics.performStep()
         return true
     }
 
     private func moveDay(by offset: Int) -> KeyPress.Result {
         guard let index = days.firstIndex(where: { $0.date == day }) else { return .ignored }
-        day = days[min(max(index + offset, 0), days.count - 1)].date
+        select(days[min(max(index + offset, 0), days.count - 1)].date)
         return .handled
+    }
+
+    /// Keeps the clock time on another day; the current day keeps the exact
+    /// time, which rebuilding could move to a repeated hour's other run.
+    private func select(_ newDay: Date) {
+        guard newDay != day else { return }
+        date = Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: newDay) ?? newDay
     }
 
     private static func minutes(of date: Date) -> Int {
