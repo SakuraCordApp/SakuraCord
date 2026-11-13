@@ -389,7 +389,7 @@ struct MarkdownBlockLayout {
         // Sized to fit the list gutter before the 4 px gap to the text.
         return NSAttributedString(attachment: MarkdownInlineStyle.symbol(
             isDone ? "checkmark.square.fill" : "square", font: .systemFont(ofSize: px(10)),
-            colors: isDone ? [.white, .controlAccentColor] : [.secondaryLabelColor]
+            colors: isDone ? [.sakuraCordLabelOnAccentColor, .controlAccentColor] : [.secondaryLabelColor]
         ))
     }
 
