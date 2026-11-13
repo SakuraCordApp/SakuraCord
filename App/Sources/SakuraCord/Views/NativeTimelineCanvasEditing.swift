@@ -1626,16 +1626,21 @@ extension NativeMessageTimelineCoordinator {
         lastEditRequestID = request.id
         guard canvas.beginEditingCurrentUserMessage(request.messageID),
               let scrollView,
-              let index = canvas.editingRowIndex
+              let index = canvas.editingRowIndex,
+              let content = canvas.editing.layout?.contentFrame
         else { return }
-        // A message in sight, even in part, is edited where it is; one out
-        // of sight is brought just into it, from the side it was on.
-        let row = canvas.rowFrame(at: index)
+        // An editor in sight, even in part, is edited where it is; one out
+        // of sight is brought just into it, from the side it was on. The
+        // editor, not its row, is tested and aligned: a row's attachments
+        // can be in sight while its text is not.
+        let editor = content.offsetBy(dx: 0, dy: canvas.displayedRowOrigin(at: index))
         let insets = scrollView.scrollerInsets
         let visible = canvas.visibleRect.divided(atDistance: insets.top, from: .minYEdge).remainder
             .divided(atDistance: insets.bottom, from: .maxYEdge).remainder
-        guard !visible.intersects(row) else { return }
-        let fromAbove = row.maxY <= visible.minY
-        _ = scroll(to: .message(request.messageID, anchor: fromAbove ? .top : .bottom), in: scrollView)
+        guard !visible.intersects(editor) else { return }
+        let offset = editor.maxY <= visible.minY ? editor.minY - visible.minY : editor.maxY - visible.maxY
+        cancelGlide()
+        scroll(toDocumentY: scrollView.contentView.bounds.minY + offset, scrollView: scrollView)
+        reportScrollState(force: true)
     }
 }

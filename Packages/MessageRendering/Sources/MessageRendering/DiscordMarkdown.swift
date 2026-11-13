@@ -794,6 +794,11 @@ public enum DiscordMarkdown {
         sourceCollector: SourceFormatCollector? = nil
     ) -> (runs: [AppKitPlan.InlineRun], endIndex: String.Index)? {
         guard let target = markdownLinkTarget(in: source, at: cursor, collector: sourceCollector) else { return nil }
+        // Discord shows such a link as the text it was typed as, its address included.
+        if MessageDocument.holdsDisallowedLinkLabelMention(source[target.label]) {
+            let text = String(source[cursor ..< target.end])
+            return ([AppKitPlan.InlineRun(text: text, traits: inheritedTraits, link: nil, color: nil)], target.end)
+        }
         sourceCollector?.collectLink?(target.label, target.end)
         var runs = inlineRuns(
             source[target.label],
@@ -813,6 +818,26 @@ public enum DiscordMarkdown {
     ) -> String.Index? {
         if let collector { return collector.next(character, from: start, before: source.endIndex) }
         return source[start...].firstIndex(of: character)
+    }
+
+    /// The labels of `[label](url)` links in `source`, outside code.
+    static func maskedLinkLabelRanges(_ source: String) -> [NSRange] {
+        guard source.contains("](") else { return [] }
+        let code = sourceCodeRanges(source)
+        let text = source[...]
+        var ranges: [NSRange] = []
+        var cursor = text.startIndex
+        while let open = text[cursor...].firstIndex(of: "[") {
+            let location = NSRange(open ..< text.index(after: open), in: source).location
+            if !code.contains(where: { NSLocationInRange(location, $0) }),
+               let target = markdownLinkTarget(in: text, at: open, collector: nil) {
+                ranges.append(NSRange(target.label, in: source))
+                cursor = target.end
+            } else {
+                cursor = text.index(after: open)
+            }
+        }
+        return ranges
     }
 
     private static func markdownLinkTarget(
@@ -1175,6 +1200,9 @@ public enum DiscordMarkdown {
         }
     }
 
+    /// Subtext and code blocks are this fraction of the body text size.
+    public static let smallTextScale: CGFloat = 0.875
+
     private static func appKitFont(
         block: AppKitPlan.Block,
         traits: AppKitPlan.InlineTraits,
@@ -1185,7 +1213,7 @@ public enum DiscordMarkdown {
         case .heading(1): (base * 1.5, .bold)
         case .heading(2): (base * 1.25, .bold)
         case .heading: (base, .bold)
-        case .subtext, .code: (base * 0.875, .regular)
+        case .subtext, .code: (base * smallTextScale, .regular)
         case .paragraph, .listItem: (base, traits.contains(.bold) ? .semibold : .regular)
         }
 

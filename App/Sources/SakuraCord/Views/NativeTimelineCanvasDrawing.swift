@@ -152,7 +152,7 @@ extension NativeTimelineCanvasView {
         let animates = !frame.isNull && !frame.isEmpty
             && !isHiddenOrHasHiddenAncestor
             && window?.occlusionState.contains(.visible) == true
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            && AppMotionPolicy.animatesUncategorized
         effectiveAppearance.performAsCurrentDrawingAppearance {
             historySkeletonShimmer.update(
                 frame: frame.isNull ? .zero : frame,

@@ -426,6 +426,7 @@ extension AppModel {
         guard currentUserRoleIDsByGuild[guildID] != roleIDs else { return }
         currentUserRoleIDsByGuild[guildID] = roleIDs
         readState.updateCurrentUserRoles(roleIDs, guildID: guildID)
+        discardUnreachableKeptComposerDrafts()
         guard selectedGuildID == guildID else { return }
         refreshUnreadPresentation(
             appliesAccessImmediately: true,
@@ -731,8 +732,8 @@ extension AppModel {
                 {
                     // The guild's authoritative list removed the selected channel,
                     // possibly its last one. Reselection closes any open thread.
-                    self.selectedChannelID = Self.preferredInitialChannelID(
-                        in: channels.filter { conversationAccess(for: $0) != .hidden }
+                    self.selectedChannelID = defaultChannelID(
+                        among: channels.filter { conversationAccess(for: $0) != .hidden }, guildID: guildID
                     )
                 }
             }
@@ -743,6 +744,7 @@ extension AppModel {
             channels: channels,
             previousChannels: previousChannels
         )
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeForumPostsChanged(channelID: ChannelID, posts: [ForumPost]) {
@@ -949,8 +951,8 @@ extension AppModel {
                    $0.id == selectedChannelID && $0.guildID == selectedGuildID
                }) == true
             {
-                self.selectedChannelID = Self.preferredInitialChannelID(
-                    in: visibleChannels.filter { conversationAccess(for: $0) != .hidden }
+                self.selectedChannelID = defaultChannelID(
+                    among: visibleChannels.filter { conversationAccess(for: $0) != .hidden }, guildID: selectedGuildID
                 )
             }
         }
@@ -1003,6 +1005,7 @@ extension AppModel {
         }
         reconcileInboxEligibility()
         selectGuild(retainedGuildID)
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeGuildChanged(_ guild: Guild) {
@@ -1066,6 +1069,7 @@ extension AppModel {
         {
             selectGuild(guilds.first?.id)
         }
+        discardUnreachableKeptComposerDrafts()
     }
 
     func consumeCurrentUserChanged(_ user: User) {

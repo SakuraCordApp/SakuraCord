@@ -934,6 +934,7 @@ extension NativeMessageTimelineCoordinator {
                 canvas.removeAccessibilityProxies()
                 canvas.reconcileAccessibilityProxiesIfActive()
                 canvas.reconcileAnimatedMedia(allowsScrolling: true)
+                canvas.reconcileHistorySkeletonShimmer()
             }
             if parent.hasMoreMessages,
                leadingHistoryReserve == 0,

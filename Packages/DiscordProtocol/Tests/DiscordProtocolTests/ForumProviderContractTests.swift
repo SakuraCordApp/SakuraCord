@@ -1097,6 +1097,34 @@ private final class ThreadLookupURLProtocol: URLProtocol, @unchecked Sendable {
     #expect(merged.isUnread)
 }
 
+@Test func `catalogue merge keeps a reply that arrived during the read`() {
+    let threadID = ChannelID(rawValue: 100)
+    let author = User(id: UserID(rawValue: 7), username: "author", displayName: "Author")
+    func post(repliesThrough lastID: UInt64, count: Int) -> ForumPost {
+        let latest = Message(
+            id: MessageID(rawValue: lastID), channelID: threadID, author: author,
+            content: "Reply \(lastID)", timestamp: Date(timeIntervalSince1970: TimeInterval(lastID))
+        )
+        return ForumPost(
+            thread: MessageThreadSummary(
+                id: threadID, name: "Post", messageCount: count,
+                lastMessageID: latest.id, totalMessageSent: count
+            ),
+            mostRecentMessage: latest
+        )
+    }
+    let read = post(repliesThrough: 102, count: 2)
+    let advanced = post(repliesThrough: 103, count: 3)
+
+    let kept = DiscordRESTProvider.mergingForumPostCatalogueMetadata(incoming: read, existing: advanced)
+    #expect(kept.thread == advanced.thread)
+    #expect(kept.mostRecentMessage == advanced.mostRecentMessage)
+
+    let refreshed = DiscordRESTProvider.mergingForumPostCatalogueMetadata(incoming: advanced, existing: read)
+    #expect(refreshed.thread == advanced.thread)
+    #expect(refreshed.mostRecentMessage == advanced.mostRecentMessage)
+}
+
 @Test func `superseded forum catalogue refreshes leave only the latest query active`() async throws {
     let provider = DiscordRESTProvider(
         credentials: ForumPostDeletionCredentialStore(),

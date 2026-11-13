@@ -206,6 +206,16 @@ If the target is absent from the working set, read `around={message}&limit=1`
 before deciding whether PUT/DELETE is needed. Missing/failed reads prevent the
 mutation; an already satisfied intent sends nothing.
 
+Like the official client, whose reaction path unarchives the thread before its
+PUT (web build `634304`, inspected 10 October 2026), a needed PUT or DELETE in
+a thread the app knows is archived first sends the
+[thread unarchive](#thread-actions-and-browser) PATCH `{"archived":false}`, the
+same provider mutation as Reopen and Mark Unread; the thread stays open even if
+the reaction then fails. Removal follows the same path; no first-party removal
+in an archived thread has been observed. Adding and removing reactions there
+requires the [Reopen permission](#sidebar-threads): Manage Threads for a locked
+thread, otherwise the send permissions.
+
 Reaction changes invalidate the affected emoji's saved previews and pending reads
 in both the model and provider, preserving other emojis' loads and previews.
 Clearing all reactions invalidates the whole message. A response for an affected
@@ -789,9 +799,11 @@ Send posts a stored file by its `uploaded_filename` without uploading it again,
 with the spoiler and filename chosen by then. Files still uploading show their
 progress cards and the message posts once they are stored. Removing a staged file
 stops its PUT, or deletes the stored file with one `DELETE
-/attachments/{uploaded_filename}` attempt. The official client keeps a
-channel's staged files across conversation switches; SakuraCord clears the
-composer on a switch and so deletes them. A thread still being created stores
+/attachments/{uploaded_filename}` attempt. Like the official client, a
+conversation keeps its staged files, and their uploads keep running, while the
+user is elsewhere in the session. They are deleted the same way when that
+conversation, its parent channel or its server is deleted, hidden or left;
+signing out or switching accounts drops them. A thread still being created stores
 its files at Send. With metadata removal off, files also wait for Send, since
 turning it on before then must still strip them.
 

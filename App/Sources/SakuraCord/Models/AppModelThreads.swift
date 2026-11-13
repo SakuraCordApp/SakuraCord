@@ -126,7 +126,7 @@ extension AppModel {
         openThreadStarterMessageID = starterMessageID
         threadDraft = ""
         threadReplyingTo = nil
-        clearComposerAttachments(for: .thread)
+        restoreComposerConversation(.thread, conversationID: thread.id)
         translation.resetDraft(.thread)
 
         if openThreadNeedsAccessResolution(thread) {
@@ -324,6 +324,7 @@ extension AppModel {
         threadBrowser.remove(threadID: channelID)
         // Closing saves the current conversation, so evict only after it closes.
         if openThread?.id == channelID { closeThread() }
+        discardKeptComposerDraft(for: channelID)
         cancelConversationRefresh(in: channelID)
         discardCachedHistory(for: channelID)
         threadPreviewMessages[channelID] = nil
@@ -343,7 +344,7 @@ extension AppModel {
         noteSideConversationChange()
         threadTimelinePosition = TimelineReadingPosition()
         threadVoiceMessageComposer.discard(playback: voiceMessagePlayback)
-        threadCommandComposer.resetForChannelChange()
+        leaveComposerConversation(.thread, conversationID: openThread?.id, in: openThread?.parentID)
         if let threadID = openThread?.id {
             cancelConversationRefresh(in: threadID)
             // Only a loaded newest-backed window is reusable history; a
@@ -395,7 +396,6 @@ extension AppModel {
         threadMessages = []
         threadDraft = ""
         threadReplyingTo = nil
-        clearComposerAttachments(for: .thread)
         translation.resetDraft(.thread)
         isLoadingThread = false
         hasCompletedInitialThreadLoad = false

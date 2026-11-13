@@ -439,7 +439,7 @@ extension AppModel {
             result.firstMessage = previous.firstMessage
             result.isFirstMessageLoaded = previous.isFirstMessageLoaded
         }
-        result.mostRecentMessage = incoming.mostRecentMessage ?? previous.mostRecentMessage
+        result.keepNewerLatestMessage(from: previous)
         result.owner = incoming.owner ?? previous.owner
         if preservesMembership, result.thread.notificationSettings == nil {
             result.thread.notificationSettings = previous.thread.notificationSettings

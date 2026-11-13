@@ -52,10 +52,12 @@ extension AppModel {
 
     /// The files within Discord's size limit, or nil when the check gave up
     /// because the account or the selected conversation changed, or it was
-    /// cancelled.
+    /// cancelled. `keepsAfterLeaving` finishes the check for a conversation
+    /// the user left, without offering its oversized files a prompt there.
     func checkedAttachmentURLsWithinDiscordLimit(
         _ urls: [URL],
-        offeringExternalUploadFor destination: MessageComposerDestination? = nil
+        offeringExternalUploadFor destination: MessageComposerDestination? = nil,
+        keepsAfterLeaving: Bool = false
     ) async -> [URL]? {
         let urls = uploadableFileURLs(urls)
         guard !urls.isEmpty else { return [] }
@@ -66,13 +68,13 @@ extension AppModel {
             checkedFiles = try await uploadPrivacyPreparation.checkSelection(urls)
         } catch {
             guard generation == accountSessionGeneration,
-                  attachmentComposerContext(for: destination ?? .channel) == context,
+                  keepsAfterLeaving || attachmentComposerContext(for: destination ?? .channel) == context,
                   !Task.isCancelled, !(error is CancellationError) else { return nil }
             errorMessage = error.localizedDescription
             return []
         }
         guard generation == accountSessionGeneration,
-              attachmentComposerContext(for: destination ?? .channel) == context,
+              keepsAfterLeaving || attachmentComposerContext(for: destination ?? .channel) == context,
               !Task.isCancelled else { return nil }
         let premiumType = snapshot?.currentUser.premiumType ?? 0
         let limit = DiscordAttachmentUploadPolicy.maximumFileSize(premiumType: premiumType)
@@ -97,7 +99,7 @@ extension AppModel {
         }
 
         guard !oversized.isEmpty else { return accepted }
-        if let destination, let context {
+        if let destination, let context, attachmentComposerContext(for: destination) == context {
             for (url, size) in oversized {
                 enqueueOversizedAttachmentPrompt(
                     OversizedAttachmentPrompt(
@@ -284,6 +286,9 @@ extension AppModel {
         )
         retainedFileURLs.formUnion(commandComposers.flatMap(\.attachmentURLs).map(\.standardizedFileURL))
         retainedFileURLs.formUnion(forumPostDrafts.values.flatMap(\.attachments).map(\.url.standardizedFileURL))
+        for kept in composer.keptDrafts.values {
+            retainedFileURLs.formUnion((kept.attachments.map(\.url) + (kept.command?.attachmentURLs ?? [])).map(\.standardizedFileURL))
+        }
         retainedFileURLs.formUnion(promisedAttachmentFilesInFlight)
 
         let staleFileURLs = promisedAttachmentDirectoryByFileURL.keys.filter {

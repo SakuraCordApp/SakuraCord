@@ -491,10 +491,11 @@ extension AppModel {
             visibleChannels = selectedGuildChannels
         }
         if selectedChannelIsGone(fromScopeChannels: selectedGuildChannels) {
-            self.selectedChannelID = Self.preferredInitialChannelID(
-                in: selectedGuildChannels.filter {
+            self.selectedChannelID = defaultChannelID(
+                among: selectedGuildChannels.filter {
                     conversationAccess(for: $0) != .hidden
-                }
+                },
+                guildID: selectedGuildID
             )
         }
         let projectedSelectedChannel =

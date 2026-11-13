@@ -56,7 +56,7 @@ extension NativeMemberListCanvasView {
         placeholderShimmerTask?.cancel()
         placeholderShimmerTask = nil
         guard hasLoadingPlaceholders,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+              AppMotionPolicy.animatesUncategorized
         else { return }
         placeholderShimmerTask = Task { @MainActor [weak self] in
             var interval = SkeletonShimmerStyle.minimumFrameInterval

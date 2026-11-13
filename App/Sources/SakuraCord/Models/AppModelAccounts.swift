@@ -456,6 +456,7 @@ extension AppModel {
         if launchMode == .normal {
             DiscordRESTProvider.removePendingStatusEdit(accountID: accountID)
             DiscordFrecencyStore.removePendingEmojiUsage(scope: accountID)
+            SettingsConversationRestorationStore.shared.remove(accountID: accountID)
             do {
                 try await clearCaches(accountID)
             } catch {

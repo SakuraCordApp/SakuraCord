@@ -18,8 +18,8 @@ struct MediaViewerText: View {
     private static let highlightLimit = 128 * 1_024
     private static let markdownLanguages: Set = ["markdown", "md", "mkdown", "mkd"]
     private nonisolated static let session = URLSession(configuration: .ephemeral)
-    /// Files read this session by their link, newest last, so reopening one
-    /// doesn't fetch it again.
+    /// Remote files read this session by their link, newest last, so
+    /// reopening one doesn't fetch it again.
     private static var loaded: [(url: URL, file: (text: String, bytesLeft: Int))] = []
     private static let maximumLoaded = 8
 
@@ -53,6 +53,8 @@ struct MediaViewerText: View {
     }
 
     private static func text(of url: URL) async throws -> (text: String, bytesLeft: Int) {
+        // A local file is cheap to read, and can change between previews.
+        if url.isFileURL { return try await load(url) }
         if let index = loaded.firstIndex(where: { $0.url == url }) {
             let entry = loaded.remove(at: index)
             loaded.append(entry)
@@ -120,7 +122,7 @@ struct MediaViewerText: View {
         let notice = bytesLeft > 0
             ? "\n\n… \(NativeTimelineFileCard.sizeText(bytesLeft)) more. Download the file to see all of it."
             : ""
-        let baseFontSize = InterfaceScale.fontSize(13)
+        let fontSize = InterfaceScale.fontSize(13)
         if markdownLanguages.contains(language) {
             let document = NSMutableAttributedString(
                 attributedString: MarkdownDocumentText.make(MarkdownDocumentText.parse(text), codeBackground: background)
@@ -132,12 +134,14 @@ struct MediaViewerText: View {
         }
         guard text.utf8.count <= highlightLimit else {
             return NSAttributedString(string: text + notice, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: baseFontSize, weight: .regular),
+                .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular),
                 .foregroundColor: NSColor.labelColor,
             ])
         }
         return NativeTimelineCoreText.scaledMarkdown(
-            DiscordMarkdown.appKitCodePlan(text + notice, language: language, on: background), baseFontSize: baseFontSize
+            DiscordMarkdown.appKitCodePlan(text + notice, language: language, on: background),
+            // Code blocks are smaller than the base size, so the base is what makes code `fontSize`.
+            baseFontSize: fontSize / DiscordMarkdown.smallTextScale
         )
     }
 }

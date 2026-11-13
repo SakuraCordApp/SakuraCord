@@ -193,6 +193,7 @@ public struct MessageDocument: Hashable, Sendable {
         guard !matches.isEmpty else { return source.isEmpty ? [] : [.markdown(source)] }
         // Only the token-only mention kinds need these scans; most matches are not.
         var literalRanges: [NSRange]?
+        var linkLabels: [NSRange]?
         var result: [Segment] = []
         var cursor = source.startIndex
         for match in matches {
@@ -204,7 +205,8 @@ public struct MessageDocument: Hashable, Sendable {
             if let emoji = RenderedEmoji(rawToken: token) {
                 result.append(.customEmoji(emoji))
             } else if !isMaskedLinkTarget(range, in: source), let mention = RenderedMention(rawToken: token),
-                      !isLiteralMention(mention, range: range, in: source, literalRanges: &literalRanges) {
+                      !isLiteralMention(mention, range: range, in: source, literalRanges: &literalRanges),
+                      !isInMaskedLinkLabel(mention, range: range, in: source, labels: &linkLabels) {
                 result.append(.mention(mention))
             } else {
                 result.append(.markdown(token))
@@ -254,6 +256,30 @@ public struct MessageDocument: Hashable, Sendable {
             cursor = previous
         }
         return escaped
+    }
+
+    /// Discord shows a masked link whose label holds any mention but a
+    /// timestamp as the text it was typed as, never as a link or a pill.
+    /// The renderer declines such a link, so the mention stays text here.
+    private static func isInMaskedLinkLabel(
+        _ mention: RenderedMention, range: Range<String.Index>, in source: String, labels: inout [NSRange]?
+    ) -> Bool {
+        guard mention.kind != .timestamp else { return false }
+        let tokenRange = NSRange(range, in: source)
+        let ranges = labels ?? DiscordMarkdown.maskedLinkLabelRanges(source)
+        labels = ranges
+        return ranges.contains { NSIntersectionRange($0, tokenRange) == tokenRange }
+    }
+
+    /// Whether a masked link's label holds a mention Discord doesn't allow
+    /// there: anything but a timestamp.
+    static func holdsDisallowedLinkLabelMention(_ label: Substring) -> Bool {
+        // Every mention token starts with `<` or `@`, or is a Discord link.
+        guard label.contains(where: { $0 == "<" || $0 == "@" }) || label.contains("://") else { return false }
+        let text = String(label)
+        return tokenExpression.matches(in: text, range: NSRange(text.startIndex..., in: text)).contains {
+            RenderedMention(rawToken: (text as NSString).substring(with: $0.range)).map { $0.kind != .timestamp } ?? false
+        }
     }
 
     /// `[label](https://discord.com/channels/…)` is a masked link, as in

@@ -1,6 +1,7 @@
 @testable import SakuraCord
 import DiscordProtocol
 import Foundation
+import SakuraCordModels
 import ServiceManagement
 import Testing
 
@@ -77,11 +78,19 @@ import Testing
 
 @MainActor
 @Test func `conversation restoration stays account scoped and consumes once`() {
-    let store = SettingsConversationRestorationStore(
-        defaults: InMemoryPreferences()
-    )
+    let defaults = InMemoryPreferences()
+    let store = SettingsConversationRestorationStore(defaults: defaults)
+    store.record(accountID: "100", guildID: "12", channelID: "13")
     store.record(accountID: "100", guildID: "10", channelID: "11")
     store.record(accountID: "200", guildID: nil, channelID: "22")
+
+    // Each server's last channel survives a relaunch, per account.
+    let relaunched = SettingsConversationRestorationStore(defaults: defaults)
+    #expect(relaunched.lastChannelIDsByGuild(accountID: "100") == [
+        GuildID(rawValue: 10): ChannelID(rawValue: 11),
+        GuildID(rawValue: 12): ChannelID(rawValue: 13),
+    ])
+    #expect(relaunched.lastChannelIDsByGuild(accountID: "200").isEmpty)
 
     #expect(
         store.preferredAccountID(for: .lastVisitedConversation) == "200"
@@ -116,6 +125,10 @@ import Testing
     )
     store.prepareAccountSwitch(to: "300")
     #expect(store.consumeLaunchRestoration(accountID: "300") == nil)
+
+    // A removed account leaves none of its conversations behind.
+    store.remove(accountID: "100")
+    #expect(store.lastChannelIDsByGuild(accountID: "100").isEmpty)
 }
 
 @MainActor
