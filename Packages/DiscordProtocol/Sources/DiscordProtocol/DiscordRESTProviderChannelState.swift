@@ -248,9 +248,10 @@ extension DiscordRESTProvider {
     }
 
     func publishGuildChannelUpdate(_ dto: ChannelDTO, guildID: GuildID) {
-        // Category changes affect their children. Ordinary updates only need
-        // to convert the changed channel, not every channel in the server.
-        guard dto.type != 4, var channels = cachedChannels[guildID] else {
+        // Category changes affect their children, and other non-list types may
+        // need an existing row removed. Ordinary updates only need to convert
+        // the changed channel, not every channel in the server.
+        guard dto.isGuildChannelListEntry, var channels = cachedChannels[guildID] else {
             publishGuildChannels(guildID)
             return
         }
@@ -282,7 +283,7 @@ extension DiscordRESTProvider {
         let categories = Dictionary(
             uniqueKeysWithValues: values.filter { $0.type == 4 }.map { ($0.id, $0) }
         )
-        return try values.filter { $0.type != 4 && !$0.isThread }.map { dto in
+        return try values.filter(\.isGuildChannelListEntry).map { dto in
             let category = dto.parentID.flatMap { categories[$0] }
             return try dto.domain(
                 guildID: guildID,
