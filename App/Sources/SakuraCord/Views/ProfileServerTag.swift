@@ -26,7 +26,7 @@ struct AppIdentityBadge: View {
             Text("APP")
         }
         .modifier(IdentityTagStyle(background: SakuraCordAccentColor.color))
-        .foregroundStyle(.white)
+        .foregroundStyle(SakuraCordAccentColor.labelOnFill)
         .accessibilityLabel(isVerified ? "Verified App" : "App")
     }
 }
