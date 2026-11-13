@@ -195,7 +195,6 @@ struct DisabledComposerView<Accessory: View>: View {
                         .accessibilityHidden(true)
                 }
                 Text(message)
-                    .lineLimit(1)
                 Spacer(minLength: 0)
                 if let until = timeoutUntil {
                     Text(timerInterval: min(Date.now, until) ... until, countsDown: true, showsHours: true)
@@ -210,8 +209,10 @@ struct DisabledComposerView<Accessory: View>: View {
         .font(.interfaceSystem(size: InterfaceTypographyMetrics.messageTextSize))
         .foregroundStyle(timeoutUntil == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.white))
         .padding(.horizontal, usesDefaultStyle ? ChatChromeMetrics.composerTextLeadingInset : InterfaceScale.metric(24))
+        // A long notice at a large message size wraps and the bar grows with it.
+        .padding(.vertical, InterfaceScale.metric(8))
         .frame(
-            height: usesDefaultStyle
+            minHeight: usesDefaultStyle
                 ? ChatChromeMetrics.composerControlHeight
                 : ChatChromeMetrics.controlHeight
         )
