@@ -186,7 +186,7 @@ enum NativeTimelineSystemSymbolCache {
         return image
     }
 
-    private static func rasterizedImage(
+    static func rasterizedImage(
         from image: NSImage,
         scale: CGFloat,
         appearance: NSAppearance

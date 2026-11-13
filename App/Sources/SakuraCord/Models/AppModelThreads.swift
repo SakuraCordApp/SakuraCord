@@ -575,7 +575,7 @@ extension AppModel {
             mentionsRepliedUser: mentionsRepliedUser,
             attachments: attachments
         )
-        guard !draft.content.isEmpty || !attachments.isEmpty else {
+        guard !draft.isEmpty else {
             // Discord sends nothing for a bare `@silent`, but clears the text.
             if clearsComposer { threadDraft = "" }
             return nil

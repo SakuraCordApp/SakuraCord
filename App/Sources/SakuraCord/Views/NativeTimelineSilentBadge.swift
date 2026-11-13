@@ -12,29 +12,36 @@ enum NativeTimelineSilentBadge {
 
     private struct Key: Hashable {
         let side: CGFloat
+        let scale: CGFloat
         let appearance: NSAppearance.Name
     }
 
-    private static var images: [Key: NSImage] = [:]
+    private static var images: [Key: NSImage?] = [:]
 
     /// SF Symbols has no such bell, so `bell.badge.fill` loses its dot to a
-    /// "z". Each size and appearance is composed once, then drawn from the
-    /// image's cached bitmap.
+    /// "z". Each size, backing scale and appearance is rasterized once.
     static func draw(in frame: CGRect) {
         let appearance = NSAppearance.currentDrawing()
-        let key = Key(side: frame.height, appearance: appearance.name)
-        let image = images[key] ?? makeImage(side: frame.height, appearance: appearance)
-        images[key] = image
+        let scale = NSGraphicsContext.current?.cgContext.convertToDeviceSpace(CGSize(width: 1, height: 1)).height
+            .magnitude ?? 2
+        let key = Key(side: frame.height, scale: scale, appearance: appearance.name)
+        let image: NSImage?
+        if let cached = images[key] {
+            image = cached
+        } else {
+            image = makeImage(side: frame.height, scale: scale, appearance: appearance)
+            images[key] = image
+        }
         guard let image else { return }
-        let scale = min(frame.width / image.size.width, frame.height / image.size.height)
-        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let fit = min(frame.width / image.size.width, frame.height / image.size.height)
+        let size = CGSize(width: image.size.width * fit, height: image.size.height * fit)
         image.draw(
             in: CGRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2, width: size.width, height: size.height),
             from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
         )
     }
 
-    private static func makeImage(side: CGFloat, appearance: NSAppearance) -> NSImage? {
+    private static func makeImage(side: CGFloat, scale: CGFloat, appearance: NSAppearance) -> NSImage? {
         var color = NSColor.secondaryLabelColor
         appearance.performAsCurrentDrawingAppearance { color = color.usingColorSpace(.deviceRGB) ?? color }
         let configuration = NSImage.SymbolConfiguration(pointSize: side, weight: .regular)
@@ -42,7 +49,7 @@ enum NativeTimelineSilentBadge {
         guard let bell = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(configuration)
         else { return nil }
-        return NSImage(size: bell.size, flipped: false) { rect in
+        let composed = NSImage(size: bell.size, flipped: false) { rect in
             bell.draw(in: rect)
             let letter = NSAttributedString(string: "z", attributes: [
                 .font: NSFont.systemFont(ofSize: rect.height * 0.55, weight: .heavy),
@@ -52,5 +59,6 @@ enum NativeTimelineSilentBadge {
             letter.draw(at: CGPoint(x: rect.maxX - size.width, y: rect.maxY - size.height + rect.height * 0.06))
             return true
         }
+        return NativeTimelineSystemSymbolCache.rasterizedImage(from: composed, scale: scale, appearance: appearance)
     }
 }

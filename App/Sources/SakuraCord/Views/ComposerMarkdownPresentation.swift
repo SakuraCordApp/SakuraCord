@@ -30,7 +30,7 @@ enum ComposerMarkdownPresentation {
             }
         }
         // Like Discord's composer, a leading `@silent` reads as a link.
-        if SilentMessagePrefix.split(original.string).isSilent {
+        if SilentMessagePrefix.isSilent(original.string) {
             text.addAttribute(
                 .foregroundColor, value: NSColor.linkColor,
                 range: NSRange(location: 0, length: SilentMessagePrefix.token.utf16.count)

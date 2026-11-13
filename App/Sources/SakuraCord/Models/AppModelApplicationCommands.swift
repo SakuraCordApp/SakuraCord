@@ -560,7 +560,7 @@ extension AppModel {
     /// action, a bare `@silent` sends nothing.
     private func sendBuiltInMessage(_ message: String, to channelID: ChannelID, session: AppModelAccountSession) async throws {
         let draft = SendMessageDraft(channelID: channelID, content: message)
-        guard !draft.content.isEmpty else { return }
+        guard !draft.isEmpty else { return }
         _ = try await session.provider.send(draft)
         recordMessageEmojiUsage(message, session: session)
     }

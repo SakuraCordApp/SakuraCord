@@ -450,10 +450,10 @@ extension AppModel {
             ))
             guard isCurrentAccountSession(session) else { return nil }
             confirmSlowmodeMessage(confirmed)
-            if sendsContext, !accompanying.content.isEmpty, shouldSendForwardContext(to: destinationID) {
+            if sendsContext, !accompanying.isEmpty, shouldSendForwardContext(to: destinationID) {
                 let confirmedContext = try await session.provider.send(accompanying)
                 guard isCurrentAccountSession(session) else { return nil }
-                recordMessageEmojiUsage(context)
+                recordMessageEmojiUsage(accompanying.content)
                 confirmSlowmodeMessage(confirmedContext)
             }
             return nil

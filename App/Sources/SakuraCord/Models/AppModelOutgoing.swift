@@ -252,7 +252,7 @@ extension AppModel {
             poll: poll,
             isTTS: isTTS
         )
-        guard !outgoing.content.isEmpty || !attachments.isEmpty || poll != nil else {
+        guard !outgoing.isEmpty else {
             // Discord sends nothing for a bare `@silent`, but clears the text.
             if clearsComposer { updateDraft("") }
             return nil
@@ -483,9 +483,8 @@ extension AppModel {
                 : [],
             poll: outgoing.poll?.preview()
         )
-        if outgoing.suppressesNotifications { message.flags.insert(.suppressNotifications) }
+        message.flags.formUnion(outgoing.messageFlags)
         if let voiceMessage = outgoing.voiceMessage, !message.attachments.isEmpty {
-            message.flags.insert(.voiceMessage)
             message.attachments[0].mediaType = "audio/ogg"
             message.attachments[0].durationSeconds = voiceMessage.durationSeconds
             message.attachments[0].waveform = voiceMessage.waveform

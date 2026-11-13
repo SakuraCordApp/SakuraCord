@@ -529,11 +529,13 @@ public struct Message: Identifiable, Codable, Hashable, Sendable {
 public enum SilentMessagePrefix {
     public static let token = "@silent"
 
+    public static func isSilent(_ content: String) -> Bool {
+        content.hasPrefix(token) && (content.dropFirst(token.count).first?.isWhitespace ?? true)
+    }
+
     public static func split(_ content: String) -> (isSilent: Bool, content: String) {
-        guard content.hasPrefix(token) else { return (false, content) }
-        let remainder = content.dropFirst(token.count)
-        guard remainder.first?.isWhitespace ?? true else { return (false, content) }
-        return (true, remainder.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard isSilent(content) else { return (false, content) }
+        return (true, content.dropFirst(token.count).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
@@ -584,6 +586,11 @@ public struct SendMessageDraft: Equatable, Sendable {
         self.poll = poll
         self.isTTS = isTTS
         self.voiceMessage = voiceMessage
+    }
+
+    /// Like Discord's send action, a draft with nothing to post is not sent.
+    public var isEmpty: Bool {
+        content.isEmpty && attachments.isEmpty && stickerIDs.isEmpty && poll == nil
     }
 
     public var messageFlags: MessageFlags {
