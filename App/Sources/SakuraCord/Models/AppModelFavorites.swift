@@ -11,8 +11,8 @@ final class FavoritesStore {
     var settings: FavoritesSettings?
     /// Whether the rail's Favorites server is the open destination.
     var isPresented = false
-    /// The channel limit an addition just hit, shown as Discord's upsell notice.
-    var limitReached: Int?
+    /// The addition Discord's limit just blocked, shown as its upsell notice.
+    var limitReached: FavoritesLimitNotice?
     var nameEditor: FavoritesNameEditor?
     @ObservationIgnored var lastChannelID: ChannelID?
     /// Favourited threads the session's active-thread lists don't carry, such
@@ -37,6 +37,14 @@ final class FavoritesStore {
         localScope = nil
         settingsAreConfirmed = false
     }
+}
+
+/// A favourite Discord's limit kept from being added.
+struct FavoritesLimitNotice: Identifiable, Equatable {
+    let limit: Int
+    let channelID: ChannelID
+    let channelType: Int
+    var id: ChannelID { channelID }
 }
 
 /// The open Favorites name dialog.
@@ -247,9 +255,18 @@ extension AppModel {
             updateFavorites(pruned + [.add(channelID, channelType: channelType)])
         } else if featuresSettings.unlimitedFavorites {
             addLocalFavorite(channelID, channelType: channelType)
-        } else {
-            favorites.limitReached = limit
+        } else if let limit {
+            favorites.limitReached = FavoritesLimitNotice(limit: limit, channelID: channelID, channelType: channelType)
         }
+    }
+
+    /// Turns on Unlimited favorites, then adds the favourite the limit blocked.
+    func addFavoriteBeyondLimit(_ notice: FavoritesLimitNotice) {
+        var settings = featuresSettings
+        settings.unlimitedFavorites = true
+        applyFeaturesSettings(settings)
+        favorites.limitReached = nil
+        toggleFavorite(notice.channelID, channelType: notice.channelType)
     }
 
     func createFavoriteCategory(named name: String) {
@@ -284,6 +301,18 @@ extension AppModel {
                 model.presentFavorites(await account.provider.favoritesSettings(), isConfirmed: false)
             }
         }
+    }
+
+    /// Like a server category's Mark as Read, each favourite in the category
+    /// gets its own channel ACK at its newest message.
+    func markFavoriteCategoryRead(_ categoryID: ChannelID) {
+        for favorite in favoriteConversations() where favorite.entry.parentID == categoryID {
+            markConversationRead(channelID: favorite.id)
+        }
+    }
+
+    func isFavoriteCategoryUnread(_ categoryID: ChannelID) -> Bool {
+        favoriteConversations().contains { $0.entry.parentID == categoryID && canMarkConversationRead(channelID: $0.id) }
     }
 
     /// A thread's mute lives in its member settings, not channel overrides.

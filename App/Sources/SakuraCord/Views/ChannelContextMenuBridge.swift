@@ -123,13 +123,16 @@ enum ChannelPinMenuAction {
 /// Page destinations share the channel row's native hover and selection tracking.
 struct ChannelRowHoverBridge: NSViewRepresentable {
     let isSelected: Bool
+    /// Resolved when the menu opens.
+    var menu: (() -> NSMenu?)?
     func makeNSView(context: Context) -> ChannelContextMenuHitView {
         let view = ChannelContextMenuHitView()
-        view.isSelected = isSelected
+        updateNSView(view, context: context)
         return view
     }
     func updateNSView(_ view: ChannelContextMenuHitView, context: Context) {
         view.isSelected = isSelected
+        view.menuProvider = menu
     }
     static func dismantleNSView(_ view: ChannelContextMenuHitView, coordinator: ()) {
         view.uninstallFromNativeRow()

@@ -5,39 +5,17 @@ import SwiftUI
 /// the model itself so unread changes re-render only this tile.
 struct FavoritesRailButton: View {
     let model: AppModel
-    @State private var isHovering = false
 
     var body: some View {
-        let isSelected = model.favorites.isPresented
         let unread = model.favoritesUnread
-        Button(action: model.openFavorites) {
-            HStack(spacing: InterfaceScale.metric(4)) {
-                ServerRailSelectionIndicator(isSelected: isSelected, isHovering: isHovering, hasNotification: unread.isUnread)
-                ServerRailBadgedIcon(mentionCount: unread.mentions) {
-                    Image(systemName: "star.fill")
-                        .font(.interface(.title2))
-                        .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
-                        .background(
-                            isSelected || isHovering ? SakuraCordAccentColor.color : Color.secondary.opacity(0.16),
-                            in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous)
-                        )
-                        .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
-                }
-            }
-            .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(ServerRailButtonStyle())
+        ServerRailSymbolButton(
+            title: "Favorites", systemImage: "star.fill", isSelected: model.favorites.isPresented,
+            hasNotification: unread.isUnread, mentionCount: unread.mentions, action: model.openFavorites
+        )
         .contextMenu {
             Button("Hide Favorites", systemImage: "eye.slash.fill") { model.setFavoritesEnabled(false) }
         }
-        .accessibilityLabel("Favorites")
         .accessibilityValue(unread.mentions > 0 ? "\(unread.mentions) unread mentions" : unread.isUnread ? "Unread" : "")
-        .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
-            isHovering ? ServerRailHoverItem(name: "Favorites", bounds: bounds) : nil
-        }
-        .onServerRailHover { isHovering = $0 }
-        .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }
 
@@ -48,14 +26,16 @@ struct FavoritesDialogs: ViewModifier {
     func body(content: Content) -> some View {
         @Bindable var favorites = model.favorites
         content
-            .alert("Need more Favorites?",
-                   isPresented: Binding(get: { favorites.limitReached != nil }, set: { if !$0 { favorites.limitReached = nil } }),
-                   presenting: favorites.limitReached) { _ in
-                Button("OK", role: .cancel) {}
-            } message: { limit in
-                Text(limit == FavoritesSettings.maximumEntries
-                    ? "Favorites are limited to \(limit) channels and DMs."
-                    : "Free Favorites are limited to \(limit). Get Nitro to add up to \(FavoritesSettings.maximumEntries) channels and DMs.")
+            .windowModal(item: $favorites.limitReached, cornerRadius: 32, cornerStyle: .circular) { blocked in
+                ModalDialogPanel(title: "Need more Favorites?", actionTitle: "Turn On Unlimited Favorites", actionSymbol: "infinity") {
+                    model.addFavoriteBeyondLimit(blocked)
+                } notice: {
+                    Text("Discord allows \(blocked.limit) Favorites on your account. Unlimited favorites keeps the rest on this Mac only.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } content: {
+                    EmptyView()
+                }
             }
             .windowModal(item: $favorites.nameEditor, cornerRadius: 32, cornerStyle: .circular) {
                 FavoritesNameEditorView(model: model, editor: $0)

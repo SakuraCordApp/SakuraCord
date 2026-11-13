@@ -63,6 +63,34 @@ struct NameEditorPanel<Notice: View, Accessory: View>: View {
     let save: () -> Void
     @ViewBuilder let notice: Notice
     @ViewBuilder let accessory: Accessory
+
+    var body: some View {
+        ModalDialogPanel(title: title, actionTitle: actionTitle, isWorking: isSaving, action: save) {
+            notice
+        } content: {
+            VStack(alignment: .leading, spacing: 8) {
+                NameEditorField(title: fieldTitle, placeholder: placeholder, draft: $draft, maximumLength: maximumLength, submit: save)
+                if let error {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                accessory
+            }
+        }
+    }
+}
+
+/// SakuraCord's compact dialog, as Change Nickname shows it: a title and
+/// notice, optional content, and Cancel beside the primary action.
+struct ModalDialogPanel<Notice: View, Content: View>: View {
+    let title: String
+    var actionTitle = "Save"
+    var actionSymbol = "checkmark"
+    /// Disables the dialog and shows the primary action's progress.
+    var isWorking = false
+    let action: () -> Void
+    @ViewBuilder let notice: Notice
+    @ViewBuilder let content: Content
     @Environment(\.windowModalContext) private var modal
     @Environment(\.windowModalAvailableSize) private var availableSize
 
@@ -75,23 +103,16 @@ struct NameEditorPanel<Notice: View, Accessory: View>: View {
                 notice
             }
             .padding(.horizontal, 12)
-            VStack(alignment: .leading, spacing: 8) {
-                NameEditorField(title: fieldTitle, placeholder: placeholder, draft: $draft, maximumLength: maximumLength, submit: save)
-                if let error {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                accessory
-            }
-            .disabled(isSaving)
-            .padding(.horizontal, 12)
+            content
+                .disabled(isWorking)
+                .padding(.horizontal, 12)
             // Keep the 12-point footer inset that makes the capsules concentric with the panel.
             HStack {
                 ModalGlassButton(symbol: "xmark", label: "Cancel") { modal?.dismiss() }
-                    .disabled(isSaving)
+                    .disabled(isWorking)
                 Spacer(minLength: 16)
-                ModalGlassButton(symbol: "checkmark", label: actionTitle, primary: true, isLoading: isSaving, action: save)
-                    .disabled(isSaving)
+                ModalGlassButton(symbol: actionSymbol, label: actionTitle, primary: true, isLoading: isWorking, action: action)
+                    .disabled(isWorking)
                     .keyboardShortcut(.defaultAction)
             }
             .padding(.top, 4)
@@ -99,7 +120,7 @@ struct NameEditorPanel<Notice: View, Accessory: View>: View {
         .padding(.top, 12)
         .padding(12)
         .frame(width: min(400, availableSize.width))
-        .windowModalDismissDisabled(isSaving)
+        .windowModalDismissDisabled(isWorking)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
     }

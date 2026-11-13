@@ -55,6 +55,21 @@ enum FavoritesMenu {
         return items
     }
 
+    /// A Favorites category's menu: Mark as Read, then Rename and Delete.
+    static func categoryMenu(for category: FavoritesSettings.Entry, model: AppModel) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let markRead = item("Mark as Read", systemImage: "envelope.open.fill") { model.markFavoriteCategoryRead(category.id) }
+        markRead.isEnabled = model.isFavoriteCategoryUnread(category.id)
+        menu.addItem(markRead)
+        menu.addItem(.separator())
+        menu.addItem(item("Rename Category…", systemImage: "pencil") { model.favorites.nameEditor = .rename(category) })
+        menu.addItem(item("Delete Category", systemImage: "trash", isDestructive: true) {
+            model.updateFavorites(.remove(category.id))
+        })
+        return menu
+    }
+
     static func item(
         _ title: String, systemImage: String?, isDestructive: Bool = false, action: (() -> Void)?
     ) -> NSMenuItem {

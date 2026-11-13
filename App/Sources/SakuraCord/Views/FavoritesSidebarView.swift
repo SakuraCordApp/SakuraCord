@@ -57,30 +57,14 @@ struct FavoritesSidebarView: View {
 
     private func categoryHeader(_ category: FavoritesSettings.Entry) -> some View {
         let isCollapsed = collapsedCategoryIDs.contains(category.id)
-        return Button {
+        return ChannelCategoryHeaderButton(name: category.nickname, isExpanded: !isCollapsed) {
             withAnimation(.snappy(duration: 0.18)) {
                 if isCollapsed { collapsedCategoryIDs.remove(category.id) } else { collapsedCategoryIDs.insert(category.id) }
             }
-        } label: {
-            HStack(spacing: InterfaceScale.metric(5)) {
-                Text(category.nickname)
-                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.interface(.caption2).weight(.semibold))
-                    .frame(width: InterfaceScale.metric(8))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(Color.primary.opacity(0.5))
-            .contentShape(Rectangle())
+        } menu: {
+            ChannelRowHoverBridge(isSelected: false) { FavoritesMenu.categoryMenu(for: category, model: model) }
         }
-        .buttonStyle(.plain)
         .interfaceFontOverride(.interface(.subheadline).weight(.bold))
-        .help(isCollapsed ? "Expand \(category.nickname)" : "Collapse \(category.nickname)")
-        .contextMenu {
-            Button("Rename Category…", systemImage: "pencil") { model.favorites.nameEditor = .rename(category) }
-            Button("Delete Category", systemImage: "trash", role: .destructive) {
-                model.updateFavorites(.remove(category.id))
-            }
-        }
     }
 }
 

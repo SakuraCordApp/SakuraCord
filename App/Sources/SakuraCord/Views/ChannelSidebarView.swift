@@ -467,6 +467,32 @@ private struct GuildChannelList: View, Equatable {
 
 }
 
+/// A collapsible category header in a sidebar channel list. `menu` is the
+/// row bridge that supplies the header's native hover and context menu.
+struct ChannelCategoryHeaderButton<Menu: View>: View {
+    let name: String
+    let isExpanded: Bool
+    let toggle: () -> Void
+    @ViewBuilder let menu: Menu
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: InterfaceScale.metric(5)) {
+                Text(name)
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.interface(.caption2).weight(.semibold))
+                    .frame(width: InterfaceScale.metric(8))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.primary.opacity(0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+        .overlay { menu }
+    }
+}
+
 /// A page or action row above a sidebar's channels, such as Server Guide.
 struct ChannelSidebarPageRow: View {
     let title: String
@@ -798,7 +824,7 @@ private struct ChannelGroupRows: View {
                    let categoryID = group.categoryID,
                    let guildID = group.guildID
                 {
-                    Button {
+                    ChannelCategoryHeaderButton(name: name, isExpanded: isExpanded) {
                         let nextValue = !isExpanded
                         withAnimation(.snappy(duration: 0.18)) {
                             isExpanded = nextValue
@@ -808,20 +834,7 @@ private struct ChannelGroupRows: View {
                                 categoryID: categoryID
                             )
                         }
-                    } label: {
-                        HStack(spacing: InterfaceScale.metric(5)) {
-                            Text(name)
-                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                .font(.interface(.caption2).weight(.semibold))
-                                .frame(width: InterfaceScale.metric(8))
-                            Spacer(minLength: 0)
-                        }
-                        .foregroundStyle(Color.primary.opacity(0.5))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(isExpanded ? "Collapse \(name)" : "Expand \(name)")
-                    .overlay {
+                    } menu: {
                         ChannelContextMenuBridge(
                             subject: .category,
                             isSelected: false,

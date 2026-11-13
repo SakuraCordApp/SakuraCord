@@ -1014,34 +1014,48 @@ struct ServerRailHoverPreferenceKey: PreferenceKey {
 private struct HomeRailButton: View {
     let home: ServerRailHomeEntry
     let action: () -> Void
+
+    var body: some View {
+        ServerRailSymbolButton(title: "Direct Messages", systemImage: "message.fill", isSelected: home.isSelected, action: action)
+    }
+}
+
+/// A rail tile drawn from a symbol, such as Direct Messages and Favorites:
+/// filled with the accent while selected or hovered, with the hover pill and name.
+struct ServerRailSymbolButton: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    var hasNotification = false
+    var mentionCount = 0
+    let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: InterfaceScale.metric(4)) {
-                ServerRailSelectionIndicator(
-                    isSelected: home.isSelected,
-                    isHovering: isHovering,
-                    hasNotification: false
-                )
-                Image(systemName: "message.fill")
-                    .font(.interface(.title2))
-                    .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
-                    .background(
-                        home.isSelected
-                            ? SakuraCordAccentColor.color
-                            : Color.secondary.opacity(0.16),
-                        in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous)
-                    )
-                    .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+                ServerRailSelectionIndicator(isSelected: isSelected, isHovering: isHovering, hasNotification: hasNotification)
+                ServerRailBadgedIcon(mentionCount: mentionCount) {
+                    Image(systemName: systemImage)
+                        .font(.interface(.title2))
+                        .frame(width: InterfaceScale.metric(44), height: InterfaceScale.metric(44))
+                        .background(
+                            isSelected || isHovering ? SakuraCordAccentColor.color : Color.secondary.opacity(0.16),
+                            in: ConcentricRectangle(cornerRadius: InterfaceScale.metric(13), style: .continuous)
+                        )
+                        .frame(width: InterfaceScale.metric(46), height: InterfaceScale.metric(46))
+                }
             }
             .frame(width: ChatChromeMetrics.serverRailWidth, height: InterfaceScale.metric(46), alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(ServerRailButtonStyle())
-        .accessibilityLabel("Direct Messages")
+        .accessibilityLabel(title)
+        .anchorPreference(key: ServerRailHoverPreferenceKey.self, value: .bounds) { bounds in
+            isHovering ? ServerRailHoverItem(name: title, bounds: bounds) : nil
+        }
         .onServerRailHover { isHovering = $0 }
-        .help("Direct Messages")
+        .animation(.snappy(duration: 0.18), value: isHovering)
     }
 }
 
