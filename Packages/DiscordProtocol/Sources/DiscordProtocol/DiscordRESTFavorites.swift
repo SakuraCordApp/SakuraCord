@@ -71,6 +71,7 @@ extension DiscordRESTProvider {
         pendingFavorites = nil
         pendingUserContent = nil
         userContentMessage = nil
+        userContentDataVersion = nil
         personalizationConsented = false
         channelAffinities = nil
         userAffinities = nil

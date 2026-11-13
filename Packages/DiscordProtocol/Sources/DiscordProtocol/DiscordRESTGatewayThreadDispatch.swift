@@ -100,7 +100,8 @@ extension DiscordRESTProvider {
             publishForumPosts(parentID: parentID)
         }
         publishActiveJoinedThreads()
-        if Self.isRecentJoin(member.joinTimestamp) {
+        // Discord's FavoriteManager auto-adds only for an update naming the account.
+        if member.userID != nil, Self.isRecentJoin(member.joinTimestamp) {
             continuation?.yield(.currentUserThreadMembershipChanged(threadID: threadID, isJoined: true))
         }
     }

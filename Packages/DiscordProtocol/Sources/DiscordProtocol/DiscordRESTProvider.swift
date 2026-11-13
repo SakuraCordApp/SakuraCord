@@ -196,6 +196,9 @@ public actor DiscordRESTProvider: PendingCredentialChatProvider {
     /// The confirmed settings-proto/1 Favorites message; nil until settings load.
     var favoritesMessage: Data?
     var favoritesDataVersion: UInt32?
+    /// The settings data version of `userContentMessage`; older copies, such as
+    /// a late response to an earlier write, are ignored.
+    var userContentDataVersion: UInt32?
     /// The optimistic Favorites state while a save is pending or in flight.
     var pendingFavorites: FavoritesSettings?
     var favoritesSaveTask: Task<Void, Never>?

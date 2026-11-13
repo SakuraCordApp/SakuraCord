@@ -14,6 +14,9 @@ extension DiscordRESTProvider {
         guard let encoded, let data = Data(base64Encoded: encoded) else { return }
         let message = DiscordUserContentProto.message(inSettings: data)
         guard message != nil || replacesAllSettings else { return }
+        let version = DiscordSettingsProto.dataVersion(in: data)
+        if let version, let current = userContentDataVersion, version < current { return }
+        if let version { userContentDataVersion = version }
         let stored = message ?? Data()
         let wasDismissed = userContentMessage.map { DiscordUserContentProto.isDismissed(DiscordUserContentProto.favoritesSuggestions, in: $0) }
         userContentMessage = stored
