@@ -400,6 +400,28 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
     override var isOpaque: Bool { false }
     override var acceptsFirstResponder: Bool { true }
 
+    override func becomeFirstResponder() -> Bool {
+        scheduleSelectionEmphasisRefresh()
+        return super.becomeFirstResponder()
+    }
+
+    override func resignFirstResponder() -> Bool {
+        scheduleSelectionEmphasisRefresh()
+        return super.resignFirstResponder()
+    }
+
+    /// The window records its new first responder only after these calls return.
+    private func scheduleSelectionEmphasisRefresh() {
+        Task { @MainActor [weak self] in self?.selectionEmphasisDidChange() }
+    }
+
+    @objc func selectionEmphasisDidChange(_ notification: Notification? = nil) {
+        guard notification == nil || notification?.object as? NSWindow === window else { return }
+        needsDisplay = true
+        reconcileBeginningSelectionOverlay()
+        animatedMediaOverlays.values.forEach { $0.updateSelectionColor() }
+    }
+
     func drawSuperclassContent(in dirtyRect: NSRect) {
         super.draw(dirtyRect)
     }
@@ -446,6 +468,9 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
                                        name: NSApplication.didBecomeActiveNotification, object: nil)
         notificationCenter.addObserver(self, selector: #selector(synchronizeActionCapsuleShiftState),
                                        name: NSMenu.didEndTrackingNotification, object: nil)
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            notificationCenter.addObserver(self, selector: #selector(selectionEmphasisDidChange(_:)), name: name, object: nil)
+        }
         notificationCenter.addObserver(self, selector: #selector(voiceMessagePlaybackDidChange(_:)),
                                        name: VoiceMessagePlaybackStore.didChange, object: nil)
         notificationCenter.addObserver(self, selector: #selector(attachmentDownloadsDidChange(_:)),
@@ -541,6 +566,10 @@ final class NativeTimelineCanvasView: NSView, WindowModalInputParticipant, NSVie
 
 @MainActor
 enum NativeTimelineRowPainter {
+    /// Like an NSTextView, the canvas draws its text selection in the active
+    /// colour only while it is the key window's first responder.
+    static var drawsEmphasizedSelection = true
+
     static func selectionOverlayImage(
         _ box: NativeTimelineAttributedTextBox,
         size: CGSize,

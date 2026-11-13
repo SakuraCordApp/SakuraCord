@@ -17,7 +17,6 @@ struct EditMessageView: View {
         VStack(alignment: .leading, spacing: InterfaceScale.metric(14)) {
             Text("Edit Message").font(.interface(.headline))
             TextEditor(text: $content)
-                .tint(SakuraCordAccentColor.color)
                 .frame(minHeight: InterfaceScale.metric(120))
                 .font(.interface(.body))
             HStack {

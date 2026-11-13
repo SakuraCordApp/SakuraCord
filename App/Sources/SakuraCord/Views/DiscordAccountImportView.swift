@@ -147,7 +147,6 @@ struct DiscordAccountImportView: View {
                     .buttonStyle(.glass)
                     .buttonBorderShape(.capsule)
                     .controlSize(.large)
-                    .tint(SakuraCordAccentColor.color)
                     .disabled(importingAccountID != nil || isTransitioning)
                     .frame(width: InterfaceScale.metric(78))
                     .accessibilityLabel("Import \(account.username)")
@@ -175,7 +174,6 @@ struct DiscordAccountImportView: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .tint(SakuraCordAccentColor.color)
         }
         .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(210))
     }
@@ -194,7 +192,6 @@ struct DiscordAccountImportView: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .tint(SakuraCordAccentColor.color)
         }
         .frame(maxWidth: .infinity, minHeight: InterfaceScale.metric(210))
     }

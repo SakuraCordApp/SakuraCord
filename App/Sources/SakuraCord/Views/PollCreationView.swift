@@ -48,7 +48,6 @@ struct PollCreationView: View {
                             PollCreationSettingRow(symbol: "checklist", title: "Allow Multiple Answers") {
                                 Toggle("Allow Multiple Answers", isOn: $draft.allowsMultipleAnswers)
                                     .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                                    .tint(SakuraCordAccentColor.color)
                             }
                         }
                         .padding(InterfaceScale.metric(8))
@@ -93,7 +92,6 @@ struct PollCreationView: View {
                 .textFieldStyle(.plain)
                 .font(.interfaceSystem(size: 19))
                 .lineLimit(1 ... 4)
-                .tint(SakuraCordAccentColor.color)
                 .focused($focus, equals: .question)
                 .onSubmit { focus = draft.answers.first.map { .answer($0.id) } }
             if draft.question.utf16.count > 260 {
@@ -175,7 +173,6 @@ private struct PollCreationAnswerRow: View {
             TextField(placeholder, text: $answer.text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1 ... 3)
-                .tint(SakuraCordAccentColor.color)
                 .focused(focus, equals: .answer(answer.id))
                 .onSubmit(submit)
                 .frame(maxWidth: .infinity, alignment: .leading)

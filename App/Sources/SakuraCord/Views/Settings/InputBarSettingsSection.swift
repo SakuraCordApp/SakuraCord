@@ -15,7 +15,6 @@ struct InputBarSettingsSection: View {
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
                 .horizontalRadioGroupLayout()
-                .tint(SakuraCordAccentColor.color)
             }
             .settingsControlAnchor(.composerBarAppearance, state: state)
 

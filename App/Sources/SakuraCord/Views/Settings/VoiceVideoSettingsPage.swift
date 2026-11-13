@@ -134,7 +134,6 @@ private struct VoiceCallDefaultsSettingsSection: View {
                 Toggle("Play call feedback sounds", isOn: $preferences.playsFeedbackSounds)
                     .settingsControlAnchor(.voiceFeedbackSounds, state: state)
             }
-            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("Calls", bundle: #bundle)
         }
@@ -173,7 +172,6 @@ private struct VoiceCameraSettingsSection: View {
                 Toggle("Join calls with camera off", isOn: $preferences.joinsWithCameraOff)
                     .settingsControlAnchor(.voiceJoinCameraOff, state: state)
             }
-            .tint(SakuraCordAccentColor.color)
         } header: {
             Text("Camera", bundle: #bundle)
         }
@@ -276,10 +274,8 @@ private struct ScreenShareDefaultsSettingsSection: View {
             .settingsControlAnchor(.voiceScreenShareFrameRate, state: state)
 
             Toggle("Include system audio", isOn: $preferences.screenShareIncludesAudio)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.voiceScreenShareAudio, state: state)
             Toggle("Show pointer", isOn: $preferences.screenShareShowsPointer)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.voiceScreenSharePointer, state: state)
         } header: {
             Text("Screen Sharing", bundle: #bundle)

@@ -181,7 +181,6 @@ struct AccountSwitcherView: View {
                 .buttonStyle(.glass)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .tint(SakuraCordAccentColor.color)
                 .disabled(switchingAccountID != nil)
                 .frame(width: InterfaceScale.metric(78))
             }
@@ -213,7 +212,6 @@ struct AccountSwitcherView: View {
         .buttonStyle(.glassProminent)
         .buttonBorderShape(.capsule)
         .controlSize(.large)
-        .tint(SakuraCordAccentColor.color)
         .disabled(switchingAccountID != nil || loggingOutAccountID != nil)
     }
 

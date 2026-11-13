@@ -97,7 +97,6 @@ private struct InterfaceSizeSection: View {
                         if !editing { value = draft }
                     }
                     .labelsHidden()
-                    .tint(SakuraCordAccentColor.color)
                     .frame(minWidth: InterfaceScale.metric(220))
                     Text(draft, format: .percent.precision(.fractionLength(0)))
                         .monospacedDigit()
@@ -154,7 +153,6 @@ private struct InterfaceMessagesSection: View {
                         in: AppearanceSettingsSnapshot.messageSpacingRange,
                         step: 1
                     )
-                    .tint(SakuraCordAccentColor.color)
                     .frame(minWidth: InterfaceScale.metric(220))
                     Text("\(Int(value.messageSpacing)) pt")
                         .monospacedDigit()
@@ -206,11 +204,9 @@ private struct InterfaceTimeSection: View {
                 "Show seconds",
                 isOn: $value.includesTimestampSeconds
             )
-            .tint(SakuraCordAccentColor.color)
             .settingsControlAnchor(.timestampSeconds, state: state)
 
             Toggle("Always show timestamps", isOn: $value.alwaysShowsTimestamps)
-                .tint(SakuraCordAccentColor.color)
                 .settingsControlAnchor(.alwaysShowTimestamps, state: state)
         } header: {
             Text("Timestamps", bundle: #bundle)

@@ -28,9 +28,10 @@ enum NativeTimelineTextPresentation {
             attributedString: attributedContent
         )
         let range = NSRange(location: 0, length: resolved.length)
-        resolved.addAttribute(.foregroundColor, value: NSColor.white, range: range)
-        resolved.addAttribute(.underlineColor, value: NSColor.white, range: range)
-        resolved.addAttribute(.strikethroughColor, value: NSColor.white, range: range)
+        let label = NSColor.sakuraCordLabelOnAccentColor
+        resolved.addAttribute(.foregroundColor, value: label, range: range)
+        resolved.addAttribute(.underlineColor, value: label, range: range)
+        resolved.addAttribute(.strikethroughColor, value: label, range: range)
         resolved.enumerateAttribute(.link, in: range) { link, linkRange, _ in
             guard link != nil else { return }
             resolved.addAttribute(
@@ -114,8 +115,7 @@ enum NativeTimelineTextPresentation {
                 for: message,
                 currentUserID: source?.currentUserID,
                 systemRecipient: source?.systemMessageRecipient(for: message),
-                systemActorColor: systemActorColor,
-                systemLinkColor: SakuraCordAccentColor.nsColor
+                systemActorColor: systemActorColor
             )
         } else {
             row.textPlan

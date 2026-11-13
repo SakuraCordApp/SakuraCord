@@ -228,7 +228,7 @@ private struct ForumNewPostButton: View {
                     .frame(width: ForumTagChipMetrics.height)
             }
             .font(.interface(.callout).weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(SakuraCordAccentColor.labelOnFill)
             .frame(height: ForumTagChipMetrics.height)
             .glassEffect(.forumChip(isOn: true), in: Capsule())
             .contentShape(Capsule())

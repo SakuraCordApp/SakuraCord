@@ -465,7 +465,6 @@ struct MessageSearchFiltersOverlay: View {
                 Button("Cancel") { dismiss() }
                 Button("Apply Filters") { apply() }
                     .buttonStyle(.borderedProminent)
-                    .tint(SakuraCordAccentColor.color)
             }
             .padding(InterfaceScale.metric(18))
         }
@@ -718,7 +717,6 @@ private struct MessageSearchDateFilters: View {
                 .fontWeight(.medium)
             Spacer()
             DatePicker("", selection: date, displayedComponents: .date)
-                .tint(SakuraCordAccentColor.color)
                 .labelsHidden()
             Button("Remove \(title.lowercased()) date", systemImage: "xmark") {
                 remove()

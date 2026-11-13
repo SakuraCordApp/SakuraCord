@@ -119,7 +119,7 @@ private struct IssueReportCelebration: View {
             }
             Image(systemName: "checkmark")
                 .font(.interfaceSystem(size: 30, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(SakuraCordAccentColor.labelOnFill)
                 .symbolEffect(.bounce, value: landed)
                 .frame(width: InterfaceScale.metric(72), height: InterfaceScale.metric(72))
                 .glassEffect(.regular.tint(SakuraCordAccentColor.color), in: Circle())
