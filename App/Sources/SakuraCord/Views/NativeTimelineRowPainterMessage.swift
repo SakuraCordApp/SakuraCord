@@ -962,7 +962,7 @@ extension NativeTimelineRowPainter {
                 ofSize: frame.height * 0.42,
                 weight: .semibold
             ),
-            color: .labelColor,
+            color: .white,
             alignment: .center
         )
     }
